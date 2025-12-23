@@ -944,13 +944,13 @@ class AsyncGridBot:
                     if order.get("side") == "buy" and order.get("state") == "open":
                         order_price = float(order.get("limit_price", 0))
                         order_id = str(order.get("id"))
-                        client_id = order.get("client_order_id", "")
+                        client_id = order.get("client_order_id") or ""
                         is_reduce_only = order.get("reduce_only", False)
                         
                         if is_reduce_only:
                             continue
                         
-                        if client_id.startswith("GBOT_") and order_price < threshold:
+                        if client_id and client_id.startswith("GBOT_") and order_price < threshold:
                             log.info(f"🗑️  Cancelling misaligned BUY order #{order_id} @ ${order_price:,.0f} (threshold: ${threshold:,.0f})")
                             await self.order_actor.ask("CANCEL_ORDER", {"order_id": order_id}, timeout=5.0)
                             await asyncio.sleep(0.2)
@@ -2084,7 +2084,18 @@ class AsyncGridBot:
         
         try:
             # Step 1: Get all positions from exchange
-            exchange_positions = await self.api_client.get_positions()
+            exchange_positions_raw = await self.api_client.get_positions()
+            
+            # Handle both dict and list responses
+            if isinstance(exchange_positions_raw, dict):
+                exchange_positions = exchange_positions_raw.get('result', [])
+                if not isinstance(exchange_positions, list):
+                    exchange_positions = [exchange_positions_raw] if exchange_positions_raw.get('size', 0) > 0 else []
+            elif isinstance(exchange_positions_raw, list):
+                exchange_positions = exchange_positions_raw
+            else:
+                log.warning(f"⚠️ Unexpected positions format: {type(exchange_positions_raw)}")
+                exchange_positions = []
             
             # Step 2: Get all open orders from exchange
             exchange_orders = await self.api_client.list_orders(
