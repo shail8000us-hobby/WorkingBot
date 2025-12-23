@@ -1,0 +1,301 @@
+active_strategies: []
+api:
+  credentials:
+    use_env: true
+  demo:
+    base_url: https://testnet-api.delta.exchange
+    private_url: https://cdn-ind.testnet.deltaex.org
+    product_id: 27
+    public_url: https://cdn-ind.testnet.deltaex.org
+    testnet: true
+    websocket_url: wss://testnet-api.delta.exchange
+  live:
+    base_url: https://api.india.delta.exchange
+    private_url: https://api.india.delta.exchange
+    product_id: 139
+    public_url: https://api.india.delta.exchange
+    testnet: false
+    websocket_url: wss://socket.india.delta.exchange
+  reference_level: 109800
+bot:
+  heartbeat_seconds: 20
+  mode: LONG
+  symbol: BTCUSD
+capital_protection:
+  drawdown_cap:
+    check_interval: 3600
+    enabled: true
+    hysteresis_pct: 15.0
+    max_pct: 30.0
+    window_days: 30
+  equity_floor:
+    check_interval: 60
+    enabled: true
+    floor_inr: 70000
+    require_acknowledgment: true
+  exposure_growth:
+    enabled: true
+    max_notional_inr_per_minute: 999999999
+    max_tranches_per_minute: 2
+    queue_enabled: true
+  pending_budget:
+    buffer_pct: 10.0
+    max_notional_inr: 2000000000000
+  two_man_rule:
+    auto_revert: true
+    enabled: true
+    timeout_seconds: 600
+emergency:
+  market_disruption_cooldown: 300
+  max_disruption_events: 5
+  max_drift_alerts: 10
+execution_safety:
+  execute_orders: true
+  i_understand_live: 'YES'
+  live_trading_password: '***REDACTED***'
+  require_live_password: true
+grid:
+  grid_step: 200
+  lot_size: 5
+  lower_range: 85000
+  upper_range: 105000
+guardian:
+  alert_threshold_80: true
+  alert_threshold_90: true
+  auto_close_positions: true
+  auto_margin_topup: false
+  auto_topup_amount_inr: 1000
+  cancel_orders_on_emergency: true
+  check_interval: 10
+  close_order_type: market
+  cooldown: 60
+  daily_summary: true
+  emergency_flag: .guardian_emergency_stop
+  enabled: true
+  health_file: .guardian_health
+  hysteresis_100_reset: 95
+  hysteresis_100_trigger: 100
+  hysteresis_80_reset: 75
+  hysteresis_80_trigger: 80
+  hysteresis_90_reset: 85
+  hysteresis_90_trigger: 90
+  liquidation_critical: 0.01
+  log_file: true
+  log_level: INFO
+  max_account_loss_inr: 5000
+  max_loss: 3000
+  pid_file: .guardian.pid
+  usd_to_inr_rate: 85.0
+health_check:
+  enabled: true
+  interval: 300
+heartbeat:
+  action: cancel_buy_orders
+  enabled: true
+  file: .heartbeat
+  monitor_interval: 10
+  timeout: 15
+  update_interval: 5
+hot_reload:
+  enabled: true
+ip_monitor:
+  enabled: true
+  interval: 300
+liquidation_protection:
+  adl_auto_reduce_level: 5
+  adl_monitoring_enabled: true
+  adl_reduce_percentage: 30
+  adl_warning_level: 4
+  alert_throttle_green: 0
+  alert_throttle_orange: 3600
+  alert_throttle_red: 0
+  alert_throttle_yellow: 3600
+  auto_add_margin_enabled: false
+  auto_cancel_orders_at_yellow: true
+  auto_emergency_on_websocket_alert: false
+  auto_margin_topup: false
+  auto_reduce_at_utilization: 80
+  auto_reduce_percentage: 30
+  auto_reduce_positions_enabled: false
+  auto_topup_amount_inr: 1000
+  auto_topup_target: 90
+  auto_topup_threshold: 60
+  distance_to_liq_warning: 3.0
+  dynamic_utilization_enabled: false
+  dynamic_utilization_mtm_threshold: 20
+  dynamic_utilization_reduction: 10
+  dynamic_utilization_volatility_factor: true
+  emergency_cancel_all_orders: true
+  emergency_close_all_at_distance: 30
+  emergency_close_all_at_utilization: 90
+  emergency_close_percentage: 100
+  enabled: true
+  funding_pre_payment_check: true
+  funding_pre_payment_minutes: 60
+  funding_rate_alert_threshold: 0.5
+  funding_rate_critical_threshold: 1.0
+  funding_rate_monitoring: true
+  liquidation_alert_email: false
+  liquidation_alert_sound: true
+  liquidation_alert_telegram: true
+  liquidation_alert_throttle: 3600
+  liquidation_check_interval: 5
+  liquidation_distance_check_interval: true
+  liquidation_distance_critical: 50.0
+  liquidation_distance_min: 60.0
+  liquidation_distance_target: 70.0
+  liquidation_distance_warning: 10.0
+  liquidation_log_level: INFO
+  maintenance_margin_percent: 2.5
+  margin_critical_threshold: 20
+  margin_danger_threshold: 50
+  margin_emergency_reserve: 60
+  margin_utilization_critical: 80.0
+  margin_utilization_max: 40
+  margin_utilization_warning: 60
+  margin_utilization_warning_1: 500
+  margin_utilization_warning_2: 70
+  margin_warning_threshold: 80
+  mark_price_websocket_enabled: true
+  max_topups_per_position: 3
+  min_balance_reserve_percent: 20
+  mtm_alert_threshold: -1000
+  mtm_check_interval: 2
+  mtm_critical_threshold: -3000
+  mtm_monitoring_enabled: true
+  portfolio_margin_websocket_enabled: true
+  positions_websocket_enabled: true
+  real_time_monitoring: true
+  reduce_only_at_utilization: 200
+  websocket_heartbeat_interval: 30
+  websocket_margin_updates: true
+  websocket_portfolio_updates: true
+  websocket_reconnect_delay: 5
+  websocket_reconnect_interval: 5
+  websocket_timeout: 30
+logging:
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  guardian_log_file: guardian.log
+  guardian_log_level: INFO
+  level: INFO
+order_execution:
+  adopt_untagged: false
+  cooldown_seconds: 30
+  fill_threshold: 0.98
+  max_retries: 3
+  post_only_mode: auto
+  price_buffer_pct: 0.1
+  retry_delay: 2.0
+  tag_prefix: GBOT_
+performance_logging:
+  enabled: true
+  interval: 3600
+pm2:
+  use_pm2: true
+refactor_compat:
+  enabled: true
+  fail_threshold: 2
+  warn_threshold: 1
+risk_analytics:
+  cache_ttl: 60
+  enabled: true
+risk_limits:
+  emergency_price_buffer: 0.2
+  max_account_loss_inr: 25000
+  max_disruption_events: 5
+  max_drift_alerts: 10
+  usd_to_inr_rate: 85.0
+safety:
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 3
+    half_open_calls: 2
+    timeout: 60
+    timeout_seconds: 60
+  confirmation_guard:
+    chaos_threshold: 60
+    enabled: true
+    poll_interval: 10
+  execute_orders: true
+  flash_move: {}
+  i_understand_live: 'YES'
+  live_acknowledgment: 'YES'
+  spread_guard: {}
+  volatility:
+    auto_resume: true
+    check_interval: 300.0
+    enabled: true
+    halt_threshold: 100
+    max_iv: 55.0
+    max_rv: 55.0
+    max_spread: 10.0
+    monitor_enabled: true
+    opportunistic_recovery:
+      cooldown_seconds: 60
+      enabled: true
+      execution_delay_ms: 300
+      iv_threshold: 35.0
+      max_orders_startup: 2
+      max_orders_volatility: 5
+      min_profit_margin: 500.0
+      rv_threshold: 40.0
+      spread_threshold: 10.0
+    resume_buffer: 5.0
+    rv_window: 24
+    threshold_elevated: 40
+    threshold_extreme: 80
+    threshold_high: 60
+    update_interval: 60
+shutdown:
+  cancel_buy_orders: true
+  keep_tp_orders: true
+  shutdown_duration: 60
+startup:
+  cancel_all_on_start: false
+  cancel_scope: tagged
+  enable_smart_recovery: true
+  forget_exchange_on_start: true
+  strict_start: true
+  sync_duration: 60
+stop_loss_percent: 3.0
+strategies: []
+take_profit_percent: 0.3
+telegram:
+  bot_token: '***REDACTED***'
+  chat_id: '8170794676'
+  demo_bot_token: '***REDACTED***'
+  demo_chat_id: '8170794676'
+  enabled: true
+  live_bot_token: '***REDACTED***'
+  live_chat_id: '8170794676'
+trading_mode: demo
+version: '2.0'
+webui:
+  allowed_origins: http://localhost:*,http://127.0.0.1:*,http://100.107.230.67:*,http://mymac.tail289dc3.ts.net:*,http://*.ts.net:*,http://100.*.*.*:*
+  auth:
+    enabled: false
+    user: admin
+  auth_enabled: false
+  enabled: true
+  errors:
+    allow_destructive: false
+    burst_threshold: 10
+    collector_enabled: true
+    db_path: data/errors.db
+    push_websocket: true
+    rate_limit_max: 100
+    rate_limit_window: 60
+  flask:
+    debug: false
+    env: production
+    host: 127.0.0.1
+    port: 5001
+  logs:
+    guardian_bot: logs/guardian.log
+    health_bot: logs/health.log
+    trading_bot: bot.log
+  pm2:
+    enabled: false
+  port: 5555
+  url:
+    default: http://localhost:5555

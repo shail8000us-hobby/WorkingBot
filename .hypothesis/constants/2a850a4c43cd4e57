@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/utils/logging_setup.py
+# hypothesis_version: 6.141.1
+
+[1000000, 'INFO', 'LOG_LEVEL', 'bot', 'bot.log', 'logs']

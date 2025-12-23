@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/capital/equity_floor.py
+# hypothesis_version: 6.141.1
+
+[100, '.', '.emergency_stop', '.equity_floor_breach', '0', '60', '85', '=', 'EQUITY_FLOOR_INR', 'USD_TO_INR_RATE', 'acknowledged', 'balance', 'breach_time', 'breached', 'check_count', 'check_interval', 'checked', 'current_equity', 'enabled', 'equity_floor', 'error', 'floor', 'floor_inr', 'last_check_time', 'last_equity', 'margin', 'new_breach', 'result', 'success']

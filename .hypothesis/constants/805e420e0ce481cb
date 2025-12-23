@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/webui/backend/utils/pm2_adapter.py
+# hypothesis_version: 6.141.1
+
+[100, 1024, 30000, '--force', '--lines', '--nostream', '--only', '--version', '1', 'PM2 is not enabled', 'SIGTERM', 'USE_PM2', 'all', 'cpu', 'created_at', 'cwd', 'delete', 'demo', 'env', 'err', 'error_file', 'exec_interpreter', 'exec_mode', 'false', 'flush', 'fork', 'grid_config.env', 'gridbot-demo', 'gridbot-live', 'ignore', 'interpreter', 'jlist', 'kill_signal', 'kill_timeout', 'live', 'log_file', 'logs', 'memory', 'mode', 'monit', 'name', 'online', 'out', 'pid', 'pm2', 'pm2_env', 'pm2_id', 'pm_cwd', 'pm_err_log_path', 'pm_exec_path', 'pm_id', 'pm_out_log_path', 'pm_uptime', 'python3', 'r', 'reload', 'restart', 'restart_time', 'restarts', 'save', 'script', 'start', 'status', 'stop', 'true', 'unknown', 'unstable_restarts', 'uptime', 'utf-8', 'watch', 'watching', 'yes']

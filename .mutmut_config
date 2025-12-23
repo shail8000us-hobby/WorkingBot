@@ -1,0 +1,21 @@
+[mutmut]
+# Mutation Testing Configuration for GridBot
+# Tests your tests by introducing bugs and verifying tests catch them
+
+# Paths to mutate (critical trading logic only)
+paths_to_mutate=bot/strategy/modules/grid_calculator.py,bot/strategy/modules/order_manager.py
+
+# Test command
+runner=python3 -m pytest tests/test_grid_calculator.py tests/test_grid_properties.py tests/test_order_properties.py -x --tb=no -q
+
+# Test time multiplier (allow 5x normal time for mutation tests)
+tests_timeout=60
+
+# Disable caching for first run (can enable later for speed)
+cache_only=False
+
+# Output format
+dict_synonyms=
+
+# Backup original files
+backup=True

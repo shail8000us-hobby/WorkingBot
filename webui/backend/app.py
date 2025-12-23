@@ -1,0 +1,872 @@
+#!/usr/bin/env python3
+"""
+GridBot Web UI - Backend Server (Refactored Architecture)
+
+BEFORE: 8,850 lines, 133 routes, 233 functions in one file
+AFTER:  ~180 lines + 16 blueprint modules
+
+Refactored: October 31, 2025
+Architecture: Flask Blueprints pattern
+"""
+
+import os
+import sys
+from pathlib import Path
+
+# Setup paths
+BASE_DIR = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+# Load config from YAML (SINGLE SOURCE OF TRUTH)
+from config.loader import get_config, get_api_credentials
+cfg = get_config()
+print(f"✅ Loaded config from config.yaml ({cfg.bot.symbol})")
+
+# Load API credentials from .env (security best practice)
+credentials = get_api_credentials(cfg.trading_mode)
+if credentials['api_key']:
+    os.environ['DELTA_API_KEY'] = credentials['api_key']
+    os.environ['DELTA_API_SECRET'] = credentials['api_secret']
+    print(f"✅ Trading mode: {cfg.trading_mode}")
+    print(f"✅ API credentials loaded from secrets/api_keys.env (Key: {credentials['api_key'][:8]}...)")
+else:
+    print(f"⚠️  WARNING: API credentials not found in secrets/api_keys.env")
+
+# Flask imports
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
+from flask_compress import Compress
+import time
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+# Setup logging with rotation
+LOG_DIR = Path(__file__).parent / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        # Console handler
+        logging.StreamHandler(),
+        # Rotating file handler: 10MB max, keep 3 backups
+        RotatingFileHandler(
+            LOG_DIR / 'backend_fixed.log',
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=3,
+            encoding='utf-8'
+        )
+    ]
+)
+log = logging.getLogger(__name__)
+
+# Import all blueprints
+# When run as module: use relative imports
+# When run directly: use absolute imports
+try:
+    from .routes import (
+        utility_bp, health_bp, logs_bp, docs_bp, metrics_bp,
+        websocket_api_bp, system_bp, monitor_bp, guardian_bp,
+        pm2_bp, orders_bp, pnl_bp, positions_bp,
+        # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
+        bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
+        robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
+        dynamic_brain_bp, grid_mode_bp
+    )
+    from .routes.prediction_api import prediction_bp
+    from .routes.monitoring import monitoring_bp  # NOV 8: Bot monitoring systems
+    from .routes.yaml_config_api import yaml_config_bp  # NOV 15: YAML config API
+    from .routes.file_manager import file_manager_bp  # NOV 16: File Manager for Phase 2
+    from .routes.mode_switcher import mode_switcher_bp  # NOV 16: Phase 3 - Mode Switcher
+    from .routes.system_health import system_health_bp  # NOV 16: Phase 3 - System Health Monitor
+    from .routes.instance_manager import instance_bp  # NOV 16: Phase 3 - Instance Manager
+    from .routes.code_explainer import code_explainer_bp  # NOV 16: Phase 3 - Code Explainer AI
+    from .routes.recovery import bp as recovery_bp  # NOV 20: Recovery systems
+    from .routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
+except ImportError:
+    from routes import (
+        utility_bp, health_bp, logs_bp, docs_bp, metrics_bp,
+        websocket_api_bp, system_bp, monitor_bp, guardian_bp,
+        pm2_bp, orders_bp, pnl_bp, positions_bp,
+        # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
+        bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
+        robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
+        dynamic_brain_bp, grid_mode_bp
+    )
+    from routes.prediction_api import prediction_bp
+    from routes.monitoring import monitoring_bp  # NOV 8: Bot monitoring systems
+    from routes.yaml_config_api import yaml_config_bp  # NOV 15: YAML config API
+    from routes.file_manager import file_manager_bp  # NOV 16: File Manager for Phase 2
+    from routes.mode_switcher import mode_switcher_bp  # NOV 16: Phase 3 - Mode Switcher
+    from routes.system_health import system_health_bp  # NOV 16: Phase 3 - System Health Monitor
+    from routes.instance_manager import instance_bp  # NOV 16: Phase 3 - Instance Manager
+    from routes.code_explainer import code_explainer_bp  # NOV 16: Phase 3 - Code Explainer AI
+    from routes.recovery import bp as recovery_bp  # NOV 20: Recovery system
+    from routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
+
+# Load YAML config
+from config.loader import get_config
+cfg = get_config()
+
+# Create Flask app
+app = Flask(__name__, static_folder='../frontend/build')
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+app.config['_start_time'] = time.time()
+
+# Enable compression
+compress = Compress()
+app.config['COMPRESS_MIMETYPES'] = [
+    'text/html', 'text/css', 'text/xml', 'application/json',
+    'application/javascript', 'text/javascript'
+]
+compress.init_app(app)
+
+# CORS configuration
+ALLOWED_ORIGINS = cfg.webui.allowed_origins
+CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)
+
+# SocketIO
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='threading',
+    engineio_logger=False,
+    logger=False,
+    ping_timeout=120,
+    ping_interval=30,
+    allow_upgrades=True
+)
+
+# ============================================================================
+# Register All Blueprints
+# ============================================================================
+
+# Brain Analyzer (Independent Observer - doesn't touch bot code)
+try:
+    from webui.backend.brain_analyzer import brain_analyzer_bp
+    BRAIN_ANALYZER_AVAILABLE = True
+except:
+    try:
+        from brain_analyzer import brain_analyzer_bp
+        BRAIN_ANALYZER_AVAILABLE = True
+    except:
+        BRAIN_ANALYZER_AVAILABLE = False
+
+blueprints = [
+    yaml_config_bp,  # NOV 15: Register FIRST to intercept /api/config/all
+    utility_bp, health_bp, logs_bp, docs_bp, metrics_bp,
+    websocket_api_bp, system_bp, monitor_bp, guardian_bp,
+    pm2_bp, orders_bp, pnl_bp, positions_bp,
+    # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
+    bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
+    robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
+    dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp
+]
+
+# Add brain analyzer if available (same port, separate codebase)
+if BRAIN_ANALYZER_AVAILABLE:
+    blueprints.append(brain_analyzer_bp)
+    log.info("✅ Brain Analyzer (Observer) registered")
+
+# Register health blueprint with /api prefix (its routes don't have /api)
+app.register_blueprint(health_bp, url_prefix='/api')
+
+# Register other blueprints without prefix (they already have /api in routes)
+for i, bp in enumerate(blueprints):
+    if bp != health_bp:
+        try:
+            app.register_blueprint(bp)
+            print(f"✅ Registered blueprint {i+1}/{len(blueprints)}: {bp.name}")
+        except Exception as e:
+            print(f"❌ Failed to register blueprint {i+1}/{len(blueprints)}: {bp.name} - {e}")
+            log.error(f"Blueprint registration failed: {bp.name} - {e}")
+
+# Register File Manager blueprint (Phase 2)
+app.register_blueprint(file_manager_bp)
+print(f"✅ Registered file_manager blueprint")
+
+# Register Phase 3 blueprints (NOV 16)
+app.register_blueprint(mode_switcher_bp)
+print(f"✅ Registered mode_switcher blueprint")
+
+app.register_blueprint(system_health_bp)
+print(f"✅ Registered system_health blueprint")
+
+app.register_blueprint(instance_bp)
+print(f"✅ Registered instance_manager blueprint")
+
+# Register Code Explainer blueprint (NOV 16: Phase 3)
+app.register_blueprint(code_explainer_bp, url_prefix='/api/code-explainer')
+print(f"✅ Registered code_explainer blueprint")
+
+# Register Recovery System blueprint (NOV 20: Recovery system)
+app.register_blueprint(recovery_bp)
+print(f"✅ Registered recovery blueprint")
+
+app.register_blueprint(reconciliation_bp)
+print(f"✅ Registered reconciliation blueprint")
+
+# Initialize monitoring system wiring
+from webui.backend.routes.monitoring import set_bot_instance
+
+def wire_bot_monitoring(bot_instance):
+    """Wire bot instance to monitoring system"""
+    try:
+        set_bot_instance(bot_instance)
+        log.info("✅ Bot monitoring systems wired to WebUI")
+    except Exception as e:
+        log.error(f"Failed to wire bot monitoring: {e}")
+
+# Make wire function available globally
+app.wire_bot_monitoring = wire_bot_monitoring
+
+print(f"✅ Registered {len(app.blueprints)} total blueprints")
+
+# ============================================================================
+# Route Overrides (YAML Config Migration)
+# ============================================================================
+
+# Override /api/config/all to use YAML (config.yaml is the source)
+from routes.yaml_config_api import get_all_config_compat, get_flat_config_compat
+
+# Remove old routes and add YAML-based ones
+app.add_url_rule('/api/config/all', 'yaml_config_all', get_all_config_compat, methods=['GET'])
+app.add_url_rule('/api/config/flat', 'yaml_config_flat', get_flat_config_compat, methods=['GET'])
+print("✅ Overrode /api/config/all with YAML-based endpoint")
+
+# ============================================================================
+# Request Metrics Logging Middleware
+# ============================================================================
+
+from webui.backend.utils.metrics_logger import metrics_logger
+
+@app.before_request
+def start_request_timer():
+    """Record request start time for latency tracking"""
+    request._start_time = time.time()
+
+@app.after_request
+def log_request_metrics(response):
+    """
+    Log API request metrics to SQLite for trending
+    
+    Tracks:
+    - API latency (response time)
+    - Error counts (4xx, 5xx responses)
+    - Endpoint usage patterns
+    """
+    try:
+        # Calculate latency
+        if hasattr(request, '_start_time'):
+            latency_ms = (time.time() - request._start_time) * 1000
+        else:
+            latency_ms = 0
+        
+        # Only log API routes (not static files)
+        if request.path.startswith('/api/'):
+            # Determine status
+            if response.status_code < 400:
+                status = 'ok'
+            elif response.status_code < 500:
+                status = 'client_error'
+            else:
+                status = 'server_error'
+            
+            # Log latency metric
+            metrics_logger.log_metric(
+                'api_latency',
+                request.path,
+                latency_ms,
+                status
+            )
+            
+            # Log error count if error
+            if status != 'ok':
+                metrics_logger.log_metric(
+                    'error_count',
+                    request.path,
+                    1,
+                    status
+                )
+    
+    except Exception as e:
+        # Don't fail the request if metrics logging fails
+        log.debug(f"Metrics logging failed: {e}")
+    
+    return response
+
+# ============================================================================
+# Global Error Handlers
+# ============================================================================
+
+@app.route('/api/debug/routes')
+def debug_routes():
+    """Debug endpoint to list all registered routes"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            'endpoint': rule.endpoint,
+            'methods': list(rule.methods - {'HEAD', 'OPTIONS'}),
+            'path': str(rule.rule)
+        })
+    return jsonify({'routes': sorted(routes, key=lambda x: x['path']), 'count': len(routes)})
+
+@app.errorhandler(404)
+def not_found(e):
+    """Handle 404 errors"""
+    return jsonify({
+        'error': 'Not found',
+        'path': request.path
+    }), 404
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    """Handle 500 errors"""
+    return jsonify({
+        'error': 'Internal server error',
+        'details': str(e) if app.debug else None
+    }), 500
+
+
+@app.errorhandler(Exception)
+def handle_global_exception(e):
+    """Global exception handler with traceback logging"""
+    import traceback
+    print(f"❌ Unhandled exception in {request.method} {request.path}: {e}")
+    print(traceback.format_exc())
+    
+    return jsonify({
+        'success': False,
+        'error': 'Internal server error',
+        'details': str(e) if app.debug else None,
+        'path': request.path
+    }), 500
+
+
+# ============================================================================
+# SocketIO Event Handlers
+# ============================================================================
+
+# Log streaming state
+import threading
+_log_tailer_thread = None
+_log_tailer_running = False
+
+def tail_logs_and_emit():
+    """
+    Background thread that tails bot log file and emits new lines via WebSocket
+    
+    ✅ RESTORED: This was lost during refactoring but is critical for live logs
+    """
+    global _log_tailer_running
+    log_file = Path("bot/logs/bot.log")
+    
+    print(f"📜 Starting log tailer for {log_file}")
+    
+    # Start from end of file
+    if not log_file.exists():
+        print(f"⚠️  Log file {log_file} doesn't exist yet, waiting...")
+        while not log_file.exists() and _log_tailer_running:
+            time.sleep(1)
+    
+    try:
+        with open(log_file, 'r') as f:
+            # Seek to end
+            f.seek(0, 2)
+            
+            while _log_tailer_running:
+                line = f.readline()
+                if line:
+                    # Strip and emit to all connected clients
+                    socketio.emit('log_entry', {'message': line.strip()})
+                else:
+                    # No new line, wait a bit
+                    time.sleep(0.1)
+                    
+    except Exception as e:
+        print(f"❌ Error in log tailer: {e}")
+    
+    print("📜 Log tailer stopped")
+
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle WebSocket connection"""
+    global _log_tailer_thread, _log_tailer_running
+    
+    try:
+        print(f"🔌 Client connected: {request.sid}")
+        emit('connected', {'status': 'Connected to GridBot WebUI'})
+        
+        # Start log tailer if not already running
+        if not _log_tailer_running:
+            _log_tailer_running = True
+            _log_tailer_thread = threading.Thread(target=tail_logs_and_emit, daemon=True, name="LogTailer")
+            _log_tailer_thread.start()
+            print("✅ Log tailer thread started")
+        
+        # Send recent logs on connect (last 100 lines)
+        try:
+            from utils.file_helpers import get_recent_logs
+            recent_logs = get_recent_logs(100)
+            if recent_logs:
+                for log_line in recent_logs:
+                    emit('log_entry', {'message': log_line.strip()})
+                print(f"📤 Sent {len(recent_logs)} recent log lines to new client")
+        except Exception as e:
+            print(f"⚠️  Error sending recent logs: {e}")
+            log.error(f"Error sending recent logs on WebSocket connect: {e}", exc_info=True)
+            
+    except Exception as e:
+        log.error(f"❌ WebSocket connection error: {e}", exc_info=True)
+        # Return False to reject the connection gracefully
+        return False
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle WebSocket disconnection"""
+    print(f"🔌 Client disconnected: {request.sid}")
+
+
+@socketio.on('ping')
+def handle_ping(data):
+    """Handle ping for latency monitoring"""
+    try:
+        emit('pong', {
+            'timestamp': time.time(),
+            'latency': int((time.time() - data.get('timestamp', time.time())) * 1000) if data else 0
+        })
+    except Exception as e:
+        print(f"Error handling ping: {e}")
+
+
+@socketio.on('get_halt_status')
+def handle_get_halt_status():
+    """Get volatility halt status from monitoring snapshot"""
+    try:
+        from pathlib import Path
+        import json
+        
+        # Read from monitoring snapshot (written by bot's MonitoringDataWriter)
+        snapshot_path = Path(BASE_DIR) / 'monitoring_snapshot.json'
+        
+        if snapshot_path.exists():
+            with open(snapshot_path, 'r') as f:
+                snapshot = json.load(f)
+            
+            # Get trading condition which includes volatility data
+            trading_condition = snapshot.get('trading_condition', {})
+            
+            # Check if there's an active halt
+            active = trading_condition.get('volatility_halted', False)
+            
+            emit('volatility_halt_status', {
+                'active': active,
+                'iv': trading_condition.get('iv', 0),
+                'rv': trading_condition.get('rv', 0),
+                'spread': trading_condition.get('spread', 0),
+                'haltDuration': trading_condition.get('halt_duration', 0),
+                'cancelledPrice': trading_condition.get('cancelled_order_price'),
+                'currentPrice': trading_condition.get('current_price'),
+                'gridStep': trading_condition.get('grid_step'),
+                'message': 'Active halt' if active else 'Normal trading'
+            })
+        else:
+            # No bot running - return safe defaults
+            emit('volatility_halt_status', {
+                'active': False,
+                'iv': 0,
+                'rv': 0,
+                'spread': 0,
+                'message': 'Bot not running'
+            })
+            
+    except Exception as e:
+        print(f"Error getting halt status: {e}")
+        emit('volatility_halt_status', {'active': False, 'error': str(e)})
+
+
+@socketio.on('get_recovery_history')
+def handle_get_recovery_history():
+    """Get opportunistic recovery history from monitoring snapshot"""
+    try:
+        from pathlib import Path
+        import json
+        
+        # Read from monitoring snapshot (written by bot's MonitoringDataWriter)
+        snapshot_path = Path(BASE_DIR) / 'monitoring_snapshot.json'
+        
+        if snapshot_path.exists():
+            with open(snapshot_path, 'r') as f:
+                snapshot = json.load(f)
+            
+            recovery_data = snapshot.get('opportunistic_recovery', {})
+            recent_recoveries = recovery_data.get('recent_recoveries', [])
+            
+            emit('recovery_history', {
+                'success': True,
+                'history': recent_recoveries
+            })
+        else:
+            emit('recovery_history', {
+                'success': False,
+                'history': [],
+                'message': 'No monitoring data available - bot may not be running'
+            })
+            
+    except Exception as e:
+        print(f"Error getting recovery history: {e}")
+        emit('recovery_history', {'success': False, 'history': [], 'error': str(e)})
+
+
+@socketio.on('get_recovery_stats')
+def handle_get_recovery_stats():
+    """Get opportunistic recovery statistics from monitoring snapshot"""
+    try:
+        from pathlib import Path
+        import json
+        
+        # Read from monitoring snapshot (written by bot's MonitoringDataWriter)
+        snapshot_path = Path(BASE_DIR) / 'monitoring_snapshot.json'
+        
+        if snapshot_path.exists():
+            with open(snapshot_path, 'r') as f:
+                snapshot = json.load(f)
+            
+            recovery_data = snapshot.get('opportunistic_recovery', {})
+            
+            emit('recovery_stats', {
+                'totalHalts': recovery_data.get('volatility_recoveries', 0) + recovery_data.get('startup_recoveries', 0),
+                'successfulRecoveries': recovery_data.get('total_recoveries', 0),
+                'totalExtraProfit': recovery_data.get('total_capital_saved', 0),
+                'avgExtraProfit': recovery_data.get('total_capital_saved', 0) / max(recovery_data.get('total_recoveries', 1), 1),
+                'levelsFilled': recovery_data.get('total_positions_recovered', 0)
+            })
+        else:
+            emit('recovery_stats', {
+                'totalHalts': 0,
+                'successfulRecoveries': 0,
+                'totalExtraProfit': 0,
+                'avgExtraProfit': 0,
+                'levelsFilled': 0
+            })
+            
+    except Exception as e:
+        print(f"Error getting recovery stats: {e}")
+        emit('recovery_stats', {
+            'totalHalts': 0,
+            'successfulRecoveries': 0,
+            'totalExtraProfit': 0,
+            'avgExtraProfit': 0,
+            'levelsFilled': 0,
+            'error': str(e)
+        })
+
+
+@socketio.on('get_recovery_config')
+def handle_get_recovery_config():
+    """Get opportunistic recovery configuration from YAML"""
+    try:
+        import yaml
+        from pathlib import Path
+        
+        config_path = Path(BASE_DIR) / 'config.yaml'
+        
+        if not config_path.exists():
+            emit('recovery_config', {
+                'success': False,
+                'error': 'Config file not found',
+                'config': {
+                    'enabled': False,
+                    'maxOrders': 5,
+                    'delayMs': 300,
+                    'minProfitInr': 500
+                }
+            })
+            return
+        
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        opp_config = config.get('safety', {}).get('volatility', {}).get('opportunistic_recovery', {})
+        
+        emit('recovery_config', {
+            'success': True,
+            'config': {
+                'enabled': opp_config.get('enabled', False),
+                'maxOrders': opp_config.get('max_orders_startup', 5),
+                'delayMs': opp_config.get('execution_delay_ms', 300),
+                'minProfitInr': opp_config.get('min_profit_margin', 500)
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error getting recovery config: {e}")
+        emit('recovery_config', {
+            'success': False,
+            'error': str(e),
+            'config': {
+                'enabled': False,
+                'maxOrders': 5,
+                'delayMs': 300,
+                'minProfitInr': 500
+            }
+        })
+
+
+@socketio.on('update_recovery_config')
+def handle_update_recovery_config(data):
+    """Update opportunistic recovery configuration in YAML"""
+    try:
+        import yaml
+        from pathlib import Path
+        
+        config_path = Path(BASE_DIR) / 'config.yaml'
+        
+        if not config_path.exists():
+            emit('recovery_config_updated', {
+                'success': False,
+                'error': 'Config file not found'
+            })
+            return
+        
+        # Load config
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Update opportunistic recovery settings
+        if 'safety' not in config:
+            config['safety'] = {}
+        if 'volatility' not in config['safety']:
+            config['safety']['volatility'] = {}
+        if 'opportunistic_recovery' not in config['safety']['volatility']:
+            config['safety']['volatility']['opportunistic_recovery'] = {}
+        
+        opp_config = config['safety']['volatility']['opportunistic_recovery']
+        
+        # Update fields from frontend
+        if 'enabled' in data:
+            opp_config['enabled'] = bool(data['enabled'])
+        if 'maxOrders' in data:
+            opp_config['max_orders_startup'] = int(data['maxOrders'])
+            opp_config['max_orders_volatility'] = int(data['maxOrders'])
+        if 'delayMs' in data:
+            opp_config['execution_delay_ms'] = int(data['delayMs'])
+        if 'minProfitInr' in data:
+            opp_config['min_profit_margin'] = int(data['minProfitInr'])
+        
+        # Write back to file
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        print(f"✅ Opportunistic recovery config updated: enabled={opp_config.get('enabled')}")
+        
+        emit('recovery_config_updated', {
+            'success': True,
+            'config': {
+                'enabled': opp_config.get('enabled', False),
+                'maxOrders': opp_config.get('max_orders_startup', 2),
+                'delayMs': opp_config.get('execution_delay_ms', 300),
+                'minProfitInr': opp_config.get('min_profit_margin', 500)
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error updating recovery config: {e}")
+        emit('recovery_config_updated', {
+            'success': False,
+            'error': str(e)
+        })
+
+
+# ============================================================================
+# Static File Serving (for React frontend)
+# ============================================================================
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    """
+    Serve React frontend (catch-all route)
+    
+    ⚠️  This route must be registered LAST to avoid intercepting API routes
+    """
+    # Don't intercept API routes - let them pass through to blueprints
+    if path.startswith('api/'):
+        # Let 404 handler or blueprint handle it
+        from flask import abort
+        abort(404)
+    
+    if path != "" and os.path.exists(app.static_folder + '/' + path):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
+
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+if __name__ == '__main__':
+    # ============================================================================
+    # SINGLE INSTANCE ENFORCEMENT
+    # ============================================================================
+    from webui.backend.utils.instance_lock import WebUIInstanceLock
+    
+    # Allow port configuration via YAML config (default: 5555 for production)
+    WEBUI_PORT = cfg.webui.port
+    instance_lock = WebUIInstanceLock(BASE_DIR, WEBUI_PORT)
+    
+    if not instance_lock.acquire():
+        # Another instance is already running
+        existing_info = instance_lock.get_running_instance_info()
+        print("=" * 80)
+        print("❌ ERROR: WebUI instance is already running!")
+        print("=" * 80)
+        if existing_info:
+            print(f"   PID: {existing_info.get('pid')}")
+            print(f"   Port: {existing_info.get('port')}")
+            print(f"   Started: {existing_info.get('started')}")
+        print("\nTo stop the existing instance:")
+        print("  • Check LaunchAgent: launchctl list | grep gridbot.webui")
+        print("  • Stop it: launchctl stop com.gridbot.webui")
+        print("  • Or kill process: kill <PID>")
+        print("=" * 80)
+        sys.exit(1)
+    
+    # Register cleanup on exit
+    import atexit
+    atexit.register(instance_lock.release)
+    
+    # Count routes
+    route_count = len([r for r in app.url_map.iter_rules()])
+    
+    # Check if running in production mode (via YAML config)
+    flask_env = cfg.webui.flask.env
+    debug_mode = (flask_env != 'production')
+    
+    print("=" * 80)
+    print("🚀 GridBot WebUI Backend (Refactored Architecture)")
+    print("=" * 80)
+    print(f"   Blueprints: {len(app.blueprints)}")
+    print(f"   Routes: {route_count}")
+    print(f"   Port: {WEBUI_PORT}")
+    print(f"   Mode: {flask_env.upper()}")
+    print(f"   Debug: {debug_mode}")
+    print(f"   Instance Lock: ✅ Acquired (PID {os.getpid()})")
+    print("=" * 80)
+    
+    # ============================================================================
+    # Initialize Health Checker with Process Callbacks
+    # ============================================================================
+    try:
+        print("\n💊 Starting Health Checker...")
+        from webui.backend.utils.lightweight_health import start_health_checker
+        from webui.backend.utils.process_helpers import (
+            check_bot_running,
+            check_guardian_running
+        )
+        
+        # Helper functions for safe health checks
+        def safe_check_bot():
+            try:
+                return check_bot_running()
+            except Exception:
+                return False
+        
+        def safe_check_guardian():
+            try:
+                return check_guardian_running()
+            except Exception:
+                return False
+        
+        def safe_check_telegram():
+            try:
+                # Check if telegram is configured using YAML config
+                from config.loader import get_config
+                cfg = get_config()
+                
+                # Determine which token to check based on trading mode
+                if cfg.trading_mode == 'live':
+                    bot_token = cfg.telegram.live_bot_token
+                else:
+                    bot_token = cfg.telegram.demo_bot_token
+                
+                # Fallback to generic token if mode-specific not set
+                if not bot_token:
+                    bot_token = cfg.telegram.bot_token
+                
+                return bool(bot_token and bot_token != '***REDACTED***')
+            except Exception:
+                return False
+        
+        # Start health checker with callbacks
+        start_health_checker(
+            bot_check=safe_check_bot,
+            monitor_check=lambda: False,  # Monitor deprecated, always False
+            guardian_check=safe_check_guardian,
+            telegram_check=safe_check_telegram
+        )
+        print("✅ Health checker started (background updates every 5s)\n")
+    except Exception as e:
+        print(f"⚠️  Failed to start health checker: {e}")
+        print("   Health dashboard will show 'unknown' status\n")
+    
+    # ============================================================================
+    # Initialize and Start Delta Volatility Collector
+    # ============================================================================
+    try:
+        print("\n📊 Starting Delta Volatility Collector...")
+        from bot.volatility.delta_volatility_collector import get_collector
+        
+        collector = get_collector()
+        
+        # Check if we need to backfill historical data (SIMPLE SEEDING)
+        # Use timeout to prevent blocking - if DB is locked, skip backfill check
+        import sqlite3
+        try:
+            conn = sqlite3.connect(collector.db_path, timeout=5.0)  # 5 second timeout
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM rv_calculations WHERE timeframe = '1d'")
+            daily_rv_count = cursor.fetchone()[0]
+            conn.close()
+        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+            log.warning(f"Could not check RV data count (DB may be locked): {e}")
+            daily_rv_count = 999  # Assume we have enough data, skip backfill
+        
+        # If we have less than 30 days of data, run backfill
+        if daily_rv_count < 30:
+            print(f"📊 Detected only {daily_rv_count} days of RV data - running backfill...")
+            try:
+                from bot.volatility.backfill_historical_data import backfill_rv_data
+                backfill_rv_data(days_back=90)
+                print("✅ Historical data backfill complete\n")
+            except Exception as backfill_error:
+                print(f"⚠️  Backfill warning: {backfill_error}")
+                print("   Collector will still work, but charts may have limited history\n")
+        
+        # Start background collection
+        collector.start()
+        print("✅ Delta Volatility Collector started (polling every 30s)\n")
+    except Exception as e:
+        print(f"❌ Failed to start Volatility Collector: {e}")
+        import traceback
+        traceback.print_exc()
+        print("⚠️  Continuing without volatility collector...\n")
+    
+    # IMPORTANT: Disable reloader to work with instance lock
+    # Reloader spawns child process which conflicts with lock
+    socketio.run(
+        app,
+        host='0.0.0.0',
+        port=WEBUI_PORT,
+        debug=False,  # Disable debug to prevent reloader
+        use_reloader=False,  # Critical: reloader conflicts with instance lock
+        allow_unsafe_werkzeug=True
+    )

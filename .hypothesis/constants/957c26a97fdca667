@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/health.py
+# hypothesis_version: 6.141.1
+
+[503, 1024, '.', '.health_check_test', '/', '/health', '/health/detailed', '/health/live', '/health/ready', '/version', '2.0', '2025-10-28', 'GET', 'GridBot WebUI', 'Service not ready', 'System is degraded', 'Unable to check CPU', 'Z', 'alive', 'available_gb', 'build_date', 'config_file', 'cores', 'cpu', 'degraded', 'dependencies', 'disk', 'error', 'exists', 'formatted', 'free_gb', 'grid_config.env', 'guardian_bot', 'health', 'healthy', 'log_dir', 'log_directory', 'logs', 'memory', 'name', 'percent', 'percent_used', 'platform', 'python_version', 'readable', 'ready', 'resources', 'running', 'seconds', 'services', 'size_kb', 'status', 'stopped', 'test', 'timestamp', 'total_gb', 'trading_bot', 'unknown', 'uptime', 'used_gb', 'version', 'writable']

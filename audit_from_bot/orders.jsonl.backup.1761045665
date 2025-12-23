@@ -1,0 +1,5 @@
+# Bot Order Audit Trail - JSONL Format
+# Each line is a JSON object representing one order
+# Format: {"timestamp": "ISO", "order_id": "str", "client_order_id": "str", "side": "buy/sell", "price": float, "size": float, "symbol": "str", "status": "str", "provenance": "bot/manual", "strategy": "str", "metadata": {}}
+{"timestamp": "2025-10-21T10:52:20.571388+00:00", "order_id": "123456789", "client_order_id": "BOT-grid-1729012345-a7f3-buy", "side": "buy", "price": 50000.0, "size": 1.0, "symbol": "BTCUSD", "status": "open", "provenance": "bot", "strategy": "grid", "metadata": {"test": true}}
+{"timestamp": "2025-10-21T11:06:15.888651+00:00", "order_id": "671261349", "client_order_id": "BUY1761036206087", "side": "buy", "price": 107400.0, "size": 1.0, "symbol": "BTCUSD", "status": "open", "provenance": "bot", "strategy": "grid", "metadata": {"live_test": true, "from_terminal": true}}

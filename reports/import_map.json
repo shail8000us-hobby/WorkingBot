@@ -1,0 +1,2378 @@
+{
+  "generated_from": [
+    "bot",
+    "webui/backend",
+    "services",
+    "guardian",
+    "backtest",
+    "dashboard"
+  ],
+  "modules": {
+    "backtest.adapter": {
+      "file": "backtest/adapter.py",
+      "imports": [
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "sys",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "backtest.data.cache": {
+      "file": "backtest/data/cache.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "backtest.data.delta_ohlcv": {
+      "file": "backtest/data/delta_ohlcv.py",
+      "imports": [
+        "ccxt",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "logging",
+        "os",
+        "pandas",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "typing",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "backtest.metrics.accounting": {
+      "file": "backtest/metrics/accounting.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "numpy",
+        "pandas",
+        "typing",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "backtest.run": {
+      "file": "backtest/run.py",
+      "imports": [
+        "argparse",
+        "backtest.runner.grid_backtester",
+        "backtest.runner.grid_backtester.GridBacktester",
+        "datetime",
+        "datetime.datetime",
+        "dotenv",
+        "dotenv.dotenv_values",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "sys"
+      ]
+    },
+    "backtest.runner.grid_backtester": {
+      "file": "backtest/runner/grid_backtester.py",
+      "imports": [
+        "backtest.adapter",
+        "backtest.adapter.create_backtest_strategy",
+        "backtest.data.delta_ohlcv",
+        "backtest.data.delta_ohlcv.DeltaOHLCV",
+        "backtest.metrics.accounting",
+        "backtest.metrics.accounting.BacktestAccountant",
+        "backtest.sim.fee_model",
+        "backtest.sim.fee_model.FeeModel",
+        "backtest.sim.funding_model",
+        "backtest.sim.funding_model.FundingModel",
+        "backtest.sim.sim_exchange",
+        "backtest.sim.sim_exchange.SimExchange",
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "os",
+        "pandas",
+        "pathlib",
+        "pathlib.Path",
+        "sys",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "backtest.runner.simple_grid": {
+      "file": "backtest/runner/simple_grid.py",
+      "imports": [
+        "logging",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "backtest.sim.fee_model": {
+      "file": "backtest/sim/fee_model.py",
+      "imports": [
+        "logging",
+        "os",
+        "typing",
+        "typing.Optional"
+      ]
+    },
+    "backtest.sim.funding_model": {
+      "file": "backtest/sim/funding_model.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "logging",
+        "os",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "backtest.sim.sim_exchange": {
+      "file": "backtest/sim/sim_exchange.py",
+      "imports": [
+        ".fee_model",
+        ".fee_model.FeeModel",
+        ".funding_model",
+        ".funding_model.FundingModel",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "dataclasses.field",
+        "datetime",
+        "datetime.datetime",
+        "enum",
+        "enum.Enum",
+        "logging",
+        "pandas",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.ai.__init__": {
+      "file": "bot/ai/__init__.py",
+      "imports": [
+        ".advisor",
+        ".advisor.AIAdvisor",
+        ".advisor.get_ai_advisor"
+      ]
+    },
+    "bot.ai.advanced.__init__": {
+      "file": "bot/ai/advanced/__init__.py",
+      "imports": [
+        ".ml_predictor",
+        ".ml_predictor.MLPredictor",
+        ".ml_predictor.get_ml_predictor",
+        ".monte_carlo",
+        ".monte_carlo.MonteCarloSimulator",
+        ".monte_carlo.get_monte_carlo_simulator"
+      ]
+    },
+    "bot.ai.advanced.ml_predictor": {
+      "file": "bot/ai/advanced/ml_predictor.py",
+      "imports": [
+        "collections",
+        "collections.deque",
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "numpy",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.ai.advanced.monte_carlo": {
+      "file": "bot/ai/advanced/monte_carlo.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "logging",
+        "numpy",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Tuple"
+      ]
+    },
+    "bot.ai.advisor": {
+      "file": "bot/ai/advisor.py",
+      "imports": [
+        "bot.safety.blocker_tracker",
+        "bot.safety.blocker_tracker.get_blocker_tracker",
+        "datetime",
+        "datetime.datetime",
+        "dotenv",
+        "dotenv.dotenv_values",
+        "dotenv.load_dotenv",
+        "json",
+        "openai",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "re",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.ai.analytics.__init__": {
+      "file": "bot/ai/analytics/__init__.py",
+      "imports": [
+        ".execution",
+        ".execution.ExecutionAnalytics",
+        ".execution.get_execution_analytics",
+        ".log_analyzer",
+        ".log_analyzer.LogAnalyzer",
+        ".log_analyzer.get_log_analyzer",
+        ".performance",
+        ".performance.PerformanceAnalytics",
+        ".performance.get_performance_analytics",
+        ".risk",
+        ".risk.RiskAnalytics",
+        ".risk.get_risk_analytics"
+      ]
+    },
+    "bot.ai.analytics.execution": {
+      "file": "bot/ai/analytics/execution.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "numpy",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Iterator",
+        "typing.List"
+      ]
+    },
+    "bot.ai.analytics.log_analyzer": {
+      "file": "bot/ai/analytics/log_analyzer.py",
+      "imports": [
+        "collections",
+        "collections.Counter",
+        "collections.defaultdict",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "pathlib",
+        "pathlib.Path",
+        "re",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.ai.analytics.performance": {
+      "file": "bot/ai/analytics/performance.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "numpy",
+        "pandas",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Iterator",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.ai.analytics.risk": {
+      "file": "bot/ai/analytics/risk.py",
+      "imports": [
+        ".performance",
+        ".performance.get_performance_analytics",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "numpy",
+        "pandas",
+        "pathlib",
+        "pathlib.Path",
+        "scipy",
+        "scipy.stats",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.ai.conversational.__init__": {
+      "file": "bot/ai/conversational/__init__.py",
+      "imports": [
+        ".intelligent_advisor",
+        ".intelligent_advisor.IntelligentAdvisor",
+        ".intelligent_advisor.get_intelligent_advisor"
+      ]
+    },
+    "bot.ai.conversational.intelligent_advisor": {
+      "file": "bot/ai/conversational/intelligent_advisor.py",
+      "imports": [
+        "..analytics",
+        "..analytics.get_execution_analytics",
+        "..analytics.get_performance_analytics",
+        "..analytics.get_risk_analytics",
+        "..institutional_advisor",
+        "..institutional_advisor.get_institutional_advisor",
+        "..predictive",
+        "..predictive.get_market_regime_detector",
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "psutil",
+        "re",
+        "requests",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.ai.institutional_advisor": {
+      "file": "bot/ai/institutional_advisor.py",
+      "imports": [
+        ".analytics",
+        ".analytics.get_execution_analytics",
+        ".analytics.get_log_analyzer",
+        ".analytics.get_performance_analytics",
+        ".analytics.get_risk_analytics",
+        ".predictive",
+        ".predictive.get_grid_optimizer",
+        ".predictive.get_market_regime_detector",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "numpy",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.ai.predictive.__init__": {
+      "file": "bot/ai/predictive/__init__.py",
+      "imports": [
+        ".market_regime",
+        ".market_regime.MarketRegimeDetector",
+        ".market_regime.get_market_regime_detector",
+        ".optimizer",
+        ".optimizer.GridOptimizer",
+        ".optimizer.get_grid_optimizer"
+      ]
+    },
+    "bot.ai.predictive.market_regime": {
+      "file": "bot/ai/predictive/market_regime.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "logging",
+        "numpy",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "requests",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.ai.predictive.optimizer": {
+      "file": "bot/ai/predictive/optimizer.py",
+      "imports": [
+        "..analytics",
+        "..analytics.get_performance_analytics",
+        ".market_regime",
+        ".market_regime.get_market_regime_detector",
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "numpy",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.api._orders_helpers": {
+      "file": "bot/api/_orders_helpers.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.api._ticker_helpers": {
+      "file": "bot/api/_ticker_helpers.py",
+      "imports": [
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.api.ccxt_handle": {
+      "file": "bot/api/ccxt_handle.py",
+      "imports": [
+        "ccxt",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "logging",
+        "os"
+      ]
+    },
+    "bot.api.client": {
+      "file": "bot/api/client.py",
+      "imports": [
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "os",
+        "time"
+      ]
+    },
+    "bot.api.delta_client": {
+      "file": "bot/api/delta_client.py",
+      "imports": [
+        "bot.risk.guards",
+        "bot.risk.guards.RiskBreach",
+        "bot.risk.guards.assert_can_trade",
+        "hashlib",
+        "hmac",
+        "json",
+        "os",
+        "requests",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Union"
+      ]
+    },
+    "bot.capital.__init__": {
+      "file": "bot/capital/__init__.py",
+      "imports": [
+        ".equity_tracker",
+        ".equity_tracker.EquityTracker",
+        ".equity_tracker.get_equity_tracker"
+      ]
+    },
+    "bot.capital.equity_tracker": {
+      "file": "bot/capital/equity_tracker.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.delta_websocket.__init__": {
+      "file": "bot/delta_websocket/__init__.py",
+      "imports": [
+        ".delta_ws",
+        ".delta_ws.DeltaWebSocket",
+        ".ws_manager",
+        ".ws_manager.WebSocketManager"
+      ]
+    },
+    "bot.delta_websocket.delta_ws": {
+      "file": "bot/delta_websocket/delta_ws.py",
+      "imports": [
+        "collections",
+        "collections.defaultdict",
+        "hashlib",
+        "hmac",
+        "json",
+        "logging",
+        "os",
+        "threading",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.Optional",
+        "websocket",
+        "websocket.WebSocketApp",
+        "websocket.enableTrace"
+      ]
+    },
+    "bot.delta_websocket.ws_manager": {
+      "file": "bot/delta_websocket/ws_manager.py",
+      "imports": [
+        ".delta_ws",
+        ".delta_ws.DeltaWebSocket",
+        "collections",
+        "collections.deque",
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "os",
+        "threading",
+        "typing",
+        "typing.Any",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.diagnostics": {
+      "file": "bot/diagnostics.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "platform",
+        "shutil",
+        "subprocess",
+        "sys",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Mapping",
+        "typing.cast"
+      ]
+    },
+    "bot.guardian.__init__": {
+      "file": "bot/guardian/__init__.py",
+      "imports": [
+        ".emergency_actions",
+        ".emergency_actions.EmergencyActions",
+        ".guardian_bot",
+        ".guardian_bot.GuardianBot",
+        ".health_tracker",
+        ".health_tracker.HealthTracker",
+        ".position_monitor",
+        ".position_monitor.PositionMonitor",
+        ".risk_enforcer",
+        ".risk_enforcer.RiskEnforcer"
+      ]
+    },
+    "bot.guardian.emergency_actions": {
+      "file": "bot/guardian/emergency_actions.py",
+      "imports": [
+        "logging",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Dict",
+        "typing.List"
+      ]
+    },
+    "bot.guardian.guardian_bot": {
+      "file": "bot/guardian/guardian_bot.py",
+      "imports": [
+        "bot.capital.equity_tracker",
+        "bot.capital.equity_tracker.get_equity_tracker",
+        "bot.guardian.emergency_actions",
+        "bot.guardian.emergency_actions.EmergencyActions",
+        "bot.guardian.health_tracker",
+        "bot.guardian.health_tracker.HealthTracker",
+        "bot.guardian.position_monitor",
+        "bot.guardian.position_monitor.PositionMonitor",
+        "bot.guardian.risk_enforcer",
+        "bot.guardian.risk_enforcer.RiskEnforcer",
+        "bot.liquidation.distance_monitor",
+        "bot.liquidation.distance_monitor.LiquidationDistanceMonitor",
+        "bot.liquidation.margin_monitor",
+        "bot.liquidation.margin_monitor.MarginUtilizationMonitor",
+        "bot.liquidation.mtm_tracker",
+        "bot.liquidation.mtm_tracker.MTMTracker",
+        "bot.safety.emergency_override",
+        "bot.safety.emergency_override.should_check_liquidation",
+        "bot.safety.emergency_override.should_check_risk_management",
+        "bot.utils.env_loader",
+        "bot.utils.env_loader.get_mode_display_info",
+        "bot.utils.env_loader.load_trading_mode_config",
+        "bot.utils.telepush",
+        "bot.utils.telepush.send_telegram_alert",
+        "ccxt",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "signal",
+        "sys",
+        "time",
+        "tools.telepush",
+        "tools.telepush.send_telegram_alert",
+        "traceback",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.guardian.health_tracker": {
+      "file": "bot/guardian/health_tracker.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.guardian.position_monitor": {
+      "file": "bot/guardian/position_monitor.py",
+      "imports": [
+        "decimal",
+        "decimal.Decimal",
+        "logging",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.guardian.risk_enforcer": {
+      "file": "bot/guardian/risk_enforcer.py",
+      "imports": [
+        "logging",
+        "typing",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.heartbeat.__init__": {
+      "file": "bot/heartbeat/__init__.py",
+      "imports": [
+        "bot.heartbeat.manager",
+        "bot.heartbeat.manager.HeartbeatManager"
+      ]
+    },
+    "bot.heartbeat.manager": {
+      "file": "bot/heartbeat/manager.py",
+      "imports": [
+        "json",
+        "logging",
+        "os",
+        "time",
+        "typing",
+        "typing.Optional"
+      ]
+    },
+    "bot.heartbeat.monitor": {
+      "file": "bot/heartbeat/monitor.py",
+      "imports": [
+        "bot.utils.env_loader",
+        "bot.utils.env_loader.get_mode_display_info",
+        "bot.utils.env_loader.load_trading_mode_config",
+        "bot.utils.notifier",
+        "bot.utils.notifier.TelegramNotifier",
+        "ccxt",
+        "datetime",
+        "datetime.datetime",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "sys",
+        "time",
+        "traceback"
+      ]
+    },
+    "bot.liquidation.__init__": {
+      "file": "bot/liquidation/__init__.py",
+      "imports": [
+        ".distance_monitor",
+        ".distance_monitor.LiquidationDistanceMonitor",
+        ".margin_monitor",
+        ".margin_monitor.MarginUtilizationMonitor",
+        ".mtm_tracker",
+        ".mtm_tracker.MTMTracker"
+      ]
+    },
+    "bot.liquidation.distance_monitor": {
+      "file": "bot/liquidation/distance_monitor.py",
+      "imports": [
+        "logging",
+        "os",
+        "typing",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.liquidation.margin_monitor": {
+      "file": "bot/liquidation/margin_monitor.py",
+      "imports": [
+        "bot.utils.telepush",
+        "bot.utils.telepush.send_telegram_message",
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "os",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.liquidation.mtm_tracker": {
+      "file": "bot/liquidation/mtm_tracker.py",
+      "imports": [
+        "collections",
+        "collections.deque",
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "os",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.margin_topup": {
+      "file": "bot/margin_topup.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.notifier",
+        "bot.utils.notifier.TelegramNotifier",
+        "decimal",
+        "decimal.Decimal",
+        "logging",
+        "os",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.network.__init__": {
+      "file": "bot/network/__init__.py",
+      "imports": [
+        "bot.network.ip_monitor",
+        "bot.network.ip_monitor.IPMonitor",
+        "bot.network.ip_monitor.get_ip_monitor"
+      ]
+    },
+    "bot.network.ip_monitor": {
+      "file": "bot/network/ip_monitor.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "requests",
+        "sys",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.news.__init__": {
+      "file": "bot/news/__init__.py",
+      "imports": [
+        ".aggregator",
+        ".aggregator.NewsAggregator",
+        ".aggregator.get_news_aggregator"
+      ]
+    },
+    "bot.news.aggregator": {
+      "file": "bot/news/aggregator.py",
+      "imports": [
+        "bot.safety.blocker_tracker",
+        "bot.safety.blocker_tracker.get_blocker_tracker",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "requests",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.observability.errors.__init__": {
+      "file": "bot/observability/errors/__init__.py",
+      "imports": [
+        ".catalog",
+        ".catalog.ErrorCatalog",
+        ".classifier",
+        ".classifier.ErrorClassifier",
+        ".collector",
+        ".collector.ErrorCollector",
+        ".remediator",
+        ".remediator.ErrorRemediator",
+        ".schema",
+        ".schema.ErrorEvent",
+        ".schema.ErrorSeverity",
+        ".schema.ErrorSource",
+        ".schema.ErrorStatus"
+      ]
+    },
+    "bot.observability.errors.catalog": {
+      "file": "bot/observability/errors/catalog.py",
+      "imports": [
+        ".schema",
+        ".schema.ErrorAction",
+        ".schema.ErrorSeverity",
+        ".schema.ErrorSource",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "re",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.observability.errors.classifier": {
+      "file": "bot/observability/errors/classifier.py",
+      "imports": [
+        ".catalog",
+        ".catalog.ErrorCatalog",
+        ".catalog.ErrorPattern",
+        ".schema",
+        ".schema.ErrorEvent",
+        ".schema.ErrorSeverity",
+        ".schema.ErrorSource",
+        ".schema.ErrorStatus",
+        "datetime",
+        "datetime.datetime",
+        "os",
+        "re",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional",
+        "uuid"
+      ]
+    },
+    "bot.observability.errors.collector": {
+      "file": "bot/observability/errors/collector.py",
+      "imports": [
+        ".schema",
+        ".schema.ErrorSource",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "queue",
+        "queue.Empty",
+        "queue.Queue",
+        "re",
+        "threading",
+        "time",
+        "typing",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Set"
+      ]
+    },
+    "bot.observability.errors.remediator": {
+      "file": "bot/observability/errors/remediator.py",
+      "imports": [
+        ".schema",
+        ".schema.ErrorAction",
+        ".schema.ErrorEvent",
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "requests",
+        "socket",
+        "subprocess",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.observability.errors.schema": {
+      "file": "bot/observability/errors/schema.py",
+      "imports": [
+        "dataclasses",
+        "dataclasses.dataclass",
+        "dataclasses.field",
+        "datetime",
+        "datetime.datetime",
+        "enum",
+        "enum.Enum",
+        "json",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.observability.errors.store": {
+      "file": "bot/observability/errors/store.py",
+      "imports": [
+        ".schema",
+        ".schema.ErrorEvent",
+        ".schema.ErrorSeverity",
+        ".schema.ErrorSource",
+        ".schema.ErrorStatus",
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "pathlib",
+        "pathlib.Path",
+        "sqlite3",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.orders.audit": {
+      "file": "bot/orders/audit.py",
+      "imports": [
+        "dataclasses",
+        "dataclasses.asdict",
+        "dataclasses.dataclass",
+        "datetime",
+        "datetime.datetime",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.orders.executor": {
+      "file": "bot/orders/executor.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.safety.circuit_breaker",
+        "bot.safety.circuit_breaker.CircuitBreakerOpen",
+        "bot.safety.circuit_breaker.get_circuit_breaker",
+        "bot.safety.order_confirmation_guard",
+        "bot.safety.order_confirmation_guard.get_confirmation_guard",
+        "ccxt",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "logging",
+        "os",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.orders.fill_watcher": {
+      "file": "bot/orders/fill_watcher.py",
+      "imports": [
+        "bot.api.delta_client",
+        "bot.api.delta_client.DeltaClient",
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "time",
+        "typing",
+        "typing.Tuple"
+      ]
+    },
+    "bot.orders.manager": {
+      "file": "bot/orders/manager.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.orders.executor",
+        "bot.orders.executor.DeltaExecutor",
+        "bot.orders.protection",
+        "bot.orders.protection.GridConfig",
+        "bot.orders.protection.build_reduce_only_limit_order_payload",
+        "logging",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.orders.oms": {
+      "file": "bot/orders/oms.py",
+      "imports": [
+        "math",
+        "time",
+        "uuid"
+      ]
+    },
+    "bot.orders.protection": {
+      "file": "bot/orders/protection.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "json",
+        "typing",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.pnl_history": {
+      "file": "bot/pnl_history.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.notifier",
+        "bot.utils.notifier.TelegramNotifier",
+        "csv",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List"
+      ]
+    },
+    "bot.position_tracker": {
+      "file": "bot/position_tracker.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "dataclasses",
+        "dataclasses.asdict",
+        "dataclasses.dataclass",
+        "datetime",
+        "datetime.datetime",
+        "decimal",
+        "decimal.Decimal",
+        "json",
+        "logging",
+        "os",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.recon_telegram": {
+      "file": "bot/recon_telegram.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "requests",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Set"
+      ]
+    },
+    "bot.reconciliation.__init__": {
+      "file": "bot/reconciliation/__init__.py",
+      "imports": [
+        ".v2_service",
+        ".v2_service.ReconciliationV2Service"
+      ]
+    },
+    "bot.reconciliation.v2_service": {
+      "file": "bot/reconciliation/v2_service.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.api.delta_client",
+        "bot.api.delta_client.DeltaClient",
+        "bot.utils.atomic_file",
+        "bot.utils.atomic_file.atomic_write_json",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "dataclasses.field",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "datetime.timezone",
+        "json",
+        "math",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "threading",
+        "threading.Lock",
+        "typing",
+        "typing.Any",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.Iterable",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.reconciliation_service": {
+      "file": "bot/reconciliation_service.py",
+      "imports": [
+        "bot.api.ccxt_handle",
+        "bot.api.ccxt_handle.ensure_ccxt",
+        "bot.api.delta_client",
+        "bot.api.delta_client.DeltaClient",
+        "bot.recon_telegram",
+        "bot.recon_telegram.ReconciliationTelegramNotifier",
+        "bot.utils.atomic_file",
+        "bot.utils.atomic_file.atomic_write_json",
+        "dataclasses",
+        "dataclasses.asdict",
+        "dataclasses.dataclass",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "hashlib",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "sys",
+        "threading",
+        "threading.Lock",
+        "threading.Thread",
+        "time",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.reports.pnl": {
+      "file": "bot/reports/pnl.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "argparse",
+        "ccxt",
+        "datetime",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "math",
+        "math.isnan",
+        "os",
+        "sys",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.reports.pnl_delta": {
+      "file": "bot/reports/pnl_delta.py",
+      "imports": [
+        "argparse",
+        "csv",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timezone",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "hashlib",
+        "hmac",
+        "json",
+        "os",
+        "requests",
+        "sys",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple",
+        "urllib.parse",
+        "urllib.parse.urlencode",
+        "zoneinfo",
+        "zoneinfo.ZoneInfo"
+      ]
+    },
+    "bot.reports.pnl_html": {
+      "file": "bot/reports/pnl_html.py",
+      "imports": [
+        "argparse",
+        "csv",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timezone",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "email",
+        "email.encoders",
+        "email.mime.base",
+        "email.mime.base.MIMEBase",
+        "email.mime.multipart",
+        "email.mime.multipart.MIMEMultipart",
+        "email.mime.text",
+        "email.mime.text.MIMEText",
+        "hashlib",
+        "hmac",
+        "json",
+        "os",
+        "requests",
+        "smtplib",
+        "sys",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple",
+        "urllib.parse",
+        "urllib.parse.urlencode"
+      ]
+    },
+    "bot.risk.guards": {
+      "file": "bot/risk/guards.py",
+      "imports": [
+        "bot.safety.emergency_override",
+        "bot.safety.emergency_override.should_check_monitoring",
+        "decimal",
+        "decimal.Decimal",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path"
+      ]
+    },
+    "bot.run": {
+      "file": "bot/run.py",
+      "imports": [
+        "bot.diagnostics",
+        "bot.diagnostics.create_snapshot",
+        "bot.heartbeat",
+        "bot.heartbeat.HeartbeatManager",
+        "bot.liquidation.distance_monitor",
+        "bot.liquidation.distance_monitor.LiquidationDistanceMonitor",
+        "bot.liquidation.margin_monitor",
+        "bot.liquidation.margin_monitor.MarginUtilizationMonitor",
+        "bot.liquidation.mtm_tracker",
+        "bot.liquidation.mtm_tracker.MTMTracker",
+        "bot.run",
+        "bot.safety",
+        "bot.safety.config_guard",
+        "bot.safety.config_guard.get_config_guard",
+        "bot.safety.loss_limits",
+        "bot.safety.loss_limits.validate_loss_limits",
+        "bot.safety.preflight",
+        "bot.strategy.gbot_clean",
+        "bot.strategy.gbot_clean.run_grid_strategy",
+        "bot.utils.env_loader",
+        "bot.utils.env_loader.get_mode_display_info",
+        "bot.utils.env_loader.load_trading_mode_config",
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "bot.volatility.iv_rv_tracker",
+        "bot.volatility.iv_rv_tracker.get_volatility_tracker",
+        "ccxt",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "signal",
+        "sys",
+        "time",
+        "typing",
+        "typing.Optional"
+      ]
+    },
+    "bot.safety": {
+      "file": "bot/safety.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "os",
+        "sys"
+      ]
+    },
+    "bot.safety.__init__": {
+      "file": "bot/safety/__init__.py",
+      "imports": [
+        "bot.safety.circuit_breaker",
+        "bot.safety.circuit_breaker.CircuitBreaker",
+        "bot.safety.circuit_breaker.CircuitBreakerOpen",
+        "bot.safety.gatekeeper",
+        "bot.safety.gatekeeper.can_place_orders",
+        "bot.safety.gatekeeper.get_gatekeeper_stats",
+        "bot.safety.gatekeeper.reset_gatekeeper_stats",
+        "bot.safety.loss_limits",
+        "bot.safety.loss_limits.get_loss_limits_config",
+        "bot.safety.loss_limits.validate_loss_limits"
+      ]
+    },
+    "bot.safety.blocker_tracker": {
+      "file": "bot/safety/blocker_tracker.py",
+      "imports": [
+        "bot.safety.gatekeeper",
+        "bot.safety.gatekeeper.can_place_orders",
+        "bot.safety.gatekeeper.get_gatekeeper_stats",
+        "datetime",
+        "datetime.datetime",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "subprocess",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List"
+      ]
+    },
+    "bot.safety.circuit_breaker": {
+      "file": "bot/safety/circuit_breaker.py",
+      "imports": [
+        "enum",
+        "enum.Enum",
+        "logging",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.safety.config_guard": {
+      "file": "bot/safety/config_guard.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "hashlib",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.safety.emergency_override": {
+      "file": "bot/safety/emergency_override.py",
+      "imports": [
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "threading",
+        "threading.Lock",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.safety.exposure_limiter": {
+      "file": "bot/safety/exposure_limiter.py",
+      "imports": [
+        "collections",
+        "collections.deque",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "logging",
+        "os",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.safety.gatekeeper": {
+      "file": "bot/safety/gatekeeper.py",
+      "imports": [
+        "bot.api.exchange_ops",
+        "bot.api.exchange_ops.get_exchange_ops",
+        "bot.liquidation.margin_monitor",
+        "bot.liquidation.margin_monitor.MarginUtilizationMonitor",
+        "bot.safety.exposure_limiter",
+        "bot.safety.exposure_limiter.get_exposure_limiter",
+        "bot.safety.order_confirmation_guard",
+        "bot.safety.order_confirmation_guard.get_confirmation_guard",
+        "bot.volatility.iv_rv_tracker",
+        "bot.volatility.iv_rv_tracker.get_volatility_tracker",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.safety.loss_limits": {
+      "file": "bot/safety/loss_limits.py",
+      "imports": [
+        "logging",
+        "os",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "bot.safety.order_confirmation_guard": {
+      "file": "bot/safety/order_confirmation_guard.py",
+      "imports": [
+        "bot.utils.env_loader",
+        "bot.utils.env_loader.get_current_mode",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "sys",
+        "telepush",
+        "telepush.send_telegram_alert",
+        "threading",
+        "threading.Lock",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "bot.state.reconcile": {
+      "file": "bot/state/reconcile.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.api.delta_client",
+        "bot.api.delta_client.DeltaClient",
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "dotenv",
+        "dotenv.dotenv_values",
+        "os",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Set"
+      ]
+    },
+    "bot.state.store": {
+      "file": "bot/state/store.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.atomic_file",
+        "bot.utils.atomic_file.atomic_write_json",
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "json",
+        "pathlib",
+        "pathlib.Path",
+        "typing",
+        "typing.Any",
+        "typing.Dict"
+      ]
+    },
+    "bot.strategy.archive.gbot_20250911_155851": {
+      "file": "bot/strategy/archive/gbot_20250911_155851.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.colors",
+        "bot.utils.colors.cyan",
+        "bot.utils.colors.green",
+        "bot.utils.colors.orange",
+        "bot.utils.colors.red",
+        "logging",
+        "os",
+        "time",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple",
+        "typing.Union"
+      ]
+    },
+    "bot.strategy.archive.gbot_v1_7_3": {
+      "file": "bot/strategy/archive/gbot_v1_7_3.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.colors",
+        "bot.utils.colors.cyan",
+        "bot.utils.colors.green",
+        "bot.utils.colors.orange",
+        "bot.utils.colors.red",
+        "logging",
+        "os",
+        "time",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple",
+        "typing.Union"
+      ]
+    },
+    "bot.strategy.gbot": {
+      "file": "bot/strategy/gbot.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.colors",
+        "bot.utils.colors.cyan",
+        "bot.utils.colors.green",
+        "bot.utils.colors.orange",
+        "bot.utils.colors.red",
+        "logging",
+        "os",
+        "time",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Tuple",
+        "typing.Union"
+      ]
+    },
+    "bot.strategy.gbot_clean": {
+      "file": "bot/strategy/gbot_clean.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.margin_topup",
+        "bot.margin_topup.MarginTopUpManager",
+        "bot.network",
+        "bot.network.get_ip_monitor",
+        "bot.orders.audit",
+        "bot.orders.audit.OrderAuditLogger",
+        "bot.orders.audit.OrderMetadata",
+        "bot.orders.protection",
+        "bot.orders.protection.GridConfig",
+        "bot.orders.protection.build_reduce_only_limit_order_payload",
+        "bot.pnl_history",
+        "bot.pnl_history.LiquidationAlertManager",
+        "bot.pnl_history.PnLHistoryLogger",
+        "bot.position_tracker",
+        "bot.position_tracker.PositionTracker",
+        "bot.risk.guards",
+        "bot.risk.guards.RiskBreach",
+        "bot.risk.guards.assert_can_trade",
+        "bot.run",
+        "bot.safety.gatekeeper",
+        "bot.safety.gatekeeper.can_place_orders",
+        "bot.safety.order_confirmation_guard",
+        "bot.safety.order_confirmation_guard.get_confirmation_guard",
+        "bot.utils.atomic_file",
+        "bot.utils.atomic_file.atomic_write_json",
+        "bot.utils.colors",
+        "bot.utils.colors.cyan",
+        "bot.utils.colors.green",
+        "bot.utils.colors.orange",
+        "bot.utils.colors.red",
+        "bot.utils.env_loader",
+        "bot.utils.env_loader.get_current_mode",
+        "bot.utils.notifier",
+        "bot.utils.notifier.TelegramNotifier",
+        "bot.utils.position_display",
+        "bot.utils.position_display.display_compact_summary",
+        "bot.utils.position_display.display_positions",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "datetime",
+        "datetime.datetime",
+        "dotenv",
+        "dotenv.dotenv_values",
+        "json",
+        "logging",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "time",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Set",
+        "typing.Tuple",
+        "typing.Union"
+      ]
+    },
+    "bot.strategy.grid": {
+      "file": "bot/strategy/grid.py",
+      "imports": [
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "dataclasses",
+        "dataclasses.dataclass"
+      ]
+    },
+    "bot.strategy.grid_sync": {
+      "file": "bot/strategy/grid_sync.py",
+      "imports": [
+        "bot.utils.atomic_file",
+        "bot.utils.atomic_file.atomic_write_json",
+        "ccxt",
+        "json",
+        "os",
+        "time",
+        "typing"
+      ]
+    },
+    "bot.strategy.levels": {
+      "file": "bot/strategy/levels.py",
+      "imports": [
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "typing",
+        "typing.List"
+      ]
+    },
+    "bot.strategy.sed.alerts": {
+      "file": "bot/strategy/sed/alerts.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.strategy.gbot",
+        "bot.strategy.gbot.GridBot",
+        "bot.strategy.gbot._next_lower_after_buy",
+        "bot.strategy.gbot._tp_for_entry",
+        "bot.strategy.gbot._within_band",
+        "bot.utils.notifier",
+        "bot.utils.notifier.TelegramNotifier",
+        "collections",
+        "collections.Counter",
+        "collections.defaultdict",
+        "logging",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Set",
+        "typing.Tuple"
+      ]
+    },
+    "bot.tools.status": {
+      "file": "bot/tools/status.py",
+      "imports": [
+        "bot.strategy.levels",
+        "bot.strategy.levels.LadderCfg",
+        "bot.strategy.levels.build_buy_ladder",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path"
+      ]
+    },
+    "bot.tools.status_warn": {
+      "file": "bot/tools/status_warn.py",
+      "imports": [
+        "bot.strategy.levels",
+        "bot.strategy.levels.LadderCfg",
+        "bot.strategy.levels.build_buy_ladder",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path"
+      ]
+    },
+    "bot.utils.alerts": {
+      "file": "bot/utils/alerts.py",
+      "imports": [
+        "os",
+        "sys",
+        "winsound"
+      ]
+    },
+    "bot.utils.atomic_file": {
+      "file": "bot/utils/atomic_file.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "tempfile",
+        "typing",
+        "typing.Any"
+      ]
+    },
+    "bot.utils.bot_order_id": {
+      "file": "bot/utils/bot_order_id.py",
+      "imports": [
+        "random",
+        "string",
+        "time",
+        "typing",
+        "typing.Optional"
+      ]
+    },
+    "bot.utils.config_check": {
+      "file": "bot/utils/config_check.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.strategy.grid",
+        "bot.strategy.grid.GridConfig",
+        "bot.utils.logging_setup",
+        "bot.utils.logging_setup.get_logger",
+        "dataclasses",
+        "dataclasses.asdict",
+        "typing",
+        "typing.Tuple"
+      ]
+    },
+    "bot.utils.env_loader": {
+      "file": "bot/utils/env_loader.py",
+      "imports": [
+        "logging",
+        "os",
+        "typing",
+        "typing.Literal"
+      ]
+    },
+    "bot.utils.logging_setup": {
+      "file": "bot/utils/logging_setup.py",
+      "imports": [
+        "logging",
+        "logging.handlers",
+        "logging.handlers.RotatingFileHandler",
+        "os",
+        "pathlib",
+        "pathlib.Path"
+      ]
+    },
+    "bot.utils.notifier": {
+      "file": "bot/utils/notifier.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "json",
+        "logging",
+        "os",
+        "time",
+        "typing",
+        "typing.Optional",
+        "urllib.parse",
+        "urllib.request"
+      ]
+    },
+    "bot.utils.position_display": {
+      "file": "bot/utils/position_display.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "bot.utils.colors",
+        "bot.utils.colors.bold",
+        "bot.utils.colors.cyan",
+        "bot.utils.colors.green",
+        "bot.utils.colors.orange",
+        "bot.utils.colors.purple",
+        "bot.utils.colors.red",
+        "decimal",
+        "decimal.Decimal",
+        "logging",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "bot.utils.watchdog": {
+      "file": "bot/utils/watchdog.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "os",
+        "time"
+      ]
+    },
+    "bot.volatility.__init__": {
+      "file": "bot/volatility/__init__.py",
+      "imports": [
+        "bot.volatility.iv_rv_tracker",
+        "bot.volatility.iv_rv_tracker.VolatilityTracker",
+        "bot.volatility.iv_rv_tracker.get_volatility_tracker"
+      ]
+    },
+    "bot.volatility.iv_rv_tracker": {
+      "file": "bot/volatility/iv_rv_tracker.py",
+      "imports": [
+        "bot.safety.emergency_override",
+        "bot.safety.emergency_override.should_check_risk_management",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "datetime.timezone",
+        "json",
+        "logging",
+        "math",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "requests",
+        "sys",
+        "telepush",
+        "telepush.send_telegram_alert",
+        "threading",
+        "threading.Lock",
+        "threading.Thread",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional",
+        "typing.Tuple"
+      ]
+    },
+    "dashboard.run": {
+      "file": "dashboard/run.py",
+      "imports": [
+        "bot.strategy.gbot_clean",
+        "bot.strategy.gbot_clean.run_grid_strategy",
+        "ccxt",
+        "dataclasses",
+        "dataclasses.dataclass",
+        "dotenv",
+        "dotenv.load_dotenv",
+        "logging",
+        "os",
+        "sys"
+      ]
+    },
+    "services.error_monitor": {
+      "file": "services/error_monitor.py",
+      "imports": [
+        "argparse",
+        "bot.observability.errors",
+        "bot.observability.errors.ErrorClassifier",
+        "bot.observability.errors.catalog",
+        "bot.observability.errors.catalog.ErrorCatalog",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "re",
+        "sqlite3",
+        "sys",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "services.error_resolver": {
+      "file": "services/error_resolver.py",
+      "imports": [
+        "argparse",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "pathlib",
+        "pathlib.Path",
+        "sqlite3"
+      ]
+    },
+    "services.notifications": {
+      "file": "services/notifications.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "os",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "services.notifications.__init__": {
+      "file": "services/notifications/__init__.py",
+      "imports": [
+        ".telegram_command_handler",
+        ".telegram_command_handler.TelegramCommandHandler",
+        ".telegram_error_notifier",
+        ".telegram_error_notifier.TelegramErrorNotifier"
+      ]
+    },
+    "services.notifications.telegram_command_handler": {
+      "file": "services/notifications/telegram_command_handler.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "logging",
+        "os",
+        "requests",
+        "threading",
+        "threading.Lock",
+        "threading.Thread",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "services.notifications.telegram_error_notifier": {
+      "file": "services/notifications/telegram_error_notifier.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "logging",
+        "os",
+        "requests",
+        "threading",
+        "threading.Lock",
+        "threading.Thread",
+        "time",
+        "typing",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional"
+      ]
+    },
+    "services.quick_error_scan": {
+      "file": "services/quick_error_scan.py",
+      "imports": [
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "re",
+        "sys"
+      ]
+    },
+    "webui.backend.app": {
+      "file": "webui/backend/app.py",
+      "imports": [
+        "bot.ai.advanced",
+        "bot.ai.advanced.get_ml_predictor",
+        "bot.ai.advanced.get_monte_carlo_simulator",
+        "bot.ai.advisor",
+        "bot.ai.advisor.get_ai_advisor",
+        "bot.ai.analytics",
+        "bot.ai.analytics.get_execution_analytics",
+        "bot.ai.analytics.get_log_analyzer",
+        "bot.ai.analytics.get_performance_analytics",
+        "bot.ai.analytics.get_risk_analytics",
+        "bot.ai.conversational",
+        "bot.ai.conversational.get_intelligent_advisor",
+        "bot.ai.institutional_advisor",
+        "bot.ai.institutional_advisor.get_institutional_advisor",
+        "bot.ai.predictive",
+        "bot.ai.predictive.get_grid_optimizer",
+        "bot.ai.predictive.get_market_regime_detector",
+        "bot.api.exchange_ops",
+        "bot.api.exchange_ops.get_exchange_ops",
+        "bot.capital.equity_tracker",
+        "bot.capital.equity_tracker.get_equity_tracker",
+        "bot.news.aggregator",
+        "bot.news.aggregator.get_news_aggregator",
+        "bot.orders.audit",
+        "bot.orders.audit.generate_audit_report",
+        "bot.orders.audit.get_orders_by_origin",
+        "bot.reconciliation_service",
+        "bot.reconciliation_service.ReconciliationService",
+        "bot.safety.blocker_tracker",
+        "bot.safety.blocker_tracker.get_blocker_tracker",
+        "bot.safety.circuit_breaker",
+        "bot.safety.circuit_breaker.get_all_circuit_breaker_stats",
+        "bot.safety.circuit_breaker.reset_all_circuit_breakers",
+        "bot.safety.config_guard",
+        "bot.safety.config_guard.get_config_guard",
+        "bot.safety.exposure_limiter",
+        "bot.safety.exposure_limiter.get_exposure_limiter",
+        "bot.safety.exposure_limiter.reload_exposure_limiter",
+        "bot.safety.gatekeeper",
+        "bot.safety.gatekeeper._gatekeeper",
+        "bot.safety.gatekeeper.get_gatekeeper_stats",
+        "bot.safety.loss_limits",
+        "bot.safety.loss_limits.get_loss_limits_config",
+        "bot.safety.order_confirmation_guard",
+        "bot.safety.order_confirmation_guard.get_confirmation_guard",
+        "bot.state.manager",
+        "bot.state.manager.get_state_manager",
+        "bot.utils.atomic_file",
+        "bot.utils.atomic_file.atomic_write_json",
+        "bot.utils.env_loader",
+        "bot.utils.env_loader.get_current_mode",
+        "bot.utils.env_loader.get_mode_display_info",
+        "bot.utils.env_loader.load_trading_mode_config",
+        "bot.volatility.iv_rv_tracker",
+        "bot.volatility.iv_rv_tracker.get_volatility_tracker",
+        "copy",
+        "csv",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timedelta",
+        "dotenv",
+        "dotenv.dotenv_values",
+        "dotenv.load_dotenv",
+        "error_resolution",
+        "error_resolution.error_resolution_bp",
+        "errors",
+        "errors.ErrorIntelligenceManager",
+        "errors.errors_bp",
+        "fcntl",
+        "flask",
+        "flask.Flask",
+        "flask.Response",
+        "flask.jsonify",
+        "flask.make_response",
+        "flask.request",
+        "flask.send_from_directory",
+        "flask_cors",
+        "flask_cors.CORS",
+        "flask_socketio",
+        "flask_socketio.SocketIO",
+        "flask_socketio.emit",
+        "hmac",
+        "json",
+        "numpy",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "re",
+        "recon_routes",
+        "recon_routes.init_reconciliation_service",
+        "recon_routes.recon_bp",
+        "secrets",
+        "services.notifications",
+        "services.notifications.TelegramCommandHandler",
+        "services.notifications.TelegramErrorNotifier",
+        "shutil",
+        "signal",
+        "subprocess",
+        "sys",
+        "tempfile",
+        "threading",
+        "threading.Lock",
+        "threading.Thread",
+        "time",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Callable",
+        "typing.Dict",
+        "typing.List",
+        "typing.Optional",
+        "typing.Pattern",
+        "typing.Set",
+        "typing.Tuple",
+        "typing.Union",
+        "watchdog.events",
+        "watchdog.events.FileSystemEventHandler",
+        "watchdog.observers",
+        "watchdog.observers.Observer"
+      ]
+    },
+    "webui.backend.error_resolution": {
+      "file": "webui/backend/error_resolution.py",
+      "imports": [
+        "bot.liquidation.margin_monitor",
+        "bot.liquidation.margin_monitor.MarginUtilizationMonitor",
+        "bot.observability.errors",
+        "bot.observability.errors.ErrorStatus",
+        "bot.safety.gatekeeper",
+        "bot.safety.gatekeeper.get_gatekeeper_stats",
+        "flask",
+        "flask.Blueprint",
+        "flask.jsonify",
+        "flask.request",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "subprocess",
+        "sys",
+        "time",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.List",
+        "webui.backend.app",
+        "webui.backend.app.start_bot",
+        "webui.backend.app.stop_bot",
+        "webui.backend.errors.manager",
+        "webui.backend.errors.manager.error_store"
+      ]
+    },
+    "webui.backend.errors.__init__": {
+      "file": "webui/backend/errors/__init__.py",
+      "imports": [
+        ".manager",
+        ".manager.ErrorIntelligenceManager",
+        ".routes",
+        ".routes.errors_bp"
+      ]
+    },
+    "webui.backend.errors.manager": {
+      "file": "webui/backend/errors/manager.py",
+      "imports": [
+        ".routes",
+        ".routes.emit_new_error",
+        ".routes.init_error_api",
+        "bot.observability.errors",
+        "bot.observability.errors.ErrorClassifier",
+        "bot.observability.errors.ErrorCollector",
+        "bot.observability.errors.ErrorRemediator",
+        "bot.observability.errors.ErrorSource",
+        "bot.observability.errors.catalog",
+        "bot.observability.errors.catalog.ErrorCatalog",
+        "bot.observability.errors.store",
+        "bot.observability.errors.store.ErrorStore",
+        "os",
+        "sys",
+        "threading",
+        "traceback",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    },
+    "webui.backend.errors.routes": {
+      "file": "webui/backend/errors/routes.py",
+      "imports": [
+        "bot.observability.errors",
+        "bot.observability.errors.ErrorClassifier",
+        "bot.observability.errors.ErrorCollector",
+        "bot.observability.errors.ErrorEvent",
+        "bot.observability.errors.ErrorRemediator",
+        "bot.observability.errors.ErrorSeverity",
+        "bot.observability.errors.ErrorSource",
+        "bot.observability.errors.ErrorStatus",
+        "bot.observability.errors.catalog",
+        "bot.observability.errors.catalog.ErrorCatalog",
+        "bot.observability.errors.store",
+        "bot.observability.errors.store.ErrorStore",
+        "flask",
+        "flask.Blueprint",
+        "flask.jsonify",
+        "flask.request",
+        "flask_socketio",
+        "flask_socketio.emit",
+        "json",
+        "os",
+        "pathlib",
+        "pathlib.Path",
+        "subprocess",
+        "sys",
+        "typing",
+        "typing.Optional"
+      ]
+    },
+    "webui.backend.recon_routes": {
+      "file": "webui/backend/recon_routes.py",
+      "imports": [
+        "flask",
+        "flask.Blueprint",
+        "flask.jsonify",
+        "flask.request",
+        "json",
+        "pathlib",
+        "pathlib.Path",
+        "sys",
+        "traceback"
+      ]
+    },
+    "webui.backend.recon_v2_routes": {
+      "file": "webui/backend/recon_v2_routes.py",
+      "imports": [
+        "__future__",
+        "__future__.annotations",
+        "datetime",
+        "datetime.datetime",
+        "datetime.timezone",
+        "flask",
+        "flask.Blueprint",
+        "flask.jsonify",
+        "flask.request",
+        "threading",
+        "threading.Lock",
+        "threading.Thread",
+        "typing",
+        "typing.Any",
+        "typing.Dict",
+        "typing.Optional"
+      ]
+    }
+  }
+}

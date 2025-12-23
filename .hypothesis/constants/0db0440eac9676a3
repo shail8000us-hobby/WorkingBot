@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/config/config_manager_core.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.001, 0.1, 1.0, 5.0, 10.0, 35.0, 40.0, 50.0, 100.0, 200.0, 1000.0, 10000.0, 101000.0, 108000.0, 130000.0, 100, 300, 1000, 3600, '"', '#', '# ║', "'", '1', '=', 'BTCUSD', 'DELTA_PRODUCT_ID', 'Enable guardian bot', 'GRIDBOT_LOT', 'GRIDBOT_LOWER', 'GRIDBOT_MAX_OPEN', 'GRIDBOT_REF', 'GRIDBOT_STEP', 'GRIDBOT_SYMBOL', 'GRIDBOT_UPPER', 'GUARDIAN_ENABLED', 'General', 'Grid step size', 'HEARTBEAT_TIMEOUT', 'HOT_RELOAD', 'Lot size per order', 'Lower grid boundary', 'MAX_ACCOUNT_LOSS_INR', 'TRADING_MODE', 'Trading symbol', 'Upper grid boundary', 'VOLATILITY_MAX_IV', 'VOLATILITY_MAX_RV', '__main__', 'demo', 'error', 'errors', 'grid_config.env', 'live', 'on', 'parameters', 'r', 'true', 'type', 'utf-8', 'valid', 'value', 'w', 'warnings', 'yes', '║', '║\\s*(\\d+️⃣\\s*[^║]+)']

@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/emergency.py
+# hypothesis_version: 6.141.1
+
+[200, 400, 500, '%Y-%m-%d %H:%M:%S', '--daemon', 'DISABLED', 'ENABLED', 'GET', 'No reason provided', 'POST', 'a', 'action', 'bot.pid', 'bot_launcher.py', 'capital_protection', 'changed_by', 'clear_emergency_flag', 'emergency', 'enabled', 'error', 'flag_exists', 'flag_location', 'force_restart', 'last_changed', 'liquidity_monitor', 'message', 'monitoring', 'overrides', 'python3', 'r', 'reason', 'reset_gatekeeper', 'result', 'risk_management', 'success', 'system', 'system_reset', 'w', 'webui_user']

@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/state/store.py
+# hypothesis_version: 6.141.1
+
+[0.0, 109800.0, 'StateStore', 'last_price', 'load_positions_file', 'load_state_file', 'open_positions', 'positions', 'r', 'reference_level', 'state', 'summary', 'utf-8']

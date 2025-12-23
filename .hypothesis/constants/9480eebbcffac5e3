@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/brain_analyzer/ast_parser.py
+# hypothesis_version: 6.141.1
+
+[100, 'action_call', 'args', 'calculate', 'can', 'cancel', 'check', 'compute', 'condition', 'decision_call', 'decisions', 'error', 'execute', 'file', 'function', 'function_calls', 'functions', 'has_decisions', 'has_elif', 'has_else', 'if_statement', 'is', 'is_async', 'line', 'line_number', 'name', 'place', 'should', 'total_decisions', 'total_functions', 'type', 'unknown', 'unparse', 'verify']

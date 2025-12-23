@@ -1,0 +1,59 @@
+[1m============================= test session starts ==============================[0m
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: /Users/ssr/Projects/WorkingBot
+configfile: pyproject.toml
+plugins: hypothesis-6.141.1, cov-7.0.0
+[1mcollecting ... [0m<unknown>:642: DeprecationWarning: invalid escape sequence \.
+collected 306 items / 1 error
+
+==================================== ERRORS ====================================
+[31m[1m_______________ ERROR collecting tests/test_institutional_ai.py ________________[0m
+[31mImportError while importing test module '/Users/ssr/Projects/WorkingBot/tests/test_institutional_ai.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/__init__.py:127: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/test_institutional_ai.py:15: in <module>
+    from bot.ai.analytics.performance import PerformanceAnalytics
+bot/ai/analytics/__init__.py:15: in <module>
+    from .risk import RiskAnalytics, get_risk_analytics
+bot/ai/analytics/risk.py:18: in <module>
+    from scipy import stats
+E   ModuleNotFoundError: No module named 'scipy'[0m
+[33m=============================== warnings summary ===============================[0m
+../../Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35
+  /Users/ssr/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+[36m[1m=========================== short test summary info ============================[0m
+[31mERROR[0m tests/test_institutional_ai.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+[31m========================= [33m1 warning[0m, [31m[1m1 error[0m[31m in 9.53s[0m[31m ==========================[0m
+================================================================================
+🧪 GridBot Test Suite - Comprehensive Testing & Coverage
+================================================================================
+📁 Project Root: /Users/ssr/Projects/WorkingBot
+⏰ Started: 2025-11-04 00:44:13
+📊 Coverage: Enabled
+================================================================================
+
+🧪 Running Tests: test_*.py
+  Command: pytest /Users/ssr/Projects/WorkingBot/tests --cov=bot/strategy --cov=bot/api --cov=bot/config --cov-report=term-missing --cov-report=html --cov-fail-under=0 -v --tb=short --color=yes
+
+
+📊 Coverage Summary for Critical Modules
+--------------------------------------------------------------------------------
+  ⚠️  No coverage data found
+
+📊 HTML Coverage Report Generated!
+  📄 Open: /Users/ssr/Projects/WorkingBot/htmlcov/index.html
+  💡 View in browser: open /Users/ssr/Projects/WorkingBot/htmlcov/index.html
+
+================================================================================
+📊 TEST RUN SUMMARY
+================================================================================
+❌ Some Tests Failed
+================================================================================

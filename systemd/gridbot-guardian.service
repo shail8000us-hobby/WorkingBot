@@ -1,0 +1,31 @@
+[Unit]
+Description=GridBot Guardian - Always-On Safety Monitor
+Documentation=https://github.com/physicsssr/Working-gridBOT
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME_HERE
+Group=YOUR_GROUP_HERE
+WorkingDirectory=/path/to/WorkingBot
+ExecStart=/usr/bin/python3 -m bot.guardian.guardian_bot
+Restart=always
+RestartSec=10
+StandardOutput=append:/path/to/WorkingBot/bot/logs/guardian.log
+StandardError=append:/path/to/WorkingBot/bot/logs/guardian_error.log
+
+# Security hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/path/to/WorkingBot
+ReadWritePaths=/path/to/WorkingBot/bot/logs
+
+# Environment
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+[Install]
+WantedBy=multi-user.target
+

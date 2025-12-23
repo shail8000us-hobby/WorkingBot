@@ -1,0 +1,30 @@
+# Volatility History JSON Schema
+# This file documents the structure for IV/RV historical data used by the volatility chart system.
+
+# Each entry in the JSON array is an object with:
+# - timestamp: int (UNIX seconds, UTC)
+# - iv: float (Implied Volatility, %)
+# - rv: float (Realized Volatility, %)
+# - zone: str (optional, e.g. 'LOW', 'NORMAL', 'ELEVATED', 'HIGH', 'EXTREME')
+# - time: str (optional, ISO8601 for frontend display)
+
+[
+  {
+    "timestamp": 1727740800,
+    "iv": 38.2,
+    "rv": 41.7,
+    "zone": "ELEVATED",
+    "time": "2025-10-25T00:00:00+00:00"
+  },
+  {
+    "timestamp": 1727827200,
+    "iv": 36.5,
+    "rv": 39.2,
+    "zone": "NORMAL",
+    "time": "2025-10-26T00:00:00+00:00"
+  }
+  # ... more entries ...
+]
+
+# The collector appends new entries every 30s. The backend filters by timeframe for the API.
+# This schema supports efficient querying and is easy to extend for new fields.

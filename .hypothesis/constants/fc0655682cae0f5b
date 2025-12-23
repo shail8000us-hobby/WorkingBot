@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/websocket_api.py
+# hypothesis_version: 6.141.1
+
+[0.2, 100, 200, 500, '/api/websocket/stats', 'Error rate analytics', 'GET', 'Uptime tracking', 'base_reconnect_delay', 'capabilities', 'config', 'connected', 'error', 'exponential_backoff', 'features', 'health_monitoring', 'idempotent_orders', 'jitter_ratio', 'max_reconnect_delay', 'message', 'note', 'ping_interval', 'ping_timeout', 'stats', 'structured_logging', 'success', 'tcp_keepalive', 'websocket_api']

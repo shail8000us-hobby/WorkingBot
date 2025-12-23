@@ -1,0 +1,143 @@
+{
+  "timestamp": "2025-12-23T12:41:38.808380",
+  "monitoring_active": true,
+  "bot_status": {
+    "active": true,
+    "mode": "UNKNOWN",
+    "current_price": 87470.5,
+    "positions": 0,
+    "max_positions": 0
+  },
+  "layers": {
+    "price_health": {
+      "active": true,
+      "price": 87470.5,
+      "price_age_seconds": 0.6366479396820068,
+      "source": "WEBSOCKET",
+      "status": "FRESH",
+      "is_fresh": true,
+      "is_critical": false,
+      "thresholds": {
+        "stale": 35.0,
+        "critical": 60.0
+      },
+      "statistics": {
+        "total_updates": 26125,
+        "websocket_updates": 0,
+        "rest_api_updates": 64,
+        "stale_warnings": 212,
+        "critical_warnings": 180
+      }
+    },
+    "pre_order_stats": {
+      "total_decisions": 8914,
+      "approved": 0,
+      "rejected": 0,
+      "approval_rate": 0.0,
+      "active": true
+    },
+    "tp_verification": {
+      "total_verifications": 0,
+      "successful": 0,
+      "failed": 0,
+      "orphaned_positions": 0,
+      "success_rate": 0,
+      "active": true
+    },
+    "anomalies": {
+      "active": true,
+      "anomalies_detected": 0,
+      "critical_alerts": 0,
+      "current_anomalies": 0,
+      "anomaly_list": [],
+      "statistics": {
+        "recent_orders_tracked": 0,
+        "recent_tps_tracked": 0,
+        "orders_without_tp": 0,
+        "order_placement_rate": 0
+      },
+      "thresholds": {
+        "max_orders_without_tp": 3,
+        "max_price_jump_pct": 5.0,
+        "max_orders_per_minute": 10
+      },
+      "health_status": "HEALTHY"
+    },
+    "predictive": {
+      "active": true,
+      "current_state": {
+        "mode": "LONG",
+        "price": 87470.5,
+        "grid_step": 500.0,
+        "positions": 0,
+        "max_positions": 10,
+        "capacity_used_pct": 0.0,
+        "pending_buy": true,
+        "pending_sell": false
+      },
+      "executed_orders": [],
+      "placed_tps": [],
+      "scenarios": {
+        "next_action": {
+          "type": "PENDING_BUY",
+          "price": 87500.0,
+          "status": "Waiting for fill",
+          "then": "Calculate TP"
+        },
+        "price_drops": [
+          {
+            "action": "BUY",
+            "price": 87000.0,
+            "tp_price": 87500.0,
+            "change_pct": -0.5378956333849698,
+            "reason": "Grid level #1",
+            "sequence": 1,
+            "profit_target": 500.0
+          },
+          {
+            "action": "BUY",
+            "price": 86500.0,
+            "tp_price": 87000.0,
+            "change_pct": -1.1095169228482744,
+            "reason": "Grid level #2",
+            "sequence": 2,
+            "profit_target": 500.0
+          },
+          {
+            "action": "BUY",
+            "price": 86000.0,
+            "tp_price": 86500.0,
+            "change_pct": -1.6811382123115794,
+            "reason": "Grid level #3",
+            "sequence": 3,
+            "profit_target": 500.0
+          }
+        ],
+        "price_rises": [
+          {
+            "action": "No TPs",
+            "price": null,
+            "reason": "No open positions",
+            "sequence": 1
+          }
+        ]
+      }
+    },
+    "trading_condition": {
+      "active": false,
+      "error": "'BlockerTracker' object has no attribute '_check_order_confirmation_guard'"
+    },
+    "opportunistic_recovery": {
+      "active": false,
+      "enabled": false,
+      "total_recoveries": 0,
+      "total_positions_recovered": 0,
+      "total_capital_saved": 0.0,
+      "startup_recoveries": 0,
+      "volatility_recoveries": 0,
+      "last_recovery_time": null,
+      "current_opportunistic_positions": [],
+      "recent_recoveries": []
+    }
+  }
+}

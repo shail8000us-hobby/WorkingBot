@@ -1,0 +1,17 @@
+{
+  "open_positions": [],
+  "pending_buy": null,
+  "pending_sell": null,
+  "last_buy_order_time": 1763130187.873514,
+  "last_sell_order_time": 0,
+  "total_positions_opened": 0,
+  "total_positions_closed": 0,
+  "max_positions": 10,
+  "capacity": {
+    "current": 0,
+    "max": 10,
+    "available": 10
+  },
+  "last_update": 1763130235.357036,
+  "source": "AsyncBot_PositionManagerActor"
+}

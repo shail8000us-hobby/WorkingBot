@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/circuit_breaker.py
+# hypothesis_version: 6.141.1
+
+['CLOSED', 'HALF_OPEN', 'OPEN', 'Service still down', 'circuit_breaker', 'default', 'failure_count', 'failure_rate', 'last_failure_time', 'name', 'state', 'success_count', 'total_blocks', 'total_calls', 'total_failures', 'total_successes', 'uptime_seconds']

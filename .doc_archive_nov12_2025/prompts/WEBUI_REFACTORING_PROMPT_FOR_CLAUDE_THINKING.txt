@@ -1,0 +1,869 @@
+================================================================================
+FLASK API REFACTORING PROMPT - FOR CLAUDE 3.5 SONNET (THINKING)
+================================================================================
+
+MISSION: Refactor webui/backend/app.py (8,850 lines, 133 API routes) into 
+         15 modular route files using Flask Blueprints pattern
+
+CONTEXT: Successfully refactored GridBot from 3,492-line God Class into 7 
+         focused modules (96.7% test coverage). Now applying same proven 
+         approach to Flask API backend.
+
+================================================================================
+CURRENT STATE - THE PROBLEM
+================================================================================
+
+FILE: webui/backend/app.py
+SIZE: 8,850 lines (2.5x worse than GridBot God Class!)
+ROUTES: 133 API endpoints in single file
+FUNCTIONS: 233 functions
+CLASSES: 4 classes
+
+CRITICAL ISSUES:
+🔴 Impossible to maintain (3x size of typical microservice)
+🔴 Every change risks breaking 133 endpoints
+🔴 Merge conflicts guaranteed in team environment
+🔴 Testing nightmare (must mock entire Flask app)
+🔴 Security risk (all routes share same context)
+🔴 No separation of concerns
+🔴 Cannot test routes in isolation
+
+ROUTE DISTRIBUTION (from analysis):
+- /api/bot/* (bot control: start, stop, restart, status)
+- /api/config/* (configuration management)
+- /api/logs/* (log retrieval)
+- /api/positions/* (position data)
+- /api/orders/* (order data)
+- /api/pnl-history/* (PNL tracking)
+- /api/guardian/* (guardian bot control)
+- /api/monitor/* (monitor control)
+- /api/tmux/* (tmux session management)
+- /api/robustness/* (robustness metrics)
+- /api/websocket/* (WebSocket stats)
+- /api/metrics/* (system metrics)
+- /api/docs/* (documentation endpoints)
+- /api/health/* (health checks)
+- /api/system/* (system status)
+- Misc utility routes (frontend errors, performance logs, etc.)
+
+================================================================================
+TARGET ARCHITECTURE - FLASK BLUEPRINTS PATTERN
+================================================================================
+
+DESIRED STRUCTURE:
+
+webui/backend/
+├── app.py (main app, <200 lines)
+│   ├── Flask app initialization
+│   ├── Blueprint registration
+│   ├── CORS configuration
+│   ├── Error handlers (global)
+│   ├── Authentication middleware (if any)
+│   └── Main entry point
+│
+└── routes/
+    ├── __init__.py (blueprint exports)
+    │
+    ├── bot_control.py (~500-700 lines)
+    │   └── POST /api/bot/start
+    │   └── POST /api/bot/stop
+    │   └── POST /api/bot/restart
+    │   └── GET  /api/bot/status
+    │   └── GET  /api/bots/status (all bots)
+    │   └── POST /api/bots/stop (all bots)
+    │
+    ├── config.py (~500-700 lines)
+    │   └── GET  /api/config
+    │   └── POST /api/config
+    │   └── GET  /api/config/verify
+    │   └── POST /api/config/apply
+    │   └── GET  /api/diagnostics/config-usage
+    │
+    ├── logs.py (~400-500 lines)
+    │   └── GET  /api/logs
+    │   └── GET  /api/logs/recent
+    │   └── GET  /api/sync-report
+    │   └── GET  /api/shutdown-report
+    │
+    ├── positions.py (~500-700 lines)
+    │   └── GET  /api/positions
+    │   └── POST /api/positions/resync
+    │   └── GET  /api/state (runtime state)
+    │
+    ├── orders.py (~400-500 lines)
+    │   └── GET  /api/orders
+    │   └── Related order management endpoints
+    │
+    ├── pnl.py (~400-500 lines)
+    │   └── GET  /api/pnl-history
+    │   └── GET  /api/pnl-history/hourly
+    │   └── PNL calculation utilities
+    │
+    ├── guardian.py (~400-500 lines)
+    │   └── GET  /api/guardian/status
+    │   └── POST /api/guardian/start
+    │   └── POST /api/guardian/stop
+    │
+    ├── monitor.py (~300-400 lines)
+    │   └── GET  /api/monitor/status
+    │   └── POST /api/monitor/start
+    │   └── POST /api/monitor/stop
+    │
+    ├── tmux.py (~500-700 lines)
+    │   └── GET  /api/tmux/status
+    │   └── POST /api/tmux/start
+    │   └── POST /api/tmux/stop
+    │   └── Tmux session management utilities
+    │
+    ├── robustness.py (~400-500 lines)
+    │   └── GET  /api/robustness/gatekeeper/status
+    │   └── GET  /api/robustness/loss-limits
+    │   └── GET  /api/robustness/circuit-breakers
+    │   └── POST /api/robustness/circuit-breakers/reset
+    │   └── GET  /api/robustness/audit/report
+    │
+    ├── websocket_api.py (~400-500 lines)
+    │   └── GET  /api/websocket/health
+    │   └── GET  /api/websocket/stats
+    │
+    ├── metrics.py (~300-400 lines)
+    │   └── GET  /api/metrics/queue
+    │   └── GET  /api/metrics/circuit-breakers
+    │
+    ├── health.py (~300-400 lines)
+    │   └── GET  /api/health
+    │   └── GET  /api/health/detailed
+    │   └── GET  /api/version
+    │
+    ├── docs.py (~300-400 lines)
+    │   └── GET  /api/docs/capital-protection
+    │   └── GET  /api/docs/<path:filename>
+    │   └── GET  /api/help/registry
+    │
+    ├── system.py (~400-500 lines)
+    │   └── GET  /api/system/status
+    │   └── GET  /api/trading-mode
+    │   └── POST /api/trading-mode
+    │
+    └── utility.py (~300-400 lines)
+        └── POST /api/frontend-error
+        └── POST /api/performance-log
+        └── GET  /api/bot-actions/recent
+        └── Other utility endpoints
+
+TOTAL: ~15 files, averaging 400-600 lines each
+       8,850 lines → 15 files = ~590 lines/file average
+
+================================================================================
+REFACTORING REQUIREMENTS
+================================================================================
+
+1. FLASK BLUEPRINTS PATTERN
+   ────────────────────────────────────────────────────────────────────────
+   - Each route module MUST use Flask Blueprint
+   - Blueprint naming convention: route_group + "_bp"
+   - Example:
+     ```python
+     from flask import Blueprint, jsonify, request
+     
+     bot_control_bp = Blueprint('bot_control', __name__)
+     
+     @bot_control_bp.route('/api/bot/start', methods=['POST'])
+     def start_bot():
+         # implementation
+     ```
+
+2. PRESERVE ALL FUNCTIONALITY
+   ────────────────────────────────────────────────────────────────────────
+   - Every single endpoint MUST be preserved (133 routes)
+   - All request/response formats unchanged
+   - All error handling preserved
+   - All authentication/authorization preserved
+   - All CORS settings preserved
+   - All middleware preserved
+
+3. SHARED UTILITIES
+   ────────────────────────────────────────────────────────────────────────
+   - If multiple routes share helper functions, extract to utilities
+   - Create webui/backend/utils/ if needed:
+     * file_helpers.py (file reading/parsing)
+     * process_helpers.py (subprocess management)
+     * auth_helpers.py (authentication utilities)
+     * response_helpers.py (common response formatting)
+
+4. IMPORTS AND DEPENDENCIES
+   ────────────────────────────────────────────────────────────────────────
+   - Each blueprint file imports only what it needs
+   - No circular imports between blueprints
+   - Shared config/constants in separate file if needed
+   - All external dependencies (os, sys, subprocess, etc.) imported per file
+
+5. ERROR HANDLING
+   ────────────────────────────────────────────────────────────────────────
+   - Global error handlers stay in main app.py
+   - Route-specific error handling in each blueprint
+   - Consistent error response format across all routes
+
+6. TESTING COMPATIBILITY
+   ────────────────────────────────────────────────────────────────────────
+   - Each blueprint should be testable in isolation
+   - Mock dependencies cleanly
+   - Preserve any existing test helpers
+
+7. BACKWARD COMPATIBILITY
+   ────────────────────────────────────────────────────────────────────────
+   - ALL endpoints keep exact same URLs
+   - ALL request/response formats unchanged
+   - Frontend requires ZERO changes
+   - Drop-in replacement for old app.py
+
+8. DOCUMENTATION
+   ────────────────────────────────────────────────────────────────────────
+   - Each blueprint file has docstring explaining its routes
+   - Main app.py has updated structure overview
+   - README showing blueprint registration order
+
+================================================================================
+EXECUTION STEPS (DO IN THIS ORDER)
+================================================================================
+
+PHASE 1: ANALYSIS (30 minutes thinking time)
+──────────────────────────────────────────────────────────────────────────────
+1. Read entire webui/backend/app.py carefully
+2. Identify all 133 routes and their dependencies
+3. Group routes by domain (bot control, config, logs, etc.)
+4. Identify shared helper functions
+5. Map out dependency graph
+6. Plan extraction order (least dependencies first)
+
+PHASE 2: STRUCTURE CREATION (15 minutes)
+──────────────────────────────────────────────────────────────────────────────
+1. Create webui/backend/routes/ directory
+2. Create webui/backend/routes/__init__.py
+3. Create webui/backend/utils/ if needed for shared utilities
+4. Plan blueprint names and registration order
+
+PHASE 3: EXTRACT BLUEPRINTS (3-4 hours, one domain at a time)
+──────────────────────────────────────────────────────────────────────────────
+
+FOR EACH DOMAIN (do 15 times, one file at a time):
+  
+  A. Extract routes for this domain
+     - Copy all relevant route handlers
+     - Copy all helper functions used by these routes
+     - Add proper imports
+     - Create Blueprint instance
+     - Add docstring explaining routes
+  
+  B. Verify completeness
+     - Check all routes from this domain included
+     - Check all dependencies imported
+     - Check no circular imports
+     - Check consistent error handling
+  
+  C. Test mentally
+     - Trace request flow through blueprint
+     - Verify response format matches original
+     - Check authentication/authorization preserved
+
+EXTRACTION ORDER (dependency-sorted):
+1. utility.py (least dependencies, simple routes)
+2. health.py (simple status checks)
+3. docs.py (static documentation)
+4. metrics.py (read-only metrics)
+5. websocket_api.py (WebSocket stats)
+6. logs.py (log file reading)
+7. pnl.py (PNL calculations)
+8. orders.py (order data)
+9. positions.py (position data)
+10. config.py (configuration management)
+11. system.py (system status)
+12. monitor.py (monitor control)
+13. guardian.py (guardian control)
+14. tmux.py (tmux session management)
+15. bot_control.py (bot lifecycle - most dependencies)
+16. robustness.py (cross-cutting concerns)
+
+PHASE 4: MAIN APP REFACTORING (30 minutes)
+──────────────────────────────────────────────────────────────────────────────
+1. Slim down app.py to <200 lines:
+   ```python
+   from flask import Flask, jsonify
+   from flask_cors import CORS
+   
+   # Import all blueprints
+   from routes import (
+       bot_control_bp,
+       config_bp,
+       logs_bp,
+       # ... all 15 blueprints
+   )
+   
+   app = Flask(__name__)
+   CORS(app)
+   
+   # Register all blueprints
+   app.register_blueprint(bot_control_bp)
+   app.register_blueprint(config_bp)
+   # ... register all 15
+   
+   # Global error handlers
+   @app.errorhandler(404)
+   def not_found(e):
+       return jsonify({'error': 'Not found'}), 404
+   
+   # ... other global handlers
+   
+   if __name__ == '__main__':
+       app.run(host='0.0.0.0', port=5001, debug=True)
+   ```
+
+2. Update routes/__init__.py to export all blueprints:
+   ```python
+   from .bot_control import bot_control_bp
+   from .config import config_bp
+   # ... import all 15 blueprints
+   
+   __all__ = [
+       'bot_control_bp',
+       'config_bp',
+       # ... export all 15
+   ]
+   ```
+
+PHASE 5: VERIFICATION (1 hour)
+──────────────────────────────────────────────────────────────────────────────
+1. Check all 133 routes accounted for
+2. Verify no duplicate routes
+3. Check all imports resolve
+4. Trace 5-10 sample request flows end-to-end
+5. Verify error handling preserved
+6. Check CORS settings preserved
+7. Verify authentication preserved
+
+================================================================================
+BLUEPRINT TEMPLATE (USE THIS FOR EACH FILE)
+================================================================================
+
+```python
+"""
+[Domain Name] Routes Blueprint
+
+This module handles all API routes related to [domain description].
+
+Routes:
+- [METHOD] [PATH] - [Description]
+- [METHOD] [PATH] - [Description]
+...
+
+Dependencies:
+- [List key dependencies]
+
+Author: Refactored from app.py God file (8,850 lines)
+Date: [Current date]
+"""
+
+import os
+import sys
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+
+from flask import Blueprint, jsonify, request, send_file
+# Add other Flask imports as needed
+
+# Initialize logger
+log = logging.getLogger(__name__)
+
+# Create blueprint
+[domain]_bp = Blueprint('[domain]', __name__)
+
+# ============================================================================
+# Helper Functions (private to this blueprint)
+# ============================================================================
+
+def _helper_function_1():
+    """Helper function description"""
+    pass
+
+# ============================================================================
+# Route Handlers
+# ============================================================================
+
+@[domain]_bp.route('/api/[path]', methods=['GET'])
+def route_handler_1():
+    """
+    Route description
+    
+    Returns:
+        JSON response with [description]
+    
+    Example:
+        GET /api/[path]
+        Response: {"status": "ok", "data": {...}}
+    """
+    try:
+        # Implementation
+        return jsonify({'status': 'ok'}), 200
+    except Exception as e:
+        log.error(f"Error in route_handler_1: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Add all other routes for this domain...
+
+# ============================================================================
+# Blueprint Configuration (if needed)
+# ============================================================================
+
+def init_[domain]_routes(app):
+    """
+    Initialize [domain] routes with app-specific configuration
+    
+    Args:
+        app: Flask application instance
+    """
+    # Any blueprint-specific initialization
+    pass
+```
+
+================================================================================
+CRITICAL SUCCESS CRITERIA (ALL MUST BE MET)
+================================================================================
+
+✅ COMPLETENESS
+   - All 133 routes preserved
+   - All helper functions included
+   - All imports correct
+   - No missing functionality
+
+✅ STRUCTURE
+   - 15 blueprint files created
+   - Each file 300-700 lines
+   - Main app.py <200 lines
+   - Clean imports (no circular deps)
+
+✅ BACKWARD COMPATIBILITY
+   - All URLs unchanged
+   - All request formats unchanged
+   - All response formats unchanged
+   - Frontend works without changes
+
+✅ TESTABILITY
+   - Each blueprint can be tested independently
+   - Clear separation of concerns
+   - Mockable dependencies
+
+✅ MAINTAINABILITY
+   - Clear domain boundaries
+   - Single Responsibility Principle
+   - Easy to find/modify routes
+   - No merge conflicts on team
+
+✅ DOCUMENTATION
+   - Each file has clear docstring
+   - Routes listed in file header
+   - Dependencies documented
+   - Examples provided
+
+================================================================================
+TESTING CHECKLIST (AFTER COMPLETION)
+================================================================================
+
+1. IMPORT TEST
+   ```python
+   # Test all blueprints import successfully
+   from routes import (
+       bot_control_bp,
+       config_bp,
+       # ... all 15
+   )
+   print("✅ All blueprints imported successfully")
+   ```
+
+2. ROUTE COUNT VERIFICATION
+   ```python
+   # Verify all 133 routes present
+   from app import app
+   routes = [str(rule) for rule in app.url_map.iter_rules()]
+   assert len(routes) >= 133, f"Missing routes! Found {len(routes)}/133"
+   print(f"✅ All {len(routes)} routes registered")
+   ```
+
+3. SAMPLE ENDPOINT TEST
+   - Test 5-10 representative endpoints
+   - Verify responses match original format
+   - Check error handling works
+
+4. CIRCULAR IMPORT CHECK
+   ```bash
+   # Try importing each blueprint individually
+   python -c "from routes.bot_control import bot_control_bp"
+   python -c "from routes.config import config_bp"
+   # ... test all 15
+   ```
+
+5. FILE SIZE CHECK
+   ```bash
+   # Verify file sizes reasonable
+   wc -l webui/backend/routes/*.py
+   wc -l webui/backend/app.py  # Should be <200 lines
+   ```
+
+================================================================================
+OUTPUT FORMAT
+================================================================================
+
+For each blueprint file you create, provide:
+
+1. FULL FILE CONTENT
+   - Complete, runnable Python code
+   - All imports included
+   - All functions complete (no placeholders)
+   - Proper error handling
+   - Clear docstrings
+
+2. FILE METADATA
+   - Filename: routes/[domain].py
+   - Line count: [actual lines]
+   - Routes handled: [list of routes]
+   - Dependencies: [key imports]
+
+3. INTEGRATION NOTES
+   - Any special setup needed
+   - Blueprint registration order if important
+   - Configuration requirements
+
+DO NOT:
+❌ Use placeholders like "... existing code ..."
+❌ Skip error handling
+❌ Omit imports
+❌ Leave TODOs or incomplete sections
+❌ Change route URLs or response formats
+
+DO:
+✅ Provide complete, working code
+✅ Include all error handling
+✅ Add helpful comments
+✅ Use consistent coding style
+✅ Test logic flow mentally
+
+================================================================================
+EXAMPLE: bot_control.py (REFERENCE IMPLEMENTATION)
+================================================================================
+
+```python
+"""
+Bot Control Routes Blueprint
+
+This module handles all API routes related to bot lifecycle management.
+
+Routes:
+- POST /api/bot/start - Start the trading bot
+- POST /api/bot/stop - Stop the trading bot
+- POST /api/bot/restart - Restart the trading bot
+- GET  /api/bot/status - Get bot running status
+- GET  /api/bots/status - Get status of all bots (bot + guardian + monitor)
+- POST /api/bots/stop - Emergency stop all bots
+
+Dependencies:
+- Subprocess management for bot process control
+- PID file reading for status checks
+- Tmux session management
+- File system access for logs and state files
+
+Author: Refactored from app.py God file (8,850 lines)
+Date: 2025-10-31
+"""
+
+import os
+import sys
+import logging
+import subprocess
+import signal
+from pathlib import Path
+from typing import Dict, Optional, List
+
+from flask import Blueprint, jsonify, request
+
+# Initialize logger
+log = logging.getLogger(__name__)
+
+# Create blueprint
+bot_control_bp = Blueprint('bot_control', __name__)
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+BOT_PID_FILE = Path("reports/bot.pid")
+GUARDIAN_PID_FILE = Path("reports/guardian.pid")
+MONITOR_PID_FILE = Path("reports/monitor.pid")
+
+# ============================================================================
+# Helper Functions (private to this blueprint)
+# ============================================================================
+
+def _is_process_running(pid: int) -> bool:
+    """Check if process with given PID is running"""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+def _read_pid_file(filepath: Path) -> Optional[int]:
+    """Read PID from file, return None if file doesn't exist or invalid"""
+    try:
+        if filepath.exists():
+            with open(filepath, 'r') as f:
+                return int(f.read().strip())
+    except (ValueError, IOError) as e:
+        log.warning(f"Failed to read PID from {filepath}: {e}")
+    return None
+
+def _stop_process_by_pid(pid: int, timeout: int = 5) -> bool:
+    """
+    Stop process gracefully (SIGTERM), then forcefully (SIGKILL) if needed
+    
+    Returns:
+        True if process stopped, False otherwise
+    """
+    try:
+        # Try graceful shutdown first
+        os.kill(pid, signal.SIGTERM)
+        
+        # Wait for process to exit
+        import time
+        for _ in range(timeout * 10):
+            if not _is_process_running(pid):
+                return True
+            time.sleep(0.1)
+        
+        # Force kill if still running
+        log.warning(f"Process {pid} didn't stop gracefully, force killing")
+        os.kill(pid, signal.SIGKILL)
+        return True
+        
+    except ProcessLookupError:
+        return True  # Already stopped
+    except Exception as e:
+        log.error(f"Failed to stop process {pid}: {e}")
+        return False
+
+# ============================================================================
+# Route Handlers
+# ============================================================================
+
+@bot_control_bp.route('/api/bot/status', methods=['GET'])
+def get_bot_status():
+    """
+    Get current status of trading bot
+    
+    Returns:
+        JSON response with bot running status and PID
+    
+    Example:
+        GET /api/bot/status
+        Response: {
+            "running": true,
+            "pid": 12345,
+            "uptime": "2h 15m"
+        }
+    """
+    try:
+        pid = _read_pid_file(BOT_PID_FILE)
+        
+        if pid and _is_process_running(pid):
+            # Calculate uptime from PID file modification time
+            mtime = BOT_PID_FILE.stat().st_mtime
+            uptime_seconds = int(time.time() - mtime)
+            
+            return jsonify({
+                'running': True,
+                'pid': pid,
+                'uptime_seconds': uptime_seconds
+            }), 200
+        else:
+            return jsonify({
+                'running': False,
+                'pid': None
+            }), 200
+            
+    except Exception as e:
+        log.error(f"Error checking bot status: {e}")
+        return jsonify({
+            'error': str(e),
+            'running': False
+        }), 500
+
+@bot_control_bp.route('/api/bot/start', methods=['POST'])
+def start_bot():
+    """
+    Start the trading bot in tmux session
+    
+    Returns:
+        JSON response with success/failure status
+    """
+    try:
+        # Check if already running
+        pid = _read_pid_file(BOT_PID_FILE)
+        if pid and _is_process_running(pid):
+            return jsonify({
+                'error': 'Bot already running',
+                'pid': pid
+            }), 400
+        
+        # Start bot in tmux session
+        cmd = [
+            'tmux', 'new-session', '-d', '-s', 'gridbot',
+            'cd ~/Projects/WorkingBot && python3 bot/run.py'
+        ]
+        
+        subprocess.run(cmd, check=True)
+        
+        # Wait briefly for PID file to be created
+        import time
+        time.sleep(1)
+        
+        new_pid = _read_pid_file(BOT_PID_FILE)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Bot started successfully',
+            'pid': new_pid
+        }), 200
+        
+    except subprocess.CalledProcessError as e:
+        log.error(f"Failed to start bot: {e}")
+        return jsonify({
+            'error': 'Failed to start bot',
+            'details': str(e)
+        }), 500
+    except Exception as e:
+        log.error(f"Error starting bot: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@bot_control_bp.route('/api/bot/stop', methods=['POST'])
+def stop_bot():
+    """
+    Stop the trading bot gracefully
+    
+    Returns:
+        JSON response with success/failure status
+    """
+    try:
+        pid = _read_pid_file(BOT_PID_FILE)
+        
+        if not pid:
+            return jsonify({
+                'error': 'Bot not running (no PID file)'
+            }), 400
+        
+        if not _is_process_running(pid):
+            # Clean up stale PID file
+            BOT_PID_FILE.unlink(missing_ok=True)
+            return jsonify({
+                'error': 'Bot not running (stale PID)',
+                'pid': pid
+            }), 400
+        
+        # Stop process
+        if _stop_process_by_pid(pid):
+            # Clean up PID file
+            BOT_PID_FILE.unlink(missing_ok=True)
+            
+            return jsonify({
+                'success': True,
+                'message': 'Bot stopped successfully',
+                'pid': pid
+            }), 200
+        else:
+            return jsonify({
+                'error': 'Failed to stop bot',
+                'pid': pid
+            }), 500
+            
+    except Exception as e:
+        log.error(f"Error stopping bot: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ... implement remaining routes following same pattern ...
+
+# /api/bot/restart
+# /api/bots/status (combined status of all bots)
+# /api/bots/stop (emergency stop all)
+
+```
+
+================================================================================
+FINAL DELIVERABLES
+================================================================================
+
+Provide these files in order:
+
+1. webui/backend/app.py (refactored main app, <200 lines)
+2. webui/backend/routes/__init__.py (blueprint exports)
+3. webui/backend/routes/utility.py
+4. webui/backend/routes/health.py
+5. webui/backend/routes/docs.py
+6. webui/backend/routes/metrics.py
+7. webui/backend/routes/websocket_api.py
+8. webui/backend/routes/logs.py
+9. webui/backend/routes/pnl.py
+10. webui/backend/routes/orders.py
+11. webui/backend/routes/positions.py
+12. webui/backend/routes/config.py
+13. webui/backend/routes/system.py
+14. webui/backend/routes/monitor.py
+15. webui/backend/routes/guardian.py
+16. webui/backend/routes/tmux.py
+17. webui/backend/routes/bot_control.py
+18. webui/backend/routes/robustness.py
+
+Plus (if needed):
+19. webui/backend/utils/file_helpers.py (shared utilities)
+20. webui/backend/utils/process_helpers.py
+21. webui/backend/utils/response_helpers.py
+
+Total: 18-21 files
+
+For each file, provide:
+- Complete implementation
+- Line count
+- Routes handled
+- Brief description
+
+================================================================================
+SUCCESS METRICS
+================================================================================
+
+After refactoring, we should achieve:
+
+📊 QUANTITATIVE:
+- 8,850 lines → ~15 files of ~590 lines each
+- 133 routes → distributed across 15 blueprints
+- Main app.py: <200 lines (95% reduction)
+- 0 circular dependencies
+- 100% backward compatibility
+
+💡 QUALITATIVE:
+- 10x easier to find specific route
+- 10x easier to test in isolation
+- 95% reduction in merge conflicts
+- Clear domain boundaries
+- Single Responsibility Principle
+- Easy to onboard new developers
+
+================================================================================
+READY? LET'S REFACTOR! 🚀
+================================================================================
+
+Take your time. Think deeply about the architecture. Extract one domain at a 
+time. Ensure completeness. Test mentally. Deliver production-ready code.
+
+Remember: We successfully refactored GridBot from 3,492 lines to 7 focused 
+modules with 96.7% test coverage. We can do the same here!
+
+START NOW. Think step by step. Extract carefully. Test thoroughly.
+
+GOOD LUCK! 🎯

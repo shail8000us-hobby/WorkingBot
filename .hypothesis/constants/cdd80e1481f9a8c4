@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/__init__.py
+# hypothesis_version: 6.141.1
+
+['ai_bp', 'bot_control_bp', 'capital_bp', 'config_bp', 'docs_bp', 'dynamic_brain_bp', 'emergency_bp', 'grid_mode_bp', 'guardian_bp', 'health_bp', 'liquidation_bp', 'logs_bp', 'metrics_bp', 'monitor_bp', 'orders_bp', 'pnl_bp', 'positions_bp', 'recon_bp', 'risk_bp', 'robustness_bp', 'strategy_bp', 'system_bp', 'tmux_bp', 'todos_bp', 'utility_bp', 'websocket_api_bp']

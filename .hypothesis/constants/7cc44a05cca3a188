@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/gatekeeper.py
+# hypothesis_version: 6.141.1
+
+[1.0, 110000.0, 100, '  4. Restart bot', '../grid_config.env', '.equity_floor_breach', '0', '1', '10', '110000', '=', 'BUY', 'EXECUTE_ORDERS', 'GRIDBOT_LOT', 'GRIDBOT_LOWER', 'GRIDBOT_REF', 'I_UNDERSTAND_LIVE', 'SafetyGatekeeper', 'TRADING_MODE', 'To resume trading:', 'UNKNOWN', 'YES', 'amount', 'block_rate', 'block_reason', 'blocks', 'buy', 'can_open_positions', 'checks', 'demo', 'emergency_flag', 'equity_floor_breach', 'false', 'force_block', 'gatekeeper', 'grid_config.env', 'invalid_trading_mode', 'last_block_reason', 'limit_price', 'live', 'notional_value', 'order_type', 'origin', 'price', 'qty', 'quantity', 'reduceOnly', 'reduce_only', 'side', 'size', 'trigger_price', 'true', 'unknown', 'utilization', 'yes', 'zone', '⛔ REDUCE ONLY MODE']

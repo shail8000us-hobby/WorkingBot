@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/guardian.py
+# hypothesis_version: 6.141.1
+
+[200, 500, '.guardian_health', '/api/guardian/start', '/api/guardian/status', '/api/guardian/stop', 'GET', 'POST', 'dashboard', 'error', 'guardian', 'health', 'is_healthy', 'message', 'r', 'running', 'seconds_since_check', 'start_guardian.sh', 'stop_guardian.sh', 'success', 'timestamp']

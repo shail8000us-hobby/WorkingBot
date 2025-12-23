@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/grid_calculator.py
+# hypothesis_version: 6.141.1
+
+[0.01, 0.5, '=', 'LONG', 'SHORT', 'entry_price', 'runner']

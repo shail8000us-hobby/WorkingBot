@@ -1,0 +1,160 @@
+{
+  "version": "1.0.0-stable",
+  "registry_created": "2025-10-21",
+  "last_updated": "2025-10-23",
+  "description": "Registry of production-locked files - Updated after WebSocket production-grade upgrade",
+  "locked_files": [
+    {
+      "path": "bot/strategy/gbot_ws.py",
+      "symbol": "\ud83d\udd12",
+      "status": "PRODUCTION-LOCKED",
+      "version": "1.0.0-stable",
+      "finalized_date": "2025-10-21",
+      "owner": "Shailendra Singh Rajawat",
+      "sha256": "241120e030ed1f9df8ff711948e76334629402364396c48a013f7bd048a62fc9",
+      "description": "Core grid trading strategy with WebSocket integration",
+      "critical_features": [
+        "Single pending buy enforcement (prevents multiple pending orders)",
+        "Thread-safe state management (locks + processed fills tracking)",
+        "TP placement with retry mechanism (protects capital)",
+        "Multi-layer fill deduplication (prevents double processing)",
+        "Maker/taker role tracking (fee monitoring)"
+      ],
+      "lines_of_code": 1169,
+      "risk_level": "CRITICAL",
+      "test_required": true,
+      "dry_run_required": true,
+      "checksum": "6f531bb64a3b81050c57322bdf9dcafa4590b6d169f8b0dfcd14e0f695546f08"
+    },
+    {
+      "path": "bot/delta_websocket/ws_manager.py",
+      "symbol": "\ud83d\udd12",
+      "status": "PRODUCTION-LOCKED",
+      "version": "1.0.0-stable",
+      "finalized_date": "2025-10-21",
+      "owner": "Shailendra Singh Rajawat",
+      "sha256": "8bd7f6f4028158c09ede7aa058922b79dfbe615bee5ce856ab5e4a7aa716617d",
+      "description": "WebSocket manager with dual-channel fill detection",
+      "critical_features": [
+        "Dual-channel fill detection (v2/user_trades PRIMARY, orders FALLBACK)",
+        "Multi-layer deduplication (_processed_order_fills tracking)",
+        "Maker/taker role extraction (fee monitoring)",
+        "Commission tracking (profitability analysis)",
+        "Thread-safe callback management"
+      ],
+      "lines_of_code": 587,
+      "risk_level": "CRITICAL",
+      "test_required": true,
+      "dry_run_required": true
+    },
+    {
+      "path": "bot/api/delta_client.py",
+      "symbol": "\ud83d\udd12",
+      "status": "PRODUCTION-LOCKED",
+      "version": "1.0.0-stable",
+      "finalized_date": "2025-10-21",
+      "owner": "Shailendra Singh Rajawat",
+      "sha256": "9202406c009e0790c031a85002d0cdc403572cd8c3948487ff611c7715738672",
+      "description": "Delta Exchange API client with authentication and Circuit Breaker protection",
+      "critical_features": [
+        "HMAC-SHA256 authentication (API key/secret signing)",
+        "Order placement/cancellation (trading operations)",
+        "Position management (portfolio tracking)",
+        "Error handling and retries (reliability)",
+        "Risk guard integration (safety checks)",
+        "Circuit Breaker pattern (API failure protection)"
+      ],
+      "lines_of_code": 493,
+      "risk_level": "CRITICAL",
+      "test_required": true,
+      "dry_run_required": true,
+      "checksum": "9202406c009e0790c031a85002d0cdc403572cd8c3948487ff611c7715738672",
+      "last_modified": "2025-10-23",
+      "modification_reason": "Added Circuit Breaker integration for Risk Management System"
+    },
+    {
+      "path": "bot/guardian/position_monitor.py",
+      "checksum": "84383c7ffdd882edce9514f19525ac6d0bbf07344edcc82dbdaebc31f0e54c0e",
+      "description": "Guardian position monitoring",
+      "sha256": "eedd254f5ffa8b59950829f471e2fda8f42aa1a5133fafbca160454ee3cab89c"
+    },
+    {
+      "path": "bot/websocket_fill_detector.py",
+      "sha256": "67fafc81f8e4cac7164b026f15687dbe2ed433fe3a73fcc1bbeef60c878ef0cb",
+      "checksum": "4bebd62b2811791fb4246e07e49710f46b4cbdaba1d8d67130d901806dccf6a9",
+      "description": "Fixed WebSocket URLs for Delta Exchange India"
+    },
+    {
+      "path": "bot/liquidation/integrated_monitor.py",
+      "symbol": "\ud83d\udd12",
+      "status": "PRODUCTION-LOCKED",
+      "version": "1.0.0-stable",
+      "finalized_date": "2025-10-23",
+      "owner": "Shailendra Singh Rajawat",
+      "sha256": "35606ca587b601e4773e7fe43a29ccd7af8a3d5ab2b002bdc62e3d5947e90c8e",
+      "description": "Integrated liquidation monitor using Delta Exchange as source of truth - Updated with UPNL sign fix (UCF to P&L conversion)",
+      "critical_features": [
+        "Direct Delta Exchange API integration",
+        "Real-time position monitoring",
+        "USD to INR conversion (85x multiplier)",
+        "Fallback handling for missing mark prices",
+        "Comprehensive risk assessment",
+        "Production-grade WebSocket reconnection (chaos-proof, TCP keepalive, metrics)"
+      ],
+      "dependencies": [
+        "bot.api.delta_client",
+        "config_manager.ConfigManager"
+      ],
+      "modification_approval_required": true,
+      "backup_required": true,
+      "last_modified": "2025-10-23",
+      "modification_reason": "WebSocket production-grade upgrade with 10 enterprise features"
+    }
+  ],
+  "protection_enabled": false,
+  "require_approval": false,
+  "require_password": false,
+  "integrity_check_on_startup": true,
+  "audit_log": ".audit_log.jsonl",
+  "backup_directory": "backups/",
+  "protection_layers": [
+    "File headers (visual warning)",
+    "Git pre-commit hooks (password authentication)",
+    "SHA256 integrity verification (runtime check)",
+    "File permissions (read-only)",
+    "macOS Finder color tags (visual indicator)",
+    "Audit logging (change tracking)"
+  ],
+  "git_protection": {
+    "protected_branch": "production/v1.0.0-locked",
+    "tag": "\ud83d\udd12v1.0.0-stable",
+    "require_signed_commits": false
+  },
+  "workflow": {
+    "change_request_process": [
+      "1. Review proposed changes thoroughly",
+      "2. Understand impact on trading logic",
+      "3. Test in dry-run mode",
+      "4. Enter Mac password to approve",
+      "5. Update checksums after change",
+      "6. Test in production with small capital"
+    ],
+    "rollback_process": [
+      "1. git checkout \ud83d\udd12v1.0.0-stable",
+      "2. Or restore from backups/",
+      "3. Verify checksums match",
+      "4. Restart bot"
+    ]
+  },
+  "contacts": {
+    "owner": "Shailendra Singh Rajawat",
+    "emergency_contact": "owner"
+  },
+  "notes": [
+    "These files have been tested and approved for production trading",
+    "Any modifications could affect real money trading operations",
+    "Always test changes in dry-run mode before production",
+    "Keep backups of working versions",
+    "Document all changes in git commits with clear reasoning"
+  ]
+}

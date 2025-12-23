@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/strategy/modules/volatility_handler.py
+# hypothesis_version: 6.141.1
+
+[15.0, '%Y%m%d_%H%M%S', '30', '300', '5', '500', '=', 'True', 'active', 'available', 'blocked_at', 'cancellation_failed', 'cancelled_at', 'cancelled_orders', 'client_order_id', 'current_iv', 'current_rv', 'entry_price', 'grid_level', 'iv', 'max_iv', 'max_rv', 'normalized_at', 'order_id', 'price', 'r', 'reason', 'runner', 'rv', 'spread', 'triggered_at', 'true', 'volatility_snapshot', 'w']

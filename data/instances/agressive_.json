@@ -1,0 +1,18 @@
+{
+  "id": "agressive_",
+  "name": "agressive ",
+  "mode": "demo",
+  "strategy": "aggressive",
+  "grid": {
+    "lower_range": 85000,
+    "upper_range": 105000,
+    "grid_step": 200,
+    "lot_size": 5,
+    "take_profit_percent": 0.3,
+    "stop_loss_percent": 3.0
+  },
+  "created_at": "2025-11-17T18:03:14.072753Z",
+  "pnl": 0,
+  "positions": 0,
+  "enabled": false
+}

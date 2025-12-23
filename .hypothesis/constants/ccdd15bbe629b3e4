@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/emergency_kill.py
+# hypothesis_version: 6.141.1
+
+['-S', '-lc', '.*', '.bot.lock', '.bot_instance.lock', '.bot_shutdown', '.guardian.pid', '.heartbeat', '.monitor.pid', '.tmux-gridbot', '=', 'Command timed out', 'USER', '__main__', 'aux', 'bash', 'cmd', 'default', 'errors', 'kill-server', 'killed', 'line', 'message', 'no server running', 'pid', 'ps', 'python.*bot.run', 'python.*bot/run', 'python.*bot_launcher', 'python.*bot_stopper', 'python.*emergency', 'python.*guardian', 'python.*heartbeat', 'python.*monitoring', 'python.*recon', 'reports/bot.pid', 'still_running', 'success', 'tmux', 'tmux_sessions', 'total_found', 'total_killed', 'unknown', 'user', '~']

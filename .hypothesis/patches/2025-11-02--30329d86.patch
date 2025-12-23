@@ -1,0 +1,36 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.141.1 <no-reply@hypothesis.works>
+Date: Sun, 02 Nov 2025 14:47:58
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/test_grid_properties.py
++++ ./tests/test_grid_properties.py
+@@ -562,17 +562,24 @@
+ 
+ @given(params=valid_grid_params())
+ @settings(max_examples=100)
++@example(
++    params={'lower': 1000.0,
++     'upper': 1050.0,
++     'step': 10.0,
++     'ref': 1000.0,
++     'tick_size': 1.0},  # or any other generated value
++).via('discovered failure')
+ def test_property_lower_bound_is_inclusive(params):
+     """
+     PROPERTY: Lower bound is INCLUSIVE (lower <= price)
+-    
++
+     Mutation Test: Catches change from <= to <
+     """
+     calc = GridCalculator(**params)
+-    
++
+     # Price exactly at lower bound should be within bounds
+     assert calc.is_within_bounds(params['lower']) == True
+-    
++
+     # Price just below lower bound should be outside bounds
+     assert calc.is_within_bounds(params['lower'] - 0.01) == False
+ 

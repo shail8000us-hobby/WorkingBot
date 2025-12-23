@@ -1,0 +1,476 @@
+2025-10-23 10:44:18,667 [INFO] 🔐 Verifying production-locked files...
+2025-10-23 10:44:18,668 [INFO] ✅ bot/strategy/gbot_ws.py: OK
+2025-10-23 10:44:18,668 [INFO] ✅ bot/delta_websocket/ws_manager.py: OK
+2025-10-23 10:44:18,669 [INFO] ✅ bot/api/delta_client.py: OK
+2025-10-23 10:44:18,669 [INFO] ✅ bot/guardian/position_monitor.py: OK
+2025-10-23 10:44:18,670 [INFO] ✅ bot/websocket_fill_detector.py: OK
+2025-10-23 10:44:18,670 [INFO] ✅ bot/liquidation/integrated_monitor.py: OK
+2025-10-23 10:44:18,670 [INFO] ✅ All production-locked files verified successfully
+2025-10-23 10:44:18,681 [INFO] runner: Using professional logging setup with rotation
+2025-10-23 10:44:18,681 [INFO] Using professional logging setup with rotation
+2025-10-23 10:44:18,682 [INFO] runner: ✅ Noisy library loggers suppressed (set to WARNING)
+2025-10-23 10:44:18,682 [INFO] ✅ Noisy library loggers suppressed (set to WARNING)
+2025-10-23 10:44:18,695 [INFO] 📋 Initialized 14 parameter definitions
+2025-10-23 10:44:18,696 [INFO] ✅ Configuration loaded successfully: 14 parameters
+2025-10-23 10:44:18,696 [INFO] 🔧 Configuration Manager initialized
+2025-10-23 10:44:18,697 [INFO] 📁 Config file: /Users/shailendrasinghrajawat/Documents/WorkingBot/grid_config.env
+2025-10-23 10:44:18,697 [INFO] 📊 Parameters defined: 14
+2025-10-23 10:44:18,698 [INFO] runner: env: loaded secrets/api_keys.env
+2025-10-23 10:44:18,698 [INFO] env: loaded secrets/api_keys.env
+2025-10-23 10:44:18,699 [INFO] runner: env: loaded .env
+2025-10-23 10:44:18,699 [INFO] env: loaded .env
+2025-10-23 10:44:18,715 [INFO] runner: env: loaded grid_config.env
+2025-10-23 10:44:18,715 [INFO] env: loaded grid_config.env
+2025-10-23 10:44:18,716 [WARNING] ================================================================================
+2025-10-23 10:44:18,716 [WARNING] 🔴 LIVE MODE ENABLED - REAL MONEY TRADING!
+2025-10-23 10:44:18,716 [WARNING] ================================================================================
+2025-10-23 10:44:18,716 [WARNING] ⚠️  WARNING: This bot will place REAL orders with REAL money
+2025-10-23 10:44:18,716 [WARNING] 📍 API: https://api.india.delta.exchange
+2025-10-23 10:44:18,716 [WARNING] 💰 Funds: Your actual account balance
+2025-10-23 10:44:18,716 [WARNING] 🛡️  Ensure all safety settings are configured correctly
+2025-10-23 10:44:18,716 [WARNING] ================================================================================
+2025-10-23 10:44:18,716 [WARNING] 🔴 Loaded LIVE credentials (Key: UWlRQubJ...)
+2025-10-23 10:44:18,716 [WARNING] 🔴 LIVE Product ID: 27, Symbol: BTCUSD
+2025-10-23 10:44:18,716 [WARNING] 🔴 HTTP: https://api.india.delta.exchange
+2025-10-23 10:44:18,716 [WARNING] 🔴 WebSocket: wss://socket.india.delta.exchange
+2025-10-23 10:44:18,716 [INFO] runner: 
+2025-10-23 10:44:18,716 [INFO] 
+2025-10-23 10:44:18,716 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,716 [INFO] ================================================================================
+2025-10-23 10:44:18,716 [INFO] runner: 🔴 TRADING MODE: LIVE MODE - REAL MONEY TRADING
+2025-10-23 10:44:18,716 [INFO] 🔴 TRADING MODE: LIVE MODE - REAL MONEY TRADING
+2025-10-23 10:44:18,716 [INFO] runner: API URL: https://api.india.delta.exchange
+2025-10-23 10:44:18,716 [INFO] API URL: https://api.india.delta.exchange
+2025-10-23 10:44:18,716 [INFO] runner: Risk Level: HIGH RISK - Real money at stake
+2025-10-23 10:44:18,716 [INFO] Risk Level: HIGH RISK - Real money at stake
+2025-10-23 10:44:18,716 [INFO] runner: Funds: Real account balance
+2025-10-23 10:44:18,716 [INFO] Funds: Real account balance
+2025-10-23 10:44:18,716 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,716 [INFO] ================================================================================
+2025-10-23 10:44:18,716 [INFO] runner: 
+2025-10-23 10:44:18,716 [INFO] 
+2025-10-23 10:44:18,781 [INFO] ======================================================================
+2025-10-23 10:44:18,782 [INFO] 🛡️  SAFETY GATEKEEPER INITIALIZED
+2025-10-23 10:44:18,782 [INFO] ======================================================================
+2025-10-23 10:44:18,782 [INFO] All order placement must pass through gatekeeper
+2025-10-23 10:44:18,782 [INFO] Checking: Emergency flag, EXECUTE_ORDERS, I_UNDERSTAND_LIVE, Mode, Margin Utilization
+2025-10-23 10:44:18,782 [INFO] ======================================================================
+2025-10-23 10:44:18,782 [INFO] runner: 
+2025-10-23 10:44:18,782 [INFO] 
+2025-10-23 10:44:18,783 [INFO] ======================================================================
+2025-10-23 10:44:18,783 [INFO] 💰 LOSS LIMITS VALIDATION
+2025-10-23 10:44:18,783 [INFO] ======================================================================
+2025-10-23 10:44:18,783 [INFO] Trader limit:   ₹3,000.00
+2025-10-23 10:44:18,783 [INFO] Guardian limit: ₹2,850.00
+2025-10-23 10:44:18,783 [INFO] 
+2025-10-23 10:44:18,783 [INFO] ✅ Good buffer: ₹150.00 (5.0%)
+2025-10-23 10:44:18,783 [INFO] 
+2025-10-23 10:44:18,783 [INFO] ✅ Configuration is VALID
+2025-10-23 10:44:18,783 [INFO]    Guardian will act before Trader stops
+2025-10-23 10:44:18,783 [INFO]    This is the correct setup!
+2025-10-23 10:44:18,783 [INFO] 
+2025-10-23 10:44:18,783 [INFO] ======================================================================
+2025-10-23 10:44:18,783 [INFO] ✅ VALIDATION PASSED - No issues found
+2025-10-23 10:44:18,783 [INFO] ======================================================================
+2025-10-23 10:44:18,783 [INFO] runner: 
+2025-10-23 10:44:18,783 [INFO] 
+2025-10-23 10:44:18,783 [INFO] runner: 🌊 Volatility tracker disabled (needs WebSocket migration)
+2025-10-23 10:44:18,783 [INFO] 🌊 Volatility tracker disabled (needs WebSocket migration)
+2025-10-23 10:44:18,783 [INFO] runner: 
+2025-10-23 10:44:18,783 [INFO] 
+2025-10-23 10:44:18,783 [INFO] runner: 🛡️  Initializing Liquidation Protection System...
+2025-10-23 10:44:18,783 [INFO] 🛡️  Initializing Liquidation Protection System...
+2025-10-23 10:44:18,783 [INFO] runner: 
+2025-10-23 10:44:18,783 [INFO] 
+2025-10-23 10:44:18,783 [INFO] runner: ✅ Liquidation protection modules loaded
+2025-10-23 10:44:18,783 [INFO] ✅ Liquidation protection modules loaded
+2025-10-23 10:44:18,783 [INFO] runner:    • Margin Utilization Monitor
+2025-10-23 10:44:18,783 [INFO]    • Margin Utilization Monitor
+2025-10-23 10:44:18,783 [INFO] runner:    • Liquidation Distance Monitor
+2025-10-23 10:44:18,783 [INFO]    • Liquidation Distance Monitor
+2025-10-23 10:44:18,783 [INFO] runner:    • MTM (Mark-to-Market) Tracker
+2025-10-23 10:44:18,783 [INFO]    • MTM (Mark-to-Market) Tracker
+2025-10-23 10:44:18,784 [INFO] runner: 
+2025-10-23 10:44:18,784 [INFO] 
+2025-10-23 10:44:18,802 [INFO] Single instance lock acquired (PID: 83276)
+2025-10-23 10:44:18,802 [INFO] runner: ✅ Single instance check passed: Lock acquired successfully (PID: 83276)
+2025-10-23 10:44:18,802 [INFO] ✅ Single instance check passed: Lock acquired successfully (PID: 83276)
+2025-10-23 10:44:18,802 [INFO] runner: Signal handlers registered (Ctrl+C will gracefully stop the bot)
+2025-10-23 10:44:18,802 [INFO] Signal handlers registered (Ctrl+C will gracefully stop the bot)
+2025-10-23 10:44:18,803 [INFO] ======================================================================
+2025-10-23 10:44:18,803 [INFO] 👥 TWO-MAN RULE (CONFIG GUARD) INITIALIZED
+2025-10-23 10:44:18,803 [INFO] ======================================================================
+2025-10-23 10:44:18,803 [INFO] Mode: live
+2025-10-23 10:44:18,803 [INFO] Timeout: 600s (10 minutes)
+2025-10-23 10:44:18,803 [INFO] Auto-revert: True
+2025-10-23 10:44:18,803 [INFO] Guarded Keys: 7
+2025-10-23 10:44:18,803 [INFO] Safety Features: 5
+2025-10-23 10:44:18,803 [INFO] ======================================================================
+2025-10-23 10:44:18,803 [INFO] runner: grid: online  symbol=BTCUSD  LOWER=105000.0  UPPER=110000.0  STEP=500.0  REF=108000.0  LOT=1.0  max_open=10
+2025-10-23 10:44:18,803 [INFO] grid: online  symbol=BTCUSD  LOWER=105000.0  UPPER=110000.0  STEP=500.0  REF=108000.0  LOT=1.0  max_open=10
+2025-10-23 10:44:18,803 [INFO] runner: 🛡️  Initializing liquidation protection monitors...
+2025-10-23 10:44:18,803 [INFO] 🛡️  Initializing liquidation protection monitors...
+2025-10-23 10:44:18,806 [INFO] ✅ Integrated Liquidation Monitor initialized with direct Delta Exchange API
+2025-10-23 10:44:18,807 [INFO] runner: 🔐 Verifying production-locked files...
+2025-10-23 10:44:18,807 [INFO] 🔐 Verifying production-locked files...
+2025-10-23 10:44:18,807 [INFO] runner: ✅ bot/strategy/gbot_ws.py: OK
+2025-10-23 10:44:18,807 [INFO] ✅ bot/strategy/gbot_ws.py: OK
+2025-10-23 10:44:18,807 [INFO] runner: ✅ bot/delta_websocket/ws_manager.py: OK
+2025-10-23 10:44:18,807 [INFO] ✅ bot/delta_websocket/ws_manager.py: OK
+2025-10-23 10:44:18,807 [INFO] runner: ✅ bot/api/delta_client.py: OK
+2025-10-23 10:44:18,807 [INFO] ✅ bot/api/delta_client.py: OK
+2025-10-23 10:44:18,807 [INFO] runner: ✅ bot/guardian/position_monitor.py: OK
+2025-10-23 10:44:18,807 [INFO] ✅ bot/guardian/position_monitor.py: OK
+2025-10-23 10:44:18,807 [INFO] runner: ✅ bot/websocket_fill_detector.py: OK
+2025-10-23 10:44:18,807 [INFO] ✅ bot/websocket_fill_detector.py: OK
+2025-10-23 10:44:18,807 [INFO] runner: ✅ bot/liquidation/integrated_monitor.py: OK
+2025-10-23 10:44:18,807 [INFO] ✅ bot/liquidation/integrated_monitor.py: OK
+2025-10-23 10:44:18,807 [INFO] runner: ✅ All production-locked files verified successfully
+2025-10-23 10:44:18,807 [INFO] ✅ All production-locked files verified successfully
+2025-10-23 10:44:18,807 [INFO] runner: Using professional logging setup with rotation
+2025-10-23 10:44:18,807 [INFO] Using professional logging setup with rotation
+2025-10-23 10:44:18,807 [INFO] runner: ✅ Noisy library loggers suppressed (set to WARNING)
+2025-10-23 10:44:18,807 [INFO] ✅ Noisy library loggers suppressed (set to WARNING)
+2025-10-23 10:44:18,810 [INFO] runner: env: loaded secrets/api_keys.env
+2025-10-23 10:44:18,810 [INFO] env: loaded secrets/api_keys.env
+2025-10-23 10:44:18,813 [INFO] runner: env: loaded .env
+2025-10-23 10:44:18,813 [INFO] env: loaded .env
+2025-10-23 10:44:18,845 [INFO] runner: env: loaded grid_config.env
+2025-10-23 10:44:18,845 [INFO] env: loaded grid_config.env
+2025-10-23 10:44:18,845 [WARNING] ================================================================================
+2025-10-23 10:44:18,845 [WARNING] 🔴 LIVE MODE ENABLED - REAL MONEY TRADING!
+2025-10-23 10:44:18,845 [WARNING] ================================================================================
+2025-10-23 10:44:18,845 [WARNING] ⚠️  WARNING: This bot will place REAL orders with REAL money
+2025-10-23 10:44:18,845 [WARNING] 📍 API: https://api.india.delta.exchange
+2025-10-23 10:44:18,845 [WARNING] 💰 Funds: Your actual account balance
+2025-10-23 10:44:18,845 [WARNING] 🛡️  Ensure all safety settings are configured correctly
+2025-10-23 10:44:18,845 [WARNING] ================================================================================
+2025-10-23 10:44:18,845 [WARNING] 🔴 Loaded LIVE credentials (Key: UWlRQubJ...)
+2025-10-23 10:44:18,845 [WARNING] 🔴 LIVE Product ID: 27, Symbol: BTCUSD
+2025-10-23 10:44:18,845 [WARNING] 🔴 HTTP: https://api.india.delta.exchange
+2025-10-23 10:44:18,845 [WARNING] 🔴 WebSocket: wss://socket.india.delta.exchange
+2025-10-23 10:44:18,845 [INFO] runner: 
+2025-10-23 10:44:18,845 [INFO] 
+2025-10-23 10:44:18,845 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,845 [INFO] ================================================================================
+2025-10-23 10:44:18,845 [INFO] runner: 🔴 TRADING MODE: LIVE MODE - REAL MONEY TRADING
+2025-10-23 10:44:18,845 [INFO] 🔴 TRADING MODE: LIVE MODE - REAL MONEY TRADING
+2025-10-23 10:44:18,845 [INFO] runner: API URL: https://api.india.delta.exchange
+2025-10-23 10:44:18,845 [INFO] API URL: https://api.india.delta.exchange
+2025-10-23 10:44:18,846 [INFO] runner: Risk Level: HIGH RISK - Real money at stake
+2025-10-23 10:44:18,846 [INFO] Risk Level: HIGH RISK - Real money at stake
+2025-10-23 10:44:18,846 [INFO] runner: Funds: Real account balance
+2025-10-23 10:44:18,846 [INFO] Funds: Real account balance
+2025-10-23 10:44:18,846 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,846 [INFO] ================================================================================
+2025-10-23 10:44:18,846 [INFO] runner: 
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] runner: 
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] ======================================================================
+2025-10-23 10:44:18,846 [INFO] 💰 LOSS LIMITS VALIDATION
+2025-10-23 10:44:18,846 [INFO] ======================================================================
+2025-10-23 10:44:18,846 [INFO] Trader limit:   ₹3,000.00
+2025-10-23 10:44:18,846 [INFO] Guardian limit: ₹2,850.00
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] ✅ Good buffer: ₹150.00 (5.0%)
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] ✅ Configuration is VALID
+2025-10-23 10:44:18,846 [INFO]    Guardian will act before Trader stops
+2025-10-23 10:44:18,846 [INFO]    This is the correct setup!
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] ======================================================================
+2025-10-23 10:44:18,846 [INFO] ✅ VALIDATION PASSED - No issues found
+2025-10-23 10:44:18,846 [INFO] ======================================================================
+2025-10-23 10:44:18,846 [INFO] runner: 
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] runner: 🌊 Volatility tracker disabled (needs WebSocket migration)
+2025-10-23 10:44:18,846 [INFO] 🌊 Volatility tracker disabled (needs WebSocket migration)
+2025-10-23 10:44:18,846 [INFO] runner: 
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] runner: 🛡️  Initializing Liquidation Protection System...
+2025-10-23 10:44:18,846 [INFO] 🛡️  Initializing Liquidation Protection System...
+2025-10-23 10:44:18,846 [INFO] runner: 
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] runner: ✅ Liquidation protection modules loaded
+2025-10-23 10:44:18,846 [INFO] ✅ Liquidation protection modules loaded
+2025-10-23 10:44:18,846 [INFO] runner:    • Margin Utilization Monitor
+2025-10-23 10:44:18,846 [INFO]    • Margin Utilization Monitor
+2025-10-23 10:44:18,846 [INFO] runner:    • Liquidation Distance Monitor
+2025-10-23 10:44:18,846 [INFO]    • Liquidation Distance Monitor
+2025-10-23 10:44:18,846 [INFO] runner:    • MTM (Mark-to-Market) Tracker
+2025-10-23 10:44:18,846 [INFO]    • MTM (Mark-to-Market) Tracker
+2025-10-23 10:44:18,846 [INFO] runner: 
+2025-10-23 10:44:18,846 [INFO] 
+2025-10-23 10:44:18,846 [INFO] runner: ✅ Liquidation protection active
+2025-10-23 10:44:18,846 [INFO] ✅ Liquidation protection active
+2025-10-23 10:44:18,847 [WARNING] runner: ⚠️  Liquidation protection initialization failed: 'IntegratedLiquidationMonitor' object has no attribute 'max_utilization'
+2025-10-23 10:44:18,847 [WARNING] ⚠️  Liquidation protection initialization failed: 'IntegratedLiquidationMonitor' object has no attribute 'max_utilization'
+2025-10-23 10:44:18,847 [WARNING] runner: Bot will continue without liquidation protection
+2025-10-23 10:44:18,847 [WARNING] Bot will continue without liquidation protection
+2025-10-23 10:44:18,847 [INFO] runner: ✅ Heartbeat enabled: .heartbeat (update every 5s)
+2025-10-23 10:44:18,847 [INFO] ✅ Heartbeat enabled: .heartbeat (update every 5s)
+2025-10-23 10:44:18,847 [INFO] runner: 💓 Heartbeat started: PID=83276
+2025-10-23 10:44:18,847 [INFO] 💓 Heartbeat started: PID=83276
+2025-10-23 10:44:18,847 [INFO] runner: 💓 Heartbeat system activated
+2025-10-23 10:44:18,847 [INFO] 💓 Heartbeat system activated
+2025-10-23 10:44:18,847 [INFO] runner: 📝 Created PID file: reports/bot.pid (PID: 83276)
+2025-10-23 10:44:18,847 [INFO] 📝 Created PID file: reports/bot.pid (PID: 83276)
+2025-10-23 10:44:18,847 [INFO] runner: 
+2025-10-23 10:44:18,847 [INFO] 
+2025-10-23 10:44:18,847 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,847 [INFO] ================================================================================
+2025-10-23 10:44:18,847 [INFO] runner: 🚀 WEBSOCKET GRIDBOT - PRODUCTION MODE
+2025-10-23 10:44:18,847 [INFO] 🚀 WEBSOCKET GRIDBOT - PRODUCTION MODE
+2025-10-23 10:44:18,848 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,848 [INFO] ================================================================================
+2025-10-23 10:44:18,848 [INFO] runner: Symbol: BTCUSD
+2025-10-23 10:44:18,848 [INFO] Symbol: BTCUSD
+2025-10-23 10:44:18,848 [INFO] runner: Grid Range: $105,000 - $110,000
+2025-10-23 10:44:18,848 [INFO] Grid Range: $105,000 - $110,000
+2025-10-23 10:44:18,848 [INFO] runner: Step: $500
+2025-10-23 10:44:18,848 [INFO] Step: $500
+2025-10-23 10:44:18,848 [INFO] runner: Reference: $108,000
+2025-10-23 10:44:18,848 [INFO] Reference: $108,000
+2025-10-23 10:44:18,848 [INFO] runner: Lot Size: 1 contracts
+2025-10-23 10:44:18,848 [INFO] Lot Size: 1 contracts
+2025-10-23 10:44:18,848 [INFO] runner: Max Open: 10 positions
+2025-10-23 10:44:18,848 [INFO] Max Open: 10 positions
+2025-10-23 10:44:18,848 [INFO] runner: Mode: LIVE
+2025-10-23 10:44:18,848 [INFO] Mode: LIVE
+2025-10-23 10:44:18,848 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,848 [INFO] ================================================================================
+2025-10-23 10:44:18,848 [INFO] runner: 
+2025-10-23 10:44:18,848 [INFO] 
+2025-10-23 10:44:18,848 [INFO] runner: ✨ FEATURES:
+2025-10-23 10:44:18,848 [INFO] ✨ FEATURES:
+2025-10-23 10:44:18,848 [INFO] runner:   • WebSocket-only data (single source of truth)
+2025-10-23 10:44:18,848 [INFO]   • WebSocket-only data (single source of truth)
+2025-10-23 10:44:18,848 [INFO] runner:   • Native Delta client (no CCXT quirks)
+2025-10-23 10:44:18,848 [INFO]   • Native Delta client (no CCXT quirks)
+2025-10-23 10:44:18,848 [INFO] runner:   • Instant fill detection (0.05s vs 20s)
+2025-10-23 10:44:18,848 [INFO]   • Instant fill detection (0.05s vs 20s)
+2025-10-23 10:44:18,848 [INFO] runner:   • Complete event logging (no ghost orders)
+2025-10-23 10:44:18,848 [INFO]   • Complete event logging (no ghost orders)
+2025-10-23 10:44:18,848 [INFO] runner:   • Event-driven architecture (400x faster)
+2025-10-23 10:44:18,848 [INFO]   • Event-driven architecture (400x faster)
+2025-10-23 10:44:18,848 [INFO] runner: ================================================================================
+2025-10-23 10:44:18,848 [INFO] ================================================================================
+2025-10-23 10:44:18,848 [INFO] runner: 
+2025-10-23 10:44:18,848 [INFO] 
+2025-10-23 10:44:18,852 [INFO] ✅ Order Status Poller initialized (interval: 5.0s)
+2025-10-23 10:44:18,852 [INFO] ✅ Position Synchronizer initialized (interval: 30.0s)
+2025-10-23 10:44:18,852 [INFO] ✅ WebSocket Fill Detector initialized (URL: wss://socket.india.delta.exchange)
+2025-10-23 10:44:18,852 [INFO] ✅ Robust Fill Detector initialized
+2025-10-23 10:44:18,852 [INFO] 🌐 Global robust fill detector created
+2025-10-23 10:44:18,852 [INFO] runner: ✅ Robust fill detection system initialized
+2025-10-23 10:44:18,852 [INFO] ✅ Robust fill detection system initialized
+2025-10-23 10:44:18,853 [INFO] ✅ Integrated Liquidation Monitor initialized with direct Delta Exchange API
+2025-10-23 10:44:18,853 [INFO] 🚀 Integrated liquidation monitoring started with direct Delta Exchange API
+2025-10-23 10:44:18,853 [INFO] runner: ✅ Real-time liquidation monitoring initialized
+2025-10-23 10:44:18,853 [INFO] ✅ Real-time liquidation monitoring initialized
+2025-10-23 10:44:18,853 [INFO] runner: ✅ Native Delta client initialized
+2025-10-23 10:44:18,853 [INFO] ✅ Native Delta client initialized
+2025-10-23 10:44:18,853 [INFO] runner:    Base URL: https://api.india.delta.exchange
+2025-10-23 10:44:18,853 [INFO]    Base URL: https://api.india.delta.exchange
+2025-10-23 10:44:18,853 [INFO] runner:    Product ID: 27
+2025-10-23 10:44:18,853 [INFO]    Product ID: 27
+2025-10-23 10:44:18,853 [INFO] runner: 🔌 Initializing WebSocket GridBot for BTCUSD
+2025-10-23 10:44:18,853 [INFO] 🔌 Initializing WebSocket GridBot for BTCUSD
+2025-10-23 10:44:18,853 [INFO] runner:    Grid: 105000.0 - 110000.0, Step: 500.0
+2025-10-23 10:44:18,853 [INFO]    Grid: 105000.0 - 110000.0, Step: 500.0
+2025-10-23 10:44:18,853 [INFO] runner:    Lot: 1, Max Open: 10
+2025-10-23 10:44:18,853 [INFO]    Lot: 1, Max Open: 10
+2025-10-23 10:44:18,853 [INFO] runner:    Mode: LIVE
+2025-10-23 10:44:18,853 [INFO]    Mode: LIVE
+2025-10-23 10:44:18,853 [INFO] runner: 📡 WebSocket Manager initialized for BTCUSD
+2025-10-23 10:44:18,853 [INFO] 📡 WebSocket Manager initialized for BTCUSD
+2025-10-23 10:44:18,853 [INFO] runner: 📡 WebSocket callbacks registered
+2025-10-23 10:44:18,853 [INFO] 📡 WebSocket callbacks registered
+2025-10-23 10:44:18,853 [INFO] runner: ✅ WebSocket GridBot initialized
+2025-10-23 10:44:18,853 [INFO] ✅ WebSocket GridBot initialized
+2025-10-23 10:44:18,853 [INFO] runner: [38;5;208m🚀 Starting Pure WebSocket GridBot (Single Source of Truth)...[0m
+2025-10-23 10:44:18,853 [INFO] [38;5;208m🚀 Starting Pure WebSocket GridBot (Single Source of Truth)...[0m
+2025-10-23 10:44:18,853 [INFO] runner:    Mode: LIVE
+2025-10-23 10:44:18,853 [INFO]    Mode: LIVE
+2025-10-23 10:44:18,853 [INFO] runner:    • WebSocket: Instant price updates
+2025-10-23 10:44:18,853 [INFO]    • WebSocket: Instant price updates
+2025-10-23 10:44:18,853 [INFO] runner:    • WebSocket: Instant fill detection (0.05s, 100% reliable)
+2025-10-23 10:44:18,853 [INFO]    • WebSocket: Instant fill detection (0.05s, 100% reliable)
+2025-10-23 10:44:18,853 [INFO] runner: 🔌 Connecting to WebSocket...
+2025-10-23 10:44:18,853 [INFO] 🔌 Connecting to WebSocket...
+2025-10-23 10:44:18,854 [INFO] runner: 🔌 Delta WebSocket initialized: wss://socket.india.delta.exchange
+2025-10-23 10:44:18,854 [INFO] 🔌 Delta WebSocket initialized: wss://socket.india.delta.exchange
+2025-10-23 10:44:18,854 [INFO] runner:    Max reconnect attempts: 100
+2025-10-23 10:44:18,854 [INFO]    Max reconnect attempts: 100
+2025-10-23 10:44:18,854 [INFO] runner:    Base delay: 1s, Max delay: 60s
+2025-10-23 10:44:18,854 [INFO]    Base delay: 1s, Max delay: 60s
+2025-10-23 10:44:18,855 [INFO] runner:    Jitter: ±20%
+2025-10-23 10:44:18,855 [INFO]    Jitter: ±20%
+2025-10-23 10:44:18,855 [INFO] runner: 🔌 Initiating WebSocket connection to wss://socket.india.delta.exchange...
+2025-10-23 10:44:18,855 [INFO] 🔌 Initiating WebSocket connection to wss://socket.india.delta.exchange...
+2025-10-23 10:44:18,855 [INFO] runner: 💓 [HEARTBEAT] Monitor started
+2025-10-23 10:44:18,855 [INFO] 💓 [HEARTBEAT] Monitor started
+2025-10-23 10:44:18,855 [INFO] runner: 💓 Heartbeat monitor thread started
+2025-10-23 10:44:18,855 [INFO] 💓 Heartbeat monitor thread started
+2025-10-23 10:44:18,855 [INFO] runner:    ├─ Ping interval: 30s
+2025-10-23 10:44:18,855 [INFO]    ├─ Ping interval: 30s
+2025-10-23 10:44:18,855 [INFO] runner: 🔌 [CONNECTION] Establishing new connection...
+2025-10-23 10:44:18,855 [INFO] 🔌 [CONNECTION] Establishing new connection...
+2025-10-23 10:44:18,855 [INFO] runner:    ├─ Warning threshold: 45s
+2025-10-23 10:44:18,855 [INFO]    ├─ Warning threshold: 45s
+2025-10-23 10:44:18,855 [INFO] runner:    ├─ URL: wss://socket.india.delta.exchange
+2025-10-23 10:44:18,855 [INFO]    ├─ URL: wss://socket.india.delta.exchange
+2025-10-23 10:44:18,855 [INFO] runner:    └─ Dead connection threshold: 60s
+2025-10-23 10:44:18,855 [INFO]    └─ Dead connection threshold: 60s
+2025-10-23 10:44:18,855 [INFO] runner:    ├─ TCP keepalive: Enabled
+2025-10-23 10:44:18,855 [INFO]    ├─ TCP keepalive: Enabled
+2025-10-23 10:44:18,855 [INFO] runner:    └─ Timeout: 15s
+2025-10-23 10:44:18,855 [INFO]    └─ Timeout: 15s
+2025-10-23 10:44:18,855 [INFO] runner: ⏳ [CONNECTION] Waiting for connection...
+2025-10-23 10:44:18,855 [INFO] ⏳ [CONNECTION] Waiting for connection...
+2025-10-23 10:44:19,466 [INFO] runner: ✅ [LIFECYCLE] WebSocket connected successfully
+2025-10-23 10:44:19,466 [INFO] ✅ [LIFECYCLE] WebSocket connected successfully
+2025-10-23 10:44:19,466 [INFO] runner:    └─ URL: wss://socket.india.delta.exchange
+2025-10-23 10:44:19,466 [INFO]    └─ URL: wss://socket.india.delta.exchange
+2025-10-23 10:44:19,466 [INFO] runner: 🔐 Authenticating WebSocket connection...
+2025-10-23 10:44:19,466 [INFO] 🔐 Authenticating WebSocket connection...
+2025-10-23 10:44:19,479 [INFO] runner: ✅ [CONNECTION] New connection established successfully
+2025-10-23 10:44:19,479 [INFO] ✅ [CONNECTION] New connection established successfully
+2025-10-23 10:44:19,479 [INFO] runner: 🔄 [RESUBSCRIBE] No channels to resubscribe
+2025-10-23 10:44:19,479 [INFO] 🔄 [RESUBSCRIBE] No channels to resubscribe
+2025-10-23 10:44:19,641 [INFO] runner: ✅ WebSocket connection confirmed (received: success)
+2025-10-23 10:44:19,641 [INFO] ✅ WebSocket connection confirmed (received: success)
+2025-10-23 10:44:19,691 [INFO] runner: ✅ WebSocket authenticated!
+2025-10-23 10:44:19,691 [INFO] ✅ WebSocket authenticated!
+2025-10-23 10:44:19,691 [INFO] runner: ✅ WebSocket ready!
+2025-10-23 10:44:19,691 [INFO] ✅ WebSocket ready!
+2025-10-23 10:44:19,691 [INFO] runner: 📡 Subscribing to channels...
+2025-10-23 10:44:19,691 [INFO] 📡 Subscribing to channels...
+2025-10-23 10:44:19,691 [INFO] runner: 📡 Subscribing to v2/user_trades (['BTCUSD'])
+2025-10-23 10:44:19,691 [INFO] 📡 Subscribing to v2/user_trades (['BTCUSD'])
+2025-10-23 10:44:19,691 [INFO] runner: 📡 Subscribing to orders (['BTCUSD'])
+2025-10-23 10:44:19,691 [INFO] 📡 Subscribing to orders (['BTCUSD'])
+2025-10-23 10:44:19,691 [INFO] runner: 📡 Subscribing to positions (['all'])
+2025-10-23 10:44:19,691 [INFO] 📡 Subscribing to positions (['all'])
+2025-10-23 10:44:19,691 [INFO] runner: 📡 Subscribing to margins
+2025-10-23 10:44:19,691 [INFO] 📡 Subscribing to margins
+2025-10-23 10:44:19,691 [INFO] runner: 📡 Subscribing to v2/ticker (['BTCUSD'])
+2025-10-23 10:44:19,691 [INFO] 📡 Subscribing to v2/ticker (['BTCUSD'])
+2025-10-23 10:44:19,692 [INFO] runner: 📡 Subscribing to l2_orderbook (['BTCUSD'])
+2025-10-23 10:44:19,692 [INFO] 📡 Subscribing to l2_orderbook (['BTCUSD'])
+2025-10-23 10:44:19,692 [INFO] runner: 📡 Subscribing to all_trades (['BTCUSD'])
+2025-10-23 10:44:19,692 [INFO] 📡 Subscribing to all_trades (['BTCUSD'])
+2025-10-23 10:44:19,692 [INFO] runner: ✅ WebSocket Manager connected and subscribed!
+2025-10-23 10:44:19,692 [INFO] ✅ WebSocket Manager connected and subscribed!
+2025-10-23 10:44:19,692 [INFO] runner: ✅ WebSocket connected - now receiving real-time events!
+2025-10-23 10:44:19,692 [INFO] ✅ WebSocket connected - now receiving real-time events!
+2025-10-23 10:44:19,692 [INFO] 🔄 Order status polling started
+2025-10-23 10:44:19,692 [INFO] 🔄 Position synchronization started
+2025-10-23 10:44:19,693 [INFO] 🚀 Robust fill detection started (Polling + Position Sync)
+2025-10-23 10:44:19,693 [INFO] runner: ✅ Robust fill detection system started
+2025-10-23 10:44:19,693 [INFO] ✅ Robust fill detection system started
+2025-10-23 10:44:19,693 [INFO] runner:    • WebSocket fill detection (primary)
+2025-10-23 10:44:19,693 [INFO]    • WebSocket fill detection (primary)
+2025-10-23 10:44:19,693 [INFO] runner:    • Order status polling (fallback)
+2025-10-23 10:44:19,693 [INFO]    • Order status polling (fallback)
+2025-10-23 10:44:19,693 [INFO] runner:    • Position synchronization (reconciliation)
+2025-10-23 10:44:19,693 [INFO]    • Position synchronization (reconciliation)
+2025-10-23 10:44:19,693 [INFO] runner: ⏳ Waiting for initial price from WebSocket...
+2025-10-23 10:44:19,693 [INFO] ⏳ Waiting for initial price from WebSocket...
+2025-10-23 10:44:23,229 [INFO] runner: [92m✅ Got price: $108760.0[0m
+2025-10-23 10:44:23,229 [INFO] [92m✅ Got price: $108760.0[0m
+2025-10-23 10:44:23,230 [INFO] runner: 🎯 Setting up initial grid...
+2025-10-23 10:44:23,230 [INFO] 🎯 Setting up initial grid...
+2025-10-23 10:44:23,230 [INFO] runner: 🎯 Setting up initial grid (current price: $108760.0)
+2025-10-23 10:44:23,230 [INFO] 🎯 Setting up initial grid (current price: $108760.0)
+2025-10-23 10:44:23,230 [INFO] runner: 🎯 Placing initial BUY order @ 107500.0
+2025-10-23 10:44:23,230 [INFO] 🎯 Placing initial BUY order @ 107500.0
+2025-10-23 10:44:23,869 [INFO] runner: [38;5;208m📝 Placing BUY @ 107500.0, size: 1[0m
+2025-10-23 10:44:23,869 [INFO] [38;5;208m📝 Placing BUY @ 107500.0, size: 1[0m
+2025-10-23 10:44:23,870 [INFO] runner: 🔍 Order details:
+2025-10-23 10:44:23,870 [INFO] 🔍 Order details:
+2025-10-23 10:44:23,870 [INFO] runner:    Product ID: 27
+2025-10-23 10:44:23,870 [INFO]    Product ID: 27
+2025-10-23 10:44:23,870 [INFO] runner:    Side: buy
+2025-10-23 10:44:23,870 [INFO]    Side: buy
+2025-10-23 10:44:23,870 [INFO] runner:    Size: 1
+2025-10-23 10:44:23,870 [INFO]    Size: 1
+2025-10-23 10:44:23,870 [INFO] runner:    Price: 107500.0
+2025-10-23 10:44:23,870 [INFO]    Price: 107500.0
+2025-10-23 10:44:23,871 [INFO] runner:    Client ID: BOT-grid-1761196463-buy
+2025-10-23 10:44:23,871 [INFO]    Client ID: BOT-grid-1761196463-buy
+2025-10-23 10:44:25,618 [INFO] runner: [92m✅ BUY order placed: ID 1004074517[0m
+2025-10-23 10:44:25,618 [INFO] [92m✅ BUY order placed: ID 1004074517[0m
+2025-10-23 10:44:25,618 [INFO] 📝 Added order 1004074517 to tracking
+2025-10-23 10:44:25,618 [INFO] 📝 Added order 1004074517 to tracking
+2025-10-23 10:44:25,618 [INFO] 🔒 Bulletproof Order Logger initialized: /Users/shailendrasinghrajawat/Documents/WorkingBot/bot/audit
+2025-10-23 10:44:25,619 [INFO] 📝 Order logged: BOT/grid BUY @ 107500.0 size=1 (ID: 1004074517, Client: BOT-grid-1761196463-buy)
+2025-10-23 10:44:25,619 [INFO] runner: Running indefinitely (Ctrl+C to stop)...
+2025-10-23 10:44:25,619 [INFO] Running indefinitely (Ctrl+C to stop)...
+2025-10-23 10:44:35,764 [INFO] runner: [HB] Price: $108767.0, Open: 0/10, Pending: Yes
+2025-10-23 10:44:35,764 [INFO] [HB] Price: $108767.0, Open: 0/10, Pending: Yes
+2025-10-23 10:44:45,908 [INFO] runner: [HB] Price: $108764.5, Open: 0/10, Pending: Yes
+2025-10-23 10:44:45,908 [INFO] [HB] Price: $108764.5, Open: 0/10, Pending: Yes
+2025-10-23 10:44:56,028 [INFO] runner: [HB] Price: $108776.0, Open: 0/10, Pending: Yes
+2025-10-23 10:44:56,028 [INFO] [HB] Price: $108776.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:06,169 [INFO] runner: [HB] Price: $108777.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:06,169 [INFO] [HB] Price: $108777.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:16,305 [INFO] runner: [HB] Price: $108776.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:16,305 [INFO] [HB] Price: $108776.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:26,409 [INFO] runner: [HB] Price: $108776.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:26,409 [INFO] [HB] Price: $108776.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:36,527 [INFO] runner: [HB] Price: $108787.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:36,527 [INFO] [HB] Price: $108787.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:46,681 [INFO] runner: [HB] Price: $108787.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:46,681 [INFO] [HB] Price: $108787.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:56,809 [INFO] runner: [HB] Price: $108787.0, Open: 0/10, Pending: Yes
+2025-10-23 10:45:56,809 [INFO] [HB] Price: $108787.0, Open: 0/10, Pending: Yes
+2025-10-23 10:46:06,950 [INFO] runner: [HB] Price: $108766.5, Open: 0/10, Pending: Yes
+2025-10-23 10:46:06,950 [INFO] [HB] Price: $108766.5, Open: 0/10, Pending: Yes
+2025-10-23 10:46:17,087 [INFO] runner: [HB] Price: $108767.5, Open: 0/10, Pending: Yes
+2025-10-23 10:46:17,087 [INFO] [HB] Price: $108767.5, Open: 0/10, Pending: Yes
+2025-10-23 10:46:27,225 [INFO] runner: [HB] Price: $108767.5, Open: 0/10, Pending: Yes
+2025-10-23 10:46:27,225 [INFO] [HB] Price: $108767.5, Open: 0/10, Pending: Yes
+2025-10-23 10:46:37,314 [INFO] runner: [HB] Price: $108745.0, Open: 0/10, Pending: Yes
+2025-10-23 10:46:37,314 [INFO] [HB] Price: $108745.0, Open: 0/10, Pending: Yes
+2025-10-23 10:46:47,444 [INFO] runner: [HB] Price: $108744.0, Open: 0/10, Pending: Yes
+2025-10-23 10:46:47,444 [INFO] [HB] Price: $108744.0, Open: 0/10, Pending: Yes
+2025-10-23 10:46:57,592 [INFO] runner: [HB] Price: $108745.0, Open: 0/10, Pending: Yes
+2025-10-23 10:46:57,592 [INFO] [HB] Price: $108745.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:07,734 [INFO] runner: [HB] Price: $108760.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:07,734 [INFO] [HB] Price: $108760.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:17,907 [INFO] runner: [HB] Price: $108757.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:17,907 [INFO] [HB] Price: $108757.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:28,033 [INFO] runner: [HB] Price: $108757.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:28,033 [INFO] [HB] Price: $108757.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:38,125 [INFO] runner: [HB] Price: $108758.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:38,125 [INFO] [HB] Price: $108758.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:48,255 [INFO] runner: [HB] Price: $108758.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:48,255 [INFO] [HB] Price: $108758.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:58,384 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:47:58,384 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:08,517 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:08,517 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:18,662 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:18,662 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:28,802 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:28,802 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:38,983 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:38,983 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:49,087 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:49,087 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:59,242 [INFO] runner: [HB] Price: $108777.0, Open: 0/10, Pending: Yes
+2025-10-23 10:48:59,242 [INFO] [HB] Price: $108777.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:09,355 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:09,355 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:19,501 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:19,501 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:29,631 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:29,631 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:39,758 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:39,758 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:49,891 [INFO] runner: [HB] Price: $108777.0, Open: 0/10, Pending: Yes
+2025-10-23 10:49:49,891 [INFO] [HB] Price: $108777.0, Open: 0/10, Pending: Yes
+2025-10-23 10:50:00,021 [INFO] runner: [HB] Price: $108778.0, Open: 0/10, Pending: Yes
+2025-10-23 10:50:00,021 [INFO] [HB] Price: $108778.0, Open: 0/10, Pending: Yes

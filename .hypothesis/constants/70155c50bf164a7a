@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/guardian/position_monitor.py
+# hypothesis_version: 6.141.1
+
+[0.001, 2.0, 'BTC/USD:USD', 'DELTA_PRODUCT_ID', 'GRIDBOT_SYMBOL', 'ask', 'bid', 'close', 'contractSize', 'contracts', 'current_price', 'entryPrice', 'entry_price', 'id', 'index_price', 'info', 'last', 'last_price', 'long', 'losing_count', 'markPrice', 'mark_price', 'pnl', 'pnl_inr', 'pnl_usd', 'position_count', 'position_id', 'positions', 'positions_pnl', 'price', 'profitable_count', 'side', 'size', 'spot_price', 'symbol', 'total_loss_inr', 'total_pnl_inr', 'total_pnl_usd', 'total_summary', 'unknown', 'unrealizedPnl', 'unrealized_pnl']

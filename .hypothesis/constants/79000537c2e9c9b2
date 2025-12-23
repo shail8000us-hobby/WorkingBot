@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/risk/guards.py
+# hypothesis_version: 6.141.1
+
+[10000, '0', '10', 'EXECUTE_ORDERS', 'I_UNDERSTAND_LIVE', 'MAX_ACCOUNT_LOSS_INR', 'MAX_OPEN_ORDERS', 'MAX_QTY_PER_ORDER', 'NO', 'USD_TO_INR_RATE', 'YES', 'false', 'open_orders_count', 'runner', 'true', 'unrealized_pnl_usd', '⚠️']

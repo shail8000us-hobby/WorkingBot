@@ -1,0 +1,66 @@
+# GridBot Systemd Service
+# Production-ready service unit for 24/7 operation
+#
+# Installation:
+#   sudo cp gridbot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable gridbot
+#   sudo systemctl start gridbot
+#
+# Management:
+#   sudo systemctl status gridbot
+#   sudo systemctl restart gridbot
+#   sudo systemctl stop gridbot
+#   sudo journalctl -u gridbot -f
+#
+# Created: November 9, 2025
+
+[Unit]
+Description=GridBot - Automated Grid Trading Bot
+Documentation=https://github.com/physicsssr/WorkingBot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ssr
+Group=staff
+WorkingDirectory=/Users/ssr/Projects/WorkingBot
+
+# Environment
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="ENABLE_HEALTH_CHECK=true"
+Environment="HEALTH_CHECK_PORT=8080"
+
+# Start bot
+ExecStart=/usr/bin/python3 /Users/ssr/Projects/WorkingBot/bot_launcher.py
+
+# Auto-restart on failure
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# Resource limits
+MemoryMax=1G
+LimitNOFILE=65536
+CPUQuota=100%
+
+# Logging
+StandardOutput=append:/Users/ssr/Projects/WorkingBot/bot_live.log
+StandardError=append:/Users/ssr/Projects/WorkingBot/bot_live.log
+SyslogIdentifier=gridbot
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/Users/ssr/Projects/WorkingBot
+
+# Working directory must be writable
+ReadWritePaths=/Users/ssr/Projects/WorkingBot
+
+[Install]
+WantedBy=multi-user.target

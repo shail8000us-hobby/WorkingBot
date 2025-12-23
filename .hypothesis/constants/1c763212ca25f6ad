@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/reconciliation.py
+# hypothesis_version: 6.141.1
+
+[1e-09, 0.2, 'entry_price', 'exchange_positions', 'id', 'last_buy_order_time', 'last_sell_order_time', 'local_positions', 'missing_tps', 'note', 'open', 'order_id', 'orphaned_positions', 'price', 'product_id', 'protected', 'result', 'runner', 'size', 'strict_grid_order', 'success', 'synced', 'timestamp', 'tp_id']

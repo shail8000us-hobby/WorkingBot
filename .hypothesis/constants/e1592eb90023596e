@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/config/aliases.py
+# hypothesis_version: 6.141.1
+
+['ALIAS_TO_CANONICAL', 'CANONICAL_TO_ALIAS', 'GRIDBOT_LOT', 'GRIDBOT_LOWER', 'GRIDBOT_MAX_OPEN', 'GRIDBOT_REF', 'GRIDBOT_STEP', 'GRIDBOT_UPPER', 'GRID_LOWER', 'GRID_STEP', 'GRID_UPPER', 'LOT', 'MAX_OPEN', 'REFERENCE_LEVEL', 'config.aliases', 'legacy_key_used', 'strip_legacy_keys', 'upgrade_mapping']

@@ -1,0 +1,4035 @@
+[
+  {
+    "action_id": "config",
+    "title": "Get Config",
+    "summary": "Get current configuration\"\"\"",
+    "effects": [
+      "Get current configuration\"\"\"",
+      "    try:",
+      "        print(f\"[API] Config request from {request.remote_addr}\")",
+      "        config = parse_config_file()",
+      "        return jsonify(config)",
+      "    except Exception as e:",
+      "        print(f\"[API ERROR] Config fetch failed: {e}\")",
+      "        return jsonify({'error': str(e)}), 500",
+      "",
+      "",
+      "@app.route('/api/config', methods=['POST'])",
+      "def update_config():"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_LOWER",
+        "value": "110000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_UPPER",
+        "value": "130000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_STEP",
+        "value": "100",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_REF",
+        "value": "115000",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/config"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/config",
+      "webui/backend/app.py:1042 get_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.985835Z"
+  },
+  {
+    "action_id": "config",
+    "title": "Update Config",
+    "summary": "Save Configuration Changes",
+    "effects": [
+      "Save Configuration Changes",
+      "    ",
+      "    Saves configuration changes to grid_config.env file. Changes take effect",
+      "    immediately if Hot Reload is enabled, otherwise require bot restart.",
+      "    ",
+      "    Effects:",
+      "    - Writes updated parameters to grid_config.env",
+      "    - Auto-syncs legacy and modern parameter names",
+      "    - Triggers Hot Reload if enabled (bot automatically picks up changes)",
+      "    - Updates all related parameters (e.g., updating GRIDBOT_LOWER also syncs GRID_LOWER_PRICE)",
+      "    - Notifies connected clients via WebSocket",
+      "    ",
+      "    Risks:",
+      "    - Invalid grid parameters may cause bot errors",
+      "    - Changing grid geometry while bot is running may cancel existing orders",
+      "    - Always verify parameters before saving",
+      "    - Keep backup of working configuration",
+      "    ",
+      "    Related Config:"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_LOWER",
+        "value": "110000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_UPPER",
+        "value": "130000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_STEP",
+        "value": "100",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_REF",
+        "value": "115000",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/config"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/config",
+      "webui/backend/app.py:1054 update_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986156Z"
+  },
+  {
+    "action_id": "bot.status",
+    "title": "Bot Status",
+    "summary": "Get bot status\"\"\"",
+    "effects": [
+      "Get bot status\"\"\"",
+      "    return jsonify(get_bot_status())",
+      "",
+      "",
+      "@app.route('/api/bot/start', methods=['POST'])",
+      "def bot_start():"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_LOWER",
+        "value": "110000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_UPPER",
+        "value": "130000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_STEP",
+        "value": "100",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_REF",
+        "value": "115000",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/bot/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/bot/status",
+      "webui/backend/app.py:1100 bot_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986300Z"
+  },
+  {
+    "action_id": "bot.start",
+    "title": "Bot Start",
+    "summary": "Start Trading Bot",
+    "effects": [
+      "Start Trading Bot",
+      "    ",
+      "    Launches the GridBot trading engine with the currently saved grid parameters.",
+      "    The bot will begin monitoring the market and placing orders according to your configuration.",
+      "    ",
+      "    Effects:",
+      "    - Reads GRIDBOT_LOWER, GRIDBOT_UPPER, GRIDBOT_STEP, GRIDBOT_REF from grid_config.env",
+      "    - Creates new orders if EXECUTE_ORDERS=true",
+      "    - Writes process ID to reports/bot.pid",
+      "    - Initializes grid tranches based on GRIDBOT_GRID_COUNT",
+      "    - Starts continuous price monitoring and order management",
+      "    ",
+      "    Risks:",
+      "    - May place live orders if TRADING_MODE=live and I_UNDERSTAND_LIVE=YES",
+      "    - Check MAX_ACCOUNT_LOSS_INR and GUARDIAN_* limits before starting",
+      "    - Ensure sufficient USDT balance for grid orders",
+      "    - Verify grid parameters are within safe ranges",
+      "    ",
+      "    Related Config:"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_LOWER",
+        "value": "110000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_UPPER",
+        "value": "130000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_STEP",
+        "value": "100",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GRIDBOT_REF",
+        "value": "115000",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/bot/start"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/bot/start",
+      "webui/backend/app.py:1106 bot_start()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986430Z"
+  },
+  {
+    "action_id": "bot.stop",
+    "title": "Bot Stop",
+    "summary": "Stop Trading Bot",
+    "effects": [
+      "Stop Trading Bot",
+      "    ",
+      "    Gracefully stops the trading bot, allowing current operations to complete.",
+      "    The bot will stop placing new orders but will not cancel existing orders.",
+      "    ",
+      "    Effects:",
+      "    - Terminates the bot process gracefully",
+      "    - Stops monitoring and order placement",
+      "    - Preserves current positions and open orders",
+      "    - Removes bot.pid file",
+      "    ",
+      "    Note: This does not cancel existing orders. Use emergency controls if you need",
+      "    to immediately cancel all orders.",
+      "    \"\"\"",
+      "    try:",
+      "        print(f\"[API] Received bot stop request from {request.remote_addr}\")",
+      "        result = stop_bot()",
+      "        print(f\"[API] Bot stop result: {result}\")",
+      "        return jsonify(result)"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "MAX_ACCOUNT_LOSS_INR",
+        "value": "12000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_CHECK_INTERVAL",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/bot/stop"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/bot/stop",
+      "webui/backend/app.py:1143 bot_stop()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986545Z"
+  },
+  {
+    "action_id": "monitor.status",
+    "title": "Monitor Status",
+    "summary": "Get monitor status\"\"\"",
+    "effects": [
+      "Get monitor status\"\"\"",
+      "    return jsonify({'running': is_monitor_running()})",
+      "",
+      "",
+      "@app.route('/api/monitor/start', methods=['POST'])",
+      "def monitor_start():",
+      "    \"\"\"Start the heartbeat monitor"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "MAX_ACCOUNT_LOSS_INR",
+        "value": "12000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_CHECK_INTERVAL",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/monitor/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/monitor/status",
+      "webui/backend/app.py:1172 monitor_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986649Z"
+  },
+  {
+    "action_id": "monitor.start",
+    "title": "Monitor Start",
+    "summary": "Start the heartbeat monitor\"\"\"",
+    "effects": [
+      "Start the heartbeat monitor\"\"\"",
+      "    result = start_monitor()",
+      "    return jsonify(result)",
+      "",
+      "",
+      "@app.route('/api/monitor/stop', methods=['POST'])",
+      "def monitor_stop():",
+      "    \"\"\"Stop the heartbeat monitor"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "MAX_ACCOUNT_LOSS_INR",
+        "value": "12000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_CHECK_INTERVAL",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/monitor/start"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/monitor/start",
+      "webui/backend/app.py:1178 monitor_start()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986748Z"
+  },
+  {
+    "action_id": "monitor.stop",
+    "title": "Monitor Stop",
+    "summary": "Stop the heartbeat monitor\"\"\"",
+    "effects": [
+      "Stop the heartbeat monitor\"\"\"",
+      "    result = stop_monitor()",
+      "    return jsonify(result)",
+      "",
+      "",
+      "@app.route('/api/guardian/status', methods=['GET'])",
+      "def guardian_status():",
+      "    \"\"\"Get Guardian status"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "MAX_ACCOUNT_LOSS_INR",
+        "value": "12000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_CHECK_INTERVAL",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/monitor/stop"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/monitor/stop",
+      "webui/backend/app.py:1185 monitor_stop()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986850Z"
+  },
+  {
+    "action_id": "guardian.status",
+    "title": "Guardian Status",
+    "summary": "Get Guardian status\"\"\"",
+    "effects": [
+      "Get Guardian status\"\"\"",
+      "    running = is_guardian_running()",
+      "    health = get_guardian_health() if running else None",
+      "    ",
+      "    return jsonify({",
+      "        'running': running,",
+      "        'health': health",
+      "    })",
+      "",
+      "",
+      "@app.route('/api/guardian/start', methods=['POST'])",
+      "def guardian_start():"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "MAX_ACCOUNT_LOSS_INR",
+        "value": "12000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_CHECK_INTERVAL",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/guardian/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/guardian/status",
+      "webui/backend/app.py:1192 guardian_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.986955Z"
+  },
+  {
+    "action_id": "guardian.start",
+    "title": "Guardian Start",
+    "summary": "Start Safety Guardian",
+    "effects": [
+      "Start Safety Guardian",
+      "    ",
+      "    Launches the Safety Guardian monitoring process that enforces risk limits",
+      "    and protects your account from excessive losses.",
+      "    ",
+      "    Effects:",
+      "    - Monitors account balance and P&L continuously",
+      "    - Enforces MAX_ACCOUNT_LOSS_INR limit",
+      "    - Auto-stops trading bot if loss threshold breached",
+      "    - Tracks position sizes and margin usage",
+      "    - Sends alerts via Telegram if configured",
+      "    - Writes guardian.pid file",
+      "    ",
+      "    Risks:",
+      "    - Guardian requires bot to be running to be effective",
+      "    - Check GUARDIAN_ENABLED=true in config",
+      "    - Verify MAX_ACCOUNT_LOSS_INR is set appropriately",
+      "    ",
+      "    Related Config:"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "MAX_ACCOUNT_LOSS_INR",
+        "value": "12000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_CHECK_INTERVAL",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/guardian/start"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/guardian/start",
+      "webui/backend/app.py:1204 guardian_start()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.987068Z"
+  },
+  {
+    "action_id": "guardian.stop",
+    "title": "Guardian Stop Route",
+    "summary": "Stop Safety Guardian",
+    "effects": [
+      "Stop Safety Guardian",
+      "    ",
+      "    Stops the Safety Guardian monitoring process.",
+      "    WARNING: Stopping Guardian removes automatic protection against excessive losses.",
+      "    ",
+      "    Effects:",
+      "    - Terminates guardian process",
+      "    - Removes guardian.pid file",
+      "    - Disables automatic loss limit enforcement",
+      "    ",
+      "    Risks:",
+      "    - Bot will continue running without loss protection",
+      "    - You will not receive Guardian alerts",
+      "    - Consider stopping bot if Guardian is not running",
+      "    \"\"\"",
+      "    result = stop_guardian()",
+      "    return jsonify(result)"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/guardian/stop"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/guardian/stop",
+      "webui/backend/app.py:1233 guardian_stop_route()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.987504Z"
+  },
+  {
+    "action_id": "trading-mode",
+    "title": "Get Trading Mode",
+    "summary": "Get current trading mode (demo/live)\"\"\"",
+    "effects": [
+      "Get current trading mode (demo/live)\"\"\"",
+      "    try:",
+      "        from bot.utils.env_loader import get_current_mode, get_mode_display_info",
+      "        mode = get_current_mode()",
+      "        mode_info = get_mode_display_info()",
+      "        return jsonify({",
+      "            'mode': mode,",
+      "            'display': mode_info",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({'error': str(e)}), 500",
+      "",
+      "",
+      "@app.route('/api/trading-mode', methods=['POST'])",
+      "def set_trading_mode():"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/trading-mode"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/trading-mode",
+      "webui/backend/app.py:1255 get_trading_mode()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.987627Z"
+  },
+  {
+    "action_id": "trading-mode",
+    "title": "Set Trading Mode",
+    "summary": "Switch trading mode between demo and live.",
+    "effects": [
+      "Switch trading mode between demo and live.",
+      "    ",
+      "    IMPORTANT: This requires bot restart to take effect!",
+      "    The mode is saved to grid_config.env and will be used on next bot start.",
+      "    \"\"\"",
+      "    try:",
+      "        data = request.json",
+      "        new_mode = data.get('mode', '').lower().strip()",
+      "        ",
+      "        # Validate mode",
+      "        if new_mode not in ['demo', 'live']:",
+      "            return jsonify({'error': 'Invalid mode. Must be \"demo\" or \"live\"'}), 400",
+      "        ",
+      "        # Safety confirmation for live mode",
+      "        if new_mode == 'live':",
+      "            confirmed = data.get('confirmed', False)",
+      "            if not confirmed:",
+      "                return jsonify({",
+      "                    'error': 'Switching to LIVE mode requires confirmation',"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/trading-mode"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/trading-mode",
+      "webui/backend/app.py:1270 set_trading_mode()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.987747Z"
+  },
+  {
+    "action_id": "tmux.status",
+    "title": "Tmux Status",
+    "summary": "Get tmux session status\"\"\"",
+    "effects": [
+      "Get tmux session status\"\"\"",
+      "    installed = is_tmux_installed()",
+      "    session_status = get_tmux_session_status() if installed else {'exists': False}",
+      "    ",
+      "    return jsonify({",
+      "        'tmux_installed': installed,",
+      "        'session': session_status",
+      "    })",
+      "",
+      "",
+      "@app.route('/api/tmux/start', methods=['POST'])",
+      "def tmux_start():",
+      "    \"\"\"Start all bots in tmux session"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/tmux/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/tmux/status",
+      "webui/backend/app.py:1341 tmux_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.987860Z"
+  },
+  {
+    "action_id": "tmux.start",
+    "title": "Tmux Start",
+    "summary": "Start all bots in tmux session\"\"\"",
+    "effects": [
+      "Start all bots in tmux session\"\"\"",
+      "    result = start_bots_with_tmux()",
+      "    return jsonify(result)",
+      "",
+      "",
+      "@app.route('/api/tmux/stop', methods=['POST'])",
+      "def tmux_stop():",
+      "    \"\"\"Stop tmux session"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/tmux/start"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/tmux/start",
+      "webui/backend/app.py:1353 tmux_start()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.987959Z"
+  },
+  {
+    "action_id": "tmux.stop",
+    "title": "Tmux Stop",
+    "summary": "Stop tmux session\"\"\"",
+    "effects": [
+      "Stop tmux session\"\"\"",
+      "    result = stop_tmux_session()",
+      "    return jsonify(result)",
+      "",
+      "",
+      "@app.route('/api/emergency/kill-all', methods=['POST'])",
+      "def emergency_kill_all():"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/tmux/stop"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/tmux/stop",
+      "webui/backend/app.py:1360 tmux_stop()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988058Z"
+  },
+  {
+    "action_id": "emergency.kill-all",
+    "title": "Emergency Kill All",
+    "summary": "Emergency Kill All Bots",
+    "effects": [
+      "Emergency Kill All Bots",
+      "    ",
+      "    DANGER: Immediately terminates all bot processes (Trading Bot, Monitor, Guardian)",
+      "    using SIGKILL (-9). This is a hard kill that does not allow graceful shutdown.",
+      "    ",
+      "    Effects:",
+      "    - Kills Trading Bot process (if running)",
+      "    - Kills Monitor process (if running)",
+      "    - Kills Guardian process (if running)",
+      "    - Removes all PID files (bot.pid, monitor.pid, guardian.pid)",
+      "    - Does NOT cancel open orders - they remain active",
+      "    - Does NOT close positions",
+      "    ",
+      "    Risks:",
+      "    - Orders in flight may not be cancelled",
+      "    - Position may be left unbalanced",
+      "    - No graceful shutdown - state may not be saved properly",
+      "    - Open orders will remain on exchange",
+      "    - Consider using normal Stop instead if not urgent"
+    ],
+    "risks": [
+      "Destructive operation - cannot be undone",
+      " Emergency operation - use with caution"
+    ],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/emergency/kill-all"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/emergency/kill-all",
+      "webui/backend/app.py:1367 emergency_kill_all()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988164Z"
+  },
+  {
+    "action_id": "health",
+    "title": "Health Check",
+    "summary": "Health check endpoint for connection monitoring\"\"\"",
+    "effects": [
+      "Health check endpoint for connection monitoring\"\"\"",
+      "    try:",
+      "        return jsonify({",
+      "            'status': 'healthy',",
+      "            'timestamp': time.time(),",
+      "            'bot_running': is_bot_running(),",
+      "            'monitor_running': is_monitor_running(),",
+      "            'guardian_running': is_guardian_running()",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'status': 'error',",
+      "            'error': str(e)",
+      "        }), 500",
+      "",
+      "",
+      "@app.route('/api/help/registry', methods=['GET'])",
+      "def get_help_registry():"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/health"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/health",
+      "webui/backend/app.py:1474 health_check()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988290Z"
+  },
+  {
+    "action_id": "help.registry",
+    "title": "Get Help Registry",
+    "summary": "@help:action_id=help.registry",
+    "effects": [
+      "@help:action_id=help.registry",
+      "    @help:title=Get Help Registry",
+      "    @help:summary=Retrieves the complete help metadata registry for all UI actions",
+      "    @help:impact=Returns help information for all actions, filters out secrets",
+      "    ",
+      "    Get the help registry with all action metadata.",
+      "    No authentication required. Secrets are automatically filtered.",
+      "    \"\"\"",
+      "    try:",
+      "        if not HELP_REGISTRY_FILE.exists():",
+      "            return jsonify({",
+      "                'success': False,",
+      "                'message': 'Help registry not found. Run: python3 tools/help/extract_help_metadata.py',",
+      "                'actions': []",
+      "            }), 404",
+      "        ",
+      "        with open(HELP_REGISTRY_FILE, 'r') as f:",
+      "            registry = json.load(f)"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/help/registry"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/help/registry",
+      "webui/backend/app.py:1492 get_help_registry()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988446Z"
+  },
+  {
+    "action_id": "logs",
+    "title": "Get Logs",
+    "summary": "Get recent logs\"\"\"",
+    "effects": [
+      "Get recent logs\"\"\"",
+      "    lines = request.args.get('lines', 100, type=int)",
+      "    return jsonify({'logs': get_recent_logs(lines)})",
+      "",
+      "",
+      "@app.route('/api/state', methods=['GET'])",
+      "def get_state():",
+      "    \"\"\"Get current bot state"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/logs"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/logs",
+      "webui/backend/app.py:1552 get_logs()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988574Z"
+  },
+  {
+    "action_id": "state",
+    "title": "Get State",
+    "summary": "Get current bot state\"\"\"",
+    "effects": [
+      "Get current bot state\"\"\"",
+      "    state_file = get_mode_specific_file(\"state.json\")",
+      "    if state_file.exists():",
+      "        try:",
+      "            with open(state_file, 'r') as f:",
+      "                return jsonify(json.load(f))",
+      "        except Exception as e:",
+      "            return jsonify({'error': str(e)}), 500",
+      "    return jsonify({})",
+      "",
+      "",
+      "@app.route('/api/positions', methods=['GET'])",
+      "def get_positions():",
+      "    \"\"\"Get current positions with liquidation info (Trading Bot + Guardian fallback)"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/state"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/state",
+      "webui/backend/app.py:1559 get_state()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988685Z"
+  },
+  {
+    "action_id": "positions",
+    "title": "Get Positions",
+    "summary": "Get current positions with liquidation info (Trading Bot + Guardian fallback)\"\"\"",
+    "effects": [
+      "Get current positions with liquidation info (Trading Bot + Guardian fallback)\"\"\"",
+      "    positions_file = get_mode_specific_file(\"positions.json\")",
+      "    ",
+      "    # Try to read from Trading Bot's positions file first",
+      "    if positions_file.exists():",
+      "        try:",
+      "            with open(positions_file, 'r') as f:",
+      "                data = json.load(f)",
+      "                if data.get('positions') and len(data['positions']) > 0:",
+      "                    return jsonify(data)",
+      "        except Exception as e:",
+      "            print(f\"Error reading positions file: {e}\")",
+      "    ",
+      "    # Fallback: Try to get positions from Guardian Bot",
+      "    try:",
+      "        guardian_health = get_guardian_health()",
+      "        if guardian_health and guardian_health.get('status') == 'ok':",
+      "            monitoring = guardian_health.get('monitoring', {})",
+      "            position_count = monitoring.get('position_count', 0)"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/positions"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/positions",
+      "webui/backend/app.py:1572 get_positions()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988801Z"
+  },
+  {
+    "action_id": "pnl-history",
+    "title": "Get Pnl History",
+    "summary": "Get PnL history from CSV files\"\"\"",
+    "effects": [
+      "Get PnL history from CSV files\"\"\"",
+      "    try:",
+      "        # Get today's CSV file",
+      "        today = datetime.now().strftime(\"%Y%m%d\")",
+      "        csv_file = PNL_HISTORY_DIR / f\"pnl_history_{today}.csv\"",
+      "        ",
+      "        if csv_file.exists():",
+      "            import csv",
+      "            history = []",
+      "            with open(csv_file, 'r') as f:",
+      "                reader = csv.DictReader(f)",
+      "                for row in reader:",
+      "                    history.append(row)",
+      "            ",
+      "            # Return last 100 entries",
+      "            return jsonify({'history': history[-100:]})",
+      "        else:",
+      "            return jsonify({'history': []})",
+      "    except Exception as e:",
+      "        return jsonify({'error': str(e)}), 500"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/pnl-history"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/pnl-history",
+      "webui/backend/app.py:1641 get_pnl_history()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.988921Z"
+  },
+  {
+    "action_id": "docs.param",
+    "title": "Serve Docs",
+    "summary": "Serve markdown documentation files\"\"\"",
+    "effects": [
+      "Serve markdown documentation files\"\"\"",
+      "    try:",
+      "        # Security: only allow .md files",
+      "        if not filename.endswith('.md'):",
+      "            return {'error': 'Only markdown files allowed'}, 403",
+      "        ",
+      "        # Get the project root directory (3 levels up from this file)",
+      "        project_root = Path(__file__).parent.parent.parent",
+      "        doc_path = project_root / filename",
+      "        ",
+      "        # Security: ensure the file is within project root",
+      "        if not str(doc_path.resolve()).startswith(str(project_root.resolve())):",
+      "            return {'error': 'Access denied'}, 403",
+      "        ",
+      "        # Check if file exists",
+      "        if not doc_path.exists():",
+      "            return {'error': f'Documentation file not found: {filename}'}, 404",
+      "        ",
+      "        # Read and return the file content",
+      "        with open(doc_path, 'r', encoding='utf-8') as f:"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/docs/<path:filename>"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/docs/<path:filename>",
+      "webui/backend/app.py:1669 serve_docs()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989058Z"
+  },
+  {
+    "action_id": "sync-report",
+    "title": "Get Sync Report",
+    "summary": "Get the latest sync & reconciliation report\"\"\"",
+    "effects": [
+      "Get the latest sync & reconciliation report\"\"\"",
+      "    try:",
+      "        sync_file = BASE_DIR / 'sync_report.json'",
+      "        ",
+      "        if not sync_file.exists():",
+      "            return jsonify({",
+      "                'exists': False,",
+      "                'message': 'No sync report available yet. Start the bot to generate one.'",
+      "            })",
+      "        ",
+      "        with open(sync_file, 'r') as f:",
+      "            sync_data = json.load(f)",
+      "        ",
+      "        # Convert numpy types if any",
+      "        sync_data = convert_numpy_types(sync_data)",
+      "        ",
+      "        return jsonify({",
+      "            'exists': True,",
+      "            'data': sync_data",
+      "        })"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/sync-report"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/sync-report",
+      "webui/backend/app.py:1702 get_sync_report()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989162Z"
+  },
+  {
+    "action_id": "shutdown-report",
+    "title": "Get Shutdown Report",
+    "summary": "Get the latest graceful shutdown report\"\"\"",
+    "effects": [
+      "Get the latest graceful shutdown report\"\"\"",
+      "    try:",
+      "        shutdown_file = BASE_DIR / 'shutdown_report.json'",
+      "        ",
+      "        if not shutdown_file.exists():",
+      "            return jsonify({",
+      "                'exists': False,",
+      "                'message': 'No shutdown report available yet. Stop the bot to generate one.'",
+      "            })",
+      "        ",
+      "        with open(shutdown_file, 'r') as f:",
+      "            shutdown_data = json.load(f)",
+      "        ",
+      "        # Convert numpy types if any",
+      "        shutdown_data = convert_numpy_types(shutdown_data)",
+      "        ",
+      "        return jsonify({",
+      "            'exists': True,",
+      "            'data': shutdown_data",
+      "        })"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/shutdown-report"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/shutdown-report",
+      "webui/backend/app.py:1732 get_shutdown_report()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989262Z"
+  },
+  {
+    "action_id": "",
+    "title": "Serve Root",
+    "summary": "Handler for /",
+    "effects": [
+      "Calls serve_root() in backend"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /",
+      "webui/backend/app.py:1763 serve_root()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989360Z"
+  },
+  {
+    "action_id": "param",
+    "title": "Serve",
+    "summary": "Handler for /<path:path>",
+    "effects": [
+      "Calls serve() in backend"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/<path:path>"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /<path:path>",
+      "webui/backend/app.py:1767 serve()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989453Z"
+  },
+  {
+    "action_id": "robustness.gatekeeper.status",
+    "title": "Get Gatekeeper Status",
+    "summary": "Get safety gatekeeper status and statistics\"\"\"",
+    "effects": [
+      "Get safety gatekeeper status and statistics\"\"\"",
+      "    try:",
+      "        from bot.safety.gatekeeper import get_gatekeeper_stats",
+      "        stats = get_gatekeeper_stats()",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'stats': stats,",
+      "            'enabled': True",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'enabled': False",
+      "        })",
+      "",
+      "",
+      "@app.route('/api/robustness/loss-limits', methods=['GET'])",
+      "def get_loss_limits():",
+      "    \"\"\"Get loss limits configuration and validation status"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/gatekeeper/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/gatekeeper/status",
+      "webui/backend/app.py:1842 get_gatekeeper_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989562Z"
+  },
+  {
+    "action_id": "robustness.loss-limits",
+    "title": "Get Loss Limits",
+    "summary": "Get loss limits configuration and validation status\"\"\"",
+    "effects": [
+      "Get loss limits configuration and validation status\"\"\"",
+      "    try:",
+      "        from bot.safety.loss_limits import get_loss_limits_config",
+      "        config = get_loss_limits_config()",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'config': config",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        })",
+      "",
+      "",
+      "@app.route('/api/robustness/circuit-breakers', methods=['GET'])",
+      "def get_circuit_breakers():",
+      "    \"\"\"Get circuit breaker statistics"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/loss-limits"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/loss-limits",
+      "webui/backend/app.py:1861 get_loss_limits()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989656Z"
+  },
+  {
+    "action_id": "robustness.circuit-breakers",
+    "title": "Get Circuit Breakers",
+    "summary": "Get circuit breaker statistics\"\"\"",
+    "effects": [
+      "Get circuit breaker statistics\"\"\"",
+      "    try:",
+      "        from bot.safety.circuit_breaker import get_all_circuit_breaker_stats",
+      "        stats = get_all_circuit_breaker_stats()",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'circuit_breakers': stats",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'circuit_breakers': {}",
+      "        })",
+      "",
+      "",
+      "@app.route('/api/robustness/circuit-breakers/reset', methods=['POST'])",
+      "def reset_circuit_breakers():",
+      "    \"\"\"Reset all circuit breakers (manual intervention)"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "GUARDIAN_HYSTERESIS_80_TRIGGER",
+        "value": "80",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_80_RESET",
+        "value": "75",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/circuit-breakers"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/circuit-breakers",
+      "webui/backend/app.py:1878 get_circuit_breakers()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989762Z"
+  },
+  {
+    "action_id": "robustness.circuit-breakers.reset",
+    "title": "Reset Circuit Breakers",
+    "summary": "Reset all circuit breakers (manual intervention)\"\"\"",
+    "effects": [
+      "Reset all circuit breakers (manual intervention)\"\"\"",
+      "    try:",
+      "        from bot.safety.circuit_breaker import reset_all_circuit_breakers",
+      "        reset_all_circuit_breakers()",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'message': 'All circuit breakers reset'",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        })",
+      "",
+      "",
+      "@app.route('/api/robustness/audit/report', methods=['GET'])",
+      "def get_audit_report():",
+      "    \"\"\"Get order audit report"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "GUARDIAN_HYSTERESIS_80_TRIGGER",
+        "value": "80",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_80_RESET",
+        "value": "75",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_90_TRIGGER",
+        "value": "90",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_90_RESET",
+        "value": "85",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_100_TRIGGER",
+        "value": "100",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/robustness/circuit-breakers/reset"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/circuit-breakers/reset",
+      "webui/backend/app.py:1896 reset_circuit_breakers()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.989895Z"
+  },
+  {
+    "action_id": "robustness.audit.report",
+    "title": "Get Audit Report",
+    "summary": "Get order audit report\"\"\"",
+    "effects": [
+      "Get order audit report\"\"\"",
+      "    try:",
+      "        from bot.orders.audit import generate_audit_report",
+      "        from datetime import datetime, timedelta",
+      "        ",
+      "        # Get query parameters",
+      "        days = int(request.args.get('days', 7))",
+      "        start_time = datetime.utcnow() - timedelta(days=days)",
+      "        ",
+      "        report = generate_audit_report(start_time=start_time)",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'report': report",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'report': {}",
+      "        })"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "GUARDIAN_HYSTERESIS_80_TRIGGER",
+        "value": "80",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_80_RESET",
+        "value": "75",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_90_TRIGGER",
+        "value": "90",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_90_RESET",
+        "value": "85",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "GUARDIAN_HYSTERESIS_100_TRIGGER",
+        "value": "100",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/audit/report"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/audit/report",
+      "webui/backend/app.py:1913 get_audit_report()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.990021Z"
+  },
+  {
+    "action_id": "robustness.audit.orders.param",
+    "title": "Get Orders By Origin",
+    "summary": "Get orders by origin from audit log\"\"\"",
+    "effects": [
+      "Get orders by origin from audit log\"\"\"",
+      "    try:",
+      "        from bot.orders.audit import get_orders_by_origin",
+      "        from datetime import datetime, timedelta",
+      "        ",
+      "        # Get query parameters",
+      "        days = int(request.args.get('days', 7))",
+      "        start_time = datetime.utcnow() - timedelta(days=days)",
+      "        ",
+      "        orders = get_orders_by_origin(origin, start_time=start_time)",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'origin': origin,",
+      "            'orders': orders,",
+      "            'count': len(orders)",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "VOLATILITY_MAX_IV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_RV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_SPREAD",
+        "value": "10",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_AUTO_RESUME",
+        "value": "true",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/audit/orders/<origin>"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/audit/orders/<origin>",
+      "webui/backend/app.py:1937 get_orders_by_origin()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.990306Z"
+  },
+  {
+    "action_id": "robustness.guardian.hysteresis",
+    "title": "Get Guardian Hysteresis",
+    "summary": "Get Guardian hysteresis configuration\"\"\"",
+    "effects": [
+      "Get Guardian hysteresis configuration\"\"\"",
+      "    try:",
+      "        config = parse_config_file()",
+      "        ",
+      "        # Helper to get value from nested config dict",
+      "        def get_val(key, default):",
+      "            if key in config:",
+      "                return float(config[key]['value'])",
+      "            return float(default)",
+      "        ",
+      "        hysteresis = {",
+      "            '80': {",
+      "                'trigger': get_val('GUARDIAN_HYSTERESIS_80_TRIGGER', 80),",
+      "                'reset': get_val('GUARDIAN_HYSTERESIS_80_RESET', 75)",
+      "            },",
+      "            '90': {",
+      "                'trigger': get_val('GUARDIAN_HYSTERESIS_90_TRIGGER', 90),",
+      "                'reset': get_val('GUARDIAN_HYSTERESIS_90_RESET', 85)",
+      "            },",
+      "            '100': {"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "VOLATILITY_MAX_IV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_RV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_SPREAD",
+        "value": "10",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_AUTO_RESUME",
+        "value": "true",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/guardian/hysteresis"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/guardian/hysteresis",
+      "webui/backend/app.py:1963 get_guardian_hysteresis()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.990520Z"
+  },
+  {
+    "action_id": "robustness.volatility.status",
+    "title": "Get Volatility Status",
+    "summary": "Get current volatility status (IV/RV)\"\"\"",
+    "effects": [
+      "Get current volatility status (IV/RV)\"\"\"",
+      "    try:",
+      "        import json",
+      "        from dotenv import load_dotenv",
+      "        ",
+      "        # Read from status file written by Trading Bot",
+      "        workspace_root = Path(__file__).parent.parent.parent",
+      "        volatility_file = str(workspace_root / '.volatility_status.json')",
+      "        ",
+      "        if not os.path.exists(volatility_file):",
+      "            return jsonify({",
+      "                'success': True,",
+      "                'status': {",
+      "                    'enabled': True,",
+      "                    'iv': None,",
+      "                    'rv': None,",
+      "                    'spread': None,",
+      "                    'is_safe': True,",
+      "                    'violation_reason': None,",
+      "                    'last_update': None,"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "VOLATILITY_MAX_IV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_RV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_SPREAD",
+        "value": "10",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_AUTO_RESUME",
+        "value": "true",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/volatility/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/volatility/status",
+      "webui/backend/app.py:2000 get_volatility_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.990695Z"
+  },
+  {
+    "action_id": "robustness.volatility.update",
+    "title": "Update Volatility",
+    "summary": "Manually trigger volatility update\"\"\"",
+    "effects": [
+      "Manually trigger volatility update\"\"\"",
+      "    try:",
+      "        from bot.volatility.iv_rv_tracker import get_volatility_tracker",
+      "        ",
+      "        tracker = get_volatility_tracker()",
+      "        success = tracker.update()",
+      "        ",
+      "        return jsonify({",
+      "            'success': success,",
+      "            'message': 'Volatility data updated' if success else 'Update failed'",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        })",
+      "",
+      "",
+      "@app.route('/api/robustness/volatility/update-config', methods=['POST'])",
+      "def update_volatility_config():"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "VOLATILITY_MAX_IV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_RV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_SPREAD",
+        "value": "10",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/robustness/volatility/update"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/volatility/update",
+      "webui/backend/app.py:2135 update_volatility()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.990846Z"
+  },
+  {
+    "action_id": "robustness.volatility.update-config",
+    "title": "Update Volatility Config",
+    "summary": "Update volatility configuration in grid_config.env\"\"\"",
+    "effects": [
+      "Update volatility configuration in grid_config.env\"\"\"",
+      "    try:",
+      "        import re",
+      "        data = request.get_json()",
+      "        ",
+      "        # Map frontend keys to config keys",
+      "        config_mapping = {",
+      "            'max_iv': 'VOLATILITY_MAX_IV',",
+      "            'max_rv': 'VOLATILITY_MAX_RV',",
+      "            'max_spread': 'VOLATILITY_MAX_SPREAD',",
+      "            'check_interval': 'VOLATILITY_CHECK_INTERVAL'",
+      "        }",
+      "        ",
+      "        # Read current config",
+      "        with open(CONFIG_FILE, 'r') as f:",
+      "            config_content = f.read()",
+      "        ",
+      "        # Update each value",
+      "        updated_count = 0",
+      "        for key, value in data.items():"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "VOLATILITY_MAX_IV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_RV",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_MAX_SPREAD",
+        "value": "10",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "VOLATILITY_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/robustness/volatility/update-config"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/volatility/update-config",
+      "webui/backend/app.py:2155 update_volatility_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.990964Z"
+  },
+  {
+    "action_id": "robustness.confirmation-guard.status",
+    "title": "Get Confirmation Guard Status",
+    "summary": "Get order confirmation guard status\"\"\"",
+    "effects": [
+      "Get order confirmation guard status\"\"\"",
+      "    try:",
+      "        from bot.safety.order_confirmation_guard import get_confirmation_guard",
+      "        ",
+      "        guard = get_confirmation_guard()",
+      "        stats = guard.get_stats()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'stats': stats",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'stats': {",
+      "                'enabled': False,",
+      "                'pending_orders_count': 0,",
+      "                'pending_orders': []",
+      "            }"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "MARGIN_UTILIZATION_MAX",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_1",
+        "value": "50",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/robustness/confirmation-guard/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/confirmation-guard/status",
+      "webui/backend/app.py:2208 get_confirmation_guard_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.991112Z"
+  },
+  {
+    "action_id": "robustness.confirmation-guard.reset",
+    "title": "Reset Confirmation Guard",
+    "summary": "Reset confirmation guard (clear all pending orders)\"\"\"",
+    "effects": [
+      "Reset confirmation guard (clear all pending orders)\"\"\"",
+      "    try:",
+      "        from bot.safety.order_confirmation_guard import get_confirmation_guard",
+      "        ",
+      "        guard = get_confirmation_guard()",
+      "        guard.reset()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'message': 'Confirmation guard reset successfully'",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        })",
+      "",
+      "",
+      "# ============================================================================",
+      "# LIQUIDATION PROTECTION API ENDPOINTS"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "LIQUIDATION_PROTECTION_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_MAX",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_1",
+        "value": "50",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_2",
+        "value": "70",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "LIQUIDATION_DISTANCE_MIN",
+        "value": "60",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/robustness/confirmation-guard/reset"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/robustness/confirmation-guard/reset",
+      "webui/backend/app.py:2233 reset_confirmation_guard()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.991295Z"
+  },
+  {
+    "action_id": "liquidation.status",
+    "title": "Get Liquidation Status",
+    "summary": "Get comprehensive liquidation protection status\"\"\"",
+    "effects": [
+      "Get comprehensive liquidation protection status\"\"\"",
+      "    try:",
+      "        # Try to get status from Guardian Bot health file",
+      "        guardian_health_file = BASE_DIR / '.guardian_health.json'",
+      "        ",
+      "        # Default values",
+      "        margin_status = {",
+      "            'utilization': 0,",
+      "            'zone': 'UNKNOWN',",
+      "            'can_open_positions': True,",
+      "            'total_balance': 0,",
+      "            'available_balance': 0,",
+      "            'blocked_margin': 0,",
+      "            'unrealized_pnl': 0",
+      "        }",
+      "        ",
+      "        distance_status = {",
+      "            'distance': 100,",
+      "            'zone': 'SAFE',",
+      "            'maintenance_margin': 0,"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "LIQUIDATION_PROTECTION_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_MAX",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_1",
+        "value": "50",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_2",
+        "value": "70",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "LIQUIDATION_DISTANCE_MIN",
+        "value": "60",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/liquidation/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/liquidation/status",
+      "webui/backend/app.py:2257 get_liquidation_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.991453Z"
+  },
+  {
+    "action_id": "liquidation.margin-history",
+    "title": "Get Margin History",
+    "summary": "Get historical margin utilization data\"\"\"",
+    "effects": [
+      "Get historical margin utilization data\"\"\"",
+      "    try:",
+      "        # In a real implementation, this would read from a log file",
+      "        # For now, return empty history",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'history': []",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500",
+      "",
+      "",
+      "@app.route('/api/liquidation/config', methods=['GET', 'POST'])",
+      "def liquidation_config():",
+      "    \"\"\"Get or update liquidation protection configuration"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "EQUITY_FLOOR_INR",
+        "value": "10000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "LIQUIDATION_PROTECTION_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_MAX",
+        "value": "40",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_1",
+        "value": "50",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_WARNING_2",
+        "value": "70",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/liquidation/margin-history"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/liquidation/margin-history",
+      "webui/backend/app.py:2330 get_margin_history()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.991630Z"
+  },
+  {
+    "action_id": "liquidation.config",
+    "title": "Liquidation Config",
+    "summary": "Get or update liquidation protection configuration\"\"\"",
+    "effects": [
+      "Get or update liquidation protection configuration\"\"\"",
+      "    if request.method == 'GET':",
+      "        try:",
+      "            config = {",
+      "                'LIQUIDATION_PROTECTION_ENABLED': os.getenv('LIQUIDATION_PROTECTION_ENABLED', 'true'),",
+      "                'MARGIN_UTILIZATION_MAX': os.getenv('MARGIN_UTILIZATION_MAX', '40'),",
+      "                'MARGIN_UTILIZATION_WARNING_1': os.getenv('MARGIN_UTILIZATION_WARNING_1', '50'),",
+      "                'MARGIN_UTILIZATION_WARNING_2': os.getenv('MARGIN_UTILIZATION_WARNING_2', '70'),",
+      "                'LIQUIDATION_DISTANCE_MIN': os.getenv('LIQUIDATION_DISTANCE_MIN', '60'),",
+      "                'LIQUIDATION_DISTANCE_TARGET': os.getenv('LIQUIDATION_DISTANCE_TARGET', '70'),",
+      "                'AUTO_CANCEL_ORDERS_AT_YELLOW': os.getenv('AUTO_CANCEL_ORDERS_AT_YELLOW', 'true'),",
+      "                'AUTO_REDUCE_POSITIONS_ENABLED': os.getenv('AUTO_REDUCE_POSITIONS_ENABLED', 'false'),",
+      "            }",
+      "            ",
+      "            return jsonify({",
+      "                'success': True,",
+      "                'config': config",
+      "            })",
+      "        except Exception as e:",
+      "            return jsonify({"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "EQUITY_FLOOR_INR",
+        "value": "10000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_CHECK_INTERVAL",
+        "value": "60",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_REQUIRE_ACK",
+        "value": "True",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "LIQUIDATION_PROTECTION_ENABLED",
+        "value": "true",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MARGIN_UTILIZATION_MAX",
+        "value": "40",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/liquidation/config"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/liquidation/config",
+      "webui/backend/app.py:2347 liquidation_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.991819Z"
+  },
+  {
+    "action_id": "capital.equity-floor.status",
+    "title": "Get Equity Floor Status",
+    "summary": "Get equity floor status\"\"\"",
+    "effects": [
+      "Get equity floor status\"\"\"",
+      "    try:",
+      "        import os",
+      "        from pathlib import Path",
+      "        ",
+      "        # Check if breach flag exists",
+      "        breach_flag = Path('.equity_floor_breach')",
+      "        breached = breach_flag.exists()",
+      "        ",
+      "        # Get current equity (would need to fetch from Guardian Bot state)",
+      "        # For now, return config values",
+      "        floor_inr = float(os.getenv('EQUITY_FLOOR_INR', '0'))",
+      "        enabled = floor_inr > 0",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'data': {",
+      "                'enabled': enabled,",
+      "                'floor_inr': floor_inr,",
+      "                'current_equity': 0,  # Would fetch from Guardian state"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "EQUITY_FLOOR_INR",
+        "value": "10000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_CHECK_INTERVAL",
+        "value": "60",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_REQUIRE_ACK",
+        "value": "True",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_WINDOW_DAYS",
+        "value": "30",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/capital/equity-floor/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/capital/equity-floor/status",
+      "webui/backend/app.py:2411 get_equity_floor_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.991952Z"
+  },
+  {
+    "action_id": "capital.drawdown.status",
+    "title": "Get Drawdown Status",
+    "summary": "Get drawdown cap status\"\"\"",
+    "effects": [
+      "Get drawdown cap status\"\"\"",
+      "    try:",
+      "        import os",
+      "        from bot.capital.equity_tracker import get_equity_tracker",
+      "        from pathlib import Path",
+      "        ",
+      "        tracker = get_equity_tracker(Path('.'))",
+      "        stats = tracker.get_stats()",
+      "        ",
+      "        # Add config values that aren't in stats",
+      "        stats['window_days'] = int(os.getenv('DRAWDOWN_WINDOW_DAYS', '30'))",
+      "        stats['check_interval_sec'] = int(os.getenv('DRAWDOWN_CHECK_INTERVAL', '300'))",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'data': stats",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "DRAWDOWN_WINDOW_DAYS",
+        "value": "30",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_CHECK_INTERVAL",
+        "value": "300",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "MAX_PENDING_NOTIONAL_INR",
+        "value": "500000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "PENDING_BUDGET_BUFFER_PCT",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/capital/drawdown/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/capital/drawdown/status",
+      "webui/backend/app.py:2446 get_drawdown_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992079Z"
+  },
+  {
+    "action_id": "capital.exposure.status",
+    "title": "Get Exposure Status",
+    "summary": "Get exposure growth limiter status\"\"\"",
+    "effects": [
+      "Get exposure growth limiter status\"\"\"",
+      "    try:",
+      "        from bot.safety.exposure_limiter import get_exposure_limiter",
+      "        ",
+      "        limiter = get_exposure_limiter()",
+      "        stats = limiter.get_stats()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'data': stats",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'data': {",
+      "                'enabled': False,",
+      "                'max_tranches_per_minute': 2,",
+      "                'max_notional_per_minute': 300000,",
+      "                'queue_enabled': True,"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "MAX_PENDING_NOTIONAL_INR",
+        "value": "500000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "PENDING_BUDGET_BUFFER_PCT",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/capital/exposure/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/capital/exposure/status",
+      "webui/backend/app.py:2486 get_exposure_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992202Z"
+  },
+  {
+    "action_id": "capital.budget.status",
+    "title": "Get Budget Status",
+    "summary": "Get pending order budget status\"\"\"",
+    "effects": [
+      "Get pending order budget status\"\"\"",
+      "    try:",
+      "        import os",
+      "        ",
+      "        max_pending = float(os.getenv('MAX_PENDING_NOTIONAL_INR', '500000'))",
+      "        buffer_pct = float(os.getenv('PENDING_BUDGET_BUFFER_PCT', '10'))",
+      "        ",
+      "        # Try to fetch real orders, but fallback gracefully",
+      "        total_pending = 0",
+      "        pending_buy_orders = []",
+      "        ",
+      "        try:",
+      "            from bot.api.exchange_ops import get_exchange_ops",
+      "            exchange_ops = get_exchange_ops()",
+      "            open_orders = exchange_ops.fetch_open_orders()",
+      "            pending_buy_orders = [o for o in open_orders if o.get('side') == 'buy' and not o.get('reduceOnly')]",
+      "            total_pending = sum(float(o.get('price', 0)) * float(o.get('amount', 0)) for o in pending_buy_orders)",
+      "        except Exception as fetch_error:",
+      "            # Fallback: return default values if can't fetch from exchange",
+      "            print(f\"Could not fetch orders from exchange: {fetch_error}\")"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "MAX_PENDING_NOTIONAL_INR",
+        "value": "500000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "PENDING_BUDGET_BUFFER_PCT",
+        "value": "10",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/capital/budget/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/capital/budget/status",
+      "webui/backend/app.py:2521 get_budget_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992327Z"
+  },
+  {
+    "action_id": "capital.config-guard.status",
+    "title": "Get Config Guard Status",
+    "summary": "Get Two-Man Rule config guard status\"\"\"",
+    "effects": [
+      "Get Two-Man Rule config guard status\"\"\"",
+      "    try:",
+      "        from bot.safety.config_guard import get_config_guard",
+      "        from pathlib import Path",
+      "        ",
+      "        guard = get_config_guard(Path('.'))",
+      "        stats = guard.get_stats()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'data': stats",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'data': {",
+      "                'enabled': False,",
+      "                'has_pending_change': False,",
+      "                'timeout_sec': 600,"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "EQUITY_FLOOR_INR",
+        "value": "10000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_CHECK_INTERVAL",
+        "value": "60",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_REQUIRE_ACK",
+        "value": "True",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_MAX_PCT",
+        "value": "20",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_WINDOW_DAYS",
+        "value": "30",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/capital/config-guard/status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/capital/config-guard/status",
+      "webui/backend/app.py:2578 get_config_guard_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992496Z"
+  },
+  {
+    "action_id": "capital.update-config",
+    "title": "Update Capital Config",
+    "summary": "Update capital protection configuration in grid_config.env\"\"\"",
+    "effects": [
+      "Update capital protection configuration in grid_config.env\"\"\"",
+      "    try:",
+      "        import re",
+      "        ",
+      "        data = request.json",
+      "        if not data:",
+      "            return jsonify({'success': False, 'error': 'No data provided'}), 400",
+      "        ",
+      "        # Read current config file",
+      "        with open(CONFIG_FILE, 'r') as f:",
+      "            config_content = f.read()",
+      "        ",
+      "        # Update each provided setting",
+      "        updated_count = 0",
+      "        for key, value in data.items():",
+      "            # Convert frontend keys to backend keys if needed",
+      "            key_mapping = {",
+      "                # Equity Floor",
+      "                'equity_floor': 'EQUITY_FLOOR_INR',",
+      "                'equity_floor_check_interval': 'EQUITY_FLOOR_CHECK_INTERVAL',"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "EQUITY_FLOOR_INR",
+        "value": "10000",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_CHECK_INTERVAL",
+        "value": "60",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "EQUITY_FLOOR_REQUIRE_ACK",
+        "value": "True",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_MAX_PCT",
+        "value": "20",
+        "source": "grid_config.env"
+      },
+      {
+        "key": "DRAWDOWN_WINDOW_DAYS",
+        "value": "30",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/capital/update-config"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/capital/update-config",
+      "webui/backend/app.py:2606 update_capital_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992660Z"
+  },
+  {
+    "action_id": "config.all",
+    "title": "Get All Config",
+    "summary": "Get ALL configuration from grid_config.env\"\"\"",
+    "effects": [
+      "Get ALL configuration from grid_config.env\"\"\"",
+      "    try:",
+      "        config = {}",
+      "        ",
+      "        # Read all environment variables from grid_config.env",
+      "        with open(CONFIG_FILE, 'r') as f:",
+      "            for line in f:",
+      "                line = line.strip()",
+      "                # Skip comments and empty lines",
+      "                if not line or line.startswith('#'):",
+      "                    continue",
+      "                # Parse KEY=VALUE",
+      "                if '=' in line:",
+      "                    key, value = line.split('=', 1)",
+      "                    config[key] = value",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'config': config",
+      "        })"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/config/all"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/config/all",
+      "webui/backend/app.py:2686 get_all_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992778Z"
+  },
+  {
+    "action_id": "config.update",
+    "title": "Update All Config",
+    "summary": "Update multiple configuration values in grid_config.env\"\"\"",
+    "effects": [
+      "Update multiple configuration values in grid_config.env\"\"\"",
+      "    try:",
+      "        updates = request.json",
+      "        ",
+      "        if not updates:",
+      "            return jsonify({",
+      "                'success': False,",
+      "                'error': 'No configuration updates provided'",
+      "            }), 400",
+      "        ",
+      "        print(f\"[CONFIG UPDATE] Received {len(updates)} parameter(s)\")",
+      "        ",
+      "        # Auto-sync legacy and modern parameters",
+      "        synced_updates = sync_legacy_params(updates)",
+      "        ",
+      "        if len(synced_updates) > len(updates):",
+      "            print(f\"[SYNC] Auto-synced {len(synced_updates) - len(updates)} additional parameter(s)\")",
+      "        ",
+      "        # Read current file",
+      "        with open(CONFIG_FILE, 'r') as f:"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/config/update"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/config/update",
+      "webui/backend/app.py:2715 update_all_config()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.992893Z"
+  },
+  {
+    "action_id": "trading_status",
+    "title": "Get Trading Status",
+    "summary": "Get comprehensive trading status including blockers, bot state, and metrics.",
+    "effects": [
+      "Get comprehensive trading status including blockers, bot state, and metrics.",
+      "    This is the main API for the Trading Status Panel.",
+      "    \"\"\"",
+      "    try:",
+      "        from bot.safety.blocker_tracker import get_blocker_tracker",
+      "        ",
+      "        # Get blocker status",
+      "        tracker = get_blocker_tracker()",
+      "        blocker_data = tracker.check_all_blockers()",
+      "",
+      "        # ----------------------------------------------------------------------------",
+      "        # Sync with bot terminal: detect Two-Man Rule / startup hold from bot logs",
+      "        # If the bot is waiting for confirmation, surface it as a critical blocker so",
+      "        # the WebUI reflects the actual terminal state.",
+      "        # ----------------------------------------------------------------------------",
+      "        try:",
+      "            import os",
+      "            import re",
+      "            from pathlib import Path"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/trading_status"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/trading_status",
+      "webui/backend/app.py:2784 get_trading_status()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993043Z"
+  },
+  {
+    "action_id": "trading_status.start",
+    "title": "Start Trading",
+    "summary": "Start trading (start bot or override blockers)\"\"\"",
+    "effects": [
+      "Start trading (start bot or override blockers)\"\"\"",
+      "    try:",
+      "        force = request.json.get('force', False) if request.json else False",
+      "        ",
+      "        # Check if bot is already running",
+      "        if is_bot_running():",
+      "            if force:",
+      "                # Enable EXECUTE_ORDERS if it's disabled",
+      "                update_config_value('EXECUTE_ORDERS', 'True')",
+      "                return jsonify({",
+      "                    'success': True,",
+      "                    'message': 'Trading enabled (EXECUTE_ORDERS set to True)'",
+      "                })",
+      "            else:",
+      "                return jsonify({",
+      "                    'success': False,",
+      "                    'error': 'Bot is already running'",
+      "                }), 400",
+      "        else:",
+      "            # Start the bot"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "EXECUTE_ORDERS",
+        "value": "true",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/trading_status/start"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/trading_status/start",
+      "webui/backend/app.py:2924 start_trading()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993182Z"
+  },
+  {
+    "action_id": "trading_status.stop",
+    "title": "Stop Trading",
+    "summary": "Stop trading (stop bot or disable EXECUTE_ORDERS)\"\"\"",
+    "effects": [
+      "Stop trading (stop bot or disable EXECUTE_ORDERS)\"\"\"",
+      "    try:",
+      "        hard_stop = request.json.get('hard_stop', False) if request.json else False",
+      "        ",
+      "        if hard_stop:",
+      "            # Stop the bot completely",
+      "            result = stop_bot()",
+      "            return jsonify(result)",
+      "        else:",
+      "            # Just disable EXECUTE_ORDERS (soft stop)",
+      "            update_config_value('EXECUTE_ORDERS', 'False')",
+      "            return jsonify({",
+      "                'success': True,",
+      "                'message': 'Trading paused (EXECUTE_ORDERS set to False)'",
+      "            })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500"
+    ],
+    "risks": [
+      "May place live orders if TRADING_MODE=live"
+    ],
+    "related_config": [
+      {
+        "key": "EXECUTE_ORDERS",
+        "value": "true",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/trading_status/stop"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/trading_status/stop",
+      "webui/backend/app.py:2955 stop_trading()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993296Z"
+  },
+  {
+    "action_id": "trading_status.blocker.param.override",
+    "title": "Override Blocker",
+    "summary": "Override a specific blocker (with confirmation)\"\"\"",
+    "effects": [
+      "Override a specific blocker (with confirmation)\"\"\"",
+      "    try:",
+      "        # This is a placeholder for blocker-specific override logic",
+      "        # In a real implementation, you would:",
+      "        # 1. Identify the blocker type",
+      "        # 2. Apply the appropriate override (e.g., disable check, adjust threshold)",
+      "        # 3. Log the override action",
+      "        # 4. Send Telegram notification",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'message': f'Blocker {blocker_id} override requested (not yet implemented)'",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/trading_status/blocker/<blocker_id>/override"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/trading_status/blocker/<blocker_id>/override",
+      "webui/backend/app.py:2979 override_blocker()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993401Z"
+  },
+  {
+    "action_id": "emergency.check_flag",
+    "title": "Check Emergency Flag",
+    "summary": "Check if emergency stop flag exists\"\"\"",
+    "effects": [
+      "Check if emergency stop flag exists\"\"\"",
+      "    try:",
+      "        import os",
+      "        from pathlib import Path",
+      "        ",
+      "        emergency_flag = Path('.guardian_emergency_stop')",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'flag_exists': emergency_flag.exists(),",
+      "            'flag_location': str(emergency_flag.absolute()) if emergency_flag.exists() else None",
+      "        })",
+      "            ",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),",
+      "            'message': 'Failed to check emergency flag'",
+      "        }), 500"
+    ],
+    "risks": [
+      "Emergency operation - use with caution"
+    ],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/emergency/check_flag"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/emergency/check_flag",
+      "webui/backend/app.py:3005 check_emergency_flag()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993505Z"
+  },
+  {
+    "action_id": "emergency.clear_flag",
+    "title": "Clear Emergency Flag",
+    "summary": "Clear Emergency Flag",
+    "effects": [
+      "Clear Emergency Flag",
+      "    ",
+      "    Clears the emergency flag in bot_state.json, allowing the bot to resume normal operations.",
+      "    The emergency flag is set automatically when critical errors occur or manually via emergency stop.",
+      "    ",
+      "    Effects:",
+      "    - Removes emergency flag from bot_state.json",
+      "    - Bot can start accepting new orders again",
+      "    - Does NOT automatically restart the bot",
+      "    - Resets gatekeeper if it was blocked",
+      "    - Clears Error Intelligence emergency mode",
+      "    ",
+      "    Use Cases:",
+      "    - After resolving the issue that triggered emergency mode",
+      "    - To allow bot to restart after manual emergency stop",
+      "    - When recovering from a critical error",
+      "    ",
+      "    Post-Action:",
+      "    - Verify the root cause is resolved before clearing"
+    ],
+    "risks": [
+      "Emergency operation - use with caution"
+    ],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/emergency/clear_flag"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/emergency/clear_flag",
+      "webui/backend/app.py:3028 clear_emergency_flag()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993610Z"
+  },
+  {
+    "action_id": "emergency.reset_gatekeeper",
+    "title": "Reset Gatekeeper",
+    "summary": "Reset Gatekeeper",
+    "effects": [
+      "Reset Gatekeeper",
+      "    ",
+      "    Resets the Gatekeeper safety mechanism that blocks trading after errors or violations.",
+      "    The Gatekeeper prevents the bot from trading when safety limits are breached or errors occur.",
+      "    ",
+      "    Effects:",
+      "    - Resets gatekeeper blocking state",
+      "    - Clears error counters and violation records",
+      "    - Bot can resume checking for trading opportunities",
+      "    - Does NOT clear emergency flags (use clear_emergency_flag for that)",
+      "    ",
+      "    Risks:",
+      "    - Bot may resume trading if still running",
+      "    - Underlying issues may not be resolved",
+      "    - Error conditions may recur",
+      "    ",
+      "    Use Cases:",
+      "    - After fixing configuration issues",
+      "    - When error was temporary/resolved"
+    ],
+    "risks": [
+      "Emergency operation - use with caution"
+    ],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/emergency/reset_gatekeeper"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/emergency/reset_gatekeeper",
+      "webui/backend/app.py:3085 reset_gatekeeper()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993725Z"
+  },
+  {
+    "action_id": "debug.log_check",
+    "title": "Debug Log Check",
+    "summary": "Debug endpoint to check log reading\"\"\"",
+    "effects": [
+      "Debug endpoint to check log reading\"\"\"",
+      "    try:",
+      "        import os",
+      "        import re",
+      "        ",
+      "        log_file = Path('/Users/shailendrasinghrajawat/Documents/WorkingBot/bot/logs/bot.log')",
+      "        startup_hold = False",
+      "        confirm_file_hint = None",
+      "        ",
+      "        if log_file.exists():",
+      "            with log_file.open('rb') as f:",
+      "                try:",
+      "                    f.seek(-8192, os.SEEK_END)",
+      "                except OSError:",
+      "                    f.seek(0)",
+      "                tail = f.read().decode(errors='ignore')",
+      "            ",
+      "            config_change = 'CONFIG CHANGE REQUIRES CONFIRMATION' in tail",
+      "            waiting = 'Waiting for confirmation' in tail"
+    ],
+    "risks": [],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "GET",
+      "path": "/api/debug/log_check"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/debug/log_check",
+      "webui/backend/app.py:3139 debug_log_check()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993839Z"
+  },
+  {
+    "action_id": "emergency.force_restart",
+    "title": "Force Restart",
+    "summary": "Force Restart Bot",
+    "effects": [
+      "Force Restart Bot",
+      "    ",
+      "    Forcefully restarts the trading bot by killing existing process and starting a new one.",
+      "    This is a more aggressive action than normal stop/start - use when bot is unresponsive.",
+      "    ",
+      "    Effects:",
+      "    - Kills existing bot process (SIGTERM first, SIGKILL if needed)",
+      "    - Waits for process to terminate",
+      "    - Starts new bot process",
+      "    - Existing orders remain on exchange (NOT cancelled)",
+      "    - Positions preserved",
+      "    - Bot state reloaded from files",
+      "    ",
+      "    Risks:",
+      "    - Orders in flight may not be tracked immediately",
+      "    - Brief trading interruption (1-2 seconds)",
+      "    - Unresponsive bot may not stop cleanly",
+      "    - State sync issues if bot was mid-operation"
+    ],
+    "risks": [
+      "Emergency operation - use with caution"
+    ],
+    "related_config": [
+      {
+        "key": "TRADING_MODE",
+        "value": "demo",
+        "source": "grid_config.env"
+      }
+    ],
+    "api": {
+      "method": "POST",
+      "path": "/api/emergency/force_restart"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/emergency/force_restart",
+      "webui/backend/app.py:3190 force_restart()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.993944Z"
+  },
+  {
+    "action_id": "process.supervise",
+    "title": "Supervise Processes",
+    "summary": "Ensure trading bot and guardian bot are running. Start if not.",
+    "effects": [
+      "Ensure trading bot and guardian bot are running. Start if not.",
+      "    Returns which processes were started."
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/process/supervise"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/process/supervise",
+      "webui/backend/app.py:3277 supervise_processes()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994096Z"
+  },
+  {
+    "action_id": "ai.ask",
+    "title": "Ai Ask",
+    "summary": "Ask the AI Advisor a question\"\"\"",
+    "effects": [
+      "Ask the AI Advisor a question\"\"\"",
+      "    try:",
+      "        from bot.ai.advisor import get_ai_advisor",
+      "        ",
+      "        data = request.json",
+      "        question = data.get('question', '')",
+      "        ",
+      "        if not question:",
+      "            return jsonify({",
+      "                'success': False,",
+      "                'error': 'No question provided'",
+      "            }), 400",
+      "        ",
+      "        advisor = get_ai_advisor()",
+      "        response = advisor.ask(question)",
+      "        ",
+      "        return jsonify(response)",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/ai/ask"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/ai/ask",
+      "webui/backend/app.py:3330 ai_ask()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994199Z"
+  },
+  {
+    "action_id": "news.feed",
+    "title": "Get News Feed",
+    "summary": "Get market news feed\"\"\"",
+    "effects": [
+      "Get market news feed\"\"\"",
+      "    try:",
+      "        from bot.news.aggregator import get_news_aggregator",
+      "        ",
+      "        # Get parameters",
+      "        limit = request.args.get('limit', 10, type=int)",
+      "        priority = request.args.get('priority', 'all')  # all, critical, high, medium, low",
+      "        ",
+      "        aggregator = get_news_aggregator()",
+      "        news = aggregator.get_news(limit=limit, priority=priority)",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'news': news,",
+      "            'timestamp': datetime.now().isoformat()",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e),"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/news/feed"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/news/feed",
+      "webui/backend/app.py:3360 get_news_feed()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994296Z"
+  },
+  {
+    "action_id": "news.refresh",
+    "title": "Refresh News",
+    "summary": "Manually refresh news feed\"\"\"",
+    "effects": [
+      "Manually refresh news feed\"\"\"",
+      "    try:",
+      "        from bot.news.aggregator import get_news_aggregator",
+      "        ",
+      "        aggregator = get_news_aggregator()",
+      "        aggregator.refresh()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'message': 'News feed refreshed'",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500",
+      "",
+      "",
+      "# ============================================================================",
+      "# INSTITUTIONAL AI API (NEW - World-Class Analytics)"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/news/refresh"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/news/refresh",
+      "webui/backend/app.py:3386 refresh_news()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994411Z"
+  },
+  {
+    "action_id": "institutional.comprehensive_analysis",
+    "title": "Get Institutional Analysis",
+    "summary": "Get comprehensive institutional-grade analysis\"\"\"",
+    "effects": [
+      "Get comprehensive institutional-grade analysis\"\"\"",
+      "    try:",
+      "        from bot.ai.institutional_advisor import get_institutional_advisor",
+      "        ",
+      "        lookback_days = request.args.get('lookback_days', 30, type=int)",
+      "        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'",
+      "        ",
+      "        advisor = get_institutional_advisor()",
+      "        analysis = advisor.get_comprehensive_analysis(lookback_days, force_refresh)",
+      "        ",
+      "        # Convert numpy types to native Python types",
+      "        analysis = convert_numpy_types(analysis)",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'analysis': analysis",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/comprehensive_analysis"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/comprehensive_analysis",
+      "webui/backend/app.py:3410 get_institutional_analysis()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994524Z"
+  },
+  {
+    "action_id": "institutional.ask",
+    "title": "Institutional Ask",
+    "summary": "Ask the intelligent AI advisor a question\"\"\"",
+    "effects": [
+      "Ask the intelligent AI advisor a question\"\"\"",
+      "    try:",
+      "        from bot.ai.conversational import get_intelligent_advisor",
+      "        ",
+      "        data = request.json",
+      "        question = data.get('question', '')",
+      "        ",
+      "        if not question:",
+      "            return jsonify({",
+      "                'success': False,",
+      "                'error': 'No question provided'",
+      "            }), 400",
+      "        ",
+      "        advisor = get_intelligent_advisor()",
+      "        response = advisor.ask(question)",
+      "        ",
+      "        # Convert numpy types to native Python types",
+      "        response = convert_numpy_types(response)",
+      "        ",
+      "        # Ensure success field is present"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/institutional/ask"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/ask",
+      "webui/backend/app.py:3436 institutional_ask()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994632Z"
+  },
+  {
+    "action_id": "institutional.performance",
+    "title": "Get Performance Metrics",
+    "summary": "Get performance analytics\"\"\"",
+    "effects": [
+      "Get performance analytics\"\"\"",
+      "    try:",
+      "        from bot.ai.analytics import get_performance_analytics",
+      "        ",
+      "        lookback_days = request.args.get('lookback_days', 30, type=int)",
+      "        ",
+      "        perf = get_performance_analytics()",
+      "        metrics = perf.calculate_all_metrics(lookback_days)",
+      "        grades = perf.get_performance_grade(metrics)",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'metrics': metrics,",
+      "            'grades': grades",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/performance"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/performance",
+      "webui/backend/app.py:3470 get_performance_metrics()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994725Z"
+  },
+  {
+    "action_id": "institutional.risk",
+    "title": "Get Risk Metrics",
+    "summary": "Get risk analytics\"\"\"",
+    "effects": [
+      "Get risk analytics\"\"\"",
+      "    try:",
+      "        from bot.ai.analytics import get_risk_analytics",
+      "        ",
+      "        lookback_days = request.args.get('lookback_days', 30, type=int)",
+      "        ",
+      "        risk = get_risk_analytics()",
+      "        metrics = risk.calculate_all_metrics(lookback_days)",
+      "        grades = risk.get_risk_grade(metrics)",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'metrics': metrics,",
+      "            'grades': grades",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/risk"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/risk",
+      "webui/backend/app.py:3494 get_risk_metrics()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994819Z"
+  },
+  {
+    "action_id": "institutional.execution",
+    "title": "Get Execution Metrics",
+    "summary": "Get execution quality analytics\"\"\"",
+    "effects": [
+      "Get execution quality analytics\"\"\"",
+      "    try:",
+      "        from bot.ai.analytics import get_execution_analytics",
+      "        ",
+      "        lookback_days = request.args.get('lookback_days', 30, type=int)",
+      "        ",
+      "        execution = get_execution_analytics()",
+      "        metrics = execution.calculate_all_metrics(lookback_days)",
+      "        grades = execution.get_execution_grade(metrics)",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'metrics': metrics,",
+      "            'grades': grades",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/execution"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/execution",
+      "webui/backend/app.py:3518 get_execution_metrics()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.994914Z"
+  },
+  {
+    "action_id": "institutional.market_regime",
+    "title": "Get Market Regime",
+    "summary": "Get market regime analysis\"\"\"",
+    "effects": [
+      "Get market regime analysis\"\"\"",
+      "    try:",
+      "        from bot.ai.predictive import get_market_regime_detector",
+      "        ",
+      "        regime_detector = get_market_regime_detector()",
+      "        analysis = regime_detector.analyze_market()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'analysis': analysis",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500",
+      "",
+      "",
+      "@app.route('/api/institutional/optimization', methods=['GET'])",
+      "def get_optimization_recommendations():"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/market_regime"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/market_regime",
+      "webui/backend/app.py:3542 get_market_regime()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.995131Z"
+  },
+  {
+    "action_id": "institutional.optimization",
+    "title": "Get Optimization Recommendations",
+    "summary": "Get grid optimization recommendations\"\"\"",
+    "effects": [
+      "Get grid optimization recommendations\"\"\"",
+      "    try:",
+      "        from bot.ai.predictive import get_grid_optimizer",
+      "        ",
+      "        optimizer = get_grid_optimizer()",
+      "        recommendations = optimizer.get_optimization_recommendations()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'recommendations': recommendations",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500",
+      "",
+      "",
+      "@app.route('/api/institutional/log_analysis', methods=['GET'])",
+      "def get_log_analysis():"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/optimization"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/optimization",
+      "webui/backend/app.py:3562 get_optimization_recommendations()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.995238Z"
+  },
+  {
+    "action_id": "institutional.log_analysis",
+    "title": "Get Log Analysis",
+    "summary": "Get log analysis\"\"\"",
+    "effects": [
+      "Get log analysis\"\"\"",
+      "    try:",
+      "        from bot.ai.analytics import get_log_analyzer",
+      "        ",
+      "        lookback_hours = request.args.get('lookback_hours', 24, type=int)",
+      "        ",
+      "        log_analyzer = get_log_analyzer()",
+      "        analysis = log_analyzer.analyze_logs(lookback_hours)",
+      "        health = log_analyzer.get_health_status(analysis)",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'analysis': analysis,",
+      "            'health': health",
+      "        })",
+      "    except Exception as e:",
+      "        return jsonify({",
+      "            'success': False,",
+      "            'error': str(e)",
+      "        }), 500"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/log_analysis"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/log_analysis",
+      "webui/backend/app.py:3582 get_log_analysis()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.995339Z"
+  },
+  {
+    "action_id": "institutional.monte_carlo",
+    "title": "Get Monte Carlo Analysis",
+    "summary": "Run Monte Carlo simulation\"\"\"",
+    "effects": [
+      "Run Monte Carlo simulation\"\"\"",
+      "    try:",
+      "        from bot.ai.advanced import get_monte_carlo_simulator",
+      "        from bot.state.manager import get_state_manager",
+      "        ",
+      "        # Get parameters",
+      "        num_simulations = int(request.args.get('num_simulations', 10000))",
+      "        time_horizon = int(request.args.get('time_horizon_days', 30))",
+      "        ",
+      "        # Get current portfolio value and metrics",
+      "        state = get_state_manager()",
+      "        current_value = state.get_total_capital()",
+      "        ",
+      "        # Estimate return and volatility from recent performance",
+      "        # In production, calculate from actual trade history",
+      "        mean_return = 0.15  # 15% annualized (placeholder)",
+      "        volatility = 0.25   # 25% annualized (placeholder)",
+      "        ",
+      "        # Run Monte Carlo simulation",
+      "        simulator = get_monte_carlo_simulator(num_simulations)"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/monte_carlo"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/monte_carlo",
+      "webui/backend/app.py:3610 get_monte_carlo_analysis()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.995436Z"
+  },
+  {
+    "action_id": "institutional.ml_prediction",
+    "title": "Get Ml Prediction",
+    "summary": "Get ML-based price predictions\"\"\"",
+    "effects": [
+      "Get ML-based price predictions\"\"\"",
+      "    try:",
+      "        from bot.ai.advanced import get_ml_predictor",
+      "        ",
+      "        # Get predictor",
+      "        predictor = get_ml_predictor()",
+      "        ",
+      "        # Get current price (from state or exchange)",
+      "        # Placeholder - in production, get from actual market data",
+      "        current_price = 111500.0",
+      "        ",
+      "        # Get predictions",
+      "        price_prediction = predictor.predict_price_movement(horizon=5)",
+      "        entry_exit = predictor.suggest_entry_exit(current_price)",
+      "        patterns = predictor.detect_patterns()",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'prediction': price_prediction,",
+      "            'suggestion': entry_exit,"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "GET",
+      "path": "/api/institutional/ml_prediction"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/ml_prediction",
+      "webui/backend/app.py:3650 get_ml_prediction()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.995563Z"
+  },
+  {
+    "action_id": "institutional.win_probability",
+    "title": "Calculate Win Probability",
+    "summary": "Calculate win probability for a trade\"\"\"",
+    "effects": [
+      "Calculate win probability for a trade\"\"\"",
+      "    try:",
+      "        from bot.ai.advanced import get_ml_predictor",
+      "        ",
+      "        data = request.get_json()",
+      "        entry_price = float(data.get('entry_price'))",
+      "        target_price = float(data.get('target_price'))",
+      "        stop_loss = float(data.get('stop_loss'))",
+      "        ",
+      "        predictor = get_ml_predictor()",
+      "        probability = predictor.estimate_win_probability(",
+      "            entry_price,",
+      "            target_price,",
+      "            stop_loss",
+      "        )",
+      "        ",
+      "        return jsonify({",
+      "            'success': True,",
+      "            'probability': probability",
+      "        })"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "POST",
+      "path": "/api/institutional/win_probability"
+    },
+    "code_refs": [
+      "webui/backend/app.py: /api/institutional/win_probability",
+      "webui/backend/app.py:3681 calculate_win_probability()"
+    ],
+    "last_updated": "2025-10-15T11:49:22.995700Z"
+  },
+  {
+    "action_id": "create({\n      baseURL: this.config.baseURL,\n      timeout: this.config.timeout,\n      headers: {\n        ",
+    "title": "Create({\n      Baseurl: This Config Baseurl,\n      Timeout: This Config Timeout,\n      Headers: {\n        ",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/create({\n      baseURL: this.config.baseURL,\n      timeout: this.config.timeout,\n      headers: {\n        "
+    },
+    "code_refs": [
+      "webui/frontend/src/utils/apiClient.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:22.998943Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "request(requestConfig);\n        console.log(`\u2705 API ${method} ${url} succeeded`);\n        return response.data;\n      } catch (error) {\n        lastError = error;\n        \n        const isRetryable = this.isRetryableError(error);\n        const shouldRetry = attempt < maxRetries && isRetryable;\n\n        console.error(`\u274c API ${method} ${url} failed:`, error.message);\n\n        if (shouldRetry) {\n          const delay = this.config.retryDelay * Math.pow(2, attempt);\n          console.log(`\u23f3 Retrying in ${delay}ms...`);\n          await this.sleep(delay);\n          continue;\n        }\n\n        throw this.normalizeError(error);\n      }\n    }\n\n    throw this.normalizeError(lastError);\n  }\n\n  .**\n   * Check if error is retryable\n   *.\n  isRetryableError(error) {\n    if (!error.response) {\n      .. Network error, timeout, etc. - retryable\n      return true;\n    }\n\n    const status = error.response.status;\n    return this.config.retryStatusCodes.includes(status);\n  }\n\n  .**\n   * Normalize error for consistent handling\n   *.\n  normalizeError(error) {\n    if (!error.response) {\n      return {\n        success: false,\n        message: error.message || ",
+    "title": "Request(Requestconfig);\n        Console Log(`\u2705 Api ${Method} ${Url} Succeeded`);\n        Return Response Data;\n      } Catch (Error) {\n        Lasterror = Error;\n        \n        Const Isretryable = This Isretryableerror(Error);\n        Const Shouldretry = Attempt < Maxretries && Isretryable;\n\n        Console Error(`\u274c Api ${Method} ${Url} Failed:`, Error Message);\n\n        If (Shouldretry) {\n          Const Delay = This Config Retrydelay * Math Pow(2, Attempt);\n          Console Log(`\u23f3 Retrying In ${Delay}Ms   `);\n          Await This Sleep(Delay);\n          Continue;\n        }\n\n        Throw This Normalizeerror(Error);\n      }\n    }\n\n    Throw This Normalizeerror(Lasterror);\n  }\n\n   **\n   * Check If Error Is Retryable\n   * \n  Isretryableerror(Error) {\n    If (!Error Response) {\n         Network Error, Timeout, Etc  - Retryable\n      Return True;\n    }\n\n    Const Status = Error Response Status;\n    Return This Config Retrystatuscodes Includes(Status);\n  }\n\n   **\n   * Normalize Error For Consistent Handling\n   * \n  Normalizeerror(Error) {\n    If (!Error Response) {\n      Return {\n        Success: False,\n        Message: Error Message || ",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/request(requestConfig);\n        console.log(`\u2705 API ${method} ${url} succeeded`);\n        return response.data;\n      } catch (error) {\n        lastError = error;\n        \n        const isRetryable = this.isRetryableError(error);\n        const shouldRetry = attempt < maxRetries && isRetryable;\n\n        console.error(`\u274c API ${method} ${url} failed:`, error.message);\n\n        if (shouldRetry) {\n          const delay = this.config.retryDelay * Math.pow(2, attempt);\n          console.log(`\u23f3 Retrying in ${delay}ms...`);\n          await this.sleep(delay);\n          continue;\n        }\n\n        throw this.normalizeError(error);\n      }\n    }\n\n    throw this.normalizeError(lastError);\n  }\n\n  /**\n   * Check if error is retryable\n   */\n  isRetryableError(error) {\n    if (!error.response) {\n      // Network error, timeout, etc. - retryable\n      return true;\n    }\n\n    const status = error.response.status;\n    return this.config.retryStatusCodes.includes(status);\n  }\n\n  /**\n   * Normalize error for consistent handling\n   */\n  normalizeError(error) {\n    if (!error.response) {\n      return {\n        success: false,\n        message: error.message || "
+    },
+    "code_refs": [
+      "webui/frontend/src/utils/apiClient.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:22.998971Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "get(",
+    "title": "Get(",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/get("
+    },
+    "code_refs": [
+      "webui/frontend/src/utils/connectionManager.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:22.999337Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "errors.?status=open&status=acknowledged",
+    "title": "Errors ?Status=Open&Status=Acknowledged",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/errors/?status=open&status=acknowledged"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ErrorIntelligencePanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:22.999684Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "errors.statistics",
+    "title": "Errors Statistics",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/errors/statistics"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ErrorIntelligencePanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:22.999692Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "get(`docs.${doc.file}`);\n      setDocContent(response.data);\n    } catch (error) {\n      console.error(",
+    "title": "Get(`Docs ${Doc File}`);\n      Setdoccontent(Response Data);\n    } Catch (Error) {\n      Console Error(",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/get(`/api/docs/${doc.file}`);\n      setDocContent(response.data);\n    } catch (error) {\n      console.error("
+    },
+    "code_refs": [
+      "webui/frontend/src/components/DocumentationPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:22.999897Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "errors.scan",
+    "title": "Errors Scan",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/errors/scan"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ErrorIntelligencePanel_simple.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.000124Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "post(",
+    "title": "Post(",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/post("
+    },
+    "code_refs": [
+      "webui/frontend/src/components/TmuxPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.000468Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "get(`news.feed?limit=10&priority=${filter}`);\n      if (response.data.success) {\n        setNews(response.data.news);\n      }\n    } catch (err) {\n      console.error(",
+    "title": "Get(`News Feed?Limit=10&Priority=${Filter}`);\n      If (Response Data Success) {\n        Setnews(Response Data News);\n      }\n    } Catch (Err) {\n      Console Error(",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/get(`/api/news/feed?limit=10&priority=${filter}`);\n      if (response.data.success) {\n        setNews(response.data.news);\n      }\n    } catch (err) {\n      console.error("
+    },
+    "code_refs": [
+      "webui/frontend/src/components/MarketNewsWidget.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.003397Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "recon.resync-json",
+    "title": "Recon Resync-Json",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/recon/resync-json"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ReconciliationPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.003753Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "recon.acknowledge",
+    "title": "Recon Acknowledge",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/recon/acknowledge"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ReconciliationPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.003761Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "recon.ignore",
+    "title": "Recon Ignore",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/recon/ignore"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ReconciliationPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.003769Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "recon.run",
+    "title": "Recon Run",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/recon/run"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/ReconciliationPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.003776Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "post(endpoint);\n        if (response.data.success) {\n          alert(`\u2705 ${action.replace(",
+    "title": "Post(Endpoint);\n        If (Response Data Success) {\n          Alert(`\u2705 ${Action Replace(",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/post(endpoint);\n        if (response.data.success) {\n          alert(`\u2705 ${action.replace("
+    },
+    "code_refs": [
+      "webui/frontend/src/components/TradingStatusPanel.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.005975Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "errors.acknowledge",
+    "title": "Errors Acknowledge",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/errors/acknowledge"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/incidents/ErrorCard.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.007617Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "errors.resolve",
+    "title": "Errors Resolve",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/errors/resolve"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/incidents/ErrorCard.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.007630Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "errors.run_fix",
+    "title": "Errors Run_Fix",
+    "summary": "Frontend action (no backend mapping found)",
+    "effects": [
+      "Frontend-only action - backend implementation needed"
+    ],
+    "risks": [],
+    "related_config": [],
+    "api": {
+      "method": "UNKNOWN",
+      "path": "/api/errors/run_fix"
+    },
+    "code_refs": [
+      "webui/frontend/src/components/incidents/ErrorCard.js: API call"
+    ],
+    "last_updated": "2025-10-15T11:49:23.007638Z",
+    "needs_backend": true
+  },
+  {
+    "action_id": "capital.equity-floor.save",
+    "title": "Save Equity Floor Settings",
+    "summary": "Updates equity floor capital protection settings",
+    "effects": [
+      "Saves EQUITY_FLOOR threshold to config",
+      "Updates EQUITY_FLOOR_CHECK_INTERVAL",
+      "Sets EQUITY_FLOOR_REQUIRE_ACK if enabled",
+      "Hot reload applies changes immediately to running bot",
+      "Guardian will enforce new equity floor limit"
+    ],
+    "risks": [
+      "Setting floor too high may trigger immediate stop",
+      "Setting floor too low reduces protection"
+    ],
+    "related_config": [
+      "EQUITY_FLOOR",
+      "EQUITY_FLOOR_CHECK_INTERVAL",
+      "EQUITY_FLOOR_REQUIRE_ACK"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/capital/update-config"
+    },
+    "category": "capital-protection",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010701"
+  },
+  {
+    "action_id": "capital.drawdown-cap.save",
+    "title": "Save Drawdown Cap Settings",
+    "summary": "Updates maximum drawdown limits for capital protection",
+    "effects": [
+      "Saves MAX_DRAWDOWN_PERCENT to config",
+      "Updates DRAWDOWN_CHECK_INTERVAL",
+      "Sets DRAWDOWN_HYSTERESIS_PCT and DRAWDOWN_WINDOW_DAYS",
+      "Hot reload applies changes immediately",
+      "Guardian enforces new drawdown limits"
+    ],
+    "risks": [
+      "Tighter limits may trigger stops during normal volatility",
+      "Looser limits reduce downside protection"
+    ],
+    "related_config": [
+      "MAX_DRAWDOWN_PERCENT",
+      "DRAWDOWN_CHECK_INTERVAL",
+      "DRAWDOWN_HYSTERESIS_PCT",
+      "DRAWDOWN_WINDOW_DAYS"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/capital/update-config"
+    },
+    "category": "capital-protection",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010707"
+  },
+  {
+    "action_id": "liquidation.save-settings",
+    "title": "Save Liquidation Protection Settings",
+    "summary": "Updates liquidation protection configuration to prevent margin calls",
+    "effects": [
+      "Saves liquidation distance thresholds",
+      "Updates margin buffer requirements",
+      "Sets auto-liquidation triggers",
+      "Applies to running bot via hot reload",
+      "Liquidation monitor enforces new limits"
+    ],
+    "risks": [
+      "Too aggressive settings may close positions prematurely",
+      "Too loose settings increase liquidation risk"
+    ],
+    "related_config": [
+      "LIQUIDATION_DISTANCE_THRESHOLD",
+      "MARGIN_BUFFER_PERCENT",
+      "AUTO_LIQUIDATE_ENABLED"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/liquidation/config"
+    },
+    "category": "liquidation-protection",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010708"
+  },
+  {
+    "action_id": "monitoring.save-safety-limits",
+    "title": "Save Safety Limits",
+    "summary": "Updates core trading safety limits (loss limits, position size, order quantity)",
+    "effects": [
+      "Saves MAX_ACCOUNT_LOSS_INR to config",
+      "Updates MAX_POSITION_NOTIONAL_INR",
+      "Sets MAX_QTY_PER_ORDER",
+      "Hot reload applies immediately to running bot",
+      "Gatekeeper enforces new limits on next order"
+    ],
+    "risks": [
+      "Increasing limits reduces protection",
+      "Decreasing limits may block legitimate trades",
+      "Changes apply immediately to running bot"
+    ],
+    "related_config": [
+      "MAX_ACCOUNT_LOSS_INR",
+      "MAX_POSITION_NOTIONAL_INR",
+      "MAX_QTY_PER_ORDER"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/config"
+    },
+    "category": "safety",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010708"
+  },
+  {
+    "action_id": "reconciliation.resync",
+    "title": "Resync Order Status",
+    "summary": "Resyncs selected orders with exchange to fix discrepancies",
+    "effects": [
+      "Fetches latest order status from exchange API",
+      "Updates local bot_state.json with current status",
+      "Fixes PENDING_ACK, FILLED, CANCELLED status mismatches",
+      "Resolves ghost order issues",
+      "Updates order reconciliation log"
+    ],
+    "use_cases": [
+      "When orders show as pending but are filled on exchange",
+      "To fix ghost orders that don't exist on exchange",
+      "After network issues caused status desync"
+    ],
+    "related_config": [
+      "RECONCILIATION_ENABLED",
+      "RECONCILIATION_INTERVAL"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/reconciliation/resync"
+    },
+    "category": "reconciliation",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010709"
+  },
+  {
+    "action_id": "reconciliation.acknowledge",
+    "title": "Acknowledge Discrepancy",
+    "summary": "Marks order discrepancies as acknowledged (known/accepted)",
+    "effects": [
+      "Moves orders from active discrepancies to acknowledged",
+      "Stops alerting on these specific orders",
+      "Does NOT fix the underlying issue",
+      "Records acknowledgment time and user"
+    ],
+    "use_cases": [
+      "When discrepancy is known and being handled manually",
+      "To reduce alert noise for non-critical issues",
+      "After manual intervention outside the bot"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/reconciliation/acknowledge"
+    },
+    "category": "reconciliation",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010709"
+  },
+  {
+    "action_id": "reconciliation.ignore",
+    "title": "Ignore Discrepancy (24h)",
+    "summary": "Temporarily ignores selected order discrepancies for 24 hours",
+    "effects": [
+      "Hides discrepancies from active view",
+      "Stops alerts for 24 hours",
+      "Auto-expires after 24h and reappears if still present",
+      "Does NOT fix the issue"
+    ],
+    "use_cases": [
+      "Temporary exchange API issues",
+      "Waiting for manual order cancellation",
+      "Known transient issues"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/reconciliation/ignore"
+    },
+    "category": "reconciliation",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010710"
+  },
+  {
+    "action_id": "robustness.save-loss-limits",
+    "title": "Save Loss Limits",
+    "summary": "Updates trader and guardian loss limits for robustness protection",
+    "effects": [
+      "Saves MAX_ACCOUNT_LOSS_INR (trader limit)",
+      "Updates GUARDIAN_MAX_ACCOUNT_LOSS_INR (guardian limit)",
+      "Hot reload applies changes immediately",
+      "Guardian enforces new limits on running bot",
+      "Loss tracker resets to use new thresholds"
+    ],
+    "risks": [
+      "Increasing limits allows more losses before stop",
+      "Decreasing limits may trigger immediate stop if already exceeded"
+    ],
+    "related_config": [
+      "MAX_ACCOUNT_LOSS_INR",
+      "GUARDIAN_MAX_ACCOUNT_LOSS_INR"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/config"
+    },
+    "category": "robustness",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010711"
+  },
+  {
+    "action_id": "emergency.clear-flag",
+    "title": "Clear Emergency Flag",
+    "summary": "Clears the emergency flag allowing bot to resume operations",
+    "effects": [
+      "Removes emergency flag from bot_state.json",
+      "Bot can start accepting new orders again",
+      "Does NOT automatically restart the bot",
+      "Resets gatekeeper if it was blocked"
+    ],
+    "use_cases": [
+      "After resolving issue that triggered emergency mode",
+      "To allow bot restart after manual emergency stop",
+      "When recovering from critical error"
+    ],
+    "related_config": [
+      "EMERGENCY_STOP_ENABLED"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/emergency/clear_flag"
+    },
+    "category": "emergency",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010711"
+  },
+  {
+    "action_id": "emergency.reset-gatekeeper",
+    "title": "Reset Gatekeeper",
+    "summary": "Resets Safety Gatekeeper that blocks trading after errors",
+    "effects": [
+      "Resets gatekeeper blocking state",
+      "Clears error counters and violation records",
+      "Bot can resume checking for trading opportunities",
+      "Does NOT clear emergency flags"
+    ],
+    "risks": [
+      "Bot may resume trading if still running",
+      "Underlying issues may not be resolved",
+      "Error conditions may recur"
+    ],
+    "use_cases": [
+      "After fixing configuration issues",
+      "When error was temporary/resolved",
+      "To resume trading after manual intervention"
+    ],
+    "related_config": [
+      "GATEKEEPER_ENABLED"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/emergency/reset_gatekeeper"
+    },
+    "category": "emergency",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010712"
+  },
+  {
+    "action_id": "emergency.force-restart",
+    "title": "Force Restart Bot",
+    "summary": "Forcefully restarts bot by killing and restarting process",
+    "effects": [
+      "Kills existing bot process (SIGTERM/SIGKILL)",
+      "Starts new bot process",
+      "Existing orders remain on exchange (NOT cancelled)",
+      "Positions preserved",
+      "Bot state reloaded from files"
+    ],
+    "risks": [
+      "Orders in flight may not be tracked immediately",
+      "Brief trading interruption (1-2 seconds)",
+      "Unresponsive bot may not stop cleanly",
+      "State sync issues if bot was mid-operation"
+    ],
+    "use_cases": [
+      "Bot is frozen/unresponsive",
+      "After critical configuration change",
+      "When normal stop/start doesn't work",
+      "Emergency recovery situation"
+    ],
+    "related_config": [
+      "BOT_SCRIPT_PATH",
+      "PYTHON_EXECUTABLE"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/emergency/force_restart"
+    },
+    "category": "emergency",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010713"
+  },
+  {
+    "action_id": "config.save",
+    "title": "Save Configuration",
+    "summary": "Saves all configuration changes to grid_config.env file",
+    "effects": [
+      "Writes updated config values to grid_config.env",
+      "Validates configuration before saving",
+      "Triggers hot reload if bot is running",
+      "Changes apply immediately to running bot (no restart needed for most settings)",
+      "Creates backup of previous config"
+    ],
+    "risks": [
+      "Invalid values may prevent bot from starting",
+      "Some critical settings require bot restart to take effect",
+      "Incorrect safety limits could increase risk exposure"
+    ],
+    "use_cases": [
+      "After modifying grid parameters",
+      "Updating safety limits or risk settings",
+      "Changing Telegram or notification settings",
+      "Enabling/disabling features"
+    ],
+    "post_action": [
+      "Check bot logs for hot reload confirmation",
+      "Verify changes took effect in bot status",
+      "Restart bot if critical settings were changed"
+    ],
+    "related_config": [
+      "All config keys"
+    ],
+    "api": {
+      "method": "POST",
+      "endpoint": "/api/config/update"
+    },
+    "category": "configuration",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010713"
+  },
+  {
+    "action_id": "config.reset",
+    "title": "Reset Configuration",
+    "summary": "Discards all unsaved configuration changes and reverts to last saved state",
+    "effects": [
+      "Reloads config from grid_config.env file",
+      "Discards all pending changes in UI",
+      "Does NOT modify saved config file",
+      "No impact on running bot"
+    ],
+    "use_cases": [
+      "Made incorrect changes and want to start over",
+      "Accidentally modified wrong settings",
+      "Want to abandon all pending changes"
+    ],
+    "api": {
+      "method": "GET",
+      "endpoint": "/api/config/all"
+    },
+    "category": "configuration",
+    "source": "synthetic",
+    "last_updated": "2025-10-15T17:19:23.010714"
+  }
+]

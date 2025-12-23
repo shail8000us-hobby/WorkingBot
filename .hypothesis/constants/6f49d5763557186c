@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/reconciliation/core_engine.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.001, 0.01, 0.5, 0.8, 300, '+00:00', 'Z', '__main__', 'bot', 'bot_data', 'bot_orders', 'bot_orders_count', 'both', 'client_order_id', 'core_engine', 'created_at', 'critical', 'data_sources', 'discrepancies', 'error', 'exchange', 'exchange_data', 'exchange_orders', 'high', 'id', 'last_update', 'low', 'manual', 'manual_orders', 'medium', 'metadata', 'mismatched_orders', 'missing_in_bot', 'missing_on_exchange', 'none', 'order_id', 'price', 'product_symbol', 'provenance_evidence', 'reason', 'records', 'severity', 'side', 'size', 'status', 'success', 'summary', 'symbol', 'timestamp', 'total_orders', 'unknown', 'warning']

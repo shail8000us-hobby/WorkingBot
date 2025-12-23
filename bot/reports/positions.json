@@ -1,0 +1,12 @@
+{
+  "positions": [],
+  "summary": {
+    "total_positions": 0,
+    "total_opened": 0,
+    "total_closed": 0,
+    "max_positions": 10,
+    "available_slots": 10
+  },
+  "last_update": 1763130173.060512,
+  "source": "AsyncBot_PositionManagerActor"
+}

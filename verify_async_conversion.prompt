@@ -1,0 +1,34 @@
+# 🔍 CODE AUDIT PROMPT — THREAD → ASYNC MIGRATION VERIFICATION
+
+You are a **senior Python systems engineer** reviewing the full migration of a **threaded trading bot** to an **asyncio-based architecture** for production deployment. Your task is to deeply analyze all files and confirm that **EVERY functional component, strategy, and feature** from the threaded version has been **successfully and safely converted** to the async version.
+
+## OBJECTIVE
+Perform a **complete, line-by-line audit** between the old threaded bot and the new async bot. Identify **any missing features, incomplete conversions, blocking calls, concurrency flaws, or sync remnants** that could cause performance or logic issues in production.
+
+## REQUIRED CHECKS
+1. ✅ Confirm all threads, queues, and blocking I/O are replaced with proper async constructs (`async def`, `await`, `asyncio.Task`, `aiohttp`, etc.).
+2. ⚙️ Validate message routing, order handling, and actor/event communication use **non-blocking async message passing**.
+3. 💾 Ensure all database, file I/O, and WebSocket operations are **fully asynchronous**.
+4. 🧠 Compare the entire strategy logic: entry/exit rules, grid logic, PnL updates, stop-loss, and take-profit handling must be **identical in behavior** to the threaded bot.
+5. 🔁 Check for **deadlocks or missed awaits** — no blocking operations (`time.sleep`, `requests`, `threading`, `subprocess`, etc.) should remain.
+6. 🔍 Verify the orchestrator correctly awaits all async handlers, tasks, and background workers.
+7. 🧩 Ensure async event loops are properly managed — no nested loops or unawaited coroutines.
+8. 🧱 Confirm full error handling, logging, and state persistence logic is preserved.
+9. 🚦 Validate concurrency safety — no race conditions in order fills, partial fills, or state updates.
+10. 🧰 Check observability: all telemetry, logs, and performance metrics remain intact.
+
+## EXPECTED OUTPUT
+Produce a detailed report with:
+- ✅ A summary table showing feature-by-feature conversion status.
+- 🧩 Code diffs or snippets for mismatched areas.
+- ⚠️ Precise locations of any missing async conversion or logical regression.
+- 🧠 Final recommendation: "Production-Ready ✅" or "Incomplete 🚫" with actionable fixes.
+
+## CONTEXT
+Compare:
+- Old Threaded Bot: `threaded_bot/` 
+- New Async Bot: `async_bot/` 
+Both directories are complete codebases.
+
+---
+Now thoroughly perform this audit and generate a **professional engineering report** with your findings, including confidence level and next steps.

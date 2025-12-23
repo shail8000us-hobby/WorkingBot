@@ -1,0 +1,17 @@
+{
+  "capital_protection": {
+    "enabled": true,
+    "last_changed": "2025-10-23T19:51:40.509837",
+    "changed_by": "webui_user",
+    "reason": "Re-enabling safety feature"
+  },
+  "risk_management": {
+    "enabled": true,
+    "last_changed": "2025-10-23T21:06:13.697940",
+    "changed_by": "webui_user",
+    "reason": "Re-enabling safety feature"
+  },
+  "execute_orders": true,
+  "last_updated": null,
+  "reason": null
+}

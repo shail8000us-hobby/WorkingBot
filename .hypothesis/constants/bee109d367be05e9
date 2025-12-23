@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/ai/advanced/ml_predictor.py
+# hypothesis_version: 6.141.1
+
+[-0.5, -0.02, 0.0, 0.01, 0.02, 0.03, 0.05, 0.3, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95, 1.2, 'BUY', 'DOWN', 'HIGH', 'HOLD', 'Insufficient data', 'LOW', 'NORMAL', 'No clear signal', 'SELL', 'SIDEWAYS', 'UNKNOWN', 'UP', 'WAIT', 'action', 'confidence', 'current_price', 'direction', 'error', 'expected_value', 'momentum', 'patterns_detected', 'predicted_prices', 'reason', 'regime', 'resistance', 'reversal', 'risk_reward_ratio', 'slope', 'strength', 'support', 'support_resistance', 'trend', 'trend_strength', 'type', 'volatility', 'volatility_regime', 'win_probability']

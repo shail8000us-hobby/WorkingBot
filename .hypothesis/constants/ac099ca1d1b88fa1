@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/strategy/modules/order_manager.py
+# hypothesis_version: 6.141.1
+
+[0.2, 0.3, 0.5, 2.0, 3.0, 15.0, 100, '=', 'BOT-', 'Unknown error', 'actual_entry', 'already processed', 'buy', 'cancel_order', 'cancelled', 'client_order_id', 'close_on_trigger', 'code', 'does not exist', 'entry_price', 'error', 'failed', 'fill', 'filled', 'get_order', 'grid', 'gtc', 'id', 'limit_order', 'limit_price', 'list_orders', 'message', 'not found', 'open', 'order_not_found', 'order_type', 'pending', 'place_order', 'protected', 'quantize_price', 'reduce_only', 'rejected', 'result', 'runner', 'sell', 'short', 'side', 'size', 'state', 'state_lock', 'strategy', 'success', 'tp', 'tp_id', 'tp_offset', 'tp_price']

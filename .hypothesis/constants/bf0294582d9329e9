@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/position_manager.py
+# hypothesis_version: 6.141.1
+
+[0.01, 1.0, 300, '2.0', 'GRIDBOT_GRID_MODE', 'LONG', 'TP_HIT', 'TP_HIT_BY_ID', 'Valid', 'attempts', 'available', 'bot_pid', 'bot_version', 'buy', 'buy_order_id', 'capacity', 'checksum', 'close_reason', 'correlation_id', 'created_at', 'data', 'entry', 'entry_price', 'exit_price', 'fill_price', 'fill_size', 'grid_aligned', 'grid_calc', 'grid_mode', 'limit_order', 'max_attempts', 'max_open', 'mode', 'next_retry', 'open', 'open_positions', 'open_tranches', 'order_id', 'order_type', 'pending', 'pending_buy', 'pending_sell', 'position', 'position_id', 'positions', 'price', 'protected', 'r', 'reconciled', 'reserved', 'reserved_capacity', 'retry_queue_size', 'runner', 'schema_version', 'sell', 'session_tag', 'side', 'size', 'timestamp', 'total', 'tp', 'tp_id', 'tp_price', 'tp_retry_queue', 'unknown', 'version', 'w']

@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/exposure_limiter.py
+# hypothesis_version: 6.141.1
+
+[100, '2', '200000', '=', 'amount', 'current_window', 'enabled', 'exposure_limiter', 'notional', 'notional_inr', 'price', 'queue_depth', 'queue_enabled', 'queued_at', 'timestamp', 'total_blocks', 'total_checks', 'total_queued', 'tranches', 'true', 'utilization_pct']

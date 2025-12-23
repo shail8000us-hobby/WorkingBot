@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/prediction_api.py
+# hypothesis_version: 6.141.1
+
+[0.6, 0.8, 500, 503, '/api/prediction', '/early-warning', '/spike-forecast', '/status', '30 minutes', '5.0% IV increase', '60%', '7 minutes ahead', 'GET', 'HIGH', 'LOW', 'MEDIUM', 'alert_level', 'available', 'confidence', 'confidence_scoring', 'current_iv', 'early_warning', 'engine_available', 'error', 'features', 'lookback_window', 'message', 'min_confidence', 'minutes_ahead', 'parameters', 'pattern_match', 'pattern_recognition', 'predicted_iv', 'prediction', 'prediction_api', 'prediction_horizon', 'spike_prediction', 'spike_threshold', 'warning', 'will_spike']

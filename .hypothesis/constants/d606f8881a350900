@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/volatility_monitor.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.3, 0.5, 0.75, 1.0, -1000, 100, 365, 1000, 3600, '100', '24', '40', '60', '80', 'ELEVATED', 'EXTREME', 'HIGH', 'SAFE', 'VOLATILITY_RV_WINDOW', 'can_trade', 'current_rv', 'data_points', 'elevated', 'enabled', 'extreme', 'halt', 'halt_trading', 'high', 'is_running', 'iv', 'last_update', 'message', 'price', 'price_points', 'r', 'rv', 'safety_status', 'thresholds', 'time', 'timestamp', 'true', 'volatility_monitor', 'w', 'window_hours', 'zone']

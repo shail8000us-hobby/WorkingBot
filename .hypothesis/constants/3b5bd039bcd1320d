@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/utils/request_queue.py
+# hypothesis_version: 6.141.1
+
+[5.0, 100, 429, 503, 'active_requests', 'circuit_failures', 'circuit_open', 'error', 'max_concurrent', 'rejected_requests', 'retry_after', 'success', 'total_requests']

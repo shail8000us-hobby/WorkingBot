@@ -1,0 +1,11 @@
+#!/bin/bash
+# PM2 Monitor Launcher
+
+SCRIPT_DIR="/Users/ssr/Projects/WorkingBot"
+
+osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "cd '$SCRIPT_DIR' && ./pm2-monitor.command"
+end tell
+EOF

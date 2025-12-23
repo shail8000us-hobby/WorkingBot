@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/actors/order_actor.py
+# hypothesis_version: 6.141.1
+
+[100, 1000, 1000000, 'BTCUSD', 'BUY', 'GBOT_', 'Max retries exceeded', 'Order not found', 'OrderManager', 'SELL', 'active_order_ids', 'active_orders', 'actor', 'always', 'attempt', 'attempts', 'auto', 'buy', 'cancelled', 'cancelled_at', 'correlation_id', 'entry', 'error', 'filled_or_cancelled', 'id', 'never', 'ok', 'order', 'order placement', 'order_id', 'order_placement', 'order_type', 'orders', 'pending', 'placed_at', 'position_id', 'post_only', 'price', 'result', 'sell', 'side', 'size', 'status', 'success_rate', 'tag', 'total_cancelled', 'total_failures', 'total_placed', 'tp', 'type']

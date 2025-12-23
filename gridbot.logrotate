@@ -1,0 +1,52 @@
+# GridBot Log Rotation
+# Prevents disk space exhaustion
+#
+# Installation:
+#   sudo cp gridbot.logrotate /etc/logrotate.d/gridbot
+#   sudo chmod 644 /etc/logrotate.d/gridbot
+#
+# Testing:
+#   sudo logrotate -d /etc/logrotate.d/gridbot  # Dry run
+#   sudo logrotate -f /etc/logrotate.d/gridbot  # Force rotation
+#
+# Created: November 9, 2025
+
+# Main bot log - rotated daily
+/Users/ssr/Projects/WorkingBot/bot_live.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 ssr staff
+    postrotate
+        # Send HUP signal to bot to reopen log file
+        pkill -HUP -f "python3.*gridbot.py" || true
+    endscript
+}
+
+# Fill audit log - rotated weekly (NEVER delete!)
+/Users/ssr/Projects/WorkingBot/fill_audit_log.jsonl {
+    weekly
+    rotate 52
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 ssr staff
+    # No postrotate - audit logs are append-only
+    # Keep 52 weeks (1 year) of audit history
+}
+
+# Runtime state - rotated daily
+/Users/ssr/Projects/WorkingBot/runtime_state.json {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 ssr staff
+    # Keep 7 days of state snapshots for recovery
+}

@@ -1,0 +1,19 @@
+{
+  "active": true,
+  "triggered_at": 1761804125,
+  "cancelled_orders": [
+    {
+      "price": 108000,
+      "grid_level": 108000,
+      "order_id": "TEST_ORDER_123",
+      "cancelled_at": 1761804125,
+      "reason": "TEST_transition_normal_to_halt"
+    }
+  ],
+  "volatility_snapshot": {
+    "iv": 50.0,
+    "rv": 45.0,
+    "spread": 5.0,
+    "is_safe": false
+  }
+}

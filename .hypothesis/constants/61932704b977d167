@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/monitoring/predictive_display.py
+# hypothesis_version: 6.141.1
+
+[100, 600, '=', 'BUY', 'LONG', 'SELL', 'drops', 'entry', 'entry_price', 'exit', 'loop_num', 'mode', 'order_id', 'price', 'profit', 'rises', 'runner', 'size', 'timestamp', 'tp_price', 'unknown', '─']

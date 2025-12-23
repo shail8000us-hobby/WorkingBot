@@ -1,0 +1,55 @@
+<!doctype html><html><head>
+<meta charset="utf-8"><title>Delta PnL Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#0b1020;color:#e6e6ea;margin:0}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.card{background:#121734;border:1px solid #1f2a4a;border-radius:14px;padding:18px;margin:12px 0;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.h1{font-size:22px;margin:8px 0 2px}
+.h2{font-size:18px;margin:4px 0 12px;color:#9fb0ff}
+.kpi{font-size:26px;font-weight:700}
+.pos{color:#50fa7b} .neg{color:#ff5555} .muted{color:#9ca3af}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 8px;border-bottom:1px solid #1f2a4a;font-size:14px}
+th{text-align:left;color:#9fb0ff}
+canvas{max-height:380px}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#1f2a4a;color:#9fb0ff;font-size:12px}
+</style></head><body><div class="container">
+<div class="card"><div class="h1">Delta Exchange PnL Report</div>
+<div class="muted">Period: 2025-09-18 09:29:21 → 2025-09-18 10:29:21 · Generated: 2025-09-18 10:29:31</div></div>
+
+<div class="grid">
+  <div class="card"><div class="h2">Realized PnL (period)</div>
+    <div class="kpi pos">₹0.00</div></div>
+  <div class="card"><div class="h2">Net After Fees (period)</div>
+    <div class="kpi pos">₹0.00</div>
+    <div class="muted"><span class="badge">Fees</span> ₹0.00</div></div>
+  <div class="card"><div class="h2">Total Trades</div><div class="kpi">0</div></div>
+</div>
+
+<div class="grid">
+  <div class="card"><div class="h2">Volume by Symbol</div><canvas id="volChart"></canvas></div>
+  <div class="card"><div class="h2">Daily Trades</div><canvas id="dailyChart"></canvas></div>
+</div>
+
+<div class="card"><div class="h2">Per-Symbol PnL (period)</div>
+<table><thead><tr>
+<th>Symbol</th><th>Trades</th><th>Buy Value</th><th>Sell Value</th>
+<th>Realized</th><th>Fees</th><th>Net</th><th>Open Qty</th><th>Avg Cost</th>
+</tr></thead><tbody></tbody></table></div><div class="card"><div class="h2">Open Positions (snapshot)</div>
+<table><thead><tr><th>Symbol</th><th>Size</th><th>Entry</th><th>Mark</th><th>Unrealized</th><th>Realized</th></tr></thead><tbody></tbody></table></div><div class="card"><div class="h2">Balances (snapshot)</div>
+<table><thead><tr><th>Asset</th><th>Available</th><th>Total</th><th>Blocked</th></tr></thead><tbody><tr><td>USD</td><td>41.77965287</td><td>42.50447187</td><td>0.724819</td></tr></tbody></table></div>
+<script>
+new Chart(document.getElementById('volChart').getContext('2d'), {
+  type: 'doughnut',
+  data: { labels: [], datasets:[{ data: [] }] },
+  options: { plugins:{legend:{position:'bottom'}}, responsive:true, maintainAspectRatio:false }
+});
+new Chart(document.getElementById('dailyChart').getContext('2d'), {
+  type: 'line',
+  data: { labels: [], datasets:[{ label:'Trades', data:[] }] },
+  options: { responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+});
+</script>
+</div></body></html>

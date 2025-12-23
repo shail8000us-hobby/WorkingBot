@@ -1,0 +1,168 @@
+═══════════════════════════════════════════════════════════════
+              HOW TO START/STOP BOTS IN TMUX
+═══════════════════════════════════════════════════════════════
+
+📋 QUICK COMMANDS (Copy-Paste Ready)
+═══════════════════════════════════════════════════════════════
+
+🚀 START ALL BOTS:
+bash /Users/shailendrasinghrajawat/Documents/WorkingBot/scripts/start_tmux_daemon.sh
+
+🛑 STOP ALL BOTS:
+/opt/homebrew/bin/tmux -S ~/.tmux-gridbot/default kill-session -t gridbot
+
+📺 VIEW BOTS (Attach to tmux):
+/opt/homebrew/bin/tmux -S ~/.tmux-gridbot/default attach -t gridbot
+
+🔍 CHECK STATUS:
+/opt/homebrew/bin/tmux -S ~/.tmux-gridbot/default has-session -t gridbot && echo "✅ Running" || echo "❌ Not running"
+
+═══════════════════════════════════════════════════════════════
+              WHAT YOU'LL SEE IN TMUX
+═══════════════════════════════════════════════════════════════
+
+The terminal splits into 3 panes:
+
+┌─────────────────────────┬─────────────┐
+│                         │             │
+│   Trading Bot (2/3)     │  Guardian   │
+│        65% width        │   (2/3)     │
+│   - Grid orders         │  - UPNL     │
+│   - Price updates       │  - Alerts   │
+│                         ├─────────────┤
+│                         │   Monitor   │
+│                         │   (1/3)     │
+│                         │  - Health   │
+└─────────────────────────┴─────────────┘
+
+═══════════════════════════════════════════════════════════════
+              TMUX KEYBOARD SHORTCUTS
+═══════════════════════════════════════════════════════════════
+
+⌨️  DETACH (Exit without stopping bots):
+    1. Press: Ctrl+B (then release)
+    2. Press: d
+    → Bots keep running in background
+
+💡 OR just close Terminal window - bots stay alive!
+
+🔄 SWITCH BETWEEN PANES (when attached):
+    1. Press: Ctrl+B (then release)
+    2. Press: Arrow keys (←↑→↓)
+
+📜 SCROLL UP (view history):
+    1. Press: Ctrl+B (then release)
+    2. Press: [
+    3. Use Arrow keys or Page Up/Down
+    4. Press: q (to exit scroll mode)
+
+═══════════════════════════════════════════════════════════════
+              FROM WEBUI (LOCAL ACCESS)
+═══════════════════════════════════════════════════════════════
+
+🌐 Open: http://localhost:5555
+
+✅ WebUI CAN:
+   • Show real-time status (detects running bots)
+   • Display bot health and positions
+   • Show PNL and performance data
+   • Monitor all 3 bots
+
+❌ WebUI CANNOT (LaunchAgent restriction):
+   • Start bots (shows instructions instead)
+   • Stop bots (shows instructions instead)
+   
+   → Use Terminal commands above instead
+
+═══════════════════════════════════════════════════════════════
+              FROM MOBILE (via Tailscale)
+═══════════════════════════════════════════════════════════════
+
+📱 Access WebUI:
+   • Connect to Tailscale VPN
+   • Open: http://[mac-ip]:5555
+   • View status and metrics
+
+⚠️  TO STOP BOTS REMOTELY:
+   Currently requires SSH access:
+   
+   1. SSH into Mac: ssh user@[mac-ip]
+   2. Run stop command (see above)
+   
+   OR
+   
+   Wait until we implement remote control solution!
+   (See REMOTE_CONTROL_TODO.md)
+
+═══════════════════════════════════════════════════════════════
+              TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+❓ "Session already exists" when starting:
+   → Bots are already running! Use attach command to view them.
+
+❓ Pane shows "bash" instead of Python:
+   → That bot finished/crashed. Check logs in logs/ folder.
+
+❓ Can't see tmux session after starting:
+   → Wait 2-3 seconds for bots to initialize
+   → Run status check command
+
+❓ ModuleNotFoundError when bots start:
+   → Check PYTHONPATH is set (daemon script does this)
+   → Script location: scripts/start_tmux_daemon.sh
+
+═══════════════════════════════════════════════════════════════
+              FILES REFERENCE
+═══════════════════════════════════════════════════════════════
+
+📂 Key Files:
+   • Daemon Script: scripts/start_tmux_daemon.sh
+   • Control Script: scripts/tmux_control_service.sh
+   • Trading Bot: bot/run.py
+   • Guardian Bot: bot/guardian/guardian_bot.py
+   • Monitor Bot: bot/heartbeat/monitor.py
+
+📝 Logs:
+   • Trading: logs/bot_live.log
+   • Guardian: logs/guardian.log
+   • Monitor: logs/monitor.log
+   • WebUI: logs/webui_backend.log
+
+🔧 Socket:
+   • Location: ~/.tmux-gridbot/default
+   • Remove if stale: rm -f ~/.tmux-gridbot/default
+
+═══════════════════════════════════════════════════════════════
+              DAILY WORKFLOW
+═══════════════════════════════════════════════════════════════
+
+🌅 MORNING (Start trading):
+   1. Open Terminal
+   2. Paste: bash /Users/.../start_tmux_daemon.sh
+   3. Wait for "✅ tmux session created successfully!"
+   4. Optional: Attach to view bots
+   5. Detach (Ctrl+B, d) or close Terminal
+
+🌙 EVENING (Stop trading):
+   1. Open Terminal
+   2. Paste: /opt/homebrew/bin/tmux -S ~/.tmux-gridbot/default kill-session -t gridbot
+   3. Confirm with status check
+
+📊 MONITORING:
+   • WebUI: http://localhost:5555 (always available)
+   • Attach to tmux: See live bot output
+   • Check logs: tail -f logs/bot_live.log
+
+═══════════════════════════════════════════════════════════════
+              NEXT STEPS (TODO)
+═══════════════════════════════════════════════════════════════
+
+🔨 We're working on:
+   • Remote start/stop from mobile WebUI
+   • Better LaunchAgent integration
+   • One-click control without Terminal
+
+For now, save these commands in your notes!
+
+═══════════════════════════════════════════════════════════════

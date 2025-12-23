@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Unregister Service Worker - GridBot</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            background: #334155;
+        }
+        .success { background: #064e3b; color: #6ee7b7; }
+        .error { background: #7f1d1d; color: #fca5a5; }
+        button {
+            padding: 12px 24px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        button:hover { background: #dc2626; }
+        .info {
+            background: #1e3a8a;
+            color: #93c5fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 GridBot Service Worker Manager</h1>
+    
+    <div class="info">
+        <strong>Why am I here?</strong><br>
+        The service worker is caching old versions of the WebUI, preventing updates from loading even after hard refresh (Cmd+Shift+R).
+    </div>
+
+    <button onclick="unregisterServiceWorker()">Unregister Service Worker & Clear Cache</button>
+    
+    <div id="status"></div>
+
+    <script>
+        async function unregisterServiceWorker() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<div class="status">Working...</div>';
+
+            try {
+                // 1. Unregister all service workers
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    
+                    if (registrations.length === 0) {
+                        statusDiv.innerHTML = '<div class="status success">✅ No service workers found (already unregistered)</div>';
+                    } else {
+                        for (let registration of registrations) {
+                            await registration.unregister();
+                            console.log('Unregistered:', registration);
+                        }
+                        statusDiv.innerHTML = `<div class="status success">✅ Unregistered ${registrations.length} service worker(s)</div>`;
+                    }
+                } else {
+                    statusDiv.innerHTML = '<div class="status">Service workers not supported</div>';
+                }
+
+                // 2. Clear all caches
+                const cacheNames = await caches.keys();
+                for (let name of cacheNames) {
+                    await caches.delete(name);
+                    console.log('Deleted cache:', name);
+                }
+
+                statusDiv.innerHTML += `<div class="status success">✅ Cleared ${cacheNames.length} cache(s): ${cacheNames.join(', ')}</div>`;
+
+                // 3. Clear localStorage and sessionStorage
+                localStorage.clear();
+                sessionStorage.clear();
+
+                statusDiv.innerHTML += '<div class="status success">✅ Cleared localStorage and sessionStorage</div>';
+
+                // 4. Instructions
+                statusDiv.innerHTML += `
+                    <div class="status success">
+                        <strong>✅ SUCCESS! All caches cleared.</strong><br><br>
+                        <strong>Next steps:</strong><br>
+                        1. Close all GridBot tabs<br>
+                        2. Close DevTools if open<br>
+                        3. Wait 5 seconds<br>
+                        4. Open <a href="http://localhost:5555" style="color: #93c5fd;">http://localhost:5555</a> in a new tab<br>
+                        5. You should see the latest version without any cached content
+                    </div>
+                `;
+
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+                console.error('Error:', error);
+            }
+        }
+
+        // Auto-check status on load
+        window.addEventListener('load', async () => {
+            const statusDiv = document.getElementById('status');
+            
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                const cacheNames = await caches.keys();
+                
+                statusDiv.innerHTML = `
+                    <div class="status">
+                        <strong>Current Status:</strong><br>
+                        Service Workers: ${registrations.length}<br>
+                        Caches: ${cacheNames.length} (${cacheNames.join(', ') || 'none'})<br>
+                        localStorage items: ${Object.keys(localStorage).length}
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

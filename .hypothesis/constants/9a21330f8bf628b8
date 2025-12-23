@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/reconciliation/historical_insights.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.3, 0.8, 1.2, 100.0, -1000, -100, 100, 120, 1000, '#', '+00:00', 'Z', '_', 'a', 'audit', 'auto_heal', 'bot', 'count', 'critical', 'degrading', 'detected_at', 'ghost_order', 'historical_insights', 'history_file_exists', 'history_file_path', 'impact_value', 'improving', 'issue_history.jsonl', 'issue_type', 'last_24h', 'last_30d', 'last_7d', 'last_hour', 'low', 'metadata', 'order_id', 'r', 'resolution_rate_pct', 'resolved_issues', 'severity', 'signature', 'stable', 'total_issues_tracked', 'unknown', 'w']

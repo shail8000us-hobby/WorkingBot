@@ -1,0 +1,108 @@
+.env*
+.env.local
+.venv/
+venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+bot/logs/
+bot/state.json
+*.pyc
+
+# Secrets and sensitive data
+secrets/
+secrets/**
+*.key
+*.pem
+
+# backups & temp
+*.bak
+*.bak.*
+bot/.autosave.touch
+
+# Ignore junk
+*.bak
+*.bak.*
+bot/.autosave.touch
+.env.*.bak
+.venv/
+__pycache__/
+
+open_terminals.sh.backup.*
+
+# Large files and caches
+*.log
+webui_*.log
+**/node_modules/.cache/
+**/.cache/
+*.log
+*.log
+.git.backup*
+
+# ========================================
+# LEGACY FILES - MIGRATED TO YAML
+# ========================================
+# All grid_config.env files (migrated to config.yaml)
+**/grid_config.env
+**/grid_config.env.*
+grid_config.env
+grid_config.env.*
+archive/legacy_env_config/grid_config.env*
+config_backups/**/grid_config.env*
+
+# Legacy state JSON files (now using SQL/YAML)
+bot_state.json
+state_*.json
+state.json.backup*
+monitoring_snapshot.json
+**/monitoring_snapshot.json
+
+# Legacy config backups
+config_backups/archive/
+archive/legacy_env_config/
+
+# Old .env backups
+**/*.env.backup*
+**/*.env.bak*
+# Runtime state files (generated during bot operation)
+*.db
+*.db-*
+*.db-journal
+*.db-wal
+*.db-shm
+data/*.db
+data/**/*.db
+webui/backend/*.db
+webui/backend/data/*.db
+
+# Log files
+*.log
+*.log.*
+**/*.log
+reports/*.log
+reports/*.err
+reports/*.out
+bot/logs/**
+webui/backend/logs/**
+
+# Process ID files and heartbeats
+*.pid
+.guardian.pid
+.heartbeat
+.guardian_health
+
+# Monitoring snapshots
+monitoring_snapshot.json
+data/monitoring_snapshot.json
+data/webui_guardian_stats.json
+
+# Recovery and reconciliation state
+data/recovery/*.json
+data/reconciliation/*.json
+data/system_state.json
+data/user_todos.json
+
+# Event audit logs (too large for git)
+bot/audit/*.jsonl
+data/audit/*.jsonl

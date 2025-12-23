@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/actors/base_actor.py
+# hypothesis_version: 6.141.1
+
+[0.1, 1.0, 5.0, 100, 1000, 'child_name', 'children', 'error', 'error_count', 'error_rate', 'mailbox_capacity', 'mailbox_size', 'metrics', 'name', 'ok', 'processed_count', 'restart_count', 'running', 'status']

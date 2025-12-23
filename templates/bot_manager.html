@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Process Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .bot-card {
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+        .bot-card:hover {
+            transform: translateY(-2px);
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-running { background-color: #28a745; }
+        .status-stopped { background-color: #dc3545; }
+        .log-container {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .system-info {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .action-btn {
+            margin: 2px;
+        }
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row">
+            <div class="col-12">
+                <div class="system-info">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h1><i class="fas fa-robot"></i> Bot Process Manager</h1>
+                            <p class="mb-0">Manage your trading bots with precision and control</p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <div id="system-info">
+                                <small>Loading system info...</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bot Status Cards -->
+        <div class="row" id="bot-cards">
+            <!-- Bot cards will be populated by JavaScript -->
+        </div>
+
+        <!-- System Processes -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-list"></i> System Processes</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>PID</th>
+                                        <th>CPU %</th>
+                                        <th>Memory %</th>
+                                        <th>Command</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="processes-table">
+                                    <tr>
+                                        <td colspan="4" class="text-center">Loading...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-file-alt"></i> Bot Logs</h5>
+                        <div>
+                            <select id="log-bot-select" class="form-select form-select-sm" style="width: auto; display: inline-block;">
+                                <option value="trading">Trading Bot</option>
+                                <option value="health">Health Monitor</option>
+                                <option value="monitoring">Monitoring Bot</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshLogs()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="log-container" class="log-container">
+                            Select a bot to view logs...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refresh Button -->
+    <button class="btn btn-primary refresh-btn" onclick="refreshAll()">
+        <i class="fas fa-sync-alt"></i>
+    </button>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+        
+        // Global variables
+        let currentLogBot = 'trading';
+        
+        // Socket event handlers
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            refreshAll();
+        });
+        
+        socket.on('status_update', function(data) {
+            updateBotCards(data);
+            updateSystemInfo();
+        });
+        
+        socket.on('bot_update', function(data) {
+            console.log('Bot update:', data);
+            showNotification(`Bot ${data.action} ${data.bot_type || 'all'} - ${data.result.success ? 'Success' : 'Failed'}`, 
+                           data.result.success ? 'success' : 'danger');
+            refreshAll();
+        });
+        
+        // Update bot cards
+        function updateBotCards(botStatus) {
+            const container = document.getElementById('bot-cards');
+            container.innerHTML = '';
+            
+            for (const [botType, status] of Object.entries(botStatus)) {
+                const card = createBotCard(botType, status);
+                container.appendChild(card);
+            }
+        }
+        
+        // Create bot card
+        function createBotCard(botType, status) {
+            const col = document.createElement('div');
+            col.className = 'col-md-4 mb-3';
+            
+            const statusClass = status.running ? 'status-running' : 'status-stopped';
+            const statusText = status.running ? 'Running' : 'Stopped';
+            const cardClass = status.running ? 'border-success' : 'border-danger';
+            
+            col.innerHTML = `
+                <div class="card bot-card ${cardClass}">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">
+                            <span class="status-indicator ${statusClass}"></span>
+                            ${status.name}
+                        </h6>
+                        <small class="text-muted">PID: ${status.pid || 'N/A'}</small>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text">${status.description}</p>
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                Log Size: ${formatBytes(status.log_size)}<br>
+                                Last Modified: ${status.last_modified || 'N/A'}
+                            </small>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button class="btn btn-outline-primary action-btn" onclick="botAction('start', '${botType}')">
+                                <i class="fas fa-play"></i> Start
+                            </button>
+                            <button class="btn btn-outline-warning action-btn" onclick="botAction('restart', '${botType}')">
+                                <i class="fas fa-redo"></i> Restart
+                            </button>
+                            <button class="btn btn-outline-danger action-btn" onclick="botAction('stop', '${botType}')">
+                                <i class="fas fa-stop"></i> Stop
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            return col;
+        }
+        
+        // Bot actions
+        function botAction(action, botType) {
+            const data = { action: action, bot_type: botType };
+            
+            fetch('/api/action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showNotification(`${action.charAt(0).toUpperCase() + action.slice(1)} ${botType} successful`, 'success');
+                } else {
+                    showNotification(`Failed to ${action} ${botType}: ${result.stderr}`, 'danger');
+                }
+            })
+            .catch(error => {
+                showNotification(`Error: ${error.message}`, 'danger');
+            });
+        }
+        
+        // Refresh all data
+        function refreshAll() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    updateBotCards(data.bots);
+                    updateSystemInfo(data.system);
+                })
+                .catch(error => console.error('Error:', error));
+            
+            refreshProcesses();
+            refreshLogs();
+        }
+        
+        // Update system info
+        function updateSystemInfo(systemInfo) {
+            if (systemInfo) {
+                document.getElementById('system-info').innerHTML = `
+                    <div><strong>Load:</strong> ${systemInfo.load_avg.join(', ')}</div>
+                    <div><strong>Bot Memory:</strong> ${formatBytes(systemInfo.bot_memory * 1024)}</div>
+                    <div><strong>Updated:</strong> ${systemInfo.timestamp}</div>
+                `;
+            }
+        }
+        
+        // Refresh processes
+        function refreshProcesses() {
+            fetch('/api/processes')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.getElementById('processes-table');
+                    tbody.innerHTML = '';
+                    
+                    if (data.processes && data.processes.length > 0) {
+                        data.processes.forEach(process => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${process.pid}</td>
+                                <td>${process.cpu}%</td>
+                                <td>${process.memory}%</td>
+                                <td><code>${process.command}</code></td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="4" class="text-center">No bot processes found</td></tr>';
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+        
+        // Refresh logs
+        function refreshLogs() {
+            currentLogBot = document.getElementById('log-bot-select').value;
+            
+            fetch(`/api/logs/${currentLogBot}`)
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('log-container');
+                    if (data.logs) {
+                        container.textContent = data.logs;
+                        container.scrollTop = container.scrollHeight;
+                    } else {
+                        container.textContent = 'No logs available';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('log-container').textContent = `Error loading logs: ${error.message}`;
+                });
+        }
+        
+        // Utility functions
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function showNotification(message, type) {
+            // Create a simple notification
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 5000);
+        }
+        
+        // Event listeners
+        document.getElementById('log-bot-select').addEventListener('change', refreshLogs);
+        
+        // Auto refresh every 30 seconds
+        setInterval(refreshAll, 30000);
+        
+        // Initial load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshAll();
+        });
+    </script>
+</body>
+</html>

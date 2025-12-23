@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/pnl.py
+# hypothesis_version: 6.141.1
+
+[-120, 200, 500, '%H:%M', '%Y%m%d', '%Y-%m-%d-%H', '/api/pnl-history', 'GET', 'bot', 'error', 'history', 'pnl', 'position_count', 'r', 'reports', 'time', 'timestamp', 'total_pnl', 'unrealized_pnl']

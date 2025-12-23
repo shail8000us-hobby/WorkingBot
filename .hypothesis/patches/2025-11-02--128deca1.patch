@@ -1,0 +1,23 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.141.1 <no-reply@hypothesis.works>
+Date: Sun, 02 Nov 2025 14:47:59
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/test_grid_properties.py
++++ ./tests/test_grid_properties.py
+@@ -633,10 +633,13 @@
+ 
+ @given(step=st.just(0.0))  # Exactly zero
+ @settings(max_examples=10)
++@example(
++    step=0.0,
++).via('discovered failure')
+ def test_property_step_zero_is_invalid(step):
+     """
+     PROPERTY: step == 0 must be rejected
+-    
++
+     Mutation Test: Catches change from <= 0 to < 0
+     """
+     with pytest.raises(ValueError, match="Step must be positive"):

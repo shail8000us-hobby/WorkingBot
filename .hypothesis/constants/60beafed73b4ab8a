@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/monitoring/pre_order_logger.py
+# hypothesis_version: 6.141.1
+
+[100, '=', 'BUY', 'SELL', 'approval_rate', 'approved', 'capacity_available', 'current_price', 'grid_aligned', 'price_age', 'reasons', 'rejected', 'runner', 'target_price', 'timestamp', 'total_decisions', 'type', 'volatility_safe', '📋 REJECTION REASONS:']

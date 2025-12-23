@@ -1,0 +1,22 @@
+{
+  "active": true,
+  "triggered_at": 1762015644.593738,
+  "normalized_at": null,
+  "cancelled_orders": [
+    {
+      "price": 109000.0,
+      "grid_level": 109000.0,
+      "order_id": "1016793845",
+      "client_order_id": "",
+      "cancelled_at": 1762015644.593751,
+      "reason": "IV-RV spread too large (15.6% > 10.0%)"
+    }
+  ],
+  "volatility_snapshot": {
+    "iv": 33.611233330907815,
+    "rv": 49.17357968069608,
+    "spread": -15.562346349788264,
+    "max_iv": 35.0,
+    "max_rv": 55.0
+  }
+}

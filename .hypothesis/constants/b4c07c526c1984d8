@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/event_store.py
+# hypothesis_version: 6.141.1
+
+[10.0, ':memory:', 'PRAGMA journal_mode', 'aggregate_id', 'correlation_id', 'data', 'error', 'event_id', 'event_store', 'event_type', 'metadata', 'order_cancelled', 'order_failed', 'order_filled', 'order_placed', 'pending_buy_cleared', 'pending_buy_set', 'pending_sell_cleared', 'pending_sell_set', 'position_closed', 'position_opened', 'position_updated', 'saga_compensating', 'saga_completed', 'saga_failed', 'saga_started', 'saga_step_completed', 'saga_step_failed', 'timestamp', 'tp_order_placed', 'tp_placed', 'tp_retry_completed', 'tp_retry_exhausted', 'tp_retry_scheduled', 'wal']

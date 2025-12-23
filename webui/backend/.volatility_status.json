@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "iv": 44.85,
+  "rv": 44.34165840287016,
+  "spread": 0.5083415971298422,
+  "is_safe": false,
+  "violation_reason": "IV too high (44.9% > 40.0%)",
+  "last_update": "2025-10-14T20:45:24.213492+00:00",
+  "thresholds": {
+    "max_iv": 40.0,
+    "max_rv": 40.0,
+    "max_spread": 10.0
+  },
+  "config": {
+    "check_interval": 300,
+    "auto_resume": true,
+    "resume_buffer": 5.0
+  }
+}

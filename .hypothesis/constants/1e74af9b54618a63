@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/sagas/saga_coordinator.py
+# hypothesis_version: 6.141.1
+
+[30.0, 60.0, 100, 'active_saga_ids', 'active_sagas', 'compensated', 'compensating', 'compensation_errors', 'compensation_failed', 'compensation_rate', 'completed', 'completed_steps', 'duration', 'error', 'original_error', 'original_result', 'pending', 'result', 'running', 'saga_id', 'status', 'step', 'step_index', 'step_results', 'steps', 'steps_completed', 'steps_to_compensate', 'success_rate', 'timeout', 'total_compensated', 'total_completed', 'total_failed', 'total_started', 'total_steps']

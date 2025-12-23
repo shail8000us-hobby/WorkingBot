@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/utils/file_helpers.py
+# hypothesis_version: 6.141.1
+
+[100, 'bot/logs/bot.log', 'logs/gridbot.log', 'logs/trading_bot.log', 'r']

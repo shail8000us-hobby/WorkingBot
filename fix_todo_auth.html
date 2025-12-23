@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Todo List - Direct Test</title>
+    <style>
+        body { font-family: Arial; background: #0f172a; color: #fff; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        input, button { padding: 10px; margin: 5px; font-size: 14px; }
+        input { width: 400px; background: #1e293b; color: #fff; border: 1px solid #475569; }
+        button { background: #0ea5e9; color: #fff; border: none; cursor: pointer; }
+        button:hover { background: #0284c7; }
+        .todo { background: #1e293b; padding: 10px; margin: 5px; border-radius: 5px; }
+        .error { background: #7f1d1d; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #14532d; padding: 10px; margin: 10px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Todo List - Direct Test</h1>
+        <p>This tests the API directly without authentication</p>
+        
+        <div id="message"></div>
+        
+        <div>
+            <input type="text" id="todoInput" placeholder="Enter todo text..." />
+            <button onclick="addTodo()">Add Todo</button>
+            <button onclick="loadTodos()">Refresh</button>
+        </div>
+        
+        <div id="todoList"></div>
+    </div>
+    
+    <script>
+        const API = 'http://localhost:5555/api/todos';
+        const msg = document.getElementById('message');
+        const list = document.getElementById('todoList');
+        
+        async function showMessage(text, type) {
+            msg.innerHTML = `<div class="${type}">${text}</div>`;
+            setTimeout(() => msg.innerHTML = '', 5000);
+        }
+        
+        async function loadTodos() {
+            try {
+                const res = await fetch(API);
+                const data = await res.json();
+                
+                if (data.success) {
+                    list.innerHTML = '<h3>Todos:</h3>';
+                    if (data.todos.length === 0) {
+                        list.innerHTML += '<p>No todos yet</p>';
+                    } else {
+                        data.todos.forEach(todo => {
+                            list.innerHTML += `<div class="todo">
+                                ${todo.completed ? '✓' : '○'} ${todo.text}
+                                <button onclick="deleteTodo('${todo.id}')">Delete</button>
+                            </div>`;
+                        });
+                    }
+                    showMessage(`Loaded ${data.todos.length} todos`, 'success');
+                } else {
+                    showMessage('Failed to load todos', 'error');
+                }
+            } catch (err) {
+                showMessage(`Error: ${err.message}`, 'error');
+            }
+        }
+        
+        async function addTodo() {
+            const input = document.getElementById('todoInput');
+            const text = input.value.trim();
+            
+            if (!text) {
+                showMessage('Please enter todo text', 'error');
+                return;
+            }
+            
+            try {
+                const res = await fetch(API, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok && data.success) {
+                    showMessage('Todo added successfully!', 'success');
+                    input.value = '';
+                    loadTodos();
+                } else {
+                    showMessage(`Failed: ${JSON.stringify(data)}`, 'error');
+                }
+            } catch (err) {
+                showMessage(`Error: ${err.message}`, 'error');
+            }
+        }
+        
+        async function deleteTodo(id) {
+            try {
+                const res = await fetch(`${API}/${id}`, {method: 'DELETE'});
+                const data = await res.json();
+                
+                if (data.success) {
+                    showMessage('Todo deleted', 'success');
+                    loadTodos();
+                }
+            } catch (err) {
+                showMessage(`Error: ${err.message}`, 'error');
+            }
+        }
+        
+        // Load on page load
+        loadTodos();
+    </script>
+</body>
+</html>

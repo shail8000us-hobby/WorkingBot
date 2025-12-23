@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/observability/errors/schema.py
+# hypothesis_version: 6.141.1
+
+[100, 'ErrorEvent', 'acknowledged', 'acknowledged_at', 'acknowledged_by', 'available_fixes', 'can_auto_fix', 'code', 'context', 'critical', 'description', 'explanation', 'first_seen', 'guardian', 'health', 'high', 'id', 'ignored', 'in_progress', 'is_destructive', 'is_dry_runnable', 'last_seen', 'likely_causes', 'links', 'low', 'medium', 'message_raw', 'occurrence_count', 'open', 'preconditions', 'resolution_notes', 'resolved', 'resolved_at', 'severity', 'side_effects', 'source', 'status', 'suggested_actions', 'system', 'title', 'traceback', 'trading']

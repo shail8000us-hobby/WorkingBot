@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/guardian/risk_enforcer.py
+# hypothesis_version: 6.141.1
+
+[100, 5000, '0', '100', '75', '80', '85', '90', '95', '=', 'Alert flags reset', 'EQUITY_FLOOR_INR', 'Emergency flag reset', 'alerted_80', 'alerted_90', 'emergency', 'emergency_triggered', 'equity_floor_inr', 'max_account_loss_inr', 'reset', 'safe', 'trigger', 'true', 'warning_80', 'warning_90']

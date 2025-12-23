@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/config_guard.py
+# hypothesis_version: 6.141.1
+
+[-100, 100, '.', '600', '=', 'DRAWDOWN_CAP_ENABLED', 'DRAWDOWN_MAX_PCT', 'EXECUTE_ORDERS', 'GRIDBOT_LOT', 'GRIDBOT_MAX_OPEN', 'TRADING_MODE', 'TWO_MAN_RULE_ENABLED', 'auto_revert', 'auto_reverted', 'bot', 'change_pct', 'changes', 'config_guard', 'confirm_file', 'confirmed', 'date', 'demo', 'disable_safety', 'enable_live_trading', 'enabled', 'false', 'grid_config.env', 'guarded_keys_count', 'has_pending_change', 'hash', 'key', 'limit_increase', 'new', 'new_hash', 'old', 'pending_change', 'r', 'risk_type', 'state', 'timeout_sec', 'timestamp', 'true', 'w']

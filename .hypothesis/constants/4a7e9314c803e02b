@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/reconciliation/auto_heal.py
+# hypothesis_version: 6.141.1
+
+[100, '#', '%Y%m%d_%H%M%S', 'audit', 'auto_heal', 'auto_healable', 'backup_path', 'bot', 'capital_freed', 'client_order_id', 'created_at', 'current_backed_up_to', 'deduplicated', 'duplicate_order', 'error', 'ghost_order', 'healed_count', 'impact_value', 'issue_type', 'kept_timestamp', 'message', 'no_duplicates_found', 'order_id', 'orders.jsonl', 'r', 'reason', 'recommendation', 'removed_count', 'removed_from_memory', 'restored_from', 'results', 'skipped_count', 'status', 'stuck_order', 'success', 'timestamp', 'unknown', 'w']

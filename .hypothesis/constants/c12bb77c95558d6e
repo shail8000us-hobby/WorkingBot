@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/safety/circuit_breaker.py
+# hypothesis_version: 6.141.1
+
+['=', 'CLOSED', 'HALF_OPEN', 'OPEN', 'Service still down', 'circuit_breaker', 'default', 'failure_count', 'failure_rate', 'insufficient_margin', 'invalid_price', 'last_failure_time', 'name', 'order_already_filled', 'order_not_found', 'position_not_found', 'state', 'success_count', 'times_opened', 'total_blocks', 'total_calls', 'total_failures', 'total_ignored_errors', 'total_successes', 'uptime_seconds']

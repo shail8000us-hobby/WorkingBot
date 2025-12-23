@@ -1,0 +1,89 @@
+{
+  "timestamp": "2025-10-17T12:39:31.063959",
+  "news": [
+    {
+      "id": "delta_1",
+      "title": "Delta Exchange System Update",
+      "summary": "Scheduled maintenance on Sunday 2 AM - 4 AM IST",
+      "source": "Delta Exchange",
+      "priority": "high",
+      "category": "exchange",
+      "timestamp": 1760684970.86434,
+      "url": "https://www.delta.exchange",
+      "actionable": true,
+      "action_text": "Close positions before maintenance"
+    },
+    {
+      "id": "crypto_1",
+      "title": "Bitcoin Volatility Increases",
+      "summary": "BTC price volatility has increased by 15% in the last 24 hours. Consider adjusting your grid step size.",
+      "source": "Market Analysis",
+      "priority": "medium",
+      "category": "market",
+      "timestamp": 1760684970.864349,
+      "url": "#",
+      "actionable": true,
+      "action_text": "Adjust volatility settings"
+    },
+    {
+      "id": "crypto_2",
+      "title": "Low Trading Volume Alert",
+      "summary": "Trading volume is 30% below average. Grid trading may be less effective in low-volume conditions.",
+      "source": "Market Analysis",
+      "priority": "low",
+      "category": "market",
+      "timestamp": 1760681370.864352,
+      "url": "#",
+      "actionable": false
+    },
+    {
+      "id": "bot_guardian_not_running",
+      "title": "Bot Alert: Guardian Bot Not Running",
+      "summary": "Guardian Bot is not active (no PID file found)",
+      "source": "GridBot Pro",
+      "priority": "high",
+      "category": "bot",
+      "timestamp": 1760684971.063781,
+      "url": "#",
+      "actionable": true,
+      "action_text": "Fix blocker",
+      "action_link": {
+        "tab": "guardian",
+        "section": "status",
+        "field": "GUARDIAN_ENABLED"
+      }
+    },
+    {
+      "id": "bot_process_bot_stopped",
+      "title": "Bot Alert: Trading Bot Not Running",
+      "summary": "Main trading bot process is not active",
+      "source": "GridBot Pro",
+      "priority": "critical",
+      "category": "bot",
+      "timestamp": 1760684971.063792,
+      "url": "#",
+      "actionable": true,
+      "action_text": "Fix blocker",
+      "action_link": {
+        "tab": "tmux",
+        "section": "bot_terminal"
+      }
+    },
+    {
+      "id": "bot_process_guardian_stopped",
+      "title": "Bot Alert: Guardian Bot Not Running",
+      "summary": "Guardian bot process is not active",
+      "source": "GridBot Pro",
+      "priority": "high",
+      "category": "bot",
+      "timestamp": 1760684971.063794,
+      "url": "#",
+      "actionable": true,
+      "action_text": "Fix blocker",
+      "action_link": {
+        "tab": "tmux",
+        "section": "guardian_terminal"
+      }
+    }
+  ]
+}

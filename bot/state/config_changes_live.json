@@ -1,0 +1,58 @@
+[
+  {
+    "timestamp": 1761114760.912009,
+    "date": "2025-10-22T12:02:40.912010",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1761233141.750421,
+    "date": "2025-10-23T20:55:41.750423",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1761511900.199857,
+    "date": "2025-10-27T02:21:40.199858",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1761572009.161739,
+    "date": "2025-10-27T19:03:29.161742",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1761578161.49509,
+    "date": "2025-10-27T20:46:01.495093",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1762080838.256208,
+    "date": "2025-11-02T16:23:58.256209",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1762608467.4948962,
+    "date": "2025-11-08T18:57:47.494897",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  },
+  {
+    "timestamp": 1763122874.450707,
+    "date": "2025-11-14T17:51:14.450709",
+    "changes": [],
+    "confirmed": true,
+    "auto_reverted": false
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "timestamp": 1763403185.307297,
+  "pid": 35208,
+  "uptime_seconds": 6203,
+  "status": "ok",
+  "monitoring": {
+    "position_count": 0,
+    "total_pnl_inr": 0,
+    "total_loss_inr": 0,
+    "pending_orders": 0,
+    "sagas_active": 0,
+    "sagas_failed": 0
+  },
+  "liquidation": {
+    "margin_utilization": null,
+    "distance_to_liquidation": null,
+    "current_mtm_inr": 0
+  },
+  "safety": {
+    "guardian_monitoring": true,
+    "signal_based_trading": true
+  }
+}

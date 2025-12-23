@@ -1,0 +1,23 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.141.1 <no-reply@hypothesis.works>
+Date: Sun, 02 Nov 2025 15:10:38
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/test_grid_properties.py
++++ ./tests/test_grid_properties.py
+@@ -615,10 +615,13 @@
+ 
+ @given(tick_size=st.just(0.0))  # Exactly zero
+ @settings(max_examples=10)
++@example(
++    tick_size=0.0,
++).via('discovered failure')
+ def test_property_tick_size_zero_is_invalid(tick_size):
+     """
+     PROPERTY: tick_size == 0 must be rejected
+-    
++
+     Mutation Test: Catches change from <= 0 to < 0
+     """
+     with pytest.raises(ValueError, match="tick_size must be positive"):

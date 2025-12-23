@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/monitoring/price_health_monitor.py
+# hypothesis_version: 6.141.1
+
+[0.5, 5.0, 10.0, 30.0, 100, '  └─ Age: N/A', '  └─ Price: None', '=', 'CRITICAL', 'FRESH', 'NONE', 'NO_DATA', 'REST_API', 'STALE', 'UNKNOWN', 'WebSocket', 'active', 'age', 'critical', 'critical_warnings', 'current_age', 'current_price', 'current_source', 'is_critical', 'is_fresh', 'price', 'price_age_seconds', 'rest_api_updates', 'runner', 'source', 'stale', 'stale_warnings', 'statistics', 'status', 'thresholds', 'total_updates', 'websocket_updates']

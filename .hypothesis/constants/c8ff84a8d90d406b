@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/run.py
+# hypothesis_version: 6.141.1
+
+[500.0, 114000.0, 116000.0, 117000.0, '.bot_shutdown', '.env', '.heartbeat', '1', '5', '=', 'BTC/USD:USD', 'ENABLE_HEARTBEAT', 'ENV_PATH', 'GRIDBOT_HB_SEC', 'GRIDBOT_LOT', 'GRIDBOT_LOWER', 'GRIDBOT_MAX_OPEN', 'GRIDBOT_REF', 'GRIDBOT_STEP', 'GRIDBOT_SYMBOL', 'GRIDBOT_UPPER', 'HEARTBEAT_FILE', 'INFO', 'LOG_LEVEL', '__main__', 'asyncio', 'bot.run', 'bot/logs', 'bot/logs/bot.log', 'grid_config.env', 'reports/bot.pid', 'requests', 'runner', 'secrets/api_keys.env', 'timeout_sec', 'true', 'urllib3', 'utf-8', 'w', 'websocket', '💓 Heartbeat stopped']

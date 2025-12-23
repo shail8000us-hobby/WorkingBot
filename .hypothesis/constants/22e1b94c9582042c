@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/observability/errors/collector.py
+# hypothesis_version: 6.141.1
+
+[0.1, 100, 'CRITICAL:', 'ERROR:', 'Error:', 'Exception:', 'Failed', 'Traceback', 'WARNING:', '[a-f0-9]{8,}', '\\[CRITICAL\\]', '\\[ERROR\\]', '\\[WARNING\\]', '\\d+', '\\d{2}:\\d{2}:\\d{2}', '\\d{4}-\\d{2}-\\d{2}', 'connection refused', 'error', 'events_last_minute', 'failed', 'file', 'insufficient', 'path', 'r', 'rate limit', 'rate_limits_active', 'rejected', 'replace', 'running', 'sources_monitored', 'timed out', 'type', 'unauthorized', 'unreachable', 'utf-8']

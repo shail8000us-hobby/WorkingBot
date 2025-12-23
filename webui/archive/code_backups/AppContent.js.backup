@@ -1,0 +1,801 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  ThemeProvider, createTheme, CssBaseline, Container, Grid, Paper,
+  AppBar, Toolbar, Typography, Box, Button, TextField, Switch,
+  FormControlLabel, Chip, Alert, Snackbar, Tab, Tabs, Divider,
+  Card, CardContent, IconButton, Tooltip
+} from '@mui/material';
+import {
+  PlayArrow, Stop, Refresh, Settings, ShowChart, Terminal,
+  CheckCircle, Error as ErrorIcon, Warning, Security, Shield, VerifiedUser, AccountBalance, Tune,
+  AutorenewOutlined, DeleteSweep, Psychology
+} from '@mui/icons-material';
+import './App.css';
+import './App.mobile.css';
+import ConnectionManager from './utils/connectionManager';
+import apiClient from './utils/apiClient';
+import ConnectionStatusIndicator from './components/ConnectionStatusIndicator';
+import ConfigPanel from './components/ConfigPanel';
+import BotStatus from './components/BotStatus';
+import LogsPanel from './components/LogsPanel';
+import MonitoringPanel from './components/MonitoringPanel';
+import LiquidationMonitor from './components/LiquidationMonitor';
+import GuardianPanel from './components/GuardianPanel';
+import TradingModeSwitch from './components/TradingModeSwitch';
+import TmuxPanel from './components/TmuxPanel';
+import EmergencyKillButton from './components/EmergencyKillButton';
+import RobustnessPanel from './components/RobustnessPanel';
+import CapitalProtectionPanel from './components/CapitalProtectionPanel';
+import LiquidationProtectionPanel from './components/LiquidationProtectionPanel';
+import TradingStatusPanel from './components/TradingStatusPanel';
+import AIAdvisorWidget from './components/AIAdvisorWidget';
+import MarketNewsWidget from './components/MarketNewsWidget';
+import InstitutionalAIPanel from './components/InstitutionalAIPanel';
+import DocumentationPanel from './components/DocumentationPanel';
+import SyncReconciliationPanel from './components/SyncReconciliationPanel';
+import ShutdownPanel from './components/ShutdownPanel';
+import EmergencyControlsPanel from './components/EmergencyControlsPanel';
+import ErrorIntelligencePanel from './components/ErrorIntelligencePanel_simple';
+import ReconciliationPanel from './components/ReconciliationPanel';
+// Robust UI Components
+import ErrorBoundary from './components/ErrorBoundary';
+import { NotificationProvider, useNotification } from './components/NotificationProvider';
+import { KeyboardProvider } from './components/KeyboardProvider';
+import ConfirmationDialog from './components/ConfirmationDialog';
+import { StatusSkeleton } from './components/LoadingSkeleton';
+
+const darkTheme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#00e676',
+    },
+    secondary: {
+      main: '#ff6b6b',
+    },
+    background: {
+      default: '#0a0e27',
+      paper: '#1a1f3a',
+    },
+  },
+  breakpoints: {
+    values: {
+      xs: 0,
+      sm: 600,
+      md: 960,
+      lg: 1280,
+      xl: 1920,
+    },
+  },
+  typography: {
+    // Optimize font sizes for mobile
+    h4: {
+      '@media (max-width:600px)': {
+        fontSize: '1.5rem',
+      },
+    },
+    h5: {
+      '@media (max-width:600px)': {
+        fontSize: '1.25rem',
+      },
+    },
+    h6: {
+      '@media (max-width:600px)': {
+        fontSize: '1rem',
+      },
+    },
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          '@media (max-width:600px)': {
+            minWidth: '44px', // Touch-friendly minimum size
+            minHeight: '44px',
+            fontSize: '0.875rem',
+          },
+        },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          '@media (max-width:600px)': {
+            minWidth: '80px',
+            padding: '8px 12px',
+            fontSize: '0.75rem',
+          },
+        },
+      },
+    },
+    MuiContainer: {
+      styleOverrides: {
+        root: {
+          '@media (max-width:600px)': {
+            paddingLeft: '8px',
+            paddingRight: '8px',
+          },
+        },
+      },
+    },
+  },
+});
+
+function App() {
+  const [config, setConfig] = useState({});
+  const [botStatus, setBotStatus] = useState({ running: false, pid: null });
+  const [logs, setLogs] = useState([]);
+  const [currentTab, setCurrentTab] = useState(0);
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const [loading, setLoading] = useState(false);
+  const [connectionState, setConnectionState] = useState('disconnected');
+  
+  const connectionManagerRef = useRef(null);
+
+  // Initialize Connection Manager
+  useEffect(() => {
+    console.log('🔵 Initializing ConnectionManager...');
+    
+    const connectionManager = new ConnectionManager({
+      reconnectDelay: 1000,
+      maxReconnectDelay: 30000,
+      heartbeatInterval: 5000,
+      syncInterval: 10000
+    });
+
+    // Register event listeners
+    connectionManager.on('connection', (data) => {
+      console.log('📡 Connection event:', data);
+      setConnectionState(data.status);
+      
+      if (data.status === 'connected') {
+        showNotification('Connected to server', 'success');
+        fetchInitialData();
+      } else if (data.status === 'disconnected') {
+        showNotification('Disconnected from server', 'warning');
+      } else if (data.status === 'error') {
+        showNotification(`Connection error: ${data.error}`, 'error');
+      }
+    });
+
+    connectionManager.on('config_updated', (newConfig) => {
+      console.log('📝 Config updated from server');
+      setConfig(newConfig);
+      showNotification('Configuration updated', 'info');
+    });
+
+    connectionManager.on('bot_status', (status) => {
+      console.log('🤖 Bot status update:', status);
+      setBotStatus(status);
+    });
+
+    connectionManager.on('log_entry', (data) => {
+      setLogs(prev => [...prev.slice(-99), data.message]);
+    });
+
+    connectionManager.on('error', (data) => {
+      showNotification(data.message, 'error');
+    });
+
+    connectionManager.on('heartbeat_timeout', () => {
+      showNotification('Connection may be unstable - heartbeat timeout', 'warning');
+    });
+
+    connectionManager.on('sync_error', (data) => {
+      console.error('❌ Sync error:', data.error);
+      // Don't show notification for every sync error to avoid spam
+    });
+
+    // Connect
+    connectionManager.connect();
+    connectionManagerRef.current = connectionManager;
+
+    // Cleanup
+    return () => {
+      console.log('🔴 Cleaning up ConnectionManager');
+      connectionManager.disconnect();
+    };
+  }, []);
+
+  const fetchInitialData = async () => {
+    try {
+      console.log('📥 Fetching initial data...');
+      setLoading(true);
+      
+      const [configData, statusData, logsData] = await Promise.all([
+        apiClient.getConfig(),
+        apiClient.getBotStatus(),
+        apiClient.getLogs(50)
+      ]);
+
+      setConfig(configData);
+      setBotStatus(statusData);
+      setLogs(logsData.logs || []);
+      
+      console.log('✅ Initial data loaded');
+    } catch (error) {
+      console.error('❌ Error fetching initial data:', error);
+      showNotification(`Failed to load data: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfigUpdate = async (updates) => {
+    try {
+      setLoading(true);
+      const result = await apiClient.updateConfig(updates);
+      showNotification(result.message || 'Configuration saved successfully', 'success');
+    } catch (error) {
+      showNotification(`Failed to save configuration: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartBot = async () => {
+    try {
+      console.log('📱 START button clicked');
+      setLoading(true);
+      showNotification('Starting bot...', 'info');
+      
+      const result = await apiClient.startBot();
+      
+      if (result.success) {
+        showNotification('✅ Bot started successfully!', 'success');
+        setTimeout(fetchInitialData, 1000);
+      } else {
+        showNotification(`❌ ${result.message}`, 'error');
+      }
+    } catch (error) {
+      console.error('📱 START error:', error);
+      showNotification(`❌ Failed to start bot: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStopBot = async () => {
+    try {
+      console.log('📱 STOP button clicked');
+      setLoading(true);
+      showNotification('Stopping bot...', 'info');
+      
+      const result = await apiClient.stopBot();
+      
+      if (result.success) {
+        showNotification('✅ Bot stopped successfully!', 'success');
+        setTimeout(fetchInitialData, 1000);
+      } else {
+        showNotification(`❌ ${result.message}`, 'error');
+      }
+    } catch (error) {
+      console.error('📱 STOP error:', error);
+      showNotification(`❌ Failed to stop bot: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showNotification = (message, severity = 'info') => {
+    setNotification({ open: true, message, severity });
+  };
+
+  const handleCloseNotification = () => {
+    setNotification({ ...notification, open: false });
+  };
+
+  const handleHardRefresh = () => {
+    // Force reload bypassing cache (like Cmd+Shift+R)
+    showNotification('Hard refreshing page...', 'info');
+    setTimeout(() => {
+      window.location.reload(true);
+    }, 500);
+  };
+
+  const handleClearCache = async () => {
+    try {
+      showNotification('Clearing browser cache...', 'info');
+      
+      // Clear cache using Cache API
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+      
+      // Clear localStorage and sessionStorage for this domain
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      showNotification('Cache cleared! Reloading...', 'success');
+      
+      // Reload page after clearing
+      setTimeout(() => {
+        window.location.reload(true);
+      }, 1000);
+    } catch (error) {
+      showNotification(`Failed to clear cache: ${error.message}`, 'error');
+    }
+  };
+
+  const tabsAnchorRef = React.useRef(null);
+
+  return (
+    <ThemeProvider theme={darkTheme}>
+      <CssBaseline />
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        {/* Header */}
+        <AppBar position="static" elevation={0} sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+          <Toolbar sx={{ 
+            flexWrap: { xs: 'wrap', md: 'nowrap' }, 
+            gap: { xs: 1, md: 2 },
+            py: { xs: 1, md: 2 }
+          }}>
+            <ShowChart sx={{ mr: { xs: 1, md: 2 }, display: { xs: 'none', sm: 'block' } }} />
+            <Typography 
+              variant="h6" 
+              component="div" 
+              sx={{ 
+                flexGrow: { xs: 1, md: 1 }, 
+                fontWeight: 'bold',
+                fontSize: { xs: '0.9rem', sm: '1.25rem' },
+                width: { xs: '100%', md: 'auto' },
+                mb: { xs: 1, md: 0 }
+              }}
+            >
+              GridBot Pro
+            </Typography>
+            
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: { xs: 0.5, md: 2 },
+              flexWrap: { xs: 'wrap', md: 'nowrap' },
+              width: { xs: '100%', md: 'auto' }
+            }}>
+              {/* Connection Status Indicator */}
+              <ConnectionStatusIndicator connectionManager={connectionManagerRef.current} />
+              
+              <Divider orientation="vertical" flexItem sx={{ mx: 1, bgcolor: 'rgba(255,255,255,0.3)' }} />
+              
+              {/* Running Bots Display - Shows PIDs of all running bot instances */}
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 1,
+                flexWrap: 'wrap'
+              }}>
+                {/* Main Bot */}
+                {botStatus.running && botStatus.pid && (
+                  <Chip
+                    icon={<CheckCircle />}
+                    label={`Bot: ${botStatus.pid}`}
+                    color="success"
+                    size="small"
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontSize: { xs: '0.65rem', md: '0.75rem' },
+                      height: { xs: '26px', md: '28px' }
+                    }}
+                  />
+                )}
+                {!botStatus.running && (
+                  <Chip
+                    icon={<ErrorIcon />}
+                    label="Bot: Stopped"
+                    color="default"
+                    size="small"
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontSize: { xs: '0.65rem', md: '0.75rem' },
+                      height: { xs: '26px', md: '28px' }
+                    }}
+                  />
+                )}
+                
+                {/* Guardian Bot */}
+                {botStatus.guardian_running && botStatus.guardian_health?.pid && (
+                  <Chip
+                    icon={<Shield />}
+                    label={`Guardian: ${botStatus.guardian_health.pid}`}
+                    color="info"
+                    size="small"
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontSize: { xs: '0.65rem', md: '0.75rem' },
+                      height: { xs: '26px', md: '28px' }
+                    }}
+                  />
+                )}
+                
+                {/* Heartbeat Monitor */}
+                {botStatus.monitor_running && botStatus.heartbeat?.pid && (
+                  <Chip
+                    icon={<ShowChart />}
+                    label={`Monitor: ${botStatus.heartbeat.pid}`}
+                    color="secondary"
+                    size="small"
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontSize: { xs: '0.65rem', md: '0.75rem' },
+                      height: { xs: '26px', md: '28px' }
+                    }}
+                  />
+                )}
+                
+                {/* Warning if multiple main bots running */}
+                {botStatus.running && botStatus.pid && (
+                  <Tooltip title="Check for duplicate bot processes if count > 1">
+                    <Chip
+                      label={`Total: ${(botStatus.running ? 1 : 0) + (botStatus.guardian_running ? 1 : 0) + (botStatus.monitor_running ? 1 : 0)}`}
+                      size="small"
+                      color={(botStatus.running ? 1 : 0) + (botStatus.guardian_running ? 1 : 0) + (botStatus.monitor_running ? 1 : 0) > 3 ? 'warning' : 'primary'}
+                      sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: { xs: '0.65rem', md: '0.75rem' },
+                        height: { xs: '26px', md: '28px' }
+                      }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
+              
+              <Divider orientation="vertical" flexItem sx={{ mx: 1, bgcolor: 'rgba(255,255,255,0.3)', display: { xs: 'none', md: 'block' } }} />
+              
+              <Tooltip title="Refresh">
+                <IconButton color="inherit" onClick={fetchInitialData} size="small">
+                  <Refresh />
+                </IconButton>
+              </Tooltip>
+              
+              {/* Hide these on mobile to save space */}
+              <Box sx={{ display: { xs: 'none', lg: 'flex' }, gap: 1 }}>
+                <Tooltip title="Hard refresh page (bypass cache)">
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<AutorenewOutlined />}
+                    onClick={handleHardRefresh}
+                    sx={{ 
+                      borderColor: 'rgba(255,255,255,0.5)', 
+                      color: 'white',
+                      '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                    }}
+                  >
+                    Hard Refresh
+                  </Button>
+                </Tooltip>
+                
+                <Tooltip title="Clear browser cache and reload">
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<DeleteSweep />}
+                    onClick={handleClearCache}
+                    sx={{ 
+                      borderColor: 'rgba(255,255,255,0.5)', 
+                      color: 'white',
+                      '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                    }}
+                  >
+                    Clear Cache
+                  </Button>
+                </Tooltip>
+              </Box>
+            </Box>
+          </Toolbar>
+        </AppBar>
+
+        {/* Main Content */}
+        <Container 
+          maxWidth="xl" 
+          sx={{ 
+            mt: { xs: 2, md: 4 }, 
+            mb: { xs: 2, md: 4 }, 
+            flexGrow: 1,
+            px: { xs: 1, sm: 2, md: 3 }
+          }}
+        >
+          <Grid container spacing={{ xs: 1.5, md: 3 }}>
+            {/* Trading Status Panel */}
+            <Grid item xs={12}>
+              <TradingStatusPanel
+                onNavigate={(tab, section, field) => {
+                  console.log('🚀 Navigation called with:', { tab, section, field });
+                  
+                  // Map tab names to tab indices (updated to match new navigation structure)
+                  const tabMap = {
+                    'configuration': 0,           // Configuration
+                    'monitoring': 1,              // Monitoring
+                    'sync': 2,                    // Sync & Reconcile
+                    'reconciliation': 3,          // Reconciliation & Provenance
+                    'shutdown': 4,                // Emergency Shutdown
+                    'guardian': 5,                // Guardian Bot
+                    'liquidation_monitor': 6,     // Liquidation Monitor
+                    'capital_protection': 7,      // Capital Protection
+                    'risk_management': 8,         // Risk Management
+                    'emergency_controls': 9,      // Emergency Controls
+                    'ai_advisor': 10,             // AI Advisor
+                    'tmux': 11,                   // Tmux Terminal
+                    'logs': 12,                   // System Logs
+                    'documentation': 13           // Documentation
+                  };
+                  
+                  const tabIndex = tabMap[tab];
+                  console.log('🔍 Tab mapping result:', { tab, tabIndex, availableTabs: Object.keys(tabMap) });
+                  
+                  if (tabIndex !== undefined) {
+                    console.log('✅ Setting current tab to:', tabIndex);
+                    setCurrentTab(tabIndex);
+                    // Update URL hash for deep-linking and scroll to tabs
+                    try { window.location.hash = `#${tab}`; } catch(e) {}
+                    setTimeout(() => {
+                      try { tabsAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(e) {}
+                    }, 0);
+                    showNotification(`Navigated to ${tab} - ${section}`, 'info');
+                  } else {
+                    console.warn(`❌ Unknown tab: ${tab}`);
+                    showNotification(`Tab "${tab}" not found`, 'warning');
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Bot Status Card */}
+            <Grid item xs={12}>
+              <BotStatus status={botStatus} />
+            </Grid>
+
+            {/* Trading Mode Switch */}
+            <Grid item xs={12}>
+              <TradingModeSwitch botRunning={botStatus.running} />
+            </Grid>
+
+            {/* Error Intelligence Panel - Always Visible */}
+            <Grid item xs={12}>
+              <ErrorIntelligencePanel />
+            </Grid>
+
+            {/* Emergency Kill Button */}
+            <Grid item xs={12}>
+              <Paper sx={{ 
+                p: { xs: 2, md: 3 }, 
+                bgcolor: 'rgba(211, 47, 47, 0.1)', 
+                border: '2px solid rgba(211, 47, 47, 0.3)' 
+              }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  flexWrap: 'wrap', 
+                  gap: { xs: 1, md: 2 } 
+                }}>
+                  <Box sx={{ flex: { xs: '1 1 100%', sm: '1 1 auto' } }}>
+                    <Typography 
+                      variant="h6" 
+                      sx={{ 
+                        fontWeight: 'bold', 
+                        color: 'error.main', 
+                        mb: 1,
+                        fontSize: { xs: '1rem', md: '1.25rem' }
+                      }}
+                    >
+                      🚨 Emergency Controls
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      color="text.secondary"
+                      sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}
+                    >
+                      Immediately terminate all bot processes (Trading Bot, Monitor, Guardian) and tmux session.
+                      This is a hard kill (kill -9) for emergency situations.
+                    </Typography>
+                  </Box>
+                  <Box sx={{ flex: { xs: '1 1 100%', sm: '0 0 auto' }, display: 'flex', justifyContent: { xs: 'center', sm: 'flex-end' } }}>
+                    <EmergencyKillButton />
+                  </Box>
+                </Box>
+              </Paper>
+            </Grid>
+
+            {/* Tabs */}
+            <Grid item xs={12}>
+              <Paper sx={{ mb: { xs: 2, md: 3 } }}>
+                <div ref={tabsAnchorRef} />
+                <Tabs
+                  value={currentTab}
+                  onChange={(e, newValue) => setCurrentTab(newValue)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  allowScrollButtonsMobile
+                  sx={{
+                    '& .MuiTab-root': { 
+                      fontWeight: 'bold', 
+                      fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.9rem' },
+                      minHeight: { xs: '48px', md: '64px' },
+                      px: { xs: 1, sm: 1.5, md: 2 },
+                      minWidth: { xs: '80px', sm: '100px', md: '120px' },
+                      textTransform: 'none',
+                      letterSpacing: '0.5px'
+                    },
+                    '& .MuiSvgIcon-root': {
+                      fontSize: { xs: '1.1rem', md: '1.3rem' },
+                      mr: 1
+                    },
+                    '& .MuiTabs-indicator': {
+                      height: 3,
+                      borderRadius: '2px 2px 0 0'
+                    }
+                  }}
+                >
+                  {/* Core Configuration & Monitoring */}
+                  <Tab icon={<Settings />} label="Configuration" iconPosition="start" />
+                  <Tab icon={<ShowChart />} label="Monitoring" iconPosition="start" />
+                  
+                  {/* Trading Operations */}
+                  <Tab icon={<Refresh />} label="Sync & Reconcile" iconPosition="start" />
+                  <Tab icon={<AutorenewOutlined />} label="Reconciliation" iconPosition="start" />
+                  <Tab icon={<Stop />} label="Emergency Shutdown" iconPosition="start" />
+                  
+                  {/* Safety & Risk Management */}
+                  <Tab icon={<Shield />} label="Guardian Bot" iconPosition="start" />
+                  <Tab icon={<Security />} label="Liquidation Monitor" iconPosition="start" />
+                  <Tab icon={<VerifiedUser />} label="Capital Protection" iconPosition="start" />
+                  
+                  {/* Advanced Features */}
+                  <Tab icon={<AccountBalance />} label="Risk Management" iconPosition="start" />
+                  <Tab icon={<Warning />} label="Emergency Controls" iconPosition="start" />
+                  <Tab icon={<Psychology />} label="AI Advisor" iconPosition="start" />
+                  
+                  {/* System & Debugging */}
+                  <Tab icon={<Terminal />} label="Tmux Terminal" iconPosition="start" />
+                  <Tab icon={<Terminal />} label="System Logs" iconPosition="start" />
+                  <Tab label="📚 Documentation" iconPosition="start" />
+                </Tabs>
+              </Paper>
+
+              {/* Tab Panels */}
+              {/* 0: Configuration */}
+              {currentTab === 0 && (
+                <ConfigPanel
+                  config={config}
+                  onUpdate={handleConfigUpdate}
+                  loading={loading}
+                />
+              )}
+
+              {/* 1: Monitoring */}
+              {currentTab === 1 && (
+                <MonitoringPanel
+                  botStatus={botStatus}
+                  config={config}
+                />
+              )}
+
+              {/* 2: Sync & Reconcile */}
+              {currentTab === 2 && (
+                <SyncReconciliationPanel socket={connectionManagerRef.current?.socket} />
+              )}
+
+              {/* 3: Reconciliation & Provenance */}
+              {currentTab === 3 && (
+                <ReconciliationPanel />
+              )}
+
+              {/* 4: Emergency Shutdown */}
+              {currentTab === 4 && (
+                <ShutdownPanel socket={connectionManagerRef.current?.socket} />
+              )}
+
+              {/* 5: Guardian Bot */}
+              {currentTab === 5 && (
+                <GuardianPanel socket={connectionManagerRef.current?.socket} />
+              )}
+
+              {/* 6: Liquidation Monitor */}
+              {currentTab === 6 && (
+                <LiquidationMonitor socket={connectionManagerRef.current?.socket} />
+              )}
+
+              {/* 7: Capital Protection */}
+              {currentTab === 7 && (
+                <CapitalProtectionPanel />
+              )}
+
+              {/* 8: Risk Management */}
+              {currentTab === 8 && (
+                <RobustnessPanel />
+              )}
+
+              {/* 9: Emergency Controls */}
+              {currentTab === 9 && (
+                <EmergencyControlsPanel />
+              )}
+
+              {/* 10: AI Advisor */}
+              {currentTab === 10 && (
+                <InstitutionalAIPanel />
+              )}
+
+              {/* 11: Tmux Terminal */}
+              {currentTab === 11 && (
+                <TmuxPanel />
+              )}
+
+              {/* 12: System Logs */}
+              {currentTab === 12 && (
+                <LogsPanel logs={logs} />
+              )}
+
+              {/* 13: Documentation */}
+              {currentTab === 13 && (
+                <DocumentationPanel />
+              )}
+            </Grid>
+          </Grid>
+        </Container>
+
+        {/* Notification Snackbar */}
+        <Snackbar
+          open={notification.open}
+          autoHideDuration={6000}
+          onClose={handleCloseNotification}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert onClose={handleCloseNotification} severity={notification.severity} sx={{ width: '100%' }}>
+            {notification.message}
+          </Alert>
+        </Snackbar>
+
+        {/* AI Advisor Widget - Fixed bottom right */}
+        <AIAdvisorWidget
+          onNavigate={(tab, section, field) => {
+            const tabMap = {
+              'configuration': 0,
+              'monitoring': 1,
+              'guardian': 2,
+              'liquidation_monitor': 3,
+              'robustness': 4,
+              'capital_protection': 5,
+              'liquidation_protection': 6,
+              'tmux': 7,
+              'logs': 8
+            };
+            
+            const tabIndex = tabMap[tab];
+            if (tabIndex !== undefined) {
+              setCurrentTab(tabIndex);
+              showNotification(`AI Advisor: Navigated to ${tab}`, 'info');
+            }
+          }}
+        />
+
+        {/* Market News Widget - Fixed bottom right (next to AI) */}
+        <MarketNewsWidget
+          onNavigate={(tab, section) => {
+            const tabMap = {
+              'configuration': 0,
+              'monitoring': 1,
+              'guardian': 2,
+              'liquidation_monitor': 3,
+              'robustness': 4,
+              'capital_protection': 5,
+              'liquidation_protection': 6,
+              'tmux': 7,
+              'logs': 8
+            };
+            
+            const tabIndex = tabMap[tab];
+            if (tabIndex !== undefined) {
+              setCurrentTab(tabIndex);
+              showNotification(`News: Navigated to ${tab}`, 'info');
+            }
+          }}
+        />
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+export default App;
+

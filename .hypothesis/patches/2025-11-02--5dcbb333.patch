@@ -1,0 +1,44 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.141.1 <no-reply@hypothesis.works>
+Date: Sun, 02 Nov 2025 14:48:00
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/test_grid_properties.py
++++ ./tests/test_grid_properties.py
+@@ -182,23 +182,30 @@
+ 
+ @given(params=valid_grid_params())
+ @settings(max_examples=100)
++@example(
++    params={'lower': 1000.0,
++     'upper': 1050.0,
++     'step': 10.0,
++     'ref': 1000.0,
++     'tick_size': 1.0},  # or any other generated value
++).via('discovered failure')
+ def test_property_quantize_is_idempotent(params):
+     """
+     PROPERTY: Quantizing a quantized price returns the same price
+-    
++
+     quantize(quantize(x)) == quantize(x)
+-    
++
+     This test found a REAL BUG in the original quantize_price implementation
+     that caused floating-point drift with certain tick sizes like 0.74
+     """
+     calc = GridCalculator(**params)
+-    
++
+     # Generate a random price
+     price = params['lower'] + (params['upper'] - params['lower']) * 0.5
+-    
++
+     quantized_once = calc.quantize_price(price)
+     quantized_twice = calc.quantize_price(quantized_once)
+-    
++
+     # After fix, should be within floating point precision
+     assert abs(quantized_once - quantized_twice) < 1e-6
+ 

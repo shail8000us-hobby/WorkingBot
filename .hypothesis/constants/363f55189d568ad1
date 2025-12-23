@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/ai.py
+# hypothesis_version: 6.141.1
+
+[0.15, 0.25, 111500.0, 200, 400, 500, 10000, '/api/ai/ask', '/api/ai/health', 'GET', 'No question provided', 'POST', 'ai', 'analysis', 'answer', 'available', 'connected', 'disconnected', 'entry_price', 'error', 'fallback', 'fallback_error', 'fallback_status', 'false', 'force_refresh', 'grades', 'health', 'lookback_days', 'lookback_hours', 'metrics', 'models', 'name', 'num_simulations', 'ollama', 'ollama_error', 'ollama_model', 'ollama_status', 'patterns', 'prediction', 'probability', 'question', 'recommendations', 'recommended_source', 'related_links', 'results', 'rule_based', 'source', 'stop_loss', 'success', 'suggestion', 'suggestions', 'target_price', 'time_horizon_days', 'timestamp', 'true', 'unknown']

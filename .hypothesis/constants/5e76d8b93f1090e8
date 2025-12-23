@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/bot_control.py
+# hypothesis_version: 6.141.1
+
+[0.1, 0.5, 200, 400, 403, 404, 500, 1024, 3600, '--daemon', '/api/bot/restart', '/api/bot/start', '/api/bot/status', '/api/bot/stop', '/api/bots/status', '/api/bots/stop', 'Bot is not running', 'Failed to stop bot', 'GET', 'Guardian Bot', 'Heartbeat Monitor', 'Invalid PID format', 'Main Trading Bot', 'PID is required', 'POST', 'WebUI Backend', 'bot.run', 'bot/run.py', 'bot_control', 'bot_launcher.py', 'bots', 'cmdline', 'command', 'cpuPercent', 'cpu_percent', 'create_time', 'error', 'guardian', 'guardian_bot', 'heartbeat_monitor', 'live_trading', 'memoryMb', 'memory_info', 'message', 'monitor', 'name', 'pid', 'python', 'r', 'running', 'startedAt', 'status', 'success', 'totalBots', 'type', 'uptime', 'webui', 'webui/backend/app.py']

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.workingbot.heartbeat</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/ssr/Projects/WorkingBot/bot/heartbeat/monitor.py</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/ssr/Projects/WorkingBot</string>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/ssr/Projects/WorkingBot/bot/logs/launchagent_heartbeat.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/ssr/Projects/WorkingBot/bot/logs/launchagent_heartbeat_error.log</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/ssr/Projects/WorkingBot</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>TRADING_MODE</key>
+        <string>live</string>
+    </dict>
+    
+    <!-- Run at system boot -->
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <!-- Auto-restart if crashed -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    
+    <!-- Wait 30 seconds between restart attempts -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    
+    <!-- Higher priority process -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    
+    <!-- Nice value -->
+    <key>Nice</key>
+    <integer>0</integer>
+    
+    <!-- Don't kill child processes when restarting -->
+    <key>AbandonProcessGroup</key>
+    <true/>
+    
+    <!-- Resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>512</integer>
+    </dict>
+    
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>1024</integer>
+    </dict>
+</dict>
+</plist>
+

@@ -1,0 +1,66 @@
+import pytest
+from dotenv import dotenv_values
+
+from webui.backend.app import REDACTED_PLACEHOLDER, app
+
+
+def _auth_headers():
+    return {"Authorization": "Bearer unit-test-token"}
+
+
+@pytest.fixture
+def client():
+    with app.test_client() as test_client:
+        yield test_client
+
+
+def test_config_endpoint_redacts_secret_values(client):
+    response = client.get("/api/config", headers=_auth_headers())
+    assert response.status_code == 200
+    data = response.get_json()
+
+    token_entry = data.get("TELEGRAM_BOT_TOKEN")
+    assert token_entry is not None, "Expected TELEGRAM_BOT_TOKEN in config payload"
+    assert token_entry.get("redacted") is True
+    assert token_entry.get("value") == REDACTED_PLACEHOLDER
+    assert isinstance(token_entry.get("has_value"), bool)
+
+    raw_values = dotenv_values("grid_config.env")
+    grid_key = "GRIDBOT_GRID_COUNT"
+    assert data.get(grid_key, {}).get("value") == raw_values.get(grid_key)
+
+
+def test_config_all_masks_secret_entries(client):
+    response = client.get("/api/config/all", headers=_auth_headers())
+    assert response.status_code == 200
+
+    payload = response.get_json()
+    assert payload.get("success") is True
+
+    config = payload.get("config", {})
+    secrets = payload.get("secrets", {})
+
+    assert config.get("TELEGRAM_BOT_TOKEN") == REDACTED_PLACEHOLDER
+    assert secrets.get("TELEGRAM_BOT_TOKEN", {}).get("redacted") is True
+
+    raw_values = dotenv_values("grid_config.env")
+    grid_key = "GRIDBOT_GRID_COUNT"
+    assert config.get(grid_key) == raw_values.get(grid_key)
+
+
+def test_flat_config_endpoint_returns_canonical_keys(client):
+    response = client.get("/api/config/flat", headers=_auth_headers())
+    assert response.status_code == 200
+
+    payload = response.get_json()
+    assert payload.get("success") is True
+
+    config = payload.get("config", {})
+    meta = payload.get("meta", {})
+
+    assert "GRID_LOWER" not in config
+    assert "GRIDBOT_LOWER" in config
+
+    lower_meta = meta.get("GRIDBOT_LOWER", {})
+    assert lower_meta.get("source_key") == "GRIDBOT_LOWER"
+    assert "GRID_LOWER" in lower_meta.get("legacy_sources", [])

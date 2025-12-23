@@ -1,0 +1,10 @@
+#To change the grid level stop the bot then change grid level then bash dashboard/start.sh
+There are many files lying in the name of json to remove those added a script in the name prune_backups.sh
+Fix the open_terminal.sh file #This will pop open multiple macOS Terminal windows: start bot, tail logs, hotwatch, and periodic status.bash open_terminals.sh
+Started working on pnl.sh files and fixed it 
+snapshot 10PM 
+csv and reporting snapshot 10:16 Pm and 11:13
+Email and report generation work need attention, it started sending me the email automatically 
+Tomorrow add whitelist error or whenever bot shut down due to any reason It has to drop an email 
+bash dashboard/pnl_hourly.sh
+#telegram intergartion work started snapshot taken around 12:30 pm

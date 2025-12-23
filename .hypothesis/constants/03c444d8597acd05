@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/ai/analytics/execution.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 100, 200, 500, 1000, 'Unknown', 'audit', 'avg_latency_ms', 'avg_slippage', 'avg_slippage_pct', 'bot', 'buy', 'buy_count', 'buy_percentage', 'cancelled', 'execution_efficiency', 'expected_price', 'failed', 'fill_price', 'fill_rate', 'filled', 'filled_at', 'imbalance', 'latency', 'lookback_days', 'max_latency_ms', 'max_slippage', 'max_slippage_pct', 'min_latency_ms', 'order_flow', 'orders.jsonl', 'placed_at', 'price', 'r', 'rejected', 'rejection', 'rejection_rate', 'rejection_reason', 'rejection_reasons', 'replace', 'sell', 'sell_count', 'sell_percentage', 'side', 'slippage', 'status', 'timestamp', 'total_orders', 'total_rejections', 'utf-8', '⚠️', '✓', '⭐', '🔴']

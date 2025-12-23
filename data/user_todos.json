@@ -1,0 +1,121 @@
+[
+  {
+    "id": "1762843426217",
+    "text": "tail -f /Users/ssr/Projects/WorkingBot/bot/logs/bot.log",
+    "completed": false,
+    "createdAt": "2025-11-11T12:13:46.217318",
+    "updatedAt": "2025-11-11T12:13:46.217324"
+  },
+  {
+    "id": "1762864602542",
+    "text": "# Live bot logs pm2 logs gridbot-live",
+    "completed": false,
+    "createdAt": "2025-11-11T18:06:42.542587",
+    "updatedAt": "2025-11-11T18:06:42.542594"
+  },
+  {
+    "id": "1762864625980",
+    "text": "### Restart Bot (if needed) ```bash pm2 restart gridbot-live # Shadow mode continues running!",
+    "completed": false,
+    "createdAt": "2025-11-11T18:07:05.980429",
+    "updatedAt": "2025-11-11T18:07:05.980435"
+  },
+  {
+    "id": "1762978804048",
+    "text": "python3 -m bot.run\npkill -9 -f \"python3 -m bot.run\"\ntail -f /tmp/async_bot.log",
+    "completed": false,
+    "createdAt": "2025-11-13T01:50:04.048648",
+    "updatedAt": "2025-11-13T01:50:04.048654"
+  },
+  {
+    "id": "1762978807506",
+    "text": "# Check if bot is running\nps aux | grep \"python3 -m bot.run\" | grep -v grep",
+    "completed": false,
+    "createdAt": "2025-11-13T01:50:07.506285",
+    "updatedAt": "2025-11-13T01:50:07.506290"
+  },
+  {
+    "id": "1763023630317",
+    "text": "cd ~/Projects/WorkingBot",
+    "completed": false,
+    "createdAt": "2025-11-13T14:17:10.317164",
+    "updatedAt": "2025-11-13T14:17:10.317169"
+  },
+  {
+    "id": "1763030915293",
+    "text": "Start in live mode\n./pm2_async_bot.sh start live\n\n# Start in demo mode\n./pm2_async_bot.sh start demo\n\n# Check status\n./pm2_async_bot.sh status\n\n# View logs\n./pm2_async_bot.sh logs live\n\n# Open monitoring dashboard\n./pm2_async_bot.sh monit",
+    "completed": false,
+    "createdAt": "2025-11-13T16:18:35.293204",
+    "updatedAt": "2025-11-13T16:18:35.293210"
+  },
+  {
+    "id": "1763034692247",
+    "text": "# Stop (graceful - cancels orders)\npm2 stop gridbot-live\n\n# Restart\npm2 restart gridbot-live\n\n# Delete (stop + remove from list)\npm2 delete gridbot-live\n\n# List all processes\npm2 list\n\n# Describe specific process\npm2 describe gridbot-live",
+    "completed": false,
+    "createdAt": "2025-11-13T17:21:32.247919",
+    "updatedAt": "2025-11-13T17:21:32.247924"
+  },
+  {
+    "id": "1763034737597",
+    "text": "# Start in live mode\n./pm2_async_bot.sh start live\n\n# Start in demo mode\n./pm2_async_bot.sh start demo\n\n# Check status\n./pm2_async_bot.sh status\n\n# View logs\n./pm2_async_bot.sh logs live\n\n# Open monitoring dashboard\n./pm2_async_bot.sh monit\n```",
+    "completed": false,
+    "createdAt": "2025-11-13T17:22:17.597269",
+    "updatedAt": "2025-11-13T17:22:17.597279"
+  },
+  {
+    "id": "1763113177093",
+    "text": "python3 code_explainer.py <any_python_file.py>\n\nPerfect for someone with zero coding knowledge:\n\n\u2705 Simple instructions in GIFT_INSTRUCTIONS.md\n\u2705 Complete documentation in CODE_NARRATION_FEATURE.md\n\u2705 Works standalone (no bot required)\n\u2705 3 reading levels (simple/trader/tech)\n\u2705 Production-ready and tested",
+    "completed": false,
+    "createdAt": "2025-11-14T15:09:37.093464",
+    "updatedAt": "2025-11-14T15:09:37.093476"
+  },
+  {
+    "id": "1763113206846",
+    "text": "Explain any Python file\npython3 code_explainer.py bot/strategy/async_gridbot.py\n\n# Simple mode (for beginners)\npython3 code_explainer.py human_logger.py --mode simple\n\n# Save as markdown\npython3 code_explainer.py order_actor.py --output md\n\n# Batch explain directory\npython3 code_explainer.py bot/actors --dir\n\n# Compare complexity\npython3 code_explainer.py file1.py file2.py --compare",
+    "completed": false,
+    "createdAt": "2025-11-14T15:10:06.846965",
+    "updatedAt": "2025-11-14T15:10:06.846970"
+  },
+  {
+    "id": "1763127165309",
+    "text": "# Check Tailscale status\ntailscale status\n\n# View watchdog logs\ntail -f /opt/homebrew/var/log/tailscale_watchdog.log\n\n# Manually restart Tailscale\nlaunchctl kickstart -k gui/$(id -u)/com.tailscale.tailscaled\n\n# Check if services are running\nlaunchctl list | grep tailscale",
+    "completed": false,
+    "createdAt": "2025-11-14T19:02:45.309477",
+    "updatedAt": "2025-11-14T19:02:45.309483"
+  },
+  {
+    "id": "1763361997076",
+    "text": "tail -f bot/logs/guardian.log",
+    "completed": false,
+    "createdAt": "2025-11-17T12:16:37.076169",
+    "updatedAt": "2025-11-17T12:16:37.076174"
+  },
+  {
+    "id": "1763373110561",
+    "text": "Future work \nVolatility",
+    "completed": false,
+    "createdAt": "2025-11-17T15:21:50.561884",
+    "updatedAt": "2025-11-17T15:21:50.561889"
+  },
+  {
+    "id": "1763385368060",
+    "text": "python3 view_combined_logs.py",
+    "completed": false,
+    "createdAt": "2025-11-17T18:46:08.060302",
+    "updatedAt": "2025-11-17T18:46:08.060308"
+  },
+  {
+    "id": "1763640105207",
+    "text": "./watch_all_logs.sh\n# Watch all logs continuously (recommended)\n./watch_logs_filtered.sh\n\n# Watch only errors\n./watch_logs_filtered.sh error\n\n# Watch specific price\n./watch_logs_filtered.sh 92000\n\n# Watch orders\n./watch_logs_filtered.sh order",
+    "completed": false,
+    "createdAt": "2025-11-20T17:31:45.207662",
+    "updatedAt": "2025-11-20T17:31:45.207670"
+  },
+  {
+    "id": "1766047829739",
+    "text": "# Check status\n./check_guardian_status.sh\n\n# View monitoring log\ntail -f logs/guardian_monitor.log\n\n# View guardian activity\ntail -f logs/guardian_bot.log",
+    "completed": false,
+    "createdAt": "2025-12-18T14:20:29.739178",
+    "updatedAt": "2025-12-18T14:20:29.739183"
+  }
+]

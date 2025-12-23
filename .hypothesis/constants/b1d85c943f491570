@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/ai/analytics/performance.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.05, 0.5, 1.0, 1.5, 2.0, 100, 252, 100000, 'audit', 'avg_drawdown', 'avg_loss', 'avg_win', 'bot', 'calmar_ratio', 'current_drawdown', 'data_points', 'drawdown_analysis', 'duration', 'duration_days', 'end_idx', 'entry_price', 'exit_price', 'expectancy', 'filled', 'inf', 'information_ratio', 'initial_balance', 'lookback_days', 'losing_trades', 'max_dd', 'max_dd_pct', 'max_drawdown', 'orders.jsonl', 'overall_performance', 'pnl', 'pnl_*.json', 'price', 'profit_factor', 'r', 'recovery_days', 'recovery_idx', 'replace', 'reports', 'risk_reward_ratio', 'sell', 'sharpe', 'sharpe_ratio', 'side', 'size', 'sortino_ratio', 'start_idx', 'state.json', 'status', 'timestamp', 'total_balance', 'total_pnl', 'total_return', 'total_trades', 'utf-8', 'win_loss_stats', 'win_rate', 'winning_trades', '⚠️', '✓', '⭐', '🔴']

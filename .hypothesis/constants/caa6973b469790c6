@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/webui/backend/utils/auth.py
+# hypothesis_version: 6.141.1
+
+[':', 'API_TOKEN', 'Authorization', 'Basic ', 'Bearer ', 'Invalid credentials', 'Invalid token', 'WEBUI_AUTH_PASSWORD', 'WEBUI_AUTH_TOKEN', 'WEBUI_AUTH_USER', 'WWW-Authenticate', 'admin', 'unit', 'unit-secret', 'unit-test-token', 'utf-8']

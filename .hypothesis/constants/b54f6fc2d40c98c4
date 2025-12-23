@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/loss_limits.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.05, 0.95, 100, '0', '=', 'MAX_ACCOUNT_LOSS_INR', 'Recommended fix:', 'This means:', 'buffer_inr', 'buffer_percent', 'guardian', 'guardian_limit_inr', 'is_valid', 'loss_limits', 'trader', 'trader_limit_inr', 'validated']

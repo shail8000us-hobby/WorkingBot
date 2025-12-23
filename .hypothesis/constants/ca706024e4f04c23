@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/fill_detector.py
+# hypothesis_version: 6.141.1
+
+[1.0, 2.0, 5.0, 100, 5000, '=', 'FillProcessor', 'current_depth', 'detection_source', 'drops', 'fill_price', 'fill_size', 'is_processing', 'max_depth', 'order_id', 'price', 'role', 'runner', 'side', 'size', 'timestamp', 'total_processed', 'total_queued', 'unknown']

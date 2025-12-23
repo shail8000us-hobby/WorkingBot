@@ -1,0 +1,18 @@
+{
+  "id": "conservative_grid_",
+  "name": "conservative grid ",
+  "mode": "live",
+  "strategy": "conservative",
+  "grid": {
+    "lower_range": 90000,
+    "upper_range": 110000,
+    "grid_step": 1000,
+    "lot_size": 1,
+    "take_profit_percent": 0.5,
+    "stop_loss_percent": 2.0
+  },
+  "created_at": "2025-11-17T18:02:25.874508Z",
+  "pnl": 0,
+  "positions": 0,
+  "enabled": false
+}

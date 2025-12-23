@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/logs.py
+# hypothesis_version: 6.141.1
+
+[100, 200, 500, 10000, '/api/logs', '/api/logs/recent', 'GET', 'bot/logs/bot.log', 'bot_type', 'count', 'error', 'guardian', 'health', 'lines', 'live_trading', 'log_file', 'logs', 'monitoring', 'success', 'trading']

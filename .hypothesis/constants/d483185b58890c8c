@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/backtest/sim/sim_exchange.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.5, 1000, 'BTC/USD:USD', 'USD', 'amount', 'backtest.sim', 'buy', 'canceled', 'clientOrderId', 'client_id', 'contractSize', 'contracts', 'cost', 'currency', 'entryPrice', 'fee', 'filled', 'final_equity', 'free', 'id', 'is_maker', 'leverage', 'long', 'markPrice', 'net_pnl', 'none', 'notional', 'open', 'open_orders', 'order_id', 'position_size', 'position_size_after', 'price', 'realizedPnl', 'realized_pnl', 'reduceOnly', 'reduce_only', 'remaining', 'sell', 'short', 'side', 'status', 'symbol', 'timestamp', 'total', 'total_fees', 'total_funding', 'total_pnl', 'total_trades', 'tp_first', 'unrealizedPnl', 'unrealized_pnl', 'used']

@@ -1,0 +1,1312 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# GridBot Pro - Complete YAML Configuration Schema
+# Version: 2.0
+# Last Updated: 2025-11-15
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This schema defines ALL configuration options for the GridBot trading system.
+# It serves as the single source of truth for configuration structure.
+#
+# CRITICAL SAFETY NOTES:
+# - trading_mode: Controls which API endpoints and credentials are used
+# - execute_orders: MUST be true for real trading (with acknowledgment)
+# - live_acknowledgment: MUST be "YES" to enable live trading
+# - All capital protection features should be enabled for production
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+# VERSION TRACKING
+version:
+  type: string
+  required: true
+  default: '2.0'
+  description: Configuration schema version for compatibility checks
+
+# TRADING ENVIRONMENT
+trading_mode:
+  type: enum
+  required: true
+  values: [demo, live]
+  default: demo
+  description: |
+    Trading environment mode
+    - demo: Uses testnet endpoints and credentials
+    - live: Uses production endpoints and credentials
+    CRITICAL: Verify all safety settings before switching to 'live'
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BOT CORE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+bot:
+  type: object
+  required: true
+  description: Core bot identification and mode settings
+  properties:
+    symbol:
+      type: string
+      required: true
+      default: BTCUSD
+      description: Trading pair symbol (must match Delta Exchange format)
+      validation:
+        pattern: '^[A-Z0-9]+$'
+    
+    product_id:
+      type: integer
+      required: false
+      description: Delta Exchange product ID (auto-resolved from symbol if not provided)
+      validation:
+        min: 1
+    
+    mode:
+      type: enum
+      required: true
+      values: [LONG, SHORT, BOTH]
+      default: LONG
+      description: |
+        Grid trading direction
+        - LONG: Buy low, sell high (bullish)
+        - SHORT: Sell high, buy low (bearish)
+        - BOTH: Simultaneous long and short grids
+    
+    version:
+      type: string
+      required: false
+      default: '2.0.0'
+      description: Bot version identifier
+    
+    heartbeat_seconds:
+      type: integer
+      required: false
+      default: 20
+      validation:
+        min: 5
+        max: 300
+      description: Interval between heartbeat updates (seconds)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TRADING SYMBOL CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+trading:
+  type: object
+  required: true
+  description: Symbol-specific trading parameters
+  properties:
+    symbol:
+      type: string
+      required: true
+      default: BTCUSD
+      description: Trading symbol (same as bot.symbol for consistency)
+    
+    product_id:
+      type: integer
+      required: false
+      description: Product ID override
+    
+    tick_size:
+      type: float
+      required: true
+      default: 0.5
+      validation:
+        min: 0.01
+        max: 1000
+      description: Minimum price increment for the symbol
+    
+    lot_step:
+      type: integer
+      required: true
+      default: 1
+      validation:
+        min: 1
+      description: Minimum quantity increment for the symbol
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GRID CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+grid:
+  type: object
+  required: true
+  description: Grid trading strategy parameters
+  
+  # Grid Geometry - Price Range and Spacing
+  geometry:
+    type: object
+    required: true
+    properties:
+      lower:
+        type: integer
+        required: true
+        default: 90000
+        validation:
+          min: 1
+        description: Grid lower price boundary
+      
+      upper:
+        type: integer
+        required: true
+        default: 110000
+        validation:
+          min: 1
+        description: Grid upper price boundary (must be > lower)
+      
+      step:
+        type: integer
+        required: true
+        default: 500
+        validation:
+          min: 1
+          max: 10000
+        description: Distance between grid levels (in quote currency)
+      
+      reference:
+        type: integer
+        required: true
+        default: 95500
+        validation:
+          min: 1
+        description: Reference price for grid alignment (must be within range)
+  
+  # Grid Limits - Position and Order Constraints
+  limits:
+    type: object
+    required: true
+    properties:
+      max_open_positions:
+        type: integer
+        required: true
+        default: 10
+        validation:
+          min: 1
+          max: 100
+        description: Maximum number of open positions allowed
+      
+      lot_size:
+        type: integer
+        required: true
+        default: 2
+        validation:
+          min: 1
+        description: Contracts per order (base quantity)
+      
+      max_open_orders:
+        type: integer
+        required: true
+        default: 20
+        validation:
+          min: 1
+        description: Maximum number of open orders allowed
+      
+      max_qty_per_order:
+        type: integer
+        required: true
+        default: 1
+        validation:
+          min: 1
+        description: Maximum quantity for a single order
+  
+  # Grid Behavior - Strictness and Alignment
+  behavior:
+    type: object
+    required: true
+    properties:
+      strict_grid:
+        type: boolean
+        required: true
+        default: true
+        description: Enforce strict grid level alignment
+      
+      rung_snap_mode:
+        type: enum
+        values: [below, nearest, above]
+        required: true
+        default: below
+        description: |
+          How to snap orders to grid levels
+          - below: Always round down to lower level
+          - nearest: Round to nearest level
+          - above: Always round up to higher level
+      
+      tick_size:
+        type: float
+        required: true
+        default: 0.5
+        validation:
+          min: 0.01
+        description: Price tick size for the symbol
+      
+      dynamic_tick_size:
+        type: boolean
+        required: false
+        default: true
+        description: Automatically adjust tick size based on price
+      
+      seed_initial_count:
+        type: integer
+        required: false
+        default: 0
+        validation:
+          min: 0
+          max: 50
+        description: Number of orders to place at startup
+  
+  # Smart Gap Fill - Intelligent Gap Detection
+  smart_gap_fill:
+    type: object
+    required: false
+    properties:
+      enabled:
+        type: boolean
+        required: true
+        default: false
+        description: Enable smart gap fill feature
+      
+      order_type:
+        type: enum
+        values: [maker, taker, auto]
+        required: true
+        default: maker
+        description: Order type for gap fill orders
+      
+      max_levels:
+        type: integer
+        required: true
+        default: 0
+        validation:
+          min: 0
+          max: 20
+        description: Maximum gap levels to fill (0 = disabled)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CAPITAL PROTECTION - Critical Safety Features
+# ═══════════════════════════════════════════════════════════════════════════
+
+capital:
+  type: object
+  required: true
+  description: Capital and margin management settings
+  properties:
+    usd_to_inr_rate:
+      type: float
+      required: true
+      default: 85.0
+      validation:
+        min: 1.0
+        max: 200.0
+      description: USD to INR exchange rate for calculations
+    
+    equity_floor_inr:
+      type: integer
+      required: true
+      default: 70000
+      validation:
+        min: 0
+      description: Minimum equity level (INR) - trading stops if breached
+    
+    equity_floor_check_interval:
+      type: integer
+      required: true
+      default: 60
+      validation:
+        min: 10
+        max: 3600
+      description: Equity floor check interval (seconds)
+    
+    auto_margin_topup_enabled:
+      type: boolean
+      required: false
+      default: false
+      description: Enable automatic margin top-up
+    
+    auto_topup_threshold:
+      type: float
+      required: false
+      default: 60.0
+      validation:
+        min: 0
+        max: 100
+      description: Margin utilization threshold for auto top-up (percentage)
+    
+    auto_topup_amount_inr:
+      type: integer
+      required: false
+      default: 1000
+      validation:
+        min: 100
+      description: Amount to top up each time (INR)
+
+capital_protection:
+  type: object
+  required: true
+  description: Advanced capital protection mechanisms
+  
+  equity_floor:
+    type: object
+    required: true
+    properties:
+      floor_inr:
+        type: integer
+        required: true
+        default: 70000
+        validation:
+          min: 0
+        description: Hard stop equity floor (INR)
+      
+      check_interval:
+        type: integer
+        required: true
+        default: 60
+        validation:
+          min: 10
+      description: Check interval (seconds)
+      
+      require_acknowledgment:
+        type: boolean
+        required: true
+        default: true
+        description: Require manual acknowledgment to resume after breach
+      
+      enabled:
+        type: boolean
+        required: true
+        default: true
+        description: Enable equity floor protection
+  
+  drawdown_cap:
+    type: object
+    required: false
+    properties:
+      enabled:
+        type: boolean
+        required: true
+        default: true
+      
+      max_pct:
+        type: float
+        required: true
+        default: 30.0
+        validation:
+          min: 1.0
+          max: 100.0
+      
+      window_days:
+        type: integer
+        required: true
+        default: 30
+        validation:
+          min: 1
+      
+      hysteresis_pct:
+        type: float
+        required: true
+        default: 15.0
+      
+      check_interval:
+        type: integer
+        required: true
+        default: 3600
+  
+  two_man_rule:
+    type: object
+    required: false
+    properties:
+      enabled:
+        type: boolean
+        required: true
+        default: true
+      
+      timeout_seconds:
+        type: integer
+        required: true
+        default: 600
+      
+      auto_revert:
+        type: boolean
+        required: true
+        default: true
+  
+  exposure_growth:
+    type: object
+    required: true
+    properties:
+      enabled:
+        type: boolean
+        required: true
+        default: true
+      
+      max_tranches_per_minute:
+        type: integer
+        required: true
+        default: 2
+        validation:
+          min: 1
+      
+      max_notional_inr_per_minute:
+        type: integer
+        required: true
+        default: 999999999
+      
+      queue_enabled:
+        type: boolean
+        required: true
+        default: true
+  
+  pending_budget:
+    type: object
+    required: false
+    properties:
+      max_notional_inr:
+        type: integer
+        required: true
+        default: 2000000000000
+      
+      buffer_pct:
+        type: float
+        required: true
+        default: 10.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SAFETY CONFIGURATION - Order Execution and Risk Controls
+# ═══════════════════════════════════════════════════════════════════════════
+
+safety:
+  type: object
+  required: true
+  description: CRITICAL safety controls for order execution
+  properties:
+    # CRITICAL SAFETY GATES
+    execute_orders:
+      type: boolean
+      required: true
+      default: false
+      description: |
+        CRITICAL: Enable real order placement
+        Set to false for dry-run mode (no real orders)
+        Set to true to enable live trading
+    
+    i_understand_live:
+      type: string
+      required: true
+      default: 'NO'
+      validation:
+        values: ['YES', 'NO']
+      description: |
+        CRITICAL: Live trading acknowledgment
+        Must be set to 'YES' to enable live order execution
+        Acts as final safety check before real trading
+    
+    trading_mode:
+      type: enum
+      required: true
+      values: [demo, live]
+      default: demo
+      description: Trading environment (demo/live)
+    
+    # VOLATILITY SAFETY
+    volatility_safety_enabled:
+      type: boolean
+      required: true
+      default: true
+      description: Enable volatility-based trading pause
+    
+    volatility_max_iv:
+      type: float
+      required: true
+      default: 55.0
+      validation:
+        min: 0
+        max: 200
+      description: Maximum implied volatility threshold
+    
+    volatility_max_rv:
+      type: float
+      required: true
+      default: 60.0
+      validation:
+        min: 0
+        max: 200
+      description: Maximum realized volatility threshold
+    
+    volatility_max_spread:
+      type: float
+      required: true
+      default: 15.0
+      validation:
+        min: 0
+      description: Maximum IV-RV spread allowed
+    
+    # CIRCUIT BREAKER
+    circuit_breaker:
+      type: object
+      required: true
+      properties:
+        enabled:
+          type: boolean
+          required: true
+          default: true
+        
+        failure_threshold:
+          type: integer
+          required: true
+          default: 3
+          validation:
+            min: 1
+            max: 10
+        
+        timeout_seconds:
+          type: integer
+          required: true
+          default: 60
+          validation:
+            min: 10
+        
+        half_open_calls:
+          type: integer
+          required: true
+          default: 2
+    
+    # CONFIRMATION GUARD
+    confirmation_guard_enabled:
+      type: boolean
+      required: true
+      default: true
+      description: Enable post-order confirmation checks
+    
+    # FLASH MOVE PROTECTION
+    flash_move:
+      type: object
+      required: false
+      description: Protection against flash crashes
+    
+    # SPREAD GUARD
+    spread_guard:
+      type: object
+      required: false
+      description: Bid-ask spread monitoring
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RISK LIMITS - Account-Level Risk Controls
+# ═══════════════════════════════════════════════════════════════════════════
+
+risk_limits:
+  type: object
+  required: true
+  description: Account-level risk thresholds
+  properties:
+    max_account_loss_inr:
+      type: integer
+      required: true
+      default: 25000
+      validation:
+        min: 0
+      description: Maximum account loss allowed (INR)
+    
+    usd_to_inr_rate:
+      type: float
+      required: true
+      default: 85.0
+      validation:
+        min: 1.0
+      description: USD to INR exchange rate
+    
+    max_drift_alerts:
+      type: integer
+      required: false
+      default: 10
+    
+    max_disruption_events:
+      type: integer
+      required: false
+      default: 5
+    
+    emergency_price_buffer:
+      type: float
+      required: false
+      default: 0.2
+      validation:
+        min: 0
+        max: 1
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GUARDIAN BOT - Autonomous Safety Monitor
+# ═══════════════════════════════════════════════════════════════════════════
+
+guardian:
+  type: object
+  required: false
+  description: Autonomous 24/7 safety monitoring system
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    check_interval:
+      type: integer
+      required: true
+      default: 10
+      validation:
+        min: 5
+        max: 300
+    
+    max_account_loss_inr:
+      type: integer
+      required: true
+      default: 5000
+    
+    usd_to_inr_rate:
+      type: float
+      required: true
+      default: 85.0
+    
+    liquidation_critical:
+      type: float
+      required: true
+      default: 0.01
+      validation:
+        min: 0
+        max: 1
+    
+    auto_close_positions:
+      type: boolean
+      required: true
+      default: true
+    
+    close_order_type:
+      type: enum
+      values: [market, limit]
+      required: true
+      default: market
+    
+    cancel_orders_on_emergency:
+      type: boolean
+      required: true
+      default: true
+    
+    alert_threshold_80:
+      type: boolean
+      required: false
+      default: true
+    
+    alert_threshold_90:
+      type: boolean
+      required: false
+      default: true
+    
+    daily_summary:
+      type: boolean
+      required: false
+      default: true
+    
+    cooldown:
+      type: integer
+      required: false
+      default: 60
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LIQUIDATION PROTECTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+liquidation_protection:
+  type: object
+  required: true
+  description: Real-time liquidation distance monitoring
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    margin_utilization_max:
+      type: float
+      required: true
+      default: 40.0
+      validation:
+        min: 0
+        max: 100
+    
+    margin_utilization_warning_1:
+      type: float
+      required: true
+      default: 50.0
+    
+    margin_utilization_warning_2:
+      type: float
+      required: true
+      default: 70.0
+    
+    margin_utilization_critical:
+      type: float
+      required: true
+      default: 80.0
+    
+    margin_utilization_warning:
+      type: float
+      required: true
+      default: 60.0
+    
+    margin_emergency_reserve:
+      type: float
+      required: true
+      default: 60.0
+    
+    reduce_only_at_utilization:
+      type: float
+      required: true
+      default: 200.0
+    
+    liquidation_distance_min:
+      type: float
+      required: true
+      default: 60.0
+    
+    liquidation_distance_target:
+      type: float
+      required: true
+      default: 70.0
+    
+    liquidation_distance_critical:
+      type: float
+      required: true
+      default: 50.0
+    
+    liquidation_distance_warning:
+      type: float
+      required: true
+      default: 10.0
+    
+    real_time_monitoring:
+      type: boolean
+      required: true
+      default: true
+    
+    websocket_margin_updates:
+      type: boolean
+      required: true
+      default: true
+    
+    websocket_portfolio_updates:
+      type: boolean
+      required: true
+      default: true
+    
+    auto_margin_topup:
+      type: boolean
+      required: false
+      default: false
+    
+    auto_topup_amount_inr:
+      type: integer
+      required: false
+      default: 1000
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STARTUP CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+startup:
+  type: object
+  required: true
+  description: Bot startup behavior
+  properties:
+    sync_duration:
+      type: integer
+      required: true
+      default: 60
+      validation:
+        min: 10
+        max: 600
+    
+    strict_start:
+      type: boolean
+      required: true
+      default: true
+    
+    forget_exchange_on_start:
+      type: boolean
+      required: true
+      default: true
+    
+    enable_smart_recovery:
+      type: boolean
+      required: true
+      default: true
+    
+    cancel_all_on_start:
+      type: boolean
+      required: true
+      default: false
+    
+    cancel_scope:
+      type: enum
+      values: [tagged, all]
+      required: true
+      default: tagged
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SHUTDOWN CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+shutdown:
+  type: object
+  required: true
+  description: Bot shutdown behavior
+  properties:
+    shutdown_duration:
+      type: integer
+      required: true
+      default: 60
+    
+    cancel_buy_orders:
+      type: boolean
+      required: true
+      default: true
+    
+    keep_tp_orders:
+      type: boolean
+      required: true
+      default: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ORDER EXECUTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+order_execution:
+  type: object
+  required: true
+  description: Order placement and management settings
+  properties:
+    post_only_mode:
+      type: enum
+      values: [off, auto, on]
+      required: true
+      default: auto
+    
+    price_buffer_pct:
+      type: float
+      required: true
+      default: 0.1
+      validation:
+        min: 0
+        max: 10
+    
+    fill_threshold:
+      type: float
+      required: true
+      default: 0.98
+      validation:
+        min: 0
+        max: 1
+    
+    max_retries:
+      type: integer
+      required: true
+      default: 3
+      validation:
+        min: 0
+        max: 10
+    
+    retry_delay:
+      type: float
+      required: true
+      default: 2.0
+      validation:
+        min: 0.1
+    
+    cooldown_seconds:
+      type: integer
+      required: true
+      default: 30
+      validation:
+        min: 0
+    
+    tag_prefix:
+      type: string
+      required: true
+      default: GBOT_
+    
+    adopt_untagged:
+      type: boolean
+      required: true
+      default: false
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MONITORING AND HEALTH
+# ═══════════════════════════════════════════════════════════════════════════
+
+heartbeat:
+  type: object
+  required: true
+  description: Heartbeat monitoring configuration
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    timeout:
+      type: integer
+      required: true
+      default: 15
+      validation:
+        min: 5
+    
+    update_interval:
+      type: integer
+      required: true
+      default: 5
+      validation:
+        min: 1
+    
+    monitor_interval:
+      type: integer
+      required: true
+      default: 10
+      validation:
+        min: 1
+    
+    file:
+      type: string
+      required: true
+      default: .heartbeat
+    
+    action:
+      type: enum
+      values: [cancel_buy_orders, cancel_all_orders, notify_only]
+      required: true
+      default: cancel_buy_orders
+
+monitoring:
+  type: object
+  required: false
+  description: Data monitoring and watchdog settings
+  properties:
+    watchdog:
+      type: object
+      required: false
+      properties:
+        max_api_fail:
+          type: integer
+          required: false
+          default: 3
+        
+        max_stale_s:
+          type: integer
+          required: false
+          default: 300
+        
+        autosave_every:
+          type: integer
+          required: false
+          default: 60
+        
+        kill_file:
+          type: string
+          required: false
+          default: .kill_signal
+    
+    heartbeat:
+      type: object
+      required: false
+      properties:
+        timeout:
+          type: integer
+          required: false
+          default: 60
+
+health_check:
+  type: object
+  required: false
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    interval:
+      type: integer
+      required: true
+      default: 300
+
+performance_logging:
+  type: object
+  required: false
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    interval:
+      type: integer
+      required: true
+      default: 3600
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LOGGING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+logging:
+  type: object
+  required: true
+  description: Logging configuration
+  properties:
+    level:
+      type: enum
+      values: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+      required: true
+      default: INFO
+    
+    color_logs:
+      type: boolean
+      required: false
+      default: true
+    
+    guardian_log_file:
+      type: string
+      required: false
+      default: guardian.log
+    
+    guardian_log_level:
+      type: enum
+      values: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+      required: false
+      default: INFO
+
+# ═══════════════════════════════════════════════════════════════════════════
+# API CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+api:
+  type: object
+  required: true
+  description: Delta Exchange API endpoints and configuration
+  properties:
+    demo:
+      type: object
+      required: true
+      properties:
+        public_url:
+          type: string
+          required: true
+          default: https://cdn-ind.testnet.deltaex.org
+        
+        private_url:
+          type: string
+          required: true
+          default: https://cdn-ind.testnet.deltaex.org
+        
+        websocket_url:
+          type: string
+          required: true
+          default: wss://testnet-api.delta.exchange
+    
+    live:
+      type: object
+      required: true
+      properties:
+        public_url:
+          type: string
+          required: true
+          default: https://api.india.delta.exchange
+        
+        private_url:
+          type: string
+          required: true
+          default: https://api.india.delta.exchange
+        
+        websocket_url:
+          type: string
+          required: true
+          default: wss://socket.india.delta.exchange
+    
+    # DEPRECATED - Old key names for backward compatibility
+    demo_public_url:
+      type: string
+      required: false
+      deprecated: true
+      description: Use api.demo.public_url instead
+    
+    demo_private_url:
+      type: string
+      required: false
+      deprecated: true
+    
+    demo_ws_url:
+      type: string
+      required: false
+      deprecated: true
+    
+    live_public_url:
+      type: string
+      required: false
+      deprecated: true
+    
+    live_private_url:
+      type: string
+      required: false
+      deprecated: true
+    
+    live_ws_url:
+      type: string
+      required: false
+      deprecated: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NOTIFICATIONS
+# ═══════════════════════════════════════════════════════════════════════════
+
+notifications:
+  type: object
+  required: false
+  description: Notification settings (Telegram, etc.)
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    telegram:
+      type: object
+      required: false
+      properties:
+        demo:
+          type: object
+          required: false
+          properties:
+            bot_token:
+              type: string
+              required: false
+              sensitive: true
+            
+            chat_id:
+              type: string
+              required: false
+              sensitive: true
+        
+        live:
+          type: object
+          required: false
+          properties:
+            bot_token:
+              type: string
+              required: false
+              sensitive: true
+            
+            chat_id:
+              type: string
+              required: false
+              sensitive: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WEB UI CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+webui:
+  type: object
+  required: false
+  description: Web UI server configuration
+  properties:
+    enabled:
+      type: boolean
+      required: true
+      default: true
+    
+    port:
+      type: integer
+      required: true
+      default: 5555
+      validation:
+        min: 1024
+        max: 65535
+    
+    allowed_origins:
+      type: string
+      required: true
+      default: http://localhost:*,http://127.0.0.1:*
+    
+    auth_enabled:
+      type: boolean
+      required: false
+      default: false
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RECONCILIATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+reconciliation:
+  type: object
+  required: false
+  description: Order reconciliation settings
+  properties:
+    enabled:
+      type: boolean
+      required: false
+      default: true
+    
+    lookback_days:
+      type: integer
+      required: false
+      default: 7
+      validation:
+        min: 1
+        max: 90
+    
+    dry_run:
+      type: boolean
+      required: false
+      default: false
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXECUTION SAFETY (Additional Layer)
+# ═══════════════════════════════════════════════════════════════════════════
+
+execution_safety:
+  type: object
+  required: false
+  description: Additional execution safety layer
+  properties:
+    i_understand_live:
+      type: string
+      required: false
+      default: 'NO'
+      validation:
+        values: ['YES', 'NO']
+    
+    execute_orders:
+      type: boolean
+      required: false
+      default: false
+    
+    require_live_password:
+      type: boolean
+      required: false
+      default: true
+    
+    live_trading_password:
+      type: string
+      required: false
+      sensitive: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LEGACY COMPATIBILITY (DEPRECATED)
+# ═══════════════════════════════════════════════════════════════════════════
+
+telegram:
+  type: object
+  required: false
+  deprecated: true
+  description: Use notifications.telegram instead
+  
+strategies:
+  type: array
+  required: false
+  deprecated: true
+  description: Strategy configuration (future feature)
+
+active_strategies:
+  type: array
+  required: false
+  deprecated: true
+  description: Active strategy list (future feature)

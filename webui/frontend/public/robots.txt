@@ -1,0 +1,10 @@
+# robots.txt for GridBot Pro Web UI
+# Local development interface
+
+User-agent: *
+Allow: /
+
+# Note: This is a local interface on localhost:5555
+# Allowing crawling to satisfy Lighthouse SEO checks
+# In production, this would not be publicly accessible
+

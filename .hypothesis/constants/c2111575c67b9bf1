@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/sagas/fill_processing_saga.py
+# hypothesis_version: 6.141.1
+
+[0.01, 5.0, 10.0, 30.0, 'ADD_POSITION', 'CANCEL_ORDER', 'CLEAR_PENDING_BUY', 'CLEAR_PENDING_SELL', 'GET_POSITION_BY_TP', 'GET_STATE', 'LONG', 'PLACE_BUY', 'PLACE_SELL', 'PLACE_TP', 'REMOVE_POSITION', 'SCHEDULE_TP_RETRY', 'SET_PENDING_BUY', 'SET_PENDING_SELL', 'add_position', 'buy', 'clear_pending_buy', 'clear_pending_sell', 'cleared', 'correlation_id', 'duplicate_order', 'entry_price', 'error', 'failed', 'fill_price', 'fill_size', 'invalid_grid_level', 'is_complete', 'max_retries', 'ok', 'order_id', 'pending_buy', 'pending_sell', 'place_buy_order', 'place_grid_order', 'place_sell_order', 'place_tp', 'position', 'position_id', 'price', 'reason', 'remove_position', 'retry_count', 'side', 'size', 'skipped', 'status', 'tp_price']

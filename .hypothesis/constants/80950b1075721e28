@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/backtest/sim/fee_model.py
+# hypothesis_version: 6.141.1
+
+['0.0002', '0.0005', 'BACKTEST_MAKER_FEE', 'BACKTEST_TAKER_FEE', 'backtest.fees']

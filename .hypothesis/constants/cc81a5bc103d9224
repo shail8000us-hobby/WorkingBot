@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/capital/pending_budget.py
+# hypothesis_version: 6.141.1
+
+[0.0, 85.0, 100, '0', '10', '=', 'alert_count', 'alert_threshold', 'amount', 'available', 'block_count', 'block_rate', 'buy', 'check_count', 'current_pending', 'enabled', 'in_alert_zone', 'info', 'last_pending', 'max_pending', 'order_count', 'pending_budget', 'price', 'reduce_only', 'side', 'utilization_pct']

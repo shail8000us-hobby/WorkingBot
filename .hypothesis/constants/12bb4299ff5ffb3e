@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/utils/env_loader.py
+# hypothesis_version: 6.141.1
+
+['27', '84', '=', 'BTCUSD', 'DELTA_API_KEY', 'DELTA_API_SECRET', 'DELTA_BASE_URL', 'DELTA_PRODUCT_ID', 'DELTA_SYMBOL', 'DELTA_WEBSOCKET_URL', 'DEMO_DELTA_API_KEY', 'DEMO_DELTA_SYMBOL', 'DEMO_PUBLIC_BASE_URL', 'DEMO_WEBSOCKET_URL', 'LIVE_DELTA_API_KEY', 'LIVE_DELTA_SYMBOL', 'LIVE_PUBLIC_BASE_URL', 'LIVE_WEBSOCKET_URL', 'Real account balance', 'SAFE - No real money', 'TRADING_MODE', 'Test/Demo funds', 'api_url', 'color', 'demo', 'description', 'emoji', 'funds_type', 'green', 'live', 'mode', 'red', 'risk_level', '🔴', '🟢']

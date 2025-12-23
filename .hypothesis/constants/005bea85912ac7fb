@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/strategy/gridbot.py
+# hypothesis_version: 6.141.1
+
+[0.2, 0.5, 15.0, 5000, '%Y%m%d_%H%M%S', '/', '0', '0.5', '27', ':', '=', 'BOT-', 'DELTA_API_KEY', 'DELTA_API_SECRET', 'DELTA_PRODUCT_ID', 'GRIDBOT_GRID_MODE', 'GRIDBOT_TICK_SIZE', 'LONG', 'SHORT', 'active', 'attempts', 'buy', 'buy_order_id', 'client_order_id', 'created_at', 'entry_price', 'fill_price', 'id', 'last', 'limit_price', 'max_attempts', 'open', 'order_id', 'position', 'price', 'protected', 'r', 'reconciled', 'reduce_only', 'result', 'runner', 'sell_order_id', 'short', 'side', 'size', 'state', 'success', 'timestamp', 'tp_id', 'tp_price', '⚠️ Emergency cleanup', '✅ GridBot stopped', '🛑 Shutdown requested', '🧹 GRACEFUL SHUTDOWN']

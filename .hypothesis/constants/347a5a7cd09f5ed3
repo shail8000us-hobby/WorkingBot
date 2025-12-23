@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/reconciliation/order_logger.py
+# hypothesis_version: 6.141.1
+
+[1.0, 50000.0, 100, '#', '-', '123456789', 'BOT-', 'BTCUSD', 'BUY', 'GBOT_', 'TP', '__main__', 'a', 'audit', 'bot', 'buy', 'details', 'event_type', 'filled', 'grid', 'manual', 'metadata', 'open', 'order_id', 'order_logger', 'order_update', 'orders.jsonl', 'provenance', 'r', 'reconciliation', 'status', 'test', 'timestamp', 'type', 'unknown', 'w']

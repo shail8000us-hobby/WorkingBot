@@ -1,0 +1,7 @@
+"""Legacy backup facade that forwards to app.py."""
+from __future__ import annotations
+
+from bot.refactor import is_enabled as _refactor_enabled
+
+if _refactor_enabled():
+    from .app import *  # noqa: F401,F403

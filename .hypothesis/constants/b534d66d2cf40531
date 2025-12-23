@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/tmux.py
+# hypothesis_version: 6.141.1
+
+[200, 500, '/api/tmux/start', '/api/tmux/status', '/api/tmux/stop', '/usr/bin/tmux', '/usr/local/bin/tmux', ':', 'ConnectionError', 'GET', 'POST', 'Started successfully', 'Stopped successfully', 'Unknown error', 'X-Auth-Token', 'bot_count', 'bot_pids', 'bots_stopped', 'created', 'error', 'exists', 'gridbot', 'gridbot:', 'message', 'pids_killed', 'session', 'session_name', 'session_running', 'socket', 'socket_path', 'success', 'tmux', 'tmux not found', 'tmux_installed', 'unknown', 'windows', '~']

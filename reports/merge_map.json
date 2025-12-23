@@ -1,0 +1,82 @@
+{
+  "python_facades": [
+    {
+      "from": "backtest/data/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "backtest/metrics/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "backtest/runner/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "backtest/sim/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/api/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/orders/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/risk/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/state/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/strategy/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/tools/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/utils/__init__.py",
+      "to": "bot._package_facade"
+    },
+    {
+      "from": "bot/strategy/archive/gbot_20250911_155851.py",
+      "to": "bot/strategy/archive/gbot_v1_7_3.py"
+    },
+    {
+      "from": "webui/backend/recon_routes_temp.py",
+      "to": "webui/backend/recon_routes.py"
+    }
+  ],
+  "webui_facades": [
+    {
+      "from": "webui/backend/app.py.backup",
+      "to": "webui/backend/app.py"
+    },
+    {
+      "from": "webui/backend/app.py.backup.1760789141",
+      "to": "webui/backend/app.py"
+    },
+    {
+      "from": "webui/backend/app.py.backup.20251018_112648",
+      "to": "webui/backend/app.py"
+    },
+    {
+      "from": "webui/backend/app.py.bak",
+      "to": "webui/backend/app.py"
+    },
+    {
+      "from": "webui/frontend/src/components/ErrorIntelligencePanel_simple.js",
+      "to": "webui/frontend/src/components/ErrorIntelligencePanel.js"
+    },
+    {
+      "from": "webui/frontend/src/components/ErrorResolutionPanel_simple.js",
+      "to": "webui/frontend/src/components/ErrorResolutionPanel.js"
+    }
+  ]
+}

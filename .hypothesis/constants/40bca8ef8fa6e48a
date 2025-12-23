@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/capital/equity_tracker.py
+# hypothesis_version: 6.141.1
+
+[0.0, 100, 3600, 86400, '.', '15', '20', '30', '=', 'DRAWDOWN_CAP_ENABLED', 'DRAWDOWN_MAX_PCT', 'DRAWDOWN_WINDOW_DAYS', 'TRADING_MODE', 'current_drawdown_inr', 'current_drawdown_pct', 'current_equity', 'date', 'demo', 'enabled', 'equity_inr', 'equity_tracker', 'hysteresis_pct', 'last_snapshot_time', 'max_drawdown_pct', 'peak_equity', 'protective_mode', 'r', 'snapshot_count', 'timestamp', 'total_balance', 'true', 'utilization_pct', 'w', 'window_days']

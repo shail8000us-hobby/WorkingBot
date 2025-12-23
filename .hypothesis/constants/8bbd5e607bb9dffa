@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/webui/backend/routes/pnl.py
+# hypothesis_version: 6.141.1
+
+[-120, 200, 500, '%H:%M', '%Y%m%d', '%Y-%m-%d-%H', '/api/pnl-history', '/api/pnl/summary', 'Daily PnL %', 'GET', 'Timestamp', 'Total PnL (INR)', 'Total PnL (USD)', 'bot', 'daily_pnl_percent', 'error', 'history', 'last_updated', 'pnl', 'position_count', 'r', 'reports', 'time', 'timestamp', 'total_pnl', 'total_pnl_inr', 'total_pnl_usd', 'unrealized_pnl']

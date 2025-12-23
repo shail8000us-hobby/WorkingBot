@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/brain_analyzer/code_reader.py
+# hypothesis_version: 6.141.1
+
+['*.py', '_', 'bot', 'files', 'gbot_ws.py', 'line_count', 'metadata', 'modified_timestamp', 'modules', 'name', 'path', 'r', 'relative_path', 'scan_timestamp', 'size_bytes', 'source', 'strategy', 'total_files', 'total_lines', 'utf-8']

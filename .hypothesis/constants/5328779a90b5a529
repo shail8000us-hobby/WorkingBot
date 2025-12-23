@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/strategy/modules/position_manager.py
+# hypothesis_version: 6.141.1
+
+[0.01, 3600, 'attempts', 'available', 'buy_order_id', 'capacity', 'entry', 'entry_price', 'grid_aligned', 'max_attempts', 'max_open', 'next_retry', 'open', 'open_positions', 'open_tranches', 'order_id', 'pending', 'pending_buy', 'pending_sell', 'position', 'positions', 'price', 'protected', 'r', 'reconciled', 'reserved', 'reserved_capacity', 'retry_queue_size', 'runner', 'runtime_state.json', 'session_tag', 'timestamp', 'total', 'tp', 'tp_id', 'tp_price', 'tp_retry_queue', 'unknown', 'w']

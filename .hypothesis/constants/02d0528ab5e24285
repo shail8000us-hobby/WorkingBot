@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/monitor.py
+# hypothesis_version: 6.141.1
+
+[200, 400, 500, '/api/monitor/start', '/api/monitor/status', '/api/monitor/stop', '/api/trading_status', 'Bot start requested', 'Bot stopped', 'GET', 'MODE', 'POST', 'blockers', 'bot', 'bot_running', 'dashboard', 'data', 'demo', 'error', 'force', 'hard_stop', 'message', 'monitor', 'net_pnl_inr', 'pending_orders', 'positions', 'positions.json', 'rpnl_inr', 'running', 'start_monitor.sh', 'state.json', 'stop_monitor.sh', 'success', 'timestamp', 'total_blockers', 'trading_allowed', 'unrealized_pnl', 'upnl_inr']

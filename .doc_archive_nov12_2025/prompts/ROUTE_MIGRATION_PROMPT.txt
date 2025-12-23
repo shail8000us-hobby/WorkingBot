@@ -1,0 +1,358 @@
+==============================================================================
+FLASK API ROUTE MIGRATION - COMPREHENSIVE IMPLEMENTATION PROMPT
+==============================================================================
+
+CONTEXT:
+You are completing a Flask API refactoring that migrated from a monolithic 8,850-line app.py to modular blueprints. Another AI did the initial blueprint structure but only migrated 52 of 133 routes. I've added 25 more routes (risk, capital, reconciliation blueprints), bringing us to 77 routes. You need to implement the remaining ~56 routes.
+
+CURRENT STATUS:
+✅ Completed Blueprints (77 routes total):
+- utility_bp, health_bp, logs_bp, docs_bp, metrics_bp
+- websocket_api_bp, system_bp, monitor_bp, guardian_bp
+- tmux_bp, orders_bp, pnl_bp, positions_bp, config_bp
+- bot_control_bp, todos_bp, risk_bp (13 routes), capital_bp (6 routes), recon_bp (6 routes)
+
+❌ Missing Routes (~56 routes):
+1. Robustness routes (~10 routes) - /api/robustness/*
+2. Emergency routes (~11 routes) - /api/emergency/*
+3. Config management (2 routes) - /api/config/all, /api/config/update
+4. AI Advisor (~12 routes) - /api/ai/*, /api/institutional/*
+5. Volatility signal (1 route) - /api/volatility/signal
+6. Misc routes (~15 routes) - Various utility endpoints
+7. News routes (2 routes) - /api/news/*
+
+==============================================================================
+TASK: Implement ALL remaining routes in proper blueprint files
+==============================================================================
+
+FILE LOCATIONS:
+- Original monolith: webui/backend/app.py.backup_20251031_145545 (133 routes)
+- Current app.py: webui/backend/app.py (blueprint registration)
+- Blueprint directory: webui/backend/routes/
+- Blueprint exports: webui/backend/routes/__init__.py
+
+BLUEPRINT PATTERN TO FOLLOW:
+```python
+"""
+[Blueprint Name] API Blueprint
+[Description of what this blueprint handles]
+"""
+
+from flask import Blueprint, request, jsonify
+import os
+import logging
+from pathlib import Path
+
+[blueprint_name]_bp = Blueprint('[blueprint_name]', __name__)
+log = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).parent.parent.parent.parent
+
+@[blueprint_name]_bp.route('/api/[route]/[path]', methods=['GET'])
+def [function_name]():
+    """[Docstring explaining what this route does]"""
+    try:
+        # Implementation here
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+    except Exception as e:
+        log.error(f"[Error context]: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+```
+
+REGISTRATION PATTERN:
+1. Create blueprint file: webui/backend/routes/[blueprint_name].py
+2. Add import to webui/backend/routes/__init__.py:
+   ```python
+   from .[blueprint_name] import [blueprint_name]_bp
+   ```
+3. Add to __all__ list in __init__.py
+4. Add import to webui/backend/app.py in the try/except blocks
+5. Add [blueprint_name]_bp to blueprints array in app.py
+
+==============================================================================
+SPECIFIC ROUTES TO IMPLEMENT
+==============================================================================
+
+PRIORITY 1: ROBUSTNESS BLUEPRINT (~10 routes)
+File: webui/backend/routes/robustness.py
+Source lines in backup: ~7900-8200
+
+Routes needed:
+- GET  /api/robustness/circuit-breakers - Get circuit breaker status
+- POST /api/robustness/circuit-breakers/reset - Reset circuit breakers
+- GET  /api/robustness/confirmation-guard/status - Order confirmation guard status
+- POST /api/robustness/confirmation-guard/reset - Reset confirmation guard
+- GET  /api/robustness/gatekeeper/status - Gatekeeper status
+- GET  /api/robustness/guardian/hysteresis - Guardian hysteresis settings
+- GET  /api/robustness/loss-limits - Loss limits configuration
+- POST /api/robustness/reset-safety-limits - Reset all safety limits
+- GET  /api/robustness/volatility/status - Volatility safety status
+- POST /api/robustness/volatility/update - Update volatility thresholds
+- POST /api/robustness/volatility/update-config - Update volatility config
+- GET  /api/robustness/audit/report - Audit report
+- GET  /api/robustness/audit/orders/<origin> - Order audit by origin
+
+Find these in app.py.backup_20251031_145545 by searching:
+grep -n "^@app.route('/api/robustness" webui/backend/app.py.backup_20251031_145545
+
+Extract the implementation, clean it up, and create the robustness.py blueprint.
+
+---
+
+PRIORITY 2: EMERGENCY ROUTES (~11 routes)
+Option A: Extend webui/backend/routes/system.py
+Option B: Create webui/backend/routes/emergency.py
+
+Routes needed:
+- POST /api/emergency/kill-all - Kill all bot processes
+- POST /api/emergency/force_restart - Force restart bot
+- GET  /api/emergency/check_flag - Check emergency flag status
+- POST /api/emergency/clear_flag - Clear emergency flag
+- POST /api/emergency/reset_gatekeeper - Reset gatekeeper
+- GET  /api/emergency/overrides - Get all feature overrides
+- POST /api/emergency/overrides/<feature> - Set feature override
+- POST /api/emergency/overrides/reset - Reset all overrides
+- POST /api/emergency/cancel-all - Cancel all orders
+- POST /api/emergency/close-all - Close all positions
+- POST /api/emergency/stop - Emergency stop trading
+
+Find these in app.py.backup_20251031_145545:
+grep -n "^@app.route('/api/emergency" webui/backend/app.py.backup_20251031_145545
+
+Important: These routes handle critical safety operations. Preserve all safety checks and confirmation requirements.
+
+---
+
+PRIORITY 3: CONFIG MANAGEMENT (2 routes)
+File: webui/backend/routes/config.py (EXTEND EXISTING)
+
+Routes to add:
+- GET /api/config/all - Get all configuration with metadata
+- POST /api/config/update - Update configuration values
+
+Find in backup at lines ~4500-4700:
+grep -n "^@app.route('/api/config/all" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/config/update" webui/backend/app.py.backup_20251031_145545
+
+These routes are critical for the frontend config panel.
+
+---
+
+PRIORITY 4: AI ADVISOR BLUEPRINT (~12 routes)
+File: webui/backend/routes/ai.py
+
+Routes needed:
+- POST /api/ai/ask - Ask AI advisor a question
+- GET  /api/ai/health - AI service health check
+- POST /api/institutional/comprehensive_analysis - Full portfolio analysis
+- POST /api/institutional/execution - Execution quality analysis
+- POST /api/institutional/log_analysis - Trading log analysis
+- POST /api/institutional/market_regime - Market regime detection
+- POST /api/institutional/ml_prediction - ML-based predictions
+- POST /api/institutional/monte_carlo - Monte Carlo simulation
+- POST /api/institutional/optimization - Strategy optimization
+- POST /api/institutional/performance - Performance analytics
+- POST /api/institutional/risk - Risk analysis
+- POST /api/institutional/win_probability - Win probability calculation
+
+Find these in app.py.backup_20251031_145545 at lines ~3400-4200:
+grep -n "^@app.route('/api/ai" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/institutional" webui/backend/app.py.backup_20251031_145545
+
+Note: These routes interface with AI/ML services. Handle service unavailability gracefully.
+
+---
+
+PRIORITY 5: VOLATILITY SIGNAL (1 route)
+File: webui/backend/routes/risk.py (EXTEND EXISTING)
+
+Route to add:
+- GET /api/volatility/signal - Get comprehensive market signal
+
+Find in backup at line ~7820:
+grep -n "^@app.route('/api/volatility/signal" webui/backend/app.py.backup_20251031_145545
+
+This route provides trading signals based on volatility regime analysis.
+
+---
+
+PRIORITY 6: MISC UTILITY ROUTES (~15 routes)
+Distribute across existing blueprints:
+
+To webui/backend/routes/system.py:
+- GET /api/shutdown-report - Get bot shutdown report
+- GET /api/sync-report - Get bot sync report
+- GET /api/state - Get bot state
+- GET /api/version - Get bot version
+
+To webui/backend/routes/utility.py:
+- POST /api/news/refresh - Refresh news data
+
+To webui/backend/routes/monitor.py:
+- GET /api/trading_status/blocker/<blocker_id>/override - Override trading blocker
+- POST /api/trading_status/start - Start trading
+- POST /api/trading_status/stop - Stop trading
+
+To webui/backend/routes/docs.py:
+- GET /api/docs/<path:filename> - Serve documentation files
+- GET /api/docs/capital-protection - Capital protection docs
+
+Find these routes:
+grep -n "^@app.route('/api/shutdown-report" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/sync-report" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/state" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/version" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/news" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/trading_status" webui/backend/app.py.backup_20251031_145545
+grep -n "^@app.route('/api/docs" webui/backend/app.py.backup_20251031_145545
+
+==============================================================================
+IMPLEMENTATION STEPS
+==============================================================================
+
+For EACH blueprint:
+
+1. CREATE BLUEPRINT FILE
+   - Use the blueprint pattern shown above
+   - Include all necessary imports
+   - Add proper logging and error handling
+
+2. EXTRACT ROUTES FROM BACKUP
+   - Find route implementations in app.py.backup_20251031_145545
+   - Copy the route handler function
+   - Update function to use blueprint decorator (@[blueprint_name]_bp.route)
+   - Update any hardcoded paths to use BASE_DIR
+   - Replace print() statements with log.info(), log.warning(), log.error()
+
+3. REGISTER BLUEPRINT
+   - Add import to webui/backend/routes/__init__.py
+   - Add to __all__ list in __init__.py
+   - Add import to webui/backend/app.py (both try and except blocks)
+   - Add to blueprints array in app.py
+
+4. TEST THE ROUTES
+   - Restart backend: launchctl stop com.gridbot.webui && sleep 2 && launchctl start com.gridbot.webui
+   - Test each route with curl: curl -s http://localhost:5555/api/[route] | python3 -m json.tool
+   - Verify route count: grep -h "^@.*route(" webui/backend/routes/*.py 2>/dev/null | wc -l
+   - Check for errors: tail -50 logs/launchagent_webui_error.log
+
+==============================================================================
+VALIDATION CHECKLIST
+==============================================================================
+
+After implementing all routes:
+
+□ All ~56 missing routes implemented
+□ All new blueprints registered in app.py and __init__.py
+□ Total route count: ~133 routes (grep -h "^@.*route(" webui/backend/routes/*.py | wc -l)
+□ No import errors in backend logs
+□ Backend restarts successfully
+□ All critical routes return valid JSON (not HTML 404)
+□ Frontend dashboard components load without "Unexpected token '<'" errors
+
+Test these critical frontend components:
+□ Volatility Chart - /api/risk/volatility/historical ✅ (ALREADY WORKING)
+□ Capital Protection - /api/capital/* ✅ (ALREADY WORKING)
+□ Reconciliation Panel - /api/recon/* ✅ (ALREADY WORKING)
+□ Robustness Panel - /api/robustness/*
+□ Emergency Controls - /api/emergency/*
+□ Config Management - /api/config/all, /api/config/update
+□ AI Advisor - /api/ai/*, /api/institutional/*
+□ Risk Analytics - /api/risk/analytics, /api/risk/var
+
+==============================================================================
+IMPORTANT NOTES
+==============================================================================
+
+1. PRESERVE SAFETY CHECKS
+   - Emergency routes have confirmation requirements
+   - Don't skip validation or authentication checks
+   - Maintain all try/except blocks for graceful fallbacks
+
+2. HANDLE MISSING DEPENDENCIES
+   - Some routes depend on services that might not be running
+   - Return proper error responses (503 for service unavailable)
+   - Don't crash if imports fail (use try/except)
+
+3. MAINTAIN BACKWARD COMPATIBILITY
+   - Frontend expects specific JSON response structures
+   - Keep field names exactly as they were in original routes
+   - Return same HTTP status codes (200, 404, 500, 503)
+
+4. PATH HANDLING
+   - Use BASE_DIR for file paths (already defined as Path(__file__).parent.parent.parent.parent)
+   - Original app.py used hardcoded paths - update these
+   - Config file is at: BASE_DIR / "grid_config.env"
+
+5. LOGGING
+   - Replace print() with log.info(), log.warning(), log.error()
+   - Log errors with full context for debugging
+   - Use import traceback and log.error(traceback.format_exc()) for detailed errors
+
+==============================================================================
+EXPECTED OUTPUT
+==============================================================================
+
+When complete, you should have:
+
+New/Updated Files:
+- webui/backend/routes/robustness.py (NEW)
+- webui/backend/routes/emergency.py (NEW) or system.py (EXTENDED)
+- webui/backend/routes/ai.py (NEW)
+- webui/backend/routes/config.py (EXTENDED with 2 routes)
+- webui/backend/routes/risk.py (EXTENDED with 1 route)
+- webui/backend/routes/system.py (EXTENDED with 4+ routes)
+- webui/backend/routes/utility.py (EXTENDED with 1+ routes)
+- webui/backend/routes/monitor.py (EXTENDED with 3 routes)
+- webui/backend/routes/docs.py (EXTENDED with 2 routes)
+- webui/backend/routes/__init__.py (UPDATED with new imports)
+- webui/backend/app.py (UPDATED with new blueprint registrations)
+
+Statistics:
+- Total blueprints: ~22-23 (currently 19)
+- Total routes: ~133 (currently 77, adding ~56)
+- Total lines in app.py: ~226 (should stay about the same)
+- Missing routes: 0
+
+==============================================================================
+QUICK REFERENCE COMMANDS
+==============================================================================
+
+# Find all routes in original app.py
+grep -n "^@app.route" webui/backend/app.py.backup_20251031_145545
+
+# Count routes in original
+grep "^@app.route" webui/backend/app.py.backup_20251031_145545 | wc -l
+
+# Count current blueprint routes
+grep -h "^@.*route(" webui/backend/routes/*.py 2>/dev/null | wc -l
+
+# Compare missing routes
+grep "^@app.route" webui/backend/app.py.backup_20251031_145545 | sed "s/@app.route('\([^']*\)'.*/\1/" | sort > /tmp/old.txt
+grep -h "^@.*route(" webui/backend/routes/*.py 2>/dev/null | sed "s/.*route('\([^']*\)'.*/\1/" | sort > /tmp/new.txt
+comm -23 /tmp/old.txt /tmp/new.txt  # Shows missing routes
+
+# Restart backend
+launchctl stop com.gridbot.webui && sleep 2 && launchctl start com.gridbot.webui
+
+# Check backend logs
+tail -f logs/launchagent_webui_error.log
+
+# Test a route
+curl -s http://localhost:5555/api/[route] | python3 -m json.tool
+
+==============================================================================
+START IMPLEMENTATION
+==============================================================================
+
+Begin with PRIORITY 1 (Robustness Blueprint), then work through priorities 2-6.
+For each blueprint, follow the 4-step process: Create → Extract → Register → Test.
+
+Good luck! The goal is to get from 77 routes to 133 routes, making all dashboard
+components fully functional.

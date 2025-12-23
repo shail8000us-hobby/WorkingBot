@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/utils/api_response.py
+# hypothesis_version: 6.141.1
+
+[200, 201, 202, 204, 400, 401, 403, 404, 409, 422, 429, 500, 503, 'Bad request', 'BadRequest', 'Conflict', 'Forbidden', 'InternalServerError', 'NotFound', 'Rate limit exceeded', 'RateLimited', 'Resource not found', 'Retry-After', 'ServiceUnavailable', 'Unauthorized', 'Validation failed', 'ValidationError', 'Z', 'code', 'data', 'details', 'error', 'message', 'meta', 'success', 'timestamp', 'type']

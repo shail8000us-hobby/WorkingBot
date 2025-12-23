@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/api/async_delta_client.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1.0, 10.0, 60.0, 100, 400, 401, 429, 500, ',', '/v2/orders', '/v2/orders/all', '/v2/positions', '/v2/wallet/balances', ':', 'Content-Type', 'DELETE', 'GET', 'POST', 'Retry-After', 'User-Agent', 'api-key', 'application/json', 'circuit_breaker', 'client_order_id', 'failures', 'false', 'gtc', 'id', 'is_open', 'limit_order', 'limit_price', 'open,pending', 'opens', 'order_type', 'page_size', 'post_only', 'product_id', 'product_ids', 'product_symbol', 'python-rest-client', 'rate_limit_hits', 'reduce_only', 'requests_failed', 'requests_made', 'result', 'side', 'signature', 'size', 'states', 'success_rate', 'time_in_force', 'timestamp', 'true', 'utf-8']

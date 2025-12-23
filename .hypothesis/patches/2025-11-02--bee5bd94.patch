@@ -1,0 +1,23 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.141.1 <no-reply@hypothesis.works>
+Date: Sun, 02 Nov 2025 14:48:01
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/test_grid_properties.py
++++ ./tests/test_grid_properties.py
+@@ -596,10 +596,13 @@
+ 
+ @given(lower=st.floats(min_value=1000, max_value=100000, allow_nan=False, allow_infinity=False))
+ @settings(max_examples=50)
++@example(
++    lower=1000.0,  # or any other generated value
++).via('discovered failure')
+ def test_property_lower_equals_upper_is_invalid(lower):
+     """
+     PROPERTY: Grid with lower == upper must be rejected
+-    
++
+     Mutation Test: Catches change from >= to >
+     """
+     # lower == upper should be invalid

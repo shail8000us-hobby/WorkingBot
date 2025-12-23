@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/app.py
+# hypothesis_version: 6.141.1
+
+[0.1, 100, 120, 404, 500, 1000, 5555, '*', ',', '../frontend/build', '/', '/<path:path>', '/api', '/api/debug/routes', '0.0.0.0', '=', 'COMPRESS_MIMETYPES', 'FLASK_ENV', 'FLASK_SECRET_KEY', 'HEAD', 'LogTailer', 'Not found', 'OPTIONS', 'SECRET_KEY', 'TRADING_MODE', '__main__', '_start_time', 'api/', 'api_keys.env', 'application/json', 'bot/logs/bot.log', 'connect', 'connected', 'count', 'details', 'dev-secret-key', 'development', 'disconnect', 'endpoint', 'error', 'grid_config.env', 'http://localhost:*', 'index.html', 'latency', 'log_entry', 'message', 'methods', 'path', 'ping', 'pong', 'production', 'r', 'routes', 'secrets', 'status', 'success', 'text/css', 'text/html', 'text/javascript', 'text/xml', 'threading', 'timestamp', '📜 Log tailer stopped']

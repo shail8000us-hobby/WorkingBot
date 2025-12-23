@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/routes/grid_mode.py
+# hypothesis_version: 6.141.1
+
+[400, 500, '/api/bot/grid-mode', 'GET', 'GRIDBOT_GRID_MODE', 'GRIDBOT_GRID_MODE=', 'LONG', 'POST', 'SHORT', 'description', 'error', 'grid_config.env', 'grid_mode', 'message', 'mode', 'r', 'success', 'w']

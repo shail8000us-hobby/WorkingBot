@@ -1,0 +1,44 @@
+{
+  "version": "2.0",
+  "schema_version": 1,
+  "created_at": "2025-11-12T06:41:28.016762+00:00",
+  "bot_pid": 80176,
+  "checksum": "1568c67dba44cd57",
+  "data": {
+    "timestamp": 1762929688.0167522,
+    "session_tag": "GBOT_1762915762",
+    "open_tranches": [
+      {
+        "buy_order_id": "1031764845",
+        "entry_price": 104500.0,
+        "tp_price": 105000.0,
+        "size": 1.0,
+        "timestamp": 1762866634.686955,
+        "protected": true,
+        "fill_sequence": 1.0,
+        "tp_id": "1031771978"
+      },
+      {
+        "buy_order_id": "1032317199",
+        "entry_price": 103000.0,
+        "tp_price": 103500.0,
+        "size": 1.0,
+        "timestamp": 1762888088.348365,
+        "protected": true,
+        "fill_sequence": 1.0,
+        "tp_id": "1032319559"
+      }
+    ],
+    "pending_buy": {
+      "order_id": "1032509552",
+      "price": 102500.0,
+      "timestamp": 1762915767.3681788,
+      "strict_grid_order": true
+    },
+    "pending_sell": null,
+    "tp_retry_queue": [],
+    "reserved_capacity": 0,
+    "max_open": 5,
+    "grid_mode": "LONG"
+  }
+}

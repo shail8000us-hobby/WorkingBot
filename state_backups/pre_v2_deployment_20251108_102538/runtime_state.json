@@ -1,0 +1,22 @@
+{
+  "version": "2.0",
+  "schema_version": 1,
+  "created_at": "2025-11-08T04:50:59.851426+00:00",
+  "bot_pid": 90804,
+  "checksum": "646b657a6f0214a1",
+  "data": {
+    "timestamp": 1762577459.8514152,
+    "session_tag": "TEST_DEBOUNCE",
+    "open_tranches": [
+      {
+        "entry_price": 94000,
+        "tp_price": 95000,
+        "buy_order_id": "TEST_ORDER_0"
+      }
+    ],
+    "pending_buy": null,
+    "tp_retry_queue": [],
+    "reserved_capacity": 0,
+    "max_open": 10
+  }
+}

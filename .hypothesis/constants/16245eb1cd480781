@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/brain_analyzer/change_detector.py
+# hypothesis_version: 6.141.1
+
+['HIGH', 'LOGIC_REMOVED', 'LOW', 'MEDIUM', 'NEW_LOGIC_ADDED', 'action_count', 'action_count_delta', 'action_labels', 'actions', 'actions_added', 'actions_removed', 'affected_decisions', 'ast_changes', 'ast_signature', 'bot', 'condition_count', 'conditions', 'current_hash', 'decision_count', 'decision_count_delta', 'decision_labels', 'decisions', 'decisions_added', 'decisions_removed', 'deleted_files', 'description', 'file', 'files', 'files_changed', 'files_unchanged', 'grid_calculator.py', 'gridbot.py', 'hash', 'impact', 'impact_description', 'impact_level', 'label', 'level', 'logic_impact', 'metadata', 'modified_time', 'modified_timestamp', 'modules', 'mtime', 'new_files', 'order_manager.py', 'previous_hash', 'rb', 'scan_time', 'scan_timestamp', 'source', 'strategy', 'temp.py']

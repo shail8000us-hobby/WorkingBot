@@ -1,0 +1,173 @@
+WINDOWS AI OPERATION PROMPT — GridBot Sync & Start (DO NOT START LIVE)
+
+Purpose:
+This prompt is for an automated Windows-side AI/assistant (or operator) that will verify the repository sync, run a set of deterministic checks, and start the bot in DEMO (dry-run) mode only. It must NOT start live trading until an explicit human confirmation and API keys are manually installed.
+
+High-level goals (in order):
+1) Verify environment and files (PYTHONPATH, Python version, files exist)
+2) Install dependencies if needed (or notify if offline)
+3) Run static checks & unit tests (fast subset)
+4) Run dry-run startup: set EXECUTE_ORDERS=false, TRADING_MODE=demo, start WebUI backend, start bot via batch script
+5) Verify runtime health: logs, WebUI health endpoint, WebSocket auth, no exceptions
+6) Report results with artifacts (last 200 log lines, errors, status) back to operator
+7) If failures occur, run rollback and leave system in stable state
+
+Safety rules (MANDATORY):
+- NEVER copy or transmit `secrets/api_keys.env` over network. API keys MUST be installed manually by a human.
+- NEVER start live trading. Use TRADING_MODE=demo and EXECUTE_ORDERS=false for all automated tests.
+- If a critical safety check fails (missing safety modules, or volatile IV/RV), stop and report.
+
+Commands and steps (PowerShell recommended):
+
+Step 0 — Preparations (run as the service user or administrator where necessary):
+# Set project path and PYTHONPATH
+$Env:PROJECT_DIR = 'D:\Projects\WorkingBot'
+Set-Location $Env:PROJECT_DIR
+$Env:PYTHONPATH = $Env:PROJECT_DIR
+
+# Quick environment info
+python --version
+where python
+node --version  # optional
+
+Step 1 — File checks (fast):
+# Ensure critical files exist
+$files = @(
+  'bot\run.py',
+  'bot\strategy\gridbot.py',
+  'bot\strategy\modules\grid_calculator.py',
+  'bot\strategy\modules\position_manager.py',
+  'bot\strategy\modules\fill_detector.py',
+  'bot\strategy\modules\order_manager.py',
+  'bot\strategy\modules\reconciliation.py',
+  'bot\strategy\modules\volatility_handler.py',
+  'bot\strategy\modules\websocket_handler.py',
+  'bot\strategy\handlers\long_handler.py',
+  'bot\strategy\handlers\short_handler.py',
+  'grid_config.env',
+  'webui\backend\app.py'
+)
+foreach ($f in $files) { if (-not (Test-Path $f)) { Write-Output "MISSING: $f"; $global:missing = $true } }
+if ($global:missing) { Write-Output "One or more critical files are missing. STOP and notify operator."; exit 2 }
+
+Step 2 — Virtualenv & dependencies:
+# If using venv
+if (Test-Path '.venv\Scripts\activate') {
+  Write-Output 'Activating virtualenv'
+  .\.venv\Scripts\activate
+}
+
+# Install dependencies only if pip is available and operator allows (non-interactive mode should be opt-in)
+if (Get-Command pip -ErrorAction SilentlyContinue) {
+  Write-Output 'Checking installed packages: (fast check)'
+  pip --version
+  # Optionally: pip install -r requirements.txt --no-input
+} else {
+  Write-Output 'pip not found — operator must install dependencies manually.'
+}
+
+Step 3 — Static checks & fast tests:
+# Run quick syntax check on critical files
+python -m py_compile bot\strategy\gridbot.py || { Write-Output 'SYNTAX ERROR in gridbot.py'; exit 3 }
+python -m py_compile bot\strategy\handlers\long_handler.py || { Write-Output 'SYNTAX ERROR in long_handler.py'; exit 3 }
+python -m py_compile bot\strategy\handlers\short_handler.py || { Write-Output 'SYNTAX ERROR in short_handler.py'; exit 3 }
+
+# Optional fast unit tests (subset)
+if (Test-Path 'tests') { pytest -q tests/test_partial_fill.py -q || Write-Output 'Unit test subset failed (non-blocking)'; }
+
+Step 4 — Configuration and safety checks:
+# Ensure secrets not present (operator must install)
+if (Test-Path 'secrets\api_keys.env') { Write-Output 'WARNING: api_keys.env present. CONFIRM it was installed manually.' }
+
+# Ensure safety modules exist
+if (-not (Test-Path 'bot\safety\single_instance_lock.py')) { Write-Output 'Missing safety module: single_instance_lock.py — STOP'; exit 4 }
+
+# Set demo-mode environment overrides
+$Env:TRADING_MODE = 'demo'
+$Env:EXECUTE_ORDERS = 'false'
+$Env:I_UNDERSTAND_LIVE = 'NO'
+
+Step 5 — Start WebUI backend (in background) and verify health
+Start-Process -FilePath 'cmd' -ArgumentList '/c','start_webui.bat' -NoNewWindow -WorkingDirectory $Env:PROJECT_DIR
+Start-Sleep -Seconds 3
+# Wait until health endpoint returns 200 or timeout
+$healthUrl = 'http://localhost:5555/api/health'
+$attempt=0
+while ($attempt -lt 15) {
+  try {
+    $r = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+    if ($r.StatusCode -eq 200) { Write-Output 'WebUI health OK'; break }
+  } catch { Start-Sleep -Seconds 1; $attempt++ }
+}
+if ($attempt -ge 15) { Write-Output 'WebUI did not become healthy in 15s — STOP and collect logs'; }
+
+Step 6 — Start the bot in demo/dry-run mode (batch file)
+# Use provided batch file which respects PYTHONPATH
+Start-Process -FilePath 'cmd' -ArgumentList '/c','start_bot.bat demo' -NoNewWindow -WorkingDirectory $Env:PROJECT_DIR
+Start-Sleep -Seconds 5
+
+# Verify bot process is running (find python run.py)
+$proc = Get-Process | Where-Object { $_.Path -and ($_.Path -like '*python*') } | Where-Object { (Get-Commandline $_.Id) -match 'bot\\run.py' }
+if (-not $proc) {
+  Write-Output 'Bot process not found after start — collect logs and exit'
+  # fallthrough to log collection
+}
+
+Step 7 — Verify runtime health (logs & WebSocket)
+# Tail last 200 lines of log
+$log = 'bot\logs\bot.log'
+if (Test-Path $log) { Get-Content $log -Tail 200 | Out-File -FilePath .\windows_bot_log_tail.txt -Encoding utf8 }
+
+# WebUI bot status
+try { Invoke-WebRequest -Uri 'http://localhost:5555/api/bot/status' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Select-Object StatusCode } catch { Write-Output 'Failed to query /api/bot/status' }
+
+# Check for common error patterns
+$errors = Select-String -Path $log -Pattern 'ERROR|Traceback|Exception|FAILED' -SimpleMatch -Quiet
+if ($errors) { Write-Output 'Errors found in logs — aborting further automated actions' }
+
+# Verify WebSocket authentication (if bot logs it)
+$wsauth = Select-String -Path $log -Pattern 'WebSocket authenticated|Subscription confirmed' -SimpleMatch -List 2
+if (-not $wsauth) { Write-Output 'No WebSocket authentication log lines found yet — continue monitoring' }
+
+Step 8 — Smoke tests for trading logic (non-executing)
+# Check fill detection loop appears healthy by searching logs
+Select-String -Path $log -Pattern 'FillDetector|handle_buy_fill|handle_sell_fill' -List | Select-Object -First 10
+
+Step 9 — If all checks pass → report success
+# Prepare report bundle
+$reportDir = Join-Path $Env:PROJECT_DIR 'windows_sync_report'
+New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
+# copy the last-tail log and a short status file
+if (Test-Path .\windows_bot_log_tail.txt) { Copy-Item .\windows_bot_log_tail.txt -Destination (Join-Path $reportDir 'bot_log_tail.txt') -Force }
+"Bot startup checks completed" | Out-File -FilePath (Join-Path $reportDir 'status.txt') -Encoding utf8
+
+# Summarize
+Write-Output "REPORT: report saved to $reportDir"
+
+Step 10 — Failure handling & rollback (automated limits)
+If there are critical errors (syntax errors, missing safety modules, failing websocket auth repeatedly), do NOT attempt further automated restarts. Instead:
+1) Stop the bot: run `windows\stop_bot.bat`
+2) Stop the WebUI if it was started by this run (find process and kill)
+3) Collect logs to `windows_sync_report` directory
+4) Create a concise `issue_report.txt` describing:
+   - what failed
+   - last 200 lines of log
+   - environment variables
+   - steps attempted
+5) Notify the operator (this system should print the path to the report and exit with non-zero code)
+
+Final Notes (operator guidance):
+- AFTER you (operator) manually copy `secrets\api_keys.env` into `D:\Projects\WorkingBot\secrets\api_keys.env`, and after verifying the bot runs on demo safely, ONLY THEN consider switching `EXECUTE_ORDERS=true` and `TRADING_MODE=live` after an explicit human review.
+- This prompt assumes the Windows AI can run PowerShell commands and has permission to start/stop processes. If not, escalate to a human.
+
+Exit Codes:
+- 0: All checks passed and bot started in demo mode
+- 2: Missing critical files
+- 3: Syntax errors
+- 4: Missing safety modules
+- 5: WebUI failed to start or health check failed
+- 6: Errors found in logs after start
+
+---
+
+End of prompt. Ensure the Windows AI logs every action and timestamps them. Do not transmit secrets. Do not start live mode automatically.

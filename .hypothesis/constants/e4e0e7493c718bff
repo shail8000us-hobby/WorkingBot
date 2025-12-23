@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/services/error_monitor.py
+# hypothesis_version: 6.141.1
+
+['--clear-test', '--db', '--interval', '--logs', '--once', 'API_AUTH_FAILED', 'API_RATE_LIMIT', 'CONNECTION_FAILED', 'DATABASE_ERROR', 'FILE_NOT_FOUND', 'GUARDIAN_FAILURE', 'HEARTBEAT_TIMEOUT', 'INSUFFICIENT_BALANCE', 'INVALID_GRID_CONFIG', 'ORDER_NOT_FOUND', '__main__', 'available_fixes', 'bot_run.log', 'can_auto_fix', 'code', 'context', 'critical', 'data', 'detected_at', 'errors.db', 'explanation', 'first_seen', 'guardian.log', 'guardian_debug.log', 'health', 'health.log', 'high', 'id', 'last_seen', 'likely_causes', 'links', 'log_file', 'logs', 'medium', 'message', 'message_raw', 'open', 'r', 'severity', 'source', 'store_true', 'suggested_actions', 'timestamp', 'title', 'trading', 'unknown']

@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/utils/notifier.py
+# hypothesis_version: 6.141.1
+
+[1.0, 2.0, 200, '0', '1', 'False', 'NOTIFY_ENABLED', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TRADING_MODE', '[DEMO]', '[LIVE]', 'chat_id', 'demo', 'false', 'live', 'notifier: http %s', 'runner', 'text']

@@ -1,0 +1,659 @@
+import os
+import sys
+import signal
+import logging
+import time
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+# Add project root to Python path FIRST (before any bot imports)
+project_root = Path(__file__).parent.parent.absolute()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# Now import bot modules
+from bot.legacy_config.aliases import ALIAS_TO_CANONICAL, upgrade_mapping
+
+# Import centralized configuration manager
+try:
+    from bot.legacy_config import get_config_manager, get_config
+    CONFIG_MANAGER_AVAILABLE = True
+except ImportError:
+    CONFIG_MANAGER_AVAILABLE = False
+
+# --- Production File Integrity Verification ---
+# DISABLED: Integrity verification causes startup issues
+# Can be re-enabled if needed by uncommenting below
+# try:
+#     from bot.verify_integrity import verify_locked_files
+#     
+#     # Run integrity check (in strict mode - abort on failure)
+#     if not verify_locked_files(strict_mode=True):
+#         print("")
+#         print("🚨 CRITICAL: Integrity verification failed!")
+#         print("🚨 Bot startup aborted for safety.")
+#         print("")
+#         sys.exit(1)
+# except ImportError:
+#     # verify_integrity module not found - skip check
+#     pass
+# except Exception as e:
+#     print(f"⚠️  Warning: Integrity verification error: {e}")
+#     print("⚠️  Continuing with startup (verification module may not be installed)")
+#     pass
+print("ℹ️  Production lock disabled - integrity verification skipped")
+
+# --- Heartbeat Management ---
+try:
+    from bot.heartbeat import HeartbeatManager
+    HEARTBEAT_AVAILABLE = True
+except Exception:
+    HEARTBEAT_AVAILABLE = False
+    class HeartbeatManager:
+        def __init__(self, *args, **kwargs): pass
+        def start(self): pass
+        def update(self): pass
+        def stop(self): pass
+
+# --- logging ---
+os.makedirs("bot/logs", exist_ok=True)
+
+# Use professional logging setup if available
+try:
+    from bot.utils.logging_setup import get_logger
+    log = get_logger("runner")
+    log.info("Using professional logging setup with rotation")
+except Exception:
+    # Fallback to basic logging
+    log_level = get_config("LOG_LEVEL", "INFO") if CONFIG_MANAGER_AVAILABLE else os.getenv("LOG_LEVEL", "INFO")
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("bot/logs/bot.log", encoding="utf-8"),
+        ],
+    )
+    log = logging.getLogger("runner")
+
+# --- Suppress noisy library loggers ---
+# Suppress HTTP request logs from urllib3, requests, and websocket
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("websocket").setLevel(logging.WARNING)
+# CCXT logging disabled - using pure WebSocket architecture
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+
+# Configure loguru with human-readable logging
+# Technical DEBUG logs kept for AI/system, human-friendly logs added for traders
+try:
+    from loguru import logger
+    logger.remove()  # Remove default handler
+    
+    # Keep DEBUG level for AI/system diagnostics
+    # Human-readable logs (BOT OK/WARNING/ALERT/CRITICAL) layer on top
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        level="DEBUG",  # Keep all diagnostic data
+        colorize=True,
+        backtrace=True,
+        diagnose=True
+    )
+    log.info("✅ Loguru configured with human-readable logging layer")
+    log.info("   Technical DEBUG logs preserved for AI/system")
+    log.info("   Trader-friendly BOT OK/WARNING/ALERT/CRITICAL added")
+except Exception as e:
+    log.warning(f"Could not configure loguru: {e}")
+
+log.info("✅ Noisy library loggers suppressed (set to WARNING)")
+
+# --- env ---
+try:
+    from dotenv import load_dotenv
+    env_path = get_config("ENV_PATH", ".env") if CONFIG_MANAGER_AVAILABLE else os.getenv("ENV_PATH", ".env")
+    
+    # Load secrets/api_keys.env first (contains API keys for both demo and live)
+    secrets_path = "secrets/api_keys.env"
+    if os.path.exists(secrets_path):
+        load_dotenv(secrets_path)
+        log.info(f"env: loaded {secrets_path}")
+    
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+        log.info(f"env: loaded {env_path}")
+    
+    # load grid_config.env and let it override .env for grid params
+    if os.path.exists("grid_config.env"):
+        load_dotenv("grid_config.env", override=True)
+        log.info("env: loaded grid_config.env")
+except Exception as e:
+    log.warning(f"dotenv load warning: {e}")
+
+# --- Trading Mode Configuration (Demo vs Live) ---
+# This MUST come after loading env files but BEFORE making exchange handles
+try:
+    from bot.utils.env_loader import load_trading_mode_config, get_mode_display_info
+    
+    # Load and configure trading mode (sets API keys and URLs)
+    trading_mode = load_trading_mode_config()
+    mode_info = get_mode_display_info()
+    
+    log.info("")
+    log.info("=" * 80)
+    log.info(f"{mode_info['emoji']} TRADING MODE: {mode_info['description']}")
+    log.info(f"API URL: {mode_info['api_url']}")
+    log.info(f"Risk Level: {mode_info['risk_level']}")
+    log.info(f"Funds: {mode_info['funds_type']}")
+    log.info("=" * 80)
+    log.info("")
+    
+    # Password protection removed - direct access to live trading
+    
+except Exception as e:
+    log.error(f"❌ Failed to load trading mode configuration: {e}")
+    log.error("Cannot proceed without valid trading mode setup.")
+    sys.exit(1)
+
+# --- Loss Limits Validation ---
+# Validate that Guardian and Trader loss limits are consistent
+try:
+    from bot.safety.loss_limits import validate_loss_limits
+    
+    log.info("")
+    validate_loss_limits(strict=True)
+    log.info("")
+    
+except Exception as e:
+    log.error(f"❌ Loss limits validation failed: {e}")
+    log.error("Fix configuration before starting bot.")
+    log.error("See grid_config.env for MAX_ACCOUNT_LOSS_INR and GUARDIAN_MAX_ACCOUNT_LOSS_INR")
+    sys.exit(1)
+
+# --- Volatility Safety Tracker ---
+# Start real-time volatility monitoring
+volatility_monitor = None
+volatility_tracker = None
+
+try:
+    from bot.safety.volatility_monitor import get_volatility_monitor
+    
+    volatility_monitor = get_volatility_monitor()
+    if volatility_monitor.enabled:
+        log.info("")
+        log.info("🌊 Starting Real-Time Volatility Monitor (RV Calculator)...")
+        volatility_monitor.start()
+        log.info("✅ Volatility monitor started")
+        log.info(f"   RV window: {volatility_monitor.rv_window}h")
+        log.info(f"   Thresholds: ELEVATED={volatility_monitor.threshold_elevated}%, HIGH={volatility_monitor.threshold_high}%, EXTREME={volatility_monitor.threshold_extreme}%")
+        log.info(f"   Halt threshold: {volatility_monitor.halt_trading_threshold}%")
+        log.info("")
+    else:
+        log.info("🌊 Volatility monitor disabled in config")
+except Exception as e:
+    log.warning(f"Volatility monitor initialization failed (non-fatal): {e}")
+    log.warning("Bot will continue without RV safety checks")
+
+# --- IV/RV Tracker (Delta Exchange + Deribit Integration) ---
+try:
+    from bot.volatility.iv_rv_tracker import get_volatility_tracker
+    
+    volatility_tracker = get_volatility_tracker()
+    if volatility_tracker.enabled:
+        log.info("")
+        log.info("📊 Starting IV/RV Tracker (Implied vs Realized Volatility)...")
+        volatility_tracker.start()
+        log.info("✅ IV/RV tracker started")
+        log.info(f"   Max IV: {volatility_tracker.max_iv}%")
+        log.info(f"   Max RV: {volatility_tracker.max_rv}%")
+        log.info(f"   Max IV-RV Spread: {volatility_tracker.max_spread}%")
+        log.info(f"   Check interval: {volatility_tracker.check_interval}s (5 minutes)")
+        log.info(f"   User Conditions:")
+        log.info(f"      • Trading HALTS if IV > {volatility_tracker.max_iv}%")
+        log.info(f"      • Trading HALTS if RV > {volatility_tracker.max_rv}%")
+        log.info(f"      • Trading HALTS if |IV-RV| > {volatility_tracker.max_spread}%")
+        log.info("")
+    else:
+        log.info("📊 IV/RV tracker disabled in config")
+except Exception as e:
+    log.warning(f"IV/RV tracker initialization failed (non-fatal): {e}")
+    log.warning("Bot will continue without IV/RV safety checks")
+    import traceback
+    log.debug(traceback.format_exc())
+
+# --- Liquidation Protection System ---
+margin_monitor = None
+distance_monitor = None
+mtm_tracker = None
+
+try:
+    from bot.liquidation.integrated_monitor import IntegratedLiquidationMonitor
+    
+    # Check if liquidation protection is enabled
+    if os.getenv('LIQUIDATION_PROTECTION_ENABLED', 'true').lower() == 'true':
+        log.info("")
+        log.info("🛡️  Initializing Liquidation Protection System...")
+        log.info("")
+        
+        # Note: exchange_ops will be initialized later, monitors will be initialized after that
+        log.info("✅ Liquidation protection modules loaded")
+        log.info("   • Margin Utilization Monitor")
+        log.info("   • Liquidation Distance Monitor")
+        log.info("   • MTM (Mark-to-Market) Tracker")
+        log.info("")
+except Exception as e:
+    log.warning(f"Liquidation protection initialization failed (non-fatal): {e}")
+    log.warning("Bot will continue without liquidation protection")
+
+# Bridge: map legacy GRID_* → GRIDBOT_* once for backward compatibility.
+legacy_env = {key: os.getenv(key) for key in ALIAS_TO_CANONICAL.keys()}
+upgrade_mapping(legacy_env, record=False)
+for key, value in legacy_env.items():
+    if value in (None, ""):
+        continue
+    os.environ.setdefault(key, value)
+
+# --- WebSocket-only setup (No CCXT needed!) ---
+# The WebSocket GridBot uses native Delta client for order placement
+# and WebSocket for all data - no REST API polling required!
+
+def make_delta():
+    """Legacy compatibility function - WebSocket bot doesn't need CCXT"""
+    log.info("WebSocket GridBot doesn't need CCXT - using native Delta client")
+    return None, None
+
+@dataclass
+class DC:
+    ex: object
+    ex_pub: Optional[object] = None
+
+# --- strategy ---
+# 🚀 ASYNC GRIDBOT ONLY (Phase 2+3 - Actor Model + Saga Pattern)
+# Legacy threaded bot archived: 2025-11-14 (after 100% validation)
+# All state stored in SQL event store database
+
+log.info("🚀 Using ASYNC GridBot (Production - SQL Event Store)")
+from bot.strategy.async_gridbot import AsyncGridBot
+
+# --- diagnostics ---
+try:
+    from bot.diagnostics import create_snapshot
+    DIAGNOSTICS_ENABLED = True
+except Exception:
+    DIAGNOSTICS_ENABLED = False
+
+# --- safety checks ---
+try:
+    from bot.safety import preflight
+    SAFETY_CHECKS_ENABLED = True
+except Exception:
+    SAFETY_CHECKS_ENABLED = False
+
+def envf(key, default):
+    v = os.getenv(key, str(default))
+    try:
+        return type(default)(v)
+    except Exception:
+        return default
+
+# Global flag for graceful shutdown
+shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C and other termination signals"""
+    global shutdown_requested
+    sig_name = signal.Signals(signum).name
+    log.warning(f"Received {sig_name} - initiating graceful shutdown...")
+    shutdown_requested = True
+    # Also set it on the module itself to ensure it's visible
+    import sys
+    if 'bot.run' in sys.modules:
+        sys.modules['bot.run'].shutdown_requested = True
+    
+    # Clean up single instance lock
+    try:
+        from bot.safety.single_instance_lock import cleanup_single_instance
+        cleanup_single_instance()
+    except Exception as e:
+        log.warning(f"Failed to cleanup single instance lock: {e}")
+    
+    # Create shutdown flag file as backup
+    try:
+        with open('.bot_shutdown', 'w') as f:
+            f.write('1')
+    except Exception:
+        pass
+
+def main():
+    # Clean up any leftover shutdown flag from previous run
+    try:
+        if os.path.exists('.bot_shutdown'):
+            os.remove('.bot_shutdown')
+    except Exception:
+        pass
+    
+    # Single Instance Check: Prevent multiple trading bots from running
+    try:
+        from bot.safety.single_instance_lock import setup_single_instance_lock
+        success, message = setup_single_instance_lock(trading_mode=trading_mode)
+        if not success:
+            log.critical("=" * 70)
+            log.critical("🚫 MULTIPLE BOT INSTANCES DETECTED")
+            log.critical("=" * 70)
+            log.critical(message)
+            log.critical("=" * 70)
+            log.critical(f"Only ONE trading bot can run per mode ({trading_mode})!")
+            log.critical("Please stop the existing bot before starting a new one.")
+            log.critical("=" * 70)
+            sys.exit(1)
+        else:
+            log.info(f"✅ Single instance check passed: {message}")
+    except Exception as e:
+        log.error(f"Single instance check failed: {e}")
+        log.error("Continuing anyway, but this may cause conflicts...")
+    
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # kill command
+    log.info("Signal handlers registered (Ctrl+C will gracefully stop the bot)")
+    
+    # Two-Man Rule: Check for pending config changes
+    try:
+        from bot.safety.config_guard import get_config_guard
+        from pathlib import Path
+        
+        config_guard = get_config_guard(Path.cwd())
+        
+        if config_guard.enabled:
+            # Load current config from environment (already loaded by dotenv)
+            # We use os.getenv() instead of load_env() since env is already loaded
+            current_config = {key: os.getenv(key, '') for key in config_guard.GUARDED_KEYS + config_guard.SAFETY_FEATURES}
+            
+            # Check for risky changes
+            has_changes, message, changes = config_guard.check_config_changes(current_config)
+            
+            if has_changes:
+                log.critical("=" * 70)
+                log.critical("🛑 CONFIG CHANGE REQUIRES CONFIRMATION")
+                log.critical("=" * 70)
+                log.critical(message)
+                log.critical("=" * 70)
+                log.critical("Bot will NOT start until confirmed or timeout")
+                log.critical("=" * 70)
+                
+                # Wait for confirmation or timeout
+                log.info("Waiting for confirmation...")
+                start_wait = time.time()
+                
+                while True:
+                    confirmed, timed_out = config_guard.check_confirmation()
+                    
+                    if confirmed:
+                        log.info("✅ Config change confirmed - proceeding with startup")
+                        break
+                    
+                    if timed_out:
+                        if config_guard.auto_revert:
+                            log.error("❌ Confirmation timeout - changes REJECTED")
+                            log.error("Bot will continue with PREVIOUS config (infinite uptime mode)")
+                            log.error("To apply new config: fix settings, save, and confirm within 10min")
+                            # DON'T EXIT - just continue with old config for infinite uptime
+                            break
+                        else:
+                            log.warning("⚠️  Confirmation timeout - changes ACCEPTED by default")
+                            break
+                    
+                    # Show waiting message every 30 seconds
+                    elapsed = time.time() - start_wait
+                    if int(elapsed) % 30 == 0:
+                        remaining = config_guard.pending_change['timeout_sec'] - elapsed
+                        log.info(f"Still waiting for confirmation... ({remaining//60:.0f}m {remaining%60:.0f}s remaining)")
+                    
+                    time.sleep(5)
+    
+    except Exception as e:
+        log.warning(f"Config guard check failed (non-fatal): {e}")
+    
+    # Safety preflight checks
+    if SAFETY_CHECKS_ENABLED:
+        try:
+            preflight(log)
+        except SystemExit:
+            log.error("Safety checks failed - bot will not start")
+            return 2
+        except Exception as e:
+            log.warning(f"Safety check warning: {e}")
+
+    # required inputs (now sourced from GRIDBOT_* which may come from grid_config.env)
+    symbol   = os.getenv("GRIDBOT_SYMBOL", "BTC/USD:USD")
+    lower    = envf("GRIDBOT_LOWER", 114000.0)
+    upper    = envf("GRIDBOT_UPPER", 117000.0)
+    step     = envf("GRIDBOT_STEP",  500.0)
+    ref      = envf("GRIDBOT_REF",   116000.0)
+    lot      = envf("GRIDBOT_LOT_SIZE", envf("GRIDBOT_LOT", 1))  # Check GRIDBOT_LOT_SIZE first, fallback to GRIDBOT_LOT
+    max_open = envf("GRIDBOT_MAX_OPEN", 5)
+    hb_sec   = envf("GRIDBOT_HB_SEC", 10)
+
+    # WebSocket bot doesn't need CCXT - it uses native Delta client
+    dc = DC(None)  # Legacy compatibility
+    log.info(f"grid: online  symbol={symbol}  LOWER={lower}  UPPER={upper}  STEP={step}  REF={ref}  LOT={float(lot)}  max_open={max_open}")
+
+    # Create diagnostic snapshot
+    if DIAGNOSTICS_ENABLED:
+        try:
+            create_snapshot()
+            log.info("Diagnostic snapshot created")
+        except Exception as e:
+            log.warning(f"Failed to create diagnostic snapshot: {e}")
+
+    dc = DC(ex=None, ex_pub=None)
+    
+    # Initialize Liquidation Protection Monitors
+    if os.getenv('LIQUIDATION_PROTECTION_ENABLED', 'true').lower() == 'true':
+        try:
+            # Initialize monitors with exchange operations
+            # Note: We'll use ex (the exchange handle) directly since we don't have exchange_ops wrapper yet
+            # The monitors will call ex.fetch_balance() and similar methods
+            
+            log.info("🛡️  Initializing liquidation protection monitors...")
+            # Use integrated liquidation monitor instead of separate components
+            liquidation_monitor = IntegratedLiquidationMonitor(config=os.environ)
+            margin_monitor = liquidation_monitor
+            distance_monitor = liquidation_monitor
+            mtm_tracker = liquidation_monitor
+            
+            # Store in run module for access in strategy
+            import bot.run as run_module
+            run_module.margin_monitor = margin_monitor
+            run_module.distance_monitor = distance_monitor
+            run_module.mtm_tracker = mtm_tracker
+            # volatility_monitor and volatility_tracker are already set earlier in the file
+            if volatility_monitor:
+                run_module.volatility_monitor = volatility_monitor
+            if volatility_tracker:
+                run_module.volatility_tracker = volatility_tracker
+            
+            log.info("")
+            log.info(f"   Max margin utilization: {margin_monitor.margin_max}%")
+            log.info(f"   Min liquidation distance: {distance_monitor.liquidation_distance_min}%")
+            log.info("")
+        except Exception as e:
+            log.warning(f"  Liquidation protection initialization failed: {e}")
+            log.warning(f"⚠️  Liquidation protection initialization failed: {e}")
+            log.warning("Bot will continue without liquidation protection")
+            margin_monitor = None
+            distance_monitor = None
+            mtm_tracker = None
+    
+    # Initialize Heartbeat Manager
+    heartbeat = None
+    if HEARTBEAT_AVAILABLE:
+        heartbeat_enabled = os.getenv("ENABLE_HEARTBEAT", "true").lower() == "true"  # Re-enabled with DeltaClient
+        if heartbeat_enabled:
+            heartbeat_file = os.getenv("HEARTBEAT_FILE", ".heartbeat")
+            heartbeat_interval = int(os.getenv("HEARTBEAT_UPDATE_INTERVAL", "5"))
+            heartbeat = HeartbeatManager(
+                heartbeat_file=heartbeat_file,
+                update_interval=heartbeat_interval,
+                enabled=True
+            )
+            heartbeat.start()
+            log.info("💓 Heartbeat system activated")
+        else:
+            log.info("Heartbeat system disabled in config")
+    
+    # Create PID file for WebUI detection
+    pid_file_path = Path("reports/bot.pid")
+    pid_file_path.parent.mkdir(exist_ok=True)
+    
+    try:
+        with open(pid_file_path, 'w') as f:
+            f.write(str(os.getpid()))
+        log.info(f"📝 Created PID file: {pid_file_path} (PID: {os.getpid()})")
+    except Exception as e:
+        log.warning(f"⚠️ Failed to create PID file: {e}")
+    
+    # Pass shutdown flag and heartbeat as module-level attributes for the strategy to check
+    import bot.run as run_module
+    run_module.shutdown_requested = shutdown_requested
+    run_module.heartbeat = heartbeat
+    
+    async def run_async_bot():
+        """Run async GridBot in proper async context."""
+        # Get API credentials
+        api_key = os.getenv("DELTA_API_KEY")
+        api_secret = os.getenv("DELTA_API_SECRET")
+        product_id = int(os.getenv("DELTA_PRODUCT_ID", "27"))
+        testnet = os.getenv("DELTA_TESTNET", "false").lower() == "true"
+        
+        if not api_key or not api_secret:
+            log.error("❌ DELTA_API_KEY and DELTA_API_SECRET must be set")
+            sys.exit(1)
+        
+        # Determine trading mode from symbol
+        mode = os.getenv("GRIDBOT_GRID_MODE", "LONG").upper()
+        
+        # Extract safety parameters
+        max_loss = envf("MAX_ACCOUNT_LOSS_INR", 25000)
+        vol_safety = os.getenv("VOLATILITY_SAFETY_ENABLED", "true").lower() == "true"
+        vol_max_iv = envf("VOLATILITY_MAX_IV", 50)
+        vol_max_rv = envf("VOLATILITY_MAX_RV", 55)
+        vol_max_spread = envf("VOLATILITY_MAX_SPREAD", 20)
+        confirmation_guard = os.getenv("CONFIRMATION_GUARD_ENABLED", "true").lower() == "true"
+        circuit_breaker = os.getenv("CIRCUIT_BREAKER_ENABLED", "true").lower() == "true"
+        liq_protection = os.getenv("LIQUIDATION_PROTECTION_ENABLED", "true").lower() == "true"
+        
+        # Extract order management parameters
+        tag_prefix = os.getenv("GRIDBOT_TAG_PREFIX", "GBOT_")
+        post_only_mode = os.getenv("GRIDBOT_POST_ONLY_MODE", "auto")
+        cancel_all = os.getenv("GRIDBOT_CANCEL_ALL_ON_START", "0") == "1"
+        cancel_scope = os.getenv("GRIDBOT_CANCEL_SCOPE", "tagged")
+        adopt_untagged = os.getenv("GRIDBOT_ADOPT_UNTAGGED", "0") == "1"
+        
+        # Extract grid behavior parameters
+        strict_grid = os.getenv("GRIDBOT_STRICT_GRID", "1") == "1"
+        strict_start = os.getenv("GRIDBOT_STRICT_START", "1") == "1"
+        seed_initial = envf("GRIDBOT_SEED_INITIAL_COUNT", 0)
+        smart_gap_fill = os.getenv("SMART_GAP_FILL", "false").lower() == "true"
+        rung_snap_mode = os.getenv("GRIDBOT_RUNG_SNAP_MODE", "below")
+        
+        # Extract timing parameters
+        max_retries = envf("GRIDBOT_MAX_RETRIES", 3)
+        retry_delay = envf("GRIDBOT_RETRY_DELAY", 2.0)
+        cooldown_sec = envf("GRIDBOT_COOLDOWN_SECONDS", 30)
+        
+        # Extract conversion rate
+        usd_to_inr = envf("USD_TO_INR_RATE", 85.0)
+        
+        log.info("Starting AsyncGridBot with async/await event loop")
+        log.info(f"Symbol: {symbol}, Product ID: {product_id}, Mode: {mode}, Grid: {lower}-{upper}, Step: {step}")
+        
+        # Create async bot instance (inside async context)
+        async_bot = AsyncGridBot(
+            api_key=api_key,
+            api_secret=api_secret,
+            symbol=symbol.replace("/", "").replace(":USD", ""),  # BTCUSD format
+            product_id=product_id,
+            mode=mode,
+            lower_price=lower,
+            upper_price=upper,
+            grid_step=step,
+            ref_price=ref,  # Grid reference level
+            tp_offset=step,  # Use step as TP offset
+            max_positions=max_open,
+            lot_size=lot,  # Contracts per order
+            testnet=testnet,
+            # Safety parameters
+            max_account_loss_inr=max_loss,
+            volatility_safety_enabled=vol_safety,
+            volatility_max_iv=vol_max_iv,
+            volatility_max_rv=vol_max_rv,
+            volatility_max_spread=vol_max_spread,
+            confirmation_guard_enabled=confirmation_guard,
+            circuit_breaker_enabled=circuit_breaker,
+            liquidation_protection_enabled=liq_protection,
+            # Order management parameters
+            tag_prefix=tag_prefix,
+            post_only_mode=post_only_mode,
+            cancel_all_on_start=cancel_all,
+            cancel_scope=cancel_scope,
+            adopt_untagged=adopt_untagged,
+            # Grid behavior parameters
+            strict_grid=strict_grid,
+            strict_start=strict_start,
+            seed_initial_count=seed_initial,
+            smart_gap_fill=smart_gap_fill,
+            rung_snap_mode=rung_snap_mode,
+            # Timing parameters
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            cooldown_seconds=cooldown_sec,
+            # Conversion rate
+            usd_to_inr_rate=usd_to_inr
+        )
+        
+        # FIX NOV 14: Wrap start() with try/finally to ensure stop() is always called
+        try:
+            # Run async bot
+            await async_bot.start()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            log.info("Shutdown signal received during bot operation")
+        finally:
+            # Always call stop() for graceful cleanup
+            log.info("Calling stop() to cleanup...")
+            try:
+                await async_bot.stop()
+            except Exception as e:
+                log.error(f"Error during stop(): {e}")
+                import traceback
+                log.error(traceback.format_exc())
+    
+    try:
+        # Run ASYNC GridBot (only mode available)
+        asyncio.run(run_async_bot())
+            
+    except KeyboardInterrupt:
+        log.warning("Interrupted by user (Ctrl+C)")
+    finally:
+        # Clean up PID file on shutdown
+        try:
+            if pid_file_path.exists():
+                pid_file_path.unlink()
+                log.info("🗑️ Removed PID file on shutdown")
+        except Exception as e:
+            log.warning(f"⚠️ Failed to remove PID file: {e}")
+        
+        # Stop heartbeat on shutdown
+        if heartbeat:
+            heartbeat.stop()
+            log.info("💓 Heartbeat stopped")
+    
+    if shutdown_requested:
+        log.info("Bot shutdown completed gracefully")
+        return 0
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

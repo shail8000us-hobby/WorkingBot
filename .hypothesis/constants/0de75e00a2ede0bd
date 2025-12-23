@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/monitoring/tp_verification.py
+# hypothesis_version: 6.141.1
+
+[100, '  ├─ Entry: UNKNOWN', '=', '[TP VERIFICATION]', 'buy_order_id', 'entry_price', 'failed', 'filled', 'open', 'orphaned_positions', 'pending', 'runner', 'state', 'success_rate', 'successful', 'total_verifications', 'tp_id', 'tp_price', 'unknown']

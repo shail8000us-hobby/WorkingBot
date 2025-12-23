@@ -1,0 +1,15 @@
+Metric,Value
+net_equity,42.50447187
+total_realized_pnl,0.0
+total_unrealized_pnl,0.0
+total_pnl,0.0
+trade_commission_paid,0
+position_commission_blocked,0.0
+fills_count,0
+open_positions,0
+
+Open Positions
+symbol,size,entry,mark,realized,unrealized
+
+Recent Fills (last 50)
+time,symbol,side,size,price,commission,role,type,order_id

@@ -1,0 +1,193 @@
+PROMPT FOR CLAUDE 4.5 SONNET: CREATE BOT MANAGER PANEL IN WEBUI
+=================================================================
+
+PROJECT CONTEXT:
+You are working on a trading bot system located at /Users/shailendrasinghrajawat/Documents/WorkingBot
+
+TASK:
+Create a dedicated "Bot Manager Panel" on the WebUI main page that allows users to:
+1. View all currently running bot processes in real-time
+2. See each bot's status, PID, start time, and type
+3. Stop/kill any individual bot with a single click
+4. Ensure backend and frontend are perfectly synchronized
+
+REQUIREMENTS:
+
+🔹 BACKEND (Flask API - webui/backend/app.py):
+-------------------------------------------
+1. Create a new API endpoint: GET /api/bots/status
+   - Use subprocess or psutil to detect all running Python bot processes
+   - Return JSON with array of bots containing:
+     {
+       "pid": 12345,
+       "name": "Main Trading Bot",
+       "command": "python -m bot.run",
+       "type": "live_trading" | "dry_run" | "guardian" | "webui",
+       "started_at": "2025-10-22 20:22:00",
+       "uptime": "2h 15m",
+       "status": "running",
+       "cpu_percent": 2.5,
+       "memory_mb": 45.2
+     }
+   - Detect process types by analyzing command:
+     • "bot.run --dry-run" → dry_run
+     • "bot.run" → live_trading
+     • "bot.guardian.guardian_bot" → guardian
+     • "webui/backend/app.py" → webui
+
+2. Create a new API endpoint: POST /api/bots/stop
+   - Accept JSON: { "pid": 12345 }
+   - Kill the specified process using: kill -9 <pid>
+   - Return success/failure response
+   - Include safety check: don't allow killing the WebUI backend itself
+
+3. Install required package if not present:
+   - Add 'psutil' to requirements.txt
+   - Use psutil.process_iter() to get detailed process info
+
+🔹 FRONTEND (React - webui/frontend/src/):
+-----------------------------------------
+1. Create new component: components/BotManagerPanel.js
+   - Use Material-UI (MUI) components (already in project)
+   - Auto-refresh every 5 seconds to fetch latest bot status
+   - Display bots in a clean table/card layout with:
+     • Bot name/type with colored badge (green=running, yellow=dry-run, blue=guardian, purple=webui)
+     • PID
+     • Start time and uptime
+     • CPU and memory usage
+     • Action button: "Stop" (red) - with confirmation dialog
+   - Use MUI components: Card, Table, Button, Chip, Dialog, IconButton
+   - Add icons: PlayArrowIcon (running), StopIcon (stop button), WarningIcon (alerts)
+
+2. Add the BotManagerPanel to the main dashboard:
+   - Import in: webui/frontend/src/App.js or wherever the main dashboard is
+   - Place it prominently on the main page (top section or dedicated tab)
+   - Make it collapsible/expandable if needed
+
+3. Implement real-time updates:
+   - Use React hooks: useState, useEffect
+   - Fetch from /api/bots/status every 5 seconds
+   - Show loading spinner during fetch
+   - Handle errors gracefully (show error message if backend is down)
+
+4. Implement stop functionality:
+   - When user clicks "Stop" button:
+     → Show confirmation dialog: "Are you sure you want to stop [Bot Name] (PID: 12345)?"
+     → On confirm: POST to /api/bots/stop with PID
+     → Show success/error notification (use MUI Snackbar)
+     → Immediately refresh bot list
+
+🔹 CRITICAL: BACKEND-FRONTEND SYNCHRONIZATION:
+---------------------------------------------
+1. **Data Structure Consistency**:
+   - Backend must return EXACT field names that frontend expects
+   - Use camelCase in JSON (pid, startedAt, cpuPercent, memoryMb)
+   - Test API endpoint with curl before integrating frontend
+
+2. **Error Handling**:
+   - Backend: Return proper HTTP status codes (200=success, 404=not found, 500=error)
+   - Frontend: Check response.ok before parsing JSON
+   - Show user-friendly error messages in UI
+
+3. **Real-time Sync**:
+   - After stopping a bot, immediately call fetchBots() to refresh list
+   - Use optimistic UI updates (remove bot from list immediately, rollback if API fails)
+
+4. **Testing Checklist**:
+   ✅ Test /api/bots/status returns correct data
+   ✅ Test /api/bots/stop successfully kills process
+   ✅ Verify frontend displays all running bots
+   ✅ Verify stop button works and refreshes list
+   ✅ Test error handling when backend is down
+   ✅ Test that WebUI backend cannot stop itself
+
+🔹 EXISTING PROJECT STRUCTURE:
+-----------------------------
+- Backend: webui/backend/app.py (Flask app)
+- Frontend: webui/frontend/src/ (React app)
+- Bot files: bot/run.py, bot/guardian/guardian_bot.py
+- Existing API pattern: /api/reconciliation/data, /api/liquidation/status
+- MUI already installed and used in LiquidationProtectionPanel.js, ReconciliationDashboard.js
+
+🔹 IMPLEMENTATION STEPS:
+-----------------------
+1. First, add psutil to requirements.txt (if missing)
+2. Implement backend endpoints in webui/backend/app.py
+3. Test backend endpoints with curl
+4. Create BotManagerPanel.js component
+5. Test component in isolation
+6. Integrate into main dashboard
+7. Test full flow: view bots → stop bot → verify bot stopped
+8. Ensure backend and frontend data structures match perfectly
+
+🔹 EXAMPLE API RESPONSES:
+------------------------
+GET /api/bots/status:
+{
+  "success": true,
+  "bots": [
+    {
+      "pid": 99147,
+      "name": "Main Trading Bot",
+      "command": "python -m bot.run",
+      "type": "live_trading",
+      "startedAt": "2025-10-22T20:22:00",
+      "uptime": "2h 15m",
+      "status": "running",
+      "cpuPercent": 2.5,
+      "memoryMb": 45.2
+    },
+    {
+      "pid": 99137,
+      "name": "Guardian Bot",
+      "command": "python -m bot.guardian.guardian_bot",
+      "type": "guardian",
+      "startedAt": "2025-10-22T20:22:00",
+      "uptime": "2h 15m",
+      "status": "running",
+      "cpuPercent": 1.2,
+      "memoryMb": 67.1
+    }
+  ],
+  "totalBots": 2
+}
+
+POST /api/bots/stop:
+Request: { "pid": 99147 }
+Response: {
+  "success": true,
+  "message": "Bot with PID 99147 stopped successfully"
+}
+
+🔹 UI DESIGN GUIDELINES:
+-----------------------
+- Use a clean card-based layout (MUI Card component)
+- Show bot type with colored badges:
+  • Live Trading → Green (success color)
+  • Dry Run → Yellow/Orange (warning color)
+  • Guardian → Blue (info color)
+  • WebUI → Purple (primary color)
+- Add refresh button to manually refresh bot list
+- Show last updated timestamp
+- Use icons for visual clarity
+- Make it responsive (works on mobile/tablet)
+
+🔹 SAFETY FEATURES:
+------------------
+1. Backend must prevent stopping itself (WebUI backend)
+2. Show confirmation dialog before stopping any bot
+3. Log all bot stop actions to backend logs
+4. Show warning if trying to stop live trading bot (extra confirmation)
+
+🔹 EXPECTED DELIVERABLES:
+------------------------
+✅ Backend: 2 new API endpoints  in webui/backend/app.py
+✅ Frontend: New BotManagerPanel.js component
+✅ Integration: Panel added to main dashboard
+✅ Testing: All bots display correctly, stop functionality works
+✅ Sync: Backend and frontend data structures match perfectly
+✅ Error handling: Graceful degradation if backend fails
+✅ Documentation: Code comments explaining key functions
+
+START IMPLEMENTATION NOW. Focus on clean, production-ready code with proper error handling and ensure backend-frontend sync is perfect from the start.
+

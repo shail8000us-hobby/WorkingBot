@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/state_projector.py
+# hypothesis_version: 6.141.1
+
+['buy', 'last_buy_order_time', 'last_sell_order_time', 'open_tranches', 'order_id', 'pending_buy', 'pending_sell', 'position_id', 'sell', 'side', 'size', 'state_projector', 'tp_orders']

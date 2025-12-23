@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/observability/errors/remediator.py
+# hypothesis_version: 6.141.1
+
+[1.0, 200, 900, '#', '-W', '-c', '-f', '0.5', '1', '100', '2', '; ', '=', 'API_CALL_DELAY', 'Bot is not running', 'EXECUTE_ORDERS', 'FAILED', 'False', 'GRIDBOT_LOT', 'GRIDBOT_LOWER', 'GRIDBOT_MAX_OPEN', 'GRIDBOT_REF', 'GRIDBOT_STEP', 'GRIDBOT_UPPER', 'MAX_OPEN', 'OK', 'POST_ONLY_MODE', 'True', 'api.delta.exchange', 'bot is running', 'current', 'details', 'disable_post_only', 'dns', 'dry_run', 'duration_minutes', 'exception', 'failed_conditions', 'force_config_reload', 'grid_config.env', 'hotwatch_grid.py', 'https', 'increase_api_delay', 'message', 'missing', 'new', 'new_value', 'old_value', 'passed', 'pause_trading_15m', 'pgrep', 'ping', 'r', 'reduce_position_size', 'refresh_api_keys', 'resume_at', 'success', 'sync_gridbot_params', 'test_connectivity', 'timestamp', 'w', 'writable']

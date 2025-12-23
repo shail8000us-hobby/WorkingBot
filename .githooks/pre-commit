@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "pre-commit: verifying layout…"
+bash scripts/verify_layout.sh

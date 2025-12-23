@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/webui/backend/routes/metrics.py
+# hypothesis_version: 6.141.1
+
+[100, 200, 500, 503, 1000, 2000, '/api/errors/', '/api/errors/live', '/api/errors/scan', '/api/metrics/queue', '/api/metrics/recent', 'All', 'Critical', 'GET', 'Info', 'POST', 'Warning', 'acknowledged', 'active_workers', 'bot_live.log', 'breakers', 'by_severity', 'by_status', 'category_counts', 'count', 'critical', 'error', 'errors', 'found', 'get_all_errors', 'high', 'hours', 'limit', 'lines', 'log_exists', 'log_file', 'low', 'medium', 'message', 'metadata', 'metric_type', 'metrics', 'name', 'open', 'pending_requests', 'resolved', 'severity', 'severity_counts', 'statistics', 'status', 'success', 'summary', 'timestamp', 'total', 'total_count', 'type', 'value']

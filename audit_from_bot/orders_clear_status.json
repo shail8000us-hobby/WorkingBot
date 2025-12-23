@@ -1,0 +1,13 @@
+{
+  "last_cleared_at": "2025-10-21T11:21:07.013154",
+  "backup_path": "/Users/shailendrasinghrajawat/Documents/WorkingBot/bot/audit/orders.jsonl.backup.1761045665",
+  "triggered_by": "manual",
+  "initiator_ip": "127.0.0.1",
+  "orders_before": 2,
+  "orders_after": 0,
+  "rebuild_requested": true,
+  "orders_imported": 0,
+  "sync_ok": false,
+  "sync_error": null,
+  "mode": "demo"
+}

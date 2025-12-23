@@ -1,0 +1,203 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROMPT FOR DELTA EXCHANGE AI - RECONCILIATION FEATURE ISSUE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Hi Delta Exchange Team,
+
+I'm building an automated trading bot reconciliation system for Delta Exchange India 
+that compares bot-placed orders with actual orders on the exchange. I'm facing issues 
+with fetching open orders from your API and need guidance on the correct implementation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTEXT & GOAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT I'M BUILDING:
+- Reconciliation system that compares:
+  • Bot's memory (orders placed by my bot)
+  • Exchange actual state (real orders on Delta Exchange)
+  • Purpose: Detect discrepancies, categorize orders (Bot vs Manual)
+
+CURRENT STATUS:
+- ✅ Bot orders loading works (from local memory)
+- ✅ Provenance detection works (identifies bot-placed orders)
+- ❌ Exchange order fetching FAILS (always returns 0 orders)
+
+ENVIRONMENT:
+- Trading on: Delta Exchange India (https://api.india.delta.exchange)
+- Product: BTCUSD Perpetual (Product ID: 27)
+- Mode: LIVE trading (real money)
+- Current open orders: 12 real orders (verified on web UI)
+- Order IDs: 1002690830, 1002692313, 1002693396, 1002696066, etc.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPECIFIC ISSUES & QUESTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ISSUE 1: REST API RESPONSE FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When I call fetch_open_orders(), what EXACT format does Delta Exchange India return?
+
+My current code:
+```python
+from bot.api.delta_client import DeltaClient
+client = DeltaClient()
+response = client.fetch_open_orders()
+```
+
+Question 1a: What is the EXACT response structure?
+- Is it: `{'success': True, 'result': [...]}`  (dict with success flag)
+- Or is it: `[{order1}, {order2}, ...]`  (direct list)
+- Or something else?
+
+Question 1b: What is the response when NO orders exist?
+- Empty list `[]`?
+- Dict with empty result `{'success': True, 'result': []}`?
+- Null/None?
+
+Question 1c: What fields are in each order object?
+- Need: order ID, client_order_id, side, price, size, status, symbol
+- Example response for ONE order would be helpful
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ISSUE 2: API ENDPOINT FOR FETCHING OPEN ORDERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Question 2a: What is the CORRECT endpoint for fetching open orders?
+- Is it: GET /v2/orders?state=open
+- Or: GET /v2/orders/history?state=open
+- Or: GET /v2/orders (with filters)
+- Or something else?
+
+Question 2b: Do I need to specify product_id?
+- My product: BTCUSD (Product ID: 27)
+- URL: GET /v2/orders?product_id=27&state=open ?
+
+Question 2c: Authentication requirements?
+- Headers needed: api-key, signature, timestamp?
+- Any special permissions required?
+- IP whitelisting required?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ISSUE 3: WEBSOCKET ALTERNATIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Since my trading bot already has WebSocket connection, can I use WebSocket 
+channels to get open orders instead of REST API?
+
+Question 3a: Is there a WebSocket channel for orders?
+- Channel name?
+- Subscription format?
+- Message format when orders update?
+
+Question 3b: Does the orders channel provide:
+- All open orders on subscription?
+- Or only order updates (placed/filled/cancelled)?
+- Can I get a snapshot of all current open orders?
+
+Question 3c: WebSocket vs REST API - which is better for reconciliation?
+- Need to fetch all open orders every 5 minutes
+- Compare with bot memory
+- WebSocket more efficient than polling REST?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ISSUE 4: SAMPLE WORKING CODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Could you provide a complete Python example for:
+
+1. Fetching ALL open orders via REST API:
+```python
+# Example with actual Delta Exchange India API
+import requests
+
+# What should this look like?
+# Include: URL, headers, params, response handling
+```
+
+2. Fetching ALL open orders via WebSocket:
+```python
+# Example with actual Delta Exchange India WebSocket
+import websocket
+
+# What should this look like?
+# Include: URL, subscription message, response format
+```
+
+3. Filtering orders by product_id (BTCUSD):
+```python
+# How to get only BTCUSD orders?
+# All orders then filter? Or filter in API call?
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MY CURRENT IMPLEMENTATION (FOR REFERENCE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Current code that's FAILING:
+```python
+def get_exchange_orders(self, force_refresh: bool = False):
+    """Get orders from Delta Exchange API"""
+    delta_client = self.delta_client_factory()
+    response = delta_client.fetch_open_orders()
+    
+    # Handle response - but this returns 0 orders!
+    if isinstance(response, list):
+        orders = response
+    elif isinstance(response, dict) and response.get('success'):
+        orders = response.get('result', [])
+    else:
+        return []
+    
+    # Always returns [] even though 12 orders exist on exchange!
+    return orders
+```
+
+What's wrong with this approach?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TESTING SCENARIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+To help you understand:
+- I have 12 real orders on Delta Exchange India right now
+- Order IDs: 1002690830, 1002692313, 1002693396, 1002696066, 1002696112, etc.
+- Product: BTCUSD (ID: 27)
+- All are OPEN (not filled)
+- Some are BUY orders at $107,500-$108,000
+- Some are SELL orders (TP) at $108,500
+
+When I call the API, it should return these 12 orders, but currently returns 0.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT I NEED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Official Delta Exchange India API documentation for fetching open orders
+2. Exact API endpoint, parameters, and response format
+3. Working Python code example (REST or WebSocket)
+4. Any gotchas or common mistakes to avoid
+5. Recommended approach: REST API polling vs WebSocket subscription?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ADDITIONAL CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- My bot uses client_order_id prefix "BOT-" to tag its orders
+- I'm using HMAC-SHA256 authentication
+- API key has full trading permissions
+- IP is whitelisted
+- REST API works for placing orders (that's how I got 12 orders)
+- REST API works for fetching positions
+- Only fetching open orders fails
+
+This suggests authentication is fine, but something about the fetch_open_orders() 
+call or response parsing is wrong.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Thank you for your help!

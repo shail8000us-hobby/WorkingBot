@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/modules/websocket_handler.py
+# hypothesis_version: 6.141.1
+
+[1.0, 100, 300, 49999, 50000, 50001, 'BTCUSD', 'CRITICAL', 'Callable', 'Not callable', 'Not registered', 'WARNING', 'ask', 'available_methods', 'bid', 'buy', 'callback_validation', 'callbacks_registered', 'circuit_breakers', 'emergency', 'entry_price', 'error', 'failure_count', 'fill', 'fill_errors', 'fill_price', 'fill_size', 'filled', 'fills', 'id', 'is_broken', 'is_connected', 'is_healthy', 'issues', 'last', 'liquidation', 'on_fill', 'on_order_update', 'on_position_update', 'on_price_update', 'order_id', 'order_update', 'order_update_errors', 'order_updates', 'pnl', 'position_update', 'position_updates', 'price_update', 'price_update_errors', 'price_updates', 'reason', 'recent_failure_count', 'remove_fill_callback', 'runner', 'side', 'size', 'state', 'stats', 'success', 'symbol', 'test_123', 'total_errors', 'unknown', 'valid', 'ws_manager_connected']

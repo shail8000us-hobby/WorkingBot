@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/backtest/sim/funding_model.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.0001, 3600, '0.0001', 'backtest.funding', 'historical', 'off', 'simple']

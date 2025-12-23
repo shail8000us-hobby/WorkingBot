@@ -1,0 +1,17 @@
+Metric,Value,Currency/Unit
+=== PNL (REALIZED/UNREALIZED) ===,,
+Realized PnL,0.00000000,native
+Unrealized PnL,0.02222887,native
+Realized Funding,0.00000000,native
+Net (Realized + Funding),0.00000000,native
+=== CHARGES (COMMISSIONS) ===,,
+Commission Blocked (positions),0.00000000,native
+Commission Paid (fills),1.20324418,native
+Total Charges,1.20324418,native
+=== TRADING STATS ===,,
+Total Trades,41,count
+=== WALLET BALANCES ===,,
+USD Available,37.969209323775684433,USD
+USD Total,39.93902949,USD
+USD Blocked Margin,1.969820166224315567,USD
+=== NET AFTER CHARGES ===,-1.20324418,native

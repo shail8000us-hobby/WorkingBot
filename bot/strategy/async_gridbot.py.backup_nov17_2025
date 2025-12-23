@@ -1,0 +1,3846 @@
+"""
+Async GridBot - Main async bot implementation.
+Single event loop with actors and saga pattern.
+"""
+
+import asyncio
+import json
+import os
+import sys
+import signal
+import time
+from typing import Dict, Any, Optional, List
+from pathlib import Path
+
+import aiofiles
+
+from loguru import logger as log
+
+# Add project root to path for config imports BEFORE any config imports
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Human-readable logging for traders
+from bot.utils.human_logger import human_log
+
+# YAML Configuration System (bot/config renamed to bot/legacy_config to avoid conflict)
+from config.loader import get_config
+from config.models import RootConfig
+
+from bot.api.async_delta_client import AsyncDeltaClient
+from bot.delta_websocket.async_ws_manager import AsyncWebSocketManager
+from bot.strategy.actors.position_actor import PositionManagerActor
+from bot.strategy.actors.order_actor import OrderManagerActor
+# VolatilityMonitor REMOVED - Guardian monitors volatility now
+from bot.strategy.sagas.saga_coordinator import SagaOrchestrator
+from bot.strategy.sagas.fill_processing_saga import (
+    create_buy_fill_saga,
+    create_sell_fill_saga,
+    create_short_entry_saga,
+    create_short_tp_saga,
+)
+from bot.strategy.sagas.position_closing_saga import create_emergency_close_all_saga
+from bot.strategy.modules.event_store import EventStore
+from bot.strategy.modules.grid_calculator import GridCalculator
+from bot.strategy.modules.mode_state_manager import get_mode_state_manager
+from bot.strategy.actors.base_actor import Message
+
+# NOV 13: Comprehensive Monitoring Systems (5 layers of protection)
+from bot.monitoring import (
+    PriceHealthMonitor,
+    PreOrderDecisionLogger,
+    TPVerificationSystem,
+    AnomalyDetectionSystem,
+    PredictiveDecisionDisplay,
+)
+from bot.monitoring.data_writer import MonitoringDataWriter
+
+
+class AsyncGridBot:
+    """
+    Async GridBot with actor model and saga pattern.
+    
+    Features:
+    - Single asyncio event loop (no threads)
+    - Actor-based state management (no locks)
+    - Saga pattern for transactional safety
+    - Automatic reconnection and recovery
+    """
+    
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        config: Optional[RootConfig] = None,
+        # Backward compatibility: allow manual params
+        symbol: Optional[str] = None,
+        product_id: Optional[int] = None,
+        mode: Optional[str] = None,
+        lower_price: Optional[float] = None,
+        upper_price: Optional[float] = None,
+        grid_step: Optional[float] = None,
+        ref_price: Optional[float] = None,
+        tp_offset: Optional[float] = None,
+        max_positions: Optional[int] = None,
+        lot_size: Optional[float] = None,
+        testnet: Optional[bool] = None,
+        # Safety parameters REMOVED - Guardian monitors all risk
+        # Order management parameters
+        tag_prefix: Optional[str] = None,
+        post_only_mode: Optional[str] = None,
+        cancel_all_on_start: Optional[bool] = None,
+        cancel_scope: Optional[str] = None,
+        adopt_untagged: Optional[bool] = None,
+        # Grid behavior parameters
+        strict_grid: Optional[bool] = None,
+        strict_start: Optional[bool] = None,
+        seed_initial_count: Optional[int] = None,
+        smart_gap_fill: Optional[bool] = None,
+        rung_snap_mode: Optional[str] = None,
+        # Timing parameters
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
+        cooldown_seconds: Optional[int] = None,
+        # Conversion rate
+        usd_to_inr_rate: Optional[float] = None
+    ):
+        """
+        Initialize async grid bot with YAML configuration.
+        
+        Args:
+            api_key: Delta Exchange API key (if None, reads from ENV)
+            api_secret: Delta Exchange API secret (if None, reads from ENV)
+            config: RootConfig object (if None, loads from config.yaml)
+            
+            All other params: Optional overrides for YAML config
+            If not provided, values are loaded from config.yaml
+        """
+        # Load YAML config (or use provided config)
+        if config is None:
+            config = get_config()
+        
+        self.config = config
+        
+        # API credentials - load from centralized config loader if not provided
+        if api_key and api_secret:
+            self.api_key = api_key
+            self.api_secret = api_secret
+        else:
+            from config.loader import get_api_credentials
+            credentials = get_api_credentials(config.trading_mode)
+            self.api_key = credentials['api_key']
+            self.api_secret = credentials['api_secret']
+        
+        if not self.api_key or not self.api_secret:
+            raise ValueError("API credentials must be provided or set in secrets/api_keys.env")
+        
+        # Load all parameters from YAML config (allow manual overrides)
+        self.symbol = symbol or config.bot.symbol
+        self.product_id = product_id or 27  # Default product ID
+        self.mode = mode or config.bot.mode
+        self.testnet = testnet if testnet is not None else (config.trading_mode == 'demo')
+        
+        # Store grid parameters
+        self.lower_price = lower_price or config.grid.geometry.lower
+        self.upper_price = upper_price or config.grid.geometry.upper
+        self.grid_step = grid_step or config.grid.geometry.step
+        self.ref_price = ref_price or config.grid.geometry.reference
+        self.tp_offset = tp_offset or 500  # Default TP offset
+        self.max_positions = max_positions or config.grid.limits.max_open_positions
+        self.lot_size = lot_size or config.grid.limits.lot_size
+        
+        # Safety parameters REMOVED - Guardian monitors all risk (loss, volatility, liquidation, position size)
+        # Trading bot only reads Guardian's GO/STOP signal from SQL
+        self.usd_to_inr_rate = usd_to_inr_rate or config.guardian.usd_to_inr_rate
+        
+        # Order management parameters
+        self.tag_prefix = tag_prefix or "GBOT_"
+        self.post_only_mode = post_only_mode or "auto"
+        self.cancel_all_on_start = cancel_all_on_start if cancel_all_on_start is not None else False
+        self.cancel_scope = cancel_scope or "tagged"
+        self.adopt_untagged = adopt_untagged if adopt_untagged is not None else False
+        
+        # Grid behavior parameters
+        self.strict_grid = strict_grid if strict_grid is not None else config.grid.behavior.strict_grid
+        self.strict_start = strict_start if strict_start is not None else True
+        self.seed_initial_count = seed_initial_count or config.grid.behavior.seed_initial_count
+        self.smart_gap_fill = smart_gap_fill if smart_gap_fill is not None else config.grid.smart_gap_fill.enabled
+        self.rung_snap_mode = rung_snap_mode or config.grid.behavior.rung_snap_mode
+        
+        # Timing parameters
+        self.max_retries = max_retries or config.order_execution.max_retries
+        self.retry_delay = retry_delay or config.order_execution.retry_delay
+        self.cooldown_seconds = cooldown_seconds or config.order_execution.cooldown_seconds
+        
+        # Safety state (minimal - Guardian handles most safety)
+        # These are kept for status display only, not for checking
+        self._account_loss_inr = 0.0  # For display in status endpoint
+        self._safety_halt = False  # Deprecated - Guardian controls this now
+        self._halt_reason = None  # Deprecated - Guardian controls this now
+        self._last_order_time = 0
+        self._last_safety_check_time = 0  # For periodic safety gatekeeper
+        
+        log.info("=" * 80)
+        log.info("ASYNC GRIDBOT - YAML CONFIGURATION LOADED")
+        log.info("=" * 80)
+        log.info(f"Config Version: {config.version}")
+        log.info(f"Trading Mode: {config.trading_mode.upper()}")
+        log.info(f"Symbol: {self.symbol}")
+        log.info(f"Product ID: {self.product_id}")
+        log.info(f"Mode: {self.mode}")
+        log.info(f"Grid Lower: ${self.lower_price:,.2f}")
+        log.info(f"Grid Upper: ${self.upper_price:,.2f}")
+        log.info(f"Grid Step: ${self.grid_step:,.2f}")
+        log.info(f"TP Offset: ${self.tp_offset:,.2f}")
+        log.info(f"Max Positions: {self.max_positions}")
+        log.info(f"Testnet: {self.testnet}")
+        log.info("")
+        log.info("SAFETY FEATURES:")
+        log.info(f"  Guardian Bot: Monitors all risk (volatility, loss, position, liquidation)")
+        log.info("")
+        log.info("ORDER MANAGEMENT:")
+        log.info(f"  Tag Prefix: {self.tag_prefix}")
+        log.info(f"  Post-Only Mode: {self.post_only_mode}")
+        log.info(f"  Cancel on Start: {self.cancel_all_on_start}")
+        log.info("")
+        log.info("GRID BEHAVIOR:")
+        log.info(f"  Strict Grid: {self.strict_grid}")
+        log.info(f"  Strict Start: {self.strict_start}")
+        log.info(f"  Initial Seed: {self.seed_initial_count}")
+        log.info(f"  Smart Gap Fill: {self.smart_gap_fill}")
+        log.info("=" * 80)
+        
+        # Initialize event store
+        db_name = f"bot_events_{mode}.db"
+        self.event_store = EventStore(db_name)
+        
+        # Initialize API client  
+        # Get API URL from YAML config based on trading mode
+        if config.trading_mode == 'demo':
+            api_base_url = config.api.demo_private_url
+        else:
+            api_base_url = config.api.live_private_url
+        
+        self.api_client = AsyncDeltaClient(
+            api_key=self.api_key,
+            api_secret=self.api_secret,
+            base_url=api_base_url,
+            testnet=testnet
+        )
+        
+        # Initialize actors - CRITICAL: Use instance variables
+        self.position_actor = PositionManagerActor(
+            event_store=self.event_store,
+            max_positions=self.max_positions
+        )
+        
+        log.info(f"Position Actor initialized with max_positions={self.max_positions}")
+        
+        self.order_actor = OrderManagerActor(
+            api_client=self.api_client,
+            event_store=self.event_store,
+            symbol=self.symbol,
+            product_id=self.product_id,
+            max_retries=self.max_retries,
+            tag_prefix=self.tag_prefix,
+            post_only_mode=self.post_only_mode
+        )
+        
+        log.info(f"Order Actor initialized for {self.symbol} (Product ID: {self.product_id})")
+        
+        # Initialize Volatility Monitor (Opportunistic Recovery)
+        
+        # VolatilityMonitor initialization REMOVED - Guardian monitors volatility
+        # Guardian checks IV/RV/spread and publishes GO/STOP signals
+        # Trading bot will read Guardian signal in Phase 2.7
+        
+        # Initialize WebSocket manager
+        # Get WebSocket URL from YAML config based on trading mode
+        if config.trading_mode == 'demo':
+            ws_url = config.api.demo_ws_url
+        else:
+            ws_url = config.api.live_ws_url
+        
+        self.ws_manager = AsyncWebSocketManager(
+            api_key=self.api_key,
+            api_secret=self.api_secret,
+            base_url=ws_url,
+            testnet=testnet
+        )
+        
+        # Initialize saga orchestrator
+        self.saga_orchestrator = SagaOrchestrator(
+            event_store=self.event_store,
+            max_concurrent_sagas=10
+        )
+        
+        # Grid calculator - CRITICAL: Use instance variables, not hardcoded values
+        self.grid_calc = GridCalculator(
+            lower=self.lower_price,
+            upper=self.upper_price,
+            step=self.grid_step,
+            ref=self.ref_price,
+            tick_size=0.5  # BTC tick size
+        )
+        
+        log.info(f"Grid Calculator initialized: {self.lower_price} to {self.upper_price}, step {self.grid_step}, ref {self.ref_price}")
+        
+        # Bot state
+        self._running = False
+        self._tasks: List[asyncio.Task] = []
+        self.current_price: Optional[float] = None
+        self._initial_order_placed = False
+        self._last_price_update = 0
+        self._price_stale_threshold = 10  # seconds
+        self._order_placement_lock = None  # Created in start() within event loop
+        
+        # Volatility halt state REMOVED - Guardian handles all halt decisions
+        # Standard grid gap-fill logic handles missed orders (no special recovery needed)
+        
+        # Metrics
+        self._start_time = 0
+        self._fills_processed = 0
+        self._sagas_completed = 0
+        self._sagas_failed = 0
+        
+        # Reconciliation state
+        self._last_reconciliation = 0
+        self._reconciliation_interval = 300  # 5 minutes
+        self._reconciliation_initial_delay = 60  # 1 minute initial delay
+        self._reconciliation_errors = 0
+        
+        # REST API Fallback state (NOV 13 - WebSocket starvation protection)
+        self._rest_fallback_active = False
+        self._rest_fallback_task: Optional[asyncio.Task] = None
+        
+        # ========================================================================
+        # NOV 13: Comprehensive Monitoring Systems (5 Layers of Protection)
+        # ========================================================================
+        
+        log.info("🔍 Initializing Comprehensive Monitoring Systems...")
+        
+        # Layer 1: Price Health Monitor (prevent stale price orders)
+        log.info("   ├─ Layer 1: Price Health Monitor")
+        self.price_monitor = PriceHealthMonitor(
+            stale_threshold=10.0,      # Warn if price >10s old
+            critical_threshold=30.0    # Critical if >30s old
+        )
+        
+        # Layer 2: Pre-Order Decision Logger (transparency)
+        log.info("   ├─ Layer 2: Pre-Order Decision Logger")
+        self.pre_order_logger = PreOrderDecisionLogger()
+        
+        # Layer 3: TP Verification System (orphan detection)
+        log.info("   ├─ Layer 3: TP Verification System")
+        self.tp_verifier = TPVerificationSystem(
+            delta_client=self.api_client
+        )
+        
+        # Layer 4: Anomaly Detection System (pattern detection)
+        log.info("   ├─ Layer 4: Anomaly Detection System")
+        self.anomaly_detector = AnomalyDetectionSystem()
+        
+        # Layer 5: Predictive Decision Display (show next actions)
+        log.info("   ├─ Layer 5: Predictive Decision Display")
+        self.predictive_display = PredictiveDecisionDisplay()
+        
+        # Monitoring Data Writer (WebUI integration)
+        log.info("   └─ Monitoring Data Writer (WebUI integration)")
+        self.monitoring_writer = MonitoringDataWriter()
+        self._last_monitoring_write = 0  # Track last write time
+        
+        log.info("✅ All monitoring systems initialized (5 layers + WebUI writer)")
+        
+        # ========================================================================
+        # NOV 17: Volatility tracking REMOVED - Guardian handles this now
+        # ========================================================================
+        # Guardian monitors IV, RV, spreads and publishes GO/STOP signals
+        # Trading bot reads Guardian signal from database (no duplicate checks)
+        
+        # ========================================================================
+        # NOV 13: Event Loop Watchdog (Frozen Loop Detection)
+        # ========================================================================
+        
+        self._last_heartbeat_time = time.time()
+        self._watchdog_timeout = 60.0  # Trigger if no heartbeat for 60s
+        self._watchdog_check_interval = 10.0  # Check every 10s
+        self._max_reconciliation_errors = 10
+    
+    # Loss limit checking REMOVED - Guardian monitors this
+    # Guardian checks max_account_loss_inr and publishes STOP signal
+    
+    async def _check_cooldown(self) -> bool:
+        """
+        Check if cooldown period has elapsed since last order.
+        
+        Returns:
+            True if ready to place order, False if in cooldown
+        """
+        if self.cooldown_seconds <= 0:
+            return True
+        
+        elapsed = time.time() - self._last_order_time
+        if elapsed < self.cooldown_seconds:
+            remaining = self.cooldown_seconds - elapsed
+            log.debug(f"Cooldown active: {remaining:.1f}s remaining")
+            return False
+        
+        return True
+    
+    async def _read_guardian_signal(self) -> tuple[str, str]:
+        """
+        Read Guardian's GO/STOP signal from SQL database.
+        
+        Guardian monitors ALL risk:
+        - Volatility (IV/RV/spread)
+        - Loss limits (max_account_loss_inr)
+        - Position size (max_position_size)
+        - Liquidation distance (min_liquidation_distance_inr)
+        
+        Returns:
+            (signal, reason) - 'GO'/'STOP' and reason string
+        """
+        try:
+            import sqlite3
+            from pathlib import Path
+            
+            db_path = Path('gridbot_events.db')
+            
+            if not db_path.exists():
+                log.warning("Guardian database not found, assuming GO")
+                return 'GO', 'Guardian database not yet created'
+            
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            
+            # Get latest Guardian signal
+            cursor.execute('''
+                SELECT signal, reason, timestamp
+                FROM guardian_signals
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ''')
+            
+            result = cursor.fetchone()
+            conn.close()
+            
+            if not result:
+                log.warning("No Guardian signal found, assuming GO")
+                return 'GO', 'No Guardian signal published yet'
+            
+            signal, reason, timestamp = result
+            
+            # Check signal age (Guardian publishes every 5s)
+            import time
+            signal_age = time.time() - timestamp
+            if signal_age > 30:  # 30 seconds = 6 missed cycles
+                log.warning(f"Guardian signal is stale ({signal_age:.0f}s old), assuming STOP for safety")
+                return 'STOP', f'Guardian signal stale ({signal_age:.0f}s old)'
+            
+            return signal, reason
+            
+        except Exception as e:
+            log.error(f"Error reading Guardian signal: {e}")
+            # On error, assume STOP for safety
+            return 'STOP', f'Guardian signal read error: {str(e)}'
+    
+    async def _check_guardian_volatility_status(self) -> dict:
+        """
+        Check Guardian's volatility status (temporary - will be replaced in Phase 2.7).
+        
+        For now, returns a mock status indicating volatility is OK.
+        In Phase 2.7, this will read actual Guardian GO/STOP signals from SQL.
+        
+        Returns:
+            dict: {'halt_active': bool, 'reason': str}
+        """
+        # TODO Phase 2.7: Read Guardian signal from gridbot_events.db
+        # For now, assume volatility is OK (Guardian is monitoring externally)
+        return {
+            'halt_active': False,
+            'reason': 'Guardian monitoring (integration pending Phase 2.7)'
+        }
+    
+    async def _comprehensive_safety_check(self, context: str = "order placement") -> tuple[bool, str]:
+        """
+        Comprehensive safety check - validates ALL safety mechanisms.
+        
+        Args:
+            context: What action is being checked (for logging)
+            
+        Returns:
+            (can_proceed, reason) - True if safe, False with reason if blocked
+        """
+        # 1. Check Guardian GO/STOP signal
+        signal, reason = await self._read_guardian_signal()
+        if signal == 'STOP':
+            halt_reason = (
+                f"🛑 GUARDIAN HALT: Trading blocked by Guardian\n"
+                f"   Reason: {reason}\n"
+                f"   ⏰ Waiting for Guardian to publish GO signal..."
+            )
+            log.warning(halt_reason)
+            return False, halt_reason
+        
+        # 2. Check cooldown period
+        if not await self._check_cooldown():
+            elapsed = time.time() - self._last_order_time
+            remaining = self.cooldown_seconds - elapsed
+            
+            reason = (
+                f"⏱️  COOLDOWN: Order placement rate-limited\n"
+                f"   Seconds since last order: {elapsed:.1f}s\n"
+                f"   Cooldown period: {self.cooldown_seconds:.1f}s\n"
+                f"   ⏰ Can place order in: {remaining:.1f}s"
+            )
+            log.info(reason)
+            return False, reason  # Return FULL detailed message
+        
+        # 3. Check price availability
+        if not self.current_price:
+            reason = (
+                f"📍 NO PRICE DATA: Cannot place orders without current price\n"
+                f"   ⏰ Waiting for price update from WebSocket..."
+            )
+            log.warning(reason)
+            log.warning(f"   � Trading BLOCKED for: {context}")
+            return False, reason  # Return FULL detailed message
+        
+        # 5. Check grid bounds
+        if not self.grid_calc.is_within_bounds(self.current_price):
+            reason = (
+                f"📊 PRICE OUT OF GRID: Current price outside trading range\n"
+                f"   Current Price: ${self.current_price:,.0f}\n"
+                f"   Grid Lower: ${self.grid_calc.lower:,.0f}\n"
+                f"   Grid Upper: ${self.grid_calc.upper:,.0f}\n"
+                f"   ⏰ Can trade when price enters grid range"
+            )
+            log.info(reason)
+            log.info(f"   � Trading BLOCKED for: {context}")
+            return False, reason  # Return FULL detailed message
+        
+        # 6. Check price health (NOV 13 monitoring system)
+        try:
+            can_place, health_reason = self.price_monitor.can_place_orders()
+            if not can_place:
+                reason = (
+                    f"🏥 PRICE HEALTH CHECK FAILED: {health_reason}\n"
+                    f"   ⏰ Waiting for price data to stabilize..."
+                )
+                log.warning(reason)
+                return False, reason  # Return FULL detailed message
+        except Exception as e:
+            log.debug(f"Price health check error (proceeding): {e}")
+        
+        # All checks passed
+        return True, "All safety checks passed"
+    
+    def _update_last_order_time(self) -> None:
+        """Update timestamp of last order placement."""
+        self._last_order_time = time.time()
+    
+
+    
+    async def _reconcile_orphaned_orders(self) -> None:
+        """
+        Reconcile orphaned bot orders on startup.
+        
+        Queries the exchange for any open orders placed by the bot
+        (identified by client_order_id starting with "BOT-") and adopts
+        them into the pending order tracker.
+        
+        Prevents leaving orders orphaned after bot restarts/crashes.
+        """
+        try:
+            log.info("🔄 Reconciling orphaned orders from exchange...")
+            
+            # Check if we already have pending state loaded from actors
+            existing_pending = None
+            pending_resp = await self.position_actor.ask(
+                "GET_STATE",
+                {}
+            )
+            
+            if pending_resp:
+                # Extract pending buy or sell from state
+                existing_pending = pending_resp.get('pending_buy' if self.mode == 'LONG' else 'pending_sell')
+            
+            if existing_pending:
+                existing_order_id = existing_pending.get('order_id')
+                existing_price = existing_pending.get('price')
+                log.info(f"ℹ️  State already loaded: pending_{self.mode.lower()} = {existing_order_id} @ ${existing_price:,.0f}")
+                log.info(f"   Verifying this order still exists on exchange...")
+                
+                # Verify the loaded order still exists on exchange
+                try:
+                    order_check = await self.api_client.get_order(existing_order_id)
+                    if order_check and order_check.get('state', '').lower() == 'open':
+                        log.info(f"✅ Loaded pending order verified on exchange - no reconciliation needed")
+                        return  # State is valid, skip reconciliation
+                    else:
+                        log.warning(f"⚠️  Loaded pending order NOT found or not open on exchange")
+                        log.warning(f"   Will search for other orphaned orders...")
+                        # Clear invalid state
+                        if self.mode == 'LONG':
+                            await self.position_actor.ask("CLEAR_PENDING_BUY", {})
+                        else:
+                            await self.position_actor.ask("CLEAR_PENDING_SELL", {})
+                except Exception as e:
+                    log.warning(f"⚠️  Could not verify loaded pending order: {e}")
+                    log.warning(f"   Continuing with reconciliation...")
+            
+            # Query exchange for all open orders
+            all_orders = await self.api_client.list_orders(
+                symbol=self.symbol, 
+                states="open"
+            )
+            
+            if not all_orders:
+                log.info("ℹ️  No open orders found on exchange")
+                return
+            
+            # Determine target side based on grid mode
+            target_side = 'buy' if self.mode == 'LONG' else 'sell'
+            
+            bot_orders = []
+            
+            # Find orders placed by bot (client_order_id starts with "BOT-")
+            for order in all_orders:
+                side = order.get('side', '').lower()
+                state = order.get('state', '').lower()
+                client_id = order.get('client_order_id', '')
+                is_reduce_only = order.get('reduce_only', False)
+                
+                if (state == 'open' and 
+                    side == target_side and 
+                    not is_reduce_only and 
+                    client_id.startswith('BOT-')):
+                    bot_orders.append(order)
+            
+            if not bot_orders:
+                log.info(f"✅ No orphaned bot {target_side.upper()} orders found on exchange")
+                
+                # BUT - check if bot memory has a stale pending order
+                if existing_pending:
+                    log.warning(f"⚠️  Bot memory has pending order but exchange has NONE!")
+                    log.warning(f"   Clearing stale order {existing_pending.get('order_id')} from memory...")
+                    if self.mode == 'LONG':
+                        await self.position_actor.ask("CLEAR_PENDING_BUY", {"order_id": existing_pending.get('order_id')})
+                    else:
+                        await self.position_actor.ask("CLEAR_PENDING_SELL", {"order_id": existing_pending.get('order_id')})
+                    log.info(f"✅ Stale pending order cleared from memory")
+                
+                return
+            
+            # We should only have 1 pending order at a time
+            if len(bot_orders) == 1:
+                order = bot_orders[0]
+                order_id = str(order.get('id'))
+                price = float(order.get('limit_price', 0))
+                
+                # Adopt into pending tracker (mode-aware)
+                await self.position_actor.ask({
+                    'action': 'set_pending_buy' if self.mode == 'LONG' else 'set_pending_sell',
+                    'data': {
+                        'order_id': order_id,
+                        'price': price,
+                        'timestamp': time.time(),
+                        'reconciled': True  # Mark as reconciled for tracking
+                    }
+                })
+                
+                log.info(f"✅ Adopted orphaned {target_side.upper()} order: ID {order_id} @ ${price:,.0f}")
+                log.info(f"   This order was placed in a previous session")
+                
+            elif len(bot_orders) > 1:
+                # Multiple bot orders - this shouldn't happen in normal operation
+                log.warning(f"⚠️ Found {len(bot_orders)} orphaned bot {target_side.upper()} orders (expected 0-1)")
+                log.warning(f"   Cancelling all except the most recent...")
+                
+                # Sort by creation time (most recent first)
+                bot_orders.sort(key=lambda o: o.get('created_at', ''), reverse=True)
+                
+                # Keep the most recent, cancel the rest
+                most_recent = bot_orders[0]
+                order_id = str(most_recent.get('id'))
+                price = float(most_recent.get('limit_price', 0))
+                
+                # Adopt most recent order (mode-aware)
+                await self.position_actor.ask({
+                    'action': 'set_pending_buy' if self.mode == 'LONG' else 'set_pending_sell',
+                    'data': {
+                        'order_id': order_id,
+                        'price': price,
+                        'timestamp': time.time(),
+                        'reconciled': True
+                    }
+                })
+                
+                log.info(f"✅ Adopted most recent order: ID {order_id} @ ${price:,.0f}")
+                
+                # Cancel older orders
+                for old_order in bot_orders[1:]:
+                    old_id = old_order.get('id')
+                    old_price = old_order.get('limit_price', 0)
+                    log.info(f"🗑️ Cancelling older orphaned order: ID {old_id} @ ${old_price}")
+                    
+                    cancel_resp = await self.order_actor.ask({
+                        'action': 'cancel_order',
+                        'order_id': old_id
+                    })
+                    
+                    await asyncio.sleep(0.2)  # Rate limiting
+        
+        except Exception as e:
+            log.error(f"❌ Error during orphaned order reconciliation: {e}")
+            import traceback
+            log.error(traceback.format_exc())
+    
+    async def _reconcile_fills_after_reconnect(self) -> None:
+        """
+        CRITICAL FIX NOV 14: Reconcile missed fills after WebSocket reconnect.
+        
+        After WebSocket reconnection, we may have missed fill notifications.
+        This method fetches recent fills via REST API and processes any that
+        occurred during the disconnection period.
+        
+        Prevents state desync and orphaned positions.
+        """
+        try:
+            log.info("🔄 Reconciling missed fills after WebSocket reconnect...")
+            
+            # Calculate time window - check last 5 minutes
+            # This should cover any reasonable reconnection window
+            end_time = int(time.time() * 1000)  # Current time in ms
+            start_time = end_time - (5 * 60 * 1000)  # 5 minutes ago
+            
+            # Fetch fills from REST API
+            try:
+                fills_response = await self.api_client.get_fills(
+                    product_id=self.product_id,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+            except Exception as e:
+                log.error(f"❌ Failed to fetch fills from REST API: {e}")
+                return
+            
+            if not fills_response:
+                log.info("✅ No recent fills found - no reconciliation needed")
+                return
+            
+            # Extract fills array from response
+            fills = fills_response.get('result', []) if isinstance(fills_response, dict) else fills_response
+            
+            if not fills:
+                log.info("✅ No recent fills found - no reconciliation needed")
+                return
+            
+            log.info(f"📋 Found {len(fills)} recent fill(s) - checking for missed ones...")
+            
+            # Get current state to check which fills we already processed
+            state = await self.position_actor.ask("GET_STATE", {})
+            open_tranches = state.get("open_tranches", [])
+            
+            # Track which fills we've already processed by checking:
+            # 1. Open positions (entry fills we processed)
+            # 2. Recent saga executions (check saga orchestrator history)
+            processed_order_ids = set()
+            
+            # Add order IDs from open positions
+            for tranche in open_tranches:
+                if 'order_id' in tranche:
+                    processed_order_ids.add(str(tranche['order_id']))
+            
+            # Process each fill
+            missed_count = 0
+            for fill in fills:
+                order_id = str(fill.get('order_id', ''))
+                fill_id = fill.get('id', '')
+                side = fill.get('side', '').lower()
+                price = float(fill.get('price', 0))
+                size = int(fill.get('size', 0))
+                
+                # Skip if we already processed this order
+                if order_id in processed_order_ids:
+                    continue
+                
+                # Check if this is a bot order (client_order_id starts with "BOT-")
+                # We only reconcile bot orders, not manual trades
+                client_id = fill.get('client_order_id', '')
+                if not client_id.startswith('BOT-'):
+                    log.debug(f"Skipping non-bot fill: {fill_id}")
+                    continue
+                
+                # This is a missed fill - process it now
+                log.warning(f"⚠️  MISSED FILL DETECTED: {side.upper()} {size} @ ${price:,.0f} (Order: {order_id})")
+                missed_count += 1
+                
+                # Create fill data structure matching WebSocket format
+                fill_data = {
+                    'order_id': order_id,
+                    'price': price,
+                    'size': size,
+                    'side': side,
+                    'is_complete': True,  # REST API fills are always complete
+                    'fill_id': fill_id,
+                    'reconciled': True  # Mark as reconciled for tracking
+                }
+                
+                # Process the fill through normal saga flow
+                try:
+                    await self._process_fill(fill_data)
+                    log.info(f"✅ Reconciled fill: {side.upper()} @ ${price:,.0f}")
+                    processed_order_ids.add(order_id)
+                except Exception as e:
+                    log.error(f"❌ Failed to reconcile fill {fill_id}: {e}")
+                    import traceback
+                    log.error(traceback.format_exc())
+            
+            if missed_count == 0:
+                log.info("✅ All fills were already processed - state is in sync")
+            else:
+                log.warning(f"⚠️  Reconciled {missed_count} missed fill(s)")
+                log.warning(f"   Bot state is now synchronized with exchange")
+        
+        except Exception as e:
+            log.error(f"❌ Error during fill reconciliation: {e}")
+            import traceback
+            log.error(traceback.format_exc())
+    
+    async def seed_missed_grid_levels(self, count: int) -> None:
+        """
+        Seed missed grid levels - place multiple entry orders at grid intervals.
+        
+        For LONG mode: Places BUY orders below current price
+        For SHORT mode: Places SELL orders above current price
+        
+        Uses existing order placement logic via OrderManagerActor.
+        Bot handles TPs automatically when fills occur.
+        
+        Args:
+            count: Number of grid levels to seed
+        """
+        if count <= 0:
+            return
+        
+        current_price = self.current_price
+        
+        log.info("=" * 70)
+        log.info(f"🌱 SEEDING {count} MISSED GRID LEVELS ({self.mode} MODE)")
+        log.info(f"📍 Current Price: ${current_price:,.0f}")
+        log.info("=" * 70)
+        
+        for i in range(count):
+            try:
+                if self.mode == 'LONG':
+                    # Buy below current price (going down)
+                    level = current_price - (i + 1) * self.grid_calc.step
+                    
+                    if level >= self.grid_calc.lower:
+                        # Place order via OrderManagerActor
+                        order_resp = await self.order_actor.ask({
+                            'action': 'place_buy_order',
+                            'price': level,
+                            'post_only': True
+                        })
+                        
+                        if order_resp.get('status') == 'success':
+                            order_id = order_resp.get('order_id')
+                            log.info(f"  ✅ Grid BUY placed @ ${level:,.0f} (ID: {order_id})")
+                        else:
+                            log.warning(f"  ⚠️  Failed to place BUY @ ${level:,.0f}: {order_resp.get('error')}")
+                    else:
+                        log.warning(f"  ⚠️  Level ${level:,.0f} below grid lower bound, stopping")
+                        break
+                
+                elif self.mode == 'SHORT':
+                    # Sell above current price (going up)
+                    level = current_price + (i + 1) * self.grid_calc.step
+                    
+                    if level <= self.grid_calc.upper:
+                        # Place order via OrderManagerActor
+                        order_resp = await self.order_actor.ask({
+                            'action': 'place_sell_order',
+                            'price': level,
+                            'post_only': True
+                        })
+                        
+                        if order_resp.get('status') == 'success':
+                            order_id = order_resp.get('order_id')
+                            log.info(f"  ✅ Grid SELL placed @ ${level:,.0f} (ID: {order_id})")
+                        else:
+                            log.warning(f"  ⚠️  Failed to place SELL @ ${level:,.0f}: {order_resp.get('error')}")
+                    else:
+                        log.warning(f"  ⚠️  Level ${level:,.0f} above grid upper bound, stopping")
+                        break
+                
+                # Rate limiting between orders
+                await asyncio.sleep(0.2)
+                
+            except Exception as e:
+                log.error(f"❌ Error seeding grid level {i+1}: {e}")
+                continue
+        
+        log.info("=" * 70)
+        log.info(f"✅ SEEDING COMPLETE - Bot will manage TPs automatically")
+        log.info("=" * 70)
+    
+    # ========================================================================
+    # OPPORTUNISTIC RECOVERY SYSTEM
+    # ========================================================================
+    
+    async def _check_startup_opportunistic_recovery(self) -> bool:
+        """Check for missed grid levels at startup and fill opportunistically with full safety checks.
+        
+        Returns:
+            bool: True if recovery was executed, False otherwise
+        """
+        # Startup opportunistic recovery disabled - standard grid gap-fill handles missed levels
+        return False
+        
+        try:
+            state = await self.position_actor.ask("GET_STATE", {}, timeout=3.0)
+            has_positions = len(state.get("open_tranches", [])) > 0
+            
+            if has_positions:
+                log.debug("Skipping startup recovery - positions already exist")
+                return False
+            
+            # CRITICAL: Run comprehensive safety check BEFORE attempting recovery
+            # This ensures recovery respects ALL safety limits (account loss, margin, volatility, etc.)
+            can_proceed, safety_reason = await self._comprehensive_safety_check("startup opportunistic recovery check")
+            if not can_proceed:
+                log.warning(f"Startup recovery blocked by safety: {safety_reason.split(chr(10))[0]}")
+                return False
+            
+            if self.mode == "LONG":
+                first_grid_level = self.grid_calc.ref - self.grid_calc.step
+            else:
+                first_grid_level = self.grid_calc.ref + self.grid_calc.step
+            
+            missed_levels = []
+            
+            if self.mode == "LONG" and self.current_price < first_grid_level:
+                check_price = first_grid_level
+                while check_price > self.current_price and len(missed_levels) < self._startup_opportunistic_max:
+                    if check_price >= self.grid_calc.lower:
+                        missed_levels.append(check_price)
+                    check_price -= self.grid_calc.step
+            
+            elif self.mode == "SHORT" and self.current_price > first_grid_level:
+                check_price = first_grid_level
+                while check_price < self.current_price and len(missed_levels) < self._startup_opportunistic_max:
+                    if check_price <= self.grid_calc.upper:
+                        missed_levels.append(check_price)
+                    check_price += self.grid_calc.step
+            
+            if missed_levels:
+                log.info(f"Startup recovery detected - {len(missed_levels)} missed levels")
+                log.info(f"Current price: ${self.current_price:,.2f}, First grid: ${first_grid_level:,.0f}")
+                
+                # Notify PositionActor that recovery is starting
+                await self.position_actor.tell("RECOVERY_STARTED", {"recovery_type": "startup"})
+                
+                await self._execute_startup_recovery(missed_levels)
+                return True  # Recovery executed
+            else:
+                log.debug("No missed levels detected - normal startup")
+                return False  # No recovery needed
+        
+        except Exception as e:
+            log.error(f"Error in startup recovery check: {e}")
+            return False  # Error = no recovery
+    
+    async def _execute_startup_recovery(self, grid_levels: List[float]) -> None:
+        """Execute startup recovery with full safety checks before each order.
+        
+        SAFETY INTEGRATION:
+        - Calls _comprehensive_safety_check() BEFORE each individual order
+        - This ensures EVERY recovery order passes all safety limits
+        - If ANY check fails, recovery stops immediately
+        - Prevents recovery from violating account loss, margin, or volatility limits
+        """
+        if not grid_levels:
+            return
+        
+        filled_positions = []
+        log.info(f"Executing startup recovery for {len(grid_levels)} levels")
+        
+        for i, grid_level in enumerate(grid_levels):
+            try:
+                # CRITICAL: Safety check before EACH order (not just once at start)
+                can_proceed, reason = await self._comprehensive_safety_check(f"startup recovery #{i+1}")
+                if not can_proceed:
+                    log.warning(f"Recovery order {i+1} blocked by safety: {reason.split(chr(10))[0]}")
+                    break
+                
+                side = 'buy' if self.mode == 'LONG' else 'sell'
+                log.info(f"Recovery {i+1}/{len(grid_levels)}: Placing {side.upper()} MARKET order for grid ${grid_level:,.0f}")
+                
+                # Use correct message type based on side
+                message_type = "PLACE_BUY" if side == 'buy' else "PLACE_SELL"
+                order_result = await self.order_actor.ask(
+                    message_type,
+                    {
+                        "price": grid_level,  # Reference price for TP calculation
+                        "size": self.lot_size,
+                        "order_type": "market",  # CRITICAL: Market order for immediate execution
+                        "order_purpose": "recovery"  # Mark as recovery order
+                    },
+                    timeout=15.0
+                )
+                
+                if order_result.get("status") != "ok":
+                    log.error(f"Market order failed: {order_result.get('error', 'Unknown error')}")
+                    continue
+                
+                order_id = order_result.get("order_id")
+                log.info(f"Recovery order {order_id} placed - waiting for WebSocket fill event...")
+                
+                # CRITICAL: Wait for WebSocket to process fill (NOT REST API polling)
+                # Market orders fill instantly, WebSocket delivers fill within 1-3 seconds
+                await asyncio.sleep(3.0)
+                
+                # Check if position was added via WebSocket fill handler
+                state_after = await self.position_actor.ask("GET_STATE", {})
+                positions_after = state_after.get("open_tranches", [])
+                
+                # Find the newly added position (if any)
+                new_position = None
+                for pos in positions_after:
+                    if pos.get('position_id') == str(order_id):
+                        new_position = pos
+                        break
+                
+                if not new_position:
+                    log.error(f"Recovery order {order_id} - position not found in state after 3s")
+                    log.error("WebSocket fill may have been missed or delayed")
+                    continue
+                
+                fill_price = new_position.get('actual_entry') or new_position.get('entry_price')
+                log.info(f"✅ Recovery {i+1}/{len(grid_levels)} filled @ ${fill_price:,.2f}")
+                
+                # Calculate TP using grid calculator (same as normal positions)
+                if self.mode == 'LONG':
+                    tp_price = grid_level + self.grid_calc.step
+                else:
+                    tp_price = grid_level - self.grid_calc.step
+                
+                saved_capital = abs(grid_level - fill_price)
+                log.info(f"Filled @ ${fill_price:,.2f} | TP target: ${tp_price:,.0f} | Saved: ${saved_capital:,.2f}")
+                
+                # CRITICAL: Use PositionActor expected format
+                # Match format from fill_processing_saga.py
+                position_data = {
+                    'position_id': str(order_id),  # Required by PositionActor
+                    'entry_price': grid_level,     # Grid level (for TP calculation)
+                    'tp_price': tp_price,          # Required by PositionActor
+                    'size': self.lot_size,         # Required by PositionActor
+                    'actual_entry': fill_price,    # Real fill price (for PnL tracking)
+                    'is_opportunistic': True,      # Flag for WebUI display
+                    'saved_capital': saved_capital # Extra profit from better entry
+                }
+                
+                # Add position to PositionActor (no await needed for tell)
+                await self.position_actor.tell("ADD_POSITION", position_data)
+                log.debug(f"Position {position_data['position_id']} added to PositionActor")
+                
+                # Place TP order (TP price already in position_data)
+                tp_success = await self._place_opportunistic_tp(position_data)
+                
+                if tp_success:
+                    filled_positions.append(position_data)
+                    log.info(f"✅ Recovery position {i+1} complete with TP protection")
+                else:
+                    log.critical(f"CRITICAL: Position {position_data['position_id']} has NO TP - manual intervention required")
+                    # Send Telegram alert for unprotected position
+                    try:
+                        from bot.utils.notifier import TelegramNotifier
+                        notifier = TelegramNotifier()
+                        await notifier.send_message(
+                            f"🚨 CRITICAL: Opportunistic recovery position has NO TP!\n"
+                            f"Position ID: {position_data['position_id']}\n"
+                            f"Entry: ${fill_price:,.2f}\n"
+                            f"Expected TP: ${tp_price:,.0f}\n"
+                            f"ACTION REQUIRED: Manually place TP order!"
+                        )
+                    except Exception as e:
+                        log.debug(f"Telegram notification failed: {e}")
+                        pass  # Telegram not critical
+                
+                if i < len(grid_levels) - 1:
+                    await asyncio.sleep(self._recovery_execution_delay_ms / 1000.0)
+            
+            except Exception as e:
+                log.error(f"Error executing recovery for level ${grid_level:,.0f}: {e}")
+        
+        if filled_positions:
+            total_saved = sum(p['saved_capital'] for p in filled_positions)
+            log.info(f"Startup recovery complete: {len(filled_positions)} positions, ${total_saved:,.2f} saved")
+            # Mark bot as started (even if recovery partial - positions exist)
+            self._initial_order_placed = True
+        else:
+            log.warning("Startup recovery completed with 0 fills")
+            # Still mark as started to allow normal grid trading
+            self._initial_order_placed = True
+    
+    async def _place_opportunistic_tp(self, position_data: Dict[str, Any]) -> bool:
+        """Place TP order for opportunistic position.
+        
+        Args:
+            position_data: Position dict with position_id, tp_price, size
+            
+        Returns:
+            bool: True if TP placed successfully, False otherwise
+        """
+        try:
+            tp_price = position_data['tp_price']
+            position_id = position_data['position_id']
+            
+            log.debug(f"Placing TP for position {position_id} @ ${tp_price:,.0f}")
+            
+            # Use OrderActor PLACE_TP which handles reduce_only and side automatically
+            result = await self.order_actor.ask("PLACE_TP", {
+                "price": tp_price,
+                "size": position_data['size'],
+                "position_id": position_id  # Link TP to position
+            }, timeout=10.0)
+            
+            if result.get("status") == "ok":
+                tp_order_id = result.get("order_id")
+                log.info(f"TP placed @ ${tp_price:,.0f} (ID: {tp_order_id})")
+                
+                # Update PositionActor with TP order ID (same as normal positions)
+                await self.position_actor.tell("UPDATE_POSITION_TP", {
+                    "position_id": position_id,
+                    "tp_order_id": tp_order_id
+                })
+                
+                # Store TP info in position_data for local tracking
+                position_data['tp_order_id'] = tp_order_id
+                position_data['protected'] = True
+                return True
+            else:
+                log.error(f"TP placement failed: {result.get('error', 'Unknown error')}")
+                return False
+                
+        except Exception as e:
+            log.error(f"Error placing TP: {e}")
+            return False
+    
+    
+    # Volatility halt handling REMOVED - Guardian decides GO/STOP, bot just pauses trading
+    # Standard grid gap-fill logic handles missed orders automatically
+    
+    async def start(self) -> None:
+        """Start all async components."""
+        # Rich startup banner
+        mode_emoji = "🟢" if self.testnet else "🔴"
+        mode_text = "DEMO MODE [TESTNET]" if self.testnet else "LIVE MODE [PRODUCTION]"
+        
+        log.info("=" * 98)
+        log.info(f"🎯 ASYNCGRIDBOT v2.0 INITIALIZATION (ASYNC + ACTOR + SAGA)")
+        log.info("=" * 98)
+        log.info(f"Trading Mode:  {mode_emoji} {mode_text}")
+        log.info(f"Symbol:       {self.symbol} (ID: {self.product_id})")
+        log.info(f"Grid Mode:    {self.mode} ({'Buy low, sell high' if self.mode == 'LONG' else 'Sell high, buy low'})")
+        log.info(f"Grid Bounds:  ${self.grid_calc.lower:,.0f} - ${self.grid_calc.upper:,.0f} (Step: ${self.grid_calc.step:,.0f})")
+        log.info(f"Reference:    ${self.grid_calc.ref:,.0f} (First {self.mode} @ ${self.grid_calc.ref - self.grid_calc.step if self.mode == 'LONG' else self.grid_calc.ref + self.grid_calc.step:,.0f})")
+        log.info(f"TP Offset:    ${self.tp_offset:,.0f}")
+        log.info(f"Max Positions: {self.max_positions}")
+        log.info("")
+        log.info("🔧 Architecture:")
+        log.info("   ├─ Actor Pattern: PositionManagerActor + OrderManagerActor")
+        log.info("   ├─ Saga Pattern: Transactional fill processing + emergency close")
+        log.info("   ├─ Event Store: Persistent event log for replay")
+        log.info("   ├─ Async I/O: Single event loop, no threads")
+        log.info("   └─ WebSocket: Real-time price + order updates")
+        log.info("")
+        log.info("🛡️  Safety Features:")
+        log.info(f"   └─ Guardian Bot: Monitors all risk (volatility, loss, position, liquidation)")
+        log.info("="  * 98)
+        
+        self._running = True
+        self._start_time = time.time()
+        
+        # Create asyncio primitives within event loop
+        if self._order_placement_lock is None:
+            self._order_placement_lock = asyncio.Lock()
+        
+        # ========================================================================
+        # NOV 13: MODE-ATOMIC STATE MANAGEMENT
+        # ========================================================================
+        # Mode switch = Fresh start. All existing positions = Manual.
+        # Bot never touches manual positions or their TPs.
+        
+        mode_manager = get_mode_state_manager()
+        should_load, state_file, reason = mode_manager.handle_mode_transition()
+        
+        log.info("=" * 80)
+        log.info("🔄 STATE LOADING DECISION")
+        log.info("=" * 80)
+        log.info(f"   Current Mode: {self.mode}")
+        log.info(f"   Decision: {'LOAD STATE' if should_load else 'FRESH START'}")
+        log.info(f"   Reason: {reason}")
+        log.info(f"   State File: {state_file.name if state_file else 'N/A'}")
+        log.info("=" * 80)
+        
+        if not should_load:
+            # Mode switch or first run = Log manual position policy
+            mode_manager.log_manual_position_policy()
+        
+        # Volatility halt cleanup REMOVED - Guardian manages all halt state
+        
+        # Register WebSocket handlers
+        self._register_ws_handlers()
+        
+        # CRITICAL FIX NOV 14: Register reconnection callback for fill reconciliation
+        self.ws_manager.register_reconnect_callback(self._reconcile_fills_after_reconnect)
+        
+        # Start actors FIRST (needed for reconciliation)
+        # NOTE: Actor .start() methods return immediately after starting their message loops
+        # They manage their own lifecycle, so we don't track them in self._tasks
+        log.info("Starting actors...")
+        await self.position_actor.start()
+        await self.order_actor.start()
+        
+        # Volatility Monitor startup REMOVED - Guardian monitors volatility
+        # Opportunistic recovery logic kept, but volatility checking delegated to Guardian
+        
+        # Wait a moment for actors to be ready
+        await asyncio.sleep(0.1)
+        
+        # Reconcile orphaned orders from previous session (actors must be running)
+        await self._reconcile_orphaned_orders()
+        
+        # Connect WebSocket
+        log.info("Connecting WebSocket...")
+        await self.ws_manager.connect()
+        
+        # Subscribe to channels
+        await self._subscribe_channels()
+        
+        # Wait a moment for subscriptions to stabilize
+        await asyncio.sleep(1)
+        
+        # Get current market price
+        await self._fetch_current_price()
+        
+        # Opportunistic recovery REMOVED - standard grid gap-fill handles missed levels automatically
+        
+        # Place initial order to start grid strategy
+        await self._place_initial_order()
+        
+        # Start async tasks
+        log.info("Starting async tasks...")
+        async_tasks = [
+            asyncio.create_task(self._ws_message_loop(), name="ws_loop"),
+            asyncio.create_task(self._heartbeat_loop(), name="heartbeat"),
+            asyncio.create_task(self._monitoring_loop(), name="monitoring"),
+            asyncio.create_task(self._health_check_loop(), name="health_check"),
+            asyncio.create_task(self._reconciliation_loop(), name="reconciliation"),
+            asyncio.create_task(self._rest_fallback_monitor_loop(), name="rest_fallback"),  # NOV 13: REST fallback
+            asyncio.create_task(self._watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
+            asyncio.create_task(self._safety_gatekeeper_loop(), name="safety_gatekeeper")  # Safety check every 5 min
+        ]
+        self._tasks.extend(async_tasks)
+        
+        # Setup signal handlers
+        self._setup_signal_handlers()
+        
+        # NOV 13: Wire bot instance to WebUI monitoring routes
+        log.info("🌐 Wiring bot instance to WebUI monitoring routes...")
+        human_log.wiring_webui()  # Human-readable
+        try:
+            from webui.backend.routes.monitoring import set_bot_instance
+            set_bot_instance(self)
+            log.info("✅ Bot wired to WebUI - monitoring data now accessible via API")
+            human_log.webui_connected()  # Human-readable
+        except ImportError:
+            log.warning("⚠️  WebUI monitoring routes not available (import failed)")
+        except Exception as e:
+            log.warning(f"⚠️  Could not wire to WebUI: {e}")
+        
+        log.info("✅ AsyncGridBot started successfully")
+        human_log.bot_started_successfully()  # Human-readable
+        
+        # NOV 13: Send startup notification
+        await self._send_startup_notification()
+        
+        # Wait for tasks or shutdown signal
+        # FIX NOV 14: Periodically check _running flag instead of just waiting for tasks
+        try:
+            while self._running:
+                # Check if any critical task has died
+                done_tasks = [t for t in self._tasks if t.done()]
+                if done_tasks:
+                    log.warning(f"⚠️  {len(done_tasks)} task(s) have completed unexpectedly")
+                    for task in done_tasks:
+                        task_name = task.get_name() if hasattr(task, 'get_name') else "unknown"
+                        log.warning(f"   Task '{task_name}' completed")
+                        try:
+                            exception = task.exception()
+                            if exception:
+                                log.error(f"   Task '{task_name}' failed with exception: {exception}")
+                        except:
+                            pass
+                    break
+                
+                # Sleep briefly and check again
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            log.info("Main loop cancelled - shutting down")
+        except KeyboardInterrupt:
+            log.info("KeyboardInterrupt - shutting down")
+        finally:
+            # Always call stop() when exiting main loop
+            if self._running:
+                # stop() wasn't called yet, call it now
+                await self.stop()
+    
+    async def stop(self) -> None:
+        """Gracefully stop all components."""
+        # Prevent multiple calls to stop()
+        if hasattr(self, '_stopping') and self._stopping:
+            log.debug("stop() already in progress, skipping duplicate call")
+            return
+        
+        self._stopping = True
+        log.info("Stopping AsyncGridBot...")
+        human_log.bot_shutting_down()
+        self._running = False
+        
+        # NOV 14: Cancel pending entry orders before shutdown
+        # This prevents orphaned entry orders while preserving:
+        # - Executed positions (in open_tranches)
+        # - TP orders (reduce_only orders protecting positions)
+        try:
+            # Delta Exchange takes up to 15s to process cancellations
+            # Allow 20s total (15s API + 5s buffer)
+            await asyncio.wait_for(
+                self._cancel_pending_orders_on_shutdown(),
+                timeout=20.0
+            )
+        except asyncio.TimeoutError:
+            log.warning("⚠️  Order cancellation timed out (20s) - continuing shutdown")
+        except Exception as e:
+            log.error(f"Failed to cancel pending orders on shutdown: {e}")
+        
+        # NOV 13: Send shutdown notification (quick, non-blocking)
+        try:
+            await asyncio.wait_for(
+                self._send_shutdown_notification(),
+                timeout=1.0
+            )
+        except asyncio.TimeoutError:
+            log.debug("Shutdown notification timed out")
+        except Exception as e:
+            log.debug(f"Shutdown notification failed: {e}")
+        
+        # Stop saga orchestrator (reduced timeout)
+        try:
+            await asyncio.wait_for(
+                self.saga_orchestrator.stop_all(timeout=2.0),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            log.warning("Saga orchestrator stop timed out")
+        
+        # Stop actors (parallel for speed)
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    self.position_actor.stop(timeout=2.0),
+                    self.order_actor.stop(timeout=2.0),
+                    return_exceptions=True
+                ),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            log.warning("Actor shutdown timed out")
+        
+        # Disconnect WebSocket (quick)
+        try:
+            await asyncio.wait_for(
+                self.ws_manager.disconnect(),
+                timeout=2.0
+            )
+        except asyncio.TimeoutError:
+            log.warning("WebSocket disconnect timed out")
+        
+        # Close API client
+        try:
+            await asyncio.wait_for(
+                self.api_client.close(),
+                timeout=1.0
+            )
+        except asyncio.TimeoutError:
+            log.debug("API client close timed out")
+        
+        # Cancel tasks (quick)
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for tasks to complete (brief)
+        if self._tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._tasks, return_exceptions=True),
+                    timeout=2.0
+                )
+            except asyncio.TimeoutError:
+                log.debug("Task cleanup timed out")
+        
+        # Print final metrics (quick)
+        uptime = time.time() - self._start_time
+        log.info(f"Uptime: {uptime:.0f}s | Fills: {self._fills_processed} | Sagas: {self._sagas_completed}✅ {self._sagas_failed}❌")
+        
+        log.info("✅ AsyncGridBot stopped")
+    
+    def _register_ws_handlers(self) -> None:
+        """Register WebSocket message handlers."""
+        self.ws_manager.register_handler("v2/user_trades", self._handle_user_trades)
+        self.ws_manager.register_handler("orders", self._handle_order_update)
+        self.ws_manager.register_handler("positions", self._handle_position_update)
+        self.ws_manager.register_handler("v2/ticker", self._handle_ticker_update)
+    
+    async def _subscribe_channels(self) -> None:
+        """Subscribe to WebSocket channels."""
+        channels = [
+            ("v2/user_trades", [self.symbol]),
+            ("orders", [self.symbol]),
+            ("positions", [self.symbol]),
+            ("v2/ticker", [self.symbol])
+        ]
+        
+        for channel, symbols in channels:
+            await self.ws_manager.subscribe(channel, symbols)
+            await asyncio.sleep(0.1)  # Small delay between subscriptions
+    
+    async def _ws_message_loop(self) -> None:
+        """Process WebSocket messages."""
+        log.info("WebSocket message loop started")
+        human_log.websocket_message_loop_active()  # Human-readable
+        
+        try:
+            async for message in self.ws_manager.messages():
+                if not self._running:
+                    break
+                
+                # Messages are routed via handlers registered above
+        
+        except Exception as e:
+            log.error(f"WebSocket message loop error: {e}")
+        
+        log.info("WebSocket message loop ended")
+    
+    async def _handle_user_trades(self, message: Dict[str, Any]) -> None:
+        """
+        Handle user trade (fill) messages.
+        
+        Args:
+            message: Trade message from WebSocket
+        """
+        try:
+            trades = message.get("trades", [])
+            
+            for trade in trades:
+                await self._process_fill(trade)
+        
+        except Exception as e:
+            log.error(f"Error handling user trades: {e}")
+    
+    async def _process_fill(self, fill_data: Dict[str, Any]) -> None:
+        """
+        Process fill via saga.
+        
+        Args:
+            fill_data: Fill information
+        """
+        try:
+            # CRITICAL FIX NOV 16: Only process fills for THIS bot's product
+            fill_product = fill_data.get('product_id')
+            if fill_product and fill_product != self.product_id:
+                log.debug(f"⏭️  Ignoring fill for different product: {fill_product} (bot trades product_id={self.product_id})")
+                return
+            
+            self._fills_processed += 1
+            
+            # Generate correlation ID
+            correlation_id = f"fill-{fill_data.get('id', '')}-{int(time.time()*1000)}"
+            
+            # Prepare fill data
+            # CRITICAL FIX NOV 14: Don't default is_complete to True
+            # Partial fills must be explicitly marked, otherwise position size will be wrong
+            is_complete = fill_data.get("is_complete")
+            if is_complete is None:
+                # If not provided, check unfilled_size
+                unfilled_size = fill_data.get("unfilled_size", 0)
+                is_complete = (unfilled_size == 0)
+                log.warning(f"⚠️  is_complete not provided in fill data, inferring from unfilled_size: {is_complete}")
+            
+            processed_fill = {
+                "order_id": fill_data.get("order_id"),
+                "fill_price": float(fill_data.get("price", 0)),
+                "fill_size": int(fill_data.get("size", 0)),
+                "side": fill_data.get("side"),
+                "is_complete": is_complete
+            }
+            
+            # Enhanced logging (matching old GridBot style)
+            log.info(f"🔔 Processing fill: {processed_fill['side'].upper()} {processed_fill['fill_size']} @ ${processed_fill['fill_price']:,.0f}")
+            
+            # Mark bot as started on first fill (recovery or normal)
+            if not self._initial_order_placed:
+                self._initial_order_placed = True
+                log.info("✅ Bot marked as ACTIVE (first fill processed)")
+            
+            # Human-readable narrative logging
+            human_log.order_filled(
+                processed_fill.get("order_id", "unknown"),
+                processed_fill["side"].upper(),
+                processed_fill["fill_price"]
+            )
+            
+            # Create appropriate saga based on MODE and SIDE
+            if self.mode == "LONG":
+                if processed_fill["side"] == "buy":
+                    # LONG mode: BUY = Entry
+                    # Calculate TP price for new position
+                    tp_price = processed_fill['fill_price'] + self.grid_calc.step
+                    log.info(f"   💰 New position opened | Entry: ${processed_fill['fill_price']:,.0f} → Target: ${tp_price:,.0f}")
+                    
+                    # Get current position count
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    current_positions = len(state.get("open_tranches", []))
+                    log.info(f"   📊 Active positions: {current_positions + 1}/{self.max_positions}")
+                    
+                    # Human-readable position update
+                    human_log.position_updated(size=current_positions + 1)
+                    
+                    # Calculate next buy level
+                    next_buy = self._calculate_next_grid_level('BUY', processed_fill['fill_price'])
+                    if next_buy:
+                        log.info(f"   ⬇️  Next BUY level: ${next_buy:,.0f}")
+                    
+                    saga = await create_buy_fill_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store,
+                        mode=self.mode
+                    )
+                else:  # sell
+                    # LONG mode: SELL = TP close
+                    # Get position details for profit calculation
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    positions = state.get("open_tranches", [])
+                    
+                    # Find the position that was closed
+                    order_id = processed_fill.get("order_id")
+                    closed_position = None
+                    for pos in positions:
+                        if pos.get("tp_order_id") == order_id:
+                            closed_position = pos
+                            break
+                    
+                    if closed_position:
+                        entry_price = closed_position.get("entry_price", 0)
+                        exit_price = processed_fill['fill_price']
+                        profit = exit_price - entry_price
+                        profit_pct = (profit / entry_price * 100) if entry_price > 0 else 0
+                        
+                        log.info(f"   ✅ Position closed | Entry: ${entry_price:,.0f} → Exit: ${exit_price:,.0f}")
+                        log.info(f"   💵 Profit: ${profit:,.0f} ({profit_pct:+.2f}%)")
+                    
+                    # Get updated position count
+                    remaining_positions = len(positions) - 1
+                    log.info(f"   📊 Active positions: {remaining_positions}/{self.max_positions}")
+                    
+                    # Human-readable position update with PnL
+                    if closed_position:
+                        human_log.position_updated(size=remaining_positions, pnl=profit)
+                    else:
+                        human_log.position_updated(size=remaining_positions)
+                    
+                    saga = await create_sell_fill_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store,
+                        mode=self.mode
+                    )
+            
+            elif self.mode == "SHORT":
+                if processed_fill["side"] == "sell":
+                    # SHORT mode: SELL = Entry
+                    # Calculate TP price for new position (below entry)
+                    tp_price = processed_fill['fill_price'] - self.grid_calc.step
+                    log.info(f"   💰 New SHORT position opened | Entry: ${processed_fill['fill_price']:,.0f} → Target: ${tp_price:,.0f}")
+                    
+                    # Get current position count
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    current_positions = len(state.get("open_tranches", []))
+                    log.info(f"   📊 Active positions: {current_positions + 1}/{self.max_positions}")
+                    
+                    # Human-readable position update
+                    human_log.position_updated(size=current_positions + 1)
+                    
+                    # Calculate next sell level (UP from current)
+                    next_sell = self._calculate_next_grid_level('SELL', processed_fill['fill_price'])
+                    if next_sell:
+                        log.info(f"   ⬆️  Next SELL level: ${next_sell:,.0f}")
+                    
+                    saga = await create_short_entry_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store
+                    )
+                else:  # buy
+                    # SHORT mode: BUY = TP close
+                    # Get position details for profit calculation
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    positions = state.get("open_tranches", [])
+                    
+                    # Find the position that was closed
+                    order_id = processed_fill.get("order_id")
+                    closed_position = None
+                    for pos in positions:
+                        if pos.get("tp_order_id") == order_id:
+                            closed_position = pos
+                            break
+                    
+                    if closed_position:
+                        entry_price = closed_position.get("entry_price", 0)
+                        exit_price = processed_fill['fill_price']
+                        profit = entry_price - exit_price  # SHORT profit
+                        profit_pct = (profit / entry_price * 100) if entry_price > 0 else 0
+                        
+                        log.info(f"   ✅ SHORT position closed | Entry: ${entry_price:,.0f} → Exit: ${exit_price:,.0f}")
+                        log.info(f"   💵 Profit: ${profit:,.0f} ({profit_pct:+.2f}%)")
+                    
+                    # Get updated position count
+                    remaining_positions = len(positions) - 1
+                    log.info(f"   📊 Active positions: {remaining_positions}/{self.max_positions}")
+                    
+                    # Human-readable position update with PnL
+                    if closed_position:
+                        human_log.position_updated(size=remaining_positions, pnl=profit)
+                    else:
+                        human_log.position_updated(size=remaining_positions)
+                    
+                    saga = await create_short_tp_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store
+                    )
+            else:
+                raise ValueError(f"Unknown trading mode: {self.mode}")
+            
+            # Execute saga
+            task = await self.saga_orchestrator.start_saga(saga)
+            
+            # Track saga completion
+            asyncio.create_task(self._track_saga_completion(task, correlation_id))
+            
+            # Safety check removed - Guardian monitors risk parameters
+            # Fill processed successfully
+            self._last_safety_check_time = time.time()
+        
+        except Exception as e:
+            log.error(f"Error processing fill: {e}")
+    
+    async def _track_saga_completion(self, task: asyncio.Task, correlation_id: str) -> None:
+        """Track saga completion for metrics."""
+        try:
+            result = await task
+            if result:
+                self._sagas_completed += 1
+                log.info(f"Saga completed successfully: {correlation_id}")
+            else:
+                self._sagas_failed += 1
+                log.warning(f"Saga failed/compensated: {correlation_id}")
+        except Exception as e:
+            self._sagas_failed += 1
+            log.error(f"Saga execution error: {e}")
+    
+    async def _handle_order_update(self, message: Dict[str, Any]) -> None:
+        """
+        Handle order update messages.
+        CRITICAL: Delta Exchange sends fill notifications via orders channel!
+        """
+        try:
+            # Log all order updates for debugging
+            log.debug(f"📬 Order update received: {message}")
+            
+            # Check if this is a fill notification or cancellation
+            order_data = message if isinstance(message, dict) else {}
+            
+            # Delta Exchange order status: "open", "pending", "closed" (when filled), "cancelled"
+            order_status = order_data.get("state") or order_data.get("status")
+            order_reason = order_data.get("reason")
+            order_id = order_data.get("id") or order_data.get("order_id")
+            
+            # Handle cancellation (manual or otherwise)
+            if order_status == "cancelled":
+                cancellation_reason = order_data.get("cancellation_reason", "unknown")
+                log.info(f"📭 Order cancelled: {order_id} (reason: {cancellation_reason})")
+                
+                # Clear from pending memory
+                state = await self.position_actor.ask("GET_STATE")
+                if state.get("pending_buy") == order_id:
+                    await self.position_actor.ask("CLEAR_PENDING_BUY", {"order_id": order_id})
+                    log.info(f"✅ Cleared pending buy from memory: {order_id}")
+                elif state.get("pending_sell") == order_id:
+                    await self.position_actor.ask("CLEAR_PENDING_SELL", {"order_id": order_id})
+                    log.info(f"✅ Cleared pending sell from memory: {order_id}")
+                
+                return
+            
+            # Check if order was filled (status="closed" AND reason="fill")
+            if order_status == "closed" and order_reason == "fill":
+                # CRITICAL: Only process fills from bot-placed orders
+                # Manual orders have client_order_id=None or don't start with bot tag prefix
+                client_order_id = order_data.get("client_order_id", "")
+                
+                # Check if this is a bot-placed order (starts with GBOT_ or BOT-)
+                is_bot_order = client_order_id and (client_order_id.startswith("GBOT_") or client_order_id.startswith("BOT-"))
+                
+                if not is_bot_order:
+                    order_id = order_data.get("id") or order_data.get("order_id")
+                    log.info(f"ℹ️  Ignoring manual order fill: {order_id} (client_id: {client_order_id or 'None'})")
+                    return
+                
+                # This is a fill from bot-placed order! Process it immediately
+                order_id = order_data.get("id") or order_data.get("order_id")
+                fill_price = float(order_data.get("average_fill_price") or order_data.get("price", 0))
+                fill_size = int(order_data.get("size") or order_data.get("unfilled_size", 0))
+                side = order_data.get("side", "").lower()
+                
+                log.info(f"🔔 FILL DETECTED via orders channel!")
+                log.info(f"   Order ID: {order_id}")
+                log.info(f"   Side: {side.upper()}")
+                log.info(f"   Price: ${fill_price:,.0f}")
+                log.info(f"   Size: {fill_size}")
+                
+                # Create fill data structure
+                fill_data = {
+                    "id": f"fill-{order_id}-{int(time.time()*1000)}",
+                    "order_id": str(order_id),
+                    "price": fill_price,
+                    "size": fill_size,
+                    "side": side,
+                    "is_complete": True
+                }
+                
+                # Process the fill
+                await self._process_fill(fill_data)
+                
+        except Exception as e:
+            log.error(f"Error handling order update: {e}", exc_info=True)
+    
+    async def _handle_position_update(self, message: Dict[str, Any]) -> None:
+        """Handle position update messages."""
+        # Position updates are informational - no action needed
+        pass
+    
+    async def _handle_ticker_update(self, message: Dict[str, Any]) -> None:
+        """
+        Handle ticker update messages and check for entry opportunities.
+        This is the core order placement trigger.
+        """
+        try:
+            # Extract price from ticker message (try multiple fields)
+            ticker_data = (
+                message.get('close') or 
+                message.get('last_traded_price') or 
+                message.get('mark_price') or 
+                message.get('last')
+            )
+            if not ticker_data:
+                log.warning(f"⚠️ Ticker message has no price data: {message}")
+                human_log.missing_data("price")  # Trader-friendly alert
+                return
+            
+            # Update current price
+            price = float(ticker_data)
+            old_price = self.current_price
+            self.current_price = price
+            self._last_price = price  # Store for heartbeat
+            self._last_price_update = time.time()
+            
+            # NOV 13: Update price health monitor
+            self.price_monitor.update_price(price, source="WEBSOCKET")
+            
+            # Volatility monitoring REMOVED - Guardian monitors IV/RV/spread
+            # Guardian publishes GO/STOP signals based on volatility thresholds
+            # Bot will read Guardian signals in Phase 2.7
+            
+            # Log price updates periodically (every 30s) or on significant changes
+            if not hasattr(self, '_last_price_log_time'):
+                self._last_price_log_time = 0
+            
+            time_since_log = time.time() - self._last_price_log_time
+            price_change = abs(price - old_price) if old_price else 0
+            significant_change = price_change > (price * 0.001)  # 0.1% change
+            
+            if time_since_log >= 30 or significant_change:
+                # Get bid/ask if available
+                bid = message.get('bid')
+                ask = message.get('ask')
+                
+                if bid and ask:
+                    spread = float(ask) - float(bid)
+                    log.debug(
+                        f"📊 [PRICE UPDATE] ${price:,.2f} | "
+                        f"Bid: ${float(bid):,.2f} | Ask: ${float(ask):,.2f} | "
+                        f"Spread: ${spread:.2f}"
+                    )
+                else:
+                    # Price change indicator
+                    if old_price:
+                        if price > old_price:
+                            indicator = "↑"
+                        elif price < old_price:
+                            indicator = "↓"
+                        else:
+                            indicator = "→"
+                        log.debug(f"📊 [PRICE UPDATE] ${price:,.2f} {indicator}")
+                        human_log.price_data_flowing(price)  # Trader-friendly update
+                    else:
+                        log.debug(f"📊 [PRICE UPDATE] ${price:,.2f}")
+                        human_log.price_data_flowing(price)  # Trader-friendly update
+                
+                self._last_price_log_time = time.time()
+            
+            # Check if we should place an entry order
+            await self._check_and_place_entry_order()
+            
+        except Exception as e:
+            log.error(f"Ticker update error: {e}")
+    
+    async def _fetch_current_price(self) -> None:
+        """Fetch current market price via REST API."""
+        try:
+            log.info(f"Fetching current price for {self.symbol}...")
+            human_log.fetching_price(self.symbol)  # Human-readable
+            ticker_data = await self.api_client.get_ticker(self.symbol)
+            
+            if ticker_data:
+                # get_ticker returns a list, get first item
+                if isinstance(ticker_data, list) and len(ticker_data) > 0:
+                    ticker = ticker_data[0]
+                else:
+                    ticker = ticker_data
+                
+                # Try multiple price fields
+                self.current_price = float(
+                    ticker.get('close') or 
+                    ticker.get('last_price') or 
+                    ticker.get('mark_price') or 
+                    0
+                )
+                
+                # Update price monitor so bot can pass health check at startup
+                if self.current_price > 0:
+                    self.price_monitor.update_price(self.current_price, source="REST_API")
+                    
+                log.info(f"Current market price: ${self.current_price:,.2f}")
+            else:
+                log.warning("Could not fetch current price - will use WebSocket data")
+                
+        except Exception as e:
+            log.error(f"Error fetching current price: {e}")
+    
+    async def _place_initial_order(self) -> None:
+        """
+        Place initial entry order on startup.
+        Only places order if no positions or pending orders exist.
+        """
+        try:
+            log.info("Checking if initial order should be placed...")
+            
+            # Pre-order volatility check REMOVED - Guardian handles this
+            # Guardian publishes GO/STOP signals based on volatility
+            # Trading bot will read Guardian signal (Phase 2.6)
+            
+            # Get current state
+            state = await self.position_actor.ask("GET_STATE", {})
+            
+            # Check if we already have positions or pending orders
+            has_positions = len(state.get("open_tranches", [])) > 0
+            has_pending = state.get("pending_buy") or state.get("pending_sell")
+            
+            if has_positions:
+                log.info(f"✓ Found {len(state['open_tranches'])} existing position(s) - no initial order needed")
+                self._initial_order_placed = True
+                return
+            
+            if has_pending:
+                log.info("✓ Pending order already exists in bot state - no initial order needed")
+                self._initial_order_placed = True
+                return
+            
+            # CRITICAL: Check exchange for existing open orders BEFORE placing new ones
+            log.info("🔍 Checking exchange for existing open orders...")
+            human_log.checking_orders()  # Human-readable
+            try:
+                exchange_orders = await self.api_client.get_open_orders(product_id=self.product_id)
+                
+                # CRITICAL FIX: Filter by product_id manually (API returns all products)
+                if exchange_orders:
+                    exchange_orders = [o for o in exchange_orders if o.get('product_id') == self.product_id]
+                
+                if exchange_orders and len(exchange_orders) > 0:
+                    log.warning(f"⚠️  Found {len(exchange_orders)} existing open order(s) on exchange:")
+                    human_log.existing_orders_found(len(exchange_orders))  # Human-readable
+                    for order in exchange_orders:
+                        order_id = order.get('id')
+                        side = order.get('side')
+                        price = order.get('limit_price')
+                        size = order.get('size')
+                        order_type = order.get('order_type', 'UNKNOWN')
+                        
+                        # Convert price to float for formatting (API might return string)
+                        try:
+                            price_float = float(price) if price else 0
+                            log.warning(f"   Order {order_id}: {side} {size} @ ${price_float:,.2f} [type={order_type}]")
+                        except (ValueError, TypeError):
+                            log.warning(f"   Order {order_id}: {side} {size} @ {price} [type={order_type}]")
+                    
+                    # Sync the first relevant order to bot state
+                    # CRITICAL: Only sync LIMIT orders, NEVER stop/stop-limit/market orders
+                    # This prevents interfering with manual stop losses or other manual trades
+                    for order in exchange_orders:
+                        order_side = order.get('side')
+                        order_type = order.get('order_type', '').lower()
+                        bracket_order = order.get('bracket_order')  # Bracket orders (SL/TP) have this field
+                        stop_order_type = order.get('stop_order_type')  # Stop orders have this field
+                        
+                        # Log all order details for debugging
+                        log.info(f"   📋 Order details: type={order_type}, bracket={bracket_order}, stop_type={stop_order_type}")
+                        
+                        # Skip non-limit orders (stop, stop-limit, market, etc.)
+                        # Skip bracket orders (user's manual stop-loss/take-profit brackets)
+                        if order_type != 'limit_order':
+                            log.info(f"   ⏭️  Skipping {order_type} order {order.get('id')} - bot only manages plain limit orders")
+                            continue
+                        
+                        if bracket_order:
+                            log.info(f"   ⏭️  Skipping bracket order {order.get('id')} - this is a manual SL/TP order")
+                            continue
+                        
+                        if stop_order_type:
+                            log.info(f"   ⏭️  Skipping stop order {order.get('id')} (type={stop_order_type}) - manual stop order")
+                            continue
+                        
+                        if (self.mode == "LONG" and order_side == "buy") or (self.mode == "SHORT" and order_side == "sell"):
+                            order_id = order.get('id')
+                            order_price = order.get('limit_price')
+                            
+                            # Convert price to float (API returns string)
+                            try:
+                                order_price_float = float(order_price) if order_price else 0
+                            except (ValueError, TypeError):
+                                log.error(f"Invalid price format from exchange: {order_price}")
+                                continue
+                            
+                            log.info(f"✅ Syncing existing LIMIT order {order_id} to bot state @ ${order_price_float:,.2f}")
+                            
+                            if order_side == "buy":
+                                await self.position_actor.tell("SET_PENDING_BUY", {
+                                    "order_id": order_id,
+                                    "price": order_price_float,  # Store as float
+                                    "size": order.get("size", self.lot_size),
+                                    "timestamp": time.time()
+                                })
+                            else:
+                                await self.position_actor.tell("SET_PENDING_SELL", {
+                                    "order_id": order_id,
+                                    "price": order_price_float,  # Store as float
+                                    "size": order.get("size", self.lot_size),
+                                    "timestamp": time.time()
+                                })
+                            
+                            self._initial_order_placed = True
+                            log.info("✅ Existing exchange LIMIT order synced - bot will track it")
+                            return
+                    
+                    log.warning("⚠️  Existing orders found but none are bot-managed LIMIT orders - continuing with new order")
+                else:
+                    log.info("✅ No existing orders on exchange - safe to place new order")
+            except Exception as e:
+                log.error(f"❌ Failed to check exchange orders: {e}")
+                log.warning("⚠️  Proceeding with caution - may result in duplicate orders")
+            
+            if not self.current_price:
+                log.warning("⚠️  Current price not available - cannot place initial order")
+                return
+            
+            # COMPREHENSIVE SAFETY CHECK before initial order
+            can_proceed, reason = await self._comprehensive_safety_check("initial order placement")
+            if not can_proceed:
+                # Log detailed blocking reason prominently
+                log.warning("")
+                log.warning("=" * 70)
+                log.warning("🚫 TRADING BLOCKED AT STARTUP")
+                log.warning("=" * 70)
+                for line in reason.split('\n'):
+                    if line.strip():
+                        log.warning(line)
+                log.warning("=" * 70)
+                log.warning("💡 Bot will start trading automatically when conditions are met")
+                log.warning("=" * 70)
+                log.warning("")
+                
+                # Mark as "placed" so entry order check loop runs and shows updates
+                self._initial_order_placed = True
+                self._last_block_reason = reason
+                self._last_safety_block_log = time.time()
+                return
+            
+            # Check if price is within grid bounds (already checked in comprehensive, but log it)
+            if not self.grid_calc.is_within_bounds(self.current_price):
+                log.warning(f"⚠️  Current price ${self.current_price:,.2f} outside grid bounds")
+                log.info(f"   Grid: ${self.grid_calc.lower:,.0f} - ${self.grid_calc.upper:,.0f}")
+                log.info("   Waiting for price to enter grid range...")
+                return
+            
+            # Calculate initial entry level
+            positions = state.get("open_tranches", [])
+            
+            if self.mode == "LONG":
+                # Check if we already have a pending buy order
+                pending_buy = state.get("pending_buy")
+                if pending_buy:
+                    pending_price = pending_buy.get("price")
+                    pending_order_id = pending_buy.get("order_id")
+                    log.info(f"✅ Already have pending BUY @ ${pending_price:,.2f} (Order: {pending_order_id})")
+                    log.info("   Not placing duplicate order - using existing one")
+                    human_log.duplicate_order_detected("BUY", pending_price)
+                    self._initial_order_placed = True
+                    return
+                
+                # Calculate next buy level below current price
+                target = self.grid_calc.compute_next_buy_level(positions)
+                
+                if target and self.grid_calc.is_within_bounds(target):
+                    log.info(f"📍 Placing initial MAKER BUY order @ ${target:,.2f}")
+                    log.info(f"   Current market: ${self.current_price:,.2f}")
+                    human_log.initial_order_placed("BUY", target)  # Human-readable
+                    
+                    # Place order via order actor (timeout=20s to allow for retries)
+                    result = await self.order_actor.ask("PLACE_BUY", {
+                        "price": target,
+                        "size": self.lot_size  # Use configured lot size
+                    }, timeout=20.0)
+                    
+                    if result.get("status") == "ok":
+                        order_id = result.get("order_id")
+                        
+                        # Update last order time for cooldown
+                        self._update_last_order_time()
+                        
+                        # Update position actor with pending order
+                        await self.position_actor.tell("SET_PENDING_BUY", {
+                            "order_id": order_id,
+                            "price": target,
+                            "size": self.lot_size,
+                            "timestamp": time.time()
+                        })
+                        
+                        log.info(f"✅ Initial MAKER BUY placed @ ${target:,.2f} (Order: {order_id})")
+                        self._initial_order_placed = True
+                    else:
+                        log.error(f"❌ Failed to place initial order: {result.get('error')}")
+                else:
+                    log.warning(f"⚠️  No valid buy level available (target={target})")
+                    
+            else:  # SHORT mode
+                # Check if we already have a pending sell order
+                pending_sell = state.get("pending_sell")
+                if pending_sell:
+                    pending_price = pending_sell.get("price")
+                    pending_order_id = pending_sell.get("order_id")
+                    log.info(f"✅ Already have pending SELL @ ${pending_price:,.2f} (Order: {pending_order_id})")
+                    log.info("   Not placing duplicate order - using existing one")
+                    human_log.duplicate_order_detected("SELL", pending_price)
+                    self._initial_order_placed = True
+                    return
+                
+                # Calculate next sell level above current price
+                target = self.grid_calc.compute_next_sell_level(positions)
+                
+                if target and self.grid_calc.is_within_bounds(target):
+                    log.info(f"📍 Placing initial MAKER SELL order @ ${target:,.2f}")
+                    log.info(f"   Current market: ${self.current_price:,.2f}")
+                    
+                    # Place order via order actor (timeout=20s to allow for retries)
+                    result = await self.order_actor.ask("PLACE_SELL", {
+                        "price": target,
+                        "size": 1
+                    }, timeout=20.0)
+                    
+                    if result.get("status") == "ok":
+                        order_id = result.get("order_id")
+                        
+                        # Update last order time for cooldown
+                        self._update_last_order_time()
+                        
+                        # Update position actor with pending order
+                        await self.position_actor.tell("SET_PENDING_SELL", {
+                            "order_id": order_id,
+                            "price": target,
+                            "size": self.lot_size,
+                            "timestamp": time.time()
+                        })
+                        
+                        log.info(f"✅ Initial MAKER SELL placed @ ${target:,.2f} (Order: {order_id})")
+                        self._initial_order_placed = True
+                    else:
+                        log.error(f"❌ Failed to place initial order: {result.get('error')}")
+                else:
+                    log.warning(f"⚠️  No valid sell level available (target={target})")
+                    
+        except Exception as e:
+            log.error(f"Error placing initial order: {e}", exc_info=True)
+    
+    async def _check_and_place_entry_order(self) -> None:
+        """
+        Check if entry order should be placed based on current state.
+        Called on every ticker update.
+        """
+        # Use lock to prevent concurrent order placement
+        if self._order_placement_lock.locked():
+            return  # Another order placement is in progress
+        
+        async with self._order_placement_lock:
+            try:
+                # Skip if initial order hasn't been placed yet
+                if not self._initial_order_placed:
+                    return
+                
+                # Skip if no current price
+                if not self.current_price:
+                    return
+                
+                # COMPREHENSIVE SAFETY CHECK before placing any order
+                can_proceed, reason = await self._comprehensive_safety_check("entry order placement")
+                if not can_proceed:
+                    # Log detailed reason on state change or periodically
+                    if not hasattr(self, '_last_block_reason') or self._last_block_reason != reason:
+                        # Reason changed - log immediately with full detailed message
+                        log.warning("")
+                        log.warning("=" * 70)
+                        log.warning("🚫 TRADING HALTED")
+                        log.warning("=" * 70)
+                        # reason is already a multi-line detailed message, log it directly
+                        for line in reason.split('\n'):
+                            if line.strip():
+                                log.warning(line)
+                        log.warning("=" * 70)
+                        log.warning("")
+                        self._last_block_reason = reason
+                        self._last_safety_block_log = time.time()
+                    elif time.time() - getattr(self, '_last_safety_block_log', 0) > 60:
+                        # Same reason but 60 seconds passed - remind user (compact format)
+                        first_line = reason.split('\n')[0] if '\n' in reason else reason
+                        log.warning(f"⚠️  Still blocked: {first_line}")
+                        self._last_safety_block_log = time.time()
+                    return
+            
+                # Price bounds already checked in comprehensive check
+                # Volatility already checked in comprehensive check
+                
+                # Get current state
+                state = await self.position_actor.ask("GET_STATE", {})
+                
+                # Check mode-specific pending orders
+                if self.mode == "LONG":
+                    # Skip if pending buy already exists
+                    if state.get("pending_buy"):
+                        return
+                    
+                    # Check if we have capacity
+                    if len(state["open_tranches"]) >= self.position_actor.max_positions:
+                        return  # At max capacity
+                    
+                    # Calculate next buy level
+                    positions = state["open_tranches"]
+                    target = self.grid_calc.compute_next_buy_level(positions)
+                    
+                    if target and self.grid_calc.is_within_bounds(target):
+                        # NOV 13: Pre-order decision logging
+                        self.pre_order_logger.log_decision(
+                            side="buy",
+                            price=target,
+                            current_price=self.current_price,
+                            reason="Grid level placement",
+                            positions=len(positions),
+                            max_positions=self.position_actor.max_positions
+                        )
+                        
+                        # NOV 13: Anomaly detection before order
+                        anomaly_detected = self.anomaly_detector.check_before_order(
+                            side="buy",
+                            price=target,
+                            current_price=self.current_price
+                        )
+                        
+                        if anomaly_detected:
+                            log.warning(f"⚠️  Anomaly detected before BUY order @ ${target:,.2f} - proceeding with caution")
+                        
+                        # Place buy order (timeout=20s to allow for retries)
+                        result = await self.order_actor.ask("PLACE_BUY", {
+                            "price": target,
+                            "size": self.lot_size
+                        }, timeout=20.0)
+                        
+                        if result.get("status") == "ok":
+                            order_id = result.get("order_id")
+                        
+                        # Update last order time for cooldown
+                        self._update_last_order_time()
+                        
+                        # Update position actor
+                        await self.position_actor.tell("SET_PENDING_BUY", {
+                            "order_id": order_id,
+                            "price": target,
+                            "size": self.lot_size,
+                            "timestamp": time.time()
+                        })
+                        
+                        log.info(f"✅ BUY order placed @ ${target:,.2f} (Order: {order_id})")
+                        
+                else:  # SHORT mode
+                    # Skip if pending sell already exists
+                    if state.get("pending_sell"):
+                        return
+                    
+                    # Check if we have capacity
+                    if len(state["open_tranches"]) >= self.position_actor.max_positions:
+                        return
+                    
+                    # Calculate next sell level
+                    positions = state["open_tranches"]
+                    target = self.grid_calc.compute_next_sell_level(positions)
+                    
+                    if target and self.grid_calc.is_within_bounds(target):
+                        # NOV 13: Pre-order decision logging
+                        self.pre_order_logger.log_decision(
+                            side="sell",
+                            price=target,
+                            current_price=self.current_price,
+                            reason="Grid level placement (SHORT mode)",
+                            positions=len(positions),
+                            max_positions=self.position_actor.max_positions
+                        )
+                        
+                        # NOV 13: Anomaly detection before order
+                        anomaly_detected = self.anomaly_detector.check_before_order(
+                            side="sell",
+                            price=target,
+                            current_price=self.current_price
+                        )
+                        
+                        if anomaly_detected:
+                            log.warning(f"⚠️  Anomaly detected before SELL order @ ${target:,.2f} - proceeding with caution")
+                        
+                        # Place sell order (timeout=20s to allow for retries)
+                        result = await self.order_actor.ask("PLACE_SELL", {
+                            "price": target,
+                            "size": 1
+                        }, timeout=20.0)
+                        
+                        if result.get("status") == "ok":
+                            order_id = result.get("order_id")
+                            
+                            # Update last order time for cooldown
+                            self._update_last_order_time()
+                            
+                            # Update position actor
+                            await self.position_actor.tell("SET_PENDING_SELL", {
+                                "order_id": order_id,
+                                "price": target,
+                                "size": self.lot_size,
+                                "timestamp": time.time()
+                            })
+                            
+                            log.info(f"✅ SELL order placed @ ${target:,.2f} (Order: {order_id})")
+                        
+            except Exception as e:
+                log.debug(f"Entry check error: {e}")
+    
+    async def _update_external_heartbeat(self) -> None:
+        """Update external heartbeat file for monitoring systems."""
+        try:
+            heartbeat_data = {
+                'timestamp': time.time(),
+                'status': 'running',
+                'pid': os.getpid(),
+                'quality': 'good',
+                'last_update': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'mode': self.mode,
+                'symbol': self.symbol,
+                'uptime': time.time() - self._start_time if hasattr(self, '_start_time') else 0
+            }
+            
+            async with aiofiles.open('.heartbeat', 'w') as f:
+                await f.write(json.dumps(heartbeat_data, indent=2))
+        except Exception as e:
+            log.debug(f"External heartbeat update error: {e}")
+    
+    async def _update_external_heartbeat(self) -> None:
+        """
+        Update external .heartbeat file for PM2 monitoring.
+        This file is monitored by the heartbeat-monitor process.
+        """
+        try:
+            heartbeat_file = Path(".heartbeat")
+            
+            heartbeat_data = {
+                "timestamp": time.time(),
+                "pid": os.getpid(),
+                "mode": self.mode,
+                "symbol": self.symbol,
+                "uptime": time.time() - self._start_time,
+                "status": "running",  # Guardian controls halt state
+                "last_price": getattr(self, '_last_price', None),
+                "fills_processed": self._fills_processed
+            }
+            
+            # Write heartbeat file (async I/O)
+            async with aiofiles.open(heartbeat_file, "w") as f:
+                await f.write(json.dumps(heartbeat_data, indent=2))
+                
+        except Exception as e:
+            log.debug(f"Guardian health export error: {e}")
+    
+    async def _heartbeat_loop(self) -> None:
+        """Periodic heartbeat tasks with detailed status logging."""
+        log.info("Heartbeat loop started")
+        human_log.heartbeat_loop_active()  # Human-readable
+        
+        heartbeat_counter = 0
+        
+        while self._running:
+            try:
+                await asyncio.sleep(5)  # Run every 5 seconds
+                heartbeat_counter += 1
+                
+                # NOV 13: Update watchdog timestamp
+                self._last_heartbeat_time = time.time()
+                
+                # Update external heartbeat file every cycle (5s)
+                await self._update_external_heartbeat()
+                
+                # Get state from position actor (every 15s for detailed status)
+                if heartbeat_counter % 3 == 0:
+                    state = await self.position_actor.ask("GET_STATE", {}, timeout=10)
+                    
+                    positions = state.get("open_tranches", [])
+                    pending_buy = state.get("pending_buy")
+                    pending_sell = state.get("pending_sell")
+                    
+                    # Get current price and volatility status
+                    current_price = getattr(self, '_last_price', None)
+                    
+                    # Get bid/ask from WebSocket if available
+                    bid_price = None
+                    ask_price = None
+                    spread = None
+                    
+                    try:
+                        if hasattr(self.ws_manager, 'ticker_data'):
+                            ticker_data = getattr(self.ws_manager, 'ticker_data', {})
+                            bid_price = ticker_data.get('bid')
+                            ask_price = ticker_data.get('ask')
+                            if bid_price and ask_price and bid_price > 0 and ask_price > 0:
+                                spread = ask_price - bid_price
+                    except Exception:
+                        pass
+                    
+                    # Check volatility status with REAL DATA
+                    # Volatility display REMOVED - Guardian monitors this
+                    # Check Guardian log for volatility status
+                    volatility_status = "🛡️  Guardian"
+                    volatility_detail = ""
+                    
+                    # Format detailed status log (matching old GridBot style)
+                    if current_price:
+                        # Color codes for positions
+                        positions_str = f"\033[36m{len(positions)}/{self.max_positions}\033[0m"  # Cyan
+                        
+                        # Price change indicator (green up, red down, white unchanged)
+                        if hasattr(self, '_last_hb_price'):
+                            try:
+                                current_float = float(current_price)
+                                last_float = float(self._last_hb_price)
+                                if current_float > last_float:
+                                    price_color = "\033[32m"  # Green up
+                                    price_change = "↑"
+                                elif current_float < last_float:
+                                    price_color = "\033[31m"  # Red down
+                                    price_change = "↓"
+                                else:
+                                    price_color = "\033[37m"  # White unchanged
+                                    price_change = "→"
+                            except (ValueError, TypeError):
+                                price_color = "\033[37m"
+                                price_change = ""
+                        else:
+                            price_color = "\033[33m"  # Yellow for first time
+                            price_change = ""
+                        
+                        # Pending order info with color coding
+                        pending_info = ""
+                        if self.mode == 'LONG' and pending_buy:
+                            pending_price = pending_buy.get('price')
+                            if pending_price:
+                                try:
+                                    # Convert to float for comparison (may be string from API)
+                                    pending_price_float = float(pending_price)
+                                    current_price_float = float(current_price)
+                                    # Green if below market (good for long), red if above
+                                    color = "\033[32m" if pending_price_float < current_price_float else "\033[31m"
+                                    pending_info = f" | {color}Pending BUY @ ${pending_price_float:,.0f}\033[0m"
+                                except (ValueError, TypeError):
+                                    pending_info = f" | Pending BUY @ ${pending_price}"
+                        elif self.mode == 'SHORT' and pending_sell:
+                            pending_price = pending_sell.get('price')
+                            if pending_price:
+                                try:
+                                    # Convert to float for comparison (may be string from API)
+                                    pending_price_float = float(pending_price)
+                                    current_price_float = float(current_price)
+                                    # Green if above market (good for short), red if below
+                                    color = "\033[32m" if pending_price_float > current_price_float else "\033[31m"
+                                    pending_info = f" | {color}Pending SELL @ ${pending_price_float:,.0f}\033[0m"
+                                except (ValueError, TypeError):
+                                    pending_info = f" | Pending SELL @ ${pending_price}"
+                        
+                        # Build detailed log message with bid/ask if available
+                        # Add trading status indicator
+                        trading_status = ""
+                        if not self._initial_order_placed:
+                            trading_status = " | ⏸️  NOT STARTED"
+                        elif hasattr(self, '_last_block_reason') and self._last_block_reason:
+                            # If we have a pending order, bot is ACTIVE (not blocked)
+                            if pending_buy or pending_sell:
+                                trading_status = " | ✅ ACTIVE"
+                                self._last_block_reason = None  # Clear stale block reason
+                            else:
+                                trading_status = " | 🚫 BLOCKED"
+                        else:
+                            trading_status = " | ✅ ACTIVE"
+                        
+                        if bid_price and ask_price:
+                            log.info(
+                                f"[HB] Positions: {positions_str} | "
+                                f"Price: {price_color}${current_price:,.0f}{price_change}\033[0m | "
+                                f"\033[35mBid: ${bid_price:,.1f} | Ask: ${ask_price:,.1f}\033[0m | "
+                                f"Spread: ${spread:.1f} | "
+                                f"Volatility: {volatility_status}{pending_info}{trading_status}"
+                            )
+                        else:
+                            log.info(
+                                f"[HB] Positions: {positions_str} | "
+                                f"Price: {price_color}${current_price:,.0f}{price_change}\033[0m | "
+                                f"Volatility: {volatility_status}{pending_info}{trading_status}"
+                            )
+                        
+                        # Store for next comparison
+                        self._last_hb_price = current_price
+                        
+                        # Log individual positions (Loop style - every 30s)
+                        if heartbeat_counter % 6 == 0 and positions:
+                            log.info(f"📊 [GRID STATUS] {len(positions)} active position(s):")
+                            for idx, pos in enumerate(positions, 1):
+                                entry_price = pos.get('entry_price', 0)
+                                tp_price = pos.get('tp_price', 0)
+                                pnl = (current_price - entry_price) if self.grid_mode == 'LONG' else (entry_price - current_price)
+                                pnl_pct = (pnl / entry_price * 100) if entry_price > 0 else 0
+                                
+                                # Color code PnL
+                                pnl_color = "\033[32m" if pnl > 0 else "\033[31m" if pnl < 0 else "\033[37m"
+                                
+                                log.info(
+                                    f"  Loop {idx}: Entry ${entry_price:,.0f} → "
+                                    f"TP ${tp_price:,.0f} | "
+                                    f"PnL: {pnl_color}${pnl:,.0f} ({pnl_pct:+.2f}%)\033[0m"
+                                )
+                            
+                            # Show next grid level
+                            next_buy_level = self._calculate_next_grid_level('BUY', current_price)
+                            if next_buy_level:
+                                log.info(f"  → Next BUY level: ${next_buy_level:,.0f}")
+                    else:
+                        log.info("[HB] Waiting for price data...")
+            
+            except Exception as e:
+                log.error(f"Heartbeat error: {e}")
+    
+    async def _monitoring_loop(self) -> None:
+        """Write monitoring data for WebUI."""
+        log.info("Monitoring loop started")
+        human_log.monitoring_active()  # Human-readable
+        
+        monitoring_file = Path("data/monitoring_snapshot.json")
+        monitoring_file.parent.mkdir(exist_ok=True)
+        
+        while self._running:
+            try:
+                await asyncio.sleep(5)
+                
+                # Gather monitoring data
+                state = await self.position_actor.ask("GET_STATE", {})
+                position_metrics = await self.position_actor.ask("GET_METRICS", {})
+                order_metrics = await self.order_actor.ask("GET_METRICS", {})
+                saga_metrics = self.saga_orchestrator.get_metrics()
+                actor_metrics = {
+                    "position_actor": self.position_actor.get_metrics(),
+                    "order_actor": self.order_actor.get_metrics()
+                }
+                
+                # Prepare snapshot
+                snapshot = {
+                    "timestamp": time.time(),
+                    "mode": self.mode,
+                    "symbol": self.symbol,
+                    "uptime": time.time() - self._start_time,
+                    "state": state,
+                    "metrics": {
+                        "positions": position_metrics,
+                        "orders": order_metrics,
+                        "sagas": saga_metrics,
+                        "actors": actor_metrics,
+                        "fills_processed": self._fills_processed,
+                        "sagas_completed": self._sagas_completed,
+                        "sagas_failed": self._sagas_failed
+                    },
+                    "grid_config": {
+                        "lower": self.grid_calc.lower,
+                        "upper": self.grid_calc.upper,
+                        "step": self.grid_calc.step,
+                        "ref": self.grid_calc.ref,
+                        "tp_offset": self.tp_offset
+                    },
+                    # NOV 13: Add monitoring system status
+                    "monitoring": {
+                        "price_health": self.price_monitor.get_status() if self.price_monitor else None,
+                        "recent_decisions": self.pre_order_logger.get_recent_decisions() if self.pre_order_logger else [],
+                        "anomalies": self.anomaly_detector.get_recent_anomalies() if self.anomaly_detector else []
+                    }
+                }
+                
+                # Write snapshot (async file I/O)
+                async with aiofiles.open(monitoring_file, "w") as f:
+                    await f.write(json.dumps(snapshot, indent=2))
+                
+                # NOV 13: Export Guardian health file for Guardian bot
+                try:
+                    await self._export_guardian_health(state, snapshot)
+                except Exception as e:
+                    log.error(f"Guardian health export error: {e}")
+                
+                # NOV 13: Export via monitoring data writer (for WebUI compatibility)
+                current_time = time.time()
+                if current_time - self._last_monitoring_write > 5:  # Every 5s
+                    try:
+                        self.monitoring_writer.write_snapshot(self)  # Pass bot instance, not snapshot
+                        self._last_monitoring_write = current_time
+                    except Exception as e:
+                        log.debug(f"Monitoring writer error: {e}")  # Don't spam logs
+            
+            except Exception as e:
+                log.error(f"Monitoring error: {e}")
+    
+    async def _safety_gatekeeper_loop(self) -> None:
+        """
+        Periodic safety check loop - runs every 5 minutes.
+        Also triggered by state changes (via _process_fill).
+        """
+        log.info("Safety gatekeeper loop started - checking every 5 minutes")
+        human_log.monitoring_active()  # Human-readable
+        
+        while self._running:
+            try:
+                current_time = time.time()
+                
+                # Check if 5 minutes (300 seconds) have elapsed since last check
+                if current_time - self._last_safety_check_time >= 300:
+                    log.info("🔒 Running periodic safety check (5-minute interval)...")
+                    # Safety limit checking removed - Guardian monitors all risk parameters
+                    # Just update timestamp to keep loop alive
+                    self._last_safety_check_time = current_time
+                
+                # Sleep for 30 seconds, then check again
+                await asyncio.sleep(30)
+                
+            except Exception as e:
+                log.error(f"Safety gatekeeper error: {e}")
+                await asyncio.sleep(60)  # Back off on error
+    
+    async def _export_guardian_health(self, state: Dict, snapshot: Dict) -> None:
+        """
+        Export health data for Guardian bot monitoring.
+        Guardian bot reads this file to monitor bot health and enforce risk limits.
+        """
+        try:
+            health_file = Path("bot/reports/guardian_health.json")
+            health_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Calculate total PnL from all open positions
+            total_pnl = 0
+            total_loss = 0
+            open_tranches = state.get("open_tranches", [])
+            
+            for position in open_tranches:
+                entry_price = position.get("entry_price", 0)
+                size = position.get("size", 0)
+                current_price = self._last_price if hasattr(self, '_last_price') else entry_price
+                
+                # Calculate PnL based on mode
+                if self.mode == "LONG":
+                    pnl = (current_price - entry_price) * size
+                else:  # SHORT
+                    pnl = (entry_price - current_price) * size
+                
+                total_pnl += pnl
+                if pnl < 0:
+                    total_loss += abs(pnl)
+            
+            # Build health data structure expected by Guardian
+            health_data = {
+                "timestamp": time.time(),
+                "pid": os.getpid(),
+                "uptime_seconds": int(time.time() - self._start_time),
+                "status": "ok",  # Guardian controls halt state
+                "monitoring": {
+                    "position_count": len(open_tranches),
+                    "total_pnl_inr": total_pnl,
+                    "total_loss_inr": total_loss,
+                    "pending_orders": 1 if (state.get("pending_buy") or state.get("pending_sell")) else 0,
+                    "sagas_active": snapshot["metrics"]["sagas"].get("active_sagas", 0),
+                    "sagas_failed": self._sagas_failed
+                },
+                "liquidation": {
+                    "margin_utilization": None,  # TODO: Fetch from exchange
+                    "distance_to_liquidation": None,  # TODO: Calculate
+                    "current_mtm_inr": total_pnl
+                },
+                "safety": {
+                    "guardian_monitoring": True,  # Guardian monitors all risk
+                    "signal_based_trading": True  # Bot reads Guardian GO/STOP signal
+                }
+            }
+            
+            # Write health file (async I/O)
+            async with aiofiles.open(health_file, "w") as f:
+                await f.write(json.dumps(health_data, indent=2))
+            
+        except Exception as e:
+            log.debug(f"Guardian health export error: {e}")
+    
+    async def _check_memory_usage(self) -> None:
+        """Check memory usage and log warnings if excessive."""
+        try:
+            import psutil
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
+            mem_mb = mem_info.rss / 1024 / 1024
+            
+            # Warn if memory exceeds 400 MB
+            if mem_mb > 400:
+                log.warning(f"⚠️  High memory usage: {mem_mb:.1f} MB")
+                
+                # Trigger garbage collection if memory is high
+                if mem_mb > 450:
+                    import gc
+                    gc.collect()
+                    log.info("   Triggered garbage collection")
+        except Exception as e:
+            log.debug(f"Memory check error: {e}")
+    
+    async def _check_websocket_health(self) -> None:
+        """
+        Check WebSocket connection health using proper manager API.
+        
+        NOV 13 v2: Fixed to use _ws_is_alive() wrapper and proper reconnection flow.
+        Prevents AttributeError on .closed/.connected/.open attributes.
+        """
+        try:
+            # Check if WebSocket manager exists
+            if not self.ws_manager:
+                log.warning("⚠️  WebSocket manager not initialized")
+                return
+            
+            # Use the proper is_connected property (uses _ws_is_alive internally)
+            if not self.ws_manager.is_connected:
+                log.warning(f"⚠️  WebSocket not connected (state: {self.ws_manager.state.value})")
+                
+                # Only attempt reconnect if in DISCONNECTED state (not CONNECTING/RECONNECTING)
+                if (self.ws_manager.state.value == "disconnected" and 
+                    not self.ws_manager._reconnecting):
+                    log.error("❌ WebSocket disconnected - triggering reconnect...")
+                    try:
+                        # Don't call connect() directly - trigger reconnect which handles cleanup
+                        asyncio.create_task(self.ws_manager._handle_reconnect())
+                    except Exception as reconnect_error:
+                        log.error(f"Reconnect trigger failed: {reconnect_error}")
+                return
+            
+            # Check time since last price update (data flow health)
+            if self._last_price_update > 0:
+                time_since_update = time.time() - self._last_price_update
+                
+                # Warn if no update for > 35 seconds (Delta heartbeat is 30s + 5s buffer)
+                if time_since_update > 35:
+                    log.warning(f"⚠️  WebSocket starvation: {time_since_update:.1f}s since last price update")
+                    log.warning("   Delta heartbeat threshold: 30s + 5s buffer = 35s")
+                    
+                    # If > 60 seconds, WebSocket is likely stalled - force reconnect
+                    if time_since_update > 60:
+                        log.error("❌ WebSocket appears dead (no data for 60s) - forcing reconnect...")
+                        # Trigger full reconnection (not just connect)
+                        if not self.ws_manager._reconnecting:
+                            asyncio.create_task(self.ws_manager._handle_reconnect())
+        except Exception as e:
+            log.error(f"WebSocket health check error: {e}", exc_info=True)
+    
+    async def _health_check_loop(self) -> None:
+        """Health check loop for detecting issues."""
+        log.info("Health check loop started")
+        human_log.health_monitoring_active()  # Human-readable
+        
+        while self._running:
+            try:
+                await asyncio.sleep(30)
+                
+                # Check memory usage
+                await self._check_memory_usage()
+                
+                # Process TP retry queue
+                await self._process_tp_retry_queue()
+                
+                # Check WebSocket health
+                await self._check_websocket_health()
+                
+                # Check actor health
+                position_metrics = self.position_actor.get_metrics()
+                order_metrics = self.order_actor.get_metrics()
+                
+                # Check for high error rates
+                if position_metrics.get("error_rate", 0) > 0.1:
+                    log.warning(f"High error rate in position actor: {position_metrics['error_rate']:.1%}")
+                
+                if order_metrics.get("error_rate", 0) > 0.1:
+                    log.warning(f"High error rate in order actor: {order_metrics['error_rate']:.1%}")
+                
+                # Check mailbox sizes
+                if position_metrics.get("mailbox_size", 0) > position_metrics.get("mailbox_capacity", 1000) * 0.8:
+                    log.warning(f"Position actor mailbox nearly full: {position_metrics['mailbox_size']}/{position_metrics['mailbox_capacity']}")
+                
+                if order_metrics.get("mailbox_size", 0) > order_metrics.get("mailbox_capacity", 1000) * 0.8:
+                    log.warning(f"Order actor mailbox nearly full: {order_metrics['mailbox_size']}/{order_metrics['mailbox_capacity']}")
+                
+                # Check saga metrics
+                saga_metrics = self.saga_orchestrator.get_metrics()
+                if saga_metrics["active_sagas"] > 8:
+                    log.warning(f"Many active sagas: {saga_metrics['active_sagas']}")
+                
+                # Check price health
+                if self._last_price_update > 0:
+                    price_age = time.time() - self._last_price_update
+                    if price_age > 30:
+                        log.warning(f"⚠️  Price data is STALE: {price_age:.1f}s since last update")
+                        log.warning("   WebSocket may have issues - check connectivity")
+            
+            except Exception as e:
+                log.error(f"Health check error: {e}")
+    
+    async def _process_tp_retry_queue(self) -> None:
+        """
+        Process TP retry queue - retry failed TP placements.
+        
+        Runs every 30s as part of health check loop.
+        Retries positions in queue that are due for retry.
+        """
+        try:
+            # Get due retries from position actor
+            result = await self.position_actor.ask("GET_DUE_RETRIES", {}, timeout=5.0)
+            
+            due_retries = result.get("retries", [])
+            total_queue_size = result.get("total_queue_size", 0)
+            
+            if not due_retries:
+                if total_queue_size > 0:
+                    log.debug(f"TP retry queue: {total_queue_size} pending (none due yet)")
+                return
+            
+            log.info(f"⏰ Processing {len(due_retries)} due TP retries (queue: {total_queue_size})")
+            
+            for retry_entry in due_retries:
+                position = retry_entry.get("position", {})
+                retry_count = retry_entry.get("retry_count", 0)
+                max_retries = retry_entry.get("max_retries", 5)
+                
+                position_id = position.get("position_id")
+                entry_price = position.get("entry_price")
+                tp_price = position.get("tp_price")
+                size = position.get("size", 1)
+                
+                # Check if exhausted
+                if retry_count >= max_retries:
+                    log.critical(f"🚨 TP retry exhausted for position {position_id} @ ${entry_price:,.0f}")
+                    log.critical(f"   Retried {retry_count} times - MANUAL INTERVENTION REQUIRED")
+                    
+                    # Remove from queue
+                    await self.position_actor.tell("REMOVE_FROM_RETRY_QUEUE", {
+                        "retry_entry": retry_entry
+                    })
+                    
+                    # Send Telegram alert
+                    try:
+                        from bot.utils.notifier import TelegramNotifier
+                        notifier = TelegramNotifier()
+                        notifier.send(
+                            f"🚨 TP RETRY EXHAUSTED\n\n"
+                            f"Position: {position_id}\n"
+                            f"Entry: ${entry_price:,.0f}\n"
+                            f"TP: ${tp_price:,.0f}\n"
+                            f"Retries: {retry_count}/{max_retries}\n\n"
+                            f"⚠️ MANUAL TP PLACEMENT REQUIRED"
+                        )
+                    except Exception:
+                        pass  # Telegram not critical
+                    
+                    continue
+                
+                # Attempt TP placement
+                log.info(f"⏰ Retrying TP placement (attempt {retry_count + 1}/{max_retries})")
+                log.info(f"   Position: {position_id} @ ${entry_price:,.0f} → ${tp_price:,.0f}")
+                
+                try:
+                    # Place TP via order actor
+                    result = await self.order_actor.ask("PLACE_TP", {
+                        "price": tp_price,
+                        "size": size,
+                        "position_id": position_id
+                    }, timeout=15.0)
+                    
+                    if result.get("status") == "ok":
+                        tp_order_id = result.get("order_id")
+                        log.info(f"✅ TP retry successful: Order {tp_order_id}")
+                        
+                        # Update position with TP order ID
+                        await self.position_actor.tell("UPDATE_POSITION", {
+                            "position_id": position_id,
+                            "tp_order_id": tp_order_id,
+                            "tp_price": tp_price
+                        })
+                        
+                        # Remove from retry queue
+                        await self.position_actor.tell("REMOVE_FROM_RETRY_QUEUE", {
+                            "retry_entry": retry_entry
+                        })
+                        
+                        log.info(f"✅ Position {position_id} protected with TP")
+                    else:
+                        # Retry failed - reschedule
+                        log.warning(f"⚠️ TP retry failed: {result.get('error')}")
+                        log.warning(f"   Will retry again in 10 seconds")
+                        
+                        # Reschedule with incremented retry count
+                        await self.position_actor.tell("SCHEDULE_TP_RETRY", {
+                            "position": position,
+                            "retry_count": retry_count,  # Will be incremented in handler
+                            "max_retries": max_retries
+                        })
+                        
+                        # Remove old entry
+                        await self.position_actor.tell("REMOVE_FROM_RETRY_QUEUE", {
+                            "retry_entry": retry_entry
+                        })
+                
+                except Exception as e:
+                    log.error(f"❌ TP retry exception: {e}")
+                    log.error(f"   Will retry again in 10 seconds")
+                    
+                    # Reschedule with incremented retry count
+                    await self.position_actor.tell("SCHEDULE_TP_RETRY", {
+                        "position": position,
+                        "retry_count": retry_count,
+                        "max_retries": max_retries
+                    })
+                    
+                    # Remove old entry
+                    await self.position_actor.tell("REMOVE_FROM_RETRY_QUEUE", {
+                        "retry_entry": retry_entry
+                    })
+        
+        except Exception as e:
+            log.error(f"TP retry queue processing error: {e}")
+    
+    async def _watchdog_loop(self) -> None:
+        """
+        Watchdog loop to detect frozen event loop.
+        
+        Monitors heartbeat execution and triggers emergency stop if heartbeat freezes.
+        This is critical for detecting deadlocks or infinite loops that freeze the bot.
+        
+        NOV 13: Implemented for async event loop monitoring.
+        """
+        log.info(f"🐕 Watchdog started (timeout: {self._watchdog_timeout}s, check interval: {self._watchdog_check_interval}s)")
+        human_log.watchdog_active()  # Human-readable
+        
+        while self._running:
+            try:
+                # Wait for check interval
+                await asyncio.sleep(self._watchdog_check_interval)
+                
+                if not self._running:
+                    break
+                
+                # Check time since last heartbeat
+                time_since_heartbeat = time.time() - self._last_heartbeat_time
+                
+                if time_since_heartbeat > self._watchdog_timeout:
+                    log.critical("=" * 80)
+                    log.critical(f"🚨 WATCHDOG TRIGGERED: Heartbeat frozen for {time_since_heartbeat:.1f}s")
+                    log.critical(f"   Last heartbeat: {time_since_heartbeat:.1f}s ago")
+                    log.critical(f"   Timeout threshold: {self._watchdog_timeout}s")
+                    log.critical(f"   Event loop appears to be frozen - triggering emergency stop")
+                    log.critical("=" * 80)
+                    
+                    # Send Telegram alert (if notifications implemented)
+                    try:
+                        from bot.utils.notifier import TelegramNotifier
+                        notifier = TelegramNotifier()
+                        notifier.send(
+                            f"🚨 WATCHDOG ALERT\n\n"
+                            f"Event loop frozen for {time_since_heartbeat:.1f}s\n"
+                            f"Heartbeat timeout: {self._watchdog_timeout}s\n\n"
+                            f"Bot triggering emergency stop"
+                        )
+                    except Exception:
+                        pass  # Telegram not critical
+                    
+                    # Trigger emergency stop
+                    await self.emergency_stop()
+                    break
+                else:
+                    # Heartbeat is healthy - log debug
+                    log.debug(f"🐕 Watchdog: Heartbeat healthy ({time_since_heartbeat:.1f}s since last)")
+            
+            except Exception as e:
+                log.error(f"Watchdog error: {e}")
+                # Don't stop watchdog on errors - keep monitoring
+        
+        log.info("🐕 Watchdog stopped")
+    
+    async def _reconciliation_loop(self) -> None:
+        """
+        Exchange reconciliation loop - runs every 5 minutes.
+        Critical safety net for detecting missed fills and unprotected positions.
+        """
+        log.info("🔍 [RECONCILIATION] Loop started")
+        human_log.reconciliation_active()  # Human-readable
+        
+        # Initial delay before first reconciliation (configurable for testing)
+        await asyncio.sleep(self._reconciliation_initial_delay)
+        
+        while self._running:
+            try:
+                # Wait for interval
+                await asyncio.sleep(self._reconciliation_interval)
+                
+                if not self._running:
+                    break
+                
+                # Perform reconciliation
+                log.info("🔍 [RECONCILIATION] Starting periodic check...")
+                await self._perform_reconciliation()
+                
+                self._last_reconciliation = time.time()
+                self._reconciliation_errors = 0  # Reset on success
+                
+                log.info("✅ [RECONCILIATION] Check complete")
+                
+            except Exception as e:
+                self._reconciliation_errors += 1
+                log.error(f"❌ [RECONCILIATION] Error: {e}")
+                
+                # Stop if too many errors
+                if self._reconciliation_errors >= self._max_reconciliation_errors:
+                    log.critical(f"🚨 [RECONCILIATION] Too many errors ({self._reconciliation_errors}), stopping reconciliation")
+                    break
+        
+        log.info("🔍 [RECONCILIATION] Loop exited")
+    
+    async def _perform_reconciliation(self) -> None:
+        """
+        Perform complete reconciliation between bot state and exchange.
+        
+        Steps:
+        1. Query exchange for all open orders
+        2. Compare with bot's pending orders
+        3. Investigate any discrepancies (could be missed fills)
+        4. Verify TP protection for all positions
+        5. Place emergency TPs if needed
+        """
+        try:
+            # Step 1: Get exchange orders
+            log.info("📡 [RECONCILIATION] Querying exchange for open orders...")
+            exchange_orders = await self.api_client.list_orders(symbol=self.symbol)
+            
+            if not isinstance(exchange_orders, list):
+                log.error(f"❌ [RECONCILIATION] Invalid response from list_orders: {type(exchange_orders)}")
+                return
+            
+            # Step 2: Get bot state
+            state = await self.position_actor.ask("GET_STATE", {})
+            
+            # Step 3: Check pending orders
+            pending_buy = state.get("pending_buy")
+            pending_sell = state.get("pending_sell")
+            
+            # Collect bot's known order IDs
+            bot_order_ids = set()
+            if pending_buy:
+                bot_order_ids.add(pending_buy.get("order_id"))
+            if pending_sell:
+                bot_order_ids.add(pending_sell.get("order_id"))
+            
+            # Collect exchange order IDs
+            exchange_order_ids = set(o.get("id") or o.get("order_id") for o in exchange_orders if o.get("state") == "open")
+            
+            # Find missing orders (bot thinks it has them, but exchange doesn't)
+            potentially_filled = bot_order_ids - exchange_order_ids
+            
+            if potentially_filled:
+                log.warning(f"⚠️ [RECONCILIATION] Found {len(potentially_filled)} orders that may have filled without detection!")
+                for order_id in potentially_filled:
+                    await self._investigate_missing_order(order_id)
+            else:
+                log.info(f"✅ [RECONCILIATION] All pending orders verified on exchange")
+            
+            # Step 4: Verify TP protection
+            log.info("🛡️ [RECONCILIATION] Verifying TP protection...")
+            await self._verify_tp_protection(state, exchange_orders)
+            
+        except Exception as e:
+            log.error(f"❌ [RECONCILIATION] Failed: {e}")
+            raise
+    
+    async def _investigate_missing_order(self, order_id: str) -> None:
+        """
+        Investigate an order that's missing from exchange.
+        Could be filled, cancelled, or rejected.
+        """
+        try:
+            log.info(f"🔍 [RECONCILIATION] Querying status of order {order_id}...")
+            
+            # Query individual order
+            order_info = await self.api_client.get_order(order_id)
+            
+            if not order_info:
+                log.error(f"❌ [RECONCILIATION] Failed to query order {order_id}")
+                return
+            
+            state = order_info.get("state", "unknown")
+            side = order_info.get("side", "")  # Get side for all states
+            
+            if state == "filled":
+                # MISSED FILL DETECTED!
+                log.warning(f"🚨 [RECONCILIATION] MISSED FILL DETECTED!")
+                log.warning(f"   Order {order_id} was filled but not detected via WebSocket")
+                
+                # Process the missed fill
+                fill_price = float(order_info.get("average_fill_price", 0))
+                fill_size = int(order_info.get("size", 0))
+                
+                await self._process_missed_fill(order_id, side, fill_price, fill_size)
+                
+            elif state in ["cancelled", "rejected"]:
+                log.warning(f"⚠️ [RECONCILIATION] Order {order_id} was {state}")
+                # Clear pending order from bot state
+                if side == "buy":
+                    await self.position_actor.tell("CLEAR_PENDING_BUY", {})
+                else:
+                    await self.position_actor.tell("CLEAR_PENDING_SELL", {})
+                    
+            else:
+                log.warning(f"⚠️ [RECONCILIATION] Order {order_id} state: {state}")
+                
+        except Exception as e:
+            log.error(f"❌ [RECONCILIATION] Failed to investigate order {order_id}: {e}")
+    
+    async def _process_missed_fill(self, order_id: str, side: str, fill_price: float, fill_size: int) -> None:
+        """
+        Process a fill that was missed by WebSocket.
+        Critical recovery mechanism.
+        """
+        try:
+            log.critical("🚨 PROCESSING MISSED FILL (RECONCILIATION RECOVERY)")
+            log.critical(f"   Order: {order_id}")
+            log.critical(f"   Side: {side}")
+            log.critical(f"   Price: {fill_price}")
+            log.critical(f"   Size: {fill_size}")
+            
+            # Prepare fill data
+            fill_data = {
+                "order_id": order_id,
+                "fill_price": fill_price,
+                "fill_size": fill_size,
+                "side": side,
+                "is_complete": True,
+                "_detected_via": "reconciliation_recovery"
+            }
+            
+            # Process via saga (same as regular fill)
+            await self._process_fill(fill_data)
+            
+            log.critical("✅ [RECONCILIATION] Missed fill processed successfully")
+            
+        except Exception as e:
+            log.critical(f"❌ [RECONCILIATION] FAILED to process missed fill: {e}")
+            raise
+    
+    async def _verify_tp_protection(self, state: Dict[str, Any], exchange_orders: List[Dict]) -> None:
+        """
+        Verify all positions have TP protection.
+        Place emergency TPs if missing.
+        """
+        try:
+            positions = state.get("open_tranches", [])
+            
+            if not positions:
+                log.info("✅ [RECONCILIATION] No positions to verify")
+                return
+            
+            # Build map of position_id -> TP order
+            tp_orders = {}
+            for order in exchange_orders:
+                if order.get("order_type") == "limit_order":
+                    # Check if this is a TP order (opposite side of position)
+                    product_id = order.get("product_id")
+                    # We'd need to correlate with positions - simplified for now
+                    pass
+            
+            # Check each position
+            unprotected_positions = []
+            
+            for pos in positions:
+                tp_order_id = pos.get("tp_order_id")
+                
+                if not tp_order_id:
+                    log.warning(f"⚠️ [RECONCILIATION] Position {pos.get('entry_order_id')} has no TP order ID!")
+                    unprotected_positions.append(pos)
+                    continue
+                
+                # Verify TP exists on exchange
+                tp_exists = any(o.get("id") == tp_order_id or o.get("order_id") == tp_order_id 
+                               for o in exchange_orders)
+                
+                if not tp_exists:
+                    log.critical(f"🚨 [RECONCILIATION] Position {pos.get('entry_order_id')} TP order {tp_order_id} NOT FOUND on exchange!")
+                    unprotected_positions.append(pos)
+            
+            # Place emergency TPs
+            if unprotected_positions:
+                log.critical(f"🚨 [RECONCILIATION] Found {len(unprotected_positions)} unprotected positions!")
+                
+                for pos in unprotected_positions:
+                    try:
+                        log.critical(f"   🚨 EMERGENCY: Placing TP NOW...")
+                        await self._emergency_tp_placement(pos)
+                    except Exception as e:
+                        log.critical(f"   ❌ EMERGENCY TP FAILED: {e}")
+            else:
+                log.info("✅ [RECONCILIATION] All positions have TP protection")
+                
+        except Exception as e:
+            log.error(f"❌ [RECONCILIATION] TP verification failed: {e}")
+    
+    async def _emergency_tp_placement(self, position: Dict[str, Any]) -> None:
+        """
+        Emergency TP placement for unprotected position.
+        Last line of defense.
+        """
+        try:
+            entry_price = position.get("entry_price")
+            entry_order_id = position.get("entry_order_id")
+            
+            if not entry_price:
+                log.critical(f"❌ [EMERGENCY TP] No entry price for position")
+                return
+            
+            # Calculate TP price
+            tp_price = self.grid_calc.compute_tp_price(entry_price, self.mode)
+            
+            log.critical(f"🚨 [EMERGENCY TP] Placing TP for position {entry_order_id}")
+            log.critical(f"   Entry: {entry_price}, TP: {tp_price}")
+            
+            # Place TP via order actor (timeout=20s to allow for retries)
+            result = await self.order_actor.ask("PLACE_TP", {
+                "price": tp_price,
+                "size": position.get("size", 1),
+                "position_id": entry_order_id
+            }, timeout=20.0)
+            
+            if result.get("status") == "ok":
+                tp_order_id = result.get("order_id")
+                log.critical(f"✅ [EMERGENCY TP] Placed: ID {tp_order_id}")
+                
+                # Update position with TP
+                await self.position_actor.tell("UPDATE_POSITION_TP", {
+                    "position_id": entry_order_id,
+                    "tp_order_id": tp_order_id
+                })
+            else:
+                log.critical(f"❌ [EMERGENCY TP] FAILED: {result.get('error')}")
+                
+        except Exception as e:
+            log.critical(f"❌ [EMERGENCY TP] FAILED: {e}")
+            raise
+    
+    # ========================================================================
+    # REST API Fallback System (NOV 13 - WebSocket Starvation Protection)
+    # ========================================================================
+    
+    async def _rest_fallback_monitor_loop(self) -> None:
+        """
+        Monitor WebSocket health and activate REST fallback when needed.
+        
+        Activates REST polling when:
+        - WebSocket has not sent price update for > 35s (Delta heartbeat + buffer)
+        - No price data received at all
+        
+        Deactivates REST polling when:
+        - WebSocket recovers (fresh price update received)
+        
+        Triggers WebSocket reconnection when:
+        - Price is critically stale (>300s / 5 minutes)
+        """
+        log.info("🔄 [REST FALLBACK MONITOR] Loop started")
+        log.debug(f"🔄 [REST FALLBACK MONITOR] self._running = {self._running}")
+        human_log.rest_fallback_active()  # Human-readable
+        
+        last_reconnect_attempt = 0
+        reconnect_cooldown = 60.0  # Wait 60s between reconnection attempts
+        ws_starvation_threshold = 35.0  # 30s Delta heartbeat + 5s buffer
+        critically_stale_threshold = 300.0  # 5 minutes = dead connection
+        
+        try:
+            while self._running:
+                try:
+                    # Check if we have price data
+                    if self._last_price_update == 0:
+                        # No price data yet - check how long we've been waiting
+                        if hasattr(self, '_start_time'):
+                            wait_time = time.time() - self._start_time
+                            if wait_time > 15 and not self._rest_fallback_active:
+                                log.warning(f"🚨 [REST FALLBACK] No WebSocket data for {wait_time:.1f}s since start")
+                                log.warning(f"   Activating REST fallback to get initial price...")
+                                await self._activate_rest_fallback()
+                    
+                    elif self._last_price_update > 0:
+                        age = time.time() - self._last_price_update
+                        
+                        # Check if critically stale (dead connection)
+                        if age > critically_stale_threshold:
+                            time_since_last_reconnect = time.time() - last_reconnect_attempt
+                            
+                            if time_since_last_reconnect > reconnect_cooldown:
+                                log.critical("=" * 80)
+                                log.critical(f"🚨 CRITICAL: WebSocket DEAD for {age:.1f}s (>5 minutes)")
+                                log.critical("   Attempting automatic reconnection...")
+                                log.critical("=" * 80)
+                                
+                                try:
+                                    # Attempt to reconnect WebSocket
+                                    await self._reconnect_websocket()
+                                    last_reconnect_attempt = time.time()
+                                    
+                                    # Send Telegram alert (if notifications implemented)
+                                    try:
+                                        from bot.utils.notifier import TelegramNotifier
+                                        notifier = TelegramNotifier()
+                                        notifier.send(
+                                            f"🔄 WebSocket Reconnection\n\n"
+                                            f"Price was stale for {age:.1f}s\n"
+                                            f"Automatic reconnection triggered\n\n"
+                                            f"Monitoring for recovery..."
+                                        )
+                                    except Exception:
+                                        pass  # Telegram not critical
+                                except Exception as e:
+                                    log.error(f"❌ WebSocket reconnection failed: {e}")
+                        
+                        # Activate fallback if WebSocket starved
+                        if age > ws_starvation_threshold and not self._rest_fallback_active:
+                            log.warning(f"🚨 [REST FALLBACK] WebSocket starved for {age:.1f}s > {ws_starvation_threshold}s threshold")
+                            await self._activate_rest_fallback()
+                        
+                        # Deactivate fallback if WebSocket recovered
+                        elif age < 10 and self._rest_fallback_active:
+                            log.info(f"✅ [REST FALLBACK] WebSocket recovered (age: {age:.1f}s)")
+                            await self._deactivate_rest_fallback()
+                
+                    # Check every second
+                    await asyncio.sleep(1.0)
+                    
+                except Exception as e:
+                    log.error(f"❌ [REST FALLBACK MONITOR] Error in loop: {e}")
+                    await asyncio.sleep(5.0)  # Back off on error
+                
+        except asyncio.CancelledError:
+            log.info("🔄 [REST FALLBACK MONITOR] Loop cancelled")
+            raise
+        
+        log.info("🔄 [REST FALLBACK MONITOR] Loop exited")
+        log.debug(f"🔄 [REST FALLBACK MONITOR] Final self._running = {self._running}")
+    
+    async def _activate_rest_fallback(self) -> None:
+        """Activate REST API polling as fallback for WebSocket."""
+        if self._rest_fallback_active:
+            return  # Already active
+        
+        log.warning("=" * 80)
+        log.warning("🔄 ACTIVATING REST API FALLBACK - WebSocket Starvation Detected")
+        if self._last_price_update > 0:
+            log.warning(f"   Last WebSocket update: {time.time() - self._last_price_update:.1f}s ago")
+        log.warning(f"   Polling interval: 5.0s")
+        log.warning("=" * 80)
+        
+        self._rest_fallback_active = True
+        
+        # Start polling task
+        self._rest_fallback_task = asyncio.create_task(
+            self._rest_polling_loop(),
+            name="RestFallbackPoller"
+        )
+        
+        log.info("✅ [REST FALLBACK] Polling task started")
+    
+    async def _deactivate_rest_fallback(self) -> None:
+        """Deactivate REST API fallback when WebSocket recovers."""
+        if not self._rest_fallback_active:
+            return  # Already inactive
+        
+        log.info("=" * 80)
+        log.info("✅ DEACTIVATING REST API FALLBACK - WebSocket Recovered")
+        log.info("=" * 80)
+        
+        self._rest_fallback_active = False
+        
+        # Cancel polling task
+        if self._rest_fallback_task and not self._rest_fallback_task.done():
+            log.info("⏳ [REST FALLBACK] Cancelling polling task...")
+            self._rest_fallback_task.cancel()
+            try:
+                await self._rest_fallback_task
+            except asyncio.CancelledError:
+                pass  # Expected
+        
+        self._rest_fallback_task = None
+        log.info("✅ [REST FALLBACK] Deactivated successfully")
+    
+    async def _rest_polling_loop(self) -> None:
+        """
+        Background loop that polls REST API for price and order updates.
+        
+        Runs while _rest_fallback_active == True.
+        Polls every 5 seconds.
+        """
+        log.info("🔄 [REST FALLBACK] Polling loop started")
+        
+        while self._rest_fallback_active and self._running:
+            try:
+                # Poll current price
+                await self._poll_price_via_rest()
+                
+                # Poll pending orders for fill detection
+                await self._poll_pending_orders_via_rest()
+                
+                await asyncio.sleep(5.0)
+                
+            except asyncio.CancelledError:
+                break  # Task cancelled
+            except Exception as e:
+                log.error(f"❌ [REST FALLBACK] Polling error: {e}")
+                await asyncio.sleep(5.0)
+        
+        log.info("✅ [REST FALLBACK] Polling loop exited")
+    
+    async def _poll_price_via_rest(self) -> None:
+        """Poll current price via REST API and update internal state."""
+        try:
+            # Get ticker from REST API (uses symbol, not product_id)
+            ticker = await self.api_client.get_ticker(self.symbol)
+            
+            if ticker and "close" in ticker:
+                price = float(ticker["close"])
+                
+                # Update internal price tracking
+                self.current_price = price
+                self._last_price_update = time.time()
+                # NOTE: Do NOT update last WebSocket time - this is REST data
+                
+                log.debug(f"📊 [REST FALLBACK] Price update: ${price:,.2f}")
+                
+                # NOV 13: Update price health monitor with REST source
+                self.price_monitor.update_price(price, source="REST_API")
+                
+            else:
+                log.warning(f"⚠️  [REST FALLBACK] Invalid ticker response: {ticker}")
+                
+        except Exception as e:
+            log.error(f"❌ [REST FALLBACK] Failed to poll price: {e}")
+    
+    async def _poll_pending_orders_via_rest(self) -> None:
+        """Poll pending orders via REST API to detect fills."""
+        try:
+            # Get current state from position actor (NOV 13: Fixed ask() signature - needs payload)
+            state_response = await self.position_actor.ask("GET_STATE", {}, timeout=10)
+            if not state_response or "state" not in state_response:
+                return
+            
+            state = state_response["state"]
+            pending_buy = state.get("pending_buy")
+            pending_sell = state.get("pending_sell")
+            
+            # Check each pending order
+            for order_info in [pending_buy, pending_sell]:
+                if not order_info:
+                    continue
+                
+                order_id = order_info.get("order_id")
+                expected_side = order_info.get("side", "buy")
+                
+                if not order_id:
+                    continue
+                
+                # Query order status from exchange
+                await self._check_order_status_rest(order_id, expected_side)
+                
+        except Exception as e:
+            log.error(f"❌ [REST FALLBACK] Failed to poll pending orders: {e}")
+    
+    async def _check_order_status_rest(self, order_id: str, expected_side: str) -> None:
+        """Check order status via REST API and process if filled."""
+        try:
+            # Get order details from exchange
+            order = await self.api_client.get_order(order_id)
+            
+            if not order:
+                log.warning(f"⚠️  [REST FALLBACK] Could not get order {order_id}")
+                return
+            
+            state = order.get("state", "unknown")
+            
+            # If order is filled, process it
+            if state == "filled":
+                side = order.get("side", expected_side)
+                avg_fill_price = float(order.get("average_fill_price") or order.get("limit_price", 0))
+                filled_size = int(order.get("size", 0))
+                
+                log.info(f"🔔 [REST FALLBACK] FILL DETECTED via REST polling!")
+                log.info(f"   Order ID: {order_id}")
+                log.info(f"   Side: {side}, Price: ${avg_fill_price:,.2f}, Size: {filled_size}")
+                
+                # Process the fill through normal fill handling
+                fill_data = {
+                    "order_id": order_id,
+                    "side": side,
+                    "fill_price": avg_fill_price,
+                    "fill_size": filled_size,
+                    "timestamp": time.time(),
+                    "source": "REST_POLLING"
+                }
+                
+                await self._process_fill(fill_data)
+                
+        except Exception as e:
+            log.error(f"❌ [REST FALLBACK] Error checking order {order_id}: {e}")
+    
+    async def _reconnect_websocket(self) -> None:
+        """Attempt to reconnect WebSocket."""
+        try:
+            log.info("🔄 [WEBSOCKET] Attempting reconnection...")
+            
+            # Disconnect existing connection
+            await self.ws_manager.disconnect()
+            await asyncio.sleep(2)
+            
+            # Reconnect
+            await self.ws_manager.connect()
+            
+            # Re-subscribe to channels
+            await self._subscribe_channels()
+            
+            log.info("✅ [WEBSOCKET] Reconnection successful")
+            
+        except Exception as e:
+            log.error(f"❌ [WEBSOCKET] Reconnection failed: {e}")
+            raise
+    
+    def _calculate_next_grid_level(self, side: str, current_price: float) -> Optional[float]:
+        """
+        Calculate the next grid level for order placement.
+        
+        Args:
+            side: 'BUY' or 'SELL'
+            current_price: Current market price
+            
+        Returns:
+            Next grid level price or None if out of range
+        """
+        try:
+            if side == 'BUY':
+                # For LONG mode, buy below current price
+                # Find next grid level below current price
+                next_level = self.grid_calc.lower
+                while next_level < current_price:
+                    next_level += self.grid_calc.step
+                
+                # Go one step back to get level below current price
+                next_level -= self.grid_calc.step
+                
+                # Ensure it's within grid bounds
+                if next_level >= self.grid_calc.lower and next_level <= self.grid_calc.upper:
+                    return next_level
+            else:
+                # For SHORT mode, sell above current price
+                next_level = self.grid_calc.upper
+                while next_level > current_price:
+                    next_level -= self.grid_calc.step
+                
+                # Go one step forward to get level above current price
+                next_level += self.grid_calc.step
+                
+                # Ensure it's within grid bounds
+                if next_level >= self.grid_calc.lower and next_level <= self.grid_calc.upper:
+                    return next_level
+            
+            return None
+            
+        except Exception as e:
+            log.debug(f"Error calculating next grid level: {e}")
+            return None
+    
+    # ========================================================================
+    # Telegram Notifications (NOV 13)
+    # ========================================================================
+    
+    async def _send_startup_notification(self) -> None:
+        """Send Telegram notification when bot starts."""
+        try:
+            from bot.utils.notifier import TelegramNotifier
+            notifier = TelegramNotifier()
+            
+            if notifier.enabled:
+                mode = "TESTNET" if self.testnet else "LIVE"
+                message = (
+                    f"🚀 ASYNCGRIDBOT STARTED\n\n"
+                    f"Mode: {mode}\n"
+                    f"Symbol: {self.symbol}\n"
+                    f"Grid: ${self.grid_calc.lower:,.0f} - ${self.grid_calc.upper:,.0f}\n"
+                    f"Step: ${self.grid_calc.step:,.0f}\n"
+                    f"TP Offset: ${self.tp_offset:,.0f}\n"
+                    f"Max Positions: {self.max_positions}\n\n"
+                    f"Architecture: Actor + Saga\n"
+                    f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                notifier.send(message)
+                log.info("📱 Sent startup notification")
+                human_log.startup_notification_sent()  # Human-readable
+        except Exception as e:
+            log.debug(f"Could not send startup notification: {e}")
+    
+    async def _cancel_pending_orders_on_shutdown(self) -> None:
+        """
+        Cancel pending entry orders on shutdown.
+        
+        CRITICAL POLICY (NOV 14):
+        -------------------------
+        On bot shutdown, we must cancel pending ENTRY orders (BUY/SELL) that haven't filled yet.
+        These are stored in position_actor.state["pending_buy"] / ["pending_sell"].
+        
+        WHY?
+        - Pending entry orders are speculative - they may fill after bot stops
+        - This creates orphaned positions without TP protection
+        - Bot won't be running to place TP orders for these fills
+        
+        WHAT WE PRESERVE:
+        - Executed positions (already in open_tranches) - these stay open
+        - TP orders (reduce_only=True) - these protect existing positions
+        - Manual positions/orders - never touched by bot
+        
+        WHAT WE CANCEL:
+        - Pending BUY orders (LONG mode entry orders)
+        - Pending SELL orders (SHORT mode entry orders)
+        
+        NOTE: We do NOT cancel TP orders because:
+        1. They are reduce_only (can only close positions)
+        2. They protect existing positions from loss
+        3. User may want to keep positions open with TP protection
+        """
+        try:
+            log.info("=" * 70)
+            log.info("🧹 SHUTDOWN: Cancelling pending entry orders...")
+            log.info("=" * 70)
+            
+            # Get state from position actor (contains pending orders)
+            try:
+                state = await asyncio.wait_for(
+                    self.position_actor.ask("GET_STATE", {}),
+                    timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                log.warning("⚠️  Timeout getting position state - skipping cancellation")
+                return
+            except Exception as e:
+                log.warning(f"⚠️  Error getting position state: {e} - skipping cancellation")
+                return
+            
+            if not state:
+                log.info("✅ No state available")
+                return
+            
+            pending_buy = state.get("pending_buy")
+            pending_sell = state.get("pending_sell")
+            
+            if not pending_buy and not pending_sell:
+                log.info("✅ No pending entry orders to cancel")
+                return
+            
+            cancelled_count = 0
+            
+            # Cancel pending BUY order (LONG mode entry)
+            if pending_buy:
+                order_id = pending_buy.get("order_id")
+                price = pending_buy.get("price")
+                
+                if order_id:
+                    # Convert price to float for formatting (may be string)
+                    try:
+                        price_float = float(price) if price else 0
+                        log.info(f"🗑️  Cancelling pending BUY @ ${price_float:,.0f} (Order: {order_id})")
+                    except (ValueError, TypeError):
+                        log.info(f"🗑️  Cancelling pending BUY @ {price} (Order: {order_id})")
+                    
+                    try:
+                        # Cancel via order actor
+                        result = await self.order_actor.ask(
+                            "CANCEL_ORDER",
+                            {"order_id": order_id},
+                            timeout=10.0
+                        )
+                        
+                        if result.get("status") == "ok":
+                            if result.get("already_gone"):
+                                log.info(f"   ℹ️  Order already filled/cancelled by exchange")
+                            else:
+                                log.info(f"   ✅ Cancelled pending BUY order")
+                                human_log.order_cancelled(order_id)
+                            cancelled_count += 1
+                            
+                            # Clear from position actor
+                            await self.position_actor.tell("CLEAR_PENDING_BUY", {})
+                        else:
+                            error_msg = result.get('error', 'Unknown error')
+                            error_type = result.get('error_type', 'Unknown')
+                            log.error(f"   ❌ FAILED to cancel BUY order: {error_type}: {error_msg}")
+                            log.error(f"   ⚠️  ORDER {order_id} MAY STILL BE ACTIVE ON EXCHANGE!")
+                    except Exception as e:
+                        log.error(f"   ❌ Exception during BUY order cancellation: {e}")
+                        log.error(f"   ⚠️  ORDER {order_id} MAY STILL BE ACTIVE ON EXCHANGE!")
+            
+            # Cancel pending SELL order (SHORT mode entry)
+            if pending_sell:
+                order_id = pending_sell.get("order_id")
+                price = pending_sell.get("price")
+                
+                if order_id:
+                    # Convert price to float for formatting (may be string)
+                    try:
+                        price_float = float(price) if price else 0
+                        log.info(f"🗑️  Cancelling pending SELL @ ${price_float:,.0f} (Order: {order_id})")
+                    except (ValueError, TypeError):
+                        log.info(f"🗑️  Cancelling pending SELL @ {price} (Order: {order_id})")
+                    
+                    try:
+                        # Cancel via order actor
+                        # Delta Exchange can take up to 15s to process order cancellations
+                        result = await self.order_actor.ask(
+                            "CANCEL_ORDER",
+                            {"order_id": order_id},
+                            timeout=15.0
+                        )
+                        
+                        if result.get("status") == "ok":
+                            if result.get("already_gone"):
+                                log.info(f"   ℹ️  Order already filled/cancelled by exchange")
+                            else:
+                                log.info(f"   ✅ Cancelled pending SELL order")
+                                human_log.order_cancelled(order_id)
+                            cancelled_count += 1
+                            
+                            # Clear from position actor
+                            await self.position_actor.tell("CLEAR_PENDING_SELL", {})
+                        else:
+                            error_msg = result.get('error', 'Unknown error')
+                            error_type = result.get('error_type', 'Unknown')
+                            log.error(f"   ❌ FAILED to cancel SELL order: {error_type}: {error_msg}")
+                            log.error(f"   ⚠️  ORDER {order_id} MAY STILL BE ACTIVE ON EXCHANGE!")
+                    except Exception as e:
+                        log.error(f"   ❌ Exception during SELL order cancellation: {e}")
+                        log.error(f"   ⚠️  ORDER {order_id} MAY STILL BE ACTIVE ON EXCHANGE!")
+            
+            # Summary
+            open_positions = len(state.get("open_tranches", []))
+            
+            if cancelled_count > 0:
+                log.info("=" * 70)
+                log.info(f"✅ Cancelled {cancelled_count} pending entry order(s)")
+                log.info(f"📊 Preserving {open_positions} open position(s) with TP protection")
+                log.info("=" * 70)
+            else:
+                log.info("=" * 70)
+                log.info(f"ℹ️  No pending entry orders to cancel")
+                log.info(f"📊 Preserving {open_positions} open position(s) with TP protection")
+                log.info("=" * 70)
+        
+        except Exception as e:
+            log.error(f"❌ Error during pending order cancellation on shutdown: {e}")
+            import traceback
+            log.error(traceback.format_exc())
+    
+    async def _send_shutdown_notification(self) -> None:
+        """Send Telegram notification when bot stops."""
+        try:
+            from bot.utils.notifier import TelegramNotifier
+            notifier = TelegramNotifier()
+            
+            if notifier.enabled:
+                # Get runtime stats
+                runtime = time.time() - self._start_time
+                
+                # Get final state
+                state_response = await self.position_actor.ask("GET_STATE", {})
+                if state_response and "state" in state_response:
+                    state = state_response["state"]
+                    positions = len(state.get("open_tranches", []))
+                else:
+                    positions = 0
+                
+                message = (
+                    f"🛑 ASYNCGRIDBOT STOPPED\n\n"
+                    f"Symbol: {self.symbol}\n"
+                    f"Runtime: {runtime/3600:.1f}h\n"
+                    f"Final Positions: {positions}/{self.max_positions}\n"
+                    f"Fills Processed: {self._fills_processed}\n"
+                    f"Sagas: {self._sagas_completed} completed, {self._sagas_failed} failed\n\n"
+                    f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                notifier.send(message)
+                log.info("📱 Sent shutdown notification")
+        except Exception as e:
+            log.debug(f"Could not send shutdown notification: {e}")
+    
+    async def emergency_stop(self) -> None:
+        """Emergency stop - close all positions and cancel orders."""
+        log.critical("EMERGENCY STOP INITIATED")
+        
+        try:
+            # Create emergency saga
+            correlation_id = f"emergency-{int(time.time()*1000)}"
+            
+            saga = await create_emergency_close_all_saga(
+                correlation_id=correlation_id,
+                position_actor=self.position_actor,
+                order_actor=self.order_actor,
+                event_store=self.event_store
+            )
+            
+            # Execute with timeout
+            success = await asyncio.wait_for(saga.execute(), timeout=60.0)
+            
+            if success:
+                log.info("Emergency stop completed successfully")
+            else:
+                log.error("Emergency stop failed - manual intervention required")
+        
+        except Exception as e:
+            log.critical(f"Emergency stop error: {e}")
+        
+        finally:
+            await self.stop()
+    
+    def _setup_signal_handlers(self) -> None:
+        """
+        Setup signal handlers for graceful shutdown.
+        
+        FIX NOV 14: Proper async signal handling.
+        Signal handlers are synchronous, so we set a flag that the main loop checks.
+        """
+        def signal_handler(sig, frame):
+            log.info(f"Received signal {sig} - initiating graceful shutdown")
+            self._running = False
+            # Don't try to create task from signal handler - it's synchronous
+            # The main loop will see _running=False and exit gracefully
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+
+async def main():
+    """Main entry point."""
+    from config.loader import get_api_credentials
+    
+    # Get configuration from YAML
+    config = get_config()
+    
+    # Get API credentials from secrets/api_keys.env (via centralized loader)
+    credentials = get_api_credentials(config.trading_mode)
+    api_key = credentials['api_key']
+    api_secret = credentials['api_secret']
+    
+    # Get mode and testnet from YAML config
+    mode = config.bot.mode
+    testnet = (config.trading_mode == 'demo')
+    
+    # Create bot
+    bot = AsyncGridBot(
+        api_key=api_key,
+        api_secret=api_secret,
+        mode=mode,
+        testnet=testnet
+    )
+    
+    try:
+        # Start bot
+        await bot.start()
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt received")
+    finally:
+        await bot.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

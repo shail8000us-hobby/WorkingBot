@@ -1,0 +1,112 @@
+{
+  "GUARDIAN_ENABLED": {
+    "title": "Guardian Bot",
+    "description": "Enables the Guardian Bot - your 24/7 position monitoring safety net.",
+    "whatItDoes": "The Guardian Bot runs independently and monitors ALL open positions every 10 seconds. It calculates total PnL in INR and can auto-close positions if losses exceed your limit.",
+    "impact": "**Trading Impact**: None - Guardian only monitors, doesn't place new trades.\n\n**Risk Impact**: HIGH - This is your last line of defense against catastrophic losses.",
+    "warnings": "⚠️ **CRITICAL**: Always run Guardian in production! It can save you from bot crashes or exchange issues.\n\n⚠️ Guardian runs as a separate process - it protects you even if the trading bot stops.",
+    "dependencies": "Requires `GUARDIAN_MAX_ACCOUNT_LOSS_INR` to be set.",
+    "recommended": "Always enabled in live trading"
+  },
+  "GUARDIAN_CHECK_INTERVAL": {
+    "title": "Guardian Check Interval",
+    "description": "How often (in seconds) the Guardian Bot checks your positions.",
+    "whatItDoes": "Sets the monitoring frequency. Guardian fetches all positions from exchange and calculates total unrealized PnL.",
+    "impact": "**Lower values (5-10s)**: Faster response to losses, more API calls\n\n**Higher values (30-60s)**: Less API load, slower emergency response",
+    "warnings": "⚠️ Don't set below 5 seconds - you may hit exchange rate limits.\n\n⚠️ Very high values (>60s) may delay emergency closure.",
+    "recommended": "10-15 seconds for active trading"
+  },
+  "GUARDIAN_MAX_ACCOUNT_LOSS_INR": {
+    "title": "Maximum Account Loss (INR)",
+    "description": "The absolute loss limit in INR. Guardian auto-closes ALL positions if breached.",
+    "whatItDoes": "If total unrealized PnL falls below this negative value, Guardian immediately closes all open positions at market price.",
+    "impact": "**Trading Impact**: CRITICAL - Triggers emergency position closure\n\n**Risk Impact**: This is your HARD STOP. Set it wisely based on your risk tolerance.",
+    "warnings": "⚠️ **DANGER**: Once triggered, ALL positions close at MARKET PRICE (possible slippage)\n\n⚠️ Set this BELOW your total capital to avoid liquidation\n\n⚠️ Consider funding rate costs when setting this",
+    "dependencies": "Works with `GUARDIAN_ENABLED=true`",
+    "recommended": "20-30% of total capital as maximum loss"
+  },
+  "GUARDIAN_USD_TO_INR_RATE": {
+    "title": "USD to INR Conversion Rate",
+    "description": "Exchange rate for converting USD-denominated PnL to INR.",
+    "whatItDoes": "Delta Exchange reports PnL in USD. Guardian multiplies by this rate to calculate INR losses.",
+    "impact": "**Accuracy**: Outdated rate = wrong loss calculations\n\n**Risk**: If rate is too low, you may hit loss limits prematurely",
+    "warnings": "⚠️ Update this rate weekly or when INR/USD fluctuates significantly\n\n⚠️ Wrong rate = wrong risk assessment",
+    "recommended": "Update weekly, use current market rate (check Google)"
+  },
+  "GRIDBOT_SYMBOL": {
+    "title": "Trading Symbol",
+    "description": "The cryptocurrency pair to trade (e.g., BTCUSD, ETHUSD).",
+    "whatItDoes": "Defines which futures contract the bot will trade on Delta Exchange.",
+    "impact": "**Trading Impact**: CRITICAL - Wrong symbol = trading wrong asset!\n\n**Risk Impact**: Different symbols have different volatility and margin requirements",
+    "warnings": "⚠️ **DANGER**: Changing this while bot is running may cause chaos\n\n⚠️ ALWAYS stop bot before changing symbol\n\n⚠️ Verify symbol exists on Delta Exchange",
+    "dependencies": "Must match Delta Exchange contract naming (case-sensitive)",
+    "recommended": "Start with BTCUSD for testing"
+  },
+  "GRIDBOT_REF": {
+    "title": "Grid Reference Price",
+    "description": "The center/anchor price of your grid in USD.",
+    "whatItDoes": "The bot builds the grid ladder around this price. All buy/sell levels are calculated from this reference.",
+    "impact": "**Trading Impact**: Determines where BUY orders start\n\n**Profitability**: Should be near current market price for active trading",
+    "warnings": "⚠️ If too far from market, bot won't trade immediately\n\n⚠️ Changing this resets the entire grid (stop bot first!)",
+    "recommended": "Set to current market price when starting bot"
+  },
+  "GRIDBOT_STEP": {
+    "title": "Grid Step Size",
+    "description": "The price gap (in USD) between each grid level.",
+    "whatItDoes": "Determines spacing of BUY and SELL orders. Smaller step = more frequent trades.",
+    "impact": "**Trading Impact**: \n- Small step (50-100): Many trades, lower profit per trade\n- Large step (500-1000): Fewer trades, higher profit per trade\n\n**Risk Impact**: Smaller steps = more positions = higher margin usage",
+    "warnings": "⚠️ Very small steps can lead to overtrading and high fees\n\n⚠️ Very large steps may miss profitable moves\n\n⚠️ Must be > minimum tick size for the symbol",
+    "recommended": "100-500 for BTC (0.1-0.5% of price)"
+  },
+  "GRIDBOT_LOT": {
+    "title": "Lot Size (Contracts per Order)",
+    "description": "How many contracts to buy/sell at each grid level.",
+    "whatItDoes": "Defines position size for every order. Total exposure = LOT × number of open positions.",
+    "impact": "**Trading Impact**: Larger lots = bigger profits AND losses per move\n\n**Risk Impact**: HIGH - This directly controls your capital at risk\n\n**Margin**: Larger lots require more margin",
+    "warnings": "⚠️ **CRITICAL**: Start small! Test with 1-2 lots first\n\n⚠️ Check margin requirements before increasing\n\n⚠️ `Total Risk = LOT × MAX_OPEN × STEP × 2`",
+    "dependencies": "Must be within Delta Exchange min/max contract size",
+    "recommended": "Start with 1 lot, scale slowly"
+  },
+  "GRIDBOT_MAX_OPEN": {
+    "title": "Maximum Open Positions",
+    "description": "Maximum number of simultaneous long positions the bot can hold.",
+    "whatItDoes": "Limits how many BUY orders can be filled before bot stops buying.",
+    "impact": "**Trading Impact**: Caps total exposure during downtrends\n\n**Risk Impact**: Your maximum loss is roughly `MAX_OPEN × LOT × STEP`\n\n**Margin**: More positions = more margin blocked",
+    "warnings": "⚠️ Higher values = higher capital requirement\n\n⚠️ Ensure you have enough margin for MAX_OPEN positions\n\n⚠️ Consider liquidation risk with many open positions",
+    "recommended": "5-10 for conservative trading, 10-20 for aggressive"
+  },
+  "I_UNDERSTAND_LIVE": {
+    "title": "Live Trading Confirmation",
+    "description": "Safety switch - must be 'YES' to enable REAL money trading.",
+    "whatItDoes": "Prevents accidental live trading. Bot will refuse to execute orders unless this is 'YES'.",
+    "impact": "**Trading Impact**: When 'NO', bot runs in simulation mode (no real orders)\n\n**Risk Impact**: Your safety net - ALWAYS check this before starting",
+    "warnings": "⚠️ **EXTREME DANGER**: 'YES' = REAL MONEY, REAL RISK\n\n⚠️ NEVER set to 'YES' until you've tested thoroughly on testnet\n\n⚠️ Double-check all settings before enabling",
+    "recommended": "Use 'NO' for testing, 'YES' only when ready for live trading"
+  },
+  "EXECUTE_ORDERS": {
+    "title": "Execute Orders",
+    "description": "Master on/off switch for order execution.",
+    "whatItDoes": "When 'false', bot will NOT place any orders (dry-run mode). When 'true', bot places real orders.",
+    "impact": "**Trading Impact**: Stops all order placement\n\n**Use Case**: Emergency pause without stopping the bot",
+    "warnings": "⚠️ Existing orders remain active even when set to 'false'\n\n⚠️ Use this for quick pause during market chaos",
+    "recommended": "Set to 'false' for testing logic, 'true' for live trading"
+  },
+  "SMART_GAP_FILL": {
+    "title": "Smart Gap Fill",
+    "description": "Intelligently fills missing grid levels when bot restarts.",
+    "whatItDoes": "On startup, if market has moved and left gaps in your grid, bot places orders to fill those gaps using TAKER orders at current market price.",
+    "impact": "**Trading Impact**: Ensures grid stays complete after restart\n\n**Cost**: May use TAKER orders (higher fees) instead of MAKER",
+    "warnings": "⚠️ Can execute market orders (slippage risk)\n\n⚠️ Useful for recovery, but increases fees",
+    "dependencies": "Requires `GRIDBOT_ENABLE_SMART_RECOVERY=true`",
+    "recommended": "Enable if you restart bot frequently"
+  },
+  "EQUITY_FLOOR_INR": {
+    "title": "Equity Floor (Hard Stop)",
+    "description": "Minimum account equity in INR. Bot stops ALL new orders if equity falls below this.",
+    "whatItDoes": "Monitors total account equity. If it drops below this value, bot enters 'protective mode' and refuses to open new positions.",
+    "impact": "**Trading Impact**: Stops new BUY orders\n\n**Risk Impact**: Prevents trading when capital is depleted",
+    "warnings": "⚠️ Set to 0 to disable\n\n⚠️ Should be HIGHER than your minimum margin requirement\n\n⚠️ Bot can still close positions when below floor",
+    "recommended": "Set to 30-50% of initial capital"
+  }
+}
+

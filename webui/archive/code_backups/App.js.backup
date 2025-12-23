@@ -1,0 +1,1462 @@
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  Suspense,
+  lazy
+} from 'react';
+import { Alert, Snackbar, CircularProgress } from '@mui/material';
+import clsx from 'clsx';
+import {
+  LayoutDashboard,
+  Layers3,
+  ShieldCheck,
+  SlidersHorizontal,
+  Zap,
+  BookOpen,
+  RadioTower,
+  PauseCircle,
+  AlertTriangle,
+  Terminal,
+  Play,
+  Square,
+  RefreshCw,
+  TrendingUp
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import TopBar from './components/layout/TopBar';
+import Sidebar from './components/layout/Sidebar';
+import CollapsibleCard from './components/common/CollapsibleCard';
+import { VolatilityRegimePanel, UnrealizedPnLPanel } from './components/panels';
+import EmergencyKillButton from './components/EmergencyKillButton';
+import TradingModeSwitch from './components/TradingModeSwitch';
+import HealthCheckDashboard from './components/HealthCheckDashboard';
+import TelegramStatusPanel from './components/TelegramStatusPanel';
+import BotStatus from './components/BotStatus';
+import EnhancedErrorBoundary from './components/EnhancedErrorBoundary';
+import RobustConnectionManager from './utils/RobustConnectionManager';
+import robustApiClient from './utils/robustApiClient';
+import apiClient from './utils/apiClient';
+import { userPreferences } from './utils/storage';
+import { perfMonitor } from './utils/performanceMonitor';
+import { useThemeMode } from './hooks/useThemeMode';
+import { useSystemStatus } from './context/SystemStatusContext';
+import './App.css';
+
+// DISABLE ALL LAZY LOADING - Import everything directly to eliminate ChunkLoadError
+import ConfigPanel from './components/ConfigPanel';
+import LogsPanel from './components/LogsPanel';
+import MonitoringPanel from './components/MonitoringPanel';
+import GuardianPanel from './components/GuardianPanel';
+import TmuxPanel from './components/TmuxPanel';
+import BotManagementDashboard from './components/BotManagement/BotManagementDashboard';
+import RobustnessPanel from './components/RobustnessPanel';
+import CapitalProtectionPanel from './components/CapitalProtectionPanel';
+import InstitutionalAIPanel from './components/InstitutionalAIPanel';
+import LiquidationProtectionPanel from './components/LiquidationProtectionPanel';
+import TradingStatusPanel from './components/TradingStatusPanel';
+import AIAdvisorWidget from './components/AIAdvisorWidget';
+import MarketNewsWidget from './components/MarketNewsWidget';
+import CommandKnowledgeBase from './components/CommandKnowledgeBase';
+import SyncReconciliationPanel from './components/SyncReconciliationPanel';
+import EmergencyControlsPanel from './components/EmergencyControlsPanel';
+import ErrorIntelligencePanel from './components/ErrorIntelligencePanel_simple';
+import ErrorIntelligenceLive from './components/ErrorIntelligenceLive';
+import ReconciliationPanelV2 from './components/ReconciliationPanelV2';
+import PositionsPanel from './components/PositionsPanel';
+import MarketSignalPanel from './components/MarketSignalPanel';
+import ShutdownPanel from './components/ShutdownPanel';
+import OpportunisticRecoveryPanel from './components/OpportunisticRecoveryPanel';
+import BotActionsPanel from './components/BotActionsPanel';
+import BackendDownError from './components/BackendDownError';
+import TodoListPanel from './components/TodoListPanel';
+import BotStrategyPanel from './components/BotStrategyPanel';
+import BotBrainAnalyzer from './components/BotBrainAnalyzer';
+
+// Debounce utility to prevent request storms
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+const LoadingFallback = ({ message = 'Loading component...' }) => (
+  <div className="flex items-center justify-center py-10 text-sm text-slate-400">
+    <CircularProgress size={18} />
+    <span className="ml-3">{message}</span>
+  </div>
+);
+
+const MobileNav = ({ sections = [], activeSection, onSelect }) => (
+  <div className="sticky top-[calc(4.5rem+env(safe-area-inset-top))] z-30 flex w-full gap-2 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
+    {sections.map(({ id, label }) => {
+      const active = activeSection === id;
+      return (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onSelect?.(id)}
+          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
+            active ? 'bg-sky-500 text-slate-900 shadow-card' : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          {label}
+        </button>
+      );
+    })}
+  </div>
+);
+
+function transformFlatConfig(payload) {
+  if (!payload) {
+    return { structured: {}, meta: {} };
+  }
+  const flatValues = payload?.config || {};
+  const meta = payload?.meta || {};
+  const structured = {};
+
+  Object.entries(flatValues).forEach(([key, value]) => {
+    const info = meta[key] || {};
+    structured[key] = {
+      value: value ?? '',
+      section: info.section || 'General',
+      redacted: info.redacted || false,
+      has_value: info.has_value || false,
+      legacy_sources: info.legacy_sources || [],
+      source_key: info.source_key || key
+    };
+  });
+
+  return { structured, meta };
+}
+
+function buildMetaFromStructured(structured) {
+  const meta = {};
+  Object.entries(structured || {}).forEach(([key, details]) => {
+    meta[key] = {
+      section: details.section,
+      redacted: details.redacted || false,
+      has_value: details.has_value || false,
+      legacy_sources: details.legacy_sources || [],
+      source_key: details.source_key || key
+    };
+  });
+  return meta;
+}
+
+
+function App() {
+  const { mode, toggleMode } = useThemeMode();
+  const {
+    setSystemStatus,
+    registerWarning,
+    clearWarning,
+    warnings: globalWarnings
+  } = useSystemStatus();
+  const [config, setConfig] = useState({});
+  const [configMeta, setConfigMeta] = useState({});
+  const [botStatus, setBotStatus] = useState({ running: false, pid: null });
+  const [tradingSnapshot, setTradingSnapshot] = useState(null);
+  const [positionsData, setPositionsData] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [backendDown, setBackendDown] = useState(false);
+  const [connectionState, setConnectionState] = useState('disconnected');
+  const [connectionQuality, setConnectionQuality] = useState('unknown');
+  const [latencyStats, setLatencyStats] = useState({ avg: null, history: [] });
+  const [featureFlags, setFeatureFlags] = useState({
+    reconciliation_v2: false,
+    reconciliation_v2_dry_run: true
+  });
+  const [activeSection, setActiveSection] = useState(userPreferences.selectedSection || 'dashboard');
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768;
+  });
+
+  const connectionManagerRef = useRef(null);
+  const latencyBufferRef = useRef([]);
+  
+  // Refs to always use latest versions of functions in connection manager
+  const fetchInitialDataRef = useRef(null);
+  const debouncedFetchInitialDataRef = useRef(null);
+  const pushLatencySampleRef = useRef(null);
+  const showNotificationRef = useRef(null);
+
+  const botIsRunning = Boolean(
+    botStatus?.running ||
+    botStatus?.guardian_running ||
+    botStatus?.bot_running ||
+    tradingSnapshot?.status?.bot_running
+  );
+  const openPositions = tradingSnapshot?.metrics?.open_positions ?? positionsData?.summary?.total_positions ?? null;
+  const pendingOrders = tradingSnapshot?.metrics?.pending_orders ?? null;
+  const totalPnl = Number(positionsData?.summary?.total_pnl_inr ?? tradingSnapshot?.metrics?.total_pnl ?? 0);
+  const connectionLatency = latencyStats.avg;
+
+  useEffect(() => {
+    setSystemStatus({
+      botRunning: botIsRunning,
+      lastSync: lastUpdated
+    });
+    if (!botIsRunning) {
+      registerWarning({
+        id: 'bot-stopped',
+        type: 'bot',
+        title: 'Bot is stopped',
+        message: 'Start the bot to resume live metrics, PnL, and market monitoring.'
+      });
+    } else {
+      clearWarning('bot-stopped');
+    }
+  }, [botIsRunning, lastUpdated, setSystemStatus, registerWarning, clearWarning]);
+
+  useEffect(() => {
+    perfMonitor.startTimer('app-initialization');
+    return () => perfMonitor.endTimer('app-initialization');
+  }, []);
+
+  useEffect(() => {
+    userPreferences.selectedSection = activeSection;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const showNotification = useCallback((message, severity = 'info') => {
+    setNotification({ open: true, message, severity });
+  }, []);
+
+  const handleCloseNotification = useCallback(() => {
+    setNotification((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const pushLatencySample = useCallback((latencyMs) => {
+    if (latencyMs === null || latencyMs === undefined) {
+      return;
+    }
+    const sample = {
+      time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      latency: Math.round(latencyMs)
+    };
+    latencyBufferRef.current = [...latencyBufferRef.current.slice(-59), sample];
+    const avg = Math.round(
+      latencyBufferRef.current.reduce((acc, item) => acc + Number(item.latency || 0), 0) /
+      Math.max(latencyBufferRef.current.length, 1)
+    );
+    setLatencyStats({
+      history: latencyBufferRef.current,
+      avg
+    });
+  }, []);
+
+  const ensureFresh = useCallback(() => {
+    const manager = connectionManagerRef.current;
+    if (!manager) {
+      return;
+    }
+    if (manager.socket?.connected) {
+      manager.socket.emit('request_full_state');
+    } else {
+      manager.forceReconnect();
+    }
+  }, []);
+
+  const handleHardRefresh = useCallback(() => {
+    showNotification('Hard refreshing dashboard...', 'info');
+    setTimeout(() => window.location.reload(true), 300);
+  }, [showNotification]);
+
+  const handleClearCache = useCallback(async () => {
+    try {
+      showNotification('Clearing browser cache...', 'info');
+      if (typeof caches !== 'undefined') {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((name) => caches.delete(name)));
+      }
+      localStorage.clear();
+      sessionStorage.clear();
+      showNotification('Cache cleared. Reloading...', 'success');
+      setTimeout(() => window.location.reload(true), 400);
+    } catch (error) {
+      showNotification(`Failed to clear cache: ${error.message}`, 'error');
+    }
+  }, [showNotification]);
+
+  const fetchInitialData = useCallback(async () => {
+    try {
+      perfMonitor.startTimer('fetch-initial-data');
+      setLoading(true);
+
+      const flagsPromise = robustApiClient.get('/api/flags').catch(() => ({}));
+
+      // Batch 1: Critical data
+      const [configData, botData] = await Promise.all([
+        robustApiClient.get('/api/config/flat'),
+        robustApiClient.get('/api/bot/status'),
+      ]);
+
+      // Backend is responsive, clear backend down state
+      setBackendDown(false);
+
+      // Small delay between batches to prevent resource exhaustion
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Batch 2: Secondary data
+      const [tradingData, logsData, positionsResponse, flagsData] = await Promise.all([
+        robustApiClient.get('/api/trading_status'),
+        robustApiClient.get('/api/logs', { params: { limit: 120 } }),
+        robustApiClient.get('/api/positions').catch(() => null),
+        flagsPromise
+      ]);
+
+      const { structured, meta } = transformFlatConfig(configData);
+      setConfig(structured);
+      setConfigMeta(meta);
+      setTradingSnapshot(tradingData);
+      setBotStatus(botData);
+      if (positionsResponse) {
+        setPositionsData(positionsResponse);
+      }
+
+      // Update global status context with trading snapshot (blockers, warnings, last sync)
+      if (Array.isArray(tradingData?.blockers)) {
+        globalWarnings
+          .filter((warning) => warning.id.startsWith('blocker-'))
+          .forEach((warning) => clearWarning(warning.id));
+
+        tradingData.blockers
+          .filter((blocker) => blocker?.active)
+          .forEach((blocker) => {
+            registerWarning({
+              id: `blocker-${blocker.id}`,
+              type: 'bot',
+              title: blocker.name || 'Trading blocked',
+              message: blocker.message || 'Trading has been halted pending operator review.'
+            });
+          });
+      }
+
+      setSystemStatus({ lastSync: new Date().toISOString() });
+
+      const logEntries = logsData?.logs || logsData?.data?.logs || logsData?.data || logsData || [];
+      setLogs(Array.isArray(logEntries) ? logEntries.slice(-200) : []);
+
+      setFeatureFlags((prev) => ({ ...prev, ...(flagsData || {}) }));
+      setLastUpdated(new Date().toISOString());
+
+      perfMonitor.endTimer('fetch-initial-data');
+    } catch (error) {
+      perfMonitor.endTimer('fetch-initial-data');
+      console.error('Error fetching initial data:', error);
+      
+      // Check if this is a network/connection error (backend is down)
+      if (error.message?.includes('Network Error') || 
+          error.message?.includes('ERR_CONNECTION_REFUSED') ||
+          error.code === 'ECONNREFUSED' ||
+          error.response === undefined) {
+        setBackendDown(true);
+        console.error('Backend server is not responding at localhost:5555');
+      } else {
+        showNotification(`Failed to load dashboard: ${error.message}`, 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [showNotification, registerWarning, clearWarning, globalWarnings, setSystemStatus]);
+
+  // Debounced version to prevent request storms (wait 500ms before executing)
+  const debouncedFetchInitialData = useMemo(
+    () => debounce(fetchInitialData, 500),
+    [fetchInitialData]
+  );
+
+  // Keep refs updated with latest functions so connection manager always uses current versions
+  useEffect(() => {
+    fetchInitialDataRef.current = fetchInitialData;
+    debouncedFetchInitialDataRef.current = debouncedFetchInitialData;
+  }, [fetchInitialData, debouncedFetchInitialData]);
+
+  useEffect(() => {
+    pushLatencySampleRef.current = pushLatencySample;
+  }, [pushLatencySample]);
+
+  useEffect(() => {
+    showNotificationRef.current = showNotification;
+  }, [showNotification]);
+
+  const handleConfigUpdate = useCallback(async (updates) => {
+    try {
+      setBusy(true);
+      const result = await apiClient.updateConfig(updates);
+      showNotification(result.message || 'Configuration saved successfully', 'success');
+      await fetchInitialData();
+    } catch (error) {
+      showNotification(`Failed to save configuration: ${error.message}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [fetchInitialData, showNotification]);
+
+  const handleStartBot = useCallback(async () => {
+    try {
+      setBusy(true);
+      showNotification('Starting bot...', 'info');
+      const [botResult, tmuxResult] = await Promise.all([
+        apiClient.startBot(),
+        apiClient.startTmuxSession().catch((error) => ({ success: false, message: error.message }))
+      ]);
+
+      if (botResult.success) {
+        showNotification('Bot start command acknowledged', 'success');
+        if (tmuxResult?.success) {
+          showNotification('tmux session started for Guardian/Monitor/Trading panes', 'success');
+        } else if (tmuxResult && !tmuxResult.success) {
+          showNotification(`Bot started but tmux session failed: ${tmuxResult.message || 'Check logs'}`, 'warning');
+        }
+        debouncedFetchInitialData();
+      } else {
+        showNotification(botResult.message || 'Failed to start bot', 'error');
+      }
+    } catch (error) {
+      showNotification(`Failed to start bot: ${error.message}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [fetchInitialData, debouncedFetchInitialData, showNotification]);
+
+  const handleStopBot = useCallback(async () => {
+    try {
+      setBusy(true);
+      showNotification('Stopping bot...', 'info');
+      const [botResult, tmuxResult] = await Promise.all([
+        apiClient.stopBot(),
+        apiClient.stopTmuxSession().catch((error) => ({ success: false, message: error.message }))
+      ]);
+
+      if (botResult.success) {
+        showNotification('Bot stop command acknowledged', 'success');
+        if (tmuxResult?.success) {
+          showNotification('tmux session terminated', 'success');
+        } else if (tmuxResult && !tmuxResult.success) {
+          showNotification(`Bot stopped but tmux session failed to stop: ${tmuxResult.message || 'Check logs'}`, 'warning');
+        }
+        debouncedFetchInitialData();
+      } else {
+        showNotification(botResult.message || 'Failed to stop bot', 'error');
+      }
+    } catch (error) {
+      showNotification(`Failed to stop bot: ${error.message}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [fetchInitialData, debouncedFetchInitialData, showNotification]);
+
+  const handleRestartBot = useCallback(async () => {
+    try {
+      setBusy(true);
+      showNotification('Restarting bot...', 'info');
+      const result = await apiClient.restartBot();
+      if (result.success) {
+        showNotification('Bot restart initiated', 'success');
+        debouncedFetchInitialData();
+      } else {
+        showNotification(result.message || 'Restart failed', 'error');
+      }
+    } catch (error) {
+      showNotification(`Failed to restart bot: ${error.message}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [fetchInitialData, debouncedFetchInitialData, showNotification]);
+
+  useEffect(() => {
+    console.log('🔵 Initializing connection manager');
+    
+    const manager = new RobustConnectionManager({
+      reconnectDelay: 5000,
+      maxReconnectDelay: 30000,
+      maxRetries: 3,
+      heartbeatInterval: 60000,
+      syncInterval: 30000,
+      pingTimeout: 15000
+    });
+
+    connectionManagerRef.current = manager;
+
+    manager.on('connection', (data) => {
+      setConnectionState(data.status);
+      if (data.status === 'connected') {
+        showNotificationRef.current?.('Connected to GridBot backend', 'success');
+        // Only fetch on first connection, not on every reconnect
+        if (!config || Object.keys(config).length === 0) {
+          debouncedFetchInitialDataRef.current?.();
+        }
+      } else if (data.status === 'disconnected') {
+        showNotificationRef.current?.('Disconnected from server', 'warning');
+      } else if (data.status === 'error') {
+        showNotificationRef.current?.(`Connection error: ${data.error}`, 'error');
+      }
+    });
+
+    manager.on('state_snapshot', (snapshot) => {
+      setLastUpdated(new Date().toISOString());
+      if (snapshot.config) {
+        const { structured, meta } = transformFlatConfig(snapshot.config);
+        setConfig(structured);
+        setConfigMeta(meta);
+      }
+      if (snapshot.bot_status) {
+        setBotStatus(snapshot.bot_status);
+      }
+      if (snapshot.trading_status) {
+        setTradingSnapshot(snapshot.trading_status);
+      }
+    });
+
+    manager.on('positions_update', (data) => {
+      setPositionsData(data);
+    });
+
+    manager.on('config_updated', (newConfig) => {
+      setConfig(newConfig);
+      setConfigMeta(buildMetaFromStructured(newConfig));
+    });
+
+    manager.on('bot_status', (status) => {
+      setBotStatus(status);
+    });
+
+    manager.on('log_entry', (data) => {
+      setLogs((prev) => [...prev.slice(-199), data.message]);
+    });
+
+    manager.on('error', (err) => {
+      showNotificationRef.current?.(err.message || 'Socket error', 'error');
+    });
+
+    manager.on('heartbeat_timeout', () => {
+      showNotificationRef.current?.('Connection heartbeat timeout. Reconnecting...', 'warning');
+    });
+
+    manager.on('reconnected', () => {
+      showNotificationRef.current?.('Reconnected successfully', 'success');
+      // Don't auto-fetch on reconnect - rely on WebSocket state updates instead
+      // debouncedFetchInitialDataRef.current?.(); // REMOVED to prevent API storm
+    });
+
+    manager.on('connection_retry', (data) => {
+      if (data.attempt === 1 || data.attempt % 5 === 0) {
+        showNotificationRef.current?.(`Reconnecting (${data.attempt}/${data.maxRetries})`, 'info');
+      }
+    });
+
+    manager.on('connection_failed', () => {
+      showNotificationRef.current?.('Connection failed after multiple retries', 'error');
+    });
+
+    manager.on('connection_quality', (data) => {
+      if (data.quality) {
+        setConnectionQuality(data.quality);
+      }
+      if (typeof data.latency === 'number') {
+        pushLatencySampleRef.current?.(data.latency);
+      }
+    });
+
+    manager.on('network_status', (data) => {
+      showNotificationRef.current?.(
+        data.online ? 'Network connection restored' : 'Network offline - waiting for reconnection',
+        data.online ? 'success' : 'warning'
+      );
+    });
+
+    manager.connect();
+
+    return () => {
+      manager.disconnect();
+      connectionManagerRef.current = null;
+    };
+  }, []); // Empty deps - connection manager should only be created once
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        setTimeout(ensureFresh, 350);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [ensureFresh]);
+
+  useEffect(() => {
+    const handleOnline = () => setTimeout(ensureFresh, 500);
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [ensureFresh]);
+
+  useEffect(() => {
+    const handleNotification = (event) => {
+      showNotification(event.detail.message, event.detail.severity);
+    };
+    window.addEventListener('showNotification', handleNotification);
+    return () => window.removeEventListener('showNotification', handleNotification);
+  }, [showNotification]);
+
+  useEffect(() => {
+    const handleStart = () => handleStartBot();
+    const handleStop = () => handleStopBot();
+    const handleRefresh = () => ensureFresh();
+
+    window.addEventListener('keyboard-start', handleStart);
+    window.addEventListener('keyboard-stop', handleStop);
+    window.addEventListener('keyboard-refresh', handleRefresh);
+
+    return () => {
+      window.removeEventListener('keyboard-start', handleStart);
+      window.removeEventListener('keyboard-stop', handleStop);
+      window.removeEventListener('keyboard-refresh', handleRefresh);
+    };
+  }, [handleStartBot, handleStopBot, ensureFresh]);
+
+  // Initial data load - only run once on mount
+  useEffect(() => {
+    fetchInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps = run only once on mount
+
+  const sections = useMemo(() => [
+    {
+      id: 'strategy',
+      label: 'Bot Strategy',
+      icon: Zap,
+      description: 'Live decision engine - see how bot thinks and trades'
+    },
+    {
+      id: 'actions',
+      label: 'Bot Actions',
+      icon: Zap,
+      description: 'Real-time bot decisions and future intentions'
+    },
+    {
+      id: 'todos',
+      label: 'Todo List',
+      icon: BookOpen,
+      description: 'Track improvements and ideas for the trading bot'
+    },
+    {
+      id: 'brain_flow',
+      label: 'Brain Flow Graph',
+      icon: TrendingUp,
+      description: 'Visual decision flowchart - see bot complete decision tree'
+    },
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      badge: pendingOrders ?? undefined,
+      description: 'Trading overview & telemetry'
+    },
+    {
+      id: 'positions',
+      label: 'Positions',
+      icon: Layers3,
+      badge: openPositions ?? undefined,
+      description: 'Active grids & execution state'
+    },
+    {
+      id: 'risk',
+      label: 'Risk & Safety',
+      icon: ShieldCheck,
+      description: 'Risk analytics and protection systems'
+    },
+    {
+      id: 'config',
+      label: 'Configuration',
+      icon: SlidersHorizontal,
+      description: 'Bot parameters and reconciliation tools'
+    },
+    {
+      id: 'botmanagement',
+      label: 'Bot Management',
+      icon: Terminal,
+      description: 'tmux control, process management, and emergency controls'
+    },
+    {
+      id: 'monitoring',
+      label: 'Monitoring',
+      icon: RadioTower,
+      description: 'System monitors and health metrics'
+    },
+    {
+      id: 'intelligence',
+      label: 'Intelligence',
+      icon: BookOpen,
+      description: 'AI insights, documentation, market intel'
+    }
+  ], [openPositions, pendingOrders]);
+
+  useEffect(() => {
+    const handleKeyboardNav = (event) => {
+      const index = event.detail;
+      if (typeof index === 'number' && sections[index]) {
+        setActiveSection(sections[index].id);
+      }
+    };
+    window.addEventListener('keyboard-tab-change', handleKeyboardNav);
+    return () => window.removeEventListener('keyboard-tab-change', handleKeyboardNav);
+  }, [sections]);
+
+  useEffect(() => {
+    if (!sections.some((section) => section.id === activeSection) && sections.length > 0) {
+      setActiveSection(sections[0].id);
+    }
+  }, [sections, activeSection]);
+
+  const socket = connectionManagerRef.current?.socket;
+
+  const renderInactivePanel = (title, message, cta = null) => (
+    <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/40 p-6 text-center">
+      <PauseCircle className="mb-3 h-10 w-10 text-slate-500" />
+      <p className="text-sm font-semibold text-slate-200">{title}</p>
+      <p className="mt-2 max-w-sm text-xs text-slate-400">{message}</p>
+      {cta}
+    </div>
+  );
+
+  const handleDeepLink = useCallback((tab) => {
+    const map = {
+      configuration: 'config',
+      monitoring: 'monitoring',
+      sync: 'monitoring',
+      reconciliation: 'monitoring',
+      guardian: 'risk',
+      liquidation_monitor: 'risk',
+      capital_protection: 'risk',
+      risk_management: 'risk',
+      emergency_controls: 'emergency',
+      ai_advisor: 'intelligence',
+      logs: 'monitoring',
+      bot_management: 'monitoring',
+      documentation: 'intelligence',
+      positions: 'positions'
+    };
+    const sectionId = map[tab];
+    if (sectionId) {
+      setActiveSection(sectionId);
+      showNotification(`Navigated to ${sectionId.replace('_', ' ')}`, 'info');
+    }
+  }, [showNotification]);
+
+  const renderStrategy = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="bot-strategy"
+        title="Bot Strategy Engine"
+        subtitle="Live decision-making logic with real market data"
+        accent="violet"
+        defaultOpen={true}
+      >
+        <EnhancedErrorBoundary componentName="BotStrategyPanel">
+          <BotStrategyPanel />
+        </EnhancedErrorBoundary>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderActions = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="bot-actions"
+        title="Bot Actions"
+        subtitle="Real-time bot decisions, future intentions, and event stream"
+        accent="cyan"
+        defaultOpen={true}
+      >
+        <EnhancedErrorBoundary componentName="BotActionsPanel">
+          <BotActionsPanel />
+        </EnhancedErrorBoundary>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderTodos = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="todo-list"
+        title="📝 Improvement Todo List"
+        subtitle="Track your ideas and improvements for the trading bot"
+        accent="amber"
+        defaultOpen={true}
+      >
+        <EnhancedErrorBoundary componentName="TodoListPanel">
+          <TodoListPanel />
+        </EnhancedErrorBoundary>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderBrainFlow = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="brain-flow"
+        title="🧠 Bot Brain Decision Flow"
+        subtitle="Visual flowchart showing complete decision tree"
+        accent="purple"
+        defaultOpen={true}
+      >
+        <EnhancedErrorBoundary componentName="BotBrainAnalyzer">
+          <BotBrainAnalyzer />
+        </EnhancedErrorBoundary>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderDashboard = () => (
+    <div className="grid gap-6">
+      {/* Volatility Chart - Full Width at Top */}
+      <CollapsibleCard
+        id="volatility-regime"
+        title="Volatility Regime"
+        subtitle="Comparing implied vs realized volatility"
+        accent="violet"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <VolatilityRegimePanel socket={socket} />
+        ) : (
+          renderInactivePanel(
+            'Volatility data paused',
+            'Start the bot to resume live IV/RV tracking and automatic volatility halts.'
+          )
+        )}
+      </CollapsibleCard>
+
+      {/* Unrealized PnL - Full Width */}
+      <CollapsibleCard
+        id="pnl-trend"
+        title="Unrealized PnL Trend"
+        subtitle="Intraday performance across trading session"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <UnrealizedPnLPanel socket={socket} />
+        ) : (
+          renderInactivePanel(
+            'No PnL available',
+            'Unrealized profit and loss dashboards light up once the trading engine is running.'
+          )
+        )}
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="runtime-health"
+        title="Runtime Health & Connectivity"
+        subtitle="Connectivity, safety, and backend signals"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <EnhancedErrorBoundary componentName="HealthCheckDashboard">
+          <HealthCheckDashboard 
+            socket={socket} 
+            latencyStats={latencyStats}
+            connectionQuality={connectionQuality}
+            botIsRunning={botIsRunning}
+          />
+        </EnhancedErrorBoundary>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="bot-status"
+        title="Bot Runtime Status"
+        subtitle="Process telemetry and trading mode"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        <div className="mt-6">
+          <TradingModeSwitch botRunning={botIsRunning} />
+        </div>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderPositions = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="positions-panel"
+        title="Open Positions"
+        subtitle="Real-time grid exposure and unrealized PnL"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <Suspense fallback={<LoadingFallback message="Loading positions..." />}>
+            <EnhancedErrorBoundary componentName="PositionsPanel">
+              <PositionsPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        ) : (
+          renderInactivePanel(
+            'No positions until bot starts',
+            'Position inventory and tranche breakdown appear here after the trading engine is online.'
+          )
+        )}
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="market-signal"
+        title="Market Signal Intelligence"
+        subtitle="Volatility regime, drift detection, and trade readiness"
+        accent="violet"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <Suspense fallback={<LoadingFallback message="Loading market insights..." />}>
+            <EnhancedErrorBoundary componentName="MarketSignalPanel">
+              <MarketSignalPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        ) : (
+          renderInactivePanel(
+            'Market signal waiting for bot',
+            'Once the bot subscribes to exchange feeds we will display readiness scores and drift analytics.'
+          )
+        )}
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderRisk = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="opportunistic-recovery"
+        title="🎯 Opportunistic Recovery"
+        subtitle="Trading halts are blessings, not missed opportunities"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading opportunistic recovery..." />}>
+          <EnhancedErrorBoundary componentName="OpportunisticRecoveryPanel">
+            <OpportunisticRecoveryPanel socket={socket} />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="capital-protection"
+        title="Capital Protection"
+        subtitle="Guardrails, drawdown limits, and safe operating envelope"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading capital protection..." />}>
+          <EnhancedErrorBoundary componentName="CapitalProtectionPanel">
+            <CapitalProtectionPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="liquidation-monitor"
+        title="Liquidation Monitor"
+        subtitle="Liquidation proximity, margin buffers, and alerts"
+        accent="rose"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading liquidation monitor..." />}>
+          <EnhancedErrorBoundary componentName="LiquidationProtectionPanel">
+            <LiquidationProtectionPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="risk-intelligence"
+        title="Risk Intelligence"
+        subtitle="Error intelligence, anomaly detection, and live log parsing"
+        accent="violet"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Suspense fallback={<LoadingFallback message="Loading risk intelligence..." />}>
+              <EnhancedErrorBoundary componentName="ErrorIntelligencePanel">
+                <ErrorIntelligencePanel />
+              </EnhancedErrorBoundary>
+            </Suspense>
+            <Suspense fallback={<LoadingFallback message="Connecting live feed..." />}>
+              <EnhancedErrorBoundary componentName="ErrorIntelligenceLive">
+                <ErrorIntelligenceLive />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          </div>
+        ) : (
+          renderInactivePanel(
+            'Error intelligence idle',
+            'Live anomaly scanning requires real-time logs from the trading engine and guardian. Start the bot to resume stream analysis.'
+          )
+        )}
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="guardian-robustness"
+        title="Guardian & Robustness"
+        subtitle="Guardrail automation and system self-healing"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        <div className="space-y-6">
+          <Suspense fallback={<LoadingFallback message="Loading robustness metrics..." />}>
+            <EnhancedErrorBoundary componentName="RobustnessPanel">
+              <RobustnessPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+          <Suspense fallback={<LoadingFallback message="Loading guardian status..." />}>
+            <EnhancedErrorBoundary componentName="GuardianPanel">
+              <GuardianPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </div>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderConfig = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="config-panel"
+        title="GridBot Configuration"
+        subtitle="Edit, validate, and persist bot parameters"
+        accent="sky"
+        actions={
+          <button
+            type="button"
+            onClick={handleClearCache}
+            className="rounded-full border border-slate-600/60 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-sky-400 hover:text-sky-200"
+          >
+            Clear Cache
+          </button>
+        }
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading configuration..." />}>
+          <EnhancedErrorBoundary componentName="ConfigPanel">
+            <ConfigPanel
+              config={config}
+              meta={configMeta}
+              onUpdate={handleConfigUpdate}
+              loading={busy || loading}
+            />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="sync-reconciliation"
+        title="Sync & Reconciliation"
+        subtitle="Ensure bot, exchange, and ledger remain consistent"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Suspense fallback={<LoadingFallback message="Loading sync tools..." />}>
+            <EnhancedErrorBoundary componentName="SyncReconciliationPanel">
+              <SyncReconciliationPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+          <Suspense fallback={<LoadingFallback message="Loading reconciliation dashboard..." />}>
+            <EnhancedErrorBoundary componentName="ReconciliationPanelV2">
+              <ReconciliationPanelV2 featureFlags={featureFlags} />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </div>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderEmergency = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="emergency-controls"
+        title="Emergency Controls"
+        subtitle="Emergency stop flags, reset tools, and safety overrides"
+        accent="rose"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading emergency controls..." />}>
+          <EnhancedErrorBoundary componentName="EmergencyControlsPanel">
+            <EmergencyControlsPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="emergency-kill"
+        title="Emergency Kill Switch"
+        subtitle="Immediate process termination with confirmation"
+        accent="rose"
+        defaultOpen={!isMobile}
+      >
+        <EmergencyKillButton />
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="shutdown-report"
+        title="Graceful Shutdown Report"
+        subtitle="Historical shutdown telemetry and cleanup outcomes"
+        accent="amber"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading shutdown reports..." />}>
+          <EnhancedErrorBoundary componentName="ShutdownPanel">
+            <ShutdownPanel socket={socket} />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderMonitoring = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="system-monitoring"
+        title="System Monitoring"
+        subtitle="Guardian daemons, watchdog status, and bot telemetry"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
+            <EnhancedErrorBoundary componentName="MonitoringPanel">
+              <MonitoringPanel 
+                botStatus={botStatus}
+                config={config}
+                onNavigate={(section) => console.log('Navigate to:', section)}
+              />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        ) : (
+          renderInactivePanel(
+            'Monitoring idle',
+            'Process metrics and guardian heartbeat dashboards become available once services start.'
+          )
+        )}
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="bot-management-dashboard"
+        title="Bot Management Dashboard"
+        subtitle="High-level view of bot orchestration and services"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
+          <EnhancedErrorBoundary componentName="BotManagementDashboard">
+            <BotManagementDashboard />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderIntelligence = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="ai-insights"
+        title="AI Advisor & Institutional Toolkit"
+        subtitle="Continuous intelligence, incident analysis, and strategic guidance"
+        accent="violet"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Suspense fallback={<LoadingFallback message="Loading AI advisor..." />}>
+              <EnhancedErrorBoundary componentName="AIAdvisorWidget">
+                <AIAdvisorWidget />
+              </EnhancedErrorBoundary>
+            </Suspense>
+            <Suspense fallback={<LoadingFallback message="Loading institutional AI tools..." />}>
+              <EnhancedErrorBoundary componentName="InstitutionalAIPanel">
+                <InstitutionalAIPanel />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          </div>
+        ) : (
+          renderInactivePanel(
+            'AI Advisor paused',
+            'AI-driven insights populate after the trading engine streams fresh telemetry and market states.'
+          )
+        )}
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="docs"
+        title="Know Your Bot"
+        subtitle="Mac terminal commands for starting, stopping, monitoring, and troubleshooting"
+        accent="purple"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading commands..." />}>
+          <EnhancedErrorBoundary componentName="CommandKnowledgeBase">
+            <CommandKnowledgeBase />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="market-intel"
+        title="Market Intelligence"
+        subtitle="Macro signals, latency-aware news, and quant feeds"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading market intelligence..." />}>
+          <EnhancedErrorBoundary componentName="MarketNewsWidget">
+            <MarketNewsWidget />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderBotManagement = () => (
+    <div className="grid gap-6">
+      {/* tmux Control Center */}
+      <CollapsibleCard
+        id="tmux-control"
+        title="tmux Control Center"
+        subtitle="Professional terminal multiplexer management"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading tmux status..." />}>
+          <EnhancedErrorBoundary componentName="TmuxPanel">
+            <TmuxPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Bot Process Control */}
+      <CollapsibleCard
+        id="bot-control"
+        title="Bot Process Control"
+        subtitle="Start, stop, and restart trading bot processes"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        <div className="space-y-4">
+          {/* Status Display */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+              <p className="text-xs text-slate-400">Status</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">
+                {botIsRunning ? '✅ RUNNING' : '⭕ STOPPED'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+              <p className="text-xs text-slate-400">Mode</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">
+                {botStatus?.mode || 'UNKNOWN'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+              <p className="text-xs text-slate-400">Positions</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">
+                {openPositions ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+              <p className="text-xs text-slate-400">Last Sync</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">
+                {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '--'}
+              </p>
+            </div>
+          </div>
+
+          {/* Control Buttons */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleStartBot}
+              disabled={busy || botIsRunning}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:border-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Play className="h-4 w-4" />
+              Start Bot
+            </button>
+            <button
+              type="button"
+              onClick={handleStopBot}
+              disabled={busy || !botIsRunning}
+              className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:border-rose-400 hover:bg-rose-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Square className="h-4 w-4" />
+              Stop Bot
+            </button>
+            <button
+              type="button"
+              onClick={handleRestartBot}
+              disabled={busy || !botIsRunning}
+              className="inline-flex items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:border-sky-400 hover:bg-sky-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Restart Bot
+            </button>
+          </div>
+        </div>
+      </CollapsibleCard>
+
+      {/* Emergency Controls */}
+      <CollapsibleCard
+        id="emergency-kill"
+        title="Emergency Kill Switch"
+        subtitle="Immediate process termination with confirmation"
+        accent="rose"
+        defaultOpen={false}
+      >
+        <EmergencyKillButton />
+      </CollapsibleCard>
+
+      {/* Live Logs */}
+      <CollapsibleCard
+        id="live-logs"
+        title="Live Logs Stream"
+        subtitle="Real-time bot logs with filtering and export"
+        accent="violet"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <Suspense fallback={<LoadingFallback message="Streaming logs..." />}>
+            <EnhancedErrorBoundary componentName="LogsPanel">
+              <LogsPanel logs={logs} />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        ) : (
+          renderInactivePanel(
+            'Logs unavailable',
+            'Start the bot to stream live logs from guardian and trading processes'
+          )
+        )}
+      </CollapsibleCard>
+    </div>
+  );
+
+  const sectionContent = {
+    strategy: renderStrategy(),
+    actions: renderActions(),
+    todos: renderTodos(),
+    brain_flow: renderBrainFlow(),
+    dashboard: renderDashboard(),
+    positions: renderPositions(),
+    risk: renderRisk(),
+    config: renderConfig(),
+    botmanagement: renderBotManagement(),
+    emergency: renderEmergency(),
+    monitoring: renderMonitoring(),
+    intelligence: renderIntelligence()
+  };
+
+  const activeContent = sectionContent[activeSection] || renderDashboard();
+
+  // Show backend down error page if backend is not responding
+  if (backendDown) {
+    return <BackendDownError onRetry={fetchInitialData} />;
+  }
+
+  return (
+    <div className="relative min-h-screen bg-surface text-slate-100">
+      <TopBar
+        mode={mode}
+        onToggleTheme={toggleMode}
+        onRefresh={handleHardRefresh}
+        onEnsureFresh={ensureFresh}
+        isMobile={isMobile}
+        metrics={{
+          running: botIsRunning,
+          latency: connectionLatency,
+          latencyQuality: connectionQuality,
+          unrealizedPnl: totalPnl,
+          lastUpdated
+        }}
+        processStatus={{
+          guardianPid: botStatus?.guardian_health?.pid || null,
+          tradingBotPid: botStatus?.pid || null,
+          healthBotPid: botStatus?.heartbeat?.pid || null
+        }}
+        warnings={globalWarnings}
+      />
+
+      <Sidebar
+        sections={sections}
+        activeSection={activeSection}
+        onSelect={setActiveSection}
+      />
+
+      <main className="pt-28 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pl-64">
+        <MobileNav
+          sections={sections}
+          activeSection={activeSection}
+          onSelect={setActiveSection}
+        />
+        <div className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeSection}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="space-y-6"
+            >
+              {activeContent}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </main>
+
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={5000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleCloseNotification}
+          severity={notification.severity}
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
+
+      <div className="pointer-events-none fixed inset-x-0 top-16 z-10 flex justify-center lg:pl-64">
+        <span className="rounded-b-3xl border border-slate-800/40 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          Connection: {connectionState} · Quality: {connectionQuality}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default App;

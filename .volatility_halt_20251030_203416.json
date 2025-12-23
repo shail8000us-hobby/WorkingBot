@@ -1,0 +1,13 @@
+{
+  "active": true,
+  "triggered_at": 1761836588.2879202,
+  "normalized_at": null,
+  "cancelled_orders": [],
+  "volatility_snapshot": {
+    "iv": 42.82314329713813,
+    "rv": 51.52352928273059,
+    "spread": -8.700385985592462,
+    "max_iv": 40.0,
+    "max_rv": 55.0
+  }
+}

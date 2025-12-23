@@ -1,0 +1,18 @@
+{
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        ".git": true,
+        ".venv": true,
+        ".ruff_cache": true,
+        ".pytest_cache": true,
+        "bot/logs": true,
+        "audit": true,
+        "reports": true,
+        "debugging": true,
+        "gridbot_pro.egg-info": true,
+        "workspace_snapshot.md": true,
+        "LAST_ERROR.txt": true
+    },
+    "explorer.compactFolders": false
+}

@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/webui/backend/utils/process_helpers.py
+# hypothesis_version: 6.141.1
+
+[0.1, '.guardian.pid', 'r', 'reports/bot.pid', 'reports/monitor.pid']

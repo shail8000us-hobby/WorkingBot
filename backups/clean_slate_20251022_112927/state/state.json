@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "created_at": "2025-10-21T16:30:00Z",
+  "trading_mode": "demo",
+  "symbol": "BTCUSD",
+  "open_positions": [],
+  "pending_orders": [],
+  "grid_config": {
+    "step": 100.0,
+    "upper": 120000.0,
+    "lower": 80000.0,
+    "reference": 100000.0
+  },
+  "session_info": {
+    "session_id": "gridbot_20251021",
+    "start_time": "2025-10-21T16:30:00Z",
+    "last_update": "2025-10-21T16:30:00Z"
+  }
+}

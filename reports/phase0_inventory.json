@@ -1,0 +1,2046 @@
+{
+  "path_counts": {
+    "python": 144,
+    "javascript": 72,
+    "total": 216,
+    "by_root": {
+      "bot": {
+        "python": 111,
+        "javascript": 0
+      },
+      "webui": {
+        "python": 9,
+        "javascript": 72
+      },
+      "services": {
+        "python": 8,
+        "javascript": 0
+      },
+      "backtest": {
+        "python": 15,
+        "javascript": 0
+      },
+      "dashboard": {
+        "python": 1,
+        "javascript": 0
+      }
+    }
+  },
+  "python_entrypoints": [
+    "bot/guardian/guardian_bot.py",
+    "bot/heartbeat/monitor.py",
+    "bot/network/ip_monitor.py",
+    "bot/observability/errors/catalog.py",
+    "bot/observability/errors/classifier.py",
+    "bot/observability/errors/collector.py",
+    "bot/observability/errors/remediator.py",
+    "bot/observability/errors/schema.py",
+    "bot/observability/errors/store.py",
+    "bot/reconciliation_service.py",
+    "bot/reports/pnl.py",
+    "bot/reports/pnl_delta.py",
+    "bot/reports/pnl_html.py",
+    "bot/run.py",
+    "bot/safety/emergency_override.py",
+    "bot/strategy/gbot.py",
+    "bot/strategy/gbot_clean.py",
+    "bot/utils/bot_order_id.py",
+    "dashboard/run.py",
+    "services/error_monitor.py",
+    "services/error_resolver.py",
+    "services/quick_error_scan.py",
+    "webui/backend/app.py",
+    "webui/backend/errors/routes.py",
+    "webui/backend/recon_routes.py"
+  ],
+  "js_entrypoints": [
+    "webui/frontend/src/App.js",
+    "webui/frontend/src/AppWrapper.js",
+    "webui/frontend/src/index.js"
+  ],
+  "python_core_count": 75,
+  "js_core_count": 4,
+  "duplicate_clusters": [
+    {
+      "id": "exact_python_1",
+      "type": "exact",
+      "paths": [
+        "backtest/data/__init__.py",
+        "backtest/metrics/__init__.py",
+        "backtest/runner/__init__.py",
+        "backtest/sim/__init__.py",
+        "bot/__init__.py",
+        "bot/api/__init__.py",
+        "bot/orders/__init__.py",
+        "bot/risk/__init__.py",
+        "bot/state/__init__.py",
+        "bot/strategy/__init__.py",
+        "bot/tools/__init__.py",
+        "bot/utils/__init__.py",
+        "webui/backend/recon_routes_temp.py"
+      ],
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "id": "exact_python_2",
+      "type": "exact",
+      "paths": [
+        "bot/strategy/archive/gbot_20250911_155851.py",
+        "bot/strategy/archive/gbot_v1_7_3.py"
+      ],
+      "hash": "6cb305b3645ab73b55a98c4a9b71053afd3e619751a11858d4118dcd64a127d7"
+    }
+  ],
+  "file_classification": {
+    "bot/run.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 13
+    },
+    "bot/reconciliation_service.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 3
+    },
+    "bot/diagnostics.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 8,
+      "outgoing": 0
+    },
+    "bot/safety.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/pnl_history.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/margin_topup.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/position_tracker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/recon_telegram.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/reconciliation/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/reconciliation/v2_service.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/tools/status_warn.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/tools/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/tools/status.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/capital/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/capital/equity_tracker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/liquidation/distance_monitor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/liquidation/margin_monitor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/liquidation/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/liquidation/mtm_tracker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/network/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/network/ip_monitor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/volatility/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/volatility/iv_rv_tracker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/utils/alerts.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/utils/position_display.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/utils/watchdog.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/utils/atomic_file.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/utils/notifier.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 5,
+      "outgoing": 0
+    },
+    "bot/utils/config_check.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/utils/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/utils/bot_order_id.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/utils/env_loader.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 6,
+      "outgoing": 0
+    },
+    "bot/utils/logging_setup.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 8,
+      "outgoing": 0
+    },
+    "bot/utils/colors.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 5,
+      "outgoing": 0
+    },
+    "bot/observability/errors/catalog.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/observability/errors/store.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 1
+    },
+    "bot/observability/errors/classifier.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/observability/errors/collector.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/observability/errors/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/observability/errors/remediator.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/observability/errors/schema.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 5,
+      "outgoing": 0
+    },
+    "bot/state/store.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/state/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/state/reconcile.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/safety/order_confirmation_guard.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/safety/emergency_override.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 3,
+      "outgoing": 0
+    },
+    "bot/safety/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 3
+    },
+    "bot/safety/exposure_limiter.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/safety/circuit_breaker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 3,
+      "outgoing": 0
+    },
+    "bot/safety/gatekeeper.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 5,
+      "outgoing": 5
+    },
+    "bot/safety/loss_limits.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 3,
+      "outgoing": 0
+    },
+    "bot/safety/blocker_tracker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 3,
+      "outgoing": 1
+    },
+    "bot/safety/config_guard.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/heartbeat/monitor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/heartbeat/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/heartbeat/manager.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/news/aggregator.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/news/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/ai/institutional_advisor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 2
+    },
+    "bot/ai/advisor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/ai/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/ai/predictive/market_regime.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/ai/predictive/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 3,
+      "outgoing": 1
+    },
+    "bot/ai/predictive/optimizer.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/ai/advanced/ml_predictor.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/ai/advanced/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/ai/advanced/monte_carlo.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/ai/conversational/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/ai/conversational/intelligent_advisor.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 3
+    },
+    "bot/ai/analytics/log_analyzer.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/ai/analytics/execution.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/ai/analytics/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/ai/analytics/risk.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/ai/analytics/performance.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/api/_ticker_helpers.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/api/_orders_helpers.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/api/client.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/api/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/api/delta_client.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 4,
+      "outgoing": 1
+    },
+    "bot/api/ccxt_handle.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/guardian/emergency_actions.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/guardian/position_monitor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/guardian/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/guardian/risk_enforcer.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/guardian/guardian_bot.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 11
+    },
+    "bot/guardian/health_tracker.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/orders/audit.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/orders/fill_watcher.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/orders/oms.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/orders/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/orders/manager.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "bot/orders/protection.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "bot/orders/executor.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 2
+    },
+    "bot/delta_websocket/__init__.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/delta_websocket/ws_manager.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/delta_websocket/delta_ws.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "bot/risk/guards.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 1
+    },
+    "bot/risk/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/reports/pnl_delta.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/reports/pnl_html.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/reports/pnl.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/strategy/gbot.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/strategy/grid.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "bot/strategy/gbot_clean.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 14
+    },
+    "bot/strategy/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "bot/strategy/grid_sync.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/strategy/levels.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 1
+    },
+    "bot/strategy/archive/gbot_20250911_155851.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/strategy/archive/gbot_v1_7_3.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "bot/strategy/sed/alerts.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "webui/backend/recon_v2_routes.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/backend/error_resolution.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 5
+    },
+    "webui/backend/app.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 22
+    },
+    "webui/backend/recon_routes_temp.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/backend/recon_routes.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/backend/bot/__init__.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/backend/errors/__init__.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/backend/errors/manager.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 4
+    },
+    "webui/backend/errors/routes.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 3
+    },
+    "services/error_resolver.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "services/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "services/quick_error_scan.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "services/notifications.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "services/error_monitor.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 2
+    },
+    "services/notifications/telegram_command_handler.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "services/notifications/__init__.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 1
+    },
+    "services/notifications/telegram_error_notifier.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/run.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "backtest/adapter.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "backtest/__init__.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/metrics/accounting.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "backtest/metrics/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/runner/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/runner/grid_backtester.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 6
+    },
+    "backtest/runner/simple_grid.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/sim/sim_exchange.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 2
+    },
+    "backtest/sim/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/sim/funding_model.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "backtest/sim/fee_model.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 2,
+      "outgoing": 0
+    },
+    "backtest/data/delta_ohlcv.py": {
+      "category": "UTILITY",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "backtest/data/cache.py": {
+      "category": "DEAD",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "backtest/data/__init__.py": {
+      "category": "LEGACY DUPLICATE",
+      "language": "python",
+      "duplicate_kind": "exact",
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "dashboard/run.py": {
+      "category": "CORE",
+      "language": "python",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "webui/frontend/src/index.js": {
+      "category": "CORE",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/theme.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/AppWrapper.js": {
+      "category": "CORE",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/App.js": {
+      "category": "CORE",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 1
+    },
+    "webui/frontend/src/utils/autoSave.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/apiClient.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/robustApiClient.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/keyboardShortcuts.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/rateLimiting.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/performanceMonitor.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/optimisticUpdates.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/messageQueue.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/validation.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/lazyLoader.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/themeManager.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/connectionManager.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/RobustConnectionManager.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/authToken.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/serviceWorkerManager.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/utils/storage.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/EmergencyKillButton.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ErrorIntelligencePanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/EnhancedNotificationSystem.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/EnhancedErrorBoundary.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/DocumentationPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ErrorIntelligencePanel_simple.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/TradingModeSwitch.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/TmuxPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/DocumentationViewer.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/NotificationProvider.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/SyncReconciliationPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/HelpIcon.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/LogsPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/GuardianPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/MonitoringPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/LoadingSkeleton.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ConfigSection.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ConfirmationDialog.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ConfigPanel.example.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/InstitutionalAIPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/EmergencyToggle.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/RobustnessPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/EmergencyControlsPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/MarketNewsWidget.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ConnectionStatusIndicator.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ReconciliationPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/EnhancedTooltip.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/LoadingSkeletons.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ErrorResolutionPanelSimple.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/CapitalProtectionPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/KeyboardProvider.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/BotStatus.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ErrorBoundary.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/TradingStatusPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ShutdownPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/AIAdvisorWidget.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/HealthCheckDashboard.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ReconciliationPanelV2.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ErrorResolutionPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/LiquidationProtectionPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/LiquidationMonitor.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/ConfigPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/BotManagement/BotManagementDashboard.js": {
+      "category": "CORE",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 1,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/incidents/IncidentsPanel.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/incidents/ErrorCard.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/incidents/ParamSyncDiff.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/incidents/ErrorList.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/help/HelpIcon.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/components/help/HelpDrawer.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/hooks/useSocket.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/src/hooks/useAutoSave.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    },
+    "webui/frontend/tools/validate_help_coverage.js": {
+      "category": "DEAD",
+      "language": "javascript",
+      "duplicate_kind": null,
+      "incoming": 0,
+      "outgoing": 0
+    }
+  },
+  "deletion_candidates": [
+    {
+      "path": "bot/safety.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/utils/alerts.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/utils/watchdog.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/ai/advanced/ml_predictor.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/ai/advanced/monte_carlo.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/ai/analytics/log_analyzer.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/ai/analytics/execution.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/api/_ticker_helpers.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/api/_orders_helpers.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "bot/orders/oms.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/backend/recon_v2_routes.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/backend/bot/__init__.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/backend/errors/__init__.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "services/notifications.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "services/notifications/telegram_command_handler.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "services/notifications/telegram_error_notifier.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "backtest/__init__.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "backtest/runner/simple_grid.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "backtest/data/cache.py",
+      "language": "python",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/theme.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/autoSave.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/apiClient.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/robustApiClient.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/keyboardShortcuts.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/rateLimiting.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/performanceMonitor.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/optimisticUpdates.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/messageQueue.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/validation.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/lazyLoader.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/themeManager.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/connectionManager.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/RobustConnectionManager.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/authToken.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/serviceWorkerManager.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/utils/storage.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/EmergencyKillButton.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ErrorIntelligencePanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/EnhancedNotificationSystem.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/EnhancedErrorBoundary.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/DocumentationPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ErrorIntelligencePanel_simple.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/TradingModeSwitch.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/TmuxPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/DocumentationViewer.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/NotificationProvider.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/SyncReconciliationPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/HelpIcon.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/LogsPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/GuardianPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/MonitoringPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/LoadingSkeleton.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ConfigSection.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ConfirmationDialog.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ConfigPanel.example.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/InstitutionalAIPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/EmergencyToggle.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/RobustnessPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/EmergencyControlsPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/MarketNewsWidget.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ConnectionStatusIndicator.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ReconciliationPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/EnhancedTooltip.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/LoadingSkeletons.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ErrorResolutionPanelSimple.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/CapitalProtectionPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/KeyboardProvider.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/BotStatus.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ErrorBoundary.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/TradingStatusPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ShutdownPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/AIAdvisorWidget.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/HealthCheckDashboard.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ReconciliationPanelV2.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ErrorResolutionPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/LiquidationProtectionPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/LiquidationMonitor.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/ConfigPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/incidents/IncidentsPanel.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/incidents/ErrorCard.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/incidents/ParamSyncDiff.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/incidents/ErrorList.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/help/HelpIcon.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/components/help/HelpDrawer.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/hooks/useSocket.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/src/hooks/useAutoSave.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    },
+    {
+      "path": "webui/frontend/tools/validate_help_coverage.js",
+      "language": "javascript",
+      "evidence": "No import edges detected; not marked as entrypoint"
+    }
+  ],
+  "inventory_errors": []
+}

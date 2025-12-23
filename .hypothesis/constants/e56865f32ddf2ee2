@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/webui/backend/utils/circuit_breaker.py
+# hypothesis_version: 6.141.1
+
+['bot_files', 'closed', 'delta_api', 'failure_count', 'half_open', 'last_failure_time', 'name', 'open', 'state', 'success_count', 'time_until_recovery', 'unnamed']

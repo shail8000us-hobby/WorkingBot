@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.workingbot.guardian</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/ssr/Projects/WorkingBot/bot/guardian/core/guardian_bot.py</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/ssr/Projects/WorkingBot</string>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/ssr/Projects/WorkingBot/bot/logs/launchagent_guardian.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/ssr/Projects/WorkingBot/bot/logs/launchagent_guardian_error.log</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/ssr/Projects/WorkingBot</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>TRADING_MODE</key>
+        <string>live</string>
+    </dict>
+    
+    <!-- Run at system boot -->
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <!-- Auto-restart if crashed -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    
+    <!-- Wait 30 seconds between restart attempts -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    
+    <!-- Higher priority process -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    
+    <!-- Nice value (higher priority: -20 to 20, lower is higher priority) -->
+    <key>Nice</key>
+    <integer>-5</integer>
+    
+    <!-- Don't kill child processes when restarting -->
+    <key>AbandonProcessGroup</key>
+    <true/>
+    
+    <!-- Resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>1024</integer>
+    </dict>
+    
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>2048</integer>
+    </dict>
+</dict>
+</plist>
+

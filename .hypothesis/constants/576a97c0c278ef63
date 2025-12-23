@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/webui/backend/utils/metrics_logger.py
+# hypothesis_version: 6.141.1
+
+[1000, 'avg', 'count', 'error', 'max', 'metrics.db', 'min', 'ok']

@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/volatility/iv_rv_tracker.py
+# hypothesis_version: 6.141.1
+
+[1.15, 5.0, 10.0, 35.0, 40.0, -500, 100, 200, 300, 365, 1000, '10', '1D', '1d', '300', '35', '40', '5', '=', 'BTC', 'BTC-PERPETUAL', 'BTCUSD', 'ELEVATED', 'EXTREME', 'GRIDBOT_SYMBOL', 'HIGH', 'LOW', 'NORMAL', 'UNKNOWN', 'VOLATILITY_MAX_IV', 'VOLATILITY_MAX_RV', 'ask_iv', 'auto_resume', 'bid_iv', 'bot/reports', 'check_interval', 'close', 'config', 'contract_types', 'currency', 'data', 'diff', 'enabled', 'end_timestamp', 'grid_config.env', 'instrument_name', 'is_safe', 'iv', 'last_update', 'mark_iv', 'mark_price', 'max_iv', 'max_rv', 'max_spread', 'quotes', 'r', 'resolution', 'result', 'resume_buffer', 'rv', 'secrets/api_keys.env', 'spread', 'start_timestamp', 'strike', 'strike_price', 'symbol', 'thresholds', 'time', 'timestamp', 'tools', 'true', 'violation_reason', 'volatility', 'w', 'zone']

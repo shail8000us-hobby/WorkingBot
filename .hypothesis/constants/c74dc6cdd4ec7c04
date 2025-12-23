@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/monitoring/anomaly_detection.py
+# hypothesis_version: 6.141.1
+
+[5.0, 100, '  • Data feed error', '=', 'ABNORMAL_PRICE_JUMP', 'ANOMALY_DETECTED', 'BUY', 'CRITICAL', 'EXCESSIVE_ORDER_RATE', 'HEALTHY', 'HIGH', 'MEDIUM', 'Possible causes:', 'WEBSOCKET_STALE', 'active', 'age', 'anomalies_detected', 'anomaly_list', 'count', 'critical_alerts', 'current_anomalies', 'current_price', 'filled', 'has_tp', 'health_status', 'max_price_jump_pct', 'order_id', 'order_placement_rate', 'orders', 'orders_per_minute', 'orders_without_tp', 'position_order_id', 'previous_price', 'price', 'price_change_pct', 'recent_tps_tracked', 'runner', 'severity', 'statistics', 'threshold', 'thresholds', 'time_delta', 'timestamp', 'tp_id', 'type']

@@ -1,0 +1,59 @@
+╔══════════════════════════════════════════════════════════════╗
+║                  🎯 tmux Quick Start Guide                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+✅ FIXED: tmux detection and stopping now work from WebUI!
+⚠️  LIMITATION: tmux start must be done from terminal (macOS security)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 HOW TO USE
+
+1. START tmux session (from terminal):
+   
+   ./scripts/start_tmux_daemon.sh
+   
+   ✅ Creates session with 3 panes (Guardian, Monitor, Trading)
+
+2. VIEW in WebUI:
+   
+   http://localhost:5555 → "tmux Professional Setup"
+   
+   ✅ Shows: "Session active" + attach command
+
+3. ATTACH to view bots:
+   
+   tmux -S ~/.tmux-gridbot/default attach -t gridbot
+   
+   Detach (keep running): Ctrl+B then D
+
+4. STOP from WebUI:
+   
+   Click "STOP SESSION" button
+   
+   ✅ Works from WebUI!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ WHAT WORKS FROM WEBUI
+
+[✅] Detect if tmux is installed
+[✅] Detect if session is running  
+[✅] Show session age/runtime
+[✅] Display attach command
+[✅] STOP tmux session (one-click!)
+[❌] START tmux session (use terminal)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 MORE INFO
+
+- Full guide: cat TMUX_SOLUTION_FINAL.md
+- Daemon setup: cat TMUX_DAEMON_SETUP.md
+- tmux basics: cat HOW_TO_USE_TMUX.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎉 tmux integration is 90% automated!  
+   Only starting requires one terminal command.
+   

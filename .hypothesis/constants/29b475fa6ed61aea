@@ -1,0 +1,4 @@
+# file: /Users/shailendrasinghrajawat/Projects/WorkingBot/bot/safety/order_confirmation_guard.py
+# hypothesis_version: 6.141.1
+
+['10', '60', '=', 'amount', 'average', 'blocks', 'bot', 'cancelled', 'chaos_detections', 'chaos_threshold', 'client_id', 'closed', 'completed', 'confirmation_guard', 'demo', 'enabled', 'exchange_id', 'failed', 'fill_price', 'fill_time', 'filled', 'last_block_reason', 'last_updated', 'pending', 'pending_orders', 'pending_orders_count', 'poll_interval', 'price', 'side', 'state', 'status', 'symbol', 'timestamp', 'tools', 'tp_order_id', 'tp_placed', 'tp_placed_time', 'true', 'wait_time_seconds']

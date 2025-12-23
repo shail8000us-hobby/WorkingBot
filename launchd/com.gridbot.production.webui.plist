@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Production WorkingBot - WebUI Only -->
+    <key>Label</key>
+    <string>com.gridbot.production.webui</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/ssr/Projects/WorkingBot/webui/backend/app.py</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/ssr/Projects/WorkingBot</string>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/ssr/Projects/WorkingBot/logs/webui_production.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/ssr/Projects/WorkingBot/logs/webui_production_error.log</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/ssr/Projects/WorkingBot</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PROJECT_NAME</key>
+        <string>WorkingBot-Production</string>
+    </dict>
+    
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <key>Nice</key>
+    <integer>0</integer>
+</dict>
+</plist>

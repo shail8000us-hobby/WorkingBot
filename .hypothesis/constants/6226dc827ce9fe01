@@ -1,0 +1,4 @@
+# file: /Users/ssr/Projects/WorkingBot/bot/strategy/sagas/position_closing_saga.py
+# hypothesis_version: 6.141.1
+
+[0.01, 5.0, 10.0, 30.0, 60.0, 'ADD_POSITION', 'CANCEL_ORDER', 'CLEAR_PENDING_BUY', 'CLEAR_PENDING_SELL', 'GET_OPEN_ORDERS', 'GET_OPEN_POSITIONS', 'PLACE_TP', 'REMOVE_POSITION', 'cancel_all_orders', 'cancel_tp', 'cancelled', 'cancelled_count', 'clear_pending_orders', 'cleared', 'get_position', 'id', 'limit_price', 'ok', 'order_id', 'order_ids', 'orders', 'position', 'position_id', 'positions', 'price', 'remove_all_positions', 'remove_position', 'removed', 'removed_count', 'sell', 'side', 'size', 'status', 'tp_price']
