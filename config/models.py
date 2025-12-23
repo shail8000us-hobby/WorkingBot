@@ -884,6 +884,40 @@ class RecoveryConfig(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# EXCHANGE MAINTENANCE PROTECTION (Dec 23, 2025)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class FillMonitorMaintenanceConfig(BaseModel):
+    """Fill monitor for exchange maintenance protection"""
+    enabled: bool = Field(True, description="Enable fill monitor")
+    check_interval: int = Field(30, gt=0, le=300, description="Check interval in seconds")
+    max_detection_delay: int = Field(60, gt=0, le=600, description="Max acceptable detection delay")
+
+
+class PostOrderVerificationConfig(BaseModel):
+    """Post-order verification for immediate fill detection"""
+    enabled: bool = Field(True, description="Enable post-order verification")
+    initial_delay: int = Field(1, gt=0, le=10, description="Initial delay before first check (seconds)")
+    retry_count: int = Field(3, gt=0, le=10, description="Number of retries")
+    retry_interval: int = Field(2, gt=0, le=30, description="Interval between retries (seconds)")
+
+
+class ExchangeStateDetectionConfig(BaseModel):
+    """Exchange maintenance state detection"""
+    enabled: bool = Field(True, description="Enable exchange state detection")
+    maintenance_poll_interval: int = Field(60, gt=0, le=300, description="Maintenance detection poll interval")
+    post_maintenance_sync_delay: int = Field(10, gt=0, le=120, description="Delay before sync after maintenance")
+    require_grid_coverage: bool = Field(True, description="Require grid coverage during sync")
+
+
+class ExchangeMaintenanceConfig(BaseModel):
+    """Complete exchange maintenance protection configuration"""
+    fill_monitor: FillMonitorMaintenanceConfig = Field(default_factory=FillMonitorMaintenanceConfig)
+    post_order_verification: PostOrderVerificationConfig = Field(default_factory=PostOrderVerificationConfig)
+    exchange_state_detection: ExchangeStateDetectionConfig = Field(default_factory=ExchangeStateDetectionConfig)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # ROOT CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -939,6 +973,9 @@ class RootConfig(BaseModel):
     
     # Recovery system (Nov 20, 2025)
     recovery: RecoveryConfig = Field(default_factory=RecoveryConfig, description="Recovery system configuration")
+    
+    # Exchange maintenance protection (Dec 23, 2025)
+    exchange_maintenance: ExchangeMaintenanceConfig = Field(default_factory=ExchangeMaintenanceConfig, description="Exchange maintenance protection")
     
     class Config:
         extra = "forbid"  # Reject unknown fields
