@@ -188,17 +188,22 @@ class FillMonitor(BaseMonitor):
         
         if self.missed_fill_callback:
             fill_data = {
+                "id": order_id,  # Fill Monitor uses order_id, but callback expects 'id'
                 "order_id": order_id,
                 "side": side,
+                "price": fill_price,  # Use 'price' for consistency with WebSocket fills
                 "fill_price": fill_price,
+                "size": fill_size,  # Use 'size' for consistency
                 "fill_size": fill_size,
                 "is_complete": True,
+                "state": "filled",  # Add state for compatibility
+                "unfilled_size": 0,  # Filled completely
                 "_detected_via": "fill_monitor",
                 "_detection_delay": age
             }
             
             try:
-                await self.missed_fill_callback(order_id, fill_data)
+                await self.missed_fill_callback(fill_data)  # Pass only fill_data, not order_id
                 log.info(f"[{self.name}] Missed fill processed successfully")
             except Exception as e:
                 log.error(f"[{self.name}] Error processing missed fill: {e}")
