@@ -1279,6 +1279,9 @@ class AsyncGridBot:
         # Place initial order to start grid strategy
         await self._place_initial_order()
         
+        # DEC 23: Start Fill Monitor (creates internal task)
+        await self.fill_monitor.start()
+        
         # Start async tasks
         log.info("Starting async tasks...")
         async_tasks = [
@@ -1294,7 +1297,7 @@ class AsyncGridBot:
             asyncio.create_task(self.api_client.start_websocket_health_monitor(), name="ws_health_monitor"),  # CRITICAL FIX: WebSocket health monitor (5s checks)
             asyncio.create_task(self.state_coordinator.monitor_guardian(), name="state_guardian_monitor"),  # NOV 20: State coordinator Guardian monitor
             asyncio.create_task(self.state_coordinator.run_reconciliation_loop(), name="state_reconciliation"),  # NOV 20: State coordinator reconciliation
-            asyncio.create_task(self.fill_monitor.start(), name="fill_monitor"),  # DEC 23: Fill Monitor for exchange maintenance
+            self.fill_monitor._task,  # DEC 23: Fill Monitor task (already created by start())
             asyncio.create_task(self._exchange_maintenance_monitor(), name="exchange_maintenance_monitor")  # DEC 23 Layer 3: Exchange state monitoring
         ]
         self._tasks.extend(async_tasks)
@@ -2134,8 +2137,7 @@ class AsyncGridBot:
                     
                     # Add to bot memory
                     position_id = f"recovery-{int(entry_price)}-{int(time.time())}"
-                    await self.position_actor.send_message({
-                        'type': 'ADD_POSITION',
+                    await self.position_actor.tell('ADD_POSITION', {
                         'position': {
                             'id': position_id,
                             'entry': entry_price,
@@ -2157,8 +2159,7 @@ class AsyncGridBot:
                         log.warning(f"   ⚠️ Missing TP for position at ${entry_price:,.0f} - placing now")
                         
                         # Place TP order
-                        await self.order_actor.send_message({
-                            'type': 'PLACE_SELL',
+                        await self.order_actor.tell('PLACE_SELL', {
                             'price': tp_price,
                             'size': size,
                             'reduce_only': True
@@ -2208,8 +2209,7 @@ class AsyncGridBot:
                 if not order_exists:
                     log.info(f"📍 Placing missing grid buy order at ${next_buy:,.0f}")
                     
-                    await self.order_actor.send_message({
-                        'type': 'PLACE_BUY',
+                    await self.order_actor.tell('PLACE_BUY', {
                         'price': next_buy,
                         'size': self.lot_size
                     })
@@ -2246,7 +2246,7 @@ class AsyncGridBot:
                 log.info(f"📭 Order cancelled: {order_id} (reason: {cancellation_reason})")
                 
                 # Clear from pending memory
-                state = await self.position_actor.ask("GET_STATE")
+                state = await self.position_actor.ask("GET_STATE", {})
                 if state.get("pending_buy") == order_id:
                     await self.position_actor.ask("CLEAR_PENDING_BUY", {"order_id": order_id})
                     log.info(f"✅ Cleared pending buy from memory: {order_id}")

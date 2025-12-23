@@ -9,7 +9,7 @@ grid:
     lower: '85000'
     upper: '95000'
     step: '500'
-    reference: '88000'
+    reference: '87500'
   limits:
     max_open_positions: '50'
     lot_size: '5'
@@ -358,35 +358,24 @@ recovery:
   recovery_rate_limit: 0.5
 strategies: []
 active_strategies: []
-# ============================================================================
-# DEC 23: Exchange Maintenance & Fill Detection Configuration
-# ============================================================================
-# Protects against missed fills during exchange maintenance or WebSocket issues
 exchange_maintenance:
-  # Fill Monitor: Detects fills missed by WebSocket
   fill_monitor:
-    enabled: true  # Enable proactive fill detection
-    check_interval: 30  # Check every 30 seconds
-    verification_delay: 5  # Start checking 5s after order placement
-    max_age: 86400  # Keep orders for 24 hours
-  
-  # Post-Order Verification: Check immediately after placement
+    enabled: true
+    check_interval: 30
+    verification_delay: 5
+    max_age: 86400
   post_order_verification:
-    enabled: true  # Enable immediate verification
-    timeout: 5  # Check for 5 seconds after placement
-    check_interval: 1  # Check every 1 second
-  
-  # Exchange State Detection: Monitor for maintenance
+    enabled: true
+    timeout: 5
+    check_interval: 1
   exchange_state_detection:
-    enabled: true  # Enable maintenance detection
-    check_interval: 60  # Check every 60 seconds during normal operation
-    error_threshold: 3  # Consecutive errors before assuming maintenance
-    auto_recovery: true  # Automatically recover when exchange comes back
-  
-  # Enhanced Startup Reconciliation
+    enabled: true
+    check_interval: 60
+    error_threshold: 3
+    auto_recovery: true
   startup_reconciliation:
-    enabled: true  # Enable full sync on startup
-    sync_positions: true  # Sync positions from exchange
-    sync_orders: true  # Sync open orders
-    place_missing_tps: true  # Place TPs for orphan positions
-    ensure_grid_coverage: true  # Place missing grid orders
+    enabled: true
+    sync_positions: true
+    sync_orders: true
+    place_missing_tps: true
+    ensure_grid_coverage: true
