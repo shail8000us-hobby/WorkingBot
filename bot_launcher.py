@@ -45,15 +45,25 @@ def check_existing_bot():
     return None
 
 def start_bot_daemon():
-    """Start bot in background (daemon mode)"""
-    # Start bot process
-    process = subprocess.Popen(
-        [sys.executable, '-m', 'bot.run'],
-        cwd=str(PROJECT_ROOT),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True  # Detach from parent
-    )
+    """Start bot in background (daemon mode) - survives terminal closure"""
+    # Ensure logs directory exists
+    logs_dir = PROJECT_ROOT / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    
+    # Open log files
+    stdout_log = logs_dir / "trading_bot.log"
+    stderr_log = logs_dir / "trading_bot_error.log"
+    
+    # Start bot process with output to log files
+    with open(stdout_log, 'a') as out, open(stderr_log, 'a') as err:
+        process = subprocess.Popen(
+            [sys.executable, '-m', 'bot.run'],
+            cwd=str(PROJECT_ROOT),
+            stdout=out,
+            stderr=err,
+            start_new_session=True,  # Detach from parent terminal
+            preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None  # Create new process group
+        )
     
     # Write PID file
     pid_file = PROJECT_ROOT / "reports" / "bot.pid"
@@ -62,6 +72,10 @@ def start_bot_daemon():
     
     print(f"✅ Bot started in background (PID: {process.pid})")
     print(f"📝 PID written to: {pid_file}")
+    print(f"📊 Logs: {stdout_log}")
+    print(f"❌ Errors: {stderr_log}")
+    print(f"\n💡 To monitor: tail -f {stdout_log}")
+    print(f"💡 To stop: kill {process.pid} or ./dashboard/stop.sh")
     return process.pid
 
 def start_bot_foreground():

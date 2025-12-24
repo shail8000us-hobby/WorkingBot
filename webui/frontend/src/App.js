@@ -864,7 +864,7 @@ function App() {
         defaultOpen={!isMobile}
       >
         {botIsRunning ? (
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="flex gap-6 lg:grid-cols-2">
             <Suspense fallback={<LoadingFallback message="Loading risk intelligence..." />}>
               <EnhancedErrorBoundary componentName="ErrorIntelligencePanel">
                 <ErrorIntelligencePanel />
@@ -1059,7 +1059,7 @@ function App() {
         defaultOpen={!isMobile}
       >
         {botIsRunning ? (
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="flex flex-col gap-6 max-w-[1485px]">
             <Suspense fallback={<LoadingFallback message="Loading AI advisor..." />}>
               <EnhancedErrorBoundary componentName="AIAdvisorWidget">
                 <AIAdvisorWidget />

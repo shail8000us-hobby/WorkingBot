@@ -4607,7 +4607,9 @@ class AsyncGridBot:
         """
         Setup signal handlers for graceful shutdown.
         
-        FIX NOV 14: Proper async signal handling.
+        FIX DEC 24: Ignore SIGHUP (terminal hangup) to survive terminal closure.
+        Only shutdown on explicit signals (SIGINT/SIGTERM from user/system).
+        
         Signal handlers are synchronous, so we set a flag that the main loop checks.
         """
         def signal_handler(sig, frame):
@@ -4616,8 +4618,12 @@ class AsyncGridBot:
             # Don't try to create task from signal handler - it's synchronous
             # The main loop will see _running=False and exit gracefully
         
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        # Ignore SIGHUP (terminal hangup) - bot should survive terminal closure
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        
+        # Handle shutdown signals
+        signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+        signal.signal(signal.SIGTERM, signal_handler)  # kill command
     
     async def _check_missed_grids(self) -> List[float]:
         try:

@@ -138,13 +138,6 @@ const TradingModeSwitch = ({ botRunning }) => {
             </Alert>
           )}
 
-          {botRunning && (
-            <Alert severity="warning" sx={{ mb: 2 }} icon={<InfoIcon />}>
-              <AlertTitle>Bot is Running</AlertTitle>
-              You must stop and restart the bot for mode changes to take effect.
-            </Alert>
-          )}
-
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2 }}>
             <ToggleButtonGroup
               value={currentMode}
@@ -181,34 +174,6 @@ const TradingModeSwitch = ({ botRunning }) => {
             </ToggleButtonGroup>
             <HelpIcon actionId="trading-mode" placement="right" />
           </Box>
-
-          {modeInfo && (
-            <Box sx={{ mt: 3 }}>
-              <Alert severity={currentMode === 'demo' ? 'info' : 'warning'}>
-                <AlertTitle>{modeInfo.description}</AlertTitle>
-                <List dense>
-                  <ListItem>
-                    <ListItemText
-                      primary="API URL"
-                      secondary={modeInfo.api_url}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText
-                      primary="Risk Level"
-                      secondary={modeInfo.risk_level}
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemText
-                      primary="Funds Type"
-                      secondary={modeInfo.funds_type}
-                    />
-                  </ListItem>
-                </List>
-              </Alert>
-            </Box>
-          )}
         </CardContent>
       </Card>
 

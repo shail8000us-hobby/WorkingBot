@@ -828,17 +828,12 @@ if __name__ == '__main__':
         collector = get_collector()
         
         # Check if we need to backfill historical data (SIMPLE SEEDING)
-        # Use timeout to prevent blocking - if DB is locked, skip backfill check
         import sqlite3
-        try:
-            conn = sqlite3.connect(collector.db_path, timeout=5.0)  # 5 second timeout
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM rv_calculations WHERE timeframe = '1d'")
-            daily_rv_count = cursor.fetchone()[0]
-            conn.close()
-        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
-            log.warning(f"Could not check RV data count (DB may be locked): {e}")
-            daily_rv_count = 999  # Assume we have enough data, skip backfill
+        conn = sqlite3.connect(collector.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM rv_calculations WHERE timeframe = '1d'")
+        daily_rv_count = cursor.fetchone()[0]
+        conn.close()
         
         # If we have less than 30 days of data, run backfill
         if daily_rv_count < 30:

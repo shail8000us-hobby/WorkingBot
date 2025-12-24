@@ -1,6 +1,6 @@
 import React from 'react';
-import { Paper, Grid, Typography, Box, Chip, Alert } from '@mui/material';
-import { TrendingUp, AccountBalance, ShoppingCart, Timer, Science, Warning } from '@mui/icons-material';
+import { Paper, Grid, Typography, Box } from '@mui/material';
+import { TrendingUp, AccountBalance, ShoppingCart, Timer } from '@mui/icons-material';
 
 function BotStatus({ status }) {
   const metrics = [
@@ -39,19 +39,6 @@ function BotStatus({ status }) {
         border: '1px solid #3d4678'
       }}
     >
-      {/* Trading Mode Indicator (if available) */}
-      {status.trading_mode && (
-        <Box sx={{ mb: 2 }}>
-          <Alert
-            severity={status.trading_mode.mode === 'demo' ? 'info' : 'warning'}
-            icon={status.trading_mode.mode === 'demo' ? <Science /> : <Warning />}
-            sx={{ fontWeight: 'bold' }}
-          >
-            {status.trading_mode.emoji} {status.trading_mode.description} - {status.trading_mode.risk_level}
-          </Alert>
-        </Box>
-      )}
-
       <Grid container spacing={3}>
         {metrics.map((metric, index) => (
           <Grid item xs={12} sm={6} md={3} key={index}>

@@ -9,7 +9,7 @@ grid:
     lower: '85000'
     upper: '95000'
     step: '500'
-    reference: '87500'
+    reference: '88000'
   limits:
     max_open_positions: '50'
     lot_size: '5'
