@@ -9,7 +9,7 @@ grid:
     lower: '85000'
     upper: '95000'
     step: '500'
-    reference: '88000'
+    reference: '87500'
   limits:
     max_open_positions: '50'
     lot_size: '5'
@@ -54,6 +54,8 @@ safety:
   execute_orders: true
   i_understand_live: 'YES'
   live_acknowledgment: 'YES'
+  max_position_size: 1000
+  min_liquidation_distance_pct: 50.0
   flash_move: {}
   spread_guard: {}
   volatility:
@@ -96,8 +98,13 @@ guardian:
   check_interval: 10
   max_account_loss_inr: '10000'
   usd_to_inr_rate: '85.0'
-  liquidation_critical: 0.01
+  liquidation_critical: 0.5
   auto_close_positions: true
+  health_check:
+    enabled: true
+    api_timeout_seconds: 30
+    websocket_timeout_seconds: 60
+    data_stale_threshold_seconds: 120
   close_order_type: market
   cancel_orders_on_emergency: true
   alert_threshold_80: true

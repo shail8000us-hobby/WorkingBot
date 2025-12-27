@@ -64,6 +64,66 @@ from bot.monitoring.data_writer import MonitoringDataWriter
 from bot.strategy.monitors.fill_monitor import FillMonitor
 
 
+def _configure_logging():
+    """
+    Configure loguru logging for PM2 compatibility.
+    
+    When running under PM2, PM2 adds its own timestamps, so we remove
+    loguru timestamps to avoid duplication.
+    """
+    # Check if running under PM2
+    # PM2 sets these environment variables when running processes
+    is_pm2 = (
+        os.getenv('pm_id') is not None or 
+        os.getenv('PM2_HOME') is not None or
+        os.getenv('PM2_JSON_PROCESSING') is not None
+    )
+    
+    # Remove default handler
+    log.remove()
+    
+    if is_pm2:
+        # Running under PM2 - use format WITHOUT timestamp (PM2 adds it)
+        log.add(
+            sys.stderr,
+            format="<level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level="INFO",  # Default level INFO to reduce verbosity
+            colorize=True,
+            backtrace=True,
+            diagnose=True,
+        )
+        log.info(f"✅ Logging configured for PM2 (no timestamps in output)")
+    else:
+        # Running standalone - include timestamp
+        log.add(
+            sys.stderr,
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level="DEBUG",  # More verbose when running standalone
+            colorize=True,
+            backtrace=True,
+            diagnose=True,
+        )
+        log.info(f"✅ Logging configured for standalone (with timestamps)")
+    
+    # Add file handler for detailed logs (always with timestamp)
+    log_dir = Path("bot/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    log.add(
+        log_dir / "gridbot_detailed.log",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+        level="DEBUG",
+        rotation="100 MB",
+        retention="7 days",
+        compression="zip",
+        enqueue=True,
+    )
+
+
+# Configure logging immediately at module load time
+_configure_logging()
+
+
 class AsyncGridBot:
     """
     Async GridBot with actor model and saga pattern.
@@ -185,6 +245,9 @@ class AsyncGridBot:
         self._account_loss_inr = 0.0  # For display in status endpoint
         self._last_order_time = 0
         self._last_safety_check_time = 0  # For periodic safety gatekeeper
+        
+        # Log rate limiter - track last log time for frequently occurring messages
+        self._log_rate_limiter: Dict[str, float] = {}
         
         log.info("=" * 80)
         log.info("ASYNC GRIDBOT - YAML CONFIGURATION LOADED")
@@ -399,6 +462,25 @@ class AsyncGridBot:
         # Track missed orders during Guardian STOP
         self._missed_grid_orders = []  # List of (price, side, reason, timestamp)
     
+    def _should_log(self, log_key: str, interval_seconds: float = 60.0) -> bool:
+        """
+        Rate limiter for frequent log messages.
+        
+        Args:
+            log_key: Unique identifier for this log message
+            interval_seconds: Minimum seconds between logs (default 60s)
+            
+        Returns:
+            True if enough time has passed since last log, False otherwise
+        """
+        current_time = time.time()
+        last_time = self._log_rate_limiter.get(log_key, 0)
+        
+        if current_time - last_time >= interval_seconds:
+            self._log_rate_limiter[log_key] = current_time
+            return True
+        return False
+    
     def _is_cooldown_ready(self) -> bool:
         """
         Check if cooldown period has elapsed since last order.
@@ -437,12 +519,18 @@ class AsyncGridBot:
         try:
             # Read latest Guardian signal from EventStore
             # Guardian publishes GUARDIAN_SIGNAL_GO or GUARDIAN_SIGNAL_STOP events
-            log.debug(f"Checking Guardian signals in database: {self.event_store.db_path}")
+            # Rate-limited debug logging (every 30 seconds instead of every call)
+            if self._should_log('guardian_check', interval_seconds=30):
+                log.debug(f"Checking Guardian signals in database: {self.event_store.db_path}")
+            
             events = self.event_store.get_events_by_type(
                 [EventType.GUARDIAN_SIGNAL_GO, EventType.GUARDIAN_SIGNAL_STOP],
                 limit=1
             )
-            log.debug(f"Found {len(events)} Guardian events")
+            
+            # Only log event count if we haven't logged recently
+            if self._should_log('guardian_events_count', interval_seconds=30):
+                log.debug(f"Found {len(events)} Guardian events")
             
             if not events:
                 log.warning("⚠️  No Guardian signal found yet - Guardian may be starting up")
@@ -459,17 +547,21 @@ class AsyncGridBot:
             import time
             signal_age = time.time() - timestamp
             
-            # Log Guardian status with details
+            # Log Guardian status - rate limit to every 10s (balance visibility vs spam)
+            should_log_guardian = self._should_log('guardian_status', interval_seconds=10)
+            
             if signal == 'GO':
-                log.info(f"🛡️  Guardian: 🟢 GO - Trading allowed (signal age: {signal_age:.1f}s)")
-                # Log key safety metrics from Guardian
-                if details:
-                    iv = details.get('iv', 0)
-                    rv = details.get('rv', 0)
-                    pnl_inr = details.get('pnl_inr', 0)
-                    max_loss = details.get('max_loss_limit', 0)
-                    log.info(f"   📊 IV: {iv:.1f}%, RV: {rv:.1f}%, PnL: ₹{pnl_inr:.2f}/₹{max_loss:.0f}")
+                if should_log_guardian:
+                    log.info(f"🛡️  Guardian: 🟢 GO - Trading allowed (signal age: {signal_age:.1f}s)")
+                    # Log key safety metrics from Guardian
+                    if details:
+                        iv = details.get('iv', 0)
+                        rv = details.get('rv', 0)
+                        pnl_inr = details.get('pnl_inr', 0)
+                        max_loss = details.get('max_loss_limit', 0)
+                        log.info(f"   📊 IV: {iv:.1f}%, RV: {rv:.1f}%, PnL: ₹{pnl_inr:.2f}/₹{max_loss:.0f}")
             else:
+                # STOP signal - ALWAYS log (critical safety information)
                 log.warning(f"🛡️  Guardian: 🔴 STOP - Trading blocked (signal age: {signal_age:.1f}s)")
                 log.warning(f"   Reason: {reason}")
             
@@ -1217,12 +1309,13 @@ class AsyncGridBot:
         should_load, state_file, reason = mode_manager.handle_mode_transition()
         
         log.info("=" * 80)
-        log.info("🔄 STATE LOADING DECISION")
+        log.info("�️ STATE MANAGEMENT - CLEAN SLATE MODE")
         log.info("=" * 80)
         log.info(f"   Current Mode: {self.mode}")
-        log.info(f"   Decision: {'LOAD STATE' if should_load else 'FRESH START'}")
+        log.info(f"   Storage: SQLite Event Store (data/bot_events_{self.mode}.db)")
+        log.info(f"   State Loading: DISABLED (Clean Slate - sync from exchange only)")
+        log.info(f"   Mode Tracking: {state_file.name if state_file else 'N/A'} (not loaded)")
         log.info(f"   Reason: {reason}")
-        log.info(f"   State File: {state_file.name if state_file else 'N/A'}")
         log.info("=" * 80)
         
         if not should_load:
@@ -1307,19 +1400,16 @@ class AsyncGridBot:
         
         # NOV 13: Wire bot instance to WebUI monitoring routes
         log.info("🌐 Wiring bot instance to WebUI monitoring routes...")
-        human_log.wiring_webui()  # Human-readable
         try:
             from webui.backend.routes.monitoring import set_bot_instance
             set_bot_instance(self)
             log.info("✅ Bot wired to WebUI - monitoring data now accessible via API")
-            human_log.webui_connected()  # Human-readable
         except ImportError:
             log.warning("⚠️  WebUI monitoring routes not available (import failed)")
         except Exception as e:
             log.warning(f"⚠️  Could not wire to WebUI: {e}")
         
         log.info("✅ AsyncGridBot started successfully")
-        human_log.bot_started_successfully()  # Human-readable
         
         # NOV 13: Send startup notification
         await self._send_startup_notification()
@@ -1338,7 +1428,9 @@ class AsyncGridBot:
                         task_name = task.get_name() if hasattr(task, 'get_name') else "unknown"
                         # Skip websocket task - reconnection is normal
                         if 'websocket' in task_name.lower() or 'ws' in task_name.lower():
-                            log.debug(f"   Task '{task_name}' completed (normal for reconnection)")
+                            # Rate-limited logging for websocket reconnections
+                            if self._should_log('websocket_reconnection', interval_seconds=30):
+                                log.debug(f"   Task '{task_name}' completed (normal for reconnection)")
                             continue
                         critical_failures.append(task)
                         log.warning(f"   Task '{task_name}' completed unexpectedly")
@@ -1354,7 +1446,9 @@ class AsyncGridBot:
                         log.warning(f"⚠️  {len(critical_failures)} critical task(s) failed - stopping bot")
                         break
                     else:
-                        log.debug("All completed tasks were non-critical (websocket reconnection)")
+                        # Rate-limited logging for non-critical completions
+                        if self._should_log('non_critical_task_completion', interval_seconds=60):
+                            log.debug("All completed tasks were non-critical (websocket reconnection)")
                 
                 # Sleep briefly and check again
                 await asyncio.sleep(1.0)
@@ -1496,7 +1590,6 @@ class AsyncGridBot:
     async def _ws_message_loop(self) -> None:
         """WebSocket message processing loop."""
         log.info("📡 WebSocket message loop started")
-        human_log.websocket_message_loop_active()  # Human-readable
         
         try:
             async for message in self.api_client.ws_manager.messages():
@@ -2072,7 +2165,8 @@ class AsyncGridBot:
             elif state == 'maintenance':
                 log.info(f"🏗️ Exchange still in maintenance (check #{check_count})")
             else:
-                log.warning(f"⚠️ Exchange state unknown (check #{check_count}) - will keep checking")
+                # State is likely 'unknown' during transition - this is normal
+                log.debug(f"Exchange state: {state} (check #{check_count}) - continuing to monitor")
     
     async def _full_exchange_sync(self):
         """
@@ -2137,18 +2231,19 @@ class AsyncGridBot:
                     
                     # Add to bot memory
                     position_id = f"recovery-{int(entry_price)}-{int(time.time())}"
+                    tp_price = entry_price + self.grid_step
+                    
+                    # FIXED: Use correct ADD_POSITION format (direct fields, not nested 'position' dict)
                     await self.position_actor.tell('ADD_POSITION', {
-                        'position': {
-                            'id': position_id,
-                            'entry': entry_price,
-                            'size': size,
-                            'entry_order_id': position_id,
-                            'recovered': True
-                        }
+                        'position_id': position_id,
+                        'entry_price': entry_price,
+                        'tp_price': tp_price,
+                        'size': size,
+                        'entry_order_id': position_id,
+                        'recovered': True
                     })
                     
                     # Check if TP order exists
-                    tp_price = entry_price + self.grid_step
                     tp_exists = any(
                         abs(float(o.get('limit_price', 0)) - tp_price) < 0.01
                         and o.get('reduce_only', False)
@@ -2167,11 +2262,117 @@ class AsyncGridBot:
                     else:
                         log.info(f"   ✅ TP order already exists at ${tp_price:,.0f}")
             
-            # Step 6: Ensure grid coverage (place missing grid buy orders)
+            # Step 6: Find orphan TP orders (CRITICAL FIX DEC 24)
+            # These are bot-tagged TP orders without corresponding positions in memory
+            # This happens when: entry fills → bot restarts → TP still pending
+            orphan_tp_orders = []
+            for order in exchange_orders:
+                client_order_id = order.get('client_order_id') or ''  # Handle None case
+                
+                if (order.get('reduce_only', False) and 
+                    order.get('side', '').lower() == 'sell' and
+                    client_order_id.startswith('GBOT_')):
+                    
+                    tp_price = float(order.get('limit_price', 0))
+                    
+                    # Check if bot already has position with this TP
+                    bot_has_position = any(
+                        abs(float(bp.get('tp_price', 0)) - tp_price) < 0.01
+                        for bp in bot_positions
+                    )
+                    
+                    if not bot_has_position:
+                        orphan_tp_orders.append(order)
+            
+            # Step 7: Reconstruct positions from orphan TP orders
+            if orphan_tp_orders:
+                log.warning(f"🔍 Found {len(orphan_tp_orders)} orphan TP order(s) - reconstructing positions")
+                
+                from bot.strategy.modules.event_store import EventType
+                
+                for tp_order in orphan_tp_orders:
+                    tp_price = float(tp_order.get('limit_price', 0))
+                    size = float(tp_order.get('size', 0))
+                    tp_order_id = str(tp_order.get('id'))
+                    
+                    log.warning(f"   🎯 Orphan TP order #{tp_order_id} @ ${tp_price:,.0f} (size: {size})")
+                    
+                    # Calculate expected entry price from TP
+                    if self.mode == "LONG":
+                        expected_entry = tp_price - self.grid_step
+                    else:  # SHORT
+                        expected_entry = tp_price + self.grid_step
+                    
+                    # Try to find position in event store
+                    position_from_event = None
+                    try:
+                        # Query tp_order_placed events with this order_id
+                        tp_events = self.event_store.get_events_by_type(
+                            EventType.TP_ORDER_PLACED,
+                            limit=1000  # Last 1000 TP placements
+                        )
+                        
+                        for event in tp_events:
+                            if str(event.data.get('order_id')) == tp_order_id:
+                                # Found the TP placement event - get position_id
+                                position_id = event.aggregate_id
+                                
+                                # Now find the position_opened event
+                                position_events = self.event_store.get_events_by_type(
+                                    EventType.POSITION_OPENED,
+                                    limit=1000
+                                )
+                                
+                                for pos_event in position_events:
+                                    if pos_event.aggregate_id == position_id:
+                                        position_from_event = pos_event.data
+                                        log.info(f"   ✅ Found position in event store: {position_id}")
+                                        break
+                                break
+                    except Exception as e:
+                        log.warning(f"   ⚠️ Could not query event store: {e}")
+                    
+                    # Reconstruct position (from event store or calculated)
+                    if position_from_event:
+                        # Use data from event store
+                        position_id = position_from_event.get('position_id')
+                        entry_price = position_from_event.get('entry_price')
+                        
+                        log.info(f"   📊 Recovering from event: entry=${entry_price:,.0f}, tp=${tp_price:,.0f}")
+                        
+                        await self.position_actor.tell('ADD_POSITION', {
+                            'position_id': position_id,
+                            'entry_price': entry_price,
+                            'tp_price': tp_price,
+                            'size': size,
+                            'tp_order_id': tp_order_id,
+                            'entry_order_id': position_from_event.get('entry_order_id', position_id),
+                            'recovered': True
+                        })
+                    else:
+                        # Reconstruct from TP order + grid calculation
+                        position_id = f"recovery-tp-{tp_order_id}"
+                        
+                        log.warning(f"   ⚠️ Not in event store - calculating from grid: entry=${expected_entry:,.0f}")
+                        
+                        await self.position_actor.tell('ADD_POSITION', {
+                            'position_id': position_id,
+                            'entry_price': expected_entry,
+                            'tp_price': tp_price,
+                            'size': size,
+                            'tp_order_id': tp_order_id,
+                            'entry_order_id': position_id,
+                            'recovered': True
+                        })
+                    
+                    log.info(f"   ✅ Position reconstructed for TP #{tp_order_id}")
+            
+            # Step 8: Ensure grid coverage (place missing grid buy orders)
             await self._ensure_grid_coverage()
             
             log.info(f"✅ Full exchange sync complete:")
             log.info(f"   - {len(orphan_positions)} orphan positions recovered")
+            log.info(f"   - {len(orphan_tp_orders)} positions reconstructed from TP orders")
             log.info(f"   - Grid coverage verified")
             
         except Exception as e:
@@ -2339,8 +2540,9 @@ class AsyncGridBot:
             # NOV 13: Update price health monitor
             self.price_monitor.update_price(price, source="WEBSOCKET")
             
-            # Debug: Log ticker updates to verify WebSocket is working
-            log.debug(f"💚 WebSocket ticker: ${price:,.2f} (age will be 0s)")
+            # Debug: Log ticker updates (rate-limited to avoid spam)
+            if self._should_log('websocket_ticker', interval_seconds=60):
+                log.debug(f"💚 WebSocket ticker: ${price:,.2f} (age: 0s)")
             
             # Volatility monitoring REMOVED - Guardian monitors IV/RV/spread
             # Guardian publishes GO/STOP signals based on volatility thresholds
@@ -2453,7 +2655,6 @@ class AsyncGridBot:
             
             # CRITICAL: Check exchange for existing open orders BEFORE placing new ones
             log.info("🔍 Checking exchange for existing open orders...")
-            human_log.checking_orders()  # Human-readable
             try:
                 exchange_orders = await self.api_client.rest_client.get_open_orders(product_id=self.product_id)
                 
@@ -2795,7 +2996,7 @@ class AsyncGridBot:
                     # Mark as halted when blocked
                     self._was_halted = True
                     
-                    # Log detailed reason on state change or periodically
+                    # Log detailed reason on state change or periodically (every 60s)
                     if not hasattr(self, '_last_block_reason') or self._last_block_reason != reason:
                         # Reason changed - log immediately with full detailed message
                         log.warning("")
@@ -2810,11 +3011,12 @@ class AsyncGridBot:
                         log.warning("")
                         self._last_block_reason = reason
                         self._last_safety_block_log = time.time()
-                    elif time.time() - getattr(self, '_last_safety_block_log', 0) > 60:
-                        # Same reason but 60 seconds passed - remind user (compact format)
+                    elif time.time() - getattr(self, '_last_safety_block_log', 0) > 300:
+                        # Same reason but 5 minutes passed - brief reminder
                         first_line = reason.split('\n')[0] if '\n' in reason else reason
-                        log.warning(f"⚠️  Still blocked: {first_line}")
+                        log.info(f"ℹ️  Still blocked: {first_line}")
                         self._last_safety_block_log = time.time()
+                    # Silently skip if same reason and logged recently
                     return
                 
                 # GUARDIAN RESUME - Reset halt flag
@@ -2995,8 +3197,7 @@ class AsyncGridBot:
     
     async def _heartbeat_loop(self) -> None:
         """Periodic heartbeat tasks with detailed status logging."""
-        log.info("Heartbeat loop started")
-        human_log.heartbeat_loop_active()  # Human-readable
+        log.info("💓 Heartbeat loop started (every {self.config.bot.heartbeat_seconds}s)")
         
         heartbeat_counter = 0
         
@@ -3107,19 +3308,16 @@ class AsyncGridBot:
                         # Store for next comparison
                         self._last_hb_price = current_price
                         
-                        # Log detailed grid status (every 30s)
-                        if heartbeat_counter % 6 == 0:
+                        # Log detailed grid status (every 60s instead of 30s)
+                        if heartbeat_counter % 12 == 0:
                             self._log_detailed_grid_status(positions, pending_buy, pending_sell, current_price)
-                    else:
-                        log.info("[HB] Waiting for price data...")
             
             except Exception as e:
                 log.error(f"Heartbeat error: {e}")
     
     async def _monitoring_loop(self) -> None:
         """Write monitoring data for WebUI."""
-        log.info("Monitoring loop started")
-        human_log.monitoring_active()  # Human-readable
+        log.info("📊 Monitoring loop started")
         
         monitoring_file = Path("data/monitoring_snapshot.json")
         monitoring_file.parent.mkdir(exist_ok=True)

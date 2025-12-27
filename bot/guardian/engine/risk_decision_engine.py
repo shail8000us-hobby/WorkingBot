@@ -32,6 +32,7 @@ except ImportError:
 
 from bot.strategy.modules.event_store import EventStore, Event, EventType
 from config.loader import get_config
+from bot.guardian.health.health_tracker import SystemHealthTracker
 
 # Configure module logger
 log = logging.getLogger("guardian.risk_engine")
@@ -81,6 +82,9 @@ class GuardianRiskDecisionEngine:
         # Components will be injected
         self.volatility_collector = None
         self.position_monitor = None
+        
+        # Initialize health tracker for Layer 5
+        self.health_tracker = SystemHealthTracker(config=self.config)
         
         # Setup config file watcher (WebUI changes)
         # Config is at project root, not in config/ subdirectory
@@ -377,7 +381,7 @@ class GuardianRiskDecisionEngine:
         
         try:
             liq_distance = self.position_monitor.get_liquidation_distance()
-            min_distance = getattr(self.config.safety, 'min_liquidation_distance_inr', None)
+            min_distance = getattr(self.config.safety, 'min_liquidation_distance_pct', None)
             if min_distance:
                 return liq_distance < min_distance
             return False
@@ -387,8 +391,11 @@ class GuardianRiskDecisionEngine:
     
     def _has_system_issues(self) -> bool:
         """Check for API connectivity or other system issues"""
-        # TODO: Implement health tracker integration
-        return False
+        if not hasattr(self, 'health_tracker') or not self.health_tracker:
+            return False  # No tracker = assume healthy (fail-safe)
+        
+        # Use health tracker's critical issue detection
+        return self.health_tracker.has_critical_issues()
     
     def _make_go_signal(self) -> Dict:
         """Create a GO signal - all systems nominal"""
@@ -396,6 +403,7 @@ class GuardianRiskDecisionEngine:
         pnl = self._get_pnl_details()
         position = self._get_position_details()
         liquidation = self._get_liquidation_details()
+        health = self._get_health_details()
         
         # Log comprehensive safety metrics - SHOW EVERYTHING FOR TRANSPARENCY
         log.info("="*80)
@@ -445,10 +453,30 @@ class GuardianRiskDecisionEngine:
         log.info(f"      Status: {liquidation.get('status', 'UNKNOWN')}")
         
         # 5. SYSTEM HEALTH CHECK
-        log.info("   💻 SYSTEM HEALTH CHECK: ✅ PASS")
-        log.info("      API Connectivity: OK")
-        log.info("      Position Monitor: ACTIVE")
-        log.info("      Volatility Collector: ACTIVE")
+        health_emoji = "✅" if health.get('system_healthy', True) else "⚠️"
+        maintenance_mode = health.get('exchange_in_maintenance', False)
+        
+        if maintenance_mode:
+            log.info(f"   💻 SYSTEM HEALTH CHECK: 🔴 MAINTENANCE MODE")
+            log.info(f"      Exchange Status: IN MAINTENANCE")
+        else:
+            log.info(f"   💻 SYSTEM HEALTH CHECK: {health_emoji} {'PASS' if health.get('system_healthy', True) else 'DEGRADED'}")
+        
+        if health.get('enabled', False):
+            log.info(f"      API Health: {'✅' if health.get('api_healthy', True) else '❌'} (Success rate: {health.get('api_success_rate', 100):.1f}%)")
+            log.info(f"      WebSocket: {'✅ Connected' if health.get('websocket_connected', True) else '❌ Disconnected'} (Stale: {health.get('websocket_stale_seconds', 0):.0f}s)")
+            log.info(f"      Data Freshness: {'✅' if health.get('data_healthy', True) else '❌'}")
+            log.info(f"      Event Store: {'✅ Connected' if health.get('event_store_connected', True) else '❌ Disconnected'}")
+            log.info(f"      Exchange Status: {'🔴 MAINTENANCE' if maintenance_mode else '🟢 OPERATIONAL'}")
+            
+            if health.get('maintenance_scheduled', False):
+                log.info(f"      ⚠️ Maintenance scheduled")
+            
+            if health.get('issues'):
+                log.info(f"      Issues: {', '.join(health['issues'])}")
+        else:
+            log.info("      Status: Monitoring disabled")
+        
         log.info("="*80)
         
         return {
@@ -459,7 +487,8 @@ class GuardianRiskDecisionEngine:
                 **volatility,
                 **pnl,
                 **position,
-                **liquidation
+                **liquidation,
+                **health
             }
         }
     
@@ -471,6 +500,7 @@ class GuardianRiskDecisionEngine:
         pnl = self._get_pnl_details()
         position = self._get_position_details()
         liquidation = self._get_liquidation_details()
+        health = self._get_health_details()
         
         # Log which safety system blocked trading
         log.warning("="*80)
@@ -526,9 +556,19 @@ class GuardianRiskDecisionEngine:
         log.warning(f"      Status: {liquidation.get('status', 'UNKNOWN')}")
         
         # 5. SYSTEM HEALTH
-        sys_status = "❌ BLOCKED" if 'system' in details else "✅ PASS"
+        health_blocked = "System health issue" in reason
+        sys_status = "❌ BLOCKED" if health_blocked else "✅ PASS"
         log.warning(f"   💻 SYSTEM HEALTH CHECK: {sys_status}")
-        log.warning("      API Connectivity: OK" if sys_status == "✅ PASS" else "      API Connectivity: FAILED")
+        
+        if health.get('enabled', False):
+            log.warning(f"      API Health: {'❌' if health_blocked and 'API' in health.get('issues', []) else '✅'}")
+            log.warning(f"      WebSocket: {'❌' if health_blocked and 'WebSocket' in str(health.get('issues', [])) else '✅'}")
+            log.warning(f"      Data Freshness: {'❌' if health_blocked and 'Data' in str(health.get('issues', [])) else '✅'}")
+            if health.get('issues'):
+                log.warning(f"      Issues: {', '.join(health['issues'])}")
+        else:
+            log.warning("      Status: Monitoring disabled")
+        
         log.warning("="*80)
         
         return {
@@ -728,10 +768,33 @@ class GuardianRiskDecisionEngine:
     
     def _get_health_details(self) -> Dict:
         """Get system health information"""
-        # TODO: Implement health tracker integration
+        if not hasattr(self, 'health_tracker') or not self.health_tracker:
+            return {
+                'enabled': False,
+                'status': 'unavailable',
+                'message': 'Health tracker not initialized'
+            }
+        
+        health = self.health_tracker.get_health_status()
+        
+        # Check if exchange is in maintenance
+        maintenance_mode = health.get('exchange_in_maintenance', False)
+        maintenance_status = health.get('maintenance_status', {})
+        
         return {
-            'api_status': 'connected',
-            'last_data_update': time.time()
+            'enabled': health.get('enabled', False),
+            'system_healthy': health.get('system_healthy', True),
+            'api_healthy': health.get('api', {}).get('healthy', True),
+            'api_success_rate': health.get('api', {}).get('success_rate', 100.0),
+            'websocket_connected': health.get('websocket', {}).get('connected', True),
+            'websocket_stale_seconds': health.get('websocket', {}).get('stale_seconds', 0),
+            'data_healthy': health.get('data_freshness', {}).get('healthy', True),
+            'event_store_connected': health.get('event_store_connected', True),
+            'exchange_in_maintenance': maintenance_mode,
+            'maintenance_scheduled': maintenance_status.get('maintenance_scheduled', False) if maintenance_status else False,
+            'issues': health.get('issues', []),
+            'status': 'MAINTENANCE' if maintenance_mode else ('OK' if health.get('system_healthy', True) else 'UNHEALTHY'),
+            'message': health.get('message', 'Unknown')
         }
     
     def shutdown(self):

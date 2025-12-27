@@ -246,7 +246,9 @@ class AsyncWebSocketManager:
             
             # Create message queues within running event loop
             if self._message_queue is None:
-                self._message_queue = asyncio.Queue(maxsize=1000)
+                # Larger queue to handle bursts (10K messages)
+                # Message queue holds pre-routed messages for async iteration
+                self._message_queue = asyncio.Queue(maxsize=10000)
             if self._outbound_queue is None:
                 self._outbound_queue = asyncio.Queue(maxsize=100)
             
@@ -677,8 +679,7 @@ class AsyncWebSocketManager:
         # Handle heartbeat
         if msg_type == "heartbeat":
             self.stats.last_heartbeat_time = time.time()
-            log.debug("Received heartbeat")  # Keep for AI/system
-            human_log.connection_stable()  # Trader-friendly
+            # Heartbeat received - no log (too frequent, not actionable)
             return
         
         # Handle subscription confirmations and Delta Exchange specific errors
@@ -717,10 +718,17 @@ class AsyncWebSocketManager:
         await self._route_message(message)
         
         # Add to queue for async iteration
-        if not self._message_queue.full():
-            await self._message_queue.put(message)
-        else:
-            log.warning("Message queue full - dropping message")
+        # Note: Messages are already processed via _route_message(),
+        # this queue is only for the messages() iterator (if used)
+        try:
+            self._message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            # Rate limit this warning (only log every 100 drops)
+            if not hasattr(self, '_queue_drop_count'):
+                self._queue_drop_count = 0
+            self._queue_drop_count += 1
+            if self._queue_drop_count % 100 == 1:
+                log.warning(f"Message queue full - dropped {self._queue_drop_count} messages (queue consumer may be slow)")
     
     async def _subscribe_private_channels(self) -> None:
         """Subscribe to private channels after authentication (per Delta Exchange docs)."""

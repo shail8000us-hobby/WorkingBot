@@ -298,6 +298,10 @@ class SafetyConfig(BaseModel):
     execute_orders: bool = Field(True, description="Enable real order placement (dry-run if False)")
     live_acknowledgment: str = Field("", description="Must be 'YES' to trade in live mode")
     
+    # Guardian Layer 3 & 4 Limits
+    max_position_size: Optional[int] = Field(None, gt=0, description="Max total position size in contracts")
+    min_liquidation_distance_pct: Optional[float] = Field(None, gt=0, description="Min liquidation distance percentage")
+    
     # Safety Modules
     flash_move: FlashMoveGuard
     spread_guard: SpreadGuard
@@ -309,6 +313,14 @@ class SafetyConfig(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════════
 # GUARDIAN BOT
 # ═══════════════════════════════════════════════════════════════════════════
+
+class HealthCheckConfig(BaseModel):
+    """Guardian Layer 5 health monitoring configuration"""
+    enabled: bool = Field(True, description="Enable system health monitoring")
+    api_timeout_seconds: int = Field(30, gt=0, description="API timeout threshold")
+    websocket_timeout_seconds: int = Field(60, gt=0, description="WebSocket timeout threshold")
+    data_stale_threshold_seconds: int = Field(120, gt=0, description="Data stale threshold")
+
 
 class GuardianConfig(BaseModel):
     """Guardian bot configuration"""
@@ -324,6 +336,9 @@ class GuardianConfig(BaseModel):
     alert_threshold_90: bool = Field(True, description="Alert at 90% threshold")
     daily_summary: bool = Field(True, description="Send daily summary")
     cooldown: int = Field(60, gt=0, description="Cooldown between actions")
+    
+    # Layer 5: Health monitoring
+    health_check: Optional[HealthCheckConfig] = Field(None, description="Health check configuration")
     
     # Hysteresis Configuration
     hysteresis_80_trigger: float = Field(80.0, gt=0, description="80% alert trigger threshold (can exceed 100%)")

@@ -1,17 +1,29 @@
 # 🤖 AI CONTEXT - GridBot Trading System
 
-**Last Updated:** November 20, 2025, 3:37 PM  
-**Version:** 6.0 (State Machine + Clean Slate Architecture)  
+**Last Updated:** December 25, 2025  
+**Version:** 6.1 (Log Optimization + Clean Slate Architecture)  
 **Project Location:** `/Users/ssr/Projects/WorkingBot`  
 **Status:** ✅ **PRODUCTION-READY** (Development Phase: Clean Slate Mode)
 
 ---
 
-## 🚀 **CRITICAL: LATEST ARCHITECTURE (NOV 20, 2025 - 3:37 PM)**
+## 🚀 **CRITICAL: LATEST UPDATES (DEC 25, 2025)**
+
+### **✅ NEW: Log Optimization (December 25, 2025)**
+
+The logging system has been optimized for PM2 deployment:
+
+1. ✅ **PM2-Aware Logging** - Detects PM2 environment and removes duplicate timestamps
+2. ✅ **Log Rate Limiting** - Frequent messages (Guardian, WebSocket) logged every 30-60s
+3. ✅ **Reduced Verbosity** - INFO level default (was DEBUG), ~70% fewer log lines
+4. ✅ **Cleaner Output** - Single timestamp from PM2, easier to read
+5. ✅ **Detailed Log File** - `bot/logs/gridbot_detailed.log` still has full DEBUG logs
+
+**See:** `LOG_OPTIMIZATION_DEC25_2025.md` for complete details
 
 ### **⚠️ READ THIS FIRST - STATE MACHINE + CLEAN SLATE**
 
-The GridBot system now uses a **State Machine Coordinator** with **Clean Slate on Restart**:
+The GridBot system uses a **State Machine Coordinator** with **Clean Slate on Restart**:
 
 1. ✅ **State Machine Coordinator** - Synchronizes Guardian, Recovery, and Trading (`simple_state_coordinator.py`)
 2. ✅ **Clean Slate on Restart** - Bot clears memory, syncs from exchange only

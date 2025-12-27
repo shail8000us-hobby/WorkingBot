@@ -300,14 +300,9 @@ class HumanLogger:
         )
     
     def heartbeat_ok(self):
-        """Network heartbeat working"""
-        self._add_to_memory('heartbeat')
-        self._log_with_level(
-            LogLevel.BOT_OK, 
-            "Network heartbeat OK.", 
-            key="heartbeat_ok",
-            narrative="Ping... pong. Network's healthy. We're in sync with the exchange. 💓"
-        )
+        """Network heartbeat working - silenced (too frequent)"""
+        # No longer logged - heartbeat happens every 5s and provides no actionable info
+        pass
     
     def message_routed(self, msg_type: str, handler_count: int):
         """Message successfully routed to handlers"""

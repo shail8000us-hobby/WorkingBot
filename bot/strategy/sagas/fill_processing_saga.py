@@ -554,8 +554,47 @@ async def create_sell_fill_saga(
         
         position = await asyncio.wait_for(reply_queue.get(), timeout=5.0)
         
+        # CRITICAL FIX DEC 24: Fallback if position not found in memory
         if not position:
-            raise Exception(f"No position found with TP price: {fill_data['fill_price']}")
+            log.error(f"❌ No position found in memory with TP price: {fill_data['fill_price']}")
+            log.error(f"   This should have been recovered on startup!")
+            log.error(f"   Attempting emergency recovery from TP order #{fill_data['order_id']}...")
+            
+            # Try to reconstruct position from event store
+            from bot.strategy.modules.event_store import EventType
+            
+            try:
+                # Find tp_order_placed event for this order_id
+                tp_events = event_store.get_events_by_type(EventType.TP_ORDER_PLACED, limit=1000)
+                
+                for event in tp_events:
+                    if str(event.data.get('order_id')) == str(fill_data['order_id']):
+                        position_id = event.aggregate_id
+                        
+                        # Find position_opened event
+                        pos_events = event_store.get_events_by_type(EventType.POSITION_OPENED, limit=1000)
+                        
+                        for pos_event in pos_events:
+                            if pos_event.aggregate_id == position_id:
+                                log.warning(f"   ⚠️ Found position in event store: {position_id}")
+                                log.warning(f"   Entry: ${pos_event.data.get('entry_price')}, TP: ${pos_event.data.get('tp_price')}")
+                                
+                                # Use event store data as position
+                                position = pos_event.data
+                                
+                                # Log this critical recovery
+                                log.critical(f"🚨 EMERGENCY RECOVERY: Position reconstructed from event store")
+                                log.critical(f"   This indicates startup recovery failed to load this position!")
+                                break
+                        
+                        if position:
+                            break
+            except Exception as e:
+                log.error(f"   ❌ Emergency recovery failed: {e}")
+            
+            # Still not found - this is a critical error
+            if not position:
+                raise Exception(f"No position found with TP price: {fill_data['fill_price']} - CRITICAL: Startup recovery failed!")
         
         log.info(f"[SAGA] Removing position: {position['position_id']}")
         
