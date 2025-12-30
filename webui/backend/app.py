@@ -87,6 +87,7 @@ try:
     from .routes.code_explainer import code_explainer_bp  # NOV 16: Phase 3 - Code Explainer AI
     from .routes.recovery import bp as recovery_bp  # NOV 20: Recovery systems
     from .routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
+    from .routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
 except ImportError:
     from routes import (
         utility_bp, health_bp, logs_bp, docs_bp, metrics_bp,
@@ -107,6 +108,7 @@ except ImportError:
     from routes.code_explainer import code_explainer_bp  # NOV 16: Phase 3 - Code Explainer AI
     from routes.recovery import bp as recovery_bp  # NOV 20: Recovery system
     from routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
+    from routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
 
 # Load YAML config
 from config.loader import get_config
@@ -210,6 +212,10 @@ print(f"✅ Registered recovery blueprint")
 
 app.register_blueprint(reconciliation_bp)
 print(f"✅ Registered reconciliation blueprint")
+
+# Register Multi-Symbol API blueprint (DEC 28: v5.0 multi-symbol support)
+app.register_blueprint(symbols_bp)
+print(f"✅ Registered symbols blueprint (v5.0 multi-symbol)")
 
 # Unified safety blueprint is now part of blueprints list (registered above)
 

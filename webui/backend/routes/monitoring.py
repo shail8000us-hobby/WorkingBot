@@ -40,7 +40,8 @@ monitoring_bp = Blueprint('monitoring', __name__)
 # File paths
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 RUNTIME_STATE_FILE = BASE_DIR / "runtime_state.json"
-MONITORING_SNAPSHOT_FILE = BASE_DIR / "data" / "monitoring_snapshot.json"
+# V5.0: Symbol-specific monitoring snapshots
+# MONITORING_SNAPSHOT_FILE is now determined dynamically per symbol
 
 # Global references to bot monitoring systems (set by app.py)
 _price_monitor = None
@@ -51,21 +52,68 @@ _predictive_display = None
 _bot_instance = None
 
 
-def _load_monitoring_snapshot():
+def _get_monitoring_file(symbol_name='BTCUSD', mode='LONG'):
     """
-    Load monitoring data from shared snapshot file.
+    Get path to symbol-specific monitoring snapshot file (v5.0).
+    
+    Args:
+        symbol_name: Symbol key (e.g., 'BTCUSD', 'ETHUSD')
+        mode: Trading mode (e.g., 'LONG', 'SHORT')
+    
+    Returns:
+        Path: Path to monitoring snapshot file
+    """
+    return BASE_DIR / "data" / f"monitoring_snapshot_{symbol_name}_{mode}.json"
+
+
+def _load_monitoring_snapshot(symbol_name=None, mode=None):
+    """
+    Load monitoring data from symbol-specific snapshot file (v5.0).
     
     This allows WebUI to show monitoring data even when bot runs standalone
     (not started from WebUI).
+    
+    Args:
+        symbol_name: Symbol key (default: from config or 'BTCUSD')
+        mode: Trading mode (default: from config or 'LONG')
     
     Returns:
         dict: Monitoring data or None if file doesn't exist/is stale
     """
     try:
-        if not MONITORING_SNAPSHOT_FILE.exists():
+        # Get symbol from query params or config
+        if not symbol_name:
+            from webui.backend.utils.yaml_config import get_config_value
+            config = get_config_value()
+            
+            # V5.0: Try symbols config first
+            if hasattr(config, 'symbols') and config.symbols:
+                # Use first enabled symbol
+                for sym_name, sym_config in config.symbols.items():
+                    if sym_config.enabled:
+                        symbol_name = sym_name
+                        mode = sym_config.mode
+                        break
+                
+                if not symbol_name:
+                    # No enabled symbols, use first symbol
+                    symbol_name = list(config.symbols.keys())[0]
+                    mode = config.symbols[symbol_name].mode
+            else:
+                # V4.0: Single symbol mode
+                symbol_name = getattr(config.bot, 'symbol', 'BTCUSD')
+                mode = getattr(config.bot, 'mode', 'LONG')
+        
+        if not mode:
+            mode = 'LONG'  # Default mode
+        
+        monitoring_file = _get_monitoring_file(symbol_name, mode)
+        
+        if not monitoring_file.exists():
+            log.debug(f"Monitoring snapshot not found: {monitoring_file}")
             return None
         
-        with open(MONITORING_SNAPSHOT_FILE) as f:
+        with open(monitoring_file) as f:
             data = json.load(f)
         
         # Check if data is fresh (< 30s old)
@@ -73,10 +121,10 @@ def _load_monitoring_snapshot():
         age = (datetime.now() - timestamp).total_seconds()
         
         if age < 30:
-            log.debug(f"✅ Loaded monitoring snapshot (age: {age:.1f}s)")
+            log.debug(f"✅ Loaded monitoring snapshot for {symbol_name} (age: {age:.1f}s)")
             return data
         else:
-            log.debug(f"⚠️ Monitoring snapshot too old ({age:.1f}s)")
+            log.debug(f"⚠️ Monitoring snapshot for {symbol_name} too old ({age:.1f}s)")
             return None
             
     except Exception as e:
@@ -114,14 +162,20 @@ def monitoring_status():
     """
     Get overall monitoring system status
     
+    Query Parameters:
+        symbol: Symbol name (e.g., 'BTCUSD', 'ETHUSD') - Optional, defaults to first enabled symbol
+        mode: Trading mode (e.g., 'LONG', 'SHORT') - Optional, defaults from config
+    
     Returns status of all 5 monitoring layers.
     First tries to read from shared snapshot file (works with standalone bot),
     falls back to bot_instance (WebUI-started bot).
     
     Example:
-        GET /api/monitoring/status
+        GET /api/monitoring/status?symbol=BTCUSD
         Response: {
             "monitoring_active": true,
+            "symbol": "BTCUSD",
+            "mode": "LONG",
             "layers": {
                 "price_health": true,
                 "pre_order_logger": true,
@@ -132,11 +186,17 @@ def monitoring_status():
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first (works with standalone bot)
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot:
             return jsonify({
                 'monitoring_active': snapshot.get('monitoring_active', False),
+                'symbol': snapshot.get('symbol', symbol or 'BTCUSD'),
+                'mode': snapshot.get('mode', mode or 'LONG'),
                 'layers': {
                     'price_health': snapshot['layers'].get('price_health', {}).get('active', False),
                     'pre_order_logger': snapshot['layers'].get('pre_order_stats', {}).get('active', False),
