@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, Activity, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import { SymbolContext } from '../context/SymbolContext'; // Reference for context integration
 
 /**
  * Multi-Symbol Selector Component (v5.0)

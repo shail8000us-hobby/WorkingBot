@@ -1,18 +1,18 @@
 {
-  "timestamp": "2025-12-30T23:02:12.055619",
+  "timestamp": "2025-12-31T00:04:31.609970",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 88555.5,
+    "current_price": 88354.5,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 88555.5,
-      "price_age_seconds": 4.583801984786987,
+      "price": 88354.5,
+      "price_age_seconds": 3.7247538566589355,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 5175,
+        "total_updates": 1909,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -30,10 +30,10 @@
       }
     },
     "pre_order_stats": {
-      "total_decisions": 133,
+      "total_decisions": 0,
       "approved": 0,
       "rejected": 0,
-      "approval_rate": 0.0,
+      "approval_rate": 0,
       "active": true
     },
     "tp_verification": {
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 88555.5,
+        "price": 88354.5,
         "grid_step": 500.0,
         "positions": 0,
         "max_positions": 10,
@@ -87,27 +87,27 @@
         "price_drops": [
           {
             "action": "BUY",
-            "price": 87500.0,
-            "tp_price": 88000.0,
-            "change_pct": -1.191907899565809,
+            "price": 88000.0,
+            "tp_price": 88500.0,
+            "change_pct": -0.40122461221556344,
             "reason": "Grid level #1",
             "sequence": 1,
             "profit_target": 500.0
           },
           {
             "action": "BUY",
-            "price": 87000.0,
-            "tp_price": 87500.0,
-            "change_pct": -1.7565255687111474,
+            "price": 87500.0,
+            "tp_price": 88000.0,
+            "change_pct": -0.9671267451007023,
             "reason": "Grid level #2",
             "sequence": 2,
             "profit_target": 500.0
           },
           {
             "action": "BUY",
-            "price": 86500.0,
-            "tp_price": 87000.0,
-            "change_pct": -2.3211432378564854,
+            "price": 87000.0,
+            "tp_price": 87500.0,
+            "change_pct": -1.5330288779858412,
             "reason": "Grid level #3",
             "sequence": 3,
             "profit_target": 500.0
@@ -159,7 +159,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2025-12-30T23:02:12.249036"
+      "timestamp": "2025-12-31T00:04:32.171663"
     },
     "opportunistic_recovery": {
       "active": false,
