@@ -9,7 +9,7 @@ grid:
     lower: '85000'
     upper: '95000'
     step: '500'
-    reference: '87500'
+    reference: '88000'
   limits:
     max_open_positions: '50'
     lot_size: '5'
@@ -55,7 +55,7 @@ safety:
   i_understand_live: 'YES'
   live_acknowledgment: 'YES'
   max_position_size: 1000
-  min_liquidation_distance_pct: 50.0
+  min_liquidation_distance_pct: 10.0
   flash_move: {}
   spread_guard: {}
   volatility:
@@ -93,12 +93,24 @@ safety:
     enabled: true
     poll_interval: 10
     chaos_threshold: 60
+  rsi:
+    enabled: true
+    period: 14
+    overbought_threshold: 70.0
+    oversold_threshold: 30.0
+    long_threshold: 25
+    short_threshold: 75
+    hysteresis_seconds: 60
+    timeframe: 1h
+    check_interval: 300
+    cache_ttl: 60
 guardian:
   enabled: true
-  check_interval: 10
+  check_interval: 5
   max_account_loss_inr: '10000'
   usd_to_inr_rate: '85.0'
-  liquidation_critical: 0.5
+  liquidation_critical: 1.0
+  liquidation_warning: 5.0
   auto_close_positions: true
   health_check:
     enabled: true
@@ -132,9 +144,9 @@ liquidation_protection:
   margin_utilization_warning_2: 70
   margin_emergency_reserve: 60
   reduce_only_at_utilization: 200
-  liquidation_distance_min: 60.0
-  liquidation_distance_target: 70.0
-  liquidation_distance_critical: 50.0
+  liquidation_distance_min: 10.0
+  liquidation_distance_target: 15.0
+  liquidation_distance_critical: 5.0
   liquidation_distance_check_interval: true
   real_time_monitoring: true
   websocket_margin_updates: true

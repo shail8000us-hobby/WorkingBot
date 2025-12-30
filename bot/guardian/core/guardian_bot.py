@@ -232,6 +232,16 @@ class GuardianBot:
         self.position_monitor = PositionMonitor(self.exchange, self.config)
         self.health_tracker = HealthTracker(self.config, self.base_dir)
         
+        # RSI collector (Layer 6)
+        try:
+            from bot.guardian.collectors.rsi_collector import RSICollector
+            self.rsi_collector = RSICollector(self.exchange, self.config)
+            logger.info("✅ RSI Collector initialized (Layer 6)")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize RSI collector: {e}")
+            logger.debug(f"Error details: {e}", exc_info=True)
+            self.rsi_collector = None
+        
         # Liquidation protection
         if getattr(self.config.guardian, 'liquidation_protection_enabled', True):
             try:
@@ -274,9 +284,10 @@ class GuardianBot:
         self.risk_decision_engine.set_components(
             volatility_collector=volatility_collector,
             position_monitor=self.position_monitor,
-            liquidation_monitor=self.liquidation_monitor
+            liquidation_monitor=self.liquidation_monitor,
+            rsi_collector=self.rsi_collector
         )
-        logger.info("✅ Risk engine components injected (volatility + position monitor + liquidation monitor)")
+        logger.info("✅ Risk engine components injected (volatility + position monitor + liquidation monitor + RSI collector)")
         logger.info("📡 Guardian will publish signals to database every 5 seconds")
         logger.info("🔄 Config file watcher active - will detect WebUI parameter changes")
         
@@ -473,8 +484,17 @@ class GuardianBot:
             logger.info(f"🟢 Signal: GO - All clear")
     
     def _update_health_status(self, signal_data: Optional[Dict]):
-        """Update health status file"""
+        """Update health status file with position and liquidation metrics"""
         try:
+            # Get position and liquidation metrics from monitor_cycle
+            monitoring_result = None
+            if hasattr(self, 'position_monitor') and self.position_monitor:
+                try:
+                    monitoring_result = self.position_monitor.monitor_cycle()
+                except Exception as e:
+                    logger.debug(f"Could not get monitor_cycle data: {e}")
+            
+            # Base health data
             health_data = {
                 'guardian_version': self.VERSION,
                 'last_check': datetime.now().isoformat(),
@@ -484,6 +504,29 @@ class GuardianBot:
                 'status': 'running',
                 'pid': os.getpid()
             }
+            
+            # Add position and liquidation metrics if available
+            if monitoring_result:
+                health_data['positions'] = {
+                    'count': len(monitoring_result.get('positions', [])),
+                    'current_price': monitoring_result.get('current_price'),
+                    'total_pnl_inr': monitoring_result.get('total_summary', {}).get('total_pnl_inr', 0),
+                }
+                
+                # Add liquidation metrics (Delta Exchange India improvements)
+                health_data['liquidation'] = {
+                    'distance': monitoring_result.get('liquidation_distance', 100.0),
+                    'critical': monitoring_result.get('liquidation_critical', False),
+                    'warning': monitoring_result.get('liquidation_warning', False),
+                    'details_count': len(monitoring_result.get('liquidation_details', [])),
+                }
+                
+                # Add bankruptcy distance if available
+                if hasattr(self.position_monitor, 'get_bankruptcy_distance'):
+                    try:
+                        health_data['liquidation']['bankruptcy_distance'] = self.position_monitor.get_bankruptcy_distance()
+                    except Exception:
+                        pass
             
             self.health_tracker.update_health_data(health_data)
         except Exception as e:

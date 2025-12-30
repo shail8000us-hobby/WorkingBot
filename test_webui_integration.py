@@ -1,174 +1,234 @@
 #!/usr/bin/env python3
 """
-Web UI Integration Test
-Tests all button/action endpoints to verify they're properly connected to the bot
+WebUI Integration Verification - Delta Exchange India Improvements
+===================================================================
+
+This script verifies that all Delta Exchange India improvements are properly
+integrated with the WebUI and accessible to users.
+
+Date: December 28, 2025
 """
 
-import requests
 import json
+import requests
+import sys
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
 
-# Configuration
-BASE_URL = "http://localhost:5555"
 BASE_DIR = Path(__file__).parent
+WEBUI_URL = "http://localhost:5555"
 
-class Color:
-    """ANSI color codes for terminal output"""
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    BOLD = '\033[1m'
-    END = '\033[0m'
 
-def test_endpoint(method: str, endpoint: str, data: Dict = None, expected_status: int = 200) -> Tuple[bool, str, Any]:
-    """
-    Test a single endpoint
-    Returns: (success, message, response_data)
-    """
-    url = f"{BASE_URL}{endpoint}"
+def check_guardian_health_file():
+    """Verify Guardian health file includes liquidation metrics"""
+    print("\n" + "=" * 80)
+    print("TEST 1: Guardian Health File")
+    print("=" * 80)
+    
+    health_file = BASE_DIR / '.guardian_health'
+    
+    if not health_file.exists():
+        print("❌ FAIL: .guardian_health file not found")
+        return False
+    
+    with open(health_file, 'r') as f:
+        health_data = json.load(f)
+    
+    # Check required fields
+    required_fields = {
+        'guardian_version': str,
+        'signal': str,
+        'positions': dict,
+        'liquidation': dict
+    }
+    
+    passed = True
+    for field, expected_type in required_fields.items():
+        if field not in health_data:
+            print(f"❌ FAIL: Missing field '{field}'")
+            passed = False
+        elif not isinstance(health_data[field], expected_type):
+            print(f"❌ FAIL: Field '{field}' has wrong type (expected {expected_type})")
+            passed = False
+        else:
+            print(f"✅ PASS: Field '{field}' present and correct type")
+    
+    # Check liquidation metrics specifically
+    print("\n📊 Liquidation Metrics:")
+    liquidation = health_data.get('liquidation', {})
+    required_liq_fields = ['distance', 'critical', 'warning', 'details_count', 'bankruptcy_distance']
+    
+    for field in required_liq_fields:
+        if field in liquidation:
+            print(f"   ✅ {field}: {liquidation[field]}")
+        else:
+            print(f"   ❌ Missing: {field}")
+            passed = False
+    
+    if passed:
+        print("\n✅ TEST 1 PASSED: Guardian health file properly formatted")
+    else:
+        print("\n❌ TEST 1 FAILED: Guardian health file missing required fields")
+    
+    return passed
+
+
+def check_api_liquidation_metrics():
+    """Verify /api/positions/liquidation-metrics endpoint"""
+    print("\n" + "=" * 80)
+    print("TEST 2: API - Liquidation Metrics Endpoint")
+    print("=" * 80)
+    
+    url = f"{WEBUI_URL}/api/positions/liquidation-metrics"
     
     try:
-        if method == "GET":
-            response = requests.get(url, timeout=5)
-        elif method == "POST":
-            response = requests.post(url, json=data, timeout=5)
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code != 200:
+            print(f"❌ FAIL: HTTP status {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+        
+        data = response.json()
+        
+        if not data.get('success'):
+            print(f"❌ FAIL: API returned success=false")
+            print(f"Response: {json.dumps(data, indent=2)}")
+            return False
+        
+        # Check required response fields
+        required_fields = [
+            'liquidation_distance',
+            'liquidation_critical',
+            'liquidation_warning',
+            'bankruptcy_distance',
+            'positions_count',
+            'risk_zone'
+        ]
+        
+        passed = True
+        for field in required_fields:
+            if field in data:
+                print(f"✅ {field}: {data[field]}")
+            else:
+                print(f"❌ Missing: {field}")
+                passed = False
+        
+        if passed:
+            print("\n✅ TEST 2 PASSED: API endpoint returns all required fields")
         else:
-            return False, f"Unsupported method: {method}", None
+            print("\n❌ TEST 2 FAILED: API endpoint missing required fields")
         
-        # Check status code
-        if response.status_code != expected_status:
-            return False, f"Expected {expected_status}, got {response.status_code}", None
+        return passed
         
-        # Try to parse JSON
-        try:
-            response_data = response.json()
-        except:
-            response_data = response.text
-        
-        return True, "OK", response_data
-    
-    except requests.exceptions.ConnectionError:
-        return False, "Connection refused - Is the web UI running?", None
-    except requests.exceptions.Timeout:
-        return False, "Request timeout", None
-    except Exception as e:
-        return False, f"Error: {str(e)}", None
+    except requests.exceptions.RequestException as e:
+        print(f"❌ FAIL: Could not connect to WebUI: {e}")
+        return False
+    except json.JSONDecodeError as e:
+        print(f"❌ FAIL: Invalid JSON response: {e}")
+        return False
 
-def print_result(category: str, endpoint: str, success: bool, message: str):
-    """Print test result with color coding"""
-    status = f"{Color.GREEN}✅ PASS{Color.END}" if success else f"{Color.RED}❌ FAIL{Color.END}"
-    print(f"  {status} {endpoint:<50} {message}")
+
+def check_api_monitor_cycle():
+    """Verify /api/positions/monitor-cycle endpoint"""
+    print("\n" + "=" * 80)
+    print("TEST 3: API - Monitor Cycle Endpoint")
+    print("=" * 80)
+    
+    url = f"{WEBUI_URL}/api/positions/monitor-cycle"
+    
+    try:
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code != 200:
+            print(f"❌ FAIL: HTTP status {response.status_code}")
+            return False
+        
+        data = response.json()
+        
+        if not data.get('success'):
+            print(f"❌ FAIL: API returned success=false")
+            return False
+        
+        # Check required response fields
+        required_fields = [
+            'signal',
+            'liquidation_distance',
+            'liquidation_critical',
+            'liquidation_warning',
+            'bankruptcy_distance',
+            'positions_count',
+            'current_price'
+        ]
+        
+        passed = True
+        for field in required_fields:
+            if field in data:
+                print(f"✅ {field}: {data[field]}")
+            else:
+                print(f"❌ Missing: {field}")
+                passed = False
+        
+        if passed:
+            print("\n✅ TEST 3 PASSED: Monitor cycle endpoint returns all required fields")
+        else:
+            print("\n❌ TEST 3 FAILED: Monitor cycle endpoint missing required fields")
+        
+        return passed
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ FAIL: Could not connect to WebUI: {e}")
+        return False
+    except json.JSONDecodeError as e:
+        print(f"❌ FAIL: Invalid JSON response: {e}")
+        return False
+
 
 def main():
     """Run all integration tests"""
+    print("\n" + "=" * 80)
+    print("🔍 WebUI Integration Verification")
+    print("Delta Exchange India Improvements")
+    print("=" * 80)
     
-    print(f"\n{Color.BOLD}{'='*80}{Color.END}")
-    print(f"{Color.BOLD}GridBot Web UI Integration Test{Color.END}")
-    print(f"{Color.BOLD}{'='*80}{Color.END}\n")
+    tests = [
+        ("Guardian Health File", check_guardian_health_file),
+        ("Liquidation Metrics API", check_api_liquidation_metrics),
+        ("Monitor Cycle API", check_api_monitor_cycle),
+    ]
     
-    print(f"{Color.BLUE}Testing connection to: {BASE_URL}{Color.END}\n")
-    
-    # Define all test cases
-    test_cases = {
-        "🏥 Health & Status": [
-            ("GET", "/api/health", None, 200),
-            ("GET", "/api/bot/status", None, 200),
-            ("GET", "/api/monitor/status", None, 200),
-            ("GET", "/api/guardian/status", None, 200),
-            ("GET", "/api/tmux/status", None, 200),
-            ("GET", "/api/trading_status", None, 200),
-        ],
-        
-        "⚙️  Configuration": [
-            ("GET", "/api/config", None, 200),
-            ("GET", "/api/config/all", None, 200),
-            ("GET", "/api/trading-mode", None, 200),
-        ],
-        
-        "📊 State & Positions": [
-            ("GET", "/api/state", None, 200),
-            ("GET", "/api/positions", None, 200),
-            ("GET", "/api/logs?lines=10", None, 200),
-        ],
-        
-        "🔄 Reconciliation": [
-            ("GET", "/api/recon/status", None, 200),
-            ("GET", "/api/recon/table?page=1&per_page=10", None, 200),
-        ],
-        
-        "🛡️  Robustness": [
-            ("GET", "/api/robustness/gatekeeper/status", None, 200),
-            ("GET", "/api/robustness/loss-limits", None, 200),
-            ("GET", "/api/robustness/circuit-breakers", None, 200),
-            ("GET", "/api/robustness/audit/report", None, 200),
-            ("GET", "/api/robustness/guardian/hysteresis", None, 200),
-            ("GET", "/api/robustness/volatility/status", None, 200),
-            ("GET", "/api/robustness/confirmation-guard/status", None, 200),
-        ],
-        
-        "⚖️  Liquidation Protection": [
-            ("GET", "/api/liquidation/status", None, 200),
-            ("GET", "/api/liquidation/config", None, 200),
-        ],
-        
-        "💰 Capital Protection": [
-            ("GET", "/api/capital/equity-floor/status", None, 200),
-            ("GET", "/api/capital/drawdown/status", None, 200),
-            ("GET", "/api/capital/exposure/status", None, 200),
-            ("GET", "/api/capital/budget/status", None, 200),
-            ("GET", "/api/capital/config-guard/status", None, 200),
-        ],
-        
-        "📰 News & AI": [
-            ("GET", "/api/news/feed", None, 200),
-            ("GET", "/api/institutional/comprehensive_analysis", None, 200),
-        ],
-        
-        "🚨 Emergency": [
-            ("GET", "/api/emergency/check_flag", None, 200),
-        ],
-        
-        "🔍 Error Intelligence": [
-            ("GET", "/api/errors/status", None, 200),
-            ("GET", "/api/errors/recent", None, 200),
-            ("GET", "/api/errors/stats", None, 200),
-        ],
-    }
-    
-    # Run tests
-    total_tests = 0
-    passed_tests = 0
-    failed_tests = 0
-    
-    for category, tests in test_cases.items():
-        print(f"\n{Color.BOLD}{category}{Color.END}")
-        for method, endpoint, data, expected_status in tests:
-            total_tests += 1
-            success, message, response_data = test_endpoint(method, endpoint, data, expected_status)
-            print_result(category, endpoint, success, message)
-            
-            if success:
-                passed_tests += 1
-            else:
-                failed_tests += 1
+    results = []
+    for test_name, test_func in tests:
+        result = test_func()
+        results.append((test_name, result))
     
     # Summary
-    print(f"\n{Color.BOLD}{'='*80}{Color.END}")
-    print(f"{Color.BOLD}Summary{Color.END}")
-    print(f"{Color.BOLD}{'='*80}{Color.END}")
-    print(f"Total Tests:  {total_tests}")
-    print(f"{Color.GREEN}Passed:       {passed_tests}{Color.END}")
-    print(f"{Color.RED}Failed:       {failed_tests}{Color.END}")
+    print("\n" + "=" * 80)
+    print("📊 TEST SUMMARY")
+    print("=" * 80)
     
-    if failed_tests == 0:
-        print(f"\n{Color.GREEN}{Color.BOLD}🎉 All tests passed! Web UI is fully integrated.{Color.END}")
-        return 0
+    all_passed = True
+    for test_name, passed in results:
+        status = "✅ PASS" if passed else "❌ FAIL"
+        print(f"{status}: {test_name}")
+        if not passed:
+            all_passed = False
+    
+    print("=" * 80)
+    
+    if all_passed:
+        print("\n🎉 ALL TESTS PASSED!")
+        print("\n✅ Delta Exchange India improvements are properly integrated with WebUI")
+        print("✅ Users can access liquidation metrics via API endpoints")
+        print("✅ Guardian is writing metrics to health file")
+        sys.exit(0)
     else:
-        print(f"\n{Color.RED}{Color.BOLD}⚠️  Some tests failed. Check the endpoints above.{Color.END}")
-        return 1
+        print("\n⚠️ SOME TESTS FAILED")
+        print("\nPlease check:")
+        print("  1. Guardian bot is running: pm2 status guardian-live")
+        print("  2. WebUI backend is running: launchctl list | grep gridbot.webui")
+        print("  3. No errors in logs: pm2 logs guardian-live")
+        sys.exit(1)
 
-if __name__ == "__main__":
-    exit(main())
 
+if __name__ == '__main__':
+    main()

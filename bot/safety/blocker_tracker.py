@@ -384,7 +384,10 @@ class BlockerTracker:
         # Read Guardian's GO/STOP signal from SQL database
         try:
             import sqlite3
-            db_path = self.workspace_root / 'gridbot_events.db'
+            # Use correct database based on bot mode (LONG/SHORT)
+            mode = cfg.bot.mode
+            db_name = f"bot_events_{mode}.db"
+            db_path = self.workspace_root / 'data' / db_name
             
             if not db_path.exists():
                 blockers.append({
@@ -409,10 +412,13 @@ class BlockerTracker:
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
             
-            # Get latest Guardian signal
+            # Get latest Guardian signal from EventStore
+            # Events are stored with event_type = 'guardian_signal_go' or 'guardian_signal_stop'
+            # and data is JSON string
             cursor.execute('''
-                SELECT signal, reason, timestamp
-                FROM guardian_signals
+                SELECT event_type, data, timestamp
+                FROM events
+                WHERE event_type IN ('guardian_signal_go', 'guardian_signal_stop')
                 ORDER BY timestamp DESC
                 LIMIT 1
             ''')
@@ -440,10 +446,30 @@ class BlockerTracker:
                 })
                 return blockers
             
-            signal, reason, timestamp = result
+            # Parse the result
+            import json
+            event_type, data_json, timestamp = result
+            signal_data = json.loads(data_json)
+            signal = signal_data['signal']
+            reason = signal_data['reason']
             
             # If Guardian says STOP, report it as a blocker
             if signal == 'STOP':
+                # Extract additional details if available
+                details = signal_data.get('details', {})
+                blocker_details = {
+                    'signal': signal,
+                    'reason': reason,
+                    'timestamp': timestamp,
+                    'config_key': 'guardian.enabled'
+                }
+                
+                # Add RSI details if present
+                if 'rsi' in details:
+                    blocker_details['rsi'] = details['rsi']
+                    blocker_details['threshold'] = details.get('threshold')
+                    blocker_details['bot_mode'] = details.get('bot_mode')
+                
                 blockers.append({
                     'id': 'guardian_stop_signal',
                     'category': 'GUARDIAN_BOT',
@@ -451,12 +477,7 @@ class BlockerTracker:
                     'severity': 'critical',
                     'active': True,
                     'message': f'Guardian halted trading: {reason}',
-                    'details': {
-                        'signal': signal,
-                        'reason': reason,
-                        'timestamp': timestamp,
-                        'config_key': 'guardian.enabled'
-                    },
+                    'details': blocker_details,
                     'actions': ['view_guardian_details', 'adjust_limits'],
                     'deep_link': {
                         'tab': 'guardian',
@@ -487,6 +508,13 @@ class BlockerTracker:
     
     # Volatility/liquidation/loss limit/confirmation guard checking methods REMOVED (199 lines)
     # Guardian monitors all risk - bot just reads Guardian's GO/STOP signal from SQL
+    
+    def _check_order_confirmation_guard(self) -> List[Dict]:
+        """
+        Check Order Confirmation Guard - currently not implemented
+        (Guardian handles all risk monitoring)
+        """
+        return []
     
     def _check_circuit_breaker(self) -> List[Dict]:
         """Check Circuit Breaker blockers"""

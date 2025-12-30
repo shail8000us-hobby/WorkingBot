@@ -97,14 +97,33 @@ def get_logs_recent():
         
         # Determine log file based on bot_type if not explicitly specified
         if not log_file:
+            from pathlib import Path
+            base_path = Path(__file__).parent.parent.parent.parent
+            
             log_file_map = {
                 'trading': 'bot/logs/bot.log',
                 'live_trading': 'bot/logs/bot.log',
-                'guardian': 'bot/logs/guardian.log',
+                'guardian': None,  # Will check multiple paths below
                 'monitoring': 'bot/logs/heartbeat_monitor.log',
                 'health': 'bot/logs/heartbeat_monitor.log'
             }
-            log_file = log_file_map.get(bot_type, 'bot/logs/bot.log')
+            
+            if bot_type == 'guardian':
+                # Check multiple Guardian log locations (LaunchAgent, PM2, etc.)
+                guardian_paths = [
+                    'bot/logs/guardian.log',
+                    'logs/webui_guardian.log',
+                    'logs/guardian_monitor.log'
+                ]
+                for path in guardian_paths:
+                    full_path = base_path / path
+                    if full_path.exists():
+                        log_file = path
+                        break
+                if not log_file:
+                    log_file = 'bot/logs/guardian.log'  # Default
+            else:
+                log_file = log_file_map.get(bot_type, 'bot/logs/bot.log')
         
         log.debug(f"Fetching logs from {log_file} for bot_type={bot_type}")
         log_lines = get_recent_logs(lines, log_file)

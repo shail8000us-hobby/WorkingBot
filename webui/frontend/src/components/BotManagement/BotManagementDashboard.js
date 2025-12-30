@@ -21,17 +21,12 @@ import {
   Snackbar,
   CircularProgress,
   Divider,
-  TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel
+  TextField
 } from '@mui/material';
 import {
   PlayArrow,
   Stop,
   Refresh,
-  Visibility,
   Memory,
   Speed,
   Computer,
@@ -68,8 +63,6 @@ const BotManagementDashboard = () => {
   const [botStatus, setBotStatus] = useState({});
   const [systemInfo, setSystemInfo] = useState({});
   const [processes, setProcesses] = useState([]);
-  const [logs, setLogs] = useState('');
-  const [selectedBot, setSelectedBot] = useState('trading');
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
 
@@ -126,47 +119,25 @@ const BotManagementDashboard = () => {
     }
   };
 
-  // Fetch logs
-  const fetchLogs = async (botType) => {
-    try {
-      // Map bot types to log file paths
-      const logFileMap = {
-        'trading': 'bot/logs/bot.log',
-        'live_trading': 'bot/logs/bot.log',
-        'health': 'bot/logs/heartbeat_monitor.log',
-        'monitoring': 'bot/logs/heartbeat_monitor.log',
-        'guardian': 'bot/logs/guardian.log'
-      };
-      
-      const logFile = logFileMap[botType] || 'bot/logs/bot.log';
-      
-      // ✅ FIX: Pass bot_type parameter to API
-      const response = await api.get(`/api/logs/recent?lines=100&bot_type=${botType}&log_file=${encodeURIComponent(logFile)}`);
-      
-      if (response.data.success) {
-        setLogs(response.data.logs || 'No logs available');
-      } else {
-        setLogs('Error loading logs');
-      }
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-      setLogs('Error loading logs');
-    }
-  };
-
   // Bot action handler
   const handleBotAction = async (action, botType) => {
     setLoading(true);
     try {
       let response;
       
-      // Map actions to API endpoints
+      // Map actions to API endpoints based on bot type
       if (action === 'start') {
-        response = await api.post('/api/bot/start', {
-          bot_type: botType || 'all'
-        });
+        if (botType === 'guardian') {
+          response = await api.post('/api/guardian/start');
+        } else {
+          response = await api.post('/api/bot/start', {
+            bot_type: botType || 'all'
+          });
+        }
       } else if (action === 'stop') {
-        if (botType) {
+        if (botType === 'guardian') {
+          response = await api.post('/api/guardian/stop');
+        } else if (botType) {
           // Stop specific bot by finding its PID
           const statusResponse = await api.get('/api/bots/status');
           const bots = statusResponse.data.bots || [];
@@ -184,9 +155,14 @@ const BotManagementDashboard = () => {
           response = await api.post('/api/emergency/kill-all');
         }
       } else if (action === 'restart') {
-        response = await api.post('/api/bot/restart', {
-          bot_type: botType || 'all'
-        });
+        if (botType === 'guardian') {
+          // ✅ FIX: Use Guardian-specific restart endpoint
+          response = await api.post('/api/guardian/restart');
+        } else {
+          response = await api.post('/api/bot/restart', {
+            bot_type: botType || 'all'
+          });
+        }
       }
       
       if (response && response.data.success) {
@@ -232,7 +208,6 @@ const BotManagementDashboard = () => {
   useEffect(() => {
     fetchBotStatus();
     fetchProcesses();
-    fetchLogs(selectedBot);
     
     // Set up auto-refresh
     const interval = setInterval(() => {
@@ -242,11 +217,6 @@ const BotManagementDashboard = () => {
     
     return () => clearInterval(interval);
   }, []);
-
-  // Fetch logs when selected bot changes
-  useEffect(() => {
-    fetchLogs(selectedBot);
-  }, [selectedBot]);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -427,52 +397,6 @@ const BotManagementDashboard = () => {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
-
-      {/* Logs Section */}
-      <Paper sx={{ p: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6">
-            <Visibility sx={{ mr: 1, verticalAlign: 'middle' }} />
-            Bot Logs
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel>Select Bot</InputLabel>
-              <Select
-                value={selectedBot}
-                label="Select Bot"
-                onChange={(e) => setSelectedBot(e.target.value)}
-              >
-                <MenuItem value="trading">Trading Bot</MenuItem>
-                <MenuItem value="guardian">Guardian Bot</MenuItem>
-                <MenuItem value="monitoring">Heartbeat Monitor</MenuItem>
-              </Select>
-            </FormControl>
-            <Button
-              size="small"
-              startIcon={<Refresh />}
-              onClick={() => fetchLogs(selectedBot)}
-            >
-              Refresh
-            </Button>
-          </Box>
-        </Box>
-        <Box
-          sx={{
-            backgroundColor: '#1e1e1e',
-            color: '#d4d4d4',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            maxHeight: 400,
-            overflow: 'auto',
-            padding: 2,
-            borderRadius: 1,
-            whiteSpace: 'pre-wrap'
-          }}
-        >
-          {logs || 'Select a bot to view logs...'}
-        </Box>
       </Paper>
 
       {/* Loading Overlay */}

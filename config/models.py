@@ -292,6 +292,20 @@ class ConfirmationGuard(BaseModel):
     chaos_threshold: int = Field(60, gt=0, description="Chaos threshold seconds")
 
 
+class RSIConfig(BaseModel):
+    """RSI-based trading safety (Layer 6)"""
+    enabled: bool = Field(True, description="Enable RSI monitoring")
+    period: int = Field(14, ge=2, le=50, description="RSI calculation period")
+    overbought_threshold: float = Field(70.0, ge=50, le=100, description="RSI overbought threshold (legacy)")
+    oversold_threshold: float = Field(30.0, ge=0, le=50, description="RSI oversold threshold (legacy)")
+    long_threshold: float = Field(30.0, ge=0, le=100, description="LONG mode: STOP when RSI <= this value (oversold - market too weak)")
+    short_threshold: float = Field(70.0, ge=0, le=100, description="SHORT mode: STOP when RSI >= this value (overbought - market too strong)")
+    hysteresis_seconds: int = Field(60, ge=0, le=300, description="Hysteresis delay in seconds when RSI is exactly at threshold")
+    timeframe: str = Field("1h", description="OHLCV timeframe for RSI calculation")
+    check_interval: int = Field(300, ge=60, description="RSI check interval in seconds")
+    cache_ttl: int = Field(60, ge=10, description="RSI cache TTL in seconds")
+
+
 class SafetyConfig(BaseModel):
     """Complete safety configuration"""
     # Core Trading Controls
@@ -308,6 +322,7 @@ class SafetyConfig(BaseModel):
     volatility: VolatilitySafety
     circuit_breaker: CircuitBreaker
     confirmation_guard: ConfirmationGuard
+    rsi: Optional[RSIConfig] = Field(None, description="RSI monitoring configuration (Layer 6)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

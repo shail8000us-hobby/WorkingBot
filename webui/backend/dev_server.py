@@ -16,16 +16,21 @@ if __name__ == '__main__':
     os.environ['FLASK_DEBUG'] = '1'
     
     from app import app, socketio
+    from core.config_loader import cfg
+    
+    # Get port from config (default 5555 for production)
+    port = getattr(cfg.webui, 'port', 5555)
     
     print("🔄 Development server with auto-reload enabled")
     print("📝 Watching for file changes...")
     print("🌐 Backend will restart automatically on code changes")
+    print(f"🔌 Port: {port}")
     
     # Run with reloader enabled
     socketio.run(
         app,
         host='0.0.0.0',
-        port=5000,
+        port=port,
         debug=True,
         use_reloader=True,
         log_output=True

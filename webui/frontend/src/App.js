@@ -22,7 +22,8 @@ import {
   RefreshCw,
   TrendingUp,
   Code,
-  Activity
+  Activity,
+  BarChart3
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -94,6 +95,8 @@ import ModeSwitcherPanel from './components/ModeSwitcherPanel';
 import SystemHealthPanel from './components/SystemHealthPanel';
 import MultiInstanceManager from './components/MultiInstanceManager';
 import MonitoringRecoveryPanel from './components/panels/MonitoringRecoveryPanel';
+import RSIPanel from './components/RSIPanel';
+import RiskSafetyDashboard from './components/RiskSafetyDashboard';
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
   <div className="flex items-center justify-center py-10 text-sm text-slate-400">
@@ -398,6 +401,12 @@ function App() {
       description: 'Risk analytics and protection systems'
     },
     {
+      id: 'rsi',
+      label: 'RSI',
+      icon: BarChart3,
+      description: 'RSI safety monitor - mode-specific thresholds with hysteresis'
+    },
+    {
       id: 'positions',
       label: 'Positions',
       icon: Layers3,
@@ -409,12 +418,6 @@ function App() {
       label: 'Bot Management',
       icon: Terminal,
       description: 'tmux control, process management, and emergency controls'
-    },
-    {
-      id: 'monitoring',
-      label: 'Monitoring',
-      icon: RadioTower,
-      description: 'System monitors and health metrics'
     },
     // Week 3: Guardian Dashboard (feature flag controlled)
     ...(guardianEnabled ? [{
@@ -440,12 +443,6 @@ function App() {
       label: 'Intelligence',
       icon: BookOpen,
       description: 'AI insights, documentation, market intel'
-    },
-    {
-      id: 'pm2_panel',
-      label: 'PM2 Panel',
-      icon: Terminal,
-      description: 'PM2 process management - GridBot, Guardian, Heartbeat control'
     },
     {
       id: 'logs_panel',
@@ -784,6 +781,60 @@ function App() {
           <TradingModeSwitch botRunning={botIsRunning} />
         </div>
       </CollapsibleCard>
+
+      {/* System Monitoring - Added to Dashboard */}
+      <CollapsibleCard
+        id="system-monitoring"
+        title="System Monitoring"
+        subtitle="Guardian daemons, watchdog status, and bot telemetry"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        {botIsRunning ? (
+          <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
+            <EnhancedErrorBoundary componentName="MonitoringPanel">
+              <MonitoringPanel 
+                botStatus={botStatus}
+                config={config}
+                onNavigate={(section) => console.log('Navigate to:', section)}
+              />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        ) : (
+          renderInactivePanel(
+            'Monitoring idle',
+            'Process metrics and guardian heartbeat dashboards become available once services start.'
+          )
+        )}
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="monitoring-recovery-system"
+        title="Monitoring & Recovery System"
+        subtitle="Combined monitoring and recovery engine status"
+        accent="emerald"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading monitoring & recovery..." />}>
+          <EnhancedErrorBoundary componentName="MonitoringRecoveryPanel">
+            <MonitoringRecoveryPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="bot-management-dashboard"
+        title="Bot Management Dashboard"
+        subtitle="High-level view of bot orchestration and services"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
+          <EnhancedErrorBoundary componentName="BotManagementDashboard">
+            <BotManagementDashboard />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
     </div>
   );
 
@@ -812,28 +863,48 @@ function App() {
     </div>
   );
 
-  const renderRisk = () => (
+  const renderRSI = () => (
     <div className="grid gap-6">
       <CollapsibleCard
-        id="opportunistic-recovery"
-        title="🎯 Opportunistic Recovery"
-        subtitle="Trading halts are blessings, not missed opportunities"
-        accent="emerald"
+        id="rsi-panel"
+        title="📊 RSI Safety Monitor (Layer 6)"
+        subtitle="Mode-specific RSI thresholds with hysteresis protection"
+        accent="purple"
         defaultOpen={!isMobile}
       >
-        <Suspense fallback={<LoadingFallback message="Loading opportunistic recovery..." />}>
-          <EnhancedErrorBoundary componentName="OpportunisticRecoveryPanel">
-            <OpportunisticRecoveryPanel socket={socket} />
+        <Suspense fallback={<LoadingFallback message="Loading RSI monitor..." />}>
+          <EnhancedErrorBoundary componentName="RSIPanel">
+            <RSIPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
+  const renderRisk = () => (
+    <div className="grid gap-6">
+      {/* Modern Unified Risk & Safety Dashboard */}
+      <CollapsibleCard
+        id="risk-safety-dashboard"
+        title="🛡️ Risk & Safety Control Center"
+        subtitle="6-Layer Guardian Protection • Real-time Monitoring • Institutional Grade Safety"
+        accent="sky"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading safety dashboard..." />}>
+          <EnhancedErrorBoundary componentName="RiskSafetyDashboard">
+            <RiskSafetyDashboard />
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
 
+      {/* Legacy panels kept for detailed configuration */}
       <CollapsibleCard
         id="capital-protection"
-        title="Capital Protection"
-        subtitle="Guardrails, drawdown limits, and safe operating envelope"
+        title="Capital Protection Configuration"
+        subtitle="Detailed configuration for drawdown limits and safe operating envelope"
         accent="emerald"
-        defaultOpen={!isMobile}
+        defaultOpen={false}
       >
         <Suspense fallback={<LoadingFallback message="Loading capital protection..." />}>
           <EnhancedErrorBoundary componentName="CapitalProtectionPanel">
@@ -844,10 +915,10 @@ function App() {
 
       <CollapsibleCard
         id="liquidation-monitor"
-        title="Liquidation Monitor"
-        subtitle="Liquidation proximity, margin buffers, and alerts"
+        title="Liquidation Monitor Details"
+        subtitle="Detailed liquidation proximity and margin buffer analytics"
         accent="rose"
-        defaultOpen={!isMobile}
+        defaultOpen={true}
       >
         <Suspense fallback={<LoadingFallback message="Loading liquidation monitor..." />}>
           <EnhancedErrorBoundary componentName="LiquidationProtectionPanel">
@@ -1125,46 +1196,6 @@ function App() {
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
-
-      {/* Live Logs */}
-      <CollapsibleCard
-        id="live-logs"
-        title="Live Logs Stream"
-        subtitle="Real-time bot logs with filtering and export"
-        accent="violet"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <Suspense fallback={<LoadingFallback message="Streaming logs..." />}>
-            <EnhancedErrorBoundary componentName="LogsPanel">
-              <LogsPanel logs={logs} />
-            </EnhancedErrorBoundary>
-          </Suspense>
-        ) : (
-          renderInactivePanel(
-            'Logs unavailable',
-            'Start the bot to stream live logs from guardian and trading processes'
-          )
-        )}
-      </CollapsibleCard>
-    </div>
-  );
-
-  const renderPM2Panel = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="pm2-control-standalone"
-        title="PM2 Process Manager"
-        subtitle="Production-ready process management for GridBot, Guardian, and Heartbeat"
-        accent="emerald"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading PM2 status..." />}>
-          <EnhancedErrorBoundary componentName="PM2Panel">
-            <PM2Panel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
     </div>
   );
 
@@ -1196,7 +1227,6 @@ function App() {
   const sectionContent = {
     actions: renderActions(),
     todos: renderTodos(),
-    pm2_panel: renderPM2Panel(),
     logs_panel: renderLogsPanel(),
     file_editor: renderFileEditor(),
     strategy_editor: renderStrategyEditor(),
@@ -1208,10 +1238,10 @@ function App() {
     dashboard: renderDashboard(),
     positions: renderPositions(),
     risk: renderRisk(),
+    rsi: renderRSI(),
     config: renderConfig(),
     botmanagement: renderBotManagement(),
     emergency: renderEmergency(),
-    monitoring: renderMonitoring(),
     intelligence: renderIntelligence(),
     // Week 3: Guardian Dashboard
     guardian: guardianEnabled ? (

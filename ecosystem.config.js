@@ -14,13 +14,14 @@ module.exports = {
         USE_ASYNC_BOT: "true",  // Enable AsyncBot (production-ready v2.0)
         HOT_RELOAD: "1"
       },
-      // Restart settings
-      autorestart: true,
-      max_restarts: 10,
+      // Restart settings - DISABLED (manual start/stop only)
+      autorestart: false,
+      max_restarts: 0,
       min_uptime: "10s",
       restart_delay: 5000,
-      // Memory limits
+      // Memory limits - monitoring only (no auto-restart)
       max_memory_restart: "500M",
+      // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
       // Log settings
       log_file: "bot/logs/pm2-gridbot-demo.log",
       error_file: "bot/logs/pm2-gridbot-demo-error.log",
@@ -46,13 +47,14 @@ module.exports = {
         USE_ASYNC_BOT: "true",  // Enable AsyncBot (production-ready v2.0)
         HOT_RELOAD: "1"
       },
-      // Restart settings
-      autorestart: true,
-      max_restarts: 10,
+      // Restart settings - DISABLED (manual start/stop only)
+      autorestart: false,
+      max_restarts: 0,
       min_uptime: "10s",
       restart_delay: 5000,
-      // Memory limits
+      // Memory limits - monitoring only (no auto-restart)
       max_memory_restart: "500M",
+      // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
       // Log settings
       log_file: "bot/logs/pm2-gridbot-live.log",
       error_file: "bot/logs/pm2-gridbot-live-error.log",

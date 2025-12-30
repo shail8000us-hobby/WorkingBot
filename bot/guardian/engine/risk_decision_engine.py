@@ -82,6 +82,7 @@ class GuardianRiskDecisionEngine:
         # Components will be injected
         self.volatility_collector = None
         self.position_monitor = None
+        self.rsi_collector = None
         
         # Initialize health tracker for Layer 5
         self.health_tracker = SystemHealthTracker(config=self.config)
@@ -99,7 +100,7 @@ class GuardianRiskDecisionEngine:
         log.info("✅ Guardian Risk Decision Engine initialized")
         log.info(f"   Config hash: {self.config_hash}")
     
-    def set_components(self, volatility_collector, position_monitor, liquidation_monitor=None):
+    def set_components(self, volatility_collector, position_monitor, liquidation_monitor=None, rsi_collector=None):
         """
         Inject dependencies (called by GuardianBot)
         
@@ -107,10 +108,12 @@ class GuardianRiskDecisionEngine:
             volatility_collector: Volatility data collector
             position_monitor: Position monitoring component
             liquidation_monitor: Liquidation monitor (for total account PnL)
+            rsi_collector: RSI collector (Layer 6)
         """
         self.volatility_collector = volatility_collector
         self.position_monitor = position_monitor
         self.liquidation_monitor = liquidation_monitor  # For total account PnL
+        self.rsi_collector = rsi_collector  # For RSI monitoring (Layer 6)
         log.info("✅ Risk engine components injected")
     
     def _setup_config_watcher(self):
@@ -167,12 +170,22 @@ class GuardianRiskDecisionEngine:
                 self.config = reload_config()
                 new_hash = self._calculate_config_hash()
                 
+                # HOT RELOAD: Update RSI collector thresholds
+                if self.rsi_collector:
+                    try:
+                        self.rsi_collector.reload_thresholds(self.config)
+                    except Exception as e:
+                        log.error(f"Failed to reload RSI thresholds: {e}")
+                
                 if new_hash != self.config_hash:
                     log.warning(f"⚠️  RISK PARAMETERS CHANGED (WebUI update detected)")
                     log.warning(f"   Old config: {self.config_hash} → New config: {new_hash}")
                     log.warning(f"   IV Limit: {self.config.safety.volatility.max_iv}%")
                     log.warning(f"   RV Limit: {self.config.safety.volatility.max_rv}%")
                     log.warning(f"   Spread Limit: {self.config.safety.volatility.max_spread}%")
+                    if hasattr(self.config.safety, 'rsi'):
+                        log.warning(f"   RSI Long Threshold: {self.config.safety.rsi.long_threshold}")
+                        log.warning(f"   RSI Short Threshold: {self.config.safety.rsi.short_threshold}")
                     
                     old_hash = self.config_hash
                     self.config_hash = new_hash
@@ -316,6 +329,21 @@ class GuardianRiskDecisionEngine:
                 details=self._get_health_details()
             )
         
+        # Check 6: RSI threshold (mode-specific)
+        if self._is_rsi_overbought():
+            # Get mode-specific reason with actual threshold from config
+            bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
+            if bot_mode == "LONG":
+                threshold = self.config.safety.rsi.long_threshold
+                reason = f"RSI <= {threshold} (oversold) - market too weak for LONG positions"
+            else:
+                threshold = self.config.safety.rsi.short_threshold
+                reason = f"RSI >= {threshold} (overbought) - market too strong for SHORT positions"
+            return self._make_stop_signal(
+                reason=reason,
+                details=self._get_rsi_details()
+            )
+        
         # All clear! Green light 🟢
         return self._make_go_signal()
     
@@ -327,6 +355,10 @@ class GuardianRiskDecisionEngine:
         
         try:
             vol_data = self.volatility_collector.get_latest_values()
+            
+            # Record data update for freshness tracking
+            if hasattr(self, 'health_tracker') and self.health_tracker:
+                self.health_tracker.record_data_update('volatility')
             
             iv = vol_data.get('iv', {}).get('value', 0)
             rv = vol_data.get('rv', {}).get('value', 0)
@@ -365,6 +397,11 @@ class GuardianRiskDecisionEngine:
         
         try:
             position = self.position_monitor.get_position()
+            
+            # Record data update for freshness tracking
+            if hasattr(self, 'health_tracker') and self.health_tracker:
+                self.health_tracker.record_data_update('positions')
+            
             max_size = getattr(self.config.safety, 'max_position_size', None)
             if max_size and position:
                 return abs(position.size) > max_size
@@ -381,6 +418,11 @@ class GuardianRiskDecisionEngine:
         
         try:
             liq_distance = self.position_monitor.get_liquidation_distance()
+            
+            # Record data update for freshness tracking
+            if hasattr(self, 'health_tracker') and self.health_tracker:
+                self.health_tracker.record_data_update('liquidation')
+            
             min_distance = getattr(self.config.safety, 'min_liquidation_distance_pct', None)
             if min_distance:
                 return liq_distance < min_distance
@@ -397,6 +439,32 @@ class GuardianRiskDecisionEngine:
         # Use health tracker's critical issue detection
         return self.health_tracker.has_critical_issues()
     
+    def _is_rsi_overbought(self) -> bool:
+        """
+        Check if RSI should stop trading (Layer 6).
+        Uses mode-specific thresholds with hysteresis.
+        
+        LONG mode: STOP when RSI <= long_threshold (oversold - market too weak)
+        SHORT mode: STOP when RSI >= short_threshold (overbought - market too strong)
+        """
+        if not self.rsi_collector:
+            log.debug("RSI collector not available")
+            return False  # Fail-safe: assume healthy if RSI unavailable
+        
+        try:
+            # Get RSI config
+            rsi_config = getattr(self.config.safety, 'rsi', None)
+            if not rsi_config or not getattr(rsi_config, 'enabled', False):
+                log.debug("RSI monitoring disabled")
+                return False
+            
+            # Use the collector's mode-aware logic with hysteresis
+            return self.rsi_collector.should_stop_trading()
+            
+        except Exception as e:
+            log.error(f"Error checking RSI: {e}")
+            return False  # Fail-safe: assume healthy on error
+    
     def _make_go_signal(self) -> Dict:
         """Create a GO signal - all systems nominal"""
         volatility = self._get_volatility_details()
@@ -404,6 +472,7 @@ class GuardianRiskDecisionEngine:
         position = self._get_position_details()
         liquidation = self._get_liquidation_details()
         health = self._get_health_details()
+        rsi = self._get_rsi_details()
         
         # Log comprehensive safety metrics - SHOW EVERYTHING FOR TRANSPARENCY
         log.info("="*80)
@@ -477,6 +546,26 @@ class GuardianRiskDecisionEngine:
         else:
             log.info("      Status: Monitoring disabled")
         
+        # 6. RSI SAFETY SYSTEM (Layer 6)
+        rsi_status = rsi.get('status', 'UNKNOWN')
+        bot_mode = rsi.get('bot_mode', 'LONG')
+        rsi_emoji = "✅" if rsi_status == 'GO' else "⚠️"
+        log.info(f"   📊 RSI SAFETY SYSTEM (Layer 6): {rsi_emoji} PASS")
+        if rsi.get('enabled', False):
+            log.info(f"      Bot Mode: {bot_mode}")
+            log.info(f"      Current RSI: {rsi.get('rsi', 0):.2f}")
+            if bot_mode == "LONG":
+                log.info(f"      Long Threshold: {rsi.get('long_threshold'):.1f} (STOP when RSI <= this)")
+            else:
+                log.info(f"      Short Threshold: {rsi.get('short_threshold'):.1f} (STOP when RSI >= this)")
+            log.info(f"      Period: {rsi.get('period', 14)}")
+            log.info(f"      Timeframe: {rsi.get('timeframe', '1h')}")
+            log.info(f"      Status: {rsi_status}")
+            if rsi.get('hysteresis_active', False):
+                log.info(f"      Hysteresis: Active ({rsi.get('hysteresis_seconds', 60)}s delay at threshold)")
+        else:
+            log.info("      Status: Monitoring disabled")
+        
         log.info("="*80)
         
         return {
@@ -488,7 +577,8 @@ class GuardianRiskDecisionEngine:
                 **pnl,
                 **position,
                 **liquidation,
-                **health
+                **health,
+                **rsi
             }
         }
     
@@ -501,6 +591,7 @@ class GuardianRiskDecisionEngine:
         position = self._get_position_details()
         liquidation = self._get_liquidation_details()
         health = self._get_health_details()
+        rsi = self._get_rsi_details()
         
         # Log which safety system blocked trading
         log.warning("="*80)
@@ -569,6 +660,28 @@ class GuardianRiskDecisionEngine:
         else:
             log.warning("      Status: Monitoring disabled")
         
+        # 6. RSI SAFETY SYSTEM (Layer 6)
+        rsi_blocked = "RSI" in reason
+        rsi_status = "❌ BLOCKED" if rsi_blocked else "✅ PASS"
+        bot_mode = rsi.get('bot_mode', 'LONG')
+        log.warning(f"   📊 RSI SAFETY SYSTEM (Layer 6): {rsi_status}")
+        if rsi.get('enabled', False):
+            log.warning(f"      Bot Mode: {bot_mode}")
+            log.warning(f"      Current RSI: {rsi.get('rsi', 0):.2f}")
+            if bot_mode == "LONG":
+                log.warning(f"      Long Threshold: {rsi.get('long_threshold'):.1f} (STOP when RSI <= this)")
+            else:
+                log.warning(f"      Short Threshold: {rsi.get('short_threshold'):.1f} (STOP when RSI >= this)")
+            log.warning(f"      Period: {rsi.get('period', 14)}")
+            log.warning(f"      Timeframe: {rsi.get('timeframe', '1h')}")
+            log.warning(f"      Status: {rsi.get('status', 'UNKNOWN')}")
+            if rsi_blocked:
+                log.warning(f"      Breach Amount: {rsi.get('breach_amount', 0):.2f}")
+            if rsi.get('hysteresis_active', False):
+                log.warning(f"      Hysteresis: Active ({rsi.get('hysteresis_seconds', 60)}s delay at threshold)")
+        else:
+            log.warning("      Status: Monitoring disabled")
+        
         log.warning("="*80)
         
         return {
@@ -634,6 +747,10 @@ class GuardianRiskDecisionEngine:
         try:
             vol_data = self.volatility_collector.get_latest_values()
             
+            # Record data update for freshness tracking
+            if hasattr(self, 'health_tracker') and self.health_tracker:
+                self.health_tracker.record_data_update('volatility')
+            
             # IV is direct value
             iv = vol_data.get('iv', {}).get('value', 0) if vol_data.get('iv') else 0
             
@@ -677,6 +794,12 @@ class GuardianRiskDecisionEngine:
             if hasattr(self, 'liquidation_monitor') and self.liquidation_monitor:
                 status = self.liquidation_monitor.get_status()
                 mtm_inr = status.get('total_unrealized_pnl', 0)  # MTM in INR (key: total_unrealized_pnl)
+                
+                # Record data update for freshness tracking (liquidation monitor also provides positions data)
+                if hasattr(self, 'health_tracker') and self.health_tracker:
+                    self.health_tracker.record_data_update('positions')
+                    self.health_tracker.record_data_update('liquidation')
+                
                 log.debug(f"✅ MTM from liquidation monitor: ₹{mtm_inr:.2f}")
             else:
                 log.warning("⚠️ Liquidation monitor not available - MTM = 0")
@@ -704,6 +827,11 @@ class GuardianRiskDecisionEngine:
             
             if hasattr(self, 'liquidation_monitor') and self.liquidation_monitor:
                 positions = self.liquidation_monitor.fetch_positions()
+                
+                # Record data update for freshness tracking
+                if hasattr(self, 'health_tracker') and self.health_tracker:
+                    self.health_tracker.record_data_update('positions')
+                    self.health_tracker.record_data_update('liquidation')
                 
                 # Calculate totals and build breakdown
                 for pos in positions:
@@ -751,6 +879,11 @@ class GuardianRiskDecisionEngine:
             if hasattr(self, 'liquidation_monitor') and self.liquidation_monitor:
                 status = self.liquidation_monitor.get_status()
                 distance_pct = status.get('liquidation_distance', 0)  # Key: liquidation_distance (already in %)
+                
+                # Record data update for freshness tracking
+                if hasattr(self, 'health_tracker') and self.health_tracker:
+                    self.health_tracker.record_data_update('liquidation')
+                
                 log.debug(f"✅ Liquidation distance: {distance_pct:.1f}%")
             else:
                 log.warning("⚠️ Liquidation monitor not available - distance = 0")
@@ -796,6 +929,106 @@ class GuardianRiskDecisionEngine:
             'status': 'MAINTENANCE' if maintenance_mode else ('OK' if health.get('system_healthy', True) else 'UNHEALTHY'),
             'message': health.get('message', 'Unknown')
         }
+    
+    def _get_rsi_details(self) -> Dict:
+        """Get RSI metrics for Layer 6 (mode-specific)"""
+        rsi_config = getattr(self.config.safety, 'rsi', None)
+        bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
+        
+        if not rsi_config:
+            return {
+                'rsi': 0,
+                'long_threshold': 0,
+                'short_threshold': 0,
+                'period': 14,
+                'timeframe': '1h',
+                'bot_mode': bot_mode,
+                'status': 'DISABLED',
+                'enabled': False
+            }
+        
+        try:
+            # No defaults - fail loudly if missing
+            if not hasattr(rsi_config, 'long_threshold'):
+                raise ValueError("safety.rsi.long_threshold missing in config.yaml")
+            if not hasattr(rsi_config, 'short_threshold'):
+                raise ValueError("safety.rsi.short_threshold missing in config.yaml")
+            
+            long_threshold = rsi_config.long_threshold
+            short_threshold = rsi_config.short_threshold
+            period = getattr(rsi_config, 'period', 14)
+            timeframe = getattr(rsi_config, 'timeframe', '1h')
+            enabled = getattr(rsi_config, 'enabled', True)
+            hysteresis_seconds = getattr(rsi_config, 'hysteresis_seconds', 60)
+            
+            # Get current RSI
+            rsi = None
+            current_signal = None
+            hysteresis_active = False
+            if self.rsi_collector:
+                rsi = self.rsi_collector.get_latest_rsi()
+                current_signal = getattr(self.rsi_collector, '_current_signal', None)
+                hysteresis_start = getattr(self.rsi_collector, '_hysteresis_start_time', None)
+                if hysteresis_start is not None:
+                    import time
+                    elapsed = time.time() - hysteresis_start
+                    hysteresis_active = elapsed < hysteresis_seconds
+            
+            if rsi is None:
+                return {
+                    'rsi': 0,
+                    'long_threshold': long_threshold,
+                    'short_threshold': short_threshold,
+                    'period': period,
+                    'timeframe': timeframe,
+                    'bot_mode': bot_mode,
+                    'status': 'UNAVAILABLE',
+                    'enabled': enabled,
+                    'message': 'RSI data unavailable'
+                }
+            
+            # Determine status based on mode
+            if bot_mode == "LONG":
+                threshold = long_threshold
+                if rsi >= threshold:
+                    status = 'STOP'  # Overbought for LONG
+                    breach_amount = rsi - threshold
+                else:
+                    status = 'GO'
+                    breach_amount = 0
+            else:  # SHORT mode
+                threshold = short_threshold
+                if rsi <= threshold:
+                    status = 'STOP'  # Oversold for SHORT
+                    breach_amount = threshold - rsi
+                else:
+                    status = 'GO'
+                    breach_amount = 0
+            
+            return {
+                'rsi': rsi,
+                'long_threshold': long_threshold,
+                'short_threshold': short_threshold,
+                'threshold': threshold,  # Current mode's threshold
+                'period': period,
+                'timeframe': timeframe,
+                'bot_mode': bot_mode,
+                'status': status,
+                'enabled': enabled,
+                'breach_amount': breach_amount,
+                'current_signal': current_signal,
+                'hysteresis_active': hysteresis_active,
+                'hysteresis_seconds': hysteresis_seconds
+            }
+        except Exception as e:
+            log.error(f"❌ Error getting RSI details: {e}", exc_info=True)
+            return {
+                'rsi': 0,
+                'long_threshold': 75.0,
+                'short_threshold': 25.0,
+                'status': 'ERROR',
+                'error': str(e)
+            }
     
     def shutdown(self):
         """Cleanup resources"""

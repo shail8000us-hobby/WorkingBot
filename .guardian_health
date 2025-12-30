@@ -1,8 +1,24 @@
 {
-  "timestamp": 1766558818.039296,
-  "status": "ok",
-  "pid": 943,
-  "uptime_seconds": 269035,
-  "cycle_count": 24663,
-  "last_check": 1766558807.2778602
+  "guardian_version": "2.0-SQL",
+  "last_check": "2025-12-30T18:05:56.566096",
+  "signal": "GO",
+  "reason": "All safety checks passed",
+  "check_interval": 5,
+  "status": "running",
+  "pid": 57500,
+  "positions": {
+    "count": 1,
+    "current_price": 87935.0,
+    "total_pnl_inr": 1777.7141599129095
+  },
+  "liquidation": {
+    "distance": 100.0,
+    "critical": false,
+    "warning": false,
+    "details_count": 0,
+    "bankruptcy_distance": 100.0
+  },
+  "timestamp": 1767098156.8562508,
+  "uptime_seconds": 33047,
+  "cycle_count": 4463
 }

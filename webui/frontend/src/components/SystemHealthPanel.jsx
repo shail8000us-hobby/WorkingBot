@@ -82,10 +82,44 @@ const SystemHealthPanel = () => {
       }
 
       // Fetch current system metrics
+      let metricsData = null;
       const metricsRes = await fetch('/api/system-health/metrics');
       if (metricsRes.ok) {
         const data = await metricsRes.json();
-        setSystemMetrics(data.metrics);
+        if (data.metrics) {
+          metricsData = data.metrics;
+        }
+      }
+      
+      // Fallback to /api/health/detailed if system-health endpoints don't work
+      if (!metricsData) {
+        const detailedRes = await fetch('/api/health/detailed');
+        if (detailedRes.ok) {
+          const detailedData = await detailedRes.json();
+          if (detailedData.data && detailedData.data.resources) {
+            const resources = detailedData.data.resources;
+            // Convert to expected format (handle both percent and percent_used)
+            metricsData = {
+              cpu_percent: resources.cpu?.percent || resources.cpu?.percent_used || 0,
+              cpu_count: resources.cpu?.cores || 0,
+              load_average_1m: resources.cpu?.load_avg_1m || resources.cpu?.load_average?.get?.(0) || 0,
+              load_average_5m: resources.cpu?.load_avg_5m || resources.cpu?.load_average?.get?.(1) || 0,
+              load_average_15m: resources.cpu?.load_avg_15m || resources.cpu?.load_average?.get?.(2) || 0,
+              memory_percent: resources.memory?.percent_used || resources.memory?.percent || 0,
+              memory_used_mb: resources.memory?.used_gb ? (resources.memory.used_gb * 1024) : 
+                             (resources.memory?.total_gb && resources.memory?.available_gb ? 
+                              ((resources.memory.total_gb - resources.memory.available_gb) * 1024) : 0),
+              memory_total_mb: resources.memory?.total_gb ? (resources.memory.total_gb * 1024) : 0,
+              disk_percent: resources.disk?.percent_used || resources.disk?.percent || 0,
+              disk_used_gb: resources.disk?.used_gb || 0,
+              disk_total_gb: resources.disk?.total_gb || 0
+            };
+          }
+        }
+      }
+      
+      if (metricsData) {
+        setSystemMetrics(metricsData);
       }
 
       // Fetch metrics history (last hour)
@@ -397,22 +431,22 @@ const SystemHealthPanel = () => {
                   CPU Usage
                 </Typography>
                 <Chip
-                  label={`${systemMetrics?.cpu_percent?.toFixed(1)}%`}
-                  color={getHealthColor(systemMetrics?.cpu_percent)}
+                  label={`${(systemMetrics?.cpu_percent || 0).toFixed(1)}%`}
+                  color={getHealthColor(systemMetrics?.cpu_percent || 0)}
                   size="small"
                 />
               </Box>
               <LinearProgress
                 variant="determinate"
                 value={systemMetrics?.cpu_percent || 0}
-                color={getHealthColor(systemMetrics?.cpu_percent)}
+                color={getHealthColor(systemMetrics?.cpu_percent || 0)}
                 sx={{ height: 8, borderRadius: 1 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {systemMetrics?.cpu_count} cores
+                {systemMetrics?.cpu_count || 'N/A'} cores
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Load: {systemMetrics?.load_average_1m?.toFixed(2)} / {systemMetrics?.load_average_5m?.toFixed(2)} / {systemMetrics?.load_average_15m?.toFixed(2)}
+                Load: {(systemMetrics?.load_average_1m || 0).toFixed(2)} / {(systemMetrics?.load_average_5m || 0).toFixed(2)} / {(systemMetrics?.load_average_15m || 0).toFixed(2)}
               </Typography>
             </CardContent>
           </Card>
@@ -428,19 +462,19 @@ const SystemHealthPanel = () => {
                   Memory Usage
                 </Typography>
                 <Chip
-                  label={`${systemMetrics?.memory_percent?.toFixed(1)}%`}
-                  color={getHealthColor(systemMetrics?.memory_percent)}
+                  label={`${(systemMetrics?.memory_percent || 0).toFixed(1)}%`}
+                  color={getHealthColor(systemMetrics?.memory_percent || 0)}
                   size="small"
                 />
               </Box>
               <LinearProgress
                 variant="determinate"
                 value={systemMetrics?.memory_percent || 0}
-                color={getHealthColor(systemMetrics?.memory_percent)}
+                color={getHealthColor(systemMetrics?.memory_percent || 0)}
                 sx={{ height: 8, borderRadius: 1 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {systemMetrics?.memory_used_mb?.toFixed(0)} MB / {systemMetrics?.memory_total_mb?.toFixed(0)} MB
+                {systemMetrics?.memory_used_mb ? `${systemMetrics.memory_used_mb.toFixed(0)} MB` : 'N/A'} / {systemMetrics?.memory_total_mb ? `${systemMetrics.memory_total_mb.toFixed(0)} MB` : 'N/A'}
               </Typography>
             </CardContent>
           </Card>
@@ -456,19 +490,19 @@ const SystemHealthPanel = () => {
                   Disk Usage
                 </Typography>
                 <Chip
-                  label={`${systemMetrics?.disk_percent?.toFixed(1)}%`}
-                  color={getHealthColor(systemMetrics?.disk_percent)}
+                  label={`${(systemMetrics?.disk_percent || 0).toFixed(1)}%`}
+                  color={getHealthColor(systemMetrics?.disk_percent || 0)}
                   size="small"
                 />
               </Box>
               <LinearProgress
                 variant="determinate"
                 value={systemMetrics?.disk_percent || 0}
-                color={getHealthColor(systemMetrics?.disk_percent)}
+                color={getHealthColor(systemMetrics?.disk_percent || 0)}
                 sx={{ height: 8, borderRadius: 1 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {systemMetrics?.disk_used_gb?.toFixed(1)} GB / {systemMetrics?.disk_total_gb?.toFixed(1)} GB
+                {systemMetrics?.disk_used_gb ? `${systemMetrics.disk_used_gb.toFixed(1)} GB` : 'N/A'} / {systemMetrics?.disk_total_gb ? `${systemMetrics.disk_total_gb.toFixed(1)} GB` : 'N/A'}
               </Typography>
             </CardContent>
           </Card>

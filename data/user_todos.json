@@ -117,5 +117,12 @@
     "completed": false,
     "createdAt": "2025-12-18T14:20:29.739178",
     "updatedAt": "2025-12-18T14:20:29.739183"
+  },
+  {
+    "id": "1767092122063",
+    "text": "# Start bot manually\npm2 start gridbot-live\n\n# Stop bot manually\npm2 stop gridbot-live\n\n# Restart bot manually (if needed)\npm2 restart gridbot-live\n\n# View logs\npm2 logs gridbot-live\n\n# Check status\npm2 list",
+    "completed": false,
+    "createdAt": "2025-12-30T16:25:22.063260",
+    "updatedAt": "2025-12-30T16:25:22.063266"
   }
 ]

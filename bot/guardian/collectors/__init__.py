@@ -7,8 +7,10 @@ Each collector fetches and calculates metrics only.
 
 from .position_monitor import PositionMonitor
 from .health_tracker import HealthTracker
+from .rsi_collector import RSICollector
 
 __all__ = [
     'PositionMonitor',
     'HealthTracker',
+    'RSICollector',
 ]

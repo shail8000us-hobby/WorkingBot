@@ -290,8 +290,16 @@ const LiquidationProtectionPanel = () => {
                 </Typography>
                 <Divider sx={{ my: 1 }} />
                 <Typography variant="body2">Maintenance Margin: {formatINR(distance?.maintenance_margin)}</Typography>
+                {distance?.bankruptcy_distance !== undefined && (
+                  <Typography variant="body2" color="textSecondary">
+                    Bankruptcy Distance: {distance.bankruptcy_distance.toFixed(1)}%
+                  </Typography>
+                )}
                 <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 1 }}>
-                  Formula: ((Available / MM) - 1) × 100
+                  Formula: (Current Price - Liquidation Price) / Current Price × 100
+                </Typography>
+                <Typography variant="body2" sx={{ fontSize: '0.7rem', color: 'text.disabled', mt: 0.5, fontStyle: 'italic' }}>
+                  Delta Exchange India (price-based, minimum across positions)
                 </Typography>
               </Box>
             </CardContent>

@@ -1,8 +1,10 @@
 {
   "recovery_active": false,
   "recovered_grids": [
-    88000.0
+    88500.0,
+    88000.0,
+    87500.0
   ],
-  "timestamp": 1766506074.671718,
-  "last_recovery": 1766130247.524076
+  "timestamp": 1767062021.746379,
+  "last_recovery": 1767062021.745993
 }

@@ -1,18 +1,18 @@
 {
-  "timestamp": "2025-12-24T12:16:34.772122",
+  "timestamp": "2025-12-30T18:05:55.976797",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 86993.0,
+    "current_price": 87928.5,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 86993.0,
-      "price_age_seconds": 4.972414016723633,
+      "price": 87928.5,
+      "price_age_seconds": 2.0181639194488525,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 7,
+        "total_updates": 1670,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 86993.0,
+        "price": 87928.5,
         "grid_step": 500.0,
         "positions": 0,
         "max_positions": 10,
@@ -80,34 +80,34 @@
       "scenarios": {
         "next_action": {
           "type": "PENDING_BUY",
-          "price": 86500.0,
+          "price": 87500.0,
           "status": "Waiting for fill",
           "then": "Calculate TP"
         },
         "price_drops": [
           {
             "action": "BUY",
-            "price": 86500.0,
-            "tp_price": 87000.0,
-            "change_pct": -0.566712264205166,
+            "price": 87500.0,
+            "tp_price": 88000.0,
+            "change_pct": -0.48732777199656535,
             "reason": "Grid level #1",
             "sequence": 1,
             "profit_target": 500.0
           },
           {
             "action": "BUY",
-            "price": 86000.0,
-            "tp_price": 86500.0,
-            "change_pct": -1.141471152851379,
+            "price": 87000.0,
+            "tp_price": 87500.0,
+            "change_pct": -1.0559716132994421,
             "reason": "Grid level #2",
             "sequence": 2,
             "profit_target": 500.0
           },
           {
             "action": "BUY",
-            "price": 85500.0,
-            "tp_price": 86000.0,
-            "change_pct": -1.7162300414975917,
+            "price": 86500.0,
+            "tp_price": 87000.0,
+            "change_pct": -1.624615454602319,
             "reason": "Grid level #3",
             "sequence": 3,
             "profit_target": 500.0
@@ -124,8 +124,42 @@
       }
     },
     "trading_condition": {
-      "active": false,
-      "error": "'BlockerTracker' object has no attribute '_check_order_confirmation_guard'"
+      "active": true,
+      "trading_allowed": false,
+      "total_blockers": 2,
+      "critical_blockers": [
+        {
+          "name": "Trading Bot Not Running",
+          "category": "PROCESS_MANAGER",
+          "message": "Main trading bot process is not active",
+          "details": {
+            "pid": 53515,
+            "pid_file": "/Users/ssr/Projects/WorkingBot/reports/bot.pid"
+          }
+        }
+      ],
+      "warning_blockers": [
+        {
+          "name": "Guardian Bot Not Running",
+          "category": "PROCESS_MANAGER",
+          "message": "Guardian bot process is not active",
+          "details": {}
+        }
+      ],
+      "info_blockers": [],
+      "safety_config": {
+        "execute_orders": true,
+        "trading_mode": "live",
+        "guardian_enabled": true,
+        "volatility_safety": true,
+        "liquidation_protection": true,
+        "drawdown_cap": true,
+        "order_confirmation": true
+      },
+      "guardian_status": {
+        "running": false
+      },
+      "timestamp": "2025-12-30T18:05:56.216084"
     },
     "opportunistic_recovery": {
       "active": false,

@@ -136,6 +136,16 @@ Once grid logic is bulletproof:
 
 **Violating the rules in AI_CRITICAL_RULES.md WILL break production!**
 
+**✨ RECENT FEATURE UPDATES:**
+
+### **RSI Layer 6 - Market Condition Monitor** (December 27, 2025)
+- ✅ **Status:** Production-Ready (Senior Developer Reviewed)
+- ✅ **Purpose:** Prevents grid bot trading in strongly trending markets
+- ✅ **Testing:** 19/19 unit tests passing
+- ✅ **Improvements:** Fixed RSI calculation (Wilder's method), improved hysteresis, added validation
+- 📋 **Documentation:** `RSI_LAYER6_SENIOR_REVIEW.md`, `RSI_Layer6.md`
+- 🔧 **Files:** `bot/guardian/collectors/rsi_collector.py`, `tests/test_rsi_collector.py`
+
 ---
 
 ## 📖 DOCUMENTATION MAP
@@ -241,6 +251,13 @@ Once grid logic is bulletproof:
 - **Status:** ✅ **OPERATIONAL** - Running via PM2
 - **Entry Point:** `pm2 start guardian-live`
 - **Purpose:** Risk management and volatility monitoring
+- **NEW: RSI Layer 6** ✅ PRODUCTION-READY (Dec 27, 2025)
+  - Mode-aware RSI monitoring (LONG/SHORT thresholds)
+  - Wilder's smoothing method (industry standard)
+  - Hysteresis protection (prevents signal oscillation)
+  - WebUI integration with real-time updates
+  - Comprehensive testing (19/19 tests passing)
+  - See: `RSI_LAYER6_SENIOR_REVIEW.md` for complete review
 
 **6. WebUI System** ✅ WORKING
 - **Backend:** `webui/backend/app.py` (Flask server)
@@ -760,6 +777,11 @@ CREATE TABLE guardian_signal (
 3. **Liquidation:** Distance to liquidation price
 4. **Position Size:** Max open positions
 5. **Margin:** Margin utilization percentage
+6. **RSI Layer 6:** ✨ NEW - Market condition monitoring (Dec 27, 2025)
+   - LONG mode: STOP when RSI >= 75 (overbought)
+   - SHORT mode: STOP when RSI <= 25 (oversold)
+   - Prevents trading in strongly trending markets
+   - Grid bots profit from consolidation, not trends
 
 **Guardian Process Details:**
 - **PM2 Process Name:** `guardian-live` or `guardian-demo`

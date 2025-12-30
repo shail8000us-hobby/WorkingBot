@@ -75,7 +75,7 @@ try:
         # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
         bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
         robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
-        dynamic_brain_bp, grid_mode_bp
+        dynamic_brain_bp, grid_mode_bp, unified_safety_bp
     )
     from .routes.prediction_api import prediction_bp
     from .routes.monitoring import monitoring_bp  # NOV 8: Bot monitoring systems
@@ -95,7 +95,7 @@ except ImportError:
         # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
         bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
         robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
-        dynamic_brain_bp, grid_mode_bp
+        dynamic_brain_bp, grid_mode_bp, unified_safety_bp
     )
     from routes.prediction_api import prediction_bp
     from routes.monitoring import monitoring_bp  # NOV 8: Bot monitoring systems
@@ -164,7 +164,8 @@ blueprints = [
     # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
     bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
     robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
-    dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp
+    dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp,
+    unified_safety_bp  # DEC 27: Unified Risk & Safety Dashboard
 ]
 
 # Add brain analyzer if available (same port, separate codebase)
@@ -210,6 +211,17 @@ print(f"✅ Registered recovery blueprint")
 app.register_blueprint(reconciliation_bp)
 print(f"✅ Registered reconciliation blueprint")
 
+# Unified safety blueprint is now part of blueprints list (registered above)
+
+# Register Position & Liquidation Metrics blueprint (DEC 28: Delta Exchange India improvements)
+try:
+    from webui.backend.routes.position_liquidation import position_liquidation_bp
+    app.register_blueprint(position_liquidation_bp)
+    print(f"✅ Registered position_liquidation blueprint (Delta Exchange India improvements)")
+except Exception as e:
+    print(f"⚠️ Could not register position_liquidation blueprint: {e}")
+    log.warning(f"Position liquidation routes not available: {e}")
+
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
 
@@ -221,8 +233,26 @@ def wire_bot_monitoring(bot_instance):
     except Exception as e:
         log.error(f"Failed to wire bot monitoring: {e}")
 
-# Make wire function available globally
+def wire_guardian_bot(guardian_bot):
+    """
+    Wire Guardian bot instance to WebUI routes
+    
+    This exposes PositionMonitor data (with Delta Exchange India improvements)
+    to the WebUI via position_liquidation routes.
+    
+    Args:
+        guardian_bot: GuardianBot instance with position_monitor
+    """
+    try:
+        from webui.backend.routes.position_liquidation import set_guardian_bot
+        set_guardian_bot(guardian_bot)
+        log.info("✅ Guardian bot (position monitor) wired to WebUI")
+    except Exception as e:
+        log.warning(f"Could not wire Guardian bot: {e}")
+
+# Make wire functions available globally
 app.wire_bot_monitoring = wire_bot_monitoring
+app.wire_guardian_bot = wire_guardian_bot
 
 print(f"✅ Registered {len(app.blueprints)} total blueprints")
 

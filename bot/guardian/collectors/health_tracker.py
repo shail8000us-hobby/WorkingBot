@@ -61,30 +61,39 @@ class HealthTracker:
         Update health status file (legacy method name for compatibility)
         
         Args:
-            monitoring_result: Latest monitoring cycle results
+            monitoring_result: Latest monitoring cycle results OR custom health dict
         """
         try:
-            health_data = {
-                'timestamp': time.time(),
-                'status': 'ok',
-                'pid': self.pid,
-                'uptime_seconds': int(time.time() - self.start_time),
-                'cycle_count': self.cycle_count,
-                'last_check': self.last_check_time,
-            }
-            
-            # Add monitoring summary if available
-            if monitoring_result and 'total_summary' in monitoring_result:
-                summary = monitoring_result['total_summary']
-                health_data['monitoring'] = {
-                    'position_count': summary.get('position_count', 0),
-                    'total_pnl_inr': summary.get('total_pnl_inr', 0),
-                    'total_loss_inr': summary.get('total_loss_inr', 0),
+            # Check if this is a pre-formatted health dict from guardian_bot
+            if monitoring_result and 'guardian_version' in monitoring_result:
+                # Use the provided data directly, just add metadata
+                health_data = monitoring_result.copy()
+                health_data['timestamp'] = time.time()
+                health_data['uptime_seconds'] = int(time.time() - self.start_time)
+                health_data['cycle_count'] = self.cycle_count
+            else:
+                # Legacy path: build from monitoring_result
+                health_data = {
+                    'timestamp': time.time(),
+                    'status': 'ok',
+                    'pid': self.pid,
+                    'uptime_seconds': int(time.time() - self.start_time),
+                    'cycle_count': self.cycle_count,
+                    'last_check': self.last_check_time,
                 }
-            
-            # Add liquidation data if available
-            if monitoring_result and 'liquidation' in monitoring_result:
-                health_data['liquidation'] = monitoring_result['liquidation']
+                
+                # Add monitoring summary if available
+                if monitoring_result and 'total_summary' in monitoring_result:
+                    summary = monitoring_result['total_summary']
+                    health_data['monitoring'] = {
+                        'position_count': summary.get('position_count', 0),
+                        'total_pnl_inr': summary.get('total_pnl_inr', 0),
+                        'total_loss_inr': summary.get('total_loss_inr', 0),
+                    }
+                
+                # Add liquidation data if available
+                if monitoring_result and 'liquidation' in monitoring_result:
+                    health_data['liquidation'] = monitoring_result['liquidation']
             
             # Write health file
             with open(self.health_file, 'w') as f:

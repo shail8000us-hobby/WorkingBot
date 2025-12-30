@@ -65,11 +65,13 @@ class SystemHealthTracker:
         self.websocket_reconnect_count = 0
         
         # Data freshness tracking (not critical initially)
+        # Initialize to 0 - will be set when data is actually collected
+        # This prevents false "stale" warnings at startup
         self.data_updates = {
-            'volatility': time.time(),  # Assume fresh at start
-            'positions': time.time(),
-            'liquidation': time.time(),
-            'event_store': time.time()
+            'volatility': 0,  # 0 = not collected yet
+            'positions': 0,
+            'liquidation': 0,
+            'event_store': 0
         }
         
         # Event store health
@@ -198,7 +200,7 @@ class SystemHealthTracker:
         
         if data_type in self.data_updates:
             self.data_updates[data_type] = time.time()
-            log.debug(f"✅ Data updated: {data_type}")
+            log.info(f"✅ Data updated: {data_type} (freshness tracking)")
         else:
             log.warning(f"⚠️ Unknown data type: {data_type}")
     
@@ -293,17 +295,37 @@ class SystemHealthTracker:
         
         current_time = time.time()
         
-        volatility_stale = current_time - self.data_updates.get('volatility', 0) if self.data_updates.get('volatility', 0) else 0
-        positions_stale = current_time - self.data_updates.get('positions', 0) if self.data_updates.get('positions', 0) else 0
-        liquidation_stale = current_time - self.data_updates.get('liquidation', 0) if self.data_updates.get('liquidation', 0) else 0
+        # Calculate staleness (0 if never updated, which is OK initially)
+        volatility_update = self.data_updates.get('volatility', 0)
+        positions_update = self.data_updates.get('positions', 0)
+        liquidation_update = self.data_updates.get('liquidation', 0)
         
-        # Consider data healthy if at least one source is fresh
-        # (More lenient - we don't want false positives)
-        healthy = (
-            volatility_stale < self.data_stale_threshold or
-            positions_stale < self.data_stale_threshold or
-            liquidation_stale < self.data_stale_threshold
+        volatility_stale = (current_time - volatility_update) if volatility_update > 0 else 0
+        positions_stale = (current_time - positions_update) if positions_update > 0 else 0
+        liquidation_stale = (current_time - liquidation_update) if liquidation_update > 0 else 0
+        
+        # Consider data healthy if:
+        # 1. At least one source is fresh (within threshold), OR
+        # 2. Data hasn't been collected yet (initial state - OK)
+        # This prevents false positives when Guardian first starts
+        has_data = (
+            volatility_update > 0 or
+            positions_update > 0 or
+            liquidation_update > 0
         )
+        
+        if not has_data:
+            # No data collected yet - assume healthy (initial state)
+            healthy = True
+            log.info(f"Data freshness: No data collected yet - marking as healthy (initial state)")
+        else:
+            # Data has been collected - check if any source is fresh
+            healthy = (
+                volatility_stale < self.data_stale_threshold or
+                positions_stale < self.data_stale_threshold or
+                liquidation_stale < self.data_stale_threshold
+            )
+            log.info(f"Data freshness check: vol={volatility_stale:.0f}s, pos={positions_stale:.0f}s, liq={liquidation_stale:.0f}s, threshold={self.data_stale_threshold}s, healthy={healthy}")
         
         return {
             'healthy': healthy,

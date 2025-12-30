@@ -1,0 +1,399 @@
+version: '2.0'
+trading_mode: live
+bot:
+  symbol: BTCUSD
+  mode: LONG
+  heartbeat_seconds: '20'
+grid:
+  geometry:
+    lower: '85000'
+    upper: '95000'
+    step: '500'
+    reference: '87500'
+  limits:
+    max_open_positions: '50'
+    lot_size: '5'
+    short_lot_size: '1'
+    max_open_orders: 20
+    max_qty_per_order: '2'
+  behavior:
+    strict_grid: 'true'
+    rung_snap_mode: below
+    tick_size: '0.5'
+    dynamic_tick_size: 'true'
+    seed_initial_count: '0'
+  smart_gap_fill:
+    enabled: 'false'
+    order_type: maker
+    max_levels: '0'
+capital_protection:
+  equity_floor:
+    floor_inr: 70000
+    check_interval: 60
+    require_acknowledgment: true
+    enabled: true
+  drawdown_cap:
+    enabled: true
+    max_pct: 30.0
+    window_days: 30
+    hysteresis_pct: 15.0
+    check_interval: 3600
+  two_man_rule:
+    enabled: true
+    timeout_seconds: 600
+    auto_revert: true
+  exposure_growth:
+    enabled: true
+    max_tranches_per_minute: 2
+    max_notional_inr_per_minute: 999999999
+    queue_enabled: true
+  pending_budget:
+    max_notional_inr: 2000000000000
+    buffer_pct: 10.0
+safety:
+  execute_orders: true
+  i_understand_live: 'YES'
+  live_acknowledgment: 'YES'
+  max_position_size: 1000
+  min_liquidation_distance_pct: 50.0
+  flash_move: {}
+  spread_guard: {}
+  volatility:
+    enabled: true
+    max_iv: 55.0
+    max_rv: 55.0
+    max_spread: 10.0
+    check_interval: 300.0
+    auto_resume: true
+    resume_buffer: 5.0
+    monitor_enabled: true
+    threshold_elevated: 40
+    threshold_high: 60
+    threshold_extreme: 80
+    halt_threshold: 100
+    rv_window: 24
+    update_interval: 60
+    opportunistic_recovery:
+      enabled: true
+      iv_threshold: 35.0
+      rv_threshold: 40.0
+      spread_threshold: 10.0
+      max_orders_volatility: 5
+      max_orders_startup: 5
+      execution_delay_ms: 300
+      min_profit_margin: 500
+      cooldown_seconds: 60
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 3
+    timeout_seconds: 60
+    timeout: 60
+    half_open_calls: 2
+  confirmation_guard:
+    enabled: true
+    poll_interval: 10
+    chaos_threshold: 60
+  rsi:
+    enabled: true
+    period: 14
+    overbought_threshold: 70.0
+    oversold_threshold: 30.0
+    long_threshold: 75
+    short_threshold: 25
+    hysteresis_seconds: 60
+    timeframe: 1h
+    check_interval: 300
+    cache_ttl: 60
+guardian:
+  enabled: true
+  check_interval: 5
+  max_account_loss_inr: '10000'
+  usd_to_inr_rate: '85.0'
+  liquidation_critical: 0.5
+  auto_close_positions: true
+  health_check:
+    enabled: true
+    api_timeout_seconds: 30
+    websocket_timeout_seconds: 60
+    data_stale_threshold_seconds: 120
+  close_order_type: market
+  cancel_orders_on_emergency: true
+  alert_threshold_80: true
+  alert_threshold_90: true
+  daily_summary: true
+  cooldown: 60
+  hysteresis_80_trigger: 80
+  hysteresis_80_reset: 75
+  hysteresis_90_trigger: 90
+  hysteresis_90_reset: 85
+  hysteresis_100_trigger: 100
+  hysteresis_100_reset: 95
+  health_file: .guardian_health
+  pid_file: .guardian.pid
+  emergency_flag: .guardian_emergency_stop
+  log_file: true
+  log_level: INFO
+  auto_margin_topup: false
+  auto_topup_amount_inr: 1000
+  max_loss: 3000
+liquidation_protection:
+  enabled: true
+  margin_utilization_max: 40
+  margin_utilization_warning_1: 500
+  margin_utilization_warning_2: 70
+  margin_emergency_reserve: 60
+  reduce_only_at_utilization: 200
+  liquidation_distance_min: 60.0
+  liquidation_distance_target: 70.0
+  liquidation_distance_critical: 50.0
+  liquidation_distance_check_interval: true
+  real_time_monitoring: true
+  websocket_margin_updates: true
+  websocket_portfolio_updates: true
+  margin_utilization_critical: 80.0
+  margin_utilization_warning: 60
+  liquidation_distance_warning: 10.0
+  auto_margin_topup: 'false'
+  auto_topup_amount_inr: 1000
+  liquidation_check_interval: 5
+  liquidation_log_level: INFO
+  liquidation_alert_telegram: true
+  liquidation_alert_sound: true
+  liquidation_alert_email: false
+  liquidation_alert_throttle: 3600
+  alert_throttle_green: 0
+  alert_throttle_yellow: 3600
+  alert_throttle_orange: 3600
+  alert_throttle_red: 0
+  websocket_reconnect_interval: 5
+  websocket_timeout: 30
+  websocket_heartbeat_interval: 30
+  websocket_reconnect_delay: 5
+  mark_price_websocket_enabled: true
+  portfolio_margin_websocket_enabled: true
+  positions_websocket_enabled: true
+  auto_emergency_on_websocket_alert: false
+  emergency_close_all_at_utilization: 90
+  emergency_close_all_at_distance: 30
+  emergency_close_percentage: 100
+  emergency_cancel_all_orders: true
+  mtm_monitoring_enabled: true
+  mtm_alert_threshold: -1000
+  mtm_critical_threshold: -3000
+  mtm_check_interval: 2
+  auto_cancel_orders_at_yellow: true
+  auto_reduce_positions_enabled: false
+  auto_reduce_at_utilization: 80
+  auto_reduce_percentage: 30
+  auto_add_margin_enabled: false
+  maintenance_margin_percent: '2.5'
+  auto_topup_threshold: '60'
+  auto_topup_target: '90'
+  max_topups_per_position: '3'
+  min_balance_reserve_percent: '20'
+  margin_warning_threshold: '80'
+  margin_danger_threshold: '50'
+  margin_critical_threshold: '20'
+  distance_to_liq_warning: '3.0'
+  adl_monitoring_enabled: true
+  adl_warning_level: 4
+  adl_auto_reduce_level: 5
+  adl_reduce_percentage: 30
+  funding_rate_monitoring: true
+  funding_rate_alert_threshold: 0.5
+  funding_rate_critical_threshold: 1.0
+  funding_pre_payment_check: true
+  funding_pre_payment_minutes: 60
+  dynamic_utilization_enabled: false
+  dynamic_utilization_mtm_threshold: 20
+  dynamic_utilization_reduction: 10
+  dynamic_utilization_volatility_factor: true
+startup:
+  sync_duration: 60
+  strict_start: 'true'
+  forget_exchange_on_start: 'true'
+  enable_smart_recovery: 'true'
+  cancel_all_on_start: 'false'
+  cancel_scope: tagged
+shutdown:
+  shutdown_duration: 60
+  cancel_buy_orders: true
+  keep_tp_orders: true
+order_execution:
+  post_only_mode: auto
+  price_buffer_pct: '0.1'
+  fill_threshold: '0.98'
+  max_retries: '3'
+  retry_delay: '2.0'
+  cooldown_seconds: '30'
+  tag_prefix: GBOT_
+  adopt_untagged: 'false'
+heartbeat:
+  enabled: 'true'
+  timeout: '15'
+  update_interval: '5'
+  monitor_interval: '10'
+  file: .heartbeat
+  action: cancel_buy_orders
+health_check:
+  enabled: 'true'
+  interval: '300'
+performance_logging:
+  enabled: 'true'
+  interval: '3600'
+api:
+  demo:
+    public_url: https://cdn-ind.testnet.deltaex.org
+    private_url: https://cdn-ind.testnet.deltaex.org
+    websocket_url: wss://testnet-api.delta.exchange
+    base_url: https://testnet-api.delta.exchange
+    product_id: 27
+    testnet: true
+  live:
+    public_url: https://api.india.delta.exchange
+    private_url: https://api.india.delta.exchange
+    websocket_url: wss://socket.india.delta.exchange
+    base_url: https://api.india.delta.exchange
+    product_id: 139
+    testnet: false
+  credentials:
+    use_env: true
+  reference_level: 109800
+telegram:
+  bot_token: '***REDACTED***'
+  chat_id: '8170794676'
+  live_bot_token: '***REDACTED***'
+  live_chat_id: '8170794676'
+  demo_bot_token: '***REDACTED***'
+  demo_chat_id: '8170794676'
+  enabled: true
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  guardian_log_file: guardian.log
+  guardian_log_level: INFO
+refactor_compat:
+  enabled: true
+  warn_threshold: 1
+  fail_threshold: 2
+webui:
+  port: 5555
+  allowed_origins: http://localhost:*,http://127.0.0.1:*,http://100.78.183.110:*,http://shailendras-mac-mini.tail289dc3.ts.net:*,http://*.ts.net:*,http://100.*.*.*:*
+  enabled: true
+  auth_enabled: false
+  flask:
+    debug: false
+    host: 127.0.0.1
+    port: 5001
+    env: production
+  errors:
+    collector_enabled: true
+    db_path: data/errors.db
+    rate_limit_window: 60
+    rate_limit_max: 100
+    burst_threshold: 10
+    allow_destructive: false
+    push_websocket: true
+  logs:
+    trading_bot: bot.log
+    guardian_bot: logs/guardian.log
+    health_bot: logs/health.log
+  auth:
+    enabled: false
+    user: admin
+  pm2:
+    enabled: true
+  url:
+    default: http://localhost:5555
+risk_limits:
+  max_account_loss_inr: 25000
+  usd_to_inr_rate: 85.0
+  max_drift_alerts: 10
+  max_disruption_events: 5
+  emergency_price_buffer: '0.2'
+execution_safety:
+  i_understand_live: 'YES'
+  execute_orders: 'true'
+  require_live_password: true
+  live_trading_password: '***REDACTED***'
+risk_analytics:
+  enabled: true
+  cache_ttl: 60
+ip_monitor:
+  enabled: true
+  interval: 300
+hot_reload:
+  enabled: true
+pm2:
+  enabled: true
+emergency:
+  max_drift_alerts: '10'
+  max_disruption_events: '5'
+  market_disruption_cooldown: '300'
+monitoring:
+  heartbeat:
+    enabled: true
+    file: .heartbeat
+    timeout: 60
+    check_interval: 10
+    action: cancel_buy_orders
+  fill_monitor:
+    enabled: true
+    check_interval: 30
+    verification_delay: 30
+    max_age: 86400
+  dual_channel:
+    enabled: false
+    rest_poll_interval: 10
+    max_fill_history: 1000
+    alert_on_websocket_miss: true
+  order_tracker:
+    enabled: false
+    pending_timeout: 86400
+    fill_timeout: 10
+    check_interval: 30
+    alert_on_timeout: true
+  state_comparator:
+    enabled: false
+    check_interval: 60
+    auto_reconcile: true
+    alert_threshold: 3
+  enhanced_reconciliation:
+    enabled: false
+    check_interval: 120
+    alert_on_issue: true
+recovery:
+  enabled: true
+  max_grids: 3
+  cooldown_minutes: 60
+  execution_delay_seconds: 2
+  max_retries: 3
+  retry_delay: 5
+  recovery_cooldown: 300
+  recovery_failure_threshold: 3
+  recovery_circuit_timeout: 60
+  recovery_max_concurrent: 5
+  recovery_rate_limit: 0.5
+strategies: []
+active_strategies: []
+exchange_maintenance:
+  fill_monitor:
+    enabled: true
+    check_interval: 30
+    verification_delay: 5
+    max_age: 86400
+  post_order_verification:
+    enabled: true
+    timeout: 5
+    check_interval: 1
+  exchange_state_detection:
+    enabled: true
+    check_interval: 60
+    error_threshold: 3
+    auto_recovery: true
+  startup_reconciliation:
+    enabled: true
+    sync_positions: true
+    sync_orders: true
+    place_missing_tps: true
+    ensure_grid_coverage: true

@@ -115,8 +115,61 @@ def get_liquidation_status():
         }
         
         # Try to get real data from multiple sources
-        # 1. Try liquidation monitor (most comprehensive)
-        if MONITOR_AVAILABLE and liquidation_monitor and trading_mode == 'live':
+        # 1. PRIORITY: Try Guardian health file (Delta Exchange India improvements)
+        import json
+        from pathlib import Path
+        
+        guardian_health_file = Path(__file__).parent.parent.parent.parent / '.guardian_health'
+        guardian_data_used = False
+        
+        if guardian_health_file.exists() and trading_mode == 'live':
+            try:
+                with open(guardian_health_file, 'r') as f:
+                    health_data = json.load(f)
+                
+                # Get liquidation metrics from Guardian (Delta Exchange India calculations)
+                liquidation = health_data.get('liquidation', {})
+                positions = health_data.get('positions', {})
+                
+                if liquidation:
+                    # Use price-based liquidation distance from PositionMonitor
+                    liq_distance = liquidation.get('distance', 100.0)
+                    is_critical = liquidation.get('critical', False)
+                    is_warning = liquidation.get('warning', False)
+                    
+                    # Map to existing zone names
+                    if is_critical:
+                        zone = 'CRITICAL'
+                        liquidation_risk = True
+                    elif is_warning:
+                        zone = 'DANGER'
+                        liquidation_risk = True
+                    elif liq_distance < 10.0:
+                        zone = 'WARNING'
+                        liquidation_risk = False
+                    else:
+                        zone = 'SAFE'
+                        liquidation_risk = False
+                    
+                    distance_status.update({
+                        'distance': round(liq_distance, 1),
+                        'zone': zone,
+                        'liquidation_risk': liquidation_risk,
+                        'bankruptcy_distance': round(liquidation.get('bankruptcy_distance', 100.0), 1)
+                    })
+                    guardian_data_used = True
+                    log.debug(f"Using Guardian liquidation distance: {liq_distance:.1f}% (price-based)")
+                
+                # Get position PnL from Guardian
+                if positions:
+                    mtm_status['current_mtm_inr'] = round(positions.get('total_pnl_inr', 0), 2)
+                    margin_status['unrealized_pnl'] = round(positions.get('total_pnl_inr', 0), 2)
+                    
+            except Exception as e:
+                log.warning(f"Could not read Guardian health file: {e}")
+        
+        # 2. Fallback: Try liquidation monitor
+        if not guardian_data_used and MONITOR_AVAILABLE and liquidation_monitor and trading_mode == 'live':
             try:
                 real_time_status = liquidation_monitor.get_status()
                 if 'total_balance' in real_time_status and real_time_status.get('total_balance', 0) > 0:
@@ -126,19 +179,11 @@ def get_liquidation_status():
                         'can_open_positions': real_time_status.get('margin_utilization', 0) < 80,
                         'total_balance': real_time_status.get('total_balance', 0),
                         'available_balance': real_time_status.get('available_balance', 0),
-                        'blocked_margin': real_time_status.get('blocked_balance', 0),  # Fix: Use blocked_margin consistently
+                        'blocked_margin': real_time_status.get('blocked_balance', 0),
                         'unrealized_pnl': real_time_status.get('total_unrealized_pnl', 0)
                     })
-                    # Also get liquidation distance if available
-                    if 'liquidation_distance' in real_time_status:
-                        distance_status.update({
-                            'distance': real_time_status.get('liquidation_distance', 75),
-                            'zone': real_time_status.get('liquidation_zone', 'SAFE'),
-                            'maintenance_margin': real_time_status.get('maintenance_margin', 25000),
-                            'liquidation_risk': real_time_status.get('liquidation_risk', False)
-                        })
             except Exception as e:
-                log.warning(f"Could not get real liquidation data: {e}")
+                log.warning(f"Could not get liquidation monitor data: {e}")
         
         # 2. Fallback: Get MTM from Delta Exchange API (same as positions blueprint)
         try:
@@ -214,14 +259,15 @@ def get_liquidation_status():
                             utilization = (used / balance) * 100
                             margin_status['utilization'] = round(utilization, 1)
                             
-                            # Calculate liquidation distance using the correct formula
-                            # Formula: ((Available / MM) - 1) × 100
-                            if maintenance_margin > 0:
+                            # Only calculate margin-based distance if Guardian didn't provide price-based distance
+                            if not guardian_data_used and maintenance_margin > 0:
+                                # OLD FORMULA (margin-based): Only used as fallback
+                                # Note: This is DIFFERENT from Delta Exchange India price-based calculation
                                 liquidation_distance = ((available_balance / maintenance_margin) - 1) * 100
                                 distance_status['distance'] = round(liquidation_distance, 1)
                                 distance_status['maintenance_margin'] = round(maintenance_margin, 2)
                                 
-                                # Determine zone based on liquidation distance
+                                # Determine zone based on margin distance (different thresholds)
                                 if liquidation_distance < 20:
                                     distance_status['zone'] = 'CRITICAL'
                                     distance_status['liquidation_risk'] = True
@@ -235,7 +281,9 @@ def get_liquidation_status():
                                     distance_status['zone'] = 'SAFE'
                                     distance_status['liquidation_risk'] = False
                                 
-                                log.debug(f"Liquidation distance: {liquidation_distance:.1f}% (Available: ₹{available_balance:.2f} / MM: ₹{maintenance_margin:.2f})")
+                                log.debug(f"[FALLBACK] Margin-based liquidation distance: {liquidation_distance:.1f}% (Available: ₹{available_balance:.2f} / MM: ₹{maintenance_margin:.2f})")
+                            else:
+                                distance_status['maintenance_margin'] = round(maintenance_margin, 2)
                             
                             log.debug(f"Wallet balance: ${balance_usd:.2f} USD = ₹{balance:.2f} INR")
                             

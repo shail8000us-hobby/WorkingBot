@@ -109,7 +109,7 @@ function TopBar({
           </motion.div>
           <div>
             <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
-              GridBot Pro
+              SSR BOT
             </p>
             <p className="text-xs font-semibold text-slate-100">
               {running ? 'Online' : 'Standby'}
