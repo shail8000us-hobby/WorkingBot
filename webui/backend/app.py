@@ -20,7 +20,15 @@ sys.path.insert(0, str(BASE_DIR))
 # Load config from YAML (SINGLE SOURCE OF TRUTH)
 from config.loader import get_config, get_api_credentials
 cfg = get_config()
-print(f"✅ Loaded config from config.yaml ({cfg.bot.symbol})")
+
+# Display config info (v5.0 multi-symbol or v4.0 single-symbol)
+if hasattr(cfg, 'symbols') and cfg.symbols:
+    symbols_list = ', '.join([s for s, c in cfg.symbols.items() if c.enabled])
+    print(f"✅ Loaded config v{cfg.version} with symbols: {symbols_list}")
+elif hasattr(cfg, 'bot') and hasattr(cfg.bot, 'symbol'):
+    print(f"✅ Loaded config from config.yaml ({cfg.bot.symbol})")
+else:
+    print(f"✅ Loaded config v{cfg.version}")
 
 # Load API credentials from .env (security best practice)
 credentials = get_api_credentials(cfg.trading_mode)
@@ -755,8 +763,19 @@ if __name__ == '__main__':
     # ============================================================================
     from webui.backend.utils.instance_lock import WebUIInstanceLock
     
-    # Allow port configuration via YAML config (default: 5555 for production)
-    WEBUI_PORT = cfg.webui.port
+    # Allow port configuration via CLI argument or YAML config
+    import sys
+    if len(sys.argv) > 1:
+        try:
+            WEBUI_PORT = int(sys.argv[1])
+            print(f"🔧 Using CLI port argument: {WEBUI_PORT}")
+        except ValueError:
+            print(f"❌ Invalid port argument: {sys.argv[1]}")
+            sys.exit(1)
+    else:
+        WEBUI_PORT = cfg.webui.port
+        print(f"🔧 Using config port: {WEBUI_PORT}")
+    
     instance_lock = WebUIInstanceLock(BASE_DIR, WEBUI_PORT)
     
     if not instance_lock.acquire():
