@@ -231,25 +231,38 @@ def price_health():
     """
     Get current price health status
     
+    Query Parameters:
+        symbol: Symbol name (e.g., 'BTCUSD', 'ETHUSD') - Optional
+        mode: Trading mode (e.g., 'LONG', 'SHORT') - Optional
+    
     Returns:
         Price freshness, age, source, and staleness warnings
     
     Example:
-        GET /api/monitoring/price-health
+        GET /api/monitoring/price-health?symbol=BTCUSD
         Response: {
             "fresh": true,
             "age_seconds": 2.3,
             "source": "WebSocket",
             "last_update": "2025-11-08T10:30:45",
             "stale_warning": false,
-            "critical_warning": false
+            "critical_warning": false,
+            "symbol": "BTCUSD",
+            "mode": "LONG"
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot and 'price_health' in snapshot.get('layers', {}):
-            return jsonify(snapshot['layers']['price_health']), 200
+            data = snapshot['layers']['price_health']
+            data['symbol'] = snapshot.get('symbol', symbol or 'BTCUSD')
+            data['mode'] = snapshot.get('mode', mode or 'LONG')
+            return jsonify(data), 200
         
         # Fallback to bot_instance
         if not _price_monitor:
@@ -287,21 +300,31 @@ def pre_order_stats():
     """
     Get pre-order decision statistics
     
+    Query Parameters:
+        symbol: Symbol name (e.g., 'BTCUSD', 'ETHUSD') - Optional
+        mode: Trading mode (e.g., 'LONG', 'SHORT') - Optional
+    
     Returns:
         Approval/rejection counts and rate
     
     Example:
-        GET /api/monitoring/pre-order-stats
+        GET /api/monitoring/pre-order-stats?symbol=BTCUSD
         Response: {
             "approved": 45,
             "rejected": 3,
             "total": 48,
-            "approval_rate": 93.75
+            "approval_rate": 93.75,
+            "symbol": "BTCUSD",
+            "mode": "LONG"
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot and 'pre_order_stats' in snapshot.get('layers', {}):
             return jsonify(snapshot['layers']['pre_order_stats']), 200
         
@@ -333,22 +356,35 @@ def tp_verification():
     """
     Get TP verification statistics
     
+    Query Parameters:
+        symbol: Symbol name (e.g., 'BTCUSD', 'ETHUSD') - Optional
+        mode: Trading mode (e.g., 'LONG', 'SHORT') - Optional
+    
     Returns:
         TP verification success rate and orphaned positions
     
     Example:
-        GET /api/monitoring/tp-verification
+        GET /api/monitoring/tp-verification?symbol=BTCUSD
         Response: {
             "verified": 42,
             "orphaned": 0,
-            "success_rate": 100.0
+            "success_rate": 100.0,
+            "symbol": "BTCUSD",
+            "mode": "LONG"
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot and 'tp_verification' in snapshot.get('layers', {}):
-            return jsonify(snapshot['layers']['tp_verification']), 200
+            data = snapshot['layers']['tp_verification']
+            data['symbol'] = snapshot.get('symbol', symbol or 'BTCUSD')
+            data['mode'] = snapshot.get('mode', mode or 'LONG')
+            return jsonify(data), 200
         
         # Fallback to bot_instance
         if not _tp_verifier:
@@ -385,12 +421,14 @@ def anomalies():
     
     Query Parameters:
         limit: Maximum number of anomalies to return (default: 10)
+        symbol: Symbol name (e.g., 'BTCUSD', 'ETHUSD') - Optional
+        mode: Trading mode (e.g., 'LONG', 'SHORT') - Optional
     
     Returns:
         List of recent anomalies with severity and type
     
     Example:
-        GET /api/monitoring/anomalies?limit=5
+        GET /api/monitoring/anomalies?limit=5&symbol=BTCUSD
         Response: {
             "anomalies": [
                 {
@@ -400,14 +438,23 @@ def anomalies():
                     "timestamp": "2025-11-08T10:25:30"
                 }
             ],
-            "count": 1
+            "count": 1,
+            "symbol": "BTCUSD",
+            "mode": "LONG"
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot and 'anomalies' in snapshot.get('layers', {}):
-            return jsonify(snapshot['layers']['anomalies']), 200
+            data = snapshot['layers']['anomalies']
+            data['symbol'] = snapshot.get('symbol', symbol or 'BTCUSD')
+            data['mode'] = snapshot.get('mode', mode or 'LONG')
+            return jsonify(data), 200
         
         # Fallback to bot_instance
         if not _anomaly_detector:
@@ -441,23 +488,35 @@ def predictive_map():
     """
     Get predictive decision map
     
+    Query Parameters:
+        symbol: Symbol name (e.g., 'BTCUSD', 'ETHUSD') - Optional
+        mode: Trading mode (e.g., 'LONG', 'SHORT') - Optional
+    
     Returns what bot will do next based on price movement
     
     Example:
-        GET /api/monitoring/predictive-map
+        GET /api/monitoring/predictive-map?symbol=BTCUSD
         Response: {
             "current_price": 101234,
             "next_buy_levels": [100000, 99000, 98000],
             "next_tp_fills": [101500, 102000, 102500],
             "mode": "LONG",
-            "capacity": {"used": 3, "available": 7}
+            "capacity": {"used": 3, "available": 7},
+            "symbol": "BTCUSD"
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot and 'predictive' in snapshot.get('layers', {}):
-            return jsonify(snapshot['layers']['predictive']), 200
+            data = snapshot['layers']['predictive']
+            data['symbol'] = snapshot.get('symbol', symbol or 'BTCUSD')
+            data['mode'] = snapshot.get('mode', mode or 'LONG')
+            return jsonify(data), 200
         
         # Fallback to bot_instance
         if not _predictive_display or not _bot_instance:
@@ -586,10 +645,17 @@ def advanced_predictions():
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode_param = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode_param)
         if snapshot and 'advanced_predictions' in snapshot.get('layers', {}):
-            return jsonify(snapshot['layers']['advanced_predictions']), 200
+            data = snapshot['layers']['advanced_predictions']
+            data['symbol'] = snapshot.get('symbol', symbol or 'BTCUSD')
+            data['mode'] = snapshot.get('mode', mode_param or 'LONG')
+            return jsonify(data), 200
         
         # Try to read from SQL database (works with standalone bot)
         from webui.backend.utils.bot_state_reader import get_bot_state_from_db
@@ -1098,10 +1164,17 @@ def trading_condition():
         }
     """
     try:
+        # Get symbol from query params (v5.0 multi-symbol support)
+        symbol = request.args.get('symbol', None)
+        mode = request.args.get('mode', None)
+        
         # Try snapshot file first
-        snapshot = _load_monitoring_snapshot()
+        snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot and 'trading_condition' in snapshot.get('layers', {}):
-            return jsonify(snapshot['layers']['trading_condition']), 200
+            data = snapshot['layers']['trading_condition']
+            data['symbol'] = snapshot.get('symbol', symbol or 'BTCUSD')
+            data['mode'] = snapshot.get('mode', mode or 'LONG')
+            return jsonify(data), 200
         
         # Fallback: compute directly from blocker tracker
         from bot.safety.blocker_tracker import get_blocker_tracker

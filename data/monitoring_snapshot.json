@@ -1,18 +1,18 @@
 {
-  "timestamp": "2025-12-30T22:23:02.700255",
+  "timestamp": "2025-12-30T22:49:48.804440",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 88596.0,
+    "current_price": 88555.5,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 88596.0,
-      "price_age_seconds": 4.245363235473633,
+      "price": 88555.5,
+      "price_age_seconds": 1.417492151260376,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 4712,
+        "total_updates": 5029,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 88596.0,
+        "price": 88555.5,
         "grid_step": 500.0,
         "positions": 0,
         "max_positions": 10,
@@ -89,7 +89,7 @@
             "action": "BUY",
             "price": 87500.0,
             "tp_price": 88000.0,
-            "change_pct": -1.237076165966861,
+            "change_pct": -1.191907899565809,
             "reason": "Grid level #1",
             "sequence": 1,
             "profit_target": 500.0
@@ -98,7 +98,7 @@
             "action": "BUY",
             "price": 87000.0,
             "tp_price": 87500.0,
-            "change_pct": -1.8014357307327644,
+            "change_pct": -1.7565255687111474,
             "reason": "Grid level #2",
             "sequence": 2,
             "profit_target": 500.0
@@ -107,7 +107,7 @@
             "action": "BUY",
             "price": 86500.0,
             "tp_price": 87000.0,
-            "change_pct": -2.365795295498668,
+            "change_pct": -2.3211432378564854,
             "reason": "Grid level #3",
             "sequence": 3,
             "profit_target": 500.0
@@ -159,7 +159,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2025-12-30T22:23:02.963428"
+      "timestamp": "2025-12-30T22:49:49.048575"
     },
     "opportunistic_recovery": {
       "active": false,
@@ -174,4 +174,4 @@
       "recent_recoveries": []
     }
   }
-}
+}}
