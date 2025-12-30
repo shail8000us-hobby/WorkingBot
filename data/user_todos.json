@@ -124,5 +124,12 @@
     "completed": false,
     "createdAt": "2025-12-30T16:25:22.063260",
     "updatedAt": "2025-12-30T16:25:22.063266"
+  },
+  {
+    "id": "1767110580369",
+    "text": "# Switch to production (locked)\ngit checkout production-4.0-clean\n\n# Switch to BTC production\ngit checkout BTC\n\n# Switch to BTEH development (current)\ngit checkout BTEH\n\n# Check current branch\ngit branch --show-current",
+    "completed": false,
+    "createdAt": "2025-12-30T21:33:00.369661",
+    "updatedAt": "2025-12-30T21:33:00.369667"
   }
 ]

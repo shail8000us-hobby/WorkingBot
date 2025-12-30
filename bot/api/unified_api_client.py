@@ -295,7 +295,20 @@ class UnifiedAPIClient:
         self.ws_manager.register_handler("order", callback)
     
     async def subscribe_channels(self):
-        """Subscribe to WebSocket channels"""
+        """
+        Subscribe to WebSocket channels.
+        
+        CRITICAL (Dec 30, 2025):
+        ========================
+        DO NOT subscribe to v2/user_trades - it causes duplicate fill processing.
+        Delta Exchange sends fills via BOTH channels (orders + user_trades).
+        Using both risks processing same fill twice → duplicate TP orders.
+        
+        Only subscribe to:
+        - orders (for fill detection + order lifecycle)
+        - positions (for position updates)
+        - v2/ticker (for price updates)
+        """
         if not self.ws_manager:
             return
         
@@ -303,8 +316,8 @@ class UnifiedAPIClient:
             # Subscribe to ticker (public channel)
             await self.ws_manager.subscribe("v2/ticker", [self.symbol])
             
-            # Subscribe to user trades (private channel - subscribed after auth)
-            await self.ws_manager.subscribe("v2/user_trades", [self.symbol])
+            # ❌ DISABLED: Subscribe to user trades (causes duplicate fill processing)
+            # await self.ws_manager.subscribe("v2/user_trades", [self.symbol])
             
             # Subscribe to orders (private channel)
             await self.ws_manager.subscribe("orders", [self.symbol])
@@ -312,7 +325,8 @@ class UnifiedAPIClient:
             # Subscribe to positions (private channel)
             await self.ws_manager.subscribe("positions", [self.symbol])
             
-            log.info("✅ Subscribed to WebSocket channels")
+            log.info("✅ Subscribed to channels: orders, positions, v2/ticker")
+            log.info("   v2/user_trades: DISABLED (prevents duplicate fills)")
         except Exception as e:
             log.error(f"Channel subscription failed: {e}")
     

@@ -1577,7 +1577,10 @@ class AsyncGridBot:
     def _register_ws_handlers(self) -> None:
         """Register WebSocket message handlers."""
         # WebSocket handlers are registered via UnifiedAPIClient
-        self.api_client.ws_manager.register_handler("v2/user_trades", self._handle_user_trades)
+        # NOTE: Removed v2/user_trades handler to prevent duplicate fill processing
+        # Delta Exchange sends fills via orders channel (state=closed, reason=fill)
+        # Using both channels risks processing same fill twice → duplicate TP orders
+        # self.api_client.ws_manager.register_handler("v2/user_trades", self._handle_user_trades)  # DISABLED
         self.api_client.ws_manager.register_handler("orders", self._handle_order_update)
         self.api_client.ws_manager.register_handler("positions", self._handle_position_update)
         self.api_client.ws_manager.register_handler("v2/ticker", self._handle_ticker_update)
@@ -1605,19 +1608,33 @@ class AsyncGridBot:
     
     async def _handle_user_trades(self, message: Dict[str, Any]) -> None:
         """
-        Handle user trade (fill) messages.
+        DISABLED: Handle user trade (fill) messages.
+        
+        This handler is currently DISABLED to prevent duplicate fill processing.
+        
+        Reason: Delta Exchange sends fill notifications via BOTH channels:
+        1. orders channel: state=closed, reason=fill (used by bot)
+        2. v2/user_trades channel: dedicated fill stream (redundant)
+        
+        Using both risks processing same fill twice → duplicate positions/TP orders.
+        
+        The orders channel is more reliable as it includes order lifecycle events,
+        while user_trades only provides fill data without context.
         
         Args:
-            message: Trade message from WebSocket
+            message: Trade message from WebSocket (not processed)
         """
-        try:
-            trades = message.get("trades", [])
-            
-            for trade in trades:
-                await self._process_fill(trade)
+        # DISABLED - see _register_ws_handlers() for explanation
+        log.debug("⏭️  user_trades message ignored (handler disabled)")
+        return
         
-        except Exception as e:
-            log.error(f"Error handling user trades: {e}")
+        # Original code kept for reference:
+        # try:
+        #     trades = message.get("trades", [])
+        #     for trade in trades:
+        #         await self._process_fill(trade)
+        # except Exception as e:
+        #     log.error(f"Error handling user trades: {e}")
     
     async def _process_fill(self, fill_data: Dict[str, Any]) -> None:
         """
@@ -2482,15 +2499,21 @@ class AsyncGridBot:
                 fill_size = int(order_data.get("size") or order_data.get("unfilled_size", 0))
                 side = order_data.get("side", "").lower()
                 
+                # CRITICAL: Use exchange's fill_id for deduplication (not timestamp)
+                # Delta Exchange sends duplicate WebSocket messages; proper fill_id prevents double-processing
+                exchange_fill_id = order_data.get("fill_id")  # Exchange-provided unique fill ID
+                
                 log.info(f"🔔 FILL DETECTED via orders channel!")
                 log.info(f"   Order ID: {order_id}")
+                log.info(f"   Fill ID: {exchange_fill_id}")
                 log.info(f"   Side: {side.upper()}")
                 log.info(f"   Price: ${fill_price:,.0f}")
                 log.info(f"   Size: {fill_size}")
                 
                 # Create fill data structure
+                # Use exchange fill_id if available, otherwise fallback to order_id (without timestamp)
                 fill_data = {
-                    "id": f"fill-{order_id}-{int(time.time()*1000)}",
+                    "id": exchange_fill_id or f"fill-{order_id}",
                     "order_id": str(order_id),
                     "price": fill_price,
                     "size": fill_size,
