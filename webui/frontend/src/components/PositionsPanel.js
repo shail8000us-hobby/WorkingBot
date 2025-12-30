@@ -23,8 +23,10 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
+import { useSymbol } from '../context/SymbolContext';
 
 const PositionsPanel = () => {
+  const { selectedSymbol } = useSymbol();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [positionsData, setPositionsData] = useState(null);
@@ -32,6 +34,7 @@ const PositionsPanel = () => {
   // Fetch positions
   const fetchPositions = async () => {
     try {
+      // Positions API will be updated in Phase 2C to accept symbol param
       const { data } = await api.get('/api/positions');
       
       // API returns positions directly without a 'success' wrapper
@@ -47,7 +50,7 @@ const PositionsPanel = () => {
     }
   };
 
-  // Initial load
+  // Initial load and refresh when symbol changes
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -55,7 +58,7 @@ const PositionsPanel = () => {
       setLoading(false);
     };
     loadData();
-  }, []);
+  }, [selectedSymbol]);
 
   // Auto-refresh every 5 seconds
   useEffect(() => {

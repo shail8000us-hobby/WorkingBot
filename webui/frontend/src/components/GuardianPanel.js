@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import api from '../utils/apiShim';
 import HelpIcon from './help/HelpIcon';
+import { useSymbol } from '../context/SymbolContext';
 
 const formatCurrency = (value, currency = 'INR') => {
   const amount = Number(value || 0);
@@ -57,12 +58,14 @@ const riskDescriptor = (loss, limit) => {
 };
 
 const GuardianPanel = () => {
+  const { selectedSymbol } = useSymbol();
   const [guardianStatus, setGuardianStatus] = useState({ running: false, health: null });
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
 
   const fetchGuardianStatus = useCallback(async () => {
     try {
+      // Guardian status is global, but we'll add symbol param when Phase 2C is implemented
       const response = await api.get('/api/guardian/status');
       setGuardianStatus(response.data);
     } catch (error) {
@@ -75,7 +78,7 @@ const GuardianPanel = () => {
     fetchGuardianStatus();
     const interval = setInterval(fetchGuardianStatus, 12000);
     return () => clearInterval(interval);
-  }, [fetchGuardianStatus]);
+  }, [fetchGuardianStatus, selectedSymbol]);
 
   const runGuardianAction = async (path, successMessage, errorMessage) => {
     try {

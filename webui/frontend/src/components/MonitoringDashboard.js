@@ -4,8 +4,12 @@ import {
   CheckCircle, Warning, Error as ErrorIcon, TrendingUp, TrendingDown,
   Security, Speed, BugReport, Psychology 
 } from '@mui/icons-material';
+import { useSymbolAPI } from '../hooks/useSymbolAPI';
+import { useSymbol } from '../context/SymbolContext';
 
 const MonitoringDashboard = () => {
+  const api = useSymbolAPI();
+  const { selectedSymbol } = useSymbol();
   const [monitoringStatus, setMonitoringStatus] = useState(null);
   const [priceHealth, setPriceHealth] = useState(null);
   const [preOrderStats, setPreOrderStats] = useState(null);
@@ -19,8 +23,7 @@ const MonitoringDashboard = () => {
   // Fetch monitoring status
   const fetchMonitoringStatus = async () => {
     try {
-      const response = await fetch('/api/monitoring/status');
-      const data = await response.json();
+      const data = await api.fetchJSON('/api/monitoring/status');
       setMonitoringStatus(data);
       return data.monitoring_active;
     } catch (err) {
@@ -45,22 +48,13 @@ const MonitoringDashboard = () => {
       }
 
       // Fetch all endpoints in parallel (including new advanced predictions)
-      const [healthRes, statsRes, tpRes, anomRes, mapRes, advPredRes] = await Promise.all([
-        fetch('/api/monitoring/price-health'),
-        fetch('/api/monitoring/pre-order-stats'),
-        fetch('/api/monitoring/tp-verification'),
-        fetch('/api/monitoring/anomalies'),
-        fetch('/api/monitoring/predictive-map'),
-        fetch('/api/monitoring/advanced-predictions')
-      ]);
-
       const [health, stats, tp, anom, map, advPred] = await Promise.all([
-        healthRes.json(),
-        statsRes.json(),
-        tpRes.json(),
-        anomRes.json(),
-        mapRes.json(),
-        advPredRes.json()
+        api.fetchJSON('/api/monitoring/price-health'),
+        api.fetchJSON('/api/monitoring/pre-order-stats'),
+        api.fetchJSON('/api/monitoring/tp-verification'),
+        api.fetchJSON('/api/monitoring/anomalies'),
+        api.fetchJSON('/api/monitoring/predictive-map'),
+        api.fetchJSON('/api/monitoring/advanced-predictions')
       ]);
 
       setPriceHealth(health);
@@ -79,11 +73,12 @@ const MonitoringDashboard = () => {
   };
 
   // Initial fetch and polling
+  // Auto-refresh on mount and symbol change
   useEffect(() => {
     fetchMonitoringData();
     const interval = setInterval(fetchMonitoringData, 10000); // Poll every 10s for faster updates
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedSymbol]);
 
   if (loading && !monitoringStatus) {
     return (

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, Typography, Grid, Box, Chip, LinearProgress, Button, Tooltip } from '@mui/material';
 import { CheckCircle, Refresh, Delete } from '@mui/icons-material';
 import axios from 'axios';
+import { useSymbol } from '../../context/SymbolContext';
 
 const MonitoringRecoveryPanel = () => {
+  const { selectedSymbol } = useSymbol();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -12,6 +14,7 @@ const MonitoringRecoveryPanel = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      // Recovery API will be updated in Phase 2C to accept symbol param
       const response = await axios.get('/api/recovery/combined-status');
       setData(response.data);
       setLastUpdate(new Date());
@@ -27,7 +30,7 @@ const MonitoringRecoveryPanel = () => {
     fetchData();
     const interval = setInterval(fetchData, 10000); // Update every 10 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedSymbol]);
 
   const handleClearState = async () => {
     if (window.confirm('Clear recovery state? This will reset recovered grids tracking.')) {

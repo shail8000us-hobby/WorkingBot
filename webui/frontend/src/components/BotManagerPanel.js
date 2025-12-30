@@ -32,8 +32,10 @@ import {
   Timer
 } from '@mui/icons-material';
 import axios from 'axios';
+import { useSymbol } from '../context/SymbolContext';
 
 const BotManagerPanel = () => {
+  const { selectedSymbol } = useSymbol();
   const [bots, setBots] = useState([]);
   const [totalBots, setTotalBots] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -41,7 +43,7 @@ const BotManagerPanel = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // Fetch bot status from backend
+  // Fetch bot status from backend (global, not per-symbol)
   const fetchBotStatus = async () => {
     try {
       setLoading(true);
