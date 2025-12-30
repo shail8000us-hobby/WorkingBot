@@ -1,6 +1,8 @@
 import { RefreshCw, Activity, Bot, Gauge, SignalHigh, SignalLow, Sun, Moon, Shield, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import SymbolSelector from '../SymbolSelector';
+import { useSymbol } from '../../context/SymbolContext';
 
 const qualityIconMap = {
   excellent: SignalHigh,
@@ -117,8 +119,15 @@ function TopBar({
           </div>
         </motion.div>
 
-        {/* Center: System Status */}
+        {/* Center: System Status & Symbol Selector */}
         <div className="flex items-center gap-3">
+          {/* Symbol Selector (v5.0 Multi-Symbol) */}
+          <SymbolSelector onSymbolChange={(symbol) => {
+            console.log('Symbol changed to:', symbol);
+            // Trigger data refresh for new symbol
+            if (onRefresh) onRefresh();
+          }} />
+          
           {/* Process Status */}
           <StatusSection 
             title="System" 

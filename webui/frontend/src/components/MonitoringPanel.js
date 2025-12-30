@@ -5,6 +5,7 @@ import {
   CheckCircle, Warning, Settings, Save, Cancel
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
+import { useSymbol } from '../context/SymbolContext';
 import HelpIcon from './help/HelpIcon';
 import EmergencyToggle from './EmergencyToggle';
 

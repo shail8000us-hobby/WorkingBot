@@ -3,12 +3,15 @@ import { ThemeProvider } from '@mui/material';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider } from './components/NotificationProvider';
 import { KeyboardProvider } from './components/KeyboardProvider';
+import { SymbolProvider } from './context/SymbolContext';
 import App from './AppContent';
 import { darkTheme } from './theme';
 
 /**
  * App Wrapper with all providers and error boundaries
  * This ensures robust error handling and notification system
+ * 
+ * v5.0: Added SymbolProvider for multi-symbol support
  */
 const AppWrapper = () => {
   return (
@@ -22,7 +25,9 @@ const AppWrapper = () => {
       <ThemeProvider theme={darkTheme}>
         <NotificationProvider>
           <KeyboardProvider>
-            <App />
+            <SymbolProvider>
+              <App />
+            </SymbolProvider>
           </KeyboardProvider>
         </NotificationProvider>
       </ThemeProvider>
