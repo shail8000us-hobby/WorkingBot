@@ -140,6 +140,7 @@ class AsyncGridBot:
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
         config: Optional[RootConfig] = None,
+        symbol_name: Optional[str] = None,  # NEW: Multi-symbol support (v5.0)
         # Backward compatibility: allow manual params
         symbol: Optional[str] = None,
         product_id: Optional[int] = None,
@@ -179,6 +180,7 @@ class AsyncGridBot:
             api_key: Delta Exchange API key (if None, reads from ENV)
             api_secret: Delta Exchange API secret (if None, reads from ENV)
             config: RootConfig object (if None, loads from config.yaml)
+            symbol_name: Symbol key from config.symbols (v5.0+) e.g., 'BTCUSD', 'ETHUSD'
             
             All other params: Optional overrides for YAML config
             If not provided, values are loaded from config.yaml
@@ -188,6 +190,84 @@ class AsyncGridBot:
             config = get_config()
         
         self.config = config
+        
+        # Multi-symbol support (v5.0)
+        if symbol_name:
+            # V5.0: Multi-symbol mode
+            if not config.symbols:
+                raise ValueError(f"Config v5.0 required for multi-symbol, but symbols section not found")
+            
+            if symbol_name not in config.symbols:
+                available = list(config.symbols.keys())
+                raise ValueError(
+                    f"Symbol '{symbol_name}' not found in config.yaml\n"
+                    f"Available symbols: {available}"
+                )
+            
+            symbol_config = config.symbols[symbol_name]
+            
+            # Check if symbol is enabled
+            if not symbol_config.enabled:
+                raise ValueError(
+                    f"Symbol '{symbol_name}' is disabled in config.yaml\n"
+                    f"Set symbols.{symbol_name}.enabled=true to enable it"
+                )
+            
+            # Set symbol-specific attributes (convert string config to appropriate types)
+            self.symbol_name = symbol_name
+            self.symbol = symbol_name
+            self.product_id = symbol_config.product_id
+            self.mode = symbol_config.mode
+            self.lower_price = int(symbol_config.grid.geometry.lower)
+            self.upper_price = int(symbol_config.grid.geometry.upper)
+            self.grid_step = int(symbol_config.grid.geometry.step)
+            self.ref_price = int(symbol_config.grid.geometry.reference)
+            self.max_positions = int(symbol_config.grid.limits.max_open_positions)
+            self.lot_size = int(symbol_config.grid.limits.lot_size)
+            self.max_qty_per_order = int(symbol_config.grid.limits.max_qty_per_order)
+            self.strict_grid = symbol_config.grid.behavior.strict_grid.lower() == 'true'
+            self.rung_snap_mode = symbol_config.grid.behavior.rung_snap_mode
+            self.seed_initial_count = int(symbol_config.grid.behavior.seed_initial_count) if symbol_config.grid.behavior.seed_initial_count else 0
+            
+            # Symbol-specific safety limits (for display)
+            self.max_account_loss_inr_display = float(symbol_config.safety.max_account_loss_inr)
+            self.min_liq_distance_pct_display = symbol_config.safety.min_liquidation_distance_pct
+            
+            # Smart gap fill
+            if symbol_config.grid.smart_gap_fill:
+                self.smart_gap_fill = symbol_config.grid.smart_gap_fill.enabled.lower() == 'true'
+            else:
+                self.smart_gap_fill = False
+            
+            log.info(f"🎯 Initialized bot for {symbol_name} (v5.0 multi-symbol)")
+            log.info(f"   Product ID: {self.product_id}")
+            log.info(f"   Mode: {self.mode}")
+            log.info(f"   Grid: {self.lower_price}-{self.upper_price}, step {self.grid_step}")
+            
+        else:
+            # V4.0: Backward compatibility - single symbol mode
+            if not config.bot:
+                raise ValueError(
+                    f"Either symbol_name (v5.0) or config.bot (v4.0) must be provided\n"
+                    f"To use multi-symbol, run: python async_gridbot.py <SYMBOL>"
+                )
+            
+            self.symbol_name = config.bot.symbol  # For v4.0, symbol_name = symbol
+            self.symbol = symbol or config.bot.symbol
+            self.product_id = product_id or 27  # Default product ID
+            self.mode = mode or config.bot.mode
+            self.lower_price = lower_price or config.grid.geometry.lower
+            self.upper_price = upper_price or config.grid.geometry.upper
+            self.grid_step = grid_step or config.grid.geometry.step
+            self.ref_price = ref_price or config.grid.geometry.reference
+            self.max_positions = max_positions or config.grid.limits.max_open_positions
+            self.lot_size = lot_size or config.grid.limits.lot_size
+            self.strict_grid = strict_grid if strict_grid is not None else config.grid.behavior.strict_grid
+            self.seed_initial_count = seed_initial_count or config.grid.behavior.seed_initial_count
+            self.smart_gap_fill = smart_gap_fill if smart_gap_fill is not None else config.grid.smart_gap_fill.enabled
+            self.rung_snap_mode = rung_snap_mode or config.grid.behavior.rung_snap_mode
+            
+            log.info(f"🎯 Initialized bot for {self.symbol} (v4.0 single-symbol mode)")
         
         # API credentials - load from centralized config loader if not provided
         if api_key and api_secret:
@@ -202,20 +282,9 @@ class AsyncGridBot:
         if not self.api_key or not self.api_secret:
             raise ValueError("API credentials must be provided or set in secrets/api_keys.env")
         
-        # Load all parameters from YAML config (allow manual overrides)
-        self.symbol = symbol or config.bot.symbol
-        self.product_id = product_id or 27  # Default product ID
-        self.mode = mode or config.bot.mode
+        # Common parameters (same for v4.0 and v5.0)
         self.testnet = testnet if testnet is not None else (config.trading_mode == 'demo')
-        
-        # Store grid parameters
-        self.lower_price = lower_price or config.grid.geometry.lower
-        self.upper_price = upper_price or config.grid.geometry.upper
-        self.grid_step = grid_step or config.grid.geometry.step
-        self.ref_price = ref_price or config.grid.geometry.reference
         self.tp_offset = tp_offset or 500  # Default TP offset
-        self.max_positions = max_positions or config.grid.limits.max_open_positions
-        self.lot_size = lot_size or config.grid.limits.lot_size
         
         # Safety parameters REMOVED - Guardian monitors all risk (loss, volatility, liquidation, position size)
         # Trading bot only reads Guardian's GO/STOP signal from SQL
@@ -228,12 +297,8 @@ class AsyncGridBot:
         self.cancel_scope = cancel_scope or "tagged"
         self.adopt_untagged = adopt_untagged if adopt_untagged is not None else False
         
-        # Grid behavior parameters
-        self.strict_grid = strict_grid if strict_grid is not None else config.grid.behavior.strict_grid
+        # Grid behavior parameters (if not set above)
         self.strict_start = strict_start if strict_start is not None else True
-        self.seed_initial_count = seed_initial_count or config.grid.behavior.seed_initial_count
-        self.smart_gap_fill = smart_gap_fill if smart_gap_fill is not None else config.grid.smart_gap_fill.enabled
-        self.rung_snap_mode = rung_snap_mode or config.grid.behavior.rung_snap_mode
         
         # Timing parameters
         self.max_retries = max_retries or config.order_execution.max_retries
@@ -279,9 +344,10 @@ class AsyncGridBot:
         log.info(f"  Smart Gap Fill: {self.smart_gap_fill}")
         log.info("=" * 80)
         
-        # Initialize event store
-        db_name = f"data/bot_events_{self.mode}.db"
+        # Initialize event store - Symbol-specific database (v5.0)
+        db_name = f"data/bot_events_{self.symbol_name}_{self.mode}.db"
         self.event_store = EventStore(db_name)
+        log.info(f"📊 Event Store: {db_name}")
         
         # NOV 20: Initialize Unified API Client (WebSocket PRIMARY + REST fallback)
         # CRITICAL FIX: WebSocket is PRIMARY (require_websocket=True)
@@ -364,10 +430,10 @@ class AsyncGridBot:
         self._reconciliation_initial_delay = 60  # 1 minute initial delay
         self._reconciliation_errors = 0
         
-        # Recovery state (NOV 20)
+        # Recovery state (NOV 20) - Symbol-specific (v5.0)
         self._recovery_state = None
         self._recovered_grids = set()  # Grid levels that were recovered
-        self._recovery_state_file = Path("data/recovery/recovery_state.json")
+        self._recovery_state_file = Path(f"data/recovery/recovery_state_{self.symbol_name}_{self.mode}.json")
         
         # REST API Fallback state (NOV 13 - WebSocket starvation protection)
         self._rest_fallback_active = False
@@ -1312,7 +1378,7 @@ class AsyncGridBot:
         log.info("�️ STATE MANAGEMENT - CLEAN SLATE MODE")
         log.info("=" * 80)
         log.info(f"   Current Mode: {self.mode}")
-        log.info(f"   Storage: SQLite Event Store (data/bot_events_{self.mode}.db)")
+        log.info(f"   Storage: SQLite Event Store (data/bot_events_{self.symbol_name}_{self.mode}.db)")
         log.info(f"   State Loading: DISABLED (Clean Slate - sync from exchange only)")
         log.info(f"   Mode Tracking: {state_file.name if state_file else 'N/A'} (not loaded)")
         log.info(f"   Reason: {reason}")
@@ -3339,10 +3405,10 @@ class AsyncGridBot:
                 log.error(f"Heartbeat error: {e}")
     
     async def _monitoring_loop(self) -> None:
-        """Write monitoring data for WebUI."""
+        """Write monitoring data for WebUI - Symbol-specific (v5.0)."""
         log.info("📊 Monitoring loop started")
         
-        monitoring_file = Path("data/monitoring_snapshot.json")
+        monitoring_file = Path(f"data/monitoring_snapshot_{self.symbol_name}_{self.mode}.json")
         monitoring_file.parent.mkdir(exist_ok=True)
         
         while self._running:
@@ -4953,26 +5019,48 @@ class AsyncGridBot:
 
 
 async def main():
-    """Main entry point."""
+    """Main entry point with multi-symbol support (v5.0)."""
+    import sys
     from config.loader import get_api_credentials
+    
+    # Parse CLI arguments
+    if len(sys.argv) > 1:
+        # V5.0: Multi-symbol mode - python async_gridbot.py BTCUSD
+        symbol_name = sys.argv[1].upper()
+        log.info(f"🎯 Starting bot for {symbol_name} (v5.0 multi-symbol mode)")
+    else:
+        # V4.0: Backward compatibility - No argument, use config.bot.symbol
+        symbol_name = None
+        log.info(f"🎯 Starting bot in v4.0 single-symbol mode")
     
     # Get configuration from YAML
     config = get_config()
+    
+    # V5.0 validation
+    if symbol_name and not config.symbols:
+        log.error(f"❌ Symbol argument provided but config.yaml is v4.0")
+        log.error(f"   Run: python scripts/migrate_config_to_multi_symbol.py")
+        sys.exit(1)
+    
+    if symbol_name and symbol_name not in config.symbols:
+        available = list(config.symbols.keys()) if config.symbols else []
+        log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml")
+        log.error(f"   Available symbols: {available}")
+        sys.exit(1)
     
     # Get API credentials from secrets/api_keys.env (via centralized loader)
     credentials = get_api_credentials(config.trading_mode)
     api_key = credentials['api_key']
     api_secret = credentials['api_secret']
     
-    # Get mode and testnet from YAML config
-    mode = config.bot.mode
+    # Get testnet mode
     testnet = (config.trading_mode == 'demo')
     
-    # Create bot
+    # Create bot with symbol_name (v5.0) or without (v4.0)
     bot = AsyncGridBot(
         api_key=api_key,
         api_secret=api_secret,
-        mode=mode,
+        symbol_name=symbol_name,  # NEW: Multi-symbol support
         testnet=testnet
     )
     
