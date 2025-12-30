@@ -948,21 +948,98 @@ class ExchangeMaintenanceConfig(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# MULTI-SYMBOL SUPPORT (v5.0)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CapitalAllocation(BaseModel):
+    """Capital allocation for a specific symbol"""
+    allocated_usd: float = Field(gt=0, description="Allocated capital in USD")
+    max_position_value_usd: float = Field(gt=0, description="Maximum position value in USD")
+
+
+class CapitalAllocationConfig(BaseModel):
+    """Total capital allocation across symbols"""
+    total_capital_usd: float = Field(gt=0, description="Total available capital in USD")
+    allocations: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Per-symbol capital allocations")
+
+
+class SymbolGridGeometry(BaseModel):
+    """Symbol-specific grid geometry"""
+    lower: str = Field(description="Grid lower boundary")
+    upper: str = Field(description="Grid upper boundary")
+    step: str = Field(description="Grid step size")
+    reference: str = Field(description="Reference price for starting")
+
+
+class SymbolGridLimits(BaseModel):
+    """Symbol-specific position limits"""
+    max_open_positions: str = Field(description="Maximum open positions")
+    lot_size: str = Field(description="Lot size for LONG trades")
+    short_lot_size: Optional[str] = Field(default="1", description="Lot size for SHORT trades")
+    max_open_orders: int = Field(description="Maximum open orders")
+    max_qty_per_order: str = Field(description="Maximum quantity per order")
+
+
+class SymbolGridBehavior(BaseModel):
+    """Symbol-specific grid behavior"""
+    strict_grid: str = Field(default="true", description="Enforce strict grid levels")
+    rung_snap_mode: RungSnapMode = Field(default=RungSnapMode.BELOW, description="Grid level snapping")
+    tick_size: str = Field(description="Tick size for price rounding")
+    dynamic_tick_size: Optional[str] = Field(default="false", description="Enable dynamic tick size")
+    seed_initial_count: Optional[str] = Field(default="0", description="Seed initial order count")
+
+
+class SymbolSmartGapFill(BaseModel):
+    """Symbol-specific smart gap fill config"""
+    enabled: str = Field(default="false", description="Enable smart gap fill")
+    order_type: str = Field(default="maker", description="Order type for gap fill")
+    max_levels: str = Field(default="0", description="Maximum gap levels to fill")
+
+
+class SymbolGridConfig(BaseModel):
+    """Symbol-specific grid configuration"""
+    geometry: SymbolGridGeometry
+    limits: SymbolGridLimits
+    behavior: SymbolGridBehavior
+    smart_gap_fill: Optional[SymbolSmartGapFill] = Field(default=None)
+
+
+class SymbolSafety(BaseModel):
+    """Symbol-specific safety limits"""
+    max_account_loss_inr: str = Field(description="Maximum account loss in INR")
+    min_liquidation_distance_pct: float = Field(description="Minimum liquidation distance %")
+
+
+class SymbolConfig(BaseModel):
+    """Complete configuration for a single trading symbol"""
+    enabled: bool = Field(True, description="Enable/disable this symbol")
+    product_id: int = Field(gt=0, description="Delta Exchange product ID")
+    mode: GridMode = Field(description="LONG or SHORT")
+    capital: Optional[CapitalAllocation] = Field(default=None, description="Capital allocation")
+    grid: SymbolGridConfig
+    safety: SymbolSafety
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # ROOT CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
 
 class RootConfig(BaseModel):
-    """Complete bot configuration"""
+    """Complete bot configuration (supports v4.0 single-symbol and v5.0 multi-symbol)"""
     version: str = Field("2.0", description="Config schema version")
     trading_mode: TradingMode = Field(TradingMode.DEMO, description="Trading mode (demo/live)")
     
-    # Core components
-    bot: BotConfig
-    grid: GridConfig
+    # Multi-symbol support (v5.0+)
+    capital_allocation: Optional[CapitalAllocationConfig] = Field(default=None, description="Capital allocation (v5.0+)")
+    symbols: Optional[Dict[str, SymbolConfig]] = Field(default=None, description="Symbol configurations (v5.0+)")
+    
+    # Core components (v4.0 - optional for backward compat)
+    bot: Optional[BotConfig] = Field(default=None)
+    grid: Optional[GridConfig] = Field(default=None)
     capital_protection: CapitalProtection
     safety: SafetyConfig
     guardian: GuardianConfig
-    liquidation_protection: LiquidationProtection
+    liquidation_protection: Optional[LiquidationProtection] = Field(default=None)
     
     # Behavior
     startup: StartupBehavior
@@ -971,8 +1048,8 @@ class RootConfig(BaseModel):
     
     # Monitoring
     heartbeat: Heartbeat
-    health_check: HealthCheck
-    performance_logging: PerformanceLogging
+    health_check: Optional[HealthCheck] = Field(default=None)
+    performance_logging: Optional[PerformanceLogging] = Field(default=None)
     
     # Infrastructure
     api: APIEndpoints
@@ -982,8 +1059,8 @@ class RootConfig(BaseModel):
     refactor_compat: RefactorCompat = Field(default_factory=RefactorCompat, description="Refactor compatibility layer")
     
     # Risk & Safety
-    risk_limits: RiskLimits
-    execution_safety: ExecutionSafety
+    risk_limits: Optional[RiskLimits] = Field(default=None)
+    execution_safety: Optional[ExecutionSafety] = Field(default=None)
     
     # New Subsystems
     risk_analytics: RiskAnalyticsConfig = Field(default_factory=RiskAnalyticsConfig, description="Risk analytics configuration")
@@ -1011,20 +1088,52 @@ class RootConfig(BaseModel):
         extra = "forbid"  # Reject unknown fields
         
     def validate_cross_field_constraints(self):
-        """Validate cross-field constraints"""
-        # Ensure grid step creates reasonable number of levels
-        levels = (self.grid.geometry.upper - self.grid.geometry.lower) / self.grid.geometry.step
-        if levels > 100:
-            raise ValueError(f"Grid would create {int(levels)} levels (max: 100). Increase step size.")
-        if levels < 5:
-            raise ValueError(f"Grid would create {int(levels)} levels (min: 5). Decrease step size.")
+        """Validate cross-field constraints (supports both v4.0 and v5.0)"""
+        
+        # V5.0 multi-symbol validation
+        if self.symbols:
+            for symbol_name, symbol_config in self.symbols.items():
+                # Convert string fields to int for validation
+                try:
+                    lower = int(symbol_config.grid.geometry.lower)
+                    upper = int(symbol_config.grid.geometry.upper)
+                    step = int(symbol_config.grid.geometry.step)
+                    
+                    # Ensure grid step creates reasonable number of levels
+                    levels = (upper - lower) / step
+                    if levels > 100:
+                        raise ValueError(f"{symbol_name}: Grid would create {int(levels)} levels (max: 100). Increase step size.")
+                    if levels < 5:
+                        raise ValueError(f"{symbol_name}: Grid would create {int(levels)} levels (min: 5). Decrease step size.")
+                except (ValueError, AttributeError) as e:
+                    print(f"⚠️  Warning: Could not validate grid levels for {symbol_name}: {e}")
+            
+            # Heartbeat validation
+            if self.heartbeat.update_interval >= self.heartbeat.timeout:
+                raise ValueError(f"Heartbeat update_interval ({self.heartbeat.update_interval}) must be < timeout ({self.heartbeat.timeout})")
+            
+            # Execution safety (if present)
+            if self.execution_safety and self.execution_safety.execute_orders and self.trading_mode == TradingMode.LIVE:
+                if self.execution_safety.i_understand_live != "YES":
+                    raise ValueError("Cannot execute live orders without i_understand_live=YES")
+            
+            return True
+        
+        # V4.0 single-symbol validation (backward compat)
+        if self.grid:
+            # Ensure grid step creates reasonable number of levels
+            levels = (self.grid.geometry.upper - self.grid.geometry.lower) / self.grid.geometry.step
+            if levels > 100:
+                raise ValueError(f"Grid would create {int(levels)} levels (max: 100). Increase step size.")
+            if levels < 5:
+                raise ValueError(f"Grid would create {int(levels)} levels (min: 5). Decrease step size.")
         
         # Validate heartbeat timing
         if self.heartbeat.update_interval >= self.heartbeat.timeout:
             raise ValueError(f"Heartbeat update_interval ({self.heartbeat.update_interval}) must be < timeout ({self.heartbeat.timeout})")
         
         # Validate execution safety
-        if self.execution_safety.execute_orders and self.trading_mode == TradingMode.LIVE:
+        if self.execution_safety and self.execution_safety.execute_orders and self.trading_mode == TradingMode.LIVE:
             if self.execution_safety.i_understand_live != "YES":
                 raise ValueError("Cannot execute live orders without i_understand_live=YES")
         
