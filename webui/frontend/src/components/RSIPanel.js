@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -13,7 +13,10 @@ import {
   CircularProgress,
   Chip,
   Divider,
-  Slider
+  Slider,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip
 } from '@mui/material';
 import {
   TrendingUp,
@@ -21,14 +24,32 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
-  Timer
+  Timer,
+  Activity
 } from 'lucide-react';
 import api from '../utils/apiShim';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import SymbolBadge from './common/SymbolBadge';
 
+/**
+ * RSIPanel - Multi-Symbol RSI Monitoring (v5.0)
+ * 
+ * Features:
+ * - Shows RSI for current symbol or all symbols
+ * - Symbol-aware configuration
+ * - Toggle between single symbol and all symbols view
+ */
 const RSIPanel = () => {
+  const { selectedInstance, instances, withInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
+  const selectedMode = instanceInfo?.mode || 'LONG';
+  const symbols = instances.map(i => ({ name: parseInstanceName(i.name)?.symbol })).filter((v, i, a) => a.findIndex(t => t.name === v.name) === i);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [viewMode, setViewMode] = useState('current'); // 'current' or 'all'
   const [rsiData, setRsiData] = useState(null);
+  const [allSymbolsRsi, setAllSymbolsRsi] = useState({});
   const [config, setConfig] = useState({
     enabled: true,
     period: 14,
@@ -39,31 +60,33 @@ const RSIPanel = () => {
     check_interval: 300,
     cache_ttl: 60
   });
-  const [botMode, setBotMode] = useState('LONG');
+  const [botMode, setBotMode] = useState(selectedMode);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-  useEffect(() => {
-    fetchRSIData();
-    fetchConfig();
-    fetchBotMode();
-    
-    // Refresh RSI data every 30 seconds
-    const interval = setInterval(fetchRSIData, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchRSIData = async () => {
+  // Fetch RSI data - now instance-aware  
+  const fetchRSIData = useCallback(async () => {
     try {
-      const response = await api.get('/api/guardian/rsi/status');
-      if (response.data.success) {
-        setRsiData(response.data.data);
-        // Update bot mode from response if available
-        if (response.data.data.bot_mode) {
-          setBotMode(response.data.data.bot_mode);
+      if (viewMode === 'all') {
+        // Fetch RSI for all symbols
+        const response = await api.get('/api/guardian/rsi/status');
+        if (response.data.success && response.data.symbols) {
+          setAllSymbolsRsi(response.data.symbols);
+          // Also update current symbol data
+          if (selectedSymbol && response.data.symbols[selectedSymbol]) {
+            setRsiData(response.data.symbols[selectedSymbol]);
+          }
         }
       } else {
-        console.error('RSI API returned error:', response.data.error);
-        setRsiData({ rsi: null, status: 'ERROR', status_text: response.data.error || 'Failed to fetch RSI data' });
+        // Fetch RSI for selected instance
+        const response = await api.get(withInstance('/api/guardian/rsi/status'));
+        if (response.data.success) {
+          setRsiData(response.data.data);
+          if (response.data.data?.bot_mode) {
+            setBotMode(response.data.data.bot_mode);
+          }
+        } else {
+          setRsiData({ rsi: null, status: 'ERROR', status_text: response.data.error || 'Failed to fetch RSI' });
+        }
       }
     } catch (error) {
       console.error('Error fetching RSI data:', error);
@@ -71,11 +94,26 @@ const RSIPanel = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedSymbol, selectedInstance, viewMode, withInstance]);
+
+  useEffect(() => {
+    fetchRSIData();
+    fetchConfig();
+    
+    const interval = setInterval(fetchRSIData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchRSIData]);
+
+  // Re-fetch when instance changes
+  useEffect(() => {
+    fetchRSIData();
+    fetchConfig();
+  }, [selectedInstance, fetchRSIData]);
 
   const fetchConfig = async () => {
     try {
-      const response = await api.get('/api/yaml-config?section=safety.rsi');
+      // Fetch instance-specific RSI config if available
+      const response = await api.get(withInstance('/api/yaml-config?section=safety.rsi'));
       if (response.data.success && response.data.data) {
         setConfig(prev => ({
           ...prev,
@@ -84,17 +122,6 @@ const RSIPanel = () => {
       }
     } catch (error) {
       console.error('Error fetching config:', error);
-    }
-  };
-
-  const fetchBotMode = async () => {
-    try {
-      const response = await api.get('/api/bot/grid-mode');
-      if (response.data.success) {
-        setBotMode(response.data.mode);
-      }
-    } catch (error) {
-      console.error('Error fetching bot mode:', error);
     }
   };
 
@@ -108,7 +135,6 @@ const RSIPanel = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Use the YAML config API format
       const updates = {
         'safety.rsi.enabled': config.enabled,
         'safety.rsi.period': config.period,
@@ -130,7 +156,6 @@ const RSIPanel = () => {
           message: 'RSI configuration saved successfully',
           severity: 'success'
         });
-        // Reload config to get updated values
         setTimeout(() => {
           fetchConfig();
           fetchRSIData();
@@ -149,16 +174,25 @@ const RSIPanel = () => {
     }
   };
 
-  const getStatusColor = () => {
-    if (!rsiData || rsiData.rsi === null || rsiData.rsi === undefined) return 'default';
-    return rsiData.should_stop ? 'error' : 'success';
+  const getStatusColor = (data = rsiData) => {
+    if (!data || data.rsi === null || data.rsi === undefined) return 'default';
+    return data.should_stop ? 'error' : 'success';
   };
 
-  const getStatusText = () => {
-    if (!rsiData || rsiData.rsi === null || rsiData.rsi === undefined) {
-      return rsiData?.status_text || 'Unknown';
+  const getStatusText = (data = rsiData) => {
+    if (!data || data.rsi === null || data.rsi === undefined) {
+      return data?.status_text || 'Unknown';
     }
-    return rsiData.status_text || (rsiData.should_stop ? 'STOP' : 'GO');
+    return data.status_text || (data.should_stop ? 'STOP' : 'GO');
+  };
+
+  // Symbol color helper
+  const getSymbolColor = (symbol) => {
+    const colors = {
+      BTCUSD: { bg: 'bg-orange-500/20', border: 'border-orange-500', text: 'text-orange-400' },
+      ETHUSD: { bg: 'bg-blue-500/20', border: 'border-blue-500', text: 'text-blue-400' }
+    };
+    return colors[symbol] || { bg: 'bg-slate-500/20', border: 'border-slate-500', text: 'text-slate-400' };
   };
 
   if (loading && !rsiData) {
@@ -171,70 +205,125 @@ const RSIPanel = () => {
 
   return (
     <Box sx={{ width: '100%', py: 2 }}>
-      {/* Current Status Card */}
-      <Card sx={{ mb: 3, bgcolor: 'background.paper' }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Current Status
+      {/* View Mode Toggle & Symbol Indicator */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Activity size={20} />
+            RSI Safety Monitor
           </Typography>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography variant="body1" color="text.secondary">
-                  Current RSI:
-                </Typography>
-                <Chip
-                  label={rsiData?.rsi !== null && rsiData?.rsi !== undefined ? rsiData.rsi.toFixed(2) : 'N/A'}
-                  color={getStatusColor()}
-                  size="medium"
-                  sx={{ fontSize: '1rem', fontWeight: 'bold' }}
-                />
-              </Box>
+          {viewMode === 'current' && selectedSymbol && (
+            <SymbolBadge symbol={selectedSymbol} />
+          )}
+        </Box>
+        
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={(e, newMode) => newMode && setViewMode(newMode)}
+          size="small"
+        >
+          <ToggleButton value="current">
+            Current Symbol
+          </ToggleButton>
+          <ToggleButton value="all">
+            All Symbols
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
+      {/* All Symbols View */}
+      {viewMode === 'all' && (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {Object.entries(allSymbolsRsi).map(([symbol, data]) => (
+            <Grid item xs={12} md={6} key={symbol}>
+              <RSISymbolCard 
+                symbol={symbol} 
+                data={data}
+                getStatusColor={getStatusColor}
+                getSymbolColor={getSymbolColor}
+              />
             </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography variant="body1" color="text.secondary">
-                  Trading Status:
-                </Typography>
-                <Chip
-                  label={getStatusText()}
-                  color={getStatusColor()}
-                  icon={getStatusColor() === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
-                  size="medium"
-                />
-              </Box>
+          ))}
+          {Object.keys(allSymbolsRsi).length === 0 && (
+            <Grid item xs={12}>
+              <Alert severity="info">
+                No RSI data available. Enable symbols in configuration first.
+              </Alert>
             </Grid>
-            <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">
-                Bot Mode: <strong>{rsiData?.bot_mode || botMode}</strong>
+          )}
+        </Grid>
+      )}
+
+      {/* Current Symbol Status Card */}
+      {viewMode === 'current' && (
+        <Card sx={{ mb: 3, bgcolor: 'background.paper' }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Typography variant="h6">
+                Current Status
               </Typography>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">
-                Threshold: <strong>
-                  {(rsiData?.bot_mode || botMode) === 'LONG' 
-                    ? `RSI <= ${rsiData?.long_threshold || config.long_threshold} (STOP)` 
-                    : `RSI >= ${rsiData?.short_threshold || config.short_threshold} (STOP)`
-                  }
-                </strong>
-              </Typography>
-            </Grid>
-            {rsiData?.hysteresis_active && (
-              <Grid item xs={12}>
-                <Alert severity="info" icon={<Timer />}>
-                  Hysteresis active: {rsiData.hysteresis_seconds}s delay at threshold
-                </Alert>
+              <SymbolBadge symbol={selectedSymbol} size="small" />
+            </Box>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12} md={6}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Typography variant="body1" color="text.secondary">
+                    Current RSI:
+                  </Typography>
+                  <Chip
+                    label={rsiData?.rsi !== null && rsiData?.rsi !== undefined ? rsiData.rsi.toFixed(2) : 'N/A'}
+                    color={getStatusColor()}
+                    size="medium"
+                    sx={{ fontSize: '1rem', fontWeight: 'bold' }}
+                  />
+                </Box>
               </Grid>
-            )}
-          </Grid>
-        </CardContent>
-      </Card>
+              <Grid item xs={12} md={6}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Typography variant="body1" color="text.secondary">
+                    Trading Status:
+                  </Typography>
+                  <Chip
+                    label={getStatusText()}
+                    color={getStatusColor()}
+                    icon={getStatusColor() === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                    size="medium"
+                  />
+                </Box>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Bot Mode: <strong>{rsiData?.bot_mode || botMode}</strong>
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Threshold: <strong>
+                    {(rsiData?.bot_mode || botMode) === 'LONG' 
+                      ? `RSI <= ${rsiData?.long_threshold || config.long_threshold} (STOP)` 
+                      : `RSI >= ${rsiData?.short_threshold || config.short_threshold} (STOP)`
+                    }
+                  </strong>
+                </Typography>
+              </Grid>
+              {rsiData?.hysteresis_active && (
+                <Grid item xs={12}>
+                  <Alert severity="info" icon={<Timer />}>
+                    Hysteresis active: {rsiData.hysteresis_seconds}s delay at threshold
+                  </Alert>
+                </Grid>
+              )}
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Configuration Card */}
       <Card sx={{ mb: 3, bgcolor: 'background.paper' }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Configuration
+            Configuration (Global RSI Settings)
           </Typography>
           
           <FormControlLabel
@@ -384,13 +473,8 @@ const RSIPanel = () => {
       {/* Info Alert */}
       <Alert severity="info" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>How it works:</strong>
-          <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
-            <li><strong>LONG Mode:</strong> Trading stops when RSI &gt;= {config.long_threshold} (overbought)</li>
-            <li><strong>SHORT Mode:</strong> Trading stops when RSI &lt;= {config.short_threshold} (oversold)</li>
-            <li><strong>Hysteresis:</strong> When RSI is exactly at the threshold, a {config.hysteresis_seconds}s delay prevents signal jumping</li>
-            <li>RSI is calculated from hourly OHLCV candles using a {config.period}-period moving average</li>
-          </ul>
+          <strong>Multi-Symbol RSI:</strong> RSI is calculated independently for each symbol.
+          Use "All Symbols" view to monitor RSI across all enabled instruments simultaneously.
         </Typography>
       </Alert>
 
@@ -405,6 +489,55 @@ const RSIPanel = () => {
         </Alert>
       )}
     </Box>
+  );
+};
+
+/**
+ * RSI Card for individual symbol in "All Symbols" view
+ */
+const RSISymbolCard = ({ symbol, data, getStatusColor, getSymbolColor }) => {
+  const colors = getSymbolColor(symbol);
+  
+  return (
+    <Card 
+      sx={{ 
+        bgcolor: 'background.paper',
+        borderLeft: 4,
+        borderColor: symbol === 'BTCUSD' ? 'warning.main' : 'info.main'
+      }}
+    >
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <SymbolBadge symbol={symbol} />
+            <Typography variant="subtitle2" color="text.secondary">
+              {data?.bot_mode || 'LONG'} Mode
+            </Typography>
+          </Box>
+          <Chip
+            label={data?.status || 'UNKNOWN'}
+            color={getStatusColor(data)}
+            size="small"
+          />
+        </Box>
+        
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1 }}>
+          <Typography variant="h3" sx={{ fontWeight: 700 }}>
+            {data?.rsi !== null && data?.rsi !== undefined ? data.rsi.toFixed(1) : '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            RSI
+          </Typography>
+        </Box>
+        
+        <Typography variant="caption" color="text.secondary">
+          Threshold: {data?.bot_mode === 'SHORT' 
+            ? `≥ ${data?.short_threshold || 70}` 
+            : `≤ ${data?.long_threshold || 30}`
+          }
+        </Typography>
+      </CardContent>
+    </Card>
   );
 };
 

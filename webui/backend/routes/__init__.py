@@ -34,6 +34,7 @@ from .strategy import strategy_bp
 from .dynamic_brain import dynamic_brain_bp
 from .grid_mode import grid_mode_bp
 from .unified_safety import unified_safety_bp
+from .resolved_state import resolved_state_bp
 
 __all__ = [
     'utility_bp',
@@ -63,4 +64,5 @@ __all__ = [
     'dynamic_brain_bp',
     'grid_mode_bp',
     'unified_safety_bp',
+    'resolved_state_bp',
 ]

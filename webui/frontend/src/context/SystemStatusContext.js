@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState, useCallback } from 'react';
 
 /**
  * Global system status context
@@ -31,18 +31,20 @@ export const SystemStatusProvider = ({ children }) => {
   /**
    * Merge helper used by App and feature panels to update shared state.
    * Accepts partial state e.g. { botRunning: true }.
+   * MEMOIZED to prevent infinite loops in useEffect dependencies
    */
-  const mergeStatus = (updates) => {
+  const mergeStatus = useCallback((updates) => {
     setSystemStatus((prev) => ({
       ...prev,
       ...updates
     }));
-  };
+  }, []);
 
   /**
    * Adds or updates a warning. Uses string ids so consumers can remove them.
+   * MEMOIZED to prevent infinite loops in useEffect dependencies
    */
-  const registerWarning = (warning) => {
+  const registerWarning = useCallback((warning) => {
     if (!warning?.id) {
       return;
     }
@@ -53,17 +55,18 @@ export const SystemStatusProvider = ({ children }) => {
         warnings: [...existing, warning]
       };
     });
-  };
+  }, []);
 
   /**
    * Removes a warning with the given id.
+   * MEMOIZED to prevent infinite loops in useEffect dependencies
    */
-  const clearWarning = (id) => {
+  const clearWarning = useCallback((id) => {
     setSystemStatus((prev) => ({
       ...prev,
       warnings: prev.warnings.filter((warning) => warning.id !== id)
     }));
-  };
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -72,7 +75,7 @@ export const SystemStatusProvider = ({ children }) => {
       registerWarning,
       clearWarning
     }),
-    [systemStatus]
+    [systemStatus, mergeStatus, registerWarning, clearWarning]
   );
 
   return (

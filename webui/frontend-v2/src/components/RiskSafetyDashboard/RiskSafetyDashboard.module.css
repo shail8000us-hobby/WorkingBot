@@ -1,0 +1,211 @@
+/* Risk Safety Dashboard Styles */
+
+.panel {
+  background: var(--color-bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-darker);
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.instanceBadge {
+  padding: 4px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.refreshBtn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.refreshBtn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-text-muted);
+}
+
+.error {
+  margin: 12px 16px;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.loading {
+  padding: 60px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Overall Section */
+.overallSection {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  background: var(--color-bg-darker);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.overallBadge {
+  padding: 12px 32px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #000;
+  letter-spacing: 1px;
+}
+
+.overallInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tradingStatus {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.circuitBreaker {
+  font-size: 13px;
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+/* Layers Section */
+.layersSection h3 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.layersGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.layerCard {
+  background: var(--color-bg-darker);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.layerHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layerIcon {
+  font-size: 16px;
+}
+
+.layerName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.layerMessage {
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.layerDetails {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* Recommendations Section */
+.recommendationsSection {
+  border-top: 1px solid var(--color-border);
+  padding-top: 20px;
+}
+
+.recommendationsSection h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.recommendationsList {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recommendationsList li {
+  font-size: 13px;
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+@media (max-width: 1024px) {
+  .layersGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .overallSection {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .layersGrid {
+    grid-template-columns: 1fr;
+  }
+}

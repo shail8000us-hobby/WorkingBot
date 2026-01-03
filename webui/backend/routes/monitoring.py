@@ -66,6 +66,25 @@ def _get_monitoring_file(symbol_name='BTCUSD', mode='LONG'):
     return BASE_DIR / "data" / f"monitoring_snapshot_{symbol_name}_{mode}.json"
 
 
+def get_instance_from_request():
+    """
+    Extract instance from request, supporting both v5.0 and v6.0 formats.
+    
+    Returns:
+        tuple: (instance_name, symbol, mode)
+    """
+    instance = request.args.get('instance')
+    if instance:
+        parts = instance.rsplit('_', 1)
+        if len(parts) == 2:
+            return instance, parts[0], parts[1]
+        return instance, instance, 'LONG'
+    
+    symbol = request.args.get('symbol', 'BTCUSD')
+    mode = request.args.get('mode', 'LONG')
+    return f"{symbol}_{mode}", symbol, mode
+
+
 def _load_monitoring_snapshot(symbol_name=None, mode=None):
     """
     Load monitoring data from symbol-specific snapshot file (v5.0).

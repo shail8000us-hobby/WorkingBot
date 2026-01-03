@@ -1,8 +1,8 @@
 /**
- * Config Manager Hook
+ * Config Manager Hook (v5.0 Multi-Symbol Support)
  * 
  * Manages configuration state and operations:
- * - Fetch initial config data
+ * - Fetch initial config data (symbol-aware)
  * - Update configuration
  * - Handle config state
  */
@@ -13,6 +13,7 @@ import apiClient from '../utils/apiClient';
 import { transformFlatConfig } from '../utils/configHelpers';
 import { perfMonitor } from '../utils/performanceMonitor';
 import { debounce } from '../utils/configHelpers';
+import { useSymbolSafe } from '../context/SymbolContext';
 
 export function useConfigManager({
   setBackendDown,
@@ -32,6 +33,7 @@ export function useConfigManager({
 }) {
   const [config, setConfig] = useState({});
   const [configMeta, setConfigMeta] = useState({});
+  const { selectedSymbol, fetchWithSymbol } = useSymbolSafe();
 
   const fetchInitialData = useCallback(async () => {
     try {
@@ -40,10 +42,10 @@ export function useConfigManager({
 
       const flagsPromise = robustApiClient.get('/api/flags').catch(() => ({}));
 
-      // Batch 1: Critical data
+      // Batch 1: Critical data (v5.0: symbol-aware)
       const [configData, botData] = await Promise.all([
-        robustApiClient.get('/api/config/flat'),
-        robustApiClient.get('/api/bot/status'),
+        fetchWithSymbol('/api/config/flat').then(r => r.json()),
+        fetchWithSymbol('/api/bot/status').then(r => r.json()),
       ]);
 
       // Backend is responsive, clear backend down state
@@ -52,11 +54,11 @@ export function useConfigManager({
       // Small delay between batches to prevent resource exhaustion
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Batch 2: Secondary data
+      // Batch 2: Secondary data (v5.0: symbol-aware where applicable)
       const [tradingData, logsData, positionsResponse, flagsData] = await Promise.all([
         robustApiClient.get('/api/trading_status'),
         robustApiClient.get('/api/logs', { params: { limit: 120 } }),
-        robustApiClient.get('/api/positions').catch(() => null),
+        fetchWithSymbol('/api/positions').then(r => r.json()).catch(() => null),
         flagsPromise
       ]);
 
@@ -114,6 +116,8 @@ export function useConfigManager({
       setLoading(false);
     }
   }, [
+    selectedSymbol,
+    fetchWithSymbol,
     setBackendDown,
     setBotStatus,
     setTradingSnapshot,

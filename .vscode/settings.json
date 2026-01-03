@@ -14,5 +14,7 @@
         "workspace_snapshot.md": true,
         "LAST_ERROR.txt": true
     },
-    "explorer.compactFolders": false
+    "explorer.compactFolders": false,
+    "editor.unicodeHighlight.includeComments": true,
+    "editor.unicodeHighlight.nonBasicASCII": true
 }

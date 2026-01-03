@@ -1,15 +1,24 @@
 """
 Universal configuration loader.
 Supports both ENV and YAML formats with validation.
+
+V6.0 MULTI-INSTANCE ARCHITECTURE:
+Instance = Symbol + Mode (e.g., BTCUSD_LONG, BTCUSD_SHORT)
+
+Key functions:
+- get_config(): Get global RootConfig
+- get_instance_config(name): Get config for specific instance
+- get_all_instances(): Get all enabled instances
+- get_instances_for_symbol(symbol): Get instances for a symbol
 """
 
 import yaml
 import os
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, List, Dict
 from dotenv import load_dotenv
 
-from config.models import RootConfig
+from config.models import RootConfig, InstanceConfig, GridMode
 from config.env_mapping import (
     ENV_TO_YAML_MAPPING,
     set_nested_value,
@@ -198,3 +207,207 @@ def get_api_credentials(trading_mode: Optional[str] = None):
         'api_key': api_key,
         'api_secret': api_secret
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V6.0 INSTANCE HELPERS (Instance = Symbol + Mode)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_instance_config(instance_name: str) -> Optional[InstanceConfig]:
+    """Get configuration for a specific instance
+    
+    V6.0 ARCHITECTURE: Instance = Symbol + Mode
+    
+    Args:
+        instance_name: Instance name (e.g., "BTCUSD_LONG", "ETHUSD_SHORT")
+        
+    Returns:
+        InstanceConfig if found and enabled, None otherwise
+        
+    Example:
+        config = get_instance_config("BTCUSD_LONG")
+        if config:
+            print(f"Grid range: {config.grid.geometry.lower} - {config.grid.geometry.upper}")
+            print(f"RSI stop threshold: {config.get_rsi_config().stop_threshold}")
+    """
+    root_config = get_config()
+    
+    # V6.0: Check instances section first
+    if root_config.instances and instance_name in root_config.instances:
+        instance = root_config.instances[instance_name]
+        return instance if instance.enabled else None
+    
+    # V5.0 fallback: Try to construct from symbols section
+    if root_config.symbols:
+        # Parse instance name: SYMBOL_MODE
+        parts = instance_name.rsplit('_', 1)
+        if len(parts) == 2:
+            symbol, mode = parts
+            if symbol in root_config.symbols:
+                symbol_config = root_config.symbols[symbol]
+                # Only return if mode matches
+                if symbol_config.mode.value == mode and symbol_config.enabled:
+                    # Convert SymbolConfig to InstanceConfig (compatibility layer)
+                    return _symbol_to_instance_config(symbol, symbol_config)
+    
+    return None
+
+
+def get_all_instances(enabled_only: bool = True) -> Dict[str, InstanceConfig]:
+    """Get all configured instances
+    
+    Args:
+        enabled_only: If True, only return enabled instances
+        
+    Returns:
+        Dict mapping instance names to InstanceConfig
+        
+    Example:
+        for name, config in get_all_instances().items():
+            print(f"{name}: {config.mode.value} mode, product_id={config.product_id}")
+    """
+    root_config = get_config()
+    instances = {}
+    
+    # V6.0: Use instances section
+    if root_config.instances:
+        for name, config in root_config.instances.items():
+            if not enabled_only or config.enabled:
+                instances[name] = config
+        return instances
+    
+    # V5.0 fallback: Convert symbols to instances
+    if root_config.symbols:
+        for symbol, config in root_config.symbols.items():
+            if not enabled_only or config.enabled:
+                instance_name = f"{symbol}_{config.mode.value}"
+                instances[instance_name] = _symbol_to_instance_config(symbol, config)
+    
+    return instances
+
+
+def get_instances_for_symbol(symbol: str, enabled_only: bool = True) -> Dict[str, InstanceConfig]:
+    """Get all instances for a specific symbol
+    
+    V6.0 enables running LONG and SHORT on same symbol simultaneously.
+    
+    Args:
+        symbol: Symbol name (e.g., "BTCUSD")
+        enabled_only: If True, only return enabled instances
+        
+    Returns:
+        Dict mapping instance names to InstanceConfig for the given symbol
+        
+    Example:
+        btc_instances = get_instances_for_symbol("BTCUSD")
+        # Could return: {"BTCUSD_LONG": ..., "BTCUSD_SHORT": ...}
+    """
+    all_instances = get_all_instances(enabled_only=enabled_only)
+    return {
+        name: config 
+        for name, config in all_instances.items() 
+        if config.symbol == symbol
+    }
+
+
+def parse_instance_name(instance_name: str) -> tuple:
+    """Parse instance name into symbol and mode
+    
+    Args:
+        instance_name: Instance name (e.g., "BTCUSD_LONG")
+        
+    Returns:
+        Tuple of (symbol, mode) or (None, None) if invalid
+        
+    Example:
+        symbol, mode = parse_instance_name("BTCUSD_LONG")
+        # Returns: ("BTCUSD", "LONG")
+    """
+    parts = instance_name.rsplit('_', 1)
+    if len(parts) == 2 and parts[1] in ['LONG', 'SHORT']:
+        return parts[0], parts[1]
+    return None, None
+
+
+def make_instance_name(symbol: str, mode: str) -> str:
+    """Create instance name from symbol and mode
+    
+    Args:
+        symbol: Symbol name (e.g., "BTCUSD")
+        mode: Trading mode ("LONG" or "SHORT")
+        
+    Returns:
+        Instance name (e.g., "BTCUSD_LONG")
+    """
+    return f"{symbol}_{mode.upper()}"
+
+
+def _symbol_to_instance_config(symbol: str, symbol_config) -> InstanceConfig:
+    """Convert v5.0 SymbolConfig to v6.0 InstanceConfig (internal helper)
+    
+    This provides backward compatibility for v5.0 configs.
+    """
+    from config.models import (
+        InstanceConfig, InstanceGridConfig, InstanceGridGeometry,
+        InstanceGridLimits, InstanceGridBehavior, InstanceSmartGapFill,
+        InstanceSafetyConfig, InstanceCapitalAllocation, InstanceRSIConfig
+    )
+    
+    # Build grid config
+    grid = InstanceGridConfig(
+        geometry=InstanceGridGeometry(
+            lower=symbol_config.grid.geometry.lower,
+            upper=symbol_config.grid.geometry.upper,
+            step=symbol_config.grid.geometry.step,
+            reference=symbol_config.grid.geometry.reference
+        ),
+        limits=InstanceGridLimits(
+            max_open_positions=symbol_config.grid.limits.max_open_positions,
+            lot_size=symbol_config.grid.limits.lot_size,
+            max_open_orders=symbol_config.grid.limits.max_open_orders,
+            max_qty_per_order=symbol_config.grid.limits.max_qty_per_order
+        ),
+        behavior=InstanceGridBehavior(
+            strict_grid=symbol_config.grid.behavior.strict_grid,
+            rung_snap_mode=symbol_config.grid.behavior.rung_snap_mode,
+            tick_size=symbol_config.grid.behavior.tick_size,
+            dynamic_tick_size=getattr(symbol_config.grid.behavior, 'dynamic_tick_size', 'false'),
+            seed_initial_count=getattr(symbol_config.grid.behavior, 'seed_initial_count', '0')
+        ),
+        smart_gap_fill=InstanceSmartGapFill(
+            enabled=symbol_config.grid.smart_gap_fill.enabled if symbol_config.grid.smart_gap_fill else 'false',
+            order_type=symbol_config.grid.smart_gap_fill.order_type if symbol_config.grid.smart_gap_fill else 'maker',
+            max_levels=symbol_config.grid.smart_gap_fill.max_levels if symbol_config.grid.smart_gap_fill else '0'
+        ) if symbol_config.grid.smart_gap_fill else None
+    )
+    
+    # Build safety config with mode-appropriate RSI defaults
+    rsi_config = (
+        InstanceRSIConfig.for_long_mode() 
+        if symbol_config.mode.value == 'LONG' 
+        else InstanceRSIConfig.for_short_mode()
+    )
+    
+    safety = InstanceSafetyConfig(
+        max_account_loss_inr=float(symbol_config.safety.max_account_loss_inr),
+        min_liquidation_distance_pct=symbol_config.safety.min_liquidation_distance_pct,
+        rsi=rsi_config
+    )
+    
+    # Build capital allocation
+    capital = None
+    if symbol_config.capital:
+        capital = InstanceCapitalAllocation(
+            allocated_usd=symbol_config.capital.allocated_usd,
+            max_position_value_usd=symbol_config.capital.max_position_value_usd
+        )
+    
+    return InstanceConfig(
+        symbol=symbol,
+        mode=symbol_config.mode,
+        product_id=symbol_config.product_id,
+        enabled=symbol_config.enabled,
+        capital=capital,
+        grid=grid,
+        safety=safety
+    )

@@ -34,6 +34,7 @@ import {
   getReconciliationStatus,
   getReconciliationV2Status,
   getTradingStatus,
+  getResolvedState,
   startTrading as apiStartTrading,
   stopTrading as apiStopTrading,
 } from '../lib/api';
@@ -41,6 +42,7 @@ import api from '../utils/apiShim';
 
 export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
   const [status, setStatus] = useState(null);
+  const [resolvedState, setResolvedState] = useState(null);
   const [expanded, setExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -48,7 +50,20 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
   const socket = useSocket();
   const reconV2Enabled = Boolean(featureFlags?.reconciliation_v2);
 
-  // Fetch trading status
+  // Fetch resolved system state (SINGLE SOURCE OF TRUTH)
+  const fetchResolvedState = useCallback(async () => {
+    try {
+      const state = await getResolvedState();
+      setResolvedState(state);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch trading status (for backward compatibility and additional data)
   const fetchStatus = useCallback(async () => {
     try {
       const data = await getTradingStatus();
@@ -58,17 +73,19 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
       }
     } catch (err) {
       setError(err.message);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 5 seconds - fetch resolved state first, then status
   useEffect(() => {
+    fetchResolvedState();
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
+    const interval = setInterval(() => {
+      fetchResolvedState();
+      fetchStatus();
+    }, 5000);
     return () => clearInterval(interval);
-  }, [fetchStatus]);
+  }, [fetchResolvedState, fetchStatus]);
 
   // Fetch reconciliation status
   const fetchReconStatus = useCallback(async () => {
@@ -155,6 +172,12 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
     }
   };
 
+  // Refresh resolved state
+  const handleRefresh = () => {
+    fetchResolvedState();
+    fetchStatus();
+  };
+
   // Handle emergency actions - self-service controls
   const handleEmergencyAction = async (action) => {
     try {
@@ -211,93 +234,79 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
 
   const reconHasIssues = reconAvailable && mismatchCount > 0;
 
-  // Get status color
+  // Get status color from resolved state
   const getStatusColor = () => {
-    if (!status) return 'grey';
-    switch (status.status.trading_status) {
-      case 'active':
+    if (!resolvedState) return 'grey';
+    switch (resolvedState.safety_level) {
+      case 'SAFE':
         return '#4caf50'; // Green
-      case 'blocked':
+      case 'CAUTION':
+        return '#ff9800'; // Orange
+      case 'BLOCKED':
         return '#f44336'; // Red
-      case 'bot_stopped':
-        return '#9e9e9e'; // Gray
       default:
         return '#9e9e9e';
     }
   };
 
-  // Get status icon
+  // Get status icon from resolved state
   const getStatusIcon = () => {
-    if (!status) return <CircularProgress size={20} />;
-    switch (status.status.trading_status) {
-      case 'active':
+    if (!resolvedState) return <CircularProgress size={20} />;
+    switch (resolvedState.safety_level) {
+      case 'SAFE':
         return <CheckCircle />;
-      case 'blocked':
+      case 'CAUTION':
+        return <Warning />;
+      case 'BLOCKED':
         return <Error />;
-      case 'bot_stopped':
-        return <Stop />;
       default:
         return <Info />;
     }
   };
 
-  // Get status text with specific reason
+  // Get status text from resolved state
   const getStatusText = () => {
-    if (!status) return 'Loading...';
+    if (!resolvedState) return 'Loading...';
     
-    switch (status.status.trading_status) {
-      case 'active':
-        // Show why trading is active
-        if (status.status.total_blockers === 0) {
-          return 'ACTIVE — All safety checks passed';
-        } else {
-          return 'ACTIVE — Blockers overridden by user';
-        }
-      
-      case 'blocked':
-        // Show specific blocking reason
-        const criticalBlockers = status.blockers.filter(b => b.active && b.severity === 'critical');
-        if (criticalBlockers.length > 0) {
-          // Show the first critical blocker name
-          const primaryBlocker = criticalBlockers[0];
-          return `STOPPED — ${primaryBlocker.name}`;
-        }
-        return `STOPPED — ${status.status.total_blockers} issue${status.status.total_blockers > 1 ? 's' : ''} detected`;
-      
-      case 'bot_stopped':
-        return 'BOT NOT RUNNING — Start bot to begin trading';
-      
-      default:
-        return 'UNKNOWN STATUS';
+    if (!resolvedState.trading_allowed) {
+      // Show why trading is blocked
+      if (!resolvedState.guardian_active) {
+        return `BLOCKED — ${resolvedState.guardian.reason}`;
+      }
+      const criticalWarnings = resolvedState.warning_list.filter(w => w.severity === 'critical');
+      if (criticalWarnings.length > 0) {
+        return `BLOCKED — ${criticalWarnings[0].message}`;
+      }
+      return 'BLOCKED — Trading not allowed';
     }
+    
+    // Trading is allowed
+    if (resolvedState.warning_list.length > 0) {
+      return `ACTIVE — ${resolvedState.warning_list.length} warning${resolvedState.warning_list.length > 1 ? 's' : ''}`;
+    }
+    return 'ACTIVE — All systems operational';
   };
 
-  // Get detailed status context
+  // Get detailed status context from resolved state
   const getStatusContext = () => {
-    if (!status) return null;
+    if (!resolvedState) return null;
     
-    switch (status.status.trading_status) {
-      case 'active':
-        if (status.status.total_blockers === 0) {
-          return 'Safety Gatekeeper, Risk Manager, and Position Monitor all operational';
-        } else {
-          return `${status.status.total_blockers} blocker${status.status.total_blockers > 1 ? 's' : ''} present but trading enabled`;
-        }
-      
-      case 'blocked':
-        const criticalBlockers = status.blockers.filter(b => b.active && b.severity === 'critical');
-        if (criticalBlockers.length > 0) {
-          const primaryBlocker = criticalBlockers[0];
-          return primaryBlocker.message || 'Click to view details';
-        }
-        return 'Multiple safety conditions preventing trade execution';
-      
-      case 'bot_stopped':
-        return 'Main trading bot process is not active';
-      
-      default:
-        return null;
+    if (!resolvedState.trading_allowed) {
+      if (!resolvedState.guardian_active) {
+        return resolvedState.guardian.reason;
+      }
+      const criticalWarnings = resolvedState.warning_list.filter(w => w.severity === 'critical');
+      if (criticalWarnings.length > 0) {
+        return criticalWarnings[0].message;
+      }
+      return 'Trading blocked by safety systems';
     }
+    
+    if (resolvedState.warning_list.length > 0) {
+      return `${resolvedState.warning_list.length} warning${resolvedState.warning_list.length > 1 ? 's' : ''} present - proceed with caution`;
+    }
+    
+    return `Guardian ${resolvedState.guardian.state.toLowerCase()}, Safety level: ${resolvedState.safety_level}`;
   };
 
   // Render collapsed view (always visible)
@@ -350,7 +359,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
               </Typography>
             )}
           </Box>
-          {status && (
+          {resolvedState && (
             <>
               <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
               <Box sx={{ 
@@ -359,24 +368,25 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                 flexWrap: 'wrap'
               }}>
                 <Chip
-                  label={`${status.metrics.open_positions} Pos`}
+                  label={resolvedState.net_exposure.label}
+                  size="small"
+                  color={resolvedState.net_exposure.label === 'Bullish' ? 'success' : resolvedState.net_exposure.label === 'Bearish' ? 'error' : 'default'}
+                  variant="outlined"
+                  sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                />
+                <Chip
+                  label={`Δ ${resolvedState.net_exposure.delta_pct.toFixed(1)}%`}
                   size="small"
                   color="primary"
                   variant="outlined"
                   sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                 />
-                <Chip
-                  label={`₹${status.metrics.total_pnl.toFixed(2)}`}
-                  size="small"
-                  color={status.metrics.total_pnl >= 0 ? 'success' : 'error'}
-                  sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
-                />
-                {status.status.total_blockers > 0 && (
+                {resolvedState.warning_list.length > 0 && (
                   <Chip
                     icon={<Warning sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }} />}
-                    label={`${status.status.total_blockers} Blockers`}
+                    label={`${resolvedState.warning_list.length} Warning${resolvedState.warning_list.length > 1 ? 's' : ''}`}
                     size="small"
-                    color="warning"
+                    color={resolvedState.safety_level === 'BLOCKED' ? 'error' : 'warning'}
                     sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                   />
                 )}
@@ -446,67 +456,70 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
 
   // Render expanded view
   const renderExpanded = () => {
-    if (!status) return null;
+    if (!resolvedState) return null;
 
     return (
       <Collapse in={expanded}>
         <Box sx={{ padding: { xs: 2, md: 3 } }}>
-          {/* Metrics Row */}
+          {/* Metrics Row - Using Resolved State */}
           <Grid container spacing={{ xs: 1, md: 2 }} sx={{ mb: { xs: 2, md: 3 } }}>
             <Grid item xs={6} md={3}>
               <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: 'rgba(33, 150, 243, 0.1)' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
-                  Open Positions
+                  Net Exposure
                 </Typography>
                 <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
-                  {status.metrics.open_positions}
+                  {resolvedState.net_exposure.label}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Δ {resolvedState.net_exposure.delta_pct.toFixed(1)}%
                 </Typography>
               </Paper>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: 'rgba(76, 175, 80, 0.1)' }}>
+              <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: resolvedState.guardian_active ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
-                  Pending Orders
+                  Guardian
                 </Typography>
-                <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
-                  {status.metrics.pending_orders}
+                <Typography variant="h4" color={resolvedState.guardian_active ? 'success.main' : 'error.main'} sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
+                  {resolvedState.guardian.state}
                 </Typography>
               </Paper>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: status.metrics.total_pnl >= 0 ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)' }}>
+              <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: resolvedState.safety_level === 'SAFE' ? 'rgba(76, 175, 80, 0.1)' : resolvedState.safety_level === 'CAUTION' ? 'rgba(255, 152, 0, 0.1)' : 'rgba(244, 67, 54, 0.1)' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
-                  Total PnL
+                  Safety Level
                 </Typography>
-                <Typography variant="h4" color={status.metrics.total_pnl >= 0 ? 'success.main' : 'error.main'} sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
-                  ₹{status.metrics.total_pnl.toFixed(2)}
+                <Typography variant="h4" color={resolvedState.safety_level === 'SAFE' ? 'success.main' : resolvedState.safety_level === 'CAUTION' ? 'warning.main' : 'error.main'} sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
+                  {resolvedState.safety_level}
                 </Typography>
               </Paper>
             </Grid>
             <Grid item xs={6} md={3}>
               <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: 'rgba(158, 158, 158, 0.1)' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
-                  Bot Status
+                  Execution Mode
                 </Typography>
                 <Typography variant="h6" sx={{ fontSize: { xs: '0.875rem', md: '1.25rem' } }}>
-                  {status.status.bot_running ? '🟢 Running' : '🔴 Stopped'}
+                  {resolvedState.execution_mode}
                 </Typography>
               </Paper>
             </Grid>
           </Grid>
 
-          {/* Blockers Section - Central Control Hub */}
-          {status.status.total_blockers > 0 && (
+          {/* Warnings Section - From Resolved State */}
+          {resolvedState.warning_list.length > 0 && (
             <Box sx={{ mb: { xs: 2, md: 3 } }}>
               <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
-                🚫 Trading Blocked - {status.status.total_blockers} Issue{status.status.total_blockers > 1 ? 's' : ''} Found
+                {resolvedState.trading_allowed ? '⚠️' : '🚫'} {resolvedState.trading_allowed ? 'Warnings' : 'Trading Blocked'} - {resolvedState.warning_list.length} Issue{resolvedState.warning_list.length > 1 ? 's' : ''} Found
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Review and fix these conditions to resume trading. Click any issue to navigate to the fix location.
+                {resolvedState.trading_allowed 
+                  ? 'Review these warnings before proceeding. Trading is allowed but proceed with caution.'
+                  : 'Review and fix these conditions to resume trading.'}
               </Typography>
-              {status.blockers
-                .filter(b => b.active)
-                .map((blocker, index) => {
+              {resolvedState.warning_list.map((warning, index) => {
                   // Generate actionable steps based on blocker category
                   const getActionSteps = (blocker) => {
                     if (blocker.category === 'SAFETY_GATEKEEPER') {
@@ -549,7 +562,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                   return (
                     <Alert
                       key={index}
-                      severity={blocker.severity === 'critical' ? 'error' : blocker.severity === 'warning' ? 'warning' : 'info'}
+                      severity={warning.severity === 'critical' ? 'error' : warning.severity === 'warning' ? 'warning' : 'info'}
                       sx={{ 
                         mb: 2, 
                         cursor: 'pointer',
@@ -559,108 +572,28 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                         },
                         transition: 'all 0.2s ease-in-out'
                       }}
-                      onClick={() => handleBlockerClick(blocker)}
                       action={
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                          <Button
-                            variant="contained"
-                            color="error"
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleBlockerClick(blocker);
-                            }}
-                            sx={{ 
-                              minWidth: 'auto',
-                              px: 2,
-                              py: 0.5,
-                              fontSize: '0.75rem',
-                              fontWeight: 'bold'
-                            }}
-                          >
-                            EMERGENCY CONTROLS
-                          </Button>
-                          <Tooltip title="Click to navigate to fix location">
+                          <Tooltip title={`Source: ${warning.source}`}>
                             <IconButton size="small" color="inherit">
-                              <Settings />
+                              <Info />
                             </IconButton>
                           </Tooltip>
                         </Box>
                       }
                     >
                       <AlertTitle sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
-                        {blocker.severity === 'critical' ? '🚨' : '⚠️'} {blocker.name}
+                        {warning.severity === 'critical' ? '🚨' : '⚠️'} {warning.source}
                       </AlertTitle>
                       
-                      {/* Problem Description */}
+                      {/* Warning Message */}
                       <Typography variant="body2" sx={{ mb: 1.5, fontWeight: 500 }}>
-                        <strong>Problem:</strong> {blocker.message}
+                        {warning.message}
                       </Typography>
                       
-                      {/* How It Stopped Trading */}
-                      <Typography variant="body2" sx={{ mb: 1.5, color: 'error.main', fontStyle: 'italic' }}>
-                        <strong>How it stopped trading:</strong> {blocker.category === 'SAFETY_GATEKEEPER' 
-                          ? 'Safety Gatekeeper intercepted all trade execution requests'
-                          : blocker.category === 'RISK_MANAGER'
-                          ? 'Risk Manager blocked new positions due to high risk'
-                          : blocker.category === 'POSITION_MONITOR'
-                          ? 'Position Monitor blocked trading to prevent liquidation'
-                          : blocker.category === 'EXCHANGE_CONNECTION'
-                          ? 'Exchange connection issues prevent order placement'
-                          : 'Bot safety system blocked trade execution'
-                        }
-                      </Typography>
-                      
-                      {/* Action Steps */}
-                      <Box sx={{ 
-                        bgcolor: 'rgba(255, 255, 255, 0.05)', 
-                        p: 1.5, 
-                        borderRadius: 1,
-                        border: '1px solid rgba(255, 255, 255, 0.1)'
-                      }}>
-                        <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 1, color: 'success.main' }}>
-                          ✅ STEPS TO RESUME TRADING:
-                        </Typography>
-                        {actionSteps.map((step, idx) => (
-                          <Typography 
-                            key={idx} 
-                            variant="caption" 
-                            display="block" 
-                            sx={{ 
-                              fontSize: '0.75rem',
-                              mb: 0.5,
-                              pl: 1
-                            }}
-                          >
-                            {step}
-                          </Typography>
-                        ))}
-                      </Box>
-                      
-                      <Typography variant="caption" display="block" sx={{ mt: 1.5, fontWeight: 'bold', color: 'primary.main' }}>
-                        📂 Category: {blocker.category} | 🖱️ 
-                        <Button
-                          variant="text"
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleBlockerClick(blocker);
-                          }}
-                          sx={{ 
-                            minWidth: 'auto',
-                            p: 0,
-                            fontSize: 'inherit',
-                            fontWeight: 'bold',
-                            color: 'primary.main',
-                            textDecoration: 'underline',
-                            '&:hover': {
-                              backgroundColor: 'transparent',
-                              textDecoration: 'underline'
-                            }
-                          }}
-                        >
-                          Click here to navigate to Emergency Controls
-                        </Button>
+                      {/* Timestamp */}
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(warning.timestamp).toLocaleString()}
                       </Typography>
                     </Alert>
                   );
@@ -668,8 +601,8 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
             </Box>
           )}
 
-          {/* No Blockers */}
-          {status.status.total_blockers === 0 && (
+          {/* No Warnings */}
+          {resolvedState.warning_list.length === 0 && (
             <Alert severity="success" sx={{ mb: 3 }}>
               <AlertTitle>✅ All Systems Healthy</AlertTitle>
               All safety systems are operational. Trading is allowed.
@@ -769,7 +702,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
             <Button
               variant="outlined"
               startIcon={<Refresh />}
-              onClick={fetchStatus}
+              onClick={handleRefresh}
             >
               Refresh Status
             </Button>

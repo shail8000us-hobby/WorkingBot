@@ -229,6 +229,40 @@ export async function stopTrading(hardStop = false): Promise<TradingStatusComman
   });
 }
 
+// ---------------------------------------------------------------------------
+// Resolved System State endpoint (SINGLE SOURCE OF TRUTH)
+// ---------------------------------------------------------------------------
+
+export interface ResolvedSystemState {
+  trading_allowed: boolean;
+  guardian_active: boolean;
+  safety_level: 'SAFE' | 'CAUTION' | 'BLOCKED';
+  execution_mode: 'LIVE' | 'SIM' | 'TESTNET';
+  net_exposure: {
+    delta: number;
+    delta_pct: number;
+    label: 'Bullish' | 'Neutral' | 'Bearish';
+    gamma: number;
+    vega: number;
+  };
+  warning_list: Array<{
+    severity: 'critical' | 'warning' | 'info';
+    source: string;
+    message: string;
+    timestamp: string;
+  }>;
+  guardian: {
+    state: 'ACTIVE' | 'STOPPED';
+    reason: string;
+    last_decision_time: string;
+  };
+  timestamp: string;
+}
+
+export async function getResolvedState(): Promise<ResolvedSystemState> {
+  return request<ResolvedSystemState>('/api/resolved_state');
+}
+
 export const schemas = {
   StateSchema,
   PositionsResponseSchema,

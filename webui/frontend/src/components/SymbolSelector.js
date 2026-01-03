@@ -23,26 +23,32 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
   // Load symbols from API
   useEffect(() => {
     loadSymbols();
-    const interval = setInterval(loadSymbols, 10000); // Refresh every 10s
+    const interval = setInterval(loadSymbols, 30000); // Refresh every 30s (reduced from 10s)
     return () => clearInterval(interval);
-  }, []);
+  }, []); // No dependencies to prevent unnecessary reloads
 
-  // Restore selected symbol from localStorage
+  // Restore selected symbol from localStorage (only once on mount)
   useEffect(() => {
+    if (symbols.length === 0) return; // Wait for symbols to load
+    if (selectedSymbol) return; // Already have selection
+    
     const saved = localStorage.getItem('selectedSymbol');
-    if (saved && symbols.length > 0) {
+    if (saved) {
       const symbol = symbols.find(s => s.name === saved);
       if (symbol) {
         setSelectedSymbol(symbol);
         if (onSymbolChange) onSymbolChange(symbol.name);
+        return;
       }
-    } else if (symbols.length > 0 && !selectedSymbol) {
-      // Auto-select first enabled symbol
-      const firstEnabled = symbols.find(s => s.enabled) || symbols[0];
+    }
+    
+    // Auto-select first enabled symbol
+    const firstEnabled = symbols.find(s => s.enabled) || symbols[0];
+    if (firstEnabled) {
       setSelectedSymbol(firstEnabled);
       if (onSymbolChange) onSymbolChange(firstEnabled.name);
     }
-  }, [symbols, onSymbolChange]);
+  }, [symbols.length]); // Only trigger when symbols array length changes
 
   const loadSymbols = async () => {
     try {
@@ -71,7 +77,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
   };
 
   const getStatusIcon = (symbol) => {
-    if (!symbol.enabled) return <AlertCircle className="h-4 w-4 text-slate-500" />;
+    if (!symbol || !symbol.enabled) return <AlertCircle className="h-4 w-4 text-slate-500" />;
     
     // Check monitoring file status from symbols API
     const status = symbol.status || 'unknown';
@@ -89,7 +95,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
   };
 
   const getStatusColor = (symbol) => {
-    if (!symbol.enabled) return 'bg-slate-700/50 border-slate-600';
+    if (!symbol || !symbol.enabled) return 'bg-slate-700/50 border-slate-600';
     
     const status = symbol.status || 'unknown';
     switch (status) {
@@ -105,7 +111,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
   };
 
   const getStatusText = (symbol) => {
-    if (!symbol.enabled) return 'Disabled';
+    if (!symbol || !symbol.enabled) return 'Disabled';
     
     const status = symbol.status || 'unknown';
     switch (status) {
@@ -189,7 +195,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
                   'flex w-full items-center justify-between gap-3 px-3 py-2.5 transition-colors',
                   'hover:bg-slate-700/50',
                   selectedSymbol?.name === symbol.name && 'bg-slate-700/30',
-                  !symbol.enabled && 'opacity-60'
+                  symbol && !symbol.enabled && 'opacity-60'
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -206,7 +212,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
                 <div className="flex flex-col items-end gap-0.5">
                   <span className={clsx(
                     'text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded',
-                    symbol.enabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'
+                    symbol && symbol.enabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'
                   )}>
                     {getStatusText(symbol)}
                   </span>

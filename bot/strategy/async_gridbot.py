@@ -133,6 +133,11 @@ class AsyncGridBot:
     - Actor-based state management (no locks)
     - Saga pattern for transactional safety
     - Automatic reconnection
+    
+    V6.0 MULTI-INSTANCE ARCHITECTURE:
+    - Instance = Symbol + Mode (e.g., BTCUSD_LONG, BTCUSD_SHORT)
+    - Each instance gets its own database: bot_events_BTCUSD_LONG.db
+    - LONG and SHORT can run simultaneously on the same symbol
     """
     
     def __init__(
@@ -140,7 +145,8 @@ class AsyncGridBot:
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
         config: Optional[RootConfig] = None,
-        symbol_name: Optional[str] = None,  # NEW: Multi-symbol support (v5.0)
+        instance_name: Optional[str] = None,  # V6.0: Instance-centric (preferred)
+        symbol_name: Optional[str] = None,    # V5.0: Multi-symbol (legacy)
         # Backward compatibility: allow manual params
         symbol: Optional[str] = None,
         product_id: Optional[int] = None,
@@ -176,10 +182,13 @@ class AsyncGridBot:
         """
         Initialize async grid bot with YAML configuration.
         
+        V6.0 ARCHITECTURE: Instance = Symbol + Mode
+        
         Args:
             api_key: Delta Exchange API key (if None, reads from ENV)
             api_secret: Delta Exchange API secret (if None, reads from ENV)
             config: RootConfig object (if None, loads from config.yaml)
+            instance_name: Instance key from config.instances (v6.0+) e.g., 'BTCUSD_LONG'
             symbol_name: Symbol key from config.symbols (v5.0+) e.g., 'BTCUSD', 'ETHUSD'
             
             All other params: Optional overrides for YAML config
@@ -191,12 +200,56 @@ class AsyncGridBot:
         
         self.config = config
         
-        # Multi-symbol support (v5.0)
-        if symbol_name:
-            # V5.0: Multi-symbol mode
-            if not config.symbols:
-                raise ValueError(f"Config v5.0 required for multi-symbol, but symbols section not found")
+        # V6.0: Multi-instance support (Instance = Symbol + Mode)
+        if instance_name:
+            from config.loader import get_instance_config
             
+            instance_config = get_instance_config(instance_name)
+            if not instance_config:
+                available = list(config.instances.keys()) if config.instances else []
+                raise ValueError(
+                    f"Instance '{instance_name}' not found or disabled in config.yaml\n"
+                    f"Available instances: {available}"
+                )
+            
+            # Set instance-specific attributes
+            self.instance_name = instance_name
+            self.symbol_name = instance_config.symbol
+            self.symbol = instance_config.symbol
+            self.product_id = instance_config.product_id
+            self.mode = instance_config.mode.value
+            self.lower_price = int(instance_config.grid.geometry.lower)
+            self.upper_price = int(instance_config.grid.geometry.upper)
+            self.grid_step = int(instance_config.grid.geometry.step)
+            self.ref_price = int(instance_config.grid.geometry.reference)
+            self.max_positions = int(instance_config.grid.limits.max_open_positions)
+            self.lot_size = int(instance_config.grid.limits.lot_size)
+            self.max_qty_per_order = int(instance_config.grid.limits.max_qty_per_order)
+            self.strict_grid = instance_config.grid.behavior.strict_grid.lower() == 'true'
+            self.rung_snap_mode = instance_config.grid.behavior.rung_snap_mode
+            self.seed_initial_count = int(instance_config.grid.behavior.seed_initial_count) if instance_config.grid.behavior.seed_initial_count else 0
+            
+            # Instance-specific safety limits
+            self.max_account_loss_inr_display = float(instance_config.safety.max_account_loss_inr)
+            self.min_liq_distance_pct_display = instance_config.safety.min_liquidation_distance_pct
+            
+            # Instance RSI config (for logging)
+            self.rsi_config = instance_config.get_rsi_config()
+            
+            # Smart gap fill
+            if instance_config.grid.smart_gap_fill:
+                self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled.lower() == 'true'
+            else:
+                self.smart_gap_fill = False
+            
+            log.info(f"🎯 Initialized bot for {instance_name} (v6.0 multi-instance)")
+            log.info(f"   Symbol: {self.symbol}, Mode: {self.mode}")
+            log.info(f"   Product ID: {self.product_id}")
+            log.info(f"   Grid: {self.lower_price}-{self.upper_price}, step {self.grid_step}")
+            log.info(f"   RSI: stop={self.rsi_config.stop_threshold}, resume={self.rsi_config.resume_threshold}")
+            
+        elif symbol_name and config.symbols:
+            # V5.0: Multi-symbol mode (backward compat)
             if symbol_name not in config.symbols:
                 available = list(config.symbols.keys())
                 raise ValueError(
@@ -214,10 +267,11 @@ class AsyncGridBot:
                 )
             
             # Set symbol-specific attributes (convert string config to appropriate types)
+            self.instance_name = f"{symbol_name}_{symbol_config.mode.value}"  # v6.0 compat
             self.symbol_name = symbol_name
             self.symbol = symbol_name
             self.product_id = symbol_config.product_id
-            self.mode = symbol_config.mode
+            self.mode = symbol_config.mode.value
             self.lower_price = int(symbol_config.grid.geometry.lower)
             self.upper_price = int(symbol_config.grid.geometry.upper)
             self.grid_step = int(symbol_config.grid.geometry.step)
@@ -256,6 +310,7 @@ class AsyncGridBot:
             self.symbol = symbol or config.bot.symbol
             self.product_id = product_id or 27  # Default product ID
             self.mode = mode or config.bot.mode
+            self.instance_name = f"{self.symbol}_{self.mode}"  # v6.0 compat
             self.lower_price = lower_price or config.grid.geometry.lower
             self.upper_price = upper_price or config.grid.geometry.upper
             self.grid_step = grid_step or config.grid.geometry.step
@@ -267,7 +322,7 @@ class AsyncGridBot:
             self.smart_gap_fill = smart_gap_fill if smart_gap_fill is not None else config.grid.smart_gap_fill.enabled
             self.rung_snap_mode = rung_snap_mode or config.grid.behavior.rung_snap_mode
             
-            log.info(f"🎯 Initialized bot for {self.symbol} (v4.0 single-symbol mode)")
+            log.info(f"🎯 Initialized bot for {self.instance_name} (v4.0 single-symbol mode)")
         
         # API credentials - load from centralized config loader if not provided
         if api_key and api_secret:
@@ -344,8 +399,9 @@ class AsyncGridBot:
         log.info(f"  Smart Gap Fill: {self.smart_gap_fill}")
         log.info("=" * 80)
         
-        # Initialize event store - Symbol-specific database (v5.0)
-        db_name = f"data/bot_events_{self.symbol_name}_{self.mode}.db"
+        # Initialize event store - Instance-specific database (v6.0)
+        # Uses instance_name (e.g., BTCUSD_LONG) for unique database per instance
+        db_name = f"data/bot_events_{self.instance_name}.db"
         self.event_store = EventStore(db_name)
         log.info(f"📊 Event Store: {db_name}")
         
@@ -1375,10 +1431,11 @@ class AsyncGridBot:
         should_load, state_file, reason = mode_manager.handle_mode_transition()
         
         log.info("=" * 80)
-        log.info("�️ STATE MANAGEMENT - CLEAN SLATE MODE")
+        log.info("🗄️ STATE MANAGEMENT - CLEAN SLATE MODE")
         log.info("=" * 80)
+        log.info(f"   Instance: {self.instance_name}")
         log.info(f"   Current Mode: {self.mode}")
-        log.info(f"   Storage: SQLite Event Store (data/bot_events_{self.symbol_name}_{self.mode}.db)")
+        log.info(f"   Storage: SQLite Event Store (data/bot_events_{self.instance_name}.db)")
         log.info(f"   State Loading: DISABLED (Clean Slate - sync from exchange only)")
         log.info(f"   Mode Tracking: {state_file.name if state_file else 'N/A'} (not loaded)")
         log.info(f"   Reason: {reason}")

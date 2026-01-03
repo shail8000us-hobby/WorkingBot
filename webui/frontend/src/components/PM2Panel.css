@@ -894,6 +894,177 @@
   box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
 }
 
+/* =====================================================
+   Multi-Symbol View Styles
+   ===================================================== */
+
+.pm2-notification {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pm2-notification.success {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.pm2-notification.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.pm2-symbol-view {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.pm2-all-controls {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.pm2-symbol-groups {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.symbol-group {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.symbol-group.selected {
+  border-color: rgba(14, 165, 233, 0.5);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.symbol-group.system {
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.symbol-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.symbol-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.symbol-badge {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.symbol-badge.btcusd {
+  background: linear-gradient(135deg, rgba(247, 147, 26, 0.2) 0%, rgba(247, 147, 26, 0.1) 100%);
+  color: #f7931a;
+  border: 1px solid rgba(247, 147, 26, 0.3);
+}
+
+.symbol-badge.ethusd {
+  background: linear-gradient(135deg, rgba(98, 126, 234, 0.2) 0%, rgba(98, 126, 234, 0.1) 100%);
+  color: #627eea;
+  border: 1px solid rgba(98, 126, 234, 0.3);
+}
+
+.symbol-badge.system {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.1) 100%);
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.symbol-status {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.symbol-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.symbol-processes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mini-process-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.mini-process-card.online {
+  border-left: 3px solid #10b981;
+}
+
+.mini-process-card.stopped {
+  border-left: 3px solid #64748b;
+  opacity: 0.7;
+}
+
+.mini-process-card.errored {
+  border-left: 3px solid #ef4444;
+}
+
+.mini-process-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mini-process-info svg {
+  width: 16px;
+  height: 16px;
+  color: #94a3b8;
+}
+
+.mini-process-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.mini-process-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #64748b;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .pm2-summary {
@@ -919,5 +1090,26 @@
   .logs-modal {
     width: 95%;
     max-height: 90vh;
+  }
+
+  .pm2-symbol-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .pm2-all-controls {
+    flex-direction: column;
+  }
+
+  .symbol-group-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .symbol-controls {
+    width: 100%;
+  }
+
+  .symbol-controls button {
+    flex: 1;
   }
 }

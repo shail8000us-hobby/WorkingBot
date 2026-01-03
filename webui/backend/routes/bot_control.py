@@ -74,6 +74,13 @@ def bot_status():
     """
     Get bot running status
     
+    Query Parameters:
+        symbol (optional): Symbol name (e.g., "BTCUSD", "ETHUSD")
+                          Currently bot runs as single process for first enabled symbol.
+                          This parameter is accepted for API consistency.
+                          
+    ⚠️ TODO v5.1: Support multi-process bot architecture (one process per symbol)
+    
     Uses PM2 if enabled, falls back to PID file check
     
     Returns:
@@ -81,29 +88,47 @@ def bot_status():
     
     Example:
         GET /api/bot/status
-        Response: {"running": true, "pid": 12345, "pm2_managed": true}
+        GET /api/bot/status?symbol=BTCUSD
+        Response: {
+            "running": true,
+            "pid": 12345,
+            "pm2_managed": true,
+            "symbol": "BTCUSD",  # v5.0: Requested symbol
+            "note": "Bot currently runs as single process. Per-symbol processes planned for v5.1"
+        }
     """
     try:
+        # v5.0: Accept symbol parameter (for API consistency)
+        # Note: Current bot runs as single process
+        requested_symbol = request.args.get('symbol')
+        
         # Check if PM2 is enabled
         if should_use_pm2():
             # Get status from PM2
             pm2_status = pm2.get_bot_status('live')
             
             if pm2_status:
-                return jsonify({
+                response = {
                     'running': pm2_status['status'] == 'online',
                     'pid': pm2_status.get('pid'),
                     'pm2_managed': True,
                     'pm2_status': pm2_status['status'],
                     'restarts': pm2_status.get('restarts', 0),
                     'cpu': pm2_status.get('cpu', 0),
-                    'memory_mb': round(pm2_status.get('memory', 0), 1)
-                }), 200
+                    'memory_mb': round(pm2_status.get('memory', 0), 1),
+                    # v5.0 multi-symbol fields
+                    'symbol': requested_symbol,
+                    'single_process_mode': True,
+                    'note': 'Bot runs as single process. Per-symbol processes planned for v5.1'
+                }
+                return jsonify(response), 200
             else:
                 # Not running in PM2
                 return jsonify({
                     'running': False,
-                    'pm2_managed': True
+                    'pm2_managed': True,
+                    'symbol': requested_symbol,
+                    'single_process_mode': True
                 }), 200
         
         # Fallback to traditional PID file check OR process detection
@@ -145,12 +170,17 @@ def bot_status():
             except:
                 pass
         
+        # v5.0: Include symbol info in response
         return jsonify({
             'running': running,
             'bot_status': 'online' if running else 'stopped',
             'pid': pid,
             'uptime': uptime,
-            'pm2_managed': False
+            'pm2_managed': False,
+            # v5.0 multi-symbol fields
+            'symbol': requested_symbol,
+            'single_process_mode': True,
+            'note': 'Bot runs as single process. Per-symbol processes planned for v5.1'
         }), 200
         
     except Exception as e:
@@ -158,6 +188,7 @@ def bot_status():
         return jsonify({
             'running': False,
             'error': str(e),
+            'symbol': request.args.get('symbol'),  # v5.0
             'pm2_managed': should_use_pm2()
         }), 500
 

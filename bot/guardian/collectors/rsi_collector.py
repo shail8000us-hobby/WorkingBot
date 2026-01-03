@@ -38,13 +38,16 @@ class RSICollector:
     - Comprehensive error handling with retries
     """
     
-    def __init__(self, exchange, config):
+    def __init__(self, exchange, config, symbol_name: str = None):
         """
         Initialize RSI collector.
         
         Args:
             exchange: CCXT exchange instance (for consistency, though we use REST API)
             config: Guardian configuration (RootConfig object)
+            symbol_name: Optional symbol override (e.g., "BTCUSD", "ETHUSD")
+                        If provided, uses this symbol instead of config.bot.symbol
+                        This enables multi-symbol RSI collection in v5.0
         """
         self.exchange = exchange
         self.config = config
@@ -60,14 +63,18 @@ class RSICollector:
         else:
             self.api_base = "https://api.india.delta.exchange"
         
-        # Get symbol from config
-        if hasattr(config, 'bot') and hasattr(config.bot, 'symbol'):
+        # Get symbol - prefer explicit symbol_name parameter (v5.0 multi-symbol support)
+        if symbol_name:
+            self.symbol = symbol_name
+        elif hasattr(config, 'bot') and hasattr(config.bot, 'symbol'):
             self.symbol = config.bot.symbol
         else:
             self.symbol = "BTCUSD"
         
-        # Get bot mode (LONG/SHORT)
-        if hasattr(config, 'bot') and hasattr(config.bot, 'mode'):
+        # Get bot mode (LONG/SHORT) - check symbol config first, then global
+        if symbol_name and hasattr(config, 'symbols') and symbol_name in config.symbols:
+            self.bot_mode = config.symbols[symbol_name].mode.upper()
+        elif hasattr(config, 'bot') and hasattr(config.bot, 'mode'):
             self.bot_mode = config.bot.mode.upper()  # LONG or SHORT
         else:
             self.bot_mode = "LONG"  # Default to LONG
@@ -82,8 +89,38 @@ class RSICollector:
         self._last_logged_rsi: Optional[float] = None  # For rate-limited logging
         self._last_log_time: float = 0
         
+        # v6.0: Try instance-specific RSI config first, then fall back to global
+        instance_rsi_config = None
+        if hasattr(config, 'instances') and hasattr(config, 'bot') and hasattr(config.bot, 'instance'):
+            instance_name = config.bot.instance
+            if instance_name in config.instances:
+                instance_cfg = config.instances[instance_name]
+                if hasattr(instance_cfg, 'safety') and hasattr(instance_cfg.safety, 'rsi'):
+                    instance_rsi_config = instance_cfg.safety.rsi
+                    log.info(f"Using instance-specific RSI config for {instance_name}")
+        
         # Get RSI config (NO HARDCODED DEFAULTS - must be in config.yaml)
-        if hasattr(config, 'safety') and hasattr(config.safety, 'rsi'):
+        if instance_rsi_config:
+            # v6.0: Instance-specific RSI config uses stop_threshold based on mode
+            rsi_config = instance_rsi_config
+            self.enabled = getattr(rsi_config, 'enabled', True)
+            self.period = getattr(rsi_config, 'period', 14)
+            self.timeframe = getattr(rsi_config, 'timeframe', '1h')
+            self.cache_ttl = getattr(rsi_config, 'cache_ttl', 60)
+            self.hysteresis_seconds = getattr(rsi_config, 'hysteresis_seconds', 60)
+            self.hysteresis_band = getattr(rsi_config, 'hysteresis_band', 2.0)
+            # Instance config uses stop_threshold for the mode-specific value
+            stop_threshold = getattr(rsi_config, 'stop_threshold', None)
+            resume_threshold = getattr(rsi_config, 'resume_threshold', None)
+            if self.bot_mode == "LONG":
+                # LONG mode: stop when RSI <= threshold (oversold)
+                self.long_threshold = stop_threshold if stop_threshold is not None else 30
+                self.short_threshold = 75  # Not used for LONG, but set a default
+            else:
+                # SHORT mode: stop when RSI >= threshold (overbought)
+                self.short_threshold = stop_threshold if stop_threshold is not None else 70
+                self.long_threshold = 25  # Not used for SHORT, but set a default
+        elif hasattr(config, 'safety') and hasattr(config.safety, 'rsi'):
             rsi_config = config.safety.rsi
             self.enabled = getattr(rsi_config, 'enabled', True)
             self.period = getattr(rsi_config, 'period', 14)
@@ -108,8 +145,8 @@ class RSICollector:
         log.info(f"RSICollector initialized: {self.symbol} {self.timeframe}")
         log.info(f"  Bot Mode: {self.bot_mode}")
         log.info(f"  Period: {self.period}")
-        log.info(f"  Long Threshold: {self.long_threshold} (STOP when RSI >= this - overbought risk)")
-        log.info(f"  Short Threshold: {self.short_threshold} (STOP when RSI <= this - oversold risk)")
+        log.info(f"  Long Threshold: {self.long_threshold} (STOP when RSI <= this - oversold)")
+        log.info(f"  Short Threshold: {self.short_threshold} (STOP when RSI >= this - overbought)")
         log.info(f"  Hysteresis: {self.hysteresis_seconds}s delay, ±{self.hysteresis_band} RSI band")
         log.info(f"  Cache TTL: {self.cache_ttl}s")
     

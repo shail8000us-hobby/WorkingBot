@@ -83,7 +83,7 @@ try:
         # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
         bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
         robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
-        dynamic_brain_bp, grid_mode_bp, unified_safety_bp
+        dynamic_brain_bp, grid_mode_bp, unified_safety_bp, resolved_state_bp
     )
     from .routes.prediction_api import prediction_bp
     from .routes.monitoring import monitoring_bp  # NOV 8: Bot monitoring systems
@@ -104,7 +104,7 @@ except ImportError:
         # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
         bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
         robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
-        dynamic_brain_bp, grid_mode_bp, unified_safety_bp
+        dynamic_brain_bp, grid_mode_bp, unified_safety_bp, resolved_state_bp
     )
     from routes.prediction_api import prediction_bp
     from routes.monitoring import monitoring_bp  # NOV 8: Bot monitoring systems
@@ -117,6 +117,14 @@ except ImportError:
     from routes.recovery import bp as recovery_bp  # NOV 20: Recovery system
     from routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
     from routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
+    from routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
+    # JAN 2026: WebUI v3 API endpoints
+    from routes.trades import trades_bp
+    from routes.analytics import analytics_bp
+    from routes.performance import performance_bp
+    from routes.chart import chart_bp
+    from routes.backtest import backtest_bp
+    from routes.strategies import strategies_bp
 
 # Load YAML config
 from config.loader import get_config
@@ -168,6 +176,7 @@ except:
 
 blueprints = [
     yaml_config_bp,  # NOV 15: Register FIRST to intercept /api/config/all
+    resolved_state_bp,  # JAN 2026: Single authoritative state resolver
     utility_bp, health_bp, logs_bp, docs_bp, metrics_bp,
     websocket_api_bp, system_bp, monitor_bp, guardian_bp,
     pm2_bp, orders_bp, pnl_bp, positions_bp,
@@ -175,7 +184,9 @@ blueprints = [
     bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
     robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
     dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp,
-    unified_safety_bp  # DEC 27: Unified Risk & Safety Dashboard
+    unified_safety_bp,  # DEC 27: Unified Risk & Safety Dashboard
+    # JAN 2026: WebUI v3 endpoints
+    trades_bp, analytics_bp, performance_bp, chart_bp, backtest_bp, strategies_bp
 ]
 
 # Add brain analyzer if available (same port, separate codebase)
@@ -220,6 +231,10 @@ print(f"✅ Registered recovery blueprint")
 
 app.register_blueprint(reconciliation_bp)
 print(f"✅ Registered reconciliation blueprint")
+
+# Register Settings API blueprint (JAN 2026: Risk limits)
+app.register_blueprint(settings_bp)
+print(f"✅ Registered settings blueprint")
 
 # Register Multi-Symbol API blueprint (DEC 28: v5.0 multi-symbol support)
 app.register_blueprint(symbols_bp)

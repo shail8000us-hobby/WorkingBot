@@ -18,6 +18,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { RefreshCcw, DollarSign } from 'lucide-react';
+import { useInstance, parseInstanceName } from '../../context/InstanceContext';
 
 const TIMEFRAMES = [
   { value: 'hourly', label: 'Hourly', rvKey: '1h', description: 'Rolling 24-hour window' },
@@ -240,6 +241,11 @@ function VolatilityChart({
   chartHeight = 450,
   className
 }) {
+  // Instance awareness - for future multi-symbol support
+  const { selectedInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const currentSymbol = instanceInfo?.symbol || 'BTCUSD';
+  
   const [timeframe, setTimeframe] = useState(initialTimeframe);
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -725,8 +731,16 @@ function VolatilityChart({
             <p className="text-[11px] uppercase tracking-[0.32em] text-slate-500">
               Volatility Regime
             </p>
-            <h3 className="text-lg font-semibold text-slate-100">
+            <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
               Delta Exchange IV vs RV
+              <span className={clsx(
+                'text-xs px-2 py-0.5 rounded font-medium',
+                currentSymbol === 'BTCUSD' ? 'bg-blue-500/20 text-blue-300' :
+                currentSymbol === 'ETHUSD' ? 'bg-purple-500/20 text-purple-300' :
+                'bg-slate-500/20 text-slate-300'
+              )}>
+                {currentSymbol}
+              </span>
             </h3>
             <p className="text-xs text-slate-500">
               Live implied vs realized volatility (1-hour) with {selectedTimeframe?.label?.toLowerCase()} lookback

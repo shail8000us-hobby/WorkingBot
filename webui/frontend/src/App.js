@@ -52,6 +52,10 @@ import { useSocketConnection } from './hooks/useSocketConnection';
 import { useConfigManager } from './hooks/useConfigManager';
 import { useTradingData } from './hooks/useTradingData';
 import { MobileOptimizationProvider } from './context/MobileOptimizationContext';
+import { SymbolProvider } from './context/SymbolContext';
+import { InstanceProvider } from './context/InstanceContext';
+import SymbolContextBar from './components/layout/SymbolContextBar';
+import InstanceContextBar from './components/layout/InstanceContextBar';
 import IdleIndicator from './components/IdleIndicator';
 import SafetyWarningBanner from './components/SafetyWarningBanner';
 // Mobile indicators removed for cleaner UI
@@ -96,6 +100,7 @@ import SystemHealthPanel from './components/SystemHealthPanel';
 import MultiInstanceManager from './components/MultiInstanceManager';
 import MonitoringRecoveryPanel from './components/panels/MonitoringRecoveryPanel';
 import RSIPanel from './components/RSIPanel';
+import SymbolPortfolio from './components/SymbolPortfolio';
 import RiskSafetyDashboard from './components/RiskSafetyDashboard';
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
@@ -387,6 +392,12 @@ function App() {
       icon: LayoutDashboard,
       badge: pendingOrders ?? undefined,
       description: 'Trading overview & telemetry'
+    },
+    {
+      id: 'portfolio',
+      label: '📊 Portfolio',
+      icon: TrendingUp,
+      description: 'Multi-symbol overview - all symbols at a glance'
     },
     {
       id: 'config',
@@ -1236,6 +1247,7 @@ function App() {
     instance_manager: renderInstanceManager(),
     brain_flow: renderBrainFlow(),
     dashboard: renderDashboard(),
+    portfolio: <SymbolPortfolio />,
     positions: renderPositions(),
     risk: renderRisk(),
     rsi: renderRSI(),
@@ -1271,28 +1283,44 @@ function App() {
   }
 
   return (
-    <MobileOptimizationProvider>
-      <div className="relative min-h-screen bg-surface text-slate-100">
-        <TopBar
-        mode={mode}
-        onToggleTheme={toggleMode}
-        onRefresh={handleHardRefresh}
-        onEnsureFresh={ensureFresh}
-        isMobile={isMobile}
-        metrics={{
-          running: botIsRunning,
-          latency: connectionLatency,
-          latencyQuality: connectionQuality,
-          unrealizedPnl: totalPnl,
-          lastUpdated
-        }}
-        processStatus={{
-          guardianPid: botStatus?.guardian_health?.pid || null,
-          tradingBotPid: botStatus?.pid || null,
-          healthBotPid: botStatus?.heartbeat?.pid || null
-        }}
-        warnings={globalWarnings}
-      />
+    <InstanceProvider>
+    <SymbolProvider>
+      <MobileOptimizationProvider>
+        <div className="relative min-h-screen bg-surface text-slate-100">
+          {/* V6.0: Instance Context Bar */}
+          <InstanceContextBar 
+            status={{ running: botIsRunning }}
+            pnl={{ total: totalPnl }}
+          />
+          <TopBar
+            mode={mode}
+            onToggleTheme={toggleMode}
+            onRefresh={handleHardRefresh}
+            onEnsureFresh={ensureFresh}
+            isMobile={isMobile}
+            isOnline={connectionState === 'connected'}
+            botIsRunning={botIsRunning}
+            metrics={{
+              running: botIsRunning,
+              latency: connectionLatency,
+              latencyQuality: connectionQuality,
+              unrealizedPnl: totalPnl,
+              lastUpdated
+            }}
+            processStatus={{
+              guardianPid: botStatus?.guardian_health?.pid || null,
+              tradingBotPid: botStatus?.pid || null,
+              healthBotPid: botStatus?.heartbeat?.pid || null
+            }}
+            warnings={globalWarnings}
+          />
+      
+          {/* Phase 2: Symbol Context Bar - Always visible below TopBar */}
+          <SymbolContextBar 
+            gridInfo={config?.grid}
+            status={{ running: botIsRunning }}
+            pnl={totalPnl ? { total: totalPnl } : null}
+          />
 
       <Sidebar
         sections={sections}
@@ -1351,8 +1379,10 @@ function App() {
       {/* Mobile indicators removed for cleaner mobile UI */}
       {/* <MobileBatteryIndicator /> */}
       {/* <TailscaleMobileOptimizer /> */}
-      </div>
-    </MobileOptimizationProvider>
+        </div>
+      </MobileOptimizationProvider>
+    </SymbolProvider>
+    </InstanceProvider>
   );
 }
 

@@ -1,0 +1,39 @@
+.panel { padding: var(--space-4); height: 100%; display: flex; flex-direction: column; overflow-y: auto; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4); }
+.header h2 { font-size: var(--font-size-xl); color: var(--color-text-primary); }
+.headerActions { display: flex; gap: var(--space-2); align-items: center; }
+.statusBadge { padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); }
+.statusBadge.healthy { background: var(--color-success-muted); color: var(--color-success); }
+.statusBadge.warning { background: var(--color-warning-muted); color: var(--color-warning); }
+.statusBadge.critical { background: var(--color-danger-muted); color: var(--color-danger); }
+.statusBadge.unknown { background: var(--color-surface); color: var(--color-text-muted); }
+.refreshBtn { padding: var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; }
+.error { padding: var(--space-3); background: var(--color-danger-muted); border: 1px solid var(--color-danger); border-radius: var(--radius-md); color: var(--color-danger); margin-bottom: var(--space-3); }
+.loading { display: flex; justify-content: center; align-items: center; height: 200px; color: var(--color-text-muted); }
+.overviewGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.overviewCard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); text-align: center; }
+.overviewLabel { display: block; font-size: var(--font-size-xs); color: var(--color-text-muted); margin-bottom: var(--space-1); }
+.overviewValue { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
+.section { margin-bottom: var(--space-4); }
+.section h3 { font-size: var(--font-size-base); margin-bottom: var(--space-3); color: var(--color-text-primary); }
+.circuitGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.circuitCard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
+.circuitHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
+.circuitName { font-weight: var(--font-weight-medium); }
+.circuitStatus { font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); }
+.circuitInfo { font-size: var(--font-size-xs); color: var(--color-text-muted); display: flex; flex-direction: column; gap: var(--space-1); }
+.checksGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.checkCard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
+.checkCard.pass { border-left: 3px solid var(--color-success); }
+.checkCard.warn { border-left: 3px solid var(--color-warning); }
+.checkCard.fail { border-left: 3px solid var(--color-danger); }
+.checkHeader { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.checkIcon { font-size: 1rem; }
+.checkName { font-weight: var(--font-weight-medium); }
+.checkMessage { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-2); }
+.checkTime { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.actions { display: flex; gap: var(--space-3); flex-wrap: wrap; padding-top: var(--space-4); border-top: 1px solid var(--color-border); margin-top: auto; }
+.actionBtn { padding: var(--space-2) var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; font-size: var(--font-size-sm); transition: all 0.2s; }
+.actionBtn:hover:not(:disabled) { background: var(--color-surface-elevated); }
+.actionBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.toggleBtn { background: var(--color-primary-muted); border-color: var(--color-primary); }

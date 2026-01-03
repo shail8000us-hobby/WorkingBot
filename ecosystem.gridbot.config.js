@@ -248,6 +248,65 @@ module.exports = {
       merge_logs: true,
       out_file: "/Users/ssr/Projects/WorkingBot/reports/pm2-heartbeat-out.log",
       error_file: "/Users/ssr/Projects/WorkingBot/reports/pm2-heartbeat-error.log",
+    },
+
+    // ========================================================================
+    // DEVELOPMENT WEBUI BACKEND (Port 5557)
+    // ⚠️  FOR DEVELOPMENT ONLY - Testing v5.0 Multi-Symbol Features
+    // ========================================================================
+    {
+      name: "webui-backend-dev",
+      script: "webui/backend/app_dev.py",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot:/Users/ssr/Library/Python/3.9/lib/python/site-packages",
+        WEBUI_ENV: "development",
+        FLASK_ENV: "development",
+        PYTHONUNBUFFERED: "1",
+      },
+      
+      kill_timeout: 5000,
+      kill_signal: "SIGTERM",
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: 3000,
+      watch: false,  // Disable watch, app_dev.py has hot reload
+      
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      out_file: "/Users/ssr/Projects/WorkingBot/reports/pm2-webui-backend-dev-out.log",
+      error_file: "/Users/ssr/Projects/WorkingBot/reports/pm2-webui-backend-dev-error.log",
+    },
+
+    // ========================================================================
+    // DEVELOPMENT WEBUI FRONTEND (Port 3001)
+    // ⚠️  FOR DEVELOPMENT ONLY - React Dev Server with Hot Reload
+    // ========================================================================
+    {
+      name: "webui-frontend-dev",
+      script: "npm",
+      args: "start",
+      cwd: "/Users/ssr/Projects/WorkingBot/webui/frontend",
+      
+      env: {
+        NODE_ENV: "development",
+        PORT: "3001",
+        REACT_APP_API_URL: "http://localhost:5557",
+        REACT_APP_SOCKET_URL: "http://localhost:5557",
+        REACT_APP_API_BASE_URL: "http://localhost:5557",
+      },
+      
+      kill_timeout: 5000,
+      kill_signal: "SIGTERM",
+      autorestart: false,  // Don't auto-restart React dev server
+      watch: false,
+      
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      out_file: "/Users/ssr/Projects/WorkingBot/reports/pm2-webui-frontend-dev-out.log",
+      error_file: "/Users/ssr/Projects/WorkingBot/reports/pm2-webui-frontend-dev-error.log",
     }
   ],
   

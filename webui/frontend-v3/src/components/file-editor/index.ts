@@ -1,0 +1,2 @@
+export { FileEditor } from './FileEditor';
+

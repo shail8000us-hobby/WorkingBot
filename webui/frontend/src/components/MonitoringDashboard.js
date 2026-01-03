@@ -4,12 +4,15 @@ import {
   CheckCircle, Warning, Error as ErrorIcon, TrendingUp, TrendingDown,
   Security, Speed, BugReport, Psychology 
 } from '@mui/icons-material';
-import { useSymbolAPI } from '../hooks/useSymbolAPI';
-import { useSymbol } from '../context/SymbolContext';
+import { useInstanceAPI } from '../hooks/useInstanceAPI';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import SymbolBadge from './common/SymbolBadge';
 
 const MonitoringDashboard = () => {
-  const api = useSymbolAPI();
-  const { selectedSymbol } = useSymbol();
+  const api = useInstanceAPI();
+  const { selectedInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
   const [monitoringStatus, setMonitoringStatus] = useState(null);
   const [priceHealth, setPriceHealth] = useState(null);
   const [preOrderStats, setPreOrderStats] = useState(null);
@@ -126,6 +129,9 @@ const MonitoringDashboard = () => {
               <Typography variant="h6" sx={{ fontSize: '0.95rem', fontWeight: 600 }}>
                 Price Health
               </Typography>
+              <Box sx={{ ml: 'auto' }}>
+                <SymbolBadge symbol={selectedSymbol} size="xs" variant="dot" />
+              </Box>
             </Box>
             {priceHealth && !priceHealth.error ? (
               <>

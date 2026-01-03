@@ -1,0 +1,155 @@
+.errorContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 40px 20px;
+  background: var(--panel-bg);
+}
+
+.errorCard {
+  background: var(--card-bg);
+  border: 2px solid var(--error-border);
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 600px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.critical .errorCard {
+  border-color: var(--error-color);
+  background: var(--error-bg);
+}
+
+.errorIcon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.errorTitle {
+  margin: 0 0 16px 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--error-text);
+}
+
+.errorMessage {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.componentName {
+  margin: 0 0 24px 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.componentName code {
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.retryButton,
+.reloadButton {
+  padding: 12px 32px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retryButton {
+  background: var(--primary-color);
+  color: white;
+}
+
+.retryButton:hover {
+  background: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.reloadButton {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.reloadButton:hover {
+  background: var(--hover-bg);
+}
+
+.autoReset {
+  margin: 16px 0 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.criticalWarning {
+  background: var(--error-bg);
+  border: 2px solid var(--error-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--error-text);
+}
+
+.errorDetails {
+  margin-top: 24px;
+  text-align: left;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.errorDetails summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.errorDetails summary:hover {
+  color: var(--primary-color);
+}
+
+.errorStack,
+.componentStack {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  font-family: 'Monaco', 'Courier New', monospace;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+
+.componentStack {
+  background: #2d2d2d;
+}

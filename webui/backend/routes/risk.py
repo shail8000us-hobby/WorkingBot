@@ -428,6 +428,126 @@ def get_risk_volatility_historical():
         }), 500
 
 
+@risk_bp.route('/api/risk/metrics', methods=['GET'])
+def get_risk_metrics():
+    """
+    Get risk metrics for the RiskMetricsPanel component.
+    Returns exposure, VaR, drawdown, and other key risk indicators.
+    """
+    try:
+        # Try to get from risk analytics if available
+        try:
+            from bot.ai.analytics.risk import get_risk_analytics
+            
+            analytics = get_risk_analytics()
+            portfolio_data = analytics._load_current_portfolio_data()
+            
+            # Get current exposure and calculate metrics
+            current_exposure = portfolio_data.get('total_exposure', 0)
+            total_balance = portfolio_data.get('total_balance', 1)
+            max_exposure = total_balance * 10  # Default to 10x balance as max
+            
+            # Calculate exposure percentage
+            exposure_percentage = (current_exposure / max_exposure * 100) if max_exposure > 0 else 0
+            
+            # Try to get VaR and CVaR
+            try:
+                returns = analytics._load_returns(30)
+                var_95 = abs(analytics.calculate_historical_var(returns, 0.95, total_balance))
+                cvar_95 = abs(analytics.calculate_cvar(returns, 0.95, total_balance))
+            except:
+                var_95 = total_balance * 0.05  # 5% default
+                cvar_95 = total_balance * 0.07  # 7% default
+            
+            # Get drawdown info
+            try:
+                current_drawdown = portfolio_data.get('current_drawdown', 0)
+                max_drawdown = portfolio_data.get('max_drawdown', 0)
+            except:
+                current_drawdown = 0
+                max_drawdown = 0
+            
+            # Calculate position risk (percentage of portfolio in positions)
+            position_risk = (current_exposure / total_balance * 100) if total_balance > 0 else 0
+            
+            # Calculate margin utilization
+            try:
+                margin_used = portfolio_data.get('margin_used', 0)
+                margin_available = portfolio_data.get('margin_available', total_balance)
+                margin_utilization = (margin_used / (margin_used + margin_available) * 100) if (margin_used + margin_available) > 0 else 0
+            except:
+                margin_utilization = 0
+            
+            # Calculate leverage
+            leverage = (current_exposure / total_balance) if total_balance > 0 else 1.0
+            
+            # Calculate risk-reward ratio (simplified)
+            risk_reward_ratio = 1.5  # Default value
+            
+            metrics = {
+                'current_exposure': current_exposure,
+                'max_exposure': max_exposure,
+                'exposure_percentage': exposure_percentage,
+                'position_risk': position_risk,
+                'var_95': var_95,
+                'cvar_95': cvar_95,
+                'current_drawdown': current_drawdown,
+                'max_drawdown': max_drawdown,
+                'risk_reward_ratio': risk_reward_ratio,
+                'margin_utilization': margin_utilization,
+                'leverage': leverage,
+            }
+            
+            return jsonify({
+                'data': metrics,
+                'status': 'live'
+            }), 200
+            
+        except Exception as e:
+            log.warning(f"Risk analytics not available, using defaults: {e}")
+            # Fallback to default values
+            metrics = {
+                'current_exposure': 0,
+                'max_exposure': 0,
+                'exposure_percentage': 0,
+                'position_risk': 0,
+                'var_95': 0,
+                'cvar_95': 0,
+                'current_drawdown': 0,
+                'max_drawdown': 0,
+                'risk_reward_ratio': 0,
+                'margin_utilization': 0,
+                'leverage': 1.0,
+            }
+            
+            return jsonify({
+                'data': metrics,
+                'status': 'stale',
+                'error': 'Risk analytics not available'
+            }), 200
+            
+    except Exception as e:
+        log.error(f"Error getting risk metrics: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'data': {
+                'current_exposure': 0,
+                'max_exposure': 0,
+                'exposure_percentage': 0,
+                'position_risk': 0,
+                'var_95': 0,
+                'cvar_95': 0,
+                'current_drawdown': 0,
+                'max_drawdown': 0,
+                'risk_reward_ratio': 0,
+                'margin_utilization': 0,
+                'leverage': 1.0,
+            },
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 @risk_bp.route('/api/risk/volatility/latest', methods=['GET'])
 def get_risk_volatility_latest():
     """

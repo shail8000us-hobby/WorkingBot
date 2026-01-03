@@ -13,11 +13,14 @@ import {
   TrendingUp,
   TrendingDown,
   FileWarning,
-  Info
+  Info,
+  Layers
 } from 'lucide-react';
 import api from '../utils/apiShim';
 import HelpIcon from './help/HelpIcon';
-import { useSymbol } from '../context/SymbolContext';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import SymbolBadge from './common/SymbolBadge';
+import { getResolvedState } from '../lib/api';
 
 const formatCurrency = (value, currency = 'INR') => {
   const amount = Number(value || 0);
@@ -47,7 +50,7 @@ const formatUptime = (seconds) => {
 
 const riskDescriptor = (loss, limit) => {
   if (!limit || limit <= 0) return { level: 'unknown', label: 'Unknown', variant: 'bg-slate-700 text-slate-200', progress: 0 };
-  const ratio = Math.min(Math.max(loss / limit, 0), 1);
+  const ratio = Math.min(Math.max(Math.abs(loss) / limit, 0), 1);
   if (ratio >= 1) {
     return { level: 'critical', label: 'Critical', variant: 'bg-rose-500/20 text-rose-200 border border-rose-500/40', progress: ratio * 100 };
   }
@@ -57,28 +60,51 @@ const riskDescriptor = (loss, limit) => {
   return { level: 'safe', label: 'Safe', variant: 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/40', progress: ratio * 100 };
 };
 
+/**
+ * GuardianPanel - Multi-Symbol Safety Monitor (v5.0)
+ * 
+ * Features:
+ * - Shows per-symbol loss tracking
+ * - Global portfolio risk summary
+ * - Symbol-specific risk indicators
+ */
 const GuardianPanel = () => {
-  const { selectedSymbol } = useSymbol();
-  const [guardianStatus, setGuardianStatus] = useState({ running: false, health: null });
+  const { selectedInstance, withInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const [guardianStatus, setGuardianStatus] = useState({ running: false, health: null, symbols: {}, global: {} });
+  const [resolvedState, setResolvedState] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
 
   const fetchGuardianStatus = useCallback(async () => {
     try {
-      // Guardian status is global, but we'll add symbol param when Phase 2C is implemented
-      const response = await api.get('/api/guardian/status');
+      // v6.0: Fetch guardian status for current instance
+      const response = await api.get(withInstance('/api/guardian/status'));
       setGuardianStatus(response.data);
     } catch (error) {
       console.error('Error fetching Guardian status:', error);
       setNotification({ type: 'error', message: 'Unable to retrieve Guardian status. Check connection.' });
     }
+  }, [withInstance]);
+
+  const fetchResolvedState = useCallback(async () => {
+    try {
+      const state = await getResolvedState();
+      setResolvedState(state);
+    } catch (error) {
+      console.error('Error fetching resolved state:', error);
+    }
   }, []);
 
   useEffect(() => {
     fetchGuardianStatus();
-    const interval = setInterval(fetchGuardianStatus, 12000);
+    fetchResolvedState();
+    const interval = setInterval(() => {
+      fetchGuardianStatus();
+      fetchResolvedState();
+    }, 12000);
     return () => clearInterval(interval);
-  }, [fetchGuardianStatus, selectedSymbol]);
+  }, [fetchGuardianStatus, fetchResolvedState, selectedInstance]);
 
   const runGuardianAction = async (path, successMessage, errorMessage) => {
     try {
@@ -103,23 +129,31 @@ const GuardianPanel = () => {
   const handleStopGuardian = () =>
     runGuardianAction('/api/guardian/stop', 'Guardian safety process stopped.', 'Failed to stop Guardian.');
 
-  const { running, health } = guardianStatus;
+  const { running, health, symbols = {}, global = {} } = guardianStatus;
+  
+  // Use resolved state for guardian_active (single source of truth)
+  const guardianActive = resolvedState?.guardian_active ?? false;
+  const guardianState = resolvedState?.guardian?.state ?? (running ? 'ACTIVE' : 'STOPPED');
+  const guardianReason = resolvedState?.guardian?.reason ?? (running ? 'Guardian monitoring active' : 'Guardian service not running');
+  const lastDecisionTime = resolvedState?.guardian?.last_decision_time ?? null;
 
   const monitoring = health?.monitoring;
   const config = health?.config || {};
-  const maxLoss = Number(config.max_account_loss_inr) || Number(health?.max_loss_inr) || 5000;
-  const totalLoss = Number(monitoring?.total_loss_inr || 0);
+  
+  // Use global data from new multi-symbol API
+  const totalLoss = Number(global?.total_loss_inr) || Number(monitoring?.total_loss_inr || 0);
+  const maxLoss = Number(global?.total_capital_inr * 0.1) || Number(config.max_account_loss_inr) || Number(health?.max_loss_inr) || 5000;
   const risk = useMemo(() => riskDescriptor(totalLoss, maxLoss), [totalLoss, maxLoss]);
 
   const infoBlocks = [
     {
-      title: 'Monitors 24/7',
-      description: 'Continuously scans live positions on the exchange every few seconds—even if the trading bot is offline.',
-      icon: <Activity className="h-4 w-4 text-sky-300" />
+      title: 'Multi-Symbol Monitoring',
+      description: 'Tracks losses per symbol independently. BTCUSD and ETHUSD have separate loss limits.',
+      icon: <Layers className="h-4 w-4 text-sky-300" />
     },
     {
-      title: 'Loss Guardrail',
-      description: 'Auto-terminates every position once cumulative losses breach your configured INR limit.',
+      title: 'Portfolio Protection',
+      description: 'Auto-stops all trading if total portfolio loss exceeds 10% of allocated capital.',
       icon: <AlertTriangle className="h-4 w-4 text-amber-300" />
     },
     {
@@ -169,7 +203,7 @@ const GuardianPanel = () => {
                 <span
                   className={clsx(
                     'flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold tracking-wide',
-                    running
+                    guardianActive
                       ? 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/40'
                       : 'bg-slate-800/70 text-slate-300 border border-slate-700'
                   )}
@@ -177,10 +211,10 @@ const GuardianPanel = () => {
                   <span
                     className={clsx(
                       'h-2 w-2 rounded-full',
-                      running ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_2px_rgba(16,185,129,0.45)]' : 'bg-slate-500'
+                      guardianActive ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_2px_rgba(16,185,129,0.45)]' : 'bg-slate-500'
                     )}
                   />
-                  {running ? 'Active' : 'Standby'}
+                  {guardianState}
                 </span>
               </div>
               <p className="mt-2 max-w-xl text-sm text-slate-200/85">
@@ -197,7 +231,7 @@ const GuardianPanel = () => {
                 Uptime
               </span>
               <p className="mt-2 text-lg font-semibold text-slate-100">
-                {running ? formatUptime(health?.uptime_seconds) : 'Not running'}
+                {guardianActive ? formatUptime(health?.uptime_seconds) : 'Not running'}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-800/70 bg-slate-900/70 p-3 text-sm text-slate-200">
@@ -206,7 +240,7 @@ const GuardianPanel = () => {
                 Cycles
               </span>
               <p className="mt-2 text-lg font-semibold text-slate-100">
-                {running ? formatNumber(health?.cycle_count || 0) : '—'}
+                {guardianActive ? formatNumber(health?.cycle_count || 0) : '—'}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-800/70 bg-slate-900/70 p-3 text-sm text-slate-200">
@@ -215,7 +249,7 @@ const GuardianPanel = () => {
                 Last Check
               </span>
               <p className="mt-2 text-lg font-semibold text-slate-100">
-                {running && health?.seconds_since_check !== undefined ? `${health.seconds_since_check}s ago` : '—'}
+                {lastDecisionTime ? new Date(lastDecisionTime).toLocaleTimeString() : (guardianActive && health?.seconds_since_check !== undefined ? `${health.seconds_since_check}s ago` : '—')}
               </p>
             </div>
           </div>
@@ -241,11 +275,11 @@ const GuardianPanel = () => {
             <button
               type="button"
               onClick={handleStartGuardian}
-              disabled={running || loading}
+              disabled={guardianActive || loading}
               data-action-id="guardian.start"
               className={clsx(
                 'inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition',
-                running || loading
+                guardianActive || loading
                   ? 'cursor-not-allowed border border-emerald-500/20 bg-emerald-900/20 text-emerald-200/70'
                   : 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-400 hover:bg-emerald-500/20'
               )}
@@ -257,11 +291,11 @@ const GuardianPanel = () => {
             <button
               type="button"
               onClick={handleStopGuardian}
-              disabled={!running || loading}
+              disabled={!guardianActive || loading}
               data-action-id="guardian.stop"
               className={clsx(
                 'inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition',
-                !running || loading
+                !guardianActive || loading
                   ? 'cursor-not-allowed border border-rose-500/20 bg-rose-900/20 text-rose-200/70'
                   : 'border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:border-rose-400 hover:bg-rose-500/20'
               )}
@@ -272,17 +306,18 @@ const GuardianPanel = () => {
             <HelpIcon actionId="guardian.stop" />
           </div>
         </div>
-        {!running && (
+        {!guardianActive && (
           <div className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             <AlertTriangle className="h-4 w-4" />
-            <p>
-              Guardian is idle. Start it to enforce loss limits and emergency shutdowns automatically.
-            </p>
+            <div className="flex-1">
+              <p className="font-semibold">Guardian {guardianState}</p>
+              <p className="text-xs mt-1 opacity-90">{guardianReason}</p>
+            </div>
           </div>
         )}
       </section>
 
-      {running && (
+      {guardianActive && (
         <div className="grid gap-6 xl:grid-cols-3">
           <section className="col-span-1 rounded-3xl border border-slate-800/60 bg-slate-950/60 p-6">
             <div className="flex items-center justify-between">
@@ -413,7 +448,117 @@ const GuardianPanel = () => {
         </div>
       )}
 
-      {!running && (
+      {/* Per-Symbol Loss Tracking Section */}
+      {running && Object.keys(symbols).length > 0 && (
+        <section className="rounded-3xl border border-slate-800/60 bg-slate-950/60 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+              Per-Symbol Loss Tracking
+            </h3>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Layers className="h-4 w-4 text-sky-300" />
+              {Object.keys(symbols).length} Symbols Monitored
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(symbols).map(([sym, data]) => {
+              const symbolLoss = Math.abs(Number(data?.loss_inr || 0));
+              const symbolLimit = Number(data?.loss_limit_inr) || maxLoss / Object.keys(symbols).length;
+              const symbolRisk = riskDescriptor(symbolLoss, symbolLimit);
+              const pnl = Number(data?.pnl_inr || 0);
+              const positionCount = Number(data?.position_count || 0);
+              const currentSymbol = instanceInfo?.symbol || 'BTCUSD';
+              
+              return (
+                <div
+                  key={sym}
+                  className={clsx(
+                    'rounded-2xl border p-4 transition-colors',
+                    sym === currentSymbol
+                      ? 'border-sky-500/50 bg-sky-500/5'
+                      : 'border-slate-800/60 bg-slate-900/40'
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <SymbolBadge symbol={sym} selected={sym === currentSymbol} />
+                    <span className={clsx(
+                      'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase',
+                      symbolRisk.variant
+                    )}>
+                      {symbolRisk.label}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">Positions</span>
+                      <span className="font-semibold text-slate-200">{positionCount}</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">P&L</span>
+                      <span className={clsx(
+                        'font-semibold',
+                        pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                      )}>
+                        {formatCurrency(pnl)}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>Loss vs Limit</span>
+                        <span className="font-mono">{formatCurrency(symbolLoss)} / {formatCurrency(symbolLimit)}</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={clsx(
+                            'h-full rounded-full transition-all',
+                            symbolRisk.level === 'critical' && 'bg-rose-500',
+                            symbolRisk.level === 'warning' && 'bg-amber-400',
+                            symbolRisk.level === 'safe' && 'bg-emerald-400',
+                            symbolRisk.level === 'unknown' && 'bg-slate-500'
+                          )}
+                          style={{ width: `${Math.min(symbolRisk.progress, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Global Portfolio Summary */}
+          <div className="mt-4 pt-4 border-t border-slate-800/60">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-center">
+                <p className="text-xs uppercase tracking-wider text-slate-400">Total Portfolio Value</p>
+                <p className="mt-1 text-lg font-semibold text-slate-100">
+                  {formatCurrency(global?.total_capital_inr || 0)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-center">
+                <p className="text-xs uppercase tracking-wider text-slate-400">Aggregate P&L</p>
+                <p className={clsx(
+                  'mt-1 text-lg font-semibold',
+                  (global?.total_pnl_inr || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                )}>
+                  {formatCurrency(global?.total_pnl_inr || monitoring?.total_pnl_inr || 0)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-center">
+                <p className="text-xs uppercase tracking-wider text-slate-400">Total Loss (All Symbols)</p>
+                <p className="mt-1 text-lg font-semibold text-rose-300">
+                  {formatCurrency(totalLoss)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!guardianActive && (
         <section className="rounded-3xl border border-slate-800/60 bg-slate-950/60 p-6">
           <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400">
             Why Guardian Matters

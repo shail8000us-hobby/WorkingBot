@@ -32,10 +32,12 @@ import {
   Timer
 } from '@mui/icons-material';
 import axios from 'axios';
-import { useSymbol } from '../context/SymbolContext';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
 
 const BotManagerPanel = () => {
-  const { selectedSymbol } = useSymbol();
+  const { selectedInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
   const [bots, setBots] = useState([]);
   const [totalBots, setTotalBots] = useState(0);
   const [loading, setLoading] = useState(false);

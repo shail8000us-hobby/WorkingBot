@@ -233,16 +233,51 @@ class APIClient {
     return this.post('/api/config', updates);
   }
 
-  async getBotStatus() {
-    return this.get('/api/bot/status');
+  // Symbol-specific config API methods (v5.0)
+  async getSymbolConfig(symbol) {
+    return this.get(`/api/config/symbols/${symbol}`);
   }
 
-  async startBot() {
-    return this.post('/api/bot/start');
+  async updateSymbolConfig(symbol, updates) {
+    return this.post(`/api/config/symbols/${symbol}`, updates);
   }
 
-  async stopBot() {
-    return this.post('/api/bot/stop');
+  async enableSymbol(symbol) {
+    return this.post(`/api/config/symbols/${symbol}/enable`);
+  }
+
+  async disableSymbol(symbol) {
+    return this.post(`/api/config/symbols/${symbol}/disable`);
+  }
+
+  /**
+   * Get bot status
+   * @param {Object} options - Optional parameters
+   * @param {string} options.instance - Instance name (e.g., "BTCUSD_LONG")
+   */
+  async getBotStatus(options = {}) {
+    const params = options.instance ? { instance: options.instance } : {};
+    return this.get('/api/bot/status', params);
+  }
+
+  /**
+   * Start bot
+   * @param {Object} options - Optional parameters
+   * @param {string} options.instance - Instance name (e.g., "BTCUSD_LONG")
+   */
+  async startBot(options = {}) {
+    const data = options.instance ? { instance: options.instance } : {};
+    return this.post('/api/bot/start', data);
+  }
+
+  /**
+   * Stop bot
+   * @param {Object} options - Optional parameters
+   * @param {string} options.instance - Instance name (e.g., "BTCUSD_LONG")
+   */
+  async stopBot(options = {}) {
+    const data = options.instance ? { instance: options.instance } : {};
+    return this.post('/api/bot/stop', data);
   }
 
   async startTmuxSession() {
@@ -295,8 +330,14 @@ class APIClient {
     return this.post('/api/pm2/save');
   }
 
-  async restartBot() {
-    return this.post('/api/bot/restart');
+  /**
+   * Restart bot
+   * @param {Object} options - Optional parameters
+   * @param {string} options.instance - Instance name (e.g., "BTCUSD_LONG")
+   */
+  async restartBot(options = {}) {
+    const data = options.instance ? { instance: options.instance } : {};
+    return this.post('/api/bot/restart', data);
   }
 
   async getLogs(lines = 50) {

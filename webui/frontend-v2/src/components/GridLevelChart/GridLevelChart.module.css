@@ -1,0 +1,315 @@
+/* GridLevelChart - Grid Visualization Styles */
+
+.panel {
+  background: var(--color-bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-darker);
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.headerInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.instanceBadge {
+  padding: 4px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.priceBadge {
+  padding: 4px 12px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.refreshBtn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.refreshBtn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-text-muted);
+}
+
+.loading,
+.noData {
+  padding: 60px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.error {
+  margin: 12px 16px;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.content {
+  padding: 20px;
+}
+
+/* Stats Bar */
+.statsBar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat {
+  background: var(--color-bg-darker);
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  padding: 12px;
+  text-align: center;
+}
+
+.statLabel {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.statValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Grid Container */
+.gridContainer {
+  position: relative;
+  background: var(--color-bg-darker);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  padding: 16px;
+  min-height: 400px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* Current Price Line */
+.currentPriceLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-primary);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.currentPriceLine::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  background: var(--color-primary);
+  border-radius: 50%;
+}
+
+.currentPriceLabel {
+  position: absolute;
+  left: 16px;
+  top: -10px;
+  background: var(--color-primary);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Levels Container */
+.levelsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gridLevel {
+  display: grid;
+  grid-template-columns: 100px 1fr 60px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.gridLevel:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gridLevel[data-has-order="true"] {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.gridLevel[data-has-position="true"] {
+  background: rgba(234, 179, 8, 0.1);
+  border-left: 3px solid var(--color-warning);
+}
+
+.gridLevel.buy {
+  border-left: 3px solid var(--color-success);
+}
+
+.gridLevel.sell {
+  border-left: 3px solid var(--color-danger);
+}
+
+.levelPrice {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.levelBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+}
+
+.orderMarker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.orderMarker.buy {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.orderMarker.sell {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.positionMarker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(234, 179, 8, 0.15);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--color-warning);
+}
+
+.levelStatus {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--color-text-muted);
+}
+
+.gridLevel.buy .levelStatus {
+  color: var(--color-success);
+}
+
+.gridLevel.sell .levelStatus {
+  color: var(--color-danger);
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.legendDot[data-type="buy"] {
+  background: var(--color-success);
+}
+
+.legendDot[data-type="sell"] {
+  background: var(--color-danger);
+}
+
+.legendDot[data-type="position"] {
+  background: var(--color-warning);
+}
+
+.legendDot[data-type="price"] {
+  background: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+  .statsBar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .gridLevel {
+    grid-template-columns: 80px 1fr 50px;
+  }
+
+  .legend {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

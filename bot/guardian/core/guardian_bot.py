@@ -72,13 +72,26 @@ class GuardianBot:
     3. Guardian Bot → Reads SQL signals, sends Telegram alerts
     
     NO legacy monitoring loops, NO duplicate risk checks!
+    
+    Multi-Symbol Support (v5.0):
+    - Can be started with --symbol BTCUSD to monitor a specific symbol
+    - Each symbol gets its own Guardian process and database
+    - Uses symbol-specific config from config.yaml symbols section
     """
     
-    VERSION = "2.0-SQL"
+    VERSION = "2.1-SQL-MULTISYMBOL"
     
-    def __init__(self):
-        """Initialize Guardian Bot"""
+    def __init__(self, symbol_name: str = None):
+        """
+        Initialize Guardian Bot
+        
+        Args:
+            symbol_name: Optional symbol to monitor (e.g., "BTCUSD", "ETHUSD")
+                        If provided, monitors only this symbol
+                        If None, uses global config (v4.0 single-symbol mode)
+        """
         self.base_dir = Path.cwd()
+        self.symbol_name = symbol_name  # v5.0 multi-symbol support
         self.config = None
         self.exchange = None
         self.position_monitor = None
@@ -232,11 +245,12 @@ class GuardianBot:
         self.position_monitor = PositionMonitor(self.exchange, self.config)
         self.health_tracker = HealthTracker(self.config, self.base_dir)
         
-        # RSI collector (Layer 6)
+        # RSI collector (Layer 6) - with multi-symbol support
         try:
             from bot.guardian.collectors.rsi_collector import RSICollector
-            self.rsi_collector = RSICollector(self.exchange, self.config)
-            logger.info("✅ RSI Collector initialized (Layer 6)")
+            self.rsi_collector = RSICollector(self.exchange, self.config, symbol_name=self.symbol_name)
+            symbol_info = f" for {self.symbol_name}" if self.symbol_name else ""
+            logger.info(f"✅ RSI Collector initialized (Layer 6){symbol_info}")
         except Exception as e:
             logger.error(f"❌ Failed to initialize RSI collector: {e}")
             logger.debug(f"Error details: {e}", exc_info=True)
@@ -268,9 +282,19 @@ class GuardianBot:
         logger.info("💾 Initializing Guardian Signal System (SQL-based)...")
         
         # Initialize EventStore (SQL database)
-        # Use same database as bot based on mode (LONG/SHORT)
-        mode = self.config.bot.mode
-        db_name = f"bot_events_{mode}.db"
+        # Use symbol-specific database if in multi-symbol mode (v5.0)
+        # Otherwise use global mode (v4.0)
+        if self.symbol_name:
+            # v5.0 multi-symbol mode - use symbol + mode in DB name
+            symbol_config = self.config.symbols.get(self.symbol_name)
+            mode = symbol_config.mode if symbol_config else self.config.bot.mode
+            db_name = f"bot_events_{self.symbol_name}_{mode}.db"
+            logger.info(f"🔧 Multi-symbol mode: Monitoring {self.symbol_name} ({mode})")
+        else:
+            # v4.0 single-symbol mode
+            mode = self.config.bot.mode
+            db_name = f"bot_events_{mode}.db"
+        
         db_path = self.base_dir / 'data' / db_name
         self.event_store = EventStore(str(db_path))
         logger.info(f"✅ EventStore initialized: {db_path}")
@@ -607,9 +631,90 @@ class GuardianBot:
 
 
 def main():
-    """Main entry point"""
+    """Main entry point with v6.0 multi-instance CLI support
+    
+    V6.0 ARCHITECTURE: Instance = Symbol + Mode
+    
+    Examples:
+      python start_guardian.py --instance BTCUSD_LONG   # Monitor BTCUSD LONG instance
+      python start_guardian.py --instance BTCUSD_SHORT  # Monitor BTCUSD SHORT instance
+      python start_guardian.py -i ETHUSD_LONG          # Short form
+      python start_guardian.py --symbol BTCUSD         # Legacy v5.0 mode
+    """
+    import argparse
+    from config.loader import get_instance_config, get_all_instances, make_instance_name
+    
+    parser = argparse.ArgumentParser(
+        description='Guardian Bot - Risk Monitoring System (v6.0 Multi-Instance)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+V6.0 Instance-Centric Architecture:
+  Instance = Symbol + Mode (e.g., BTCUSD_LONG, BTCUSD_SHORT)
+  
+  Each instance has its own RSI thresholds:
+  - LONG: stops at RSI <= 30 (oversold)
+  - SHORT: stops at RSI >= 70 (overbought)
+
+Examples:
+  python start_guardian.py --instance BTCUSD_LONG   Monitor BTCUSD LONG instance
+  python start_guardian.py --instance BTCUSD_SHORT  Monitor BTCUSD SHORT instance
+  python start_guardian.py -i ETHUSD_LONG           Short form
+
+Legacy (v5.0):
+  python start_guardian.py --symbol BTCUSD          Uses mode from config
+        '''
+    )
+    parser.add_argument(
+        '--instance', '-i',
+        type=str,
+        default=None,
+        help='Instance to monitor (e.g., BTCUSD_LONG, BTCUSD_SHORT). Format: SYMBOL_MODE'
+    )
+    parser.add_argument(
+        '--symbol', '-s',
+        type=str,
+        default=None,
+        help='[LEGACY] Symbol to monitor. Uses mode from config. Prefer --instance.'
+    )
+    
+    args = parser.parse_args()
+    
+    # Resolve instance name
+    instance_name = None
+    symbol_name = None
+    
+    if args.instance:
+        instance_name = args.instance.upper()
+        # Parse symbol from instance name
+        parts = instance_name.rsplit('_', 1)
+        if len(parts) == 2:
+            symbol_name = parts[0]
+    elif args.symbol:
+        # Legacy mode: find instance for symbol
+        symbol_name = args.symbol.upper()
+        config = get_config()
+        if config.instances:
+            for name, inst in config.instances.items():
+                if inst.symbol == symbol_name and inst.enabled:
+                    instance_name = name
+                    print(f"⚠️  Legacy mode: Using instance {instance_name} for symbol {symbol_name}")
+                    break
+        if not instance_name and config.symbols and symbol_name in config.symbols:
+            mode = config.symbols[symbol_name].mode.value
+            instance_name = make_instance_name(symbol_name, mode)
+            print(f"⚠️  Legacy mode: Constructed instance {instance_name}")
+    else:
+        # No arguments - use first enabled instance
+        enabled = get_all_instances(enabled_only=True)
+        if enabled:
+            instance_name = list(enabled.keys())[0]
+            symbol_name = enabled[instance_name].symbol
+            print(f"📌 No instance specified, using: {instance_name}")
+    
     try:
-        guardian = GuardianBot()
+        guardian = GuardianBot(symbol_name=symbol_name)
+        # Store instance_name for future use
+        guardian.instance_name = instance_name
         asyncio.run(guardian.run())
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt - shutting down...")

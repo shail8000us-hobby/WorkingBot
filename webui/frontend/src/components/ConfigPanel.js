@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -19,6 +19,8 @@ import {
   Badge,
   Tabs,
   Tab,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -44,16 +46,30 @@ import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   ExpandMore as ExpandMoreIcon,
+  Layers as LayersIcon,
 } from '@mui/icons-material';
 import ConfigChangeConfirmDialog from './ConfigChangeConfirmDialog';
+import SymbolBadge from './common/SymbolBadge';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import apiClient from '../utils/apiClient';
 
 function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
+  const { selectedInstance, instances, withInstance, markDirty, clearDirty } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
+  const selectedMode = instanceInfo?.mode || 'LONG';
+  const availableSymbols = instances.map(i => ({ name: parseInstanceName(i.name)?.symbol })).filter((v, i, a) => a.findIndex(t => t.name === v.name) === i);
   const [values, setValues] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
   const [copiedField, setCopiedField] = useState('');
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [pendingChanges, setPendingChanges] = useState(null);
   const [changesSummary, setChangesSummary] = useState(null);
+  
+  // Symbol-specific config state (v5.0) - Default to 'instance' for v6.0
+  const [configMode, setConfigMode] = useState('instance'); // 'global' or 'instance'
+  const [symbolConfig, setSymbolConfig] = useState({});
+  const [symbolConfigLoading, setSymbolConfigLoading] = useState(false);
   
   // Runtime confirmation state
   const [runtimeConfirmNeeded, setRuntimeConfirmNeeded] = useState(false);
@@ -65,18 +81,65 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   const [activeTab, setActiveTab] = useState(0); // 0=Essential, 1=Trading, 2=Safety, 3=Advanced
   const [showAdvancedGeometry, setShowAdvancedGeometry] = useState(false); // Grid Geometry advanced options
 
-  const computeFlatValues = (configMap) => {
+  const computeFlatValues = useCallback((configMap) => {
     const flat = {};
     Object.entries(configMap || {}).forEach(([key, details]) => {
       flat[key] = details?.value ?? '';
     });
     return flat;
-  };
+  }, []);
 
   useEffect(() => {
     setValues(computeFlatValues(config));
     setHasChanges(false);
-  }, [config]);
+  }, [config, computeFlatValues]);
+
+  // Fetch symbol-specific config when switching to symbol mode
+  const fetchSymbolConfig = useCallback(async () => {
+    if (!selectedSymbol) return;
+    
+    setSymbolConfigLoading(true);
+    try {
+      const result = await apiClient.getSymbolConfig(selectedSymbol);
+      if (result.success) {
+        setSymbolConfig(result.config || {});
+        // When in symbol mode, use symbol config values
+        if (configMode === 'instance') {
+          setValues(result.config || {});
+          setHasChanges(false);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch symbol config:', error);
+    } finally {
+      setSymbolConfigLoading(false);
+    }
+  }, [selectedSymbol, configMode]);
+
+  // Reload symbol config when selectedSymbol changes
+  useEffect(() => {
+    if (configMode === 'instance') {
+      fetchSymbolConfig();
+    }
+  }, [selectedSymbol, configMode, fetchSymbolConfig]);
+
+  // Handle config mode toggle
+  const handleConfigModeChange = useCallback((event, newMode) => {
+    if (newMode && newMode !== configMode) {
+      if (hasChanges) {
+        const confirmSwitch = window.confirm('You have unsaved changes. Switch anyway?');
+        if (!confirmSwitch) return;
+      }
+      setConfigMode(newMode);
+      setHasChanges(false);
+      
+      if (newMode === 'symbol') {
+        fetchSymbolConfig();
+      } else {
+        setValues(computeFlatValues(config));
+      }
+    }
+  }, [configMode, hasChanges, config, fetchSymbolConfig, computeFlatValues]);
 
   // Check for runtime confirmation periodically
   useEffect(() => {
@@ -126,9 +189,27 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   };
 
   const handleSave = async () => {
-    const result = await onUpdate(values);
+    let result;
     
-    // Check if confirmation is required
+    if (configMode === 'instance') {
+      // Use symbol-specific save endpoint
+      try {
+        result = await apiClient.updateSymbolConfig(selectedSymbol, values);
+        if (result?.success) {
+          setHasChanges(false);
+          alert(`✅ Configuration for ${selectedSymbol} saved successfully!`);
+          return;
+        }
+      } catch (error) {
+        alert(`❌ Failed to save ${selectedSymbol} config: ${error.message}`);
+        return;
+      }
+    } else {
+      // Use global config save
+      result = await onUpdate(values);
+    }
+    
+    // Check if confirmation is required (global mode only)
     if (result?.requiresConfirmation) {
       setPendingChanges(result.updates);
       setChangesSummary(result.changesSummary);
@@ -159,7 +240,11 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   };
 
   const handleReset = () => {
-    setValues(computeFlatValues(config));
+    if (configMode === 'instance') {
+      setValues(symbolConfig);
+    } else {
+      setValues(computeFlatValues(config));
+    }
     setHasChanges(false);
   };
 
@@ -1037,22 +1122,59 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   return (
     <Box sx={{ p: 0 }}>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
             <SettingsIcon sx={{ fontSize: 28 }} />
             GridBot Configuration
+            <SymbolBadge symbol={selectedSymbol} size="md" variant="solid" />
+            {selectedMode && (
+              <Chip 
+                label={selectedMode} 
+                size="small" 
+                color={selectedMode === 'LONG' ? 'success' : 'error'} 
+                sx={{ ml: 0.5, fontSize: '0.7rem', height: 20 }}
+              />
+            )}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Edit, validate, and manage bot parameters
+            {configMode === 'instance' 
+              ? `Editing instance ${selectedSymbol}_${selectedMode} settings` 
+              : `Edit global bot parameters (applies to all instances)`}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          {/* Config Mode Toggle */}
+          <ToggleButtonGroup
+            value={configMode}
+            exclusive
+            onChange={handleConfigModeChange}
+            size="small"
+            sx={{ mr: 2 }}
+          >
+            <ToggleButton value="global" sx={{ px: 2 }}>
+              <Tooltip title="Global settings apply to all instances">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <SettingsIcon fontSize="small" />
+                  Global
+                </Box>
+              </Tooltip>
+            </ToggleButton>
+            <ToggleButton value="instance" sx={{ px: 2 }}>
+              <Tooltip title={`Settings specific to ${selectedSymbol}_${selectedMode}`}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <LayersIcon fontSize="small" />
+                  {selectedSymbol}
+                </Box>
+              </Tooltip>
+            </ToggleButton>
+          </ToggleButtonGroup>
+          
           <Button
             variant="outlined"
             startIcon={<ResetIcon />}
             onClick={handleReset}
-            disabled={!hasChanges || loading}
+            disabled={!hasChanges || loading || symbolConfigLoading}
             size="medium"
           >
             Reset
@@ -1079,19 +1201,37 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             variant="contained"
             startIcon={<SaveIcon />}
             onClick={handleSave}
-            disabled={!hasChanges || loading}
+            disabled={!hasChanges || loading || symbolConfigLoading}
             size="medium"
             sx={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              background: configMode === 'instance' 
+                ? 'linear-gradient(135deg, #f7931a 0%, #d77b10 100%)'
+                : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               '&:hover': {
-                background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+                background: configMode === 'instance'
+                  ? 'linear-gradient(135deg, #d77b10 0%, #f7931a 100%)'
+                  : 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
               },
             }}
           >
-            Save Configuration
+            {configMode === 'instance' ? `Save ${selectedSymbol} Config` : 'Save Configuration'}
           </Button>
         </Box>
       </Box>
+
+      {/* Symbol Config Mode Info Banner */}
+      {configMode === 'instance' && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 3 }}
+          icon={<LayersIcon />}
+        >
+          <Typography variant="body2">
+            <strong>Symbol-Specific Config:</strong> Changes here only affect <strong>{selectedSymbol}</strong> trading. 
+            Grid parameters (Reference, Step, Lower/Upper bounds) are saved to <code>symbols.{selectedSymbol}</code> in config.
+          </Typography>
+        </Alert>
+      )}
 
       {/* Runtime Confirmation Banner */}
       {runtimeConfirmNeeded && (

@@ -1,0 +1,459 @@
+/**
+ * Focus View Styles
+ */
+
+.focusView {
+  display: flex;
+  min-height: calc(100vh - 64px);
+}
+
+/* ============================================================================
+   PERIPHERAL SIDEBAR
+   ============================================================================ */
+
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  padding: 16px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebarTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebarList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.peripheralItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.peripheralItem:hover {
+  background: var(--color-surface-elevated);
+}
+
+.peripheralItem[data-focused="true"] {
+  background: var(--color-primary-muted);
+  border-color: var(--color-primary);
+}
+
+.peripheralStatus {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.peripheralInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.peripheralSymbol {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.peripheralPnL {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.peripheralPnL[data-positive="true"] {
+  color: var(--color-success);
+}
+
+.peripheralPnL[data-positive="false"] {
+  color: var(--color-danger);
+}
+
+/* ============================================================================
+   MAIN CONTENT
+   ============================================================================ */
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.backButton {
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.backButton:hover {
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+}
+
+.headerInfo {
+  flex: 1;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mode[data-mode="LONG"] {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-success);
+}
+
+.mode[data-mode="SHORT"] {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}
+
+.headerMeta {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.exchange {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.tradingState {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tradingState[data-state="active"] {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-success);
+}
+
+.tradingState[data-state="paused"] {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--color-warning);
+}
+
+.tradingState[data-state="halted"] {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.pauseButton,
+.resumeButton {
+  padding: 10px 16px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pauseButton {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.pauseButton:hover {
+  background: rgba(234, 179, 8, 0.2);
+}
+
+.resumeButton {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.resumeButton:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+/* Summary Bar */
+.summaryBar {
+  display: flex;
+  gap: 24px;
+  padding: 16px 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summaryLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summaryValue {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.summaryValue[data-positive="true"] {
+  color: var(--color-success);
+}
+
+.summaryValue[data-positive="false"] {
+  color: var(--color-danger);
+}
+
+/* Panels Grid */
+.panels {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  flex: 1;
+}
+
+@media (max-width: 1200px) {
+  .panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.panelTitle {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.emptyMessage {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Tables */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.table td {
+  padding: 10px 12px;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.table td[data-side="buy"],
+.table td[data-side="long"] {
+  color: var(--color-success);
+}
+
+.table td[data-side="sell"],
+.table td[data-side="short"] {
+  color: var(--color-danger);
+}
+
+.table td[data-positive="true"] {
+  color: var(--color-success);
+}
+
+.table td[data-positive="false"] {
+  color: var(--color-danger);
+}
+
+/* Timeline */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.timelineItem {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--color-surface-elevated);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-border);
+}
+
+.timelineItem[data-severity="info"] {
+  border-left-color: var(--color-info);
+}
+
+.timelineItem[data-severity="warning"] {
+  border-left-color: var(--color-warning);
+}
+
+.timelineItem[data-severity="error"],
+.timelineItem[data-severity="critical"] {
+  border-left-color: var(--color-danger);
+}
+
+.timelineTime {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  min-width: 70px;
+}
+
+.timelineMessage {
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+/* Risk Panel */
+.riskGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.riskItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.riskLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.riskValue {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.riskBar {
+  height: 6px;
+  background: var(--color-surface-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.riskFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.riskFill[data-level="normal"] {
+  background: var(--color-success);
+}
+
+.riskFill[data-level="elevated"] {
+  background: var(--color-warning);
+}
+
+.riskFill[data-level="high"],
+.riskFill[data-level="critical"] {
+  background: var(--color-danger);
+}
+
+.riskLevel {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+  width: fit-content;
+}
+
+.riskLevel[data-level="normal"] {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-success);
+}
+
+.riskLevel[data-level="elevated"] {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--color-warning);
+}
+
+.riskLevel[data-level="high"],
+.riskLevel[data-level="critical"] {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}

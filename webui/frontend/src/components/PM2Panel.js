@@ -1,9 +1,38 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import apiClient from '../utils/apiClient';
-import { Terminal, Activity, Cpu, HardDrive, RefreshCw, PlayCircle, StopCircle, RotateCw, FileText, Trash2, CheckCircle, XCircle, AlertCircle, Shield, Heart, TrendingUp, Info } from 'lucide-react';
+import api from '../utils/apiShim';
+import { Terminal, Activity, Cpu, HardDrive, RefreshCw, PlayCircle, StopCircle, RotateCw, FileText, Trash2, CheckCircle, XCircle, AlertCircle, Shield, Heart, TrendingUp, Info, Layers } from 'lucide-react';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
 import './PM2Panel.css';
 
+/**
+ * PM2Panel - Multi-Symbol Process Manager (v5.0)
+ * 
+ * Features:
+ * - Groups processes by symbol (BTCUSD, ETHUSD)
+ * - Per-symbol start/stop controls
+ * - "Start All" / "Stop All" buttons
+ * - System processes (Guardian, Heartbeat) shown separately
+ */
 const PM2Panel = () => {
+  const { selectedInstance, instances } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
+  const selectedMode = instanceInfo?.mode || 'LONG';
+  
+  // Get all unique instances with their mode info
+  const instancesWithMode = instances.map(i => {
+    const parsed = parseInstanceName(i.name);
+    return { 
+      name: i.name, 
+      symbol: parsed?.symbol, 
+      mode: parsed?.mode,
+      enabled: i.enabled 
+    };
+  });
+  const availableSymbols = instancesWithMode
+    .map(i => i.symbol)
+    .filter((v, i, a) => a.indexOf(v) === i);
   const [pm2Status, setPM2Status] = useState(null);
   const [pm2Enabled, setPM2Enabled] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -13,7 +42,8 @@ const PM2Panel = () => {
   const [logs, setLogs] = useState({ out: [], err: [] });
   const [logsLoading, setLogsLoading] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(null);
-  const [activeTab, setActiveTab] = useState('live'); // 'live', 'demo', or 'all'
+  const [activeTab, setActiveTab] = useState('symbol'); // 'symbol', 'live', 'demo', or 'all'
+  const [notification, setNotification] = useState(null);
 
   // Fetch PM2 status
   const fetchPM2Status = useCallback(async () => {
@@ -126,12 +156,9 @@ const PM2Panel = () => {
   };
 
   const showNotification = (message, type) => {
-    // You can integrate with your notification system here
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 5000);
     console.log(`[${type.toUpperCase()}] ${message}`);
-    // Or use alert for now
-    if (type === 'error') {
-      alert(`Error: ${message}`);
-    }
   };
 
   const formatUptime = (milliseconds) => {
@@ -147,6 +174,100 @@ const PM2Panel = () => {
     if (hours > 0) return `${hours}h ${minutes % 60}m`;
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
     return `${seconds}s`;
+  };
+
+  // Multi-symbol helpers
+  const extractSymbolFromProcess = (processName) => {
+    // Pattern: gridbot-BTCUSD-live, guardian-ETHUSD-live, etc.
+    const symbolMatch = processName.match(/-(BTCUSD|ETHUSD|[A-Z]{6})(?:-|$)/i);
+    if (symbolMatch) return symbolMatch[1].toUpperCase();
+    // Legacy single-symbol names fall back to current symbol
+    if (processName.includes('-live') || processName.includes('-demo')) return selectedSymbol;
+    return null; // System process
+  };
+
+  // Group processes by symbol
+  const groupedProcesses = useMemo(() => {
+    if (!pm2Status?.processes) return { symbols: {}, system: [] };
+    
+    const groups = { symbols: {}, system: [] };
+    
+    pm2Status.processes.forEach(process => {
+      const symbol = extractSymbolFromProcess(process.name);
+      if (symbol) {
+        if (!groups.symbols[symbol]) groups.symbols[symbol] = [];
+        groups.symbols[symbol].push(process);
+      } else {
+        groups.system.push(process);
+      }
+    });
+    
+    return groups;
+  }, [pm2Status?.processes, selectedSymbol]);
+
+  // Symbol-specific start/stop handlers using new API endpoints
+  const handleStartSymbol = async (symbol) => {
+    setActionInProgress(`start-${symbol}`);
+    try {
+      const result = await api.post(`/api/symbols/${symbol}/process/start`);
+      if (result.data.success) {
+        showNotification(`${symbol} trading processes started`, 'success');
+        fetchPM2Status();
+      } else {
+        showNotification(result.data.message || `Failed to start ${symbol}`, 'error');
+      }
+    } catch (err) {
+      showNotification(err.message || `Error starting ${symbol}`, 'error');
+    }
+    setActionInProgress(null);
+  };
+
+  const handleStopSymbol = async (symbol) => {
+    setActionInProgress(`stop-${symbol}`);
+    try {
+      const result = await api.post(`/api/symbols/${symbol}/process/stop`);
+      if (result.data.success) {
+        showNotification(`${symbol} trading processes stopped`, 'success');
+        fetchPM2Status();
+      } else {
+        showNotification(result.data.message || `Failed to stop ${symbol}`, 'error');
+      }
+    } catch (err) {
+      showNotification(err.message || `Error stopping ${symbol}`, 'error');
+    }
+    setActionInProgress(null);
+  };
+
+  const handleStartAllSymbols = async () => {
+    setActionInProgress('start-all');
+    try {
+      const result = await api.post('/api/symbols/all/start');
+      if (result.data.success) {
+        showNotification(`All enabled symbols started`, 'success');
+        fetchPM2Status();
+      } else {
+        showNotification(result.data.message || 'Failed to start all symbols', 'error');
+      }
+    } catch (err) {
+      showNotification(err.message || 'Error starting all symbols', 'error');
+    }
+    setActionInProgress(null);
+  };
+
+  const handleStopAllSymbols = async () => {
+    setActionInProgress('stop-all');
+    try {
+      const result = await api.post('/api/symbols/all/stop');
+      if (result.data.success) {
+        showNotification('All symbol trading stopped', 'success');
+        fetchPM2Status();
+      } else {
+        showNotification(result.data.message || 'Failed to stop all symbols', 'error');
+      }
+    } catch (err) {
+      showNotification(err.message || 'Error stopping all symbols', 'error');
+    }
+    setActionInProgress(null);
   };
 
   const getStatusIcon = (status) => {
@@ -285,8 +406,27 @@ const PM2Panel = () => {
         </button>
       </div>
 
+      {/* Notification Banner */}
+      {notification && (
+        <div className={`pm2-notification ${notification.type}`}>
+          {notification.type === 'success' && <CheckCircle size={16} />}
+          {notification.type === 'error' && <AlertCircle size={16} />}
+          <span>{notification.message}</span>
+        </div>
+      )}
+
       {/* Tab Navigation */}
       <div className="pm2-tabs">
+        <button
+          className={`tab-button ${activeTab === 'symbol' ? 'active' : ''}`}
+          onClick={() => setActiveTab('symbol')}
+        >
+          <Layers size={16} />
+          By Symbol
+          <span className="tab-badge">
+            {Object.keys(groupedProcesses.symbols).length}
+          </span>
+        </button>
         <button
           className={`tab-button ${activeTab === 'live' ? 'active' : ''}`}
           onClick={() => setActiveTab('live')}
@@ -327,7 +467,148 @@ const PM2Panel = () => {
         </button>
       </div>
 
+      {/* Symbol-Grouped View */}
+      {activeTab === 'symbol' && (
+        <div className="pm2-symbol-view">
+          {/* Start/Stop All Controls */}
+          <div className="pm2-all-controls">
+            <button
+              onClick={handleStartAllSymbols}
+              disabled={actionInProgress === 'start-all'}
+              className="bulk-button start"
+            >
+              <PlayCircle size={16} />
+              {actionInProgress === 'start-all' ? 'Starting...' : 'Start All Symbols'}
+            </button>
+            <button
+              onClick={handleStopAllSymbols}
+              disabled={actionInProgress === 'stop-all'}
+              className="bulk-button stop"
+            >
+              <StopCircle size={16} />
+              {actionInProgress === 'stop-all' ? 'Stopping...' : 'Stop All Symbols'}
+            </button>
+          </div>
+
+          {/* Symbol Groups */}
+          <div className="pm2-symbol-groups">
+            {Object.entries(groupedProcesses.symbols).map(([symbol, processes]) => {
+              const onlineCount = processes.filter(p => p.status === 'online').length;
+              const isAllOnline = onlineCount === processes.length && processes.length > 0;
+              const isAllStopped = onlineCount === 0;
+              
+              // Find instances for this symbol
+              const symbolInstances = instancesWithMode.filter(i => i.symbol === symbol);
+              
+              return (
+                <div 
+                  key={symbol} 
+                  className={`symbol-group ${symbol === selectedSymbol ? 'selected' : ''}`}
+                >
+                  <div className="symbol-group-header">
+                    <div className="symbol-info">
+                      <span className={`symbol-badge ${symbol.toLowerCase()}`}>
+                        {symbol}
+                      </span>
+                      {/* Show instance modes */}
+                      {symbolInstances.map(inst => (
+                        <span 
+                          key={inst.name}
+                          className={`mode-badge ${inst.mode?.toLowerCase()}`}
+                          style={{
+                            fontSize: '10px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            marginLeft: '4px',
+                            backgroundColor: inst.mode === 'LONG' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            color: inst.mode === 'LONG' ? '#10b981' : '#ef4444',
+                            opacity: inst.enabled ? 1 : 0.5
+                          }}
+                        >
+                          {inst.mode}
+                        </span>
+                      ))}
+                      <span className="symbol-status">
+                        {onlineCount}/{processes.length} online
+                      </span>
+                    </div>
+                    <div className="symbol-controls">
+                      <button
+                        onClick={() => handleStartSymbol(symbol)}
+                        disabled={isAllOnline || actionInProgress === `start-${symbol}`}
+                        className="action-button start"
+                        title={`Start ${symbol} trading`}
+                      >
+                        <PlayCircle size={14} />
+                        {actionInProgress === `start-${symbol}` ? '...' : 'Start'}
+                      </button>
+                      <button
+                        onClick={() => handleStopSymbol(symbol)}
+                        disabled={isAllStopped || actionInProgress === `stop-${symbol}`}
+                        className="action-button stop"
+                        title={`Stop ${symbol} trading`}
+                      >
+                        <StopCircle size={14} />
+                        {actionInProgress === `stop-${symbol}` ? '...' : 'Stop'}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="symbol-processes">
+                    {processes.map(process => (
+                      <div key={process.name} className={`mini-process-card ${process.status}`}>
+                        <div className="mini-process-info">
+                          {getProcessIcon(process.name)}
+                          <span className="mini-process-name">
+                            {process.name.includes('gridbot') ? 'Trading' : 'Guardian'}
+                          </span>
+                          {getStatusIcon(process.status)}
+                        </div>
+                        <div className="mini-process-stats">
+                          <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
+                          <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* System Processes Group */}
+            {groupedProcesses.system.length > 0 && (
+              <div className="symbol-group system">
+                <div className="symbol-group-header">
+                  <div className="symbol-info">
+                    <span className="symbol-badge system">SYSTEM</span>
+                    <span className="symbol-status">
+                      {groupedProcesses.system.filter(p => p.status === 'online').length}/{groupedProcesses.system.length} online
+                    </span>
+                  </div>
+                </div>
+                <div className="symbol-processes">
+                  {groupedProcesses.system.map(process => (
+                    <div key={process.name} className={`mini-process-card ${process.status}`}>
+                      <div className="mini-process-info">
+                        {getProcessIcon(process.name)}
+                        <span className="mini-process-name">{getProcessDisplayName(process.name)}</span>
+                        {getStatusIcon(process.status)}
+                      </div>
+                      <div className="mini-process-stats">
+                        <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
+                        <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Summary Statistics */}
+      {activeTab !== 'symbol' && (
       <div className="pm2-summary">
         <div className="summary-card">
           <div className="summary-icon online">
@@ -389,8 +670,10 @@ const PM2Panel = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Process List */}
+      {activeTab !== 'symbol' && (
       <div className="pm2-processes">
         {filteredProcesses.length === 0 ? (
           <div className="no-processes">
@@ -498,8 +781,10 @@ const PM2Panel = () => {
         ))
         )}
       </div>
+      )}
 
       {/* Quick Control Actions */}
+      {activeTab !== 'symbol' && (
       <div className="pm2-bulk-controls">
         <h3>Quick Controls</h3>
         <div className="bulk-buttons">
@@ -540,6 +825,7 @@ const PM2Panel = () => {
           </button>
         </div>
       </div>
+      )}
 
       {/* Logs Modal */}
       {showLogs && (

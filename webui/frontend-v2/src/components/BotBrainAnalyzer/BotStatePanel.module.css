@@ -1,0 +1,104 @@
+.container {
+  padding: 20px;
+  background: var(--panel-bg);
+  border-radius: 8px;
+}
+
+.statusCard {
+  background: var(--card-bg);
+  border: 3px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.statusText {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.timestamp {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.cardIcon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.cardLabel {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cardValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.explanation {
+  background: var(--bg-secondary);
+  border-left: 4px solid var(--primary-color);
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.explanation h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.explanation ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.explanation li {
+  margin-bottom: 12px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.critical {
+  color: var(--error-text);
+  font-weight: 600;
+}
+
+.warning {
+  color: var(--warning-text);
+  font-weight: 500;
+}
+
+.info {
+  color: var(--text-primary);
+}

@@ -17,6 +17,7 @@ Dependencies:
 Refactored from app.py (8,850 lines)
 Date: 2025-10-31
 Enhanced with circuit breaker: 2025-11-12
+Updated for v6.0 instance support: 2026-01-01
 """
 
 import os
@@ -26,7 +27,32 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
+
+
+def get_instance_from_request():
+    """
+    Extract instance from request, supporting both v5.0 and v6.0 formats.
+    
+    Returns:
+        tuple: (instance_name, symbol, mode)
+               instance_name: "BTCUSD_LONG" format
+               symbol: "BTCUSD"
+               mode: "LONG"
+    """
+    # v6.0: Check for instance parameter first
+    instance = request.args.get('instance')
+    if instance:
+        parts = instance.rsplit('_', 1)
+        if len(parts) == 2:
+            return instance, parts[0], parts[1]
+        return instance, instance, 'LONG'  # Fallback for malformed instance
+    
+    # v5.0 backward compat: symbol + mode separate params
+    symbol = request.args.get('symbol', 'BTCUSD')
+    mode = request.args.get('mode', 'LONG')
+    return f"{symbol}_{mode}", symbol, mode
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -66,6 +92,64 @@ POSITIONS_FILE = BASE_DIR / "bot" / "reports" / "positions.json"
 STATE_FILE = BASE_DIR / "bot" / "reports" / "state.json"
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _filter_positions_by_symbol(positions_data, filter_symbol):
+    """
+    Filter positions data by symbol (v5.0 multi-symbol support)
+    
+    Args:
+        positions_data: Dict with 'positions' list and 'summary' dict
+        filter_symbol: Symbol name to filter by (e.g., "BTCUSD")
+    
+    Returns:
+        Filtered positions_data with recalculated summary
+    """
+    if not positions_data or not filter_symbol:
+        return positions_data
+    
+    # Filter positions list
+    all_positions = positions_data.get('positions', [])
+    filtered_positions = [
+        pos for pos in all_positions 
+        if pos.get('symbol', '').startswith(filter_symbol)
+    ]
+    
+    # Recalculate summary for filtered positions
+    total_pnl = sum(pos.get('unrealized_pnl', 0) for pos in filtered_positions)
+    total_delta = sum(pos.get('delta', 0) for pos in filtered_positions)
+    total_vega = sum(pos.get('vega', 0) for pos in filtered_positions)
+    total_theta = sum(pos.get('theta', 0) for pos in filtered_positions)
+    total_notional = sum(pos.get('notional_deployed', 0) for pos in filtered_positions)
+    
+    usd_to_inr_rate = 85  # Default, should come from config
+    try:
+        usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
+    except:
+        pass
+    
+    # Build filtered response
+    filtered_data = {
+        'positions': filtered_positions,
+        'summary': {
+            'total_positions': len(filtered_positions),
+            'total_pnl': round(total_pnl, 2),
+            'total_pnl_usd': round(total_pnl, 2),
+            'total_pnl_inr': round(total_pnl * usd_to_inr_rate, 2),
+            'portfolio_delta': round(total_delta, 2),
+            'portfolio_vega': round(total_vega, 2),
+            'portfolio_theta': round(total_theta, 2),
+            'total_notional_deployed': round(total_notional, 2),
+            'data_source': positions_data.get('summary', {}).get('data_source', 'unknown'),
+            'filtered_by_symbol': filter_symbol,  # v5.0: Indicate filtering applied
+            'total_all_symbols': len(all_positions)  # v5.0: Total before filtering
+        }
+    }
+    
+    return filtered_data
+
+# ============================================================================
 # Route Handlers
 # ============================================================================
 
@@ -73,6 +157,11 @@ STATE_FILE = BASE_DIR / "bot" / "reports" / "state.json"
 def get_positions():
     """
     Get current positions with liquidation info and Greeks
+    
+    Query Parameters:
+        symbol (optional): Filter positions by symbol (e.g., "BTCUSD", "ETHUSD")
+                          If provided, only returns positions for that symbol.
+                          If omitted, returns all positions (v4.0 backward compat).
     
     Tries multiple strategies:
     1. Delta Exchange API (real-time with Greeks)
@@ -84,6 +173,7 @@ def get_positions():
     
     Example:
         GET /api/positions
+        GET /api/positions?symbol=BTCUSD
         Response: {
             "positions": [
                 {
@@ -109,24 +199,39 @@ def get_positions():
                 "portfolio_vega": 0.05,
                 "portfolio_theta": -0.25,
                 "total_notional_deployed": 2125000.0,
-                "data_source": "delta_exchange"
+                "data_source": "delta_exchange",
+                "filtered_by_symbol": "BTCUSD"  # v5.0: If filtering applied
             }
         }
     """
     try:
+        from flask import request
+        
+        # v6.0: Get instance filter (supports both ?instance= and ?symbol= formats)
+        instance_name, filter_symbol, filter_mode = get_instance_from_request()
+        
         # Strategy 1: Try Delta Exchange API
         positions_data = _get_positions_from_delta()
         if positions_data:
+            # v6.0: Apply symbol filter if requested
+            if filter_symbol:
+                positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
             return jsonify(positions_data), 200
         
         # Strategy 2: Try positions file
         positions_data = _get_positions_from_file()
         if positions_data:
+            # v5.0: Apply symbol filter if requested
+            if filter_symbol:
+                positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
             return jsonify(positions_data), 200
         
         # Strategy 3: Try guardian
         positions_data = _get_positions_from_guardian()
         if positions_data:
+            # v5.0: Apply symbol filter if requested
+            if filter_symbol:
+                positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
             return jsonify(positions_data), 200
         
         # No positions found
@@ -137,7 +242,8 @@ def get_positions():
                 'total_pnl_usd': 0,
                 'total_pnl_inr': 0,
                 'risk_percent': 0,
-                'total_notional_deployed': 0
+                'total_notional_deployed': 0,
+                'filtered_by_symbol': filter_symbol  # v5.0
             }
         }), 200
         
@@ -503,3 +609,84 @@ def _resync_positions_from_reconciliation():
     except Exception as e:
         log.error(f"Resync failed: {e}")
         return False, str(e)
+
+
+# ============================================================================
+# WebUI v3 Additional Endpoints (JAN 2026)
+# ============================================================================
+
+@positions_bp.route('/api/positions/analysis', methods=['GET'])
+def get_position_analysis():
+    """Get position analysis and distribution for WebUI v3"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect('trading_bot.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get open positions
+        cursor.execute('''
+            SELECT symbol, mode, COUNT(*) as count, 
+                   SUM(quantity) as total_qty,
+                   AVG(entry_price) as avg_entry,
+                   SUM(unrealized_pnl) as total_pnl
+            FROM positions 
+            WHERE status = 'OPEN'
+            GROUP BY symbol, mode
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        
+        analysis = {
+            'by_symbol': {},
+            'by_mode': {},
+            'total_positions': 0,
+            'total_unrealized_pnl': 0,
+            'distribution': []
+        }
+        
+        for row in rows:
+            symbol = row['symbol']
+            mode = row['mode']
+            count = row['count']
+            total_pnl = float(row['total_pnl']) if row['total_pnl'] else 0
+            
+            # By symbol
+            if symbol not in analysis['by_symbol']:
+                analysis['by_symbol'][symbol] = {
+                    'count': 0,
+                    'total_pnl': 0,
+                    'avg_entry': 0
+                }
+            analysis['by_symbol'][symbol]['count'] += count
+            analysis['by_symbol'][symbol]['total_pnl'] += total_pnl
+            analysis['by_symbol'][symbol]['avg_entry'] = float(row['avg_entry']) if row['avg_entry'] else 0
+            
+            # By mode
+            if mode not in analysis['by_mode']:
+                analysis['by_mode'][mode] = {
+                    'count': 0,
+                    'total_pnl': 0
+                }
+            analysis['by_mode'][mode]['count'] += count
+            analysis['by_mode'][mode]['total_pnl'] += total_pnl
+            
+            analysis['total_positions'] += count
+            analysis['total_unrealized_pnl'] += total_pnl
+            
+            # Distribution
+            analysis['distribution'].append({
+                'symbol': symbol,
+                'mode': mode,
+                'count': count,
+                'percentage': 0  # Will calculate after
+            })
+        
+        # Calculate percentages
+        if analysis['total_positions'] > 0:
+            for item in analysis['distribution']:
+                item['percentage'] = (item['count'] / analysis['total_positions']) * 100
+        
+        return jsonify(analysis)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

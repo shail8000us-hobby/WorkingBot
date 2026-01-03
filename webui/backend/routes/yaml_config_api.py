@@ -451,11 +451,19 @@ def get_all_config_compat():
     This endpoint replaces the old config.py /api/config/all endpoint.
     Returns YAML config flattened to environment variable style keys.
     
+    Query Parameters:
+        symbol (optional): Symbol name (e.g., "BTCUSD", "ETHUSD")
+                          If not provided, returns first enabled symbol (v4.0 compat)
+    
     Returns:
         JSON response with config dict matching old format
     """
     try:
-        log.info("🎯 YAML CONFIG API: /api/config/all called (uses config.yaml)")
+        # ========== v5.0 MULTI-SYMBOL SUPPORT ==========
+        # Get optional symbol parameter from query string
+        requested_symbol = request.args.get('symbol')
+        
+        log.info(f"🎯 YAML CONFIG API: /api/config/all called (symbol={requested_symbol or 'auto'})")
         log.info(f"🎯 THIS IS yaml_config_api.get_all_config_compat() - NOT config.get_all_config()")
         
         # Load YAML config
@@ -464,6 +472,65 @@ def get_all_config_compat():
         
         # Flatten to env var style
         flat_config = flatten_config(yaml_data)
+        
+        # ========== v5.0 MULTI-SYMBOL SUPPORT ==========
+        # Select which symbol's config to return
+        if 'symbols' in yaml_data and yaml_data['symbols']:
+            selected_symbol = None
+            symbol_config = None
+            
+            if requested_symbol:
+                # Specific symbol requested - find it
+                for sym_name, sym_cfg in yaml_data['symbols'].items():
+                    if sym_name == requested_symbol:
+                        selected_symbol = sym_name
+                        symbol_config = sym_cfg
+                        log.info(f"✅ Found requested symbol: {requested_symbol}")
+                        break
+                
+                # If requested symbol not found, return error
+                if not symbol_config:
+                    log.warning(f"⚠️ Requested symbol '{requested_symbol}' not found in config")
+                    return jsonify({
+                        'success': False,
+                        'error': f"Symbol '{requested_symbol}' not found in configuration",
+                        'available_symbols': list(yaml_data['symbols'].keys())
+                    }), 404
+            else:
+                # No symbol requested - use first enabled symbol (v4.0 backward compat)
+                for sym_name, sym_cfg in yaml_data['symbols'].items():
+                    if sym_cfg.get('enabled', False):
+                        selected_symbol = sym_name
+                        symbol_config = sym_cfg
+                        log.info(f"✅ Auto-selected first enabled symbol: {selected_symbol}")
+                        break
+            
+            # If we found a symbol, extract its config to legacy flat keys
+            if symbol_config:
+                # Grid geometry
+                grid_geom = symbol_config.get('grid', {}).get('geometry', {})
+                flat_config['GRID_GEOMETRY_REFERENCE'] = grid_geom.get('reference', '')
+                flat_config['GRID_GEOMETRY_LOWER'] = grid_geom.get('lower', '')
+                flat_config['GRID_GEOMETRY_UPPER'] = grid_geom.get('upper', '')
+                flat_config['GRID_GEOMETRY_STEP'] = grid_geom.get('step', '')
+                
+                # Grid limits
+                grid_limits = symbol_config.get('grid', {}).get('limits', {})
+                flat_config['GRID_LIMITS_LOT_SIZE'] = grid_limits.get('lot_size', '')
+                flat_config['GRID_LIMITS_MAX_OPEN_POSITIONS'] = grid_limits.get('max_open_positions', '')
+                flat_config['GRID_LIMITS_MAX_QTY_PER_ORDER'] = grid_limits.get('max_qty_per_order', '')
+                
+                # Bot mode and symbol
+                flat_config['BOT_MODE'] = symbol_config.get('mode', '')
+                flat_config['BOT_SYMBOL'] = selected_symbol  # Use selected_symbol instead of first_symbol
+                
+                # Grid behavior
+                grid_behavior = symbol_config.get('grid', {}).get('behavior', {})
+                flat_config['GRID_BEHAVIOR_STRICT_GRID'] = grid_behavior.get('strict_grid', '')
+                flat_config['GRID_BEHAVIOR_RUNG_SNAP_MODE'] = grid_behavior.get('rung_snap_mode', '')
+                flat_config['GRID_BEHAVIOR_TICK_SIZE'] = grid_behavior.get('tick_size', '')
+                flat_config['GRID_BEHAVIOR_DYNAMIC_TICK_SIZE'] = grid_behavior.get('dynamic_tick_size', '')
+                flat_config['GRID_BEHAVIOR_SEED_INITIAL_COUNT'] = grid_behavior.get('seed_initial_count', '')
         
         # Add backward compatibility aliases for old frontend field names
         legacy_aliases = {
@@ -597,13 +664,20 @@ def get_all_config_compat():
                     'has_value': bool(value)
                 }
         
-        return jsonify({
+        # ========== v5.0 MULTI-SYMBOL RESPONSE ==========
+        # Include symbol information in response
+        response_data = {
             'success': True,
             'config': flat_config,
             'meta': metadata,  # Added metadata for frontend compatibility
             'secrets': secrets_meta,
-            'source': 'config.yaml'  # Indicate this comes from YAML
-        }), 200
+            'source': 'config.yaml',  # Indicate this comes from YAML
+            'symbol': selected_symbol,  # Which symbol this config is for
+            'symbol_enabled': symbol_config.get('enabled', False) if symbol_config else False,
+            'available_symbols': list(yaml_data.get('symbols', {}).keys())  # All available symbols
+        }
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         log.error(f"Error getting all config: {e}")
@@ -616,15 +690,63 @@ def get_all_config_compat():
 @yaml_config_bp.route('/api/config/flat', methods=['GET'])
 def get_flat_config_compat():
     """
-    Get flattened configuration (backward compatible)
+    Get flattened configuration (v5.0 multi-symbol support)
+    
+    Query Parameters:
+        symbol (optional): Specific symbol to get config for (e.g., 'BTCUSD', 'ETHUSD')
+                          If not provided, returns first enabled symbol (v4.0 compat)
     
     Returns:
         JSON response with flat config AND metadata
     """
     try:
+        from flask import request
+        
+        # v5.0: Check for symbol parameter
+        requested_symbol = request.args.get('symbol')
+        
         # Load YAML config
         with open(CONFIG_FILE, 'r') as f:
             yaml_data = yaml.safe_load(f)
+        
+        # v5.0: Select which symbol's config to flatten
+        selected_symbol = None
+        symbol_enabled = False
+        
+        if requested_symbol:
+            # Specific symbol requested - find it in config
+            for sym_name, sym_cfg in yaml_data.get('symbols', {}).items():
+                if sym_name == requested_symbol:
+                    selected_symbol = sym_name
+                    symbol_enabled = sym_cfg.get('enabled', False)
+                    # Replace top-level bot config with this symbol's config
+                    yaml_data['bot']['symbol'] = sym_name
+                    yaml_data['bot']['mode'] = sym_cfg.get('mode', 'LONG')
+                    yaml_data['bot']['product_id'] = sym_cfg.get('product_id', 0)
+                    yaml_data['grid']['geometry'] = sym_cfg.get('grid', {})
+                    yaml_data['grid']['limits'] = sym_cfg.get('limits', {})
+                    break
+            
+            if not selected_symbol:
+                # Symbol not found
+                return jsonify({
+                    'success': False,
+                    'error': f'Symbol {requested_symbol} not found in config',
+                    'available_symbols': list(yaml_data.get('symbols', {}).keys())
+                }), 404
+        else:
+            # No symbol specified - use first enabled (v4.0 backward compat)
+            for sym_name, sym_cfg in yaml_data.get('symbols', {}).items():
+                if sym_cfg.get('enabled', False):
+                    selected_symbol = sym_name
+                    symbol_enabled = True
+                    # Use this symbol's config
+                    yaml_data['bot']['symbol'] = sym_name
+                    yaml_data['bot']['mode'] = sym_cfg.get('mode', 'LONG')
+                    yaml_data['bot']['product_id'] = sym_cfg.get('product_id', 0)
+                    yaml_data['grid']['geometry'] = sym_cfg.get('grid', {})
+                    yaml_data['grid']['limits'] = sym_cfg.get('limits', {})
+                    break
         
         # Flatten
         flat_config = flatten_config(yaml_data)
@@ -756,7 +878,11 @@ def get_flat_config_compat():
             'success': True,
             'config': flat_config,
             'meta': metadata,
-            'source': 'config.yaml'
+            'source': 'config.yaml',
+            # v5.0 multi-symbol fields
+            'symbol': selected_symbol,
+            'symbol_enabled': symbol_enabled,
+            'available_symbols': list(yaml_data.get('symbols', {}).keys())
         }), 200
         
     except Exception as e:
@@ -1175,3 +1301,317 @@ def update_opportunistic_recovery_config():
             'error': str(e)
         }), 500
 
+
+# ============================================================================
+# MULTI-SYMBOL CONFIG ENDPOINTS (v5.0)
+# ============================================================================
+
+@yaml_config_bp.route('/api/config/symbols/<symbol_name>', methods=['GET'])
+def get_symbol_config(symbol_name):
+    """
+    Get configuration for a specific symbol
+    
+    Returns flattened config with GRIDBOT_* fields for this symbol only.
+    This allows frontend to edit each symbol independently.
+    
+    Args:
+        symbol_name: Symbol key (e.g., 'BTCUSD', 'ETHUSD')
+    
+    Example:
+        GET /api/config/symbols/BTCUSD
+        Response: {
+            "success": true,
+            "symbol": "BTCUSD",
+            "config": {
+                "GRIDBOT_REF": 88500,
+                "GRIDBOT_LOWER": 85000,
+                "GRIDBOT_UPPER": 92000,
+                "GRIDBOT_STEP": 100,
+                ...
+            }
+        }
+    """
+    try:
+        symbol_name = symbol_name.upper()
+        
+        with open(CONFIG_FILE, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Check if multi-symbol config
+        if 'symbols' not in config or symbol_name not in config['symbols']:
+            available = list(config.get('symbols', {}).keys())
+            return jsonify({
+                'success': False,
+                'error': f"Symbol '{symbol_name}' not found",
+                'available_symbols': available
+            }), 404
+        
+        symbol_config = config['symbols'][symbol_name]
+        
+        # Build flattened config for frontend (using legacy field names)
+        flat_config = {}
+        
+        # Grid geometry
+        grid = symbol_config.get('grid', {})
+        geometry = grid.get('geometry', {})
+        flat_config['GRIDBOT_REF'] = geometry.get('reference', 0)
+        flat_config['GRIDBOT_LOWER'] = geometry.get('lower', 0)
+        flat_config['GRIDBOT_UPPER'] = geometry.get('upper', 0)
+        flat_config['GRIDBOT_STEP'] = geometry.get('step', 0)
+        
+        # Grid limits
+        limits = grid.get('limits', {})
+        flat_config['GRIDBOT_LOT'] = limits.get('lot_size', 0)
+        flat_config['GRIDBOT_MAX_OPEN'] = limits.get('max_open_positions', 0)
+        flat_config['MAX_QTY_PER_ORDER'] = limits.get('max_qty_per_order', 0)
+        
+        # Grid behavior
+        behavior = grid.get('behavior', {})
+        flat_config['GRIDBOT_STRICT_GRID'] = behavior.get('strict_grid', True)
+        flat_config['GRIDBOT_RUNG_SNAP_MODE'] = behavior.get('rung_snap_mode', 'nearest')
+        flat_config['GRIDBOT_TICK_SIZE'] = behavior.get('tick_size', 0.5)
+        flat_config['GRIDBOT_DYNAMIC_TICK_SIZE'] = behavior.get('dynamic_tick_size', False)
+        flat_config['GRIDBOT_SEED_INITIAL_COUNT'] = behavior.get('seed_initial_count', 5)
+        
+        # Smart gap fill
+        gap_fill = grid.get('smart_gap_fill', {})
+        flat_config['SMART_GAP_FILL'] = gap_fill.get('enabled', False)
+        flat_config['GAP_FILL_ORDER_TYPE'] = gap_fill.get('order_type', 'limit')
+        flat_config['MAX_GAP_FILL_LEVELS'] = gap_fill.get('max_levels', 3)
+        
+        # Bot mode and symbol
+        flat_config['GRIDBOT_GRID_MODE'] = symbol_config.get('mode', 'LONG')
+        flat_config['GRIDBOT_SYMBOL'] = symbol_name
+        flat_config['PRODUCT_ID'] = symbol_config.get('product_id', 0)
+        flat_config['ENABLED'] = symbol_config.get('enabled', False)
+        
+        # Safety settings (per-symbol)
+        safety = symbol_config.get('safety', {})
+        flat_config['MAX_ACCOUNT_LOSS_INR'] = safety.get('max_account_loss_inr', 7000)
+        flat_config['MIN_LIQUIDATION_DISTANCE_PCT'] = safety.get('min_liquidation_distance_pct', 5)
+        
+        # RSI settings (per-symbol if available, else global)
+        rsi = safety.get('rsi', config.get('safety', {}).get('rsi', {}))
+        flat_config['RSI_ENABLED'] = rsi.get('enabled', True)
+        flat_config['RSI_LONG_THRESHOLD'] = rsi.get('long_threshold', 30)
+        flat_config['RSI_SHORT_THRESHOLD'] = rsi.get('short_threshold', 70)
+        
+        return jsonify({
+            'success': True,
+            'symbol': symbol_name,
+            'enabled': symbol_config.get('enabled', False),
+            'mode': symbol_config.get('mode', 'LONG'),
+            'config': flat_config
+        })
+        
+    except Exception as e:
+        log.error(f"Error getting symbol config for {symbol_name}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@yaml_config_bp.route('/api/config/symbols/<symbol_name>', methods=['POST'])
+def update_symbol_config(symbol_name):
+    """
+    Update configuration for a specific symbol
+    
+    This saves changes to the correct symbol section in config.yaml,
+    ensuring no cross-contamination between symbols.
+    
+    Args:
+        symbol_name: Symbol key (e.g., 'BTCUSD', 'ETHUSD')
+    
+    Request Body:
+        {
+            "GRIDBOT_REF": 88500,
+            "GRIDBOT_LOWER": 85000,
+            "GRIDBOT_STEP": 100,
+            ...
+        }
+    
+    Returns:
+        JSON response with success status
+    """
+    try:
+        symbol_name = symbol_name.upper()
+        data = request.get_json()
+        
+        with open(CONFIG_FILE, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Check if multi-symbol config
+        if 'symbols' not in config or symbol_name not in config['symbols']:
+            return jsonify({
+                'success': False,
+                'error': f"Symbol '{symbol_name}' not found"
+            }), 404
+        
+        symbol_config = config['symbols'][symbol_name]
+        updated_fields = []
+        
+        # Map flat keys to nested symbol config paths
+        field_mappings = {
+            # Grid geometry
+            'GRIDBOT_REF': ('grid', 'geometry', 'reference'),
+            'GRIDBOT_LOWER': ('grid', 'geometry', 'lower'),
+            'GRIDBOT_UPPER': ('grid', 'geometry', 'upper'),
+            'GRIDBOT_STEP': ('grid', 'geometry', 'step'),
+            
+            # Grid limits
+            'GRIDBOT_LOT': ('grid', 'limits', 'lot_size'),
+            'GRIDBOT_MAX_OPEN': ('grid', 'limits', 'max_open_positions'),
+            'MAX_QTY_PER_ORDER': ('grid', 'limits', 'max_qty_per_order'),
+            
+            # Grid behavior
+            'GRIDBOT_STRICT_GRID': ('grid', 'behavior', 'strict_grid'),
+            'GRIDBOT_RUNG_SNAP_MODE': ('grid', 'behavior', 'rung_snap_mode'),
+            'GRIDBOT_TICK_SIZE': ('grid', 'behavior', 'tick_size'),
+            'GRIDBOT_DYNAMIC_TICK_SIZE': ('grid', 'behavior', 'dynamic_tick_size'),
+            'GRIDBOT_SEED_INITIAL_COUNT': ('grid', 'behavior', 'seed_initial_count'),
+            
+            # Smart gap fill
+            'SMART_GAP_FILL': ('grid', 'smart_gap_fill', 'enabled'),
+            'GAP_FILL_ORDER_TYPE': ('grid', 'smart_gap_fill', 'order_type'),
+            'MAX_GAP_FILL_LEVELS': ('grid', 'smart_gap_fill', 'max_levels'),
+            
+            # Bot mode
+            'GRIDBOT_GRID_MODE': ('mode',),
+            'ENABLED': ('enabled',),
+            
+            # Safety
+            'MAX_ACCOUNT_LOSS_INR': ('safety', 'max_account_loss_inr'),
+            'MIN_LIQUIDATION_DISTANCE_PCT': ('safety', 'min_liquidation_distance_pct'),
+            
+            # RSI (per-symbol)
+            'RSI_ENABLED': ('safety', 'rsi', 'enabled'),
+            'RSI_LONG_THRESHOLD': ('safety', 'rsi', 'long_threshold'),
+            'RSI_SHORT_THRESHOLD': ('safety', 'rsi', 'short_threshold'),
+        }
+        
+        for flat_key, value in data.items():
+            if flat_key in field_mappings:
+                path = field_mappings[flat_key]
+                
+                # Navigate and create nested structure
+                current = symbol_config
+                for key in path[:-1]:
+                    if key not in current:
+                        current[key] = {}
+                    current = current[key]
+                
+                # Convert value type
+                if isinstance(value, str):
+                    # Try to convert string to appropriate type
+                    if value.lower() in ('true', 'false'):
+                        value = value.lower() == 'true'
+                    else:
+                        try:
+                            if '.' in value:
+                                value = float(value)
+                            else:
+                                value = int(value)
+                        except ValueError:
+                            pass  # Keep as string
+                
+                # Set the value
+                current[path[-1]] = value
+                updated_fields.append(flat_key)
+                log.info(f"Updated {symbol_name}.{'.'.join(path)} = {value}")
+        
+        # Write back to YAML
+        with open(CONFIG_FILE, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        return jsonify({
+            'success': True,
+            'symbol': symbol_name,
+            'message': f'Updated {len(updated_fields)} fields for {symbol_name}',
+            'updated_fields': updated_fields
+        })
+        
+    except Exception as e:
+        log.error(f"Error updating symbol config for {symbol_name}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@yaml_config_bp.route('/api/config/symbols/<symbol_name>/enable', methods=['POST'])
+def enable_symbol(symbol_name):
+    """
+    Enable a symbol for trading
+    
+    Args:
+        symbol_name: Symbol key (e.g., 'BTCUSD', 'ETHUSD')
+    """
+    try:
+        symbol_name = symbol_name.upper()
+        
+        with open(CONFIG_FILE, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        if 'symbols' not in config or symbol_name not in config['symbols']:
+            return jsonify({
+                'success': False,
+                'error': f"Symbol '{symbol_name}' not found"
+            }), 404
+        
+        config['symbols'][symbol_name]['enabled'] = True
+        
+        with open(CONFIG_FILE, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        log.info(f"✅ Enabled symbol: {symbol_name}")
+        
+        return jsonify({
+            'success': True,
+            'symbol': symbol_name,
+            'enabled': True,
+            'message': f'{symbol_name} is now enabled for trading'
+        })
+        
+    except Exception as e:
+        log.error(f"Error enabling symbol {symbol_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@yaml_config_bp.route('/api/config/symbols/<symbol_name>/disable', methods=['POST'])
+def disable_symbol(symbol_name):
+    """
+    Disable a symbol from trading
+    
+    Args:
+        symbol_name: Symbol key (e.g., 'BTCUSD', 'ETHUSD')
+    """
+    try:
+        symbol_name = symbol_name.upper()
+        
+        with open(CONFIG_FILE, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        if 'symbols' not in config or symbol_name not in config['symbols']:
+            return jsonify({
+                'success': False,
+                'error': f"Symbol '{symbol_name}' not found"
+            }), 404
+        
+        config['symbols'][symbol_name]['enabled'] = False
+        
+        with open(CONFIG_FILE, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        log.info(f"⛔ Disabled symbol: {symbol_name}")
+        
+        return jsonify({
+            'success': True,
+            'symbol': symbol_name,
+            'enabled': False,
+            'message': f'{symbol_name} is now disabled'
+        })
+        
+    except Exception as e:
+        log.error(f"Error disabling symbol {symbol_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500

@@ -164,6 +164,77 @@ def apply_strategy_template(template: str) -> Dict[str, Any]:
     return templates.get(template, templates['balanced'])
 
 
+@instance_bp.route('', methods=['GET'])
+@instance_bp.route('/', methods=['GET'])
+def get_instances():
+    """
+    V6.0 API: List all configured instances (Instance = Symbol + Mode)
+    Root endpoint for /api/instances
+    
+    Reads from config/symbols.yaml and returns instances in v6.0 format.
+    """
+    try:
+        from config.loader import get_all_instances
+        
+        # Get all instances from YAML config (returns Dict[name, InstanceConfig])
+        instances = get_all_instances(enabled_only=False)
+        instance_list = []
+        
+        for name, config in instances.items():
+            # InstanceConfig has attributes like symbol, mode, product_id, grid, safety, etc.
+            grid_geom = config.grid.geometry if config.grid else None
+            grid_limits = config.grid.limits if config.grid else None
+            
+            instance_list.append({
+                'name': name,
+                'symbol': config.symbol,
+                'mode': config.mode.value if hasattr(config.mode, 'value') else str(config.mode),
+                'enabled': config.enabled,
+                'product_id': config.product_id,
+                'grid': {
+                    'lower': grid_geom.lower if grid_geom else None,
+                    'upper': grid_geom.upper if grid_geom else None,
+                    'step': grid_geom.step if grid_geom else None,
+                    'reference': grid_geom.reference if grid_geom else None,
+                } if grid_geom else {},
+                'safety': {
+                    'max_positions': grid_limits.max_open_positions if grid_limits else None,
+                    'lot_size': grid_limits.lot_size if grid_limits else None,
+                } if grid_limits else {},
+                'rsi': {
+                    'stop_threshold': config.safety.rsi.stop_threshold if config.safety and config.safety.rsi else None,
+                    'resume_threshold': config.safety.rsi.resume_threshold if config.safety and config.safety.rsi else None,
+                } if config.safety and config.safety.rsi else {},
+                'database_file': f"data/bot_events_{name}.db",
+                'monitoring_file': f"data/monitoring_snapshot_{name}.json"
+            })
+        
+        return jsonify({
+            'instances': instance_list,
+            'count': len(instance_list),
+            'enabled_count': sum(1 for i in instance_list if i.get('enabled', False)),
+            'config_version': '6.0'
+        })
+    except Exception as e:
+        logger.error(f"Error loading instances: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'instances': []}), 500
+
+
+def parse_instance_name(instance_name):
+    """Parse instance name like BTCUSD_LONG into {symbol, mode}"""
+    if not instance_name or '_' not in instance_name:
+        return None
+    parts = instance_name.rsplit('_', 1)
+    if len(parts) != 2:
+        return None
+    symbol, mode = parts
+    if mode not in ['LONG', 'SHORT']:
+        return None
+    return {'symbol': symbol, 'mode': mode}
+
+
 @instance_bp.route('/list', methods=['GET'])
 def list_instances():
     """

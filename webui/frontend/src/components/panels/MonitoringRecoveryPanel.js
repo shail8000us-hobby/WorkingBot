@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, Typography, Grid, Box, Chip, LinearProgress, Button, Tooltip } from '@mui/material';
 import { CheckCircle, Refresh, Delete } from '@mui/icons-material';
 import axios from 'axios';
-import { useSymbol } from '../../context/SymbolContext';
+import { useInstance, parseInstanceName } from '../../context/InstanceContext';
 
 const MonitoringRecoveryPanel = () => {
-  const { selectedSymbol } = useSymbol();
+  const { selectedInstance, withInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

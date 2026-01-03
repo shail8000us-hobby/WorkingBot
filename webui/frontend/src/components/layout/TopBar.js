@@ -2,7 +2,7 @@ import { RefreshCw, Activity, Bot, Gauge, SignalHigh, SignalLow, Sun, Moon, Shie
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import SymbolSelector from '../SymbolSelector';
-import { useSymbol } from '../../context/SymbolContext';
+import { useInstance } from '../../context/InstanceContext';
 
 const qualityIconMap = {
   excellent: SignalHigh,
@@ -124,8 +124,8 @@ function TopBar({
           {/* Symbol Selector (v5.0 Multi-Symbol) */}
           <SymbolSelector onSymbolChange={(symbol) => {
             console.log('Symbol changed to:', symbol);
-            // Trigger data refresh for new symbol
-            if (onRefresh) onRefresh();
+            // Trigger soft data refresh for new symbol (NOT hard page reload)
+            if (onEnsureFresh) onEnsureFresh();
           }} />
           
           {/* Process Status */}

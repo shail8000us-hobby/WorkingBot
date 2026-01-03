@@ -23,19 +23,21 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
-import { useSymbol } from '../context/SymbolContext';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import SymbolBadge from './common/SymbolBadge';
 
 const PositionsPanel = () => {
-  const { selectedSymbol } = useSymbol();
+  const { selectedInstance, withInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [positionsData, setPositionsData] = useState(null);
 
-  // Fetch positions
+  // Fetch positions for current instance
   const fetchPositions = async () => {
     try {
-      // Positions API will be updated in Phase 2C to accept symbol param
-      const { data } = await api.get('/api/positions');
+      // v6.0: Use instance parameter for filtering
+      const { data } = await api.get(withInstance('/api/positions'));
       
       // API returns positions directly without a 'success' wrapper
       if (data?.status === 'NO_DATA' || data?.status === 'UNKNOWN') {
@@ -50,7 +52,7 @@ const PositionsPanel = () => {
     }
   };
 
-  // Initial load and refresh when symbol changes
+  // Initial load and refresh when instance changes
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -58,7 +60,7 @@ const PositionsPanel = () => {
       setLoading(false);
     };
     loadData();
-  }, [selectedSymbol]);
+  }, [selectedInstance]);
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
@@ -122,6 +124,7 @@ const PositionsPanel = () => {
           <Typography variant="h5" fontWeight={600}>
             Current Positions
           </Typography>
+          <SymbolBadge symbol={instanceInfo?.symbol || 'BTCUSD'} size="md" variant="solid" />
         </Box>
         <Box display="flex" gap={1}>
           <Tooltip title="Refresh positions from exchange">

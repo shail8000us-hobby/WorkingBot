@@ -948,7 +948,164 @@ class ExchangeMaintenanceConfig(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# MULTI-SYMBOL SUPPORT (v5.0)
+# MULTI-INSTANCE SUPPORT (v6.0) - Instance = Symbol + Mode
+# ═══════════════════════════════════════════════════════════════════════════
+
+class InstanceRSIConfig(BaseModel):
+    """Per-instance RSI thresholds
+    
+    CRITICAL: LONG and SHORT modes have OPPOSITE RSI logic:
+    - LONG mode: Stop when RSI <= stop_threshold (oversold = market too weak to buy)
+    - SHORT mode: Stop when RSI >= stop_threshold (overbought = market too strong to short)
+    """
+    enabled: bool = Field(True, description="Enable RSI monitoring for this instance")
+    period: int = Field(14, ge=2, le=50, description="RSI calculation period")
+    stop_threshold: float = Field(
+        description="RSI threshold to stop trading. "
+        "LONG: stop when RSI <= this (default 30). "
+        "SHORT: stop when RSI >= this (default 70)."
+    )
+    resume_threshold: float = Field(
+        description="RSI threshold to resume trading. "
+        "LONG: resume when RSI >= this (default 40). "
+        "SHORT: resume when RSI <= this (default 60)."
+    )
+    hysteresis_seconds: int = Field(60, ge=0, le=300, description="Delay when RSI at threshold")
+    timeframe: str = Field("1h", description="OHLCV timeframe for RSI")
+    check_interval: int = Field(300, ge=60, description="RSI check interval seconds")
+    
+    @classmethod
+    def for_long_mode(cls) -> "InstanceRSIConfig":
+        """Create RSI config for LONG mode (stop at oversold)"""
+        return cls(
+            enabled=True,
+            stop_threshold=30.0,  # Stop when RSI <= 30 (oversold)
+            resume_threshold=40.0  # Resume when RSI >= 40
+        )
+    
+    @classmethod
+    def for_short_mode(cls) -> "InstanceRSIConfig":
+        """Create RSI config for SHORT mode (stop at overbought)"""
+        return cls(
+            enabled=True,
+            stop_threshold=70.0,  # Stop when RSI >= 70 (overbought)
+            resume_threshold=60.0  # Resume when RSI <= 60
+        )
+
+
+class InstanceSafetyConfig(BaseModel):
+    """Per-instance safety configuration"""
+    max_account_loss_inr: float = Field(gt=0, description="Maximum account loss for this instance in INR")
+    min_liquidation_distance_pct: float = Field(gt=0, description="Minimum liquidation distance %")
+    rsi: Optional[InstanceRSIConfig] = Field(None, description="Instance-specific RSI thresholds")
+    
+    # Optional overrides
+    max_position_size: Optional[int] = Field(None, gt=0, description="Max total position size in contracts")
+    execute_orders: bool = Field(True, description="Enable real order placement (dry-run if False)")
+
+
+class InstanceGridGeometry(BaseModel):
+    """Instance-specific grid geometry"""
+    lower: str = Field(description="Grid lower boundary")
+    upper: str = Field(description="Grid upper boundary")
+    step: str = Field(description="Grid step size")
+    reference: str = Field(description="Reference price for starting")
+
+
+class InstanceGridLimits(BaseModel):
+    """Instance-specific position limits"""
+    max_open_positions: str = Field(description="Maximum open positions")
+    lot_size: str = Field(description="Lot size for trades")
+    max_open_orders: int = Field(description="Maximum open orders")
+    max_qty_per_order: str = Field(description="Maximum quantity per order")
+
+
+class InstanceGridBehavior(BaseModel):
+    """Instance-specific grid behavior"""
+    strict_grid: str = Field(default="true", description="Enforce strict grid levels")
+    rung_snap_mode: RungSnapMode = Field(default=RungSnapMode.BELOW, description="Grid level snapping")
+    tick_size: str = Field(description="Tick size for price rounding")
+    dynamic_tick_size: Optional[str] = Field(default="false", description="Enable dynamic tick size")
+    seed_initial_count: Optional[str] = Field(default="0", description="Seed initial order count")
+
+
+class InstanceSmartGapFill(BaseModel):
+    """Instance-specific smart gap fill config"""
+    enabled: str = Field(default="false", description="Enable smart gap fill")
+    order_type: str = Field(default="maker", description="Order type for gap fill")
+    max_levels: str = Field(default="0", description="Maximum gap levels to fill")
+
+
+class InstanceGridConfig(BaseModel):
+    """Instance-specific grid configuration"""
+    geometry: InstanceGridGeometry
+    limits: InstanceGridLimits
+    behavior: InstanceGridBehavior
+    smart_gap_fill: Optional[InstanceSmartGapFill] = Field(default=None)
+
+
+class InstanceCapitalAllocation(BaseModel):
+    """Instance-specific capital allocation"""
+    allocated_usd: float = Field(gt=0, description="Allocated capital in USD")
+    max_position_value_usd: float = Field(gt=0, description="Maximum position value in USD")
+
+
+class InstanceConfig(BaseModel):
+    """Complete configuration for a trading instance (Symbol + Mode)
+    
+    V6.0 ARCHITECTURE: Instance = Symbol + Mode
+    
+    Examples:
+    - BTCUSD_LONG: Bitcoin LONG grid
+    - BTCUSD_SHORT: Bitcoin SHORT grid (can run simultaneously with BTCUSD_LONG)
+    - ETHUSD_LONG: Ethereum LONG grid
+    
+    This enables running LONG and SHORT on the same symbol at the same time,
+    each with their own grid, capital, and RSI thresholds.
+    """
+    # Core identification
+    symbol: str = Field(description="Trading symbol (e.g., BTCUSD, ETHUSD)")
+    mode: GridMode = Field(description="Trading mode: LONG or SHORT")
+    product_id: int = Field(gt=0, description="Delta Exchange product ID")
+    enabled: bool = Field(True, description="Enable/disable this instance")
+    
+    # Capital allocation
+    capital: Optional[InstanceCapitalAllocation] = Field(default=None, description="Capital allocation")
+    
+    # Grid configuration
+    grid: InstanceGridConfig
+    
+    # Safety configuration (with per-instance RSI thresholds)
+    safety: InstanceSafetyConfig
+    
+    @property
+    def instance_name(self) -> str:
+        """Generate instance name from symbol + mode"""
+        return f"{self.symbol}_{self.mode.value}"
+    
+    @property
+    def database_name(self) -> str:
+        """Generate database name for this instance"""
+        return f"bot_events_{self.symbol}_{self.mode.value}.db"
+    
+    @property
+    def log_prefix(self) -> str:
+        """Generate log prefix for this instance"""
+        return f"[{self.symbol}_{self.mode.value}]"
+    
+    def get_rsi_config(self) -> InstanceRSIConfig:
+        """Get RSI config, with mode-appropriate defaults if not specified"""
+        if self.safety.rsi:
+            return self.safety.rsi
+        # Return mode-appropriate defaults
+        if self.mode == GridMode.LONG:
+            return InstanceRSIConfig.for_long_mode()
+        else:
+            return InstanceRSIConfig.for_short_mode()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LEGACY MULTI-SYMBOL SUPPORT (v5.0) - Deprecated, use instances (v6.0)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class CapitalAllocation(BaseModel):
@@ -1025,13 +1182,27 @@ class SymbolConfig(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════════
 
 class RootConfig(BaseModel):
-    """Complete bot configuration (supports v4.0 single-symbol and v5.0 multi-symbol)"""
+    """Complete bot configuration (supports v4.0, v5.0, and v6.0)
+    
+    Version History:
+    - v4.0: Single-symbol, single-mode (legacy)
+    - v5.0: Multi-symbol support (symbols section)
+    - v6.0: Multi-instance support (instances section) - Instance = Symbol + Mode
+    
+    V6.0 allows running BTCUSD_LONG and BTCUSD_SHORT simultaneously.
+    """
     version: str = Field("2.0", description="Config schema version")
     trading_mode: TradingMode = Field(TradingMode.DEMO, description="Trading mode (demo/live)")
     
-    # Multi-symbol support (v5.0+)
+    # V6.0: Multi-instance support (Instance = Symbol + Mode)
+    instances: Optional[Dict[str, InstanceConfig]] = Field(
+        default=None, 
+        description="Instance configurations (v6.0+). Key format: SYMBOL_MODE (e.g., BTCUSD_LONG)"
+    )
+    
+    # V5.0: Multi-symbol support (deprecated, use instances)
     capital_allocation: Optional[CapitalAllocationConfig] = Field(default=None, description="Capital allocation (v5.0+)")
-    symbols: Optional[Dict[str, SymbolConfig]] = Field(default=None, description="Symbol configurations (v5.0+)")
+    symbols: Optional[Dict[str, SymbolConfig]] = Field(default=None, description="Symbol configurations (v5.0+, deprecated)")
     
     # Core components (v4.0 - optional for backward compat)
     bot: Optional[BotConfig] = Field(default=None)
@@ -1088,9 +1259,56 @@ class RootConfig(BaseModel):
         extra = "forbid"  # Reject unknown fields
         
     def validate_cross_field_constraints(self):
-        """Validate cross-field constraints (supports both v4.0 and v5.0)"""
+        """Validate cross-field constraints (supports v4.0, v5.0, and v6.0)"""
         
-        # V5.0 multi-symbol validation
+        # V6.0 multi-instance validation (Instance = Symbol + Mode)
+        if self.instances:
+            for instance_name, instance_config in self.instances.items():
+                # Validate instance name format
+                expected_name = f"{instance_config.symbol}_{instance_config.mode.value}"
+                if instance_name != expected_name:
+                    raise ValueError(
+                        f"Instance key '{instance_name}' doesn't match symbol+mode '{expected_name}'. "
+                        f"Key must be SYMBOL_MODE format."
+                    )
+                
+                # Validate grid geometry
+                try:
+                    lower = int(instance_config.grid.geometry.lower)
+                    upper = int(instance_config.grid.geometry.upper)
+                    step = int(instance_config.grid.geometry.step)
+                    
+                    levels = (upper - lower) / step
+                    if levels > 100:
+                        raise ValueError(f"{instance_name}: Grid would create {int(levels)} levels (max: 100). Increase step size.")
+                    if levels < 5:
+                        raise ValueError(f"{instance_name}: Grid would create {int(levels)} levels (min: 5). Decrease step size.")
+                except (ValueError, AttributeError) as e:
+                    print(f"⚠️  Warning: Could not validate grid levels for {instance_name}: {e}")
+                
+                # Validate RSI thresholds are appropriate for mode
+                if instance_config.safety.rsi:
+                    rsi = instance_config.safety.rsi
+                    if instance_config.mode == GridMode.LONG:
+                        if rsi.stop_threshold > 50:
+                            print(f"⚠️  Warning: {instance_name} LONG mode has stop_threshold={rsi.stop_threshold}. "
+                                  f"LONG typically stops at oversold (<=30).")
+                    elif instance_config.mode == GridMode.SHORT:
+                        if rsi.stop_threshold < 50:
+                            print(f"⚠️  Warning: {instance_name} SHORT mode has stop_threshold={rsi.stop_threshold}. "
+                                  f"SHORT typically stops at overbought (>=70).")
+            
+            # Common validations
+            if self.heartbeat.update_interval >= self.heartbeat.timeout:
+                raise ValueError(f"Heartbeat update_interval ({self.heartbeat.update_interval}) must be < timeout ({self.heartbeat.timeout})")
+            
+            if self.execution_safety and self.execution_safety.execute_orders and self.trading_mode == TradingMode.LIVE:
+                if self.execution_safety.i_understand_live != "YES":
+                    raise ValueError("Cannot execute live orders without i_understand_live=YES")
+            
+            return True
+        
+        # V5.0 multi-symbol validation (deprecated)
         if self.symbols:
             for symbol_name, symbol_config in self.symbols.items():
                 # Convert string fields to int for validation

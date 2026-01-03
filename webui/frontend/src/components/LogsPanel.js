@@ -2,8 +2,13 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Paper, Box, Typography, IconButton, Chip, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import { Terminal, Clear, Download, Refresh, Shield } from '@mui/icons-material';
 import apiClient from '../utils/apiClient';
+import SymbolBadge from './common/SymbolBadge';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
 
 function LogsPanel({ logs }) {
+  const { selectedInstance, withInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const selectedSymbol = instanceInfo?.symbol; // backward compat
   const logsEndRef = useRef(null);
   const [pm2Enabled, setPM2Enabled] = useState(false);
   const [pm2Logs, setPM2Logs] = useState(null);
@@ -155,6 +160,7 @@ function LogsPanel({ logs }) {
           <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             {logSource === 'guardian' ? <Shield /> : <Terminal />} 
             Live Logs
+            <SymbolBadge symbol={selectedSymbol} size="sm" variant="outlined" />
           </Typography>
           <FormControl size="small" sx={{ minWidth: 200, mt: 1 }}>
             <InputLabel>Log Source</InputLabel>
