@@ -21,6 +21,11 @@ Module Structure:
 - strategy_risk.py          - Risk validation (Phase 3)
 - strategy_notifications.py - Alert notifications (Phase 3)
 - strategy_routes.py        - API endpoints
+
+Production-Ready Imports (from OptionBot):
+- option_validator.py       - Comprehensive validation
+- data_validator.py         - Market data quality checks
+- advanced_risk_manager.py  - VaR, Sharpe, dynamic risk
 """
 
 from flask import Blueprint
@@ -61,6 +66,26 @@ from .strategy_notifications import (
     send_strategy_notification
 )
 
+# Production-ready imports (from OptionBot)
+from .option_validator import (
+    OptionValidator,
+    ValidationLevel,
+    ValidationResult
+)
+from .data_validator import (
+    MarketDataValidator,
+    DataQualityAlert,
+    DataQualityIssue,
+    data_validator
+)
+from .advanced_risk_manager import (
+    AdvancedRiskManager,
+    RiskLevel,
+    RiskMetrics,
+    PortfolioGreeks,
+    risk_manager
+)
+
 __all__ = [
     'options_strategy_bp',
     'StrategyManager',
@@ -78,5 +103,18 @@ __all__ = [
     'RiskLimits',
     'StrategyNotificationService',
     'get_notification_service',
-    'send_strategy_notification'
+    'send_strategy_notification',
+    # Production-ready imports (from OptionBot)
+    'OptionValidator',
+    'ValidationLevel',
+    'ValidationResult',
+    'MarketDataValidator',
+    'DataQualityAlert',
+    'DataQualityIssue',
+    'data_validator',
+    'AdvancedRiskManager',
+    'RiskLevel',
+    'RiskMetrics',
+    'PortfolioGreeks',
+    'risk_manager',
 ]
