@@ -576,6 +576,26 @@ class AsyncDeltaClient:
         
         return response.get("result", [])
     
+    async def get_positions_for_underlying(self, underlying_asset: str) -> List[Dict[str, Any]]:
+        """
+        Get all positions for an underlying asset (includes futures + options).
+        
+        Args:
+            underlying_asset: Underlying asset symbol (e.g., "BTC", "ETH")
+            
+        Returns:
+            List of positions (futures + options)
+        """
+        params = {"underlying_asset_symbol": underlying_asset}
+        
+        response = await self._request_with_retry(
+            method="GET",
+            path="/v2/positions",
+            params=params
+        )
+        
+        return response.get("result", [])
+    
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """
         Get ticker data for a symbol.

@@ -32,7 +32,7 @@ interface PluginsResponse {
 }
 
 async function fetchPlugins(): Promise<PluginsResponse> {
-  const response = await fetch('http://localhost:5555/api/plugins/list');
+  const response = await fetch('http://localhost:5557/api/plugins/list');
   if (!response.ok) {
     throw new Error('Failed to fetch plugins');
   }
@@ -40,7 +40,7 @@ async function fetchPlugins(): Promise<PluginsResponse> {
 }
 
 async function togglePlugin(id: string, enabled: boolean) {
-  const response = await fetch(`http://localhost:5555/api/plugins/${id}/toggle`, {
+  const response = await fetch(`http://localhost:5557/api/plugins/${id}/toggle`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),

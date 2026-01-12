@@ -30,7 +30,7 @@ interface DatabaseResponse {
 }
 
 async function fetchDatabaseStats(): Promise<DatabaseResponse> {
-  const response = await fetch('http://localhost:5555/api/database/stats');
+  const response = await fetch('http://localhost:5557/api/database/stats');
   if (!response.ok) {
     throw new Error('Failed to fetch database stats');
   }

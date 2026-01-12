@@ -29,7 +29,7 @@ interface OrderBookResponse {
 }
 
 async function fetchOrderBook(): Promise<OrderBookResponse> {
-  const response = await fetch('http://localhost:5555/api/market/orderbook');
+  const response = await fetch('http://localhost:5557/api/market/orderbook');
   if (!response.ok) {
     throw new Error('Failed to fetch order book');
   }

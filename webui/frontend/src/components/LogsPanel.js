@@ -1,29 +1,58 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Paper, Box, Typography, IconButton, Chip, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
-import { Terminal, Clear, Download, Refresh, Shield } from '@mui/icons-material';
+import { Paper, Box, Typography, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Terminal, Clear, Download, Refresh, Shield, TrendingUp, TrendingDown } from '@mui/icons-material';
 import apiClient from '../utils/apiClient';
 import SymbolBadge from './common/SymbolBadge';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 
-function LogsPanel({ logs }) {
-  const { selectedInstance, withInstance } = useInstance();
+function LogsPanel() {
+  const { selectedInstance, instances, withInstance } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
-  const selectedSymbol = instanceInfo?.symbol; // backward compat
+  const selectedSymbol = instanceInfo?.symbol;
   const logsEndRef = useRef(null);
-  const [pm2Enabled, setPM2Enabled] = useState(false);
-  const [pm2Logs, setPM2Logs] = useState(null);
-  const [loadingPM2, setLoadingPM2] = useState(true);
-  const [logSource, setLogSource] = useState('trading'); // 'trading' or 'guardian'
+  const [logSource, setLogSource] = useState('trading'); // 'trading', 'guardian', 'btcusd', 'ethusd'
   const [guardianLogs, setGuardianLogs] = useState([]);
   const [loadingGuardian, setLoadingGuardian] = useState(false);
+  const [tradingLogs, setTradingLogs] = useState([]);
+  const [loadingTrading, setLoadingTrading] = useState(false);
+  const [btcLogs, setBtcLogs] = useState([]);
+  const [loadingBtc, setLoadingBtc] = useState(false);
+  const [ethLogs, setEthLogs] = useState([]);
+  const [loadingEth, setLoadingEth] = useState(false);
+
+  // Get available symbols from instances
+  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+
+  // Fetch Trading logs (instance-aware)
+  const fetchTradingLogs = useCallback(async () => {
+    try {
+      setLoadingTrading(true);
+      const url = selectedInstance ? withInstance('/api/logs') : '/api/logs';
+      console.log('[LogsPanel] Fetching logs from:', url);
+      const response = await apiClient.get(url, { lines: 200 });
+      console.log('[LogsPanel] Response:', response);
+      if (response && response.logs) {
+        console.log('[LogsPanel] Setting logs, count:', response.logs.length);
+        setTradingLogs(response.logs);
+      } else {
+        console.log('[LogsPanel] No logs in response');
+        setTradingLogs([]);
+      }
+    } catch (error) {
+      console.error('Error fetching trading logs:', error);
+      setTradingLogs([]);
+    } finally {
+      setLoadingTrading(false);
+    }
+  }, [selectedInstance, withInstance]);
 
   // Fetch Guardian logs
   const fetchGuardianLogs = useCallback(async () => {
     try {
       setLoadingGuardian(true);
-      const response = await apiClient.get('/api/logs/recent', { lines: 200, bot_type: 'guardian' });
-      if (response.success) {
-        setGuardianLogs(response.logs || []);
+      const response = await apiClient.get('/api/logs', { lines: 200, bot_type: 'guardian' });
+      if (response && response.success && response.logs) {
+        setGuardianLogs(response.logs);
       }
     } catch (error) {
       console.error('Error fetching Guardian logs:', error);
@@ -33,64 +62,69 @@ function LogsPanel({ logs }) {
     }
   }, []);
 
-  // Check if PM2 is enabled and fetch logs
-  const fetchPM2Logs = useCallback(async () => {
+  // Fetch BTCUSD logs
+  const fetchBtcLogs = useCallback(async () => {
     try {
-      setLoadingPM2(true);
-      const pm2Status = await apiClient.getPM2Enabled();
-      setPM2Enabled(pm2Status.enabled);
-      
-      if (pm2Status.enabled) {
-        // Get PM2 status to find running bot
-        const status = await apiClient.getPM2Status();
-        if (status.success && status.processes) {
-          // Find the first running gridbot (live or demo)
-          const runningBot = status.processes.find(p => 
-            (p.name === 'gridbot-live' || p.name === 'gridbot-demo') && p.status === 'online'
-          );
-          
-          if (runningBot) {
-            // Fetch PM2 logs for the running bot
-            const logsResult = await apiClient.getPM2Logs(runningBot.name, 100, 'all');
-            if (logsResult.success) {
-              setPM2Logs({
-                ...logsResult.logs,
-                botName: runningBot.name
-              });
-            }
-          } else {
-            setPM2Logs(null); // No bot running
-          }
-        }
+      setLoadingBtc(true);
+      const response = await apiClient.get('/api/logs', { lines: 200, instance: 'BTCUSD_LONG' });
+      if (response && response.logs) {
+        setBtcLogs(response.logs);
       }
     } catch (error) {
-      console.error('Error fetching PM2 logs:', error);
-      setPM2Enabled(false);
+      console.error('Error fetching BTCUSD logs:', error);
+      setBtcLogs([]);
     } finally {
-      setLoadingPM2(false);
+      setLoadingBtc(false);
+    }
+  }, []);
+
+  // Fetch ETHUSD logs
+  const fetchEthLogs = useCallback(async () => {
+    try {
+      setLoadingEth(true);
+      const response = await apiClient.get('/api/logs', { lines: 200, instance: 'ETHUSD_LONG' });
+      if (response && response.logs) {
+        setEthLogs(response.logs);
+      }
+    } catch (error) {
+      console.error('Error fetching ETHUSD logs:', error);
+      setEthLogs([]);
+    } finally {
+      setLoadingEth(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPM2Logs();
+    fetchTradingLogs();
     fetchGuardianLogs();
+    fetchBtcLogs();
+    fetchEthLogs();
+    
     // Refresh logs every 5 seconds
     const interval = setInterval(() => {
       if (logSource === 'guardian') {
         fetchGuardianLogs();
-      } else if (pm2Enabled) {
-        fetchPM2Logs();
+      } else if (logSource === 'btcusd') {
+        fetchBtcLogs();
+      } else if (logSource === 'ethusd') {
+        fetchEthLogs();
+      } else {
+        fetchTradingLogs();
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchPM2Logs, fetchGuardianLogs, pm2Enabled, logSource]);
+  }, [fetchTradingLogs, fetchGuardianLogs, fetchBtcLogs, fetchEthLogs, logSource, selectedInstance]);
 
-  // Fetch Guardian logs when source changes to guardian
+  // Fetch logs when source changes
   useEffect(() => {
     if (logSource === 'guardian') {
       fetchGuardianLogs();
+    } else if (logSource === 'btcusd') {
+      fetchBtcLogs();
+    } else if (logSource === 'ethusd') {
+      fetchEthLogs();
     }
-  }, [logSource, fetchGuardianLogs]);
+  }, [logSource, fetchGuardianLogs, fetchBtcLogs, fetchEthLogs]);
 
   const scrollToBottom = () => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -98,7 +132,7 @@ function LogsPanel({ logs }) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [logs, pm2Logs, guardianLogs, logSource]);
+  }, [tradingLogs, guardianLogs, logSource]);
 
   const handleClear = () => {
     // This would require backend support
@@ -107,16 +141,25 @@ function LogsPanel({ logs }) {
 
   const handleDownload = () => {
     let displayLogs = [];
+    let filename = '';
     if (logSource === 'guardian') {
       displayLogs = guardianLogs;
+      filename = 'guardian';
+    } else if (logSource === 'btcusd') {
+      displayLogs = btcLogs;
+      filename = 'btcusd';
+    } else if (logSource === 'ethusd') {
+      displayLogs = ethLogs;
+      filename = 'ethusd';
     } else {
-      displayLogs = pm2Enabled && pm2Logs ? [...pm2Logs.out, ...pm2Logs.err] : logs;
+      displayLogs = tradingLogs;
+      filename = selectedInstance || 'gridbot';
     }
     const blob = new Blob([displayLogs.join('\n')], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${logSource === 'guardian' ? 'guardian' : 'gridbot'}-logs-${new Date().toISOString()}.txt`;
+    a.download = `${filename}-logs-${new Date().toISOString()}.txt`;
     a.click();
   };
 
@@ -131,27 +174,45 @@ function LogsPanel({ logs }) {
   // Determine which logs to display
   const displayLogs = logSource === 'guardian' 
     ? guardianLogs 
-    : pm2Enabled && pm2Logs 
-    ? [...(pm2Logs.out || []), ...(pm2Logs.err || [])] 
-    : logs;
+    : logSource === 'btcusd'
+    ? btcLogs
+    : logSource === 'ethusd'
+    ? ethLogs
+    : tradingLogs;
   
   const logSourceLabel = logSource === 'guardian'
     ? 'Guardian Bot (LaunchAgent)'
-    : pm2Enabled && pm2Logs?.botName 
-    ? `Trading Bot (PM2 - ${pm2Logs.botName})` 
-    : pm2Enabled 
-    ? 'Trading Bot (PM2 - No bot running)' 
-    : 'Trading Bot (Process)';
+    : logSource === 'btcusd'
+    ? 'BTCUSD Trading Logs'
+    : logSource === 'ethusd'
+    ? 'ETHUSD Trading Logs'
+    : `Trading Bot (${selectedInstance || 'Instance'})`;
 
   const handleRefresh = () => {
     if (logSource === 'guardian') {
       fetchGuardianLogs();
+    } else if (logSource === 'btcusd') {
+      fetchBtcLogs();
+    } else if (logSource === 'ethusd') {
+      fetchEthLogs();
     } else {
-      fetchPM2Logs();
+      fetchTradingLogs();
     }
   };
 
-  const isLoading = logSource === 'guardian' ? loadingGuardian : loadingPM2;
+  const isLoading = logSource === 'guardian' ? loadingGuardian 
+    : logSource === 'btcusd' ? loadingBtc
+    : logSource === 'ethusd' ? loadingEth
+    : loadingTrading;
+
+  // Get symbol color
+  const getSymbolColor = (symbol) => {
+    const colors = {
+      'BTCUSD': '#f7931a',
+      'ETHUSD': '#627eea',
+    };
+    return colors[symbol] || '#64748b';
+  };
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -160,40 +221,41 @@ function LogsPanel({ logs }) {
           <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             {logSource === 'guardian' ? <Shield /> : <Terminal />} 
             Live Logs
-            <SymbolBadge symbol={selectedSymbol} size="sm" variant="outlined" />
+            {logSource === 'btcusd' && <Chip label="BTCUSD" size="small" sx={{ bgcolor: '#f7931a20', color: '#f7931a', fontWeight: 'bold' }} />}
+            {logSource === 'ethusd' && <Chip label="ETHUSD" size="small" sx={{ bgcolor: '#627eea20', color: '#627eea', fontWeight: 'bold' }} />}
           </Typography>
-          <FormControl size="small" sx={{ minWidth: 200, mt: 1 }}>
-            <InputLabel>Log Source</InputLabel>
-            <Select
-              value={logSource}
-              label="Log Source"
-              onChange={(e) => setLogSource(e.target.value)}
-            >
-              <MenuItem value="trading">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Terminal fontSize="small" /> Trading Bot
-                </Box>
-              </MenuItem>
-              <MenuItem value="guardian">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Shield fontSize="small" /> Guardian Bot
-                </Box>
-              </MenuItem>
-            </Select>
-          </FormControl>
+          
+          {/* Multi-source toggle buttons */}
+          <ToggleButtonGroup
+            value={logSource}
+            exclusive
+            onChange={(e, val) => val && setLogSource(val)}
+            size="small"
+            sx={{ mt: 1 }}
+          >
+            <ToggleButton value="trading">
+              <Terminal sx={{ mr: 0.5, fontSize: 16 }} /> Current
+            </ToggleButton>
+            <ToggleButton value="guardian">
+              <Shield sx={{ mr: 0.5, fontSize: 16 }} /> Guardian
+            </ToggleButton>
+            {availableSymbols.includes('BTCUSD') && (
+              <ToggleButton value="btcusd" sx={{ color: logSource === 'btcusd' ? '#f7931a' : 'inherit' }}>
+                <TrendingUp sx={{ mr: 0.5, fontSize: 16 }} /> BTCUSD
+              </ToggleButton>
+            )}
+            {availableSymbols.includes('ETHUSD') && (
+              <ToggleButton value="ethusd" sx={{ color: logSource === 'ethusd' ? '#627eea' : 'inherit' }}>
+                <TrendingUp sx={{ mr: 0.5, fontSize: 16 }} /> ETHUSD
+              </ToggleButton>
+            )}
+          </ToggleButtonGroup>
+          
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             {logSourceLabel}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {logSource === 'trading' && pm2Enabled && (
-            <Chip 
-              label="PM2 Managed" 
-              color="primary" 
-              size="small" 
-              sx={{ mr: 1 }} 
-            />
-          )}
           <Chip label={`${displayLogs.length} entries`} sx={{ mr: 1 }} />
           <IconButton 
             onClick={handleRefresh} 

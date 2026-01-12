@@ -45,12 +45,16 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer
 } from 'recharts';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import SymbolBadge from './common/SymbolBadge';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════════════════════════════════
 
 const OpportunisticRecoveryPanel = ({ socket }) => {
+  const { selectedInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
   const [recoveryHistory, setRecoveryHistory] = useState([]);
   const [stats, setStats] = useState({
     totalHalts: 0,
@@ -74,21 +78,35 @@ const OpportunisticRecoveryPanel = ({ socket }) => {
   useEffect(() => {
     if (!socket) return;
 
+    // v6.0: Filter WebSocket events by instance
     const handleRecoveryHistory = (data) => {
       if (data && data.history) {
-        setRecoveryHistory(data.history);
+        // Filter history for selected instance if provided
+        let history = data.history;
+        if (selectedInstance && data.instance && data.instance !== selectedInstance) {
+          return; // Ignore events from other instances
+        }
+        setRecoveryHistory(history);
       }
       setLoading(false);
     };
 
     const handleRecoveryStats = (data) => {
       if (data) {
+        // Filter stats for selected instance if provided
+        if (selectedInstance && data.instance && data.instance !== selectedInstance) {
+          return; // Ignore stats from other instances
+        }
         setStats(data);
       }
       setLoading(false);
     };
 
     const handleRecoveryCompleted = (data) => {
+      // Filter recovery events for selected instance
+      if (selectedInstance && data.instance && data.instance !== selectedInstance) {
+        return; // Ignore events from other instances
+      }
       setRecoveryHistory((prev) => [data, ...prev].slice(0, 10));
       updateStats(data);
     };

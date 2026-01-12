@@ -18,8 +18,14 @@ interface Todo {
   priority?: 'low' | 'medium' | 'high';
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchTodos(): Promise<Todo[]> {
-  const response = await fetch('http://localhost:5555/api/todos');
+  const response = await fetch(`${API_URL}/api/todos`);
   if (!response.ok) {
     throw new Error('Failed to fetch todos');
   }
@@ -28,7 +34,7 @@ async function fetchTodos(): Promise<Todo[]> {
 }
 
 async function createTodo(text: string): Promise<Todo> {
-  const response = await fetch('http://localhost:5555/api/todos', {
+  const response = await fetch(`${API_URL}/api/todos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -38,7 +44,7 @@ async function createTodo(text: string): Promise<Todo> {
 }
 
 async function updateTodo(id: string, updates: Partial<Todo>): Promise<Todo> {
-  const response = await fetch(`http://localhost:5555/api/todos/${id}`, {
+  const response = await fetch(`${API_URL}/api/todos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -48,7 +54,7 @@ async function updateTodo(id: string, updates: Partial<Todo>): Promise<Todo> {
 }
 
 async function deleteTodo(id: string): Promise<void> {
-  const response = await fetch(`http://localhost:5555/api/todos/${id}`, {
+  const response = await fetch(`${API_URL}/api/todos/${id}`, {
     method: 'DELETE',
   });
   if (!response.ok) throw new Error('Failed to delete todo');

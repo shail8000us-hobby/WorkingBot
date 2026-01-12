@@ -6,6 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
 import {
   Select,
   SelectContent,
@@ -51,7 +57,7 @@ export function SymbolSwitcher() {
   const { data: symbolsData, isLoading } = useQuery({
     queryKey: ['symbols-list'],
     queryFn: async () => {
-      const res = await fetch('/api/symbols');
+      const res = await fetch(`${API_URL}/api/symbols`);
       if (!res.ok) throw new Error('Failed to fetch symbols');
       return res.json() as Promise<{ symbols: Symbol[]; enabled_count: number }>;
     },
@@ -61,7 +67,7 @@ export function SymbolSwitcher() {
   // Start symbol process mutation
   const startSymbolMutation = useMutation({
     mutationFn: async (symbolName: string) => {
-      const res = await fetch(`/api/symbols/${symbolName}/process/start`, {
+      const res = await fetch(`${API_URL}/api/symbols/${symbolName}/process/start`, {
         method: 'POST',
       });
       if (!res.ok) {
@@ -87,7 +93,7 @@ export function SymbolSwitcher() {
   // Stop symbol process mutation
   const stopSymbolMutation = useMutation({
     mutationFn: async (symbolName: string) => {
-      const res = await fetch(`/api/symbols/${symbolName}/process/stop`, {
+      const res = await fetch(`${API_URL}/api/symbols/${symbolName}/process/stop`, {
         method: 'POST',
       });
       if (!res.ok) {

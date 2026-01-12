@@ -38,7 +38,7 @@ interface ResourceResponse {
 }
 
 async function fetchResourceStats(): Promise<ResourceResponse> {
-  const response = await fetch('http://localhost:5555/api/system/resources');
+  const response = await fetch('http://localhost:5557/api/system/resources');
   if (!response.ok) {
     throw new Error('Failed to fetch resource stats');
   }

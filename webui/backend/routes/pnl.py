@@ -19,7 +19,7 @@ import csv
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 log = logging.getLogger(__name__)
 
@@ -42,11 +42,15 @@ def get_pnl_history():
     Returns the last 120 entries (2 hours if checking every minute) from
     today's PnL history CSV file.
     
+    v6.0: Supports per-instance PnL history
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    
     Returns:
         JSON response with PnL history
     
     Example:
-        GET /api/pnl-history
+        GET /api/pnl-history?instance=BTCUSD_LONG
         Response: {
             "history": [
                 {
@@ -62,9 +66,18 @@ def get_pnl_history():
         }
     """
     try:
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        
         # Get today's CSV file
         today = datetime.now().strftime("%Y%m%d")
-        csv_file = PNL_HISTORY_DIR / f"pnl_history_{today}.csv"
+        
+        if instance:
+            # Per-instance PnL history
+            csv_file = PNL_HISTORY_DIR / f"pnl_history_{instance}_{today}.csv"
+        else:
+            # Global PnL history (legacy)
+            csv_file = PNL_HISTORY_DIR / f"pnl_history_{today}.csv"
         
         history = []
         if csv_file.exists():
@@ -82,7 +95,7 @@ def get_pnl_history():
                     })
         
         # Return last 120 entries (2 hours if checking every minute)
-        return jsonify({'history': history[-120:]}), 200
+        return jsonify({'history': history[-120:], 'instance': instance}), 200
         
     except Exception as e:
         log.error(f"Error fetching PnL history: {e}")
@@ -96,6 +109,10 @@ def get_hourly_pnl_history():
     
     Guardian bot stores PnL data to SQL database every 10 seconds.
     This endpoint samples at hourly intervals for the WebUI chart.
+    
+    v6.0: Supports per-instance PnL history
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
     
     Returns:
         JSON response with hourly PnL history
@@ -215,11 +232,15 @@ def get_pnl_summary():
     - Daily PnL percentage
     - Last update timestamp
     
+    v6.0: Supports per-instance PnL summary
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    
     Returns:
         JSON response with PnL summary
     
     Example:
-        GET /api/pnl/summary
+        GET /api/pnl/summary?instance=BTCUSD_LONG
         Response: {
             "total_pnl_usd": 123.45,
             "total_pnl_inr": 10272.34,
@@ -228,9 +249,18 @@ def get_pnl_summary():
         }
     """
     try:
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        
         # Get today's CSV file
         today = datetime.now().strftime("%Y%m%d")
-        csv_file = PNL_HISTORY_DIR / f"pnl_history_{today}.csv"
+        
+        if instance:
+            # Per-instance PnL summary
+            csv_file = PNL_HISTORY_DIR / f"pnl_history_{instance}_{today}.csv"
+        else:
+            # Global PnL summary (legacy)
+            csv_file = PNL_HISTORY_DIR / f"pnl_history_{today}.csv"
         
         if not csv_file.exists():
             # Return zeros if no data yet

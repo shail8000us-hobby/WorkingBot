@@ -32,8 +32,8 @@ interface RiskLimitsResponse {
 
 // API URL - use the same logic as api.ts
 const API_URL = (typeof window !== 'undefined' 
-  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5555')
-  : 'http://localhost:5555'
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
 ).trim();
 
 async function fetchRiskLimits(): Promise<RiskLimitsResponse> {

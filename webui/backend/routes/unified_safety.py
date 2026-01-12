@@ -6,7 +6,7 @@ Created: December 27, 2025
 Author: Senior Developer
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 import logging
 import json
 import sys
@@ -51,8 +51,15 @@ def get_unified_safety_dashboard():
     - System health (API, WebSocket, data freshness)
     - RSI safety signals
     - Overall risk status
+    
+    Query Parameters:
+    - symbol: BTCUSD or ETHUSD (default: BTCUSD) for multi-symbol support v6.0
     """
     try:
+        # Get symbol parameter for multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        logger.info(f"Safety dashboard request for symbol: {symbol}")
+        
         # Read Guardian health file
         guardian_health_file = BASE_DIR / '.guardian_health'
         guardian_data = {'running': False, 'health': None}
@@ -72,22 +79,24 @@ def get_unified_safety_dashboard():
         pnl_data = get_latest_pnl_from_db()
         
         # Get RSI status from API endpoint
-        rsi_data = get_rsi_status_from_api()
+        rsi_data = get_rsi_status_from_api(symbol)
         
         # Get Guardian signal from database (event store)
         guardian_signal_data = get_latest_signal_from_db()
         
         # Get RSI status from API endpoint
-        rsi_data = get_rsi_status_from_api()
+        rsi_data = get_rsi_status_from_api(symbol)
         
         # Get Guardian signal from database (event store)
         guardian_signal_data = get_latest_signal_from_db()
         
         # Get Liquidation data from API
-        liquidation_data = get_liquidation_from_api()
+        liquidation_data = get_liquidation_from_api(symbol)
         
-        # Read Volatility status file
-        volatility_file = BASE_DIR / '.volatility_status.json'
+        # Read Volatility status file (try symbol-specific first, fallback to generic)
+        volatility_file = BASE_DIR / f'.volatility_status_{symbol}.json'
+        if not volatility_file.exists():
+            volatility_file = BASE_DIR / '.volatility_status.json'
         volatility_data = {'success': False}
         
         if volatility_file.exists():
@@ -380,11 +389,11 @@ def get_latest_pnl_from_db():
         return {'success': False, 'total_pnl_inr': 0, 'position_count': 0, 'total_loss_inr': 0}
 
 
-def get_rsi_status_from_api():
+def get_rsi_status_from_api(symbol='BTCUSD'):
     """Get RSI status from Guardian API endpoint"""
     try:
-        # Call local Guardian RSI API
-        response = requests.get('http://localhost:5555/api/guardian/rsi/status', timeout=2)
+        # Call local Guardian RSI API with symbol parameter
+        response = requests.get(f'http://localhost:5555/api/guardian/rsi/status?symbol={symbol}', timeout=2)
         
         if response.status_code == 200:
             result = response.json()
@@ -412,11 +421,11 @@ def get_rsi_status_from_api():
         return {'success': False}
 
 
-def get_liquidation_from_api():
+def get_liquidation_from_api(symbol='BTCUSD'):
     """Get liquidation protection data from liquidation API endpoint"""
     try:
-        # Call local Liquidation API
-        response = requests.get('http://localhost:5555/api/liquidation/status', timeout=2)
+        # Call local Liquidation API with symbol parameter
+        response = requests.get(f'http://localhost:5555/api/liquidation/status?symbol={symbol}', timeout=2)
         
         if response.status_code == 200:
             result = response.json()

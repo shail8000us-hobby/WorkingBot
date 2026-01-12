@@ -495,6 +495,115 @@ class UnifiedAPIClient:
             raise
     
     # ========================================================================
+    # OPTIONS-SPECIFIC METHODS (Added Dec 2025)
+    # ========================================================================
+    
+    async def get_all_positions_with_options(self) -> Dict[str, List[Dict]]:
+        """
+        Get all positions (futures + options) and separate them by type.
+        Uses product detail caching to avoid rate limiting.
+        
+        Returns:
+            {
+                'futures': [...],  # Perpetual/futures positions
+                'options': [...]   # Options positions
+            }
+        """
+        await self.rate_limiter.acquire()
+        
+        if not self.circuit_breaker.can_attempt():
+            raise Exception("Circuit breaker open")
+        
+        try:
+            # Get positions for BTC (underlying_asset_symbol) which includes futures + options
+            all_positions = await self.rest_client.get_positions_for_underlying("BTC")
+            
+            # Separate by product type
+            futures_positions = []
+            options_positions = []
+            
+            for position in all_positions:
+                product_symbol = position.get('product_symbol', '')
+                
+                # Quick check: options have expiry dates in symbol (e.g., "C-BTC-27500-011225")
+                # Format: C-{underlying}-{strike}-{expiry_DDMMYY}
+                if product_symbol.startswith('C-') or product_symbol.startswith('P-'):
+                    options_positions.append(position)
+                else:
+                    futures_positions.append(position)
+            
+            self.circuit_breaker.record_success()
+            
+            log.info(f"📊 Fetched positions: {len(futures_positions)} futures, {len(options_positions)} options")
+            
+            return {
+                'futures': futures_positions,
+                'options': options_positions
+            }
+            
+        except Exception as e:
+            self.circuit_breaker.record_failure()
+            log.error(f"Failed to fetch positions with options: {e}")
+            raise
+    
+    async def get_option_ticker(self, symbol: str) -> Dict:
+        """
+        Get ticker for options contract (includes mark price, Greeks, quotes).
+        
+        Args:
+            symbol: Options symbol (e.g., "C-BTC-27500-011225")
+            
+        Returns:
+            {
+                'symbol': str,
+                'mark_price': float,
+                'ask': float,
+                'bid': float,
+                'spread_pct': float,
+                'greeks': {...},  # If available
+                'volume': float,
+                'open_interest': int
+            }
+        """
+        await self.rate_limiter.acquire()
+        
+        if not self.circuit_breaker.can_attempt():
+            raise Exception("Circuit breaker open")
+        
+        try:
+            # Get ticker data
+            ticker = await self.rest_client.get_ticker(symbol)
+            
+            # Calculate spread percentage
+            ask = ticker.get('close', 0)  # Delta uses 'close' for ask
+            bid = ticker.get('open', 0)   # Delta uses 'open' for bid
+            
+            spread_pct = 0
+            if bid > 0:
+                spread_pct = ((ask - bid) / bid) * 100
+            
+            # Enrich with calculated fields
+            enriched_ticker = {
+                'symbol': symbol,
+                'mark_price': ticker.get('mark_price', 0),
+                'ask': ask,
+                'bid': bid,
+                'spread_pct': round(spread_pct, 2),
+                'volume': ticker.get('volume', 0),
+                'open_interest': ticker.get('oi', 0),
+                'greeks': ticker.get('greeks', {}),  # Greeks if available
+                'raw': ticker  # Keep original data
+            }
+            
+            self.circuit_breaker.record_success()
+            return enriched_ticker
+            
+        except Exception as e:
+            self.circuit_breaker.record_failure()
+            log.error(f"Failed to get option ticker for {symbol}: {e}")
+            raise
+    
+    # ========================================================================
     # HEALTH MONITORING
     # ========================================================================
     

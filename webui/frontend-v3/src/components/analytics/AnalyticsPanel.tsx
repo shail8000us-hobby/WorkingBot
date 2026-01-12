@@ -47,10 +47,17 @@ interface AnalyticsResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchAnalytics(): Promise<AnalyticsResponse> {
-  const response = await fetch('http://localhost:5555/api/analytics/summary');
+  const response = await fetch(`${API_URL}/api/analytics/summary`);
   if (!response.ok) {
-    throw new Error('Failed to fetch analytics');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(typeof errorData === 'string' ? errorData : (errorData.error || `Failed to fetch analytics: ${response.statusText}`));
   }
   return response.json();
 }

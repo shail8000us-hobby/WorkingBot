@@ -45,13 +45,31 @@ class LossLimitsValidator:
         self.validated = False
     
     def load_limits(self) -> Dict[str, float]:
-        """Load loss limits from YAML config with env var fallback"""
-        # Try YAML config first
-    def load_limits(self) -> Dict[str, float]:
         """Load limits from YAML config"""
         cfg = get_config()
-        self.trader_limit = cfg.capital_protection.max_loss_inr
-        self.guardian_limit = cfg.safety.guardian.max_account_loss_inr
+        
+        # V6.0 multi-instance: Get SYMBOL from env or default to BTCUSD
+        symbol = os.environ.get('SYMBOL', 'BTCUSD')
+        mode = os.environ.get('MODE', 'LONG')
+        instance_key = f"{symbol}_{mode}"
+        
+        try:
+            # Try v6.0 per-instance config first
+            instance = cfg.instances[instance_key]
+            self.trader_limit = instance.safety.max_account_loss_inr
+            
+            # Guardian config (global for now)
+            if hasattr(cfg, 'safety') and hasattr(cfg.safety, 'guardian'):
+                self.guardian_limit = cfg.safety.guardian.max_account_loss_inr
+            else:
+                # Default: Guardian limit = 90% of trader limit
+                self.guardian_limit = self.trader_limit * 0.9
+                
+        except (AttributeError, KeyError):
+            # Fallback: Use safe defaults
+            log.warning(f"Could not load limits for {instance_key}, using defaults")
+            self.trader_limit = 10000  # Default 10k INR
+            self.guardian_limit = 9000  # 90% of trader
         
         return {
             'trader': self.trader_limit,

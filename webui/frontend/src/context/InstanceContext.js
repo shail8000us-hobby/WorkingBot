@@ -302,7 +302,6 @@ export const InstanceProvider = ({ children }) => {
     fetchWithInstance,
     
     // Backward compatibility aliases
-    selectedSymbol,
     changeSymbol: (symbol) => {
       // Find first enabled instance for this symbol
       const inst = instances.find(i => i.symbol === symbol && i.enabled);

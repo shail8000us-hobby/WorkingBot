@@ -24,7 +24,7 @@ interface NetworkResponse {
 }
 
 async function fetchNetworkStats(): Promise<NetworkResponse> {
-  const response = await fetch('http://localhost:5555/api/network/stats');
+  const response = await fetch('http://localhost:5557/api/network/stats');
   if (!response.ok) {
     throw new Error('Failed to fetch network stats');
   }

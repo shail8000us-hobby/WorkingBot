@@ -466,7 +466,9 @@ def get_next_bot_actions():
         # Get volatility data
         try:
             from bot.volatility.delta_volatility_collector import get_collector
-            collector = get_collector()
+            # v6.0: Multi-symbol support
+            symbol = request.args.get('symbol', 'BTCUSD')
+            collector = get_collector(symbol=symbol)
             latest = collector.get_latest_volatility()
             iv = latest.get('iv', {}).get('value', 0)
             rv = latest.get('rv', {}).get('1d', {}).get('value', 0)

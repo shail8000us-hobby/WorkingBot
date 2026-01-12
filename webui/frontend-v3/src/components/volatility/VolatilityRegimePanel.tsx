@@ -2,48 +2,22 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Activity, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
 
 interface VolatilityPoint {
   timestamp: number;
   iv: number | null;
   rv: number | null;
-}
-
-interface LatestVolatility {
-  iv: {
-    value: number;
-    timestamp: string;
-  };
-  rv: {
-    '1h': { value: number; timestamp: string };
-    '1d': { value: number; timestamp: string };
-    '7d': { value: number; timestamp: string };
-    '30d': { value: number; timestamp: string };
-  };
-}
-
-interface VolatilityData {
-  latest: LatestVolatility;
-  historical: {
-    iv: Array<{ timestamp: string; value: number }>;
-    rv: Array<{ timestamp: string; value: number }>;
-  };
-  monthly_averages: {
-    avg_iv: number;
-    avg_rv: number;
-  };
-}
-
-interface VolatilityResponse {
-  data: VolatilityData;
-  status: 'live' | 'stale' | 'error';
-  error?: string;
 }
 
 type Timeframe = 'hourly' | 'daily' | 'weekly' | 'monthly';
@@ -55,12 +29,89 @@ const TIMEFRAMES: Array<{ value: Timeframe; label: string; rvKey: '1h' | '1d' | 
   { value: 'monthly', label: 'Monthly', rvKey: '30d' },
 ];
 
-async function fetchVolatilityData(timeframe: Timeframe): Promise<VolatilityResponse> {
-  const response = await fetch(`http://localhost:5555/api/risk/volatility/historical?timeframe=${timeframe}`);
+interface HistoricalResponse {
+  success: boolean;
+  data: {
+    iv: Array<{ timestamp: number; value: number }>;
+    rv: Array<{ timestamp: number; value: number }>;
+  };
+  timeframe?: string;
+}
+
+interface LatestResponse {
+  success: boolean;
+  data: {
+    iv: { value: number; timestamp: number };
+    rv: {
+      '1h': { value: number; timestamp: number };
+      '1d': { value: number; timestamp: number };
+      '7d': { value: number; timestamp: number };
+      '30d': { value: number; timestamp: number };
+    };
+  };
+}
+
+interface CombinedVolatilityData {
+  historical: HistoricalResponse['data'];
+  latest: LatestResponse['data'];
+  monthlyAverages: {
+    avgIV: number | null;
+    avgRV: number | null;
+  };
+}
+
+async function fetchHistoricalData(timeframe: Timeframe): Promise<HistoricalResponse> {
+  const response = await fetch(`${API_URL}/api/risk/volatility/historical?timeframe=${timeframe}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch volatility data: ${response.statusText}`);
+    throw new Error(`Failed to fetch historical data: ${response.statusText}`);
   }
   return response.json();
+}
+
+async function fetchLatestData(): Promise<LatestResponse> {
+  const response = await fetch(`${API_URL}/api/risk/volatility/latest`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch latest data: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+async function fetchMonthlyAverages(): Promise<{ avgIV: number | null; avgRV: number | null }> {
+  try {
+    const response = await fetch(`${API_URL}/api/risk/volatility/historical?timeframe=monthly`);
+    if (!response.ok) {
+      return { avgIV: null, avgRV: null };
+    }
+    const data = await response.json();
+    if (!data.success || !data.data) {
+      return { avgIV: null, avgRV: null };
+    }
+
+    // Calculate averages
+    const ivValues = data.data.iv?.filter((p: any) => p.value != null).map((p: any) => p.value) || [];
+    const rvValues = data.data.rv?.filter((p: any) => p.value != null).map((p: any) => p.value) || [];
+
+    const avgIV = ivValues.length > 0 ? ivValues.reduce((a: number, b: number) => a + b, 0) / ivValues.length : null;
+    const avgRV = rvValues.length > 0 ? rvValues.reduce((a: number, b: number) => a + b, 0) / rvValues.length : null;
+
+    return { avgIV, avgRV };
+  } catch {
+    return { avgIV: null, avgRV: null };
+  }
+}
+
+async function fetchVolatilityData(timeframe: Timeframe): Promise<CombinedVolatilityData> {
+  const [historical, latest, monthlyAverages] = await Promise.all([
+    fetchHistoricalData(timeframe),
+    fetchLatestData(),
+    fetchMonthlyAverages(),
+  ]);
+
+  return {
+    historical: historical.data,
+    latest: latest.data,
+    monthlyAverages,
+  };
 }
 
 function formatPercent(value: number | null | undefined, options?: { showSign?: boolean }): string {
@@ -69,9 +120,9 @@ function formatPercent(value: number | null | undefined, options?: { showSign?: 
   return `${prefix}${value.toFixed(2)}%`;
 }
 
-function formatTimestamp(timestamp: string | number): string {
+function formatTimestamp(timestamp: number | string): string {
   if (!timestamp) return 'Never';
-  const date = new Date(timestamp);
+  const date = typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp);
   if (isNaN(date.getTime())) return 'Invalid';
   return new Intl.DateTimeFormat('en-IN', {
     hour: '2-digit',
@@ -83,23 +134,27 @@ function formatTimestamp(timestamp: string | number): string {
 }
 
 function mergeVolatilitySeries(
-  ivSeries: Array<{ timestamp: string; value: number }>,
-  rvSeries: Array<{ timestamp: string; value: number }>
+  ivSeries: Array<{ timestamp: number; value: number }>,
+  rvSeries: Array<{ timestamp: number; value: number }>
 ): VolatilityPoint[] {
   const merged = new Map<number, VolatilityPoint>();
 
   ivSeries?.forEach((point) => {
-    const ts = new Date(point.timestamp).getTime();
-    merged.set(ts, { timestamp: ts, iv: point.value, rv: null });
+    const ts = typeof point.timestamp === 'string' ? new Date(point.timestamp).getTime() : point.timestamp;
+    if (ts && !isNaN(ts)) {
+      merged.set(ts, { timestamp: ts, iv: point.value, rv: null });
+    }
   });
 
   rvSeries?.forEach((point) => {
-    const ts = new Date(point.timestamp).getTime();
-    const existing = merged.get(ts);
-    if (existing) {
-      merged.set(ts, { ...existing, rv: point.value });
-    } else {
-      merged.set(ts, { timestamp: ts, iv: null, rv: point.value });
+    const ts = typeof point.timestamp === 'string' ? new Date(point.timestamp).getTime() : point.timestamp;
+    if (ts && !isNaN(ts)) {
+      const existing = merged.get(ts);
+      if (existing) {
+        merged.set(ts, { ...existing, rv: point.value });
+      } else {
+        merged.set(ts, { timestamp: ts, iv: null, rv: point.value });
+      }
     }
   });
 
@@ -114,6 +169,31 @@ export function VolatilityRegimePanel() {
     queryFn: () => fetchVolatilityData(timeframe),
     refetchInterval: 30000, // Refresh every 30 seconds
   });
+
+  const selectedTimeframeData = useMemo(() => TIMEFRAMES.find((tf) => tf.value === timeframe), [timeframe]);
+
+  const latestIV = data?.latest?.iv?.value ?? null;
+  const latestRV = data?.latest?.rv?.[selectedTimeframeData?.rvKey || '1h']?.value ?? null;
+  const spread = latestIV !== null && latestRV !== null ? latestIV - latestRV : null;
+  const monthlyAvg = data?.monthlyAverages;
+
+  const chartData = useMemo(() => {
+    if (!data?.historical) return [];
+    return mergeVolatilitySeries(data.historical.iv || [], data.historical.rv || []);
+  }, [data]);
+
+  // Filter chart data to rolling 24-hour window for hourly timeframe
+  const filteredChartData = useMemo(() => {
+    if (timeframe !== 'hourly' || !chartData.length) {
+      return chartData;
+    }
+    
+    const now = Date.now();
+    const hourMs = 60 * 60 * 1000;
+    const windowStart = now - (24 * hourMs);
+    
+    return chartData.filter(point => point.timestamp >= windowStart && point.timestamp <= now);
+  }, [chartData, timeframe]);
 
   if (isLoading) {
     return (
@@ -133,7 +213,7 @@ export function VolatilityRegimePanel() {
     );
   }
 
-  if (error || data?.status === 'error') {
+  if (error) {
     return (
       <Card>
         <CardHeader>
@@ -145,25 +225,13 @@ export function VolatilityRegimePanel() {
         <CardContent>
           <Alert variant="destructive">
             <AlertDescription>
-              {data?.error || (error as Error)?.message || 'Failed to load volatility data'}
+              {(error as Error)?.message || 'Failed to load volatility data'}
             </AlertDescription>
           </Alert>
         </CardContent>
       </Card>
     );
   }
-
-  const volatilityData = data?.data;
-  const selectedTimeframeData = TIMEFRAMES.find((tf) => tf.value === timeframe);
-  const latestIV = volatilityData?.latest?.iv?.value;
-  const latestRV = volatilityData?.latest?.rv?.[selectedTimeframeData?.rvKey || '1h']?.value;
-  const spread = latestIV !== undefined && latestRV !== undefined ? latestIV - latestRV : null;
-  const monthlyAvg = volatilityData?.monthly_averages;
-
-  const chartData = mergeVolatilitySeries(
-    volatilityData?.historical?.iv || [],
-    volatilityData?.historical?.rv || []
-  );
 
   return (
     <Card>
@@ -195,7 +263,11 @@ export function VolatilityRegimePanel() {
         <div className="grid grid-cols-3 gap-4">
           <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-lg space-y-1">
             <div className="text-xs text-rose-400 uppercase tracking-wider">Implied Volatility</div>
-            <div className={`text-3xl font-bold ${timeframe === 'hourly' && monthlyAvg?.avg_iv && latestIV && latestIV > monthlyAvg.avg_iv ? 'text-rose-400' : 'text-rose-300'}`}>
+            <div className={`text-3xl font-bold ${
+              timeframe === 'hourly' && monthlyAvg?.avgIV && latestIV && latestIV > monthlyAvg.avgIV 
+                ? 'text-rose-400' 
+                : 'text-rose-300'
+            }`}>
               {formatPercent(latestIV)}
             </div>
             <div className="text-xs text-rose-200/60">ATM option IV snapshot</div>
@@ -203,7 +275,11 @@ export function VolatilityRegimePanel() {
 
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg space-y-1">
             <div className="text-xs text-emerald-400 uppercase tracking-wider">Realized Volatility</div>
-            <div className={`text-3xl font-bold ${timeframe === 'hourly' && monthlyAvg?.avg_rv && latestRV && latestRV > monthlyAvg.avg_rv ? 'text-emerald-400' : 'text-emerald-300'}`}>
+            <div className={`text-3xl font-bold ${
+              timeframe === 'hourly' && monthlyAvg?.avgRV && latestRV && latestRV > monthlyAvg.avgRV 
+                ? 'text-emerald-400' 
+                : 'text-emerald-300'
+            }`}>
               {formatPercent(latestRV)}
             </div>
             <div className="text-xs text-emerald-200/60">{selectedTimeframeData?.label} lookback</div>
@@ -211,8 +287,14 @@ export function VolatilityRegimePanel() {
 
           <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-lg space-y-1">
             <div className="text-xs text-sky-400 uppercase tracking-wider">IV - RV Spread</div>
-            <div className={`text-3xl font-bold flex items-center gap-2 ${spread !== null && spread >= 0 ? 'text-sky-300' : 'text-sky-400'}`}>
-              {spread !== null && spread >= 0 ? <TrendingUp className="h-6 w-6" /> : <TrendingDown className="h-6 w-6" />}
+            <div className={`text-3xl font-bold flex items-center gap-2 ${
+              spread !== null && spread >= 0 ? 'text-sky-300' : 'text-sky-400'
+            }`}>
+              {spread !== null && spread >= 0 ? (
+                <TrendingUp className="h-6 w-6" />
+              ) : (
+                <TrendingDown className="h-6 w-6" />
+              )}
               {formatPercent(spread, { showSign: true })}
             </div>
             <div className="text-xs text-sky-200/60">Higher spread ⇒ richer option premia</div>
@@ -221,18 +303,18 @@ export function VolatilityRegimePanel() {
 
         {/* Chart */}
         <div className="h-[400px] w-full bg-muted/50 rounded-lg p-4">
-          {chartData.length === 0 ? (
+          {filteredChartData.length === 0 ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               No historical data available for {selectedTimeframeData?.label} timeframe
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <LineChart data={filteredChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                 <XAxis
                   dataKey="timestamp"
                   type="number"
-                  domain={['dataMin', 'dataMax']}
+                  domain={timeframe === 'hourly' ? [Date.now() - (24 * 60 * 60 * 1000), Date.now()] : ['dataMin', 'dataMax']}
                   tickFormatter={(ts) => formatTimestamp(ts).split(',')[0]}
                   stroke="hsl(var(--muted-foreground))"
                   style={{ fontSize: '11px' }}
@@ -268,26 +350,26 @@ export function VolatilityRegimePanel() {
                   dot={false}
                   name="Realized Volatility"
                 />
-                {timeframe === 'hourly' && monthlyAvg?.avg_iv && (
+                {timeframe === 'hourly' && monthlyAvg?.avgIV && (
                   <ReferenceLine
-                    y={monthlyAvg.avg_iv}
+                    y={monthlyAvg.avgIV}
                     stroke="rgb(248, 113, 113)"
                     strokeDasharray="5 5"
                     label={{
-                      value: `Avg IV (30d): ${monthlyAvg.avg_iv.toFixed(2)}%`,
+                      value: `Avg IV (30d): ${monthlyAvg.avgIV.toFixed(2)}%`,
                       position: 'right',
                       fill: 'rgb(248, 113, 113)',
                       fontSize: 11,
                     }}
                   />
                 )}
-                {timeframe === 'hourly' && monthlyAvg?.avg_rv && (
+                {timeframe === 'hourly' && monthlyAvg?.avgRV && (
                   <ReferenceLine
-                    y={monthlyAvg.avg_rv}
+                    y={monthlyAvg.avgRV}
                     stroke="rgb(52, 211, 153)"
                     strokeDasharray="5 5"
                     label={{
-                      value: `Avg RV (30d): ${monthlyAvg.avg_rv.toFixed(2)}%`,
+                      value: `Avg RV (30d): ${monthlyAvg.avgRV.toFixed(2)}%`,
                       position: 'right',
                       fill: 'rgb(52, 211, 153)',
                       fontSize: 11,

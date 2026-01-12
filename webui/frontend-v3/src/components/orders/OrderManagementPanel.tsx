@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,7 +54,7 @@ export function OrderManagementPanel() {
   const { data: ordersData, isLoading } = useQuery({
     queryKey: ['orders', 'open'],
     queryFn: async () => {
-      const res = await fetch('/api/orders?state=open');
+      const res = await fetch(`${API_URL}/api/orders?state=open`);
       if (!res.ok) throw new Error('Failed to fetch orders');
       return res.json() as Promise<{ orders: Order[]; total: number }>;
     },
@@ -60,7 +66,7 @@ export function OrderManagementPanel() {
     mutationFn: async (orderId: number) => {
       // Note: This endpoint may not exist in backend
       // You may need to implement /api/orders/{id}/cancel in backend
-      const res = await fetch(`/api/orders/${orderId}/cancel`, {
+      const res = await fetch(`${API_URL}/api/orders/${orderId}/cancel`, {
         method: 'POST',
       });
       
@@ -87,7 +93,7 @@ export function OrderManagementPanel() {
     mutationFn: async () => {
       // Note: This endpoint may not exist in backend
       // You may need to implement /api/orders/cancel_all in backend
-      const res = await fetch('/api/orders/cancel_all', {
+      const res = await fetch(`${API_URL}/api/orders/cancel_all`, {
         method: 'POST',
       });
       

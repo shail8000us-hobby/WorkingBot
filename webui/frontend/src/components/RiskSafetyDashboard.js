@@ -7,8 +7,10 @@
  * - Comprehensive risk metrics
  * - Modern glassmorphism design
  * - Quick actions and emergency controls
+ * - Multi-symbol support (BTCUSD/ETHUSD) v6.0
  * 
  * Created: December 27, 2025
+ * Updated: Multi-symbol support January 2025
  * Author: Senior Developer
  */
 
@@ -28,7 +30,9 @@ import {
   Button,
   Divider,
   CircularProgress,
-  Paper
+  Paper,
+  ToggleButtonGroup,
+  ToggleButton
 } from '@mui/material';
 import {
   Shield,
@@ -51,8 +55,32 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/apiShim';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+
+// Symbol colors for theming
+const symbolColors = {
+  'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
+  'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' }
+};
 
 const RiskSafetyDashboard = () => {
+  // Multi-symbol support v6.0
+  const { selectedInstance, instances } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
+  const [currentSymbol, setCurrentSymbol] = useState(instanceInfo?.symbol || 'BTCUSD');
+  
+  // Get available symbols from instances
+  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+  if (availableSymbols.length === 0) {
+    availableSymbols.push('BTCUSD', 'ETHUSD');
+  }
+  
+  const handleSymbolChange = (event, newSymbol) => {
+    if (newSymbol !== null) {
+      setCurrentSymbol(newSymbol);
+    }
+  };
+  
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState(null);
@@ -61,7 +89,7 @@ const RiskSafetyDashboard = () => {
 
   const fetchSafetyData = useCallback(async () => {
     try {
-      const response = await api.get('/api/safety/dashboard');
+      const response = await api.get(`/api/safety/dashboard?symbol=${currentSymbol}`);
       if (response.data.success) {
         setData(response.data);
         setError(null);
@@ -76,7 +104,7 @@ const RiskSafetyDashboard = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [currentSymbol]);
 
   useEffect(() => {
     fetchSafetyData();
@@ -173,21 +201,69 @@ const RiskSafetyDashboard = () => {
   };
 
   const statusColors = getStatusColor(overall_status);
+  const currentSymbolColors = symbolColors[currentSymbol] || symbolColors['BTCUSD'];
 
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
             <Shield className="w-8 h-8" style={{ color: statusColors.text }} />
             Risk & Safety Control Center
+            <Chip
+              label={currentSymbol}
+              size="small"
+              sx={{
+                bgcolor: currentSymbolColors.bg,
+                color: currentSymbolColors.text,
+                fontWeight: 600,
+                border: `1px solid ${currentSymbolColors.border}`
+              }}
+            />
           </Typography>
           <Typography variant="body2" color="text.secondary">
             6-Layer Guardian Protection System • Real-time Monitoring • Institutional Grade Safety
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          {/* Symbol Toggle */}
+          <ToggleButtonGroup
+            value={currentSymbol}
+            exclusive
+            onChange={handleSymbolChange}
+            size="small"
+            sx={{
+              '& .MuiToggleButton-root': {
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 2,
+                py: 0.5
+              }
+            }}
+          >
+            {availableSymbols.map(symbol => {
+              const colors = symbolColors[symbol] || symbolColors['BTCUSD'];
+              return (
+                <ToggleButton
+                  key={symbol}
+                  value={symbol}
+                  sx={{
+                    '&.Mui-selected': {
+                      bgcolor: colors.bg,
+                      color: colors.text,
+                      borderColor: colors.border,
+                      '&:hover': {
+                        bgcolor: colors.bg
+                      }
+                    }
+                  }}
+                >
+                  {symbol.replace('USD', '')}
+                </ToggleButton>
+              );
+            })}
+          </ToggleButtonGroup>
           {lastUpdate && (
             <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
               Updated {Math.floor((new Date() - lastUpdate) / 1000)}s ago

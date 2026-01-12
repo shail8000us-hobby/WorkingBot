@@ -4,9 +4,9 @@ import { motion } from 'framer-motion';
 function Sidebar({ sections = [], activeSection, onSelect }) {
   return (
     <nav
-      className="fixed left-0 right-0 z-40 hidden border-b border-slate-800/80 bg-slate-950/90 backdrop-blur lg:block"
+      className="fixed left-0 right-0 z-38 hidden border-b border-slate-800/80 bg-slate-950/90 backdrop-blur lg:block"
       style={{
-        top: `calc(4.5rem + env(safe-area-inset-top))`
+        top: `calc(9.5rem + env(safe-area-inset-top))`
       }}
     >
       <div className="mx-auto max-w-full px-4">

@@ -75,21 +75,24 @@ def get_config():
     Returns the current configuration from grid_config.env with optional
     redaction of sensitive keys.
     
+    v6.0: Supports per-instance configuration
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    
     Returns:
         JSON response with configuration
     
     Example:
-        GET /api/config
-        Response: {
-            "SYMBOL": "BTCUSD",
-            "GRID_SIZE": "10",
-            ...
-        }
+        GET /api/config?instance=BTCUSD_LONG
     """
     try:
-        log.info(f"Config request from {request.remote_addr}")
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
         
-        config = _load_config(redact=True)
+        log.info(f"Config request from {request.remote_addr}" + 
+                (f" for instance {instance}" if instance else ""))
+        
+        config = _load_config(redact=True, instance=instance)
         return jsonify(config), 200
         
     except Exception as e:

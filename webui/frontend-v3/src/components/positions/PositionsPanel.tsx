@@ -35,12 +35,18 @@ interface PositionsData {
   status?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 // ===== Main Component =====
 export default function PositionsPanel() {
   const { data, isLoading, refetch, isFetching } = useQuery<PositionsData>({
     queryKey: ['positions'],
     queryFn: async () => {
-      const res = await fetch('/api/positions');
+      const res = await fetch(`${API_URL}/api/positions`);
       if (!res.ok) throw new Error('Failed to fetch positions');
       return res.json();
     },

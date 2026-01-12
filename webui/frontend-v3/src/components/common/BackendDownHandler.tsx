@@ -12,7 +12,7 @@ import { AlertTriangle, RefreshCw, WifiOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5555';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557';
 
 interface BackendDownProps {
   children: React.ReactNode;

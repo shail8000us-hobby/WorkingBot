@@ -2,6 +2,12 @@
 
 import { RiskLimitsPanel } from '@/components/risk/RiskLimitsPanel';
 import { RiskMetricsPanel } from '@/components/risk/RiskMetricsPanel';
+import { VolatilityRegimePanel } from '@/components/volatility/VolatilityRegimePanel';
+import { UnrealizedPnLPanel } from '@/components/pnl/UnrealizedPnLPanel';
+import { MarketSignalPanel } from '@/components/signals/MarketSignalPanel';
+import { LiquidationProtectionPanel } from '@/components/liquidation/LiquidationProtectionPanel';
+import { RiskSafetyDashboard } from '@/components/safety/RiskSafetyDashboard';
+import { CapitalProtectionPanel } from '@/components/capital/CapitalProtectionPanel';
 
 export default function RiskPage() {
   return (
@@ -14,8 +20,14 @@ export default function RiskPage() {
           </p>
         </div>
         <div className="grid gap-6">
+          <RiskSafetyDashboard />
+          <CapitalProtectionPanel />
+          <MarketSignalPanel />
           <RiskMetricsPanel />
           <RiskLimitsPanel />
+          <VolatilityRegimePanel />
+          <UnrealizedPnLPanel />
+          <LiquidationProtectionPanel />
         </div>
       </div>
     </div>

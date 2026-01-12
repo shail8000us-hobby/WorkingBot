@@ -9,14 +9,25 @@ backtest_bp = Blueprint('backtest', __name__)
 
 @backtest_bp.route('/api/backtest/results/latest', methods=['GET'])
 def get_latest_backtest():
-    """Get latest backtest results (mock data)"""
+    """
+    Get latest backtest results (mock data)
+    
+    v6.0: Supports per-instance backtests
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    """
     try:
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        symbol = instance.split('_')[0] if instance else 'BTCUSD'
+        
         # Mock backtest results
         results = {
             'id': 'backtest_' + datetime.now().strftime('%Y%m%d_%H%M%S'),
             'status': 'completed',
+            'instance': instance,
             'config': {
-                'symbol': 'BTCUSD',
+                'symbol': symbol,
                 'start_date': (datetime.now() - timedelta(days=30)).isoformat(),
                 'end_date': datetime.now().isoformat(),
                 'initial_capital': 10000,

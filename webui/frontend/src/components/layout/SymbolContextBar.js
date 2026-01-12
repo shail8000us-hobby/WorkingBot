@@ -114,8 +114,8 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
     <Box
       sx={{
         position: 'sticky',
-        top: '64px', // Below TopBar (adjust based on your TopBar height)
-        zIndex: 35,
+        top: { xs: '72px', md: '80px' }, // Below TopBar (adjust for TopBar height + safe area)
+        zIndex: 30, // Below TopBar (z-index: 40)
         background: colors.gradient,
         borderBottom: `2px solid ${colors.border}`,
         backdropFilter: 'blur(10px)',

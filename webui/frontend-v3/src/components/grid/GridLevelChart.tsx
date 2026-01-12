@@ -35,8 +35,14 @@ interface GridResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchGridData(): Promise<GridResponse> {
-  const response = await fetch('http://localhost:5555/api/grid/levels');
+  const response = await fetch(`${API_URL}/api/grid/levels`);
   if (!response.ok) {
     throw new Error(`Failed to fetch grid data: ${response.statusText}`);
   }

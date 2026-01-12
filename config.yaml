@@ -1,23 +1,10 @@
 version: '6.0'
 trading_mode: live
-
-# ═══════════════════════════════════════════════════════════════════════════
-# V6.0 MULTI-INSTANCE SUPPORT: Instance = Symbol + Mode
-# ═══════════════════════════════════════════════════════════════════════════
-# This enables running LONG and SHORT on the same symbol simultaneously.
-# Each instance has its own grid, capital, and RSI thresholds.
-#
-# INSTANCE NAMING: SYMBOL_MODE (e.g., BTCUSD_LONG, BTCUSD_SHORT)
-#
-# RSI LOGIC (critical difference between LONG and SHORT):
-# - LONG: stop_threshold=30 (stop when RSI <= 30, oversold = too weak to buy)
-# - SHORT: stop_threshold=70 (stop when RSI >= 70, overbought = too strong to short)
-# ═══════════════════════════════════════════════════════════════════════════
 instances:
   BTCUSD_LONG:
     symbol: BTCUSD
     mode: LONG
-    product_id: 139
+    product_id: 27
     enabled: true
     capital:
       allocated_usd: 7000
@@ -31,145 +18,6 @@ instances:
       limits:
         max_open_positions: '50'
         lot_size: '5'
-        max_open_orders: 20
-        max_qty_per_order: '2'
-      behavior:
-        strict_grid: 'true'
-        rung_snap_mode: below
-        tick_size: '0.5'
-        dynamic_tick_size: 'true'
-        seed_initial_count: '0'
-      smart_gap_fill:
-        enabled: 'false'
-        order_type: maker
-        max_levels: '0'
-    safety:
-      max_account_loss_inr: 10000
-      min_liquidation_distance_pct: 10.0
-      rsi:
-        enabled: true
-        period: 14
-        stop_threshold: 30.0      # LONG: Stop when RSI <= 30 (oversold)
-        resume_threshold: 40.0    # Resume when RSI >= 40
-        hysteresis_seconds: 60
-        timeframe: '1h'
-        check_interval: 300
-
-  BTCUSD_SHORT:
-    symbol: BTCUSD
-    mode: SHORT
-    product_id: 139
-    enabled: false               # Disabled by default, enable when ready
-    capital:
-      allocated_usd: 3000
-      max_position_value_usd: 2000
-    grid:
-      geometry:
-        lower: '95000'           # SHORT grid: higher prices
-        upper: '105000'
-        step: '500'
-        reference: '100000'
-      limits:
-        max_open_positions: '30'
-        lot_size: '5'
-        max_open_orders: 15
-        max_qty_per_order: '2'
-      behavior:
-        strict_grid: 'true'
-        rung_snap_mode: above     # SHORT: snap to above
-        tick_size: '0.5'
-        dynamic_tick_size: 'true'
-        seed_initial_count: '0'
-      smart_gap_fill:
-        enabled: 'false'
-        order_type: maker
-        max_levels: '0'
-    safety:
-      max_account_loss_inr: 5000
-      min_liquidation_distance_pct: 10.0
-      rsi:
-        enabled: true
-        period: 14
-        stop_threshold: 70.0      # SHORT: Stop when RSI >= 70 (overbought)
-        resume_threshold: 60.0    # Resume when RSI <= 60
-        hysteresis_seconds: 60
-        timeframe: '1h'
-        check_interval: 300
-
-  ETHUSD_LONG:
-    symbol: ETHUSD
-    mode: LONG
-    product_id: 3136
-    enabled: false               # Disabled by default
-    capital:
-      allocated_usd: 3000
-      max_position_value_usd: 2000
-    grid:
-      geometry:
-        lower: '3200'
-        upper: '3800'
-        step: '50'
-        reference: '3500'
-      limits:
-        max_open_positions: '30'
-        lot_size: '10'
-        max_open_orders: 15
-        max_qty_per_order: '3'
-      behavior:
-        strict_grid: 'true'
-        tick_size: '0.05'
-        rung_snap_mode: below
-        dynamic_tick_size: 'false'
-        seed_initial_count: '0'
-      smart_gap_fill:
-        enabled: 'false'
-        order_type: maker
-        max_levels: '0'
-    safety:
-      max_account_loss_inr: 5000
-      min_liquidation_distance_pct: 10.0
-      rsi:
-        enabled: true
-        period: 14
-        stop_threshold: 30.0      # LONG: Stop when RSI <= 30
-        resume_threshold: 40.0
-        hysteresis_seconds: 60
-        timeframe: '1h'
-        check_interval: 300
-
-# ═══════════════════════════════════════════════════════════════════════════
-# V5.0 LEGACY: symbols section (DEPRECATED - use instances above)
-# Kept for backward compatibility during migration
-# ═══════════════════════════════════════════════════════════════════════════
-capital_allocation:
-  total_capital_usd: 10000
-  allocations:
-    BTCUSD:
-      capital_usd: 7000
-      percentage: 70
-      max_position_value_usd: 5000
-    ETHUSD:
-      capital_usd: 3000
-      percentage: 30
-      max_position_value_usd: 2000
-symbols:
-  BTCUSD:
-    enabled: true
-    product_id: 139
-    mode: LONG
-    capital:
-      allocated_usd: 7000
-      max_position_value_usd: 5000
-    grid:
-      geometry:
-        lower: '85000'
-        upper: '95000'
-        step: '500'
-        reference: '88500'
-      limits:
-        max_open_positions: '50'
-        lot_size: '5'
-        short_lot_size: '1'
         max_open_orders: 20
         max_qty_per_order: '2'
       behavior:
@@ -184,11 +32,60 @@ symbols:
         max_levels: '0'
     safety:
       max_account_loss_inr: '10000'
-      min_liquidation_distance_pct: 10.0
-  ETHUSD:
+      min_liquidation_distance_pct: '10.0'
+      rsi:
+        enabled: true
+        period: 14
+        stop_threshold: 30.0
+        resume_threshold: 40.0
+        hysteresis_seconds: 60
+        timeframe: 1h
+        check_interval: 300
+  BTCUSD_SHORT:
+    symbol: BTCUSD
+    mode: SHORT
+    product_id: 27
     enabled: false
-    product_id: 3136
+    capital:
+      allocated_usd: 3000
+      max_position_value_usd: 2000
+    grid:
+      geometry:
+        lower: '95000'
+        upper: '105000'
+        step: '500'
+        reference: '100000'
+      limits:
+        max_open_positions: '30'
+        lot_size: '5'
+        max_open_orders: 15
+        max_qty_per_order: '2'
+      behavior:
+        strict_grid: 'true'
+        rung_snap_mode: above
+        tick_size: '0.5'
+        dynamic_tick_size: 'true'
+        seed_initial_count: '0'
+      smart_gap_fill:
+        enabled: 'false'
+        order_type: maker
+        max_levels: '0'
+    safety:
+      max_account_loss_inr: '5000'
+      min_liquidation_distance_pct: '10.0'
+      rsi:
+        enabled: true
+        period: 14
+        stop_threshold: 70.0
+        resume_threshold: 60.0
+        hysteresis_seconds: 60
+        timeframe: 1h
+        check_interval: 300
+  ETHUSD_LONG:
+    symbol: ETHUSD
     mode: LONG
+    product_id: 3136
+    enabled: true
     capital:
       allocated_usd: 3000
       max_position_value_usd: 2000
@@ -201,7 +98,6 @@ symbols:
       limits:
         max_open_positions: '30'
         lot_size: '10'
-        short_lot_size: '1'
         max_open_orders: 15
         max_qty_per_order: '3'
       behavior:
@@ -216,8 +112,29 @@ symbols:
         max_levels: '0'
     safety:
       max_account_loss_inr: '5000'
-      min_liquidation_distance_pct: 10.0
+      min_liquidation_distance_pct: '10.0'
+      rsi:
+        enabled: true
+        period: 14
+        stop_threshold: 30.0
+        resume_threshold: 40.0
+        hysteresis_seconds: 60
+        timeframe: 1h
+        check_interval: 300
+capital_allocation:
+  total_capital_usd: 10000
+  allocations:
+    BTCUSD:
+      capital_usd: 7000
+      percentage: 70
+      max_position_value_usd: 5000
+    ETHUSD:
+      capital_usd: 3000
+      percentage: 30
+      max_position_value_usd: 2000
+
 capital_protection:
+  max_loss_inr: 10000
   equity_floor:
     floor_inr: 70000
     check_interval: 60
@@ -429,19 +346,14 @@ liquidation_protection:
 execution_safety:
   execute_orders: 'true'
   i_understand_live: 'YES'
-
-# ============================================================================
-# LEGACY v4.0 GRID SETTINGS - DEPRECATED
-# Use symbols.BTCUSD.grid.* for per-symbol grid configuration
-# ============================================================================
 grid:
   smart_gap_fill:
-    order_type: 'maker'
+    order_type: maker
     max_levels: '3'
     enabled: 'false'
   behavior:
     dynamic_tick_size: 'true'
-    rung_snap_mode: 'below'
+    rung_snap_mode: below
     seed_initial_count: '0'
     strict_grid: 'true'
     tick_size: '0.5'
@@ -456,16 +368,10 @@ grid:
     upper: '95000'
 risk_limits:
   emergency_price_buffer: '500'
-
-# ============================================================================
-# LEGACY v4.0 FIELDS - DEPRECATED (Kept for backward compatibility)
-# These fields are ignored in v5.0 multi-symbol mode
-# Symbol-specific settings now in symbols.BTCUSD.* and symbols.ETHUSD.*
-# ============================================================================
 bot:
-  mode: 'LONG'  # Deprecated: Use symbols.BTCUSD.mode instead
-  heartbeat_seconds: '60'  # Deprecated: Use symbols.BTCUSD.bot_settings if needed
-  symbol: 'BTCUSD'  # Deprecated: v5.0 supports multiple symbols
+  mode: LONG
+  heartbeat_seconds: '60'
+  symbol: BTCUSD
 health_check:
   enabled: 'true'
   interval: '30'
@@ -476,3 +382,17 @@ emergency:
   market_disruption_cooldown: '300'
   max_disruption_events: '5'
   max_drift_alerts: '10'
+
+# ============================================================================
+# OPTIONS TRADING MODULE (Added: January 4, 2026)
+# ============================================================================
+# Manages options positions separately from grid bot
+# Only affects options - does NOT touch futures/grid bot trading
+options:
+  enabled: true
+  polling_interval_seconds: 5
+  rate_limit_seconds: 2
+  max_spread_pct: 10.0
+  guardian_integration: true
+  expiry_warning_hours: 24
+  liquidity_check: true

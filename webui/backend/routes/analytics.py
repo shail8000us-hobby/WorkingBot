@@ -16,12 +16,27 @@ def get_db_connection():
 
 @analytics_bp.route('/api/analytics/summary', methods=['GET'])
 def get_analytics_summary():
-    """Get comprehensive analytics summary"""
+    """
+    Get comprehensive analytics summary
+    
+    v6.0: Supports per-instance analytics
+    Query params:
+        days: Number of days to analyze (default: 30)
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    """
     try:
         days = request.args.get('days', 30, type=int)
+        instance = request.args.get('instance')  # v6.0: Instance parameter
         cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
         
-        conn = get_db_connection()
+        # v6.0: Use instance-specific database if provided
+        if instance:
+            db_name = f'trading_bot_{instance}.db'
+        else:
+            db_name = 'trading_bot.db'
+        
+        conn = sqlite3.connect(db_name)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         # Get trade stats

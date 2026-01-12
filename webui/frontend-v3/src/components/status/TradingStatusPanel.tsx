@@ -47,6 +47,12 @@ interface TradingStatus {
   blockers: Blocker[];
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 // ===== Main Component =====
 export default function TradingStatusPanel() {
   const [expanded, setExpanded] = useState(false);
@@ -56,7 +62,7 @@ export default function TradingStatusPanel() {
   const { data: status, isLoading, refetch } = useQuery<TradingStatus>({
     queryKey: ['trading-status'],
     queryFn: async () => {
-      const res = await fetch('/api/trading/status');
+      const res = await fetch(`${API_URL}/api/trading/status`);
       if (!res.ok) throw new Error('Failed to fetch trading status');
       return res.json();
     },

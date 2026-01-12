@@ -1,16 +1,23 @@
 # Backend & Frontend Port Configuration
 
-**Last Updated:** November 2, 2025
+**Last Updated:** January 5, 2026
 
 ## ⚠️ CRITICAL: Port Conflict Prevention
 
+### ✅ CURRENT PRODUCTION SETUP (Active)
+
 ### Port Assignments
 
-| Service | Port | Purpose | How to Start |
-|---------|------|---------|--------------|
-| **Backend (Flask API)** | `5555` | REST API, WebSocket, Data endpoints | `launchctl start com.gridbot.webui` |
-| **Frontend (React Dev)** | `3000` | Development server with hot-reload | `cd webui/frontend && npm start` |
-| **Frontend (Production)** | `5555` | Served by Flask backend | Automatically served by backend |
+| Service | Port | Purpose | Status |
+|---------|------|---------|--------|
+| **Backend (Flask API)** | `5555` | REST API, WebSocket, Data endpoints | ✅ **ACTIVE** (LaunchAgent) |
+| **Frontend (Production)** | `5555` | Served by Flask backend | ✅ **ACTIVE** (Built & Served) |
+| **Frontend (Dev - DISABLED)** | `3000-3002` | ~~Development server~~ | ❌ **DISABLED** (Not needed) |
+
+**Current Mode:** Production Mode Only
+- Backend runs on port 5555 via LaunchAgent
+- Frontend production build served from `/webui/frontend/build/`
+- No dev server running - single port architecture
 
 ---
 

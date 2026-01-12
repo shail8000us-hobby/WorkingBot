@@ -44,7 +44,7 @@ interface ConfigResponse {
 }
 
 async function fetchConfig(): Promise<ConfigResponse> {
-  const response = await fetch('http://localhost:5555/api/config');
+  const response = await fetch('http://localhost:5557/api/config');
   if (!response.ok) {
     throw new Error('Failed to fetch configuration');
   }
@@ -52,7 +52,7 @@ async function fetchConfig(): Promise<ConfigResponse> {
 }
 
 async function saveConfig(updates: Record<string, any>) {
-  const response = await fetch('http://localhost:5555/api/config/update', {
+  const response = await fetch('http://localhost:5557/api/config/update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ updates }),

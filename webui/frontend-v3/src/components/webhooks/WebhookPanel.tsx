@@ -36,8 +36,14 @@ interface WebhooksResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchWebhooks(): Promise<WebhooksResponse> {
-  const response = await fetch('http://localhost:5555/api/webhooks/list');
+  const response = await fetch(`${API_URL}/api/webhooks/list`);
   if (!response.ok) {
     throw new Error('Failed to fetch webhooks');
   }
@@ -45,7 +51,7 @@ async function fetchWebhooks(): Promise<WebhooksResponse> {
 }
 
 async function testWebhook(id: string) {
-  const response = await fetch(`http://localhost:5555/api/webhooks/${id}/test`, {
+  const response = await fetch(`${API_URL}/api/webhooks/${id}/test`, {
     method: 'POST',
   });
   return response.json();

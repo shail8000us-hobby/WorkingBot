@@ -26,12 +26,21 @@ def get_recent_logs(lines: int = 100, log_file: str = "bot/logs/bot.log") -> Lis
     """
     log_path = Path(log_file)
     
+    # If log_file is not an absolute path, make it relative to project root
+    if not log_path.is_absolute():
+        # Get project root (4 levels up from this file)
+        base_dir = Path(__file__).parent.parent.parent
+        log_path = base_dir / log_file
+    
     if not log_path.exists():
         # Try alternate log paths if primary doesn't exist
+        base_dir = Path(__file__).parent.parent.parent
         alternate_paths = [
-            Path("logs/gridbot.log"),
-            Path("bot/logs/gridbot_live.log"),
-            Path("logs/trading_bot.log")
+            base_dir / "logs" / "gridbot.log",
+            base_dir / "bot" / "logs" / "gridbot_live.log",
+            base_dir / "logs" / "trading_bot.log",
+            base_dir / "logs" / "webui_guardian.log",
+            base_dir / "logs" / "guardian_monitor.log",
         ]
         
         for alt_path in alternate_paths:
@@ -40,7 +49,7 @@ def get_recent_logs(lines: int = 100, log_file: str = "bot/logs/bot.log") -> Lis
                 break
         
         if not log_path.exists():
-            return []
+            return [f"Log file not found: {log_file}"]
     
     try:
         with open(log_path, 'r') as f:

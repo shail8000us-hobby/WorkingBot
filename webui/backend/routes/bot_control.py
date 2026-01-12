@@ -196,7 +196,12 @@ def bot_status():
 @bot_control_bp.route('/api/bot/start', methods=['POST'])
 def bot_start():
     """
-    Start trading bot
+    Start trading bot (v6.0 instance-aware)
+    
+    Request Body (JSON):
+        instance (optional): Instance name (e.g., "BTCUSD_LONG", "ETHUSD_LONG")
+                            If not provided, starts default 'live' bot
+        mode (legacy): Trading mode ('live' or 'demo'), deprecated in favor of instance
     
     Uses PM2 if enabled, falls back to direct launcher
     
@@ -205,12 +210,22 @@ def bot_start():
     
     Example:
         POST /api/bot/start
-        Response: {"success": true, "message": "Bot started successfully", "pm2_managed": true}
+        Body: {"instance": "BTCUSD_LONG"}
+        Response: {"success": true, "message": "Bot BTCUSD_LONG started successfully", "pm2_managed": true}
     """
     try:
+        # v6.0: Extract instance from request body
+        data = request.get_json() or {}
+        instance_name = data.get('instance')
+        mode = data.get('mode', 'live')  # Legacy fallback
+        
         # Check if PM2 is enabled
         if should_use_pm2():
-            success, message = pm2.start_bot('live')
+            # v6.0: Start specific instance if provided
+            if instance_name:
+                success, message = pm2.start_process(f'gridbot-{instance_name.lower().replace("_", "-")}')
+            else:
+                success, message = pm2.start_bot(mode)
             
             return jsonify({
                 'success': success,
@@ -270,7 +285,12 @@ def bot_start():
 @bot_control_bp.route('/api/bot/stop', methods=['POST'])
 def bot_stop():
     """
-    Stop trading bot
+    Stop trading bot (v6.0 instance-aware)
+    
+    Request Body (JSON):
+        instance (optional): Instance name (e.g., "BTCUSD_LONG", "ETHUSD_LONG")
+                            If not provided, stops default 'live' bot
+        mode (legacy): Trading mode ('live' or 'demo'), deprecated in favor of instance
     
     Uses PM2 graceful shutdown if enabled (30s timeout),
     falls back to direct SIGTERM
@@ -280,16 +300,27 @@ def bot_stop():
     
     Example:
         POST /api/bot/stop
-        Response: {"success": true, "message": "Bot stopped successfully", "pm2_managed": true}
+        Body: {"instance": "BTCUSD_LONG"}
+        Response: {"success": true, "message": "Bot BTCUSD_LONG stopped successfully", "pm2_managed": true}
     """
     try:
+        # v6.0: Extract instance from request body
+        data = request.get_json() or {}
+        instance_name = data.get('instance')
+        mode = data.get('mode', 'live')  # Legacy fallback
+        
         # Check if PM2 is enabled
         if should_use_pm2():
-            success, message = pm2.stop_bot('live')
+            # v6.0: Stop specific instance if provided
+            if instance_name:
+                success, message = pm2.stop_process(f'gridbot-{instance_name.lower().replace("_", "-")}')
+            else:
+                success, message = pm2.stop_bot(mode)
             
             return jsonify({
                 'success': success,
                 'message': message,
+                'instance': instance_name,
                 'pm2_managed': True
             }), 200 if success else 400
         
@@ -363,21 +394,41 @@ def bot_stop():
 @bot_control_bp.route('/api/bot/restart', methods=['POST'])
 def bot_restart():
     """
-    Restart trading bot
+    Restart trading bot (v6.0 instance-aware)
+    
+    Request Body (JSON):
+        instance (optional): Instance name (e.g., "BTCUSD_LONG", "ETHUSD_LONG")
+                            If not provided, restarts default 'live' bot
+        mode (legacy): Trading mode ('live' or 'demo'), deprecated in favor of instance
     
     Uses PM2 restart if enabled, falls back to stop+start
     
     Returns:
         JSON response with success status
+    
+    Example:
+        POST /api/bot/restart
+        Body: {"instance": "BTCUSD_LONG"}
+        Response: {"success": true, "message": "Bot BTCUSD_LONG restarted successfully"}
     """
     try:
+        # v6.0: Extract instance from request body
+        data = request.get_json() or {}
+        instance_name = data.get('instance')
+        mode = data.get('mode', 'live')  # Legacy fallback
+        
         # Check if PM2 is enabled
         if should_use_pm2():
-            success, message = pm2.restart_bot('live')
+            # v6.0: Restart specific instance if provided
+            if instance_name:
+                success, message = pm2.restart_process(f'gridbot-{instance_name.lower().replace("_", "-")}')
+            else:
+                success, message = pm2.restart_bot(mode)
             
             return jsonify({
                 'success': success,
                 'message': message,
+                'instance': instance_name,
                 'pm2_managed': True
             }), 200 if success else 500
         

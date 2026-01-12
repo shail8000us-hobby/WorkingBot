@@ -37,6 +37,8 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 
+from config.loader import get_config
+
 log = logging.getLogger("audit")
 
 
@@ -228,7 +230,7 @@ def get_audit_logger() -> OrderAuditLogger:
     if _audit_logger is None:
         # Use mode-specific audit file
         cfg = get_config()
-        trading_mode = cfg.safety.trading_mode.lower()
+        trading_mode = cfg.trading_mode.value.lower()  # trading_mode is at root level
         audit_file = f"bot/audit/orders_{trading_mode}.jsonl"
         _audit_logger = OrderAuditLogger(audit_file)
     return _audit_logger

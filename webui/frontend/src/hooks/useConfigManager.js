@@ -36,23 +36,43 @@ export function useConfigManager({
   const { selectedSymbol, fetchWithSymbol } = useSymbolSafe();
 
   const fetchInitialData = useCallback(async () => {
+    const timerId = 'fetch-initial-data';
+    perfMonitor.startTimer(timerId);
+    let timerEnded = false;
+    
+    const endTimerOnce = () => {
+      if (!timerEnded && perfMonitor.hasTimer(timerId)) {
+        perfMonitor.endTimer(timerId);
+        timerEnded = true;
+      }
+    };
+    
     try {
-      perfMonitor.startTimer('fetch-initial-data');
       setLoading(true);
 
       const flagsPromise = robustApiClient.get('/api/flags').catch(() => ({}));
 
-      // Batch 1: Critical data (v5.0: symbol-aware)
-      const [configData, botData] = await Promise.all([
+      // Batch 1: Critical data (v5.0: symbol-aware) - with timeout
+      const criticalDataPromise = Promise.all([
         fetchWithSymbol('/api/config/flat').then(r => r.json()),
         fetchWithSymbol('/api/bot/status').then(r => r.json()),
+      ]);
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 5000)
+      );
+      
+      const [configData, botData] = await Promise.race([
+        criticalDataPromise,
+        timeoutPromise
       ]);
 
       // Backend is responsive, clear backend down state
       setBackendDown(false);
 
       // Small delay between batches to prevent resource exhaustion
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 50)); // Reduced from 100ms
 
       // Batch 2: Secondary data (v5.0: symbol-aware where applicable)
       const [tradingData, logsData, positionsResponse, flagsData] = await Promise.all([
@@ -97,14 +117,15 @@ export function useConfigManager({
       setFeatureFlags((prev) => ({ ...prev, ...(flagsData || {}) }));
       setLastUpdated(new Date().toISOString());
 
-      perfMonitor.endTimer('fetch-initial-data');
+      endTimerOnce();
     } catch (error) {
-      perfMonitor.endTimer('fetch-initial-data');
+      endTimerOnce();
       console.error('Error fetching initial data:', error);
       
       // Check if this is a network/connection error (backend is down)
       if (error.message?.includes('Network Error') || 
           error.message?.includes('ERR_CONNECTION_REFUSED') ||
+          error.message?.includes('timeout') ||
           error.code === 'ECONNREFUSED' ||
           error.response === undefined) {
         setBackendDown(true);

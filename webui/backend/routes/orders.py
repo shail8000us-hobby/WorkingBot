@@ -35,16 +35,19 @@ def get_orders():
     """
     Get current orders from Delta Exchange
     
+    v6.0: Supports per-instance order filtering
+    
     Query Parameters:
         state (str): Filter by order state - 'all', 'open', 'filled', 'cancelled' (default: 'all')
         product_id (int): Filter by product ID
         limit (int): Maximum number of orders to return (default: 100)
+        instance (str): Optional instance name (e.g., BTCUSD_LONG) for filtering
     
     Returns:
         JSON response with orders list
     
     Example:
-        GET /api/orders?state=open&limit=50
+        GET /api/orders?state=open&limit=50&instance=BTCUSD_LONG
         Response: {
             "orders": [
                 {
@@ -63,7 +66,8 @@ def get_orders():
             "filters": {
                 "state": "open",
                 "product_id": null,
-                "limit": 50
+                "limit": 50,
+                "instance": "BTCUSD_LONG"
             }
         }
     """
@@ -72,6 +76,7 @@ def get_orders():
         state = request.args.get('state', 'all')  # all, open, filled, cancelled
         product_id = request.args.get('product_id', None)
         limit = int(request.args.get('limit', 100))
+        instance = request.args.get('instance')  # v6.0: Instance parameter
         
         # Import DeltaClient
         from bot.api.delta_client import DeltaClient

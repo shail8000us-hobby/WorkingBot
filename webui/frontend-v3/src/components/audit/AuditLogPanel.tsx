@@ -38,7 +38,7 @@ async function fetchAuditLog(category?: string): Promise<AuditLogResponse> {
   if (category && category !== 'all') {
     params.set('category', category);
   }
-  const response = await fetch(`http://localhost:5555/api/audit/logs?${params}`);
+  const response = await fetch(`http://localhost:5557/api/audit/logs?${params}`);
   if (!response.ok) {
     throw new Error('Failed to fetch audit log');
   }

@@ -111,6 +111,12 @@ interface AdvancedPredictions {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 export function MonitoringDashboard() {
   const [isMonitoringActive, setIsMonitoringActive] = useState(false);
 
@@ -118,7 +124,7 @@ export function MonitoringDashboard() {
   const { data: statusData } = useQuery({
     queryKey: ['monitoring-status'],
     queryFn: async () => {
-      const res = await fetch('/api/monitoring/status');
+      const res = await fetch(`${API_URL}/api/monitoring/status`);
       if (!res.ok) throw new Error('Failed to fetch monitoring status');
       const data = await res.json();
       setIsMonitoringActive(data.monitoring_active);
@@ -131,7 +137,7 @@ export function MonitoringDashboard() {
   const { data: priceHealth } = useQuery<PriceHealth>({
     queryKey: ['price-health'],
     queryFn: async () => {
-      const res = await fetch('/api/monitoring/price-health');
+      const res = await fetch(`${API_URL}/api/monitoring/price-health`);
       if (!res.ok) throw new Error('Failed to fetch price health');
       return res.json();
     },
@@ -143,7 +149,7 @@ export function MonitoringDashboard() {
   const { data: preOrderStats } = useQuery<PreOrderStats>({
     queryKey: ['pre-order-stats'],
     queryFn: async () => {
-      const res = await fetch('/api/monitoring/pre-order-stats');
+      const res = await fetch(`${API_URL}/api/monitoring/pre-order-stats`);
       if (!res.ok) throw new Error('Failed to fetch pre-order stats');
       return res.json();
     },
@@ -155,7 +161,7 @@ export function MonitoringDashboard() {
   const { data: tpVerification } = useQuery<TPVerification>({
     queryKey: ['tp-verification'],
     queryFn: async () => {
-      const res = await fetch('/api/monitoring/tp-verification');
+      const res = await fetch(`${API_URL}/api/monitoring/tp-verification`);
       if (!res.ok) throw new Error('Failed to fetch TP verification');
       return res.json();
     },
@@ -167,7 +173,7 @@ export function MonitoringDashboard() {
   const { data: anomaliesData } = useQuery<{ anomaly_list?: Anomaly[]; anomalies?: Anomaly[] }>({
     queryKey: ['anomalies'],
     queryFn: async () => {
-      const res = await fetch('/api/monitoring/anomalies');
+      const res = await fetch(`${API_URL}/api/monitoring/anomalies`);
       if (!res.ok) throw new Error('Failed to fetch anomalies');
       return res.json();
     },
@@ -179,7 +185,7 @@ export function MonitoringDashboard() {
   const { data: advancedPredictions } = useQuery<AdvancedPredictions>({
     queryKey: ['advanced-predictions'],
     queryFn: async () => {
-      const res = await fetch('/api/monitoring/advanced-predictions');
+      const res = await fetch(`${API_URL}/api/monitoring/advanced-predictions`);
       if (!res.ok) throw new Error('Failed to fetch advanced predictions');
       return res.json();
     },

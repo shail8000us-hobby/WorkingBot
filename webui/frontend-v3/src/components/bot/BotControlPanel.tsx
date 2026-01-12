@@ -8,6 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Play, Square, RotateCw, Power, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 interface BotStatus {
   running: boolean;
   pm2_managed: boolean;
@@ -24,7 +30,7 @@ export function BotControlPanel() {
   const { data: statusData, isLoading: statusLoading } = useQuery({
     queryKey: ['bot-status'],
     queryFn: async () => {
-      const res = await fetch('/api/bot/status');
+      const res = await fetch(`${API_URL}/api/bot/status`);
       if (!res.ok) throw new Error('Failed to fetch bot status');
       return res.json() as Promise<{ success: boolean; running: boolean; pm2_managed: boolean; pid?: number; uptime?: number }>;
     },
@@ -34,7 +40,7 @@ export function BotControlPanel() {
   // Start bot mutation
   const startMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/bot/start', { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/bot/start`, { method: 'POST' });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || 'Failed to start bot');
@@ -53,7 +59,7 @@ export function BotControlPanel() {
   // Stop bot mutation
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/bot/stop', { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/bot/stop`, { method: 'POST' });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || 'Failed to stop bot');
@@ -72,7 +78,7 @@ export function BotControlPanel() {
   // Restart bot mutation
   const restartMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/bot/restart', { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/bot/restart`, { method: 'POST' });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || 'Failed to restart bot');

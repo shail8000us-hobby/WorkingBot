@@ -241,13 +241,15 @@ function VolatilityChart({
   chartHeight = 450,
   className
 }) {
-  // Instance awareness - for future multi-symbol support
-  const { selectedInstance } = useInstance();
+  // Instance awareness for multi-symbol support (v6.0)
+  const { selectedInstance, instances } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
-  const currentSymbol = instanceInfo?.symbol || 'BTCUSD';
+  const [currentSymbol, setCurrentSymbol] = useState(instanceInfo?.symbol || 'BTCUSD');
+  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+  if (availableSymbols.length === 0) availableSymbols.push('BTCUSD', 'ETHUSD');
   
   const [timeframe, setTimeframe] = useState(initialTimeframe);
-  const [chartData, setChartData] = useState([]);
+  const [chartData, setChartData] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [latest, setLatest] = useState({ iv: null, rv: {} });
@@ -258,6 +260,17 @@ function VolatilityChart({
     avgIV: null,
     avgRV: null
   });
+
+  // Get symbol color
+  const getSymbolColor = (symbol) => {
+    const colors = {
+      'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
+      'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' },
+    };
+    return colors[symbol] || { bg: '#64748b20', border: '#64748b', text: '#64748b' };
+  };
+
+  const symbolColors = getSymbolColor(currentSymbol);
 
   const abortRef = useRef(null);
   const mountedRef = useRef(true);
@@ -282,8 +295,9 @@ function VolatilityChart({
 
   // Filter chart data to rolling 24-hour window for hourly timeframe
   const filteredChartData = useMemo(() => {
-    if (timeframe !== 'hourly' || !chartData.length) {
-      return chartData;
+    const data = chartData[currentSymbol] || [];
+    if (timeframe !== 'hourly' || !data.length) {
+      return data;
     }
     
     const now = Date.now();
@@ -291,12 +305,12 @@ function VolatilityChart({
     const windowStart = now - (24 * hourMs);
     
     // Keep only data points within the last 24 hours
-    return chartData.filter(point => point.timestamp >= windowStart && point.timestamp <= now);
-  }, [chartData, timeframe]);
+    return data.filter(point => point.timestamp >= windowStart && point.timestamp <= now);
+  }, [chartData, currentSymbol, timeframe]);
 
   const fetchLatest = useCallback(async () => {
     try {
-      const response = await fetch('/api/risk/volatility/latest');
+      const response = await fetch(`/api/risk/volatility/latest?symbol=${currentSymbol}`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -308,10 +322,9 @@ function VolatilityChart({
       setLatest(payload.data || { iv: null, rv: {} });
     } catch (err) {
       if (!mountedRef.current) return;
-      // Log silently; latest is not critical for chart rendering
       console.warn('Failed to fetch latest volatility values:', err);
     }
-  }, []);
+  }, [currentSymbol]);
 
   const fetchHistorical = useCallback(async (tf, { showLoader = true } = {}) => {
     if (abortRef.current) {
@@ -326,12 +339,12 @@ function VolatilityChart({
     setError(null);
 
     try {
-      const response = await fetch(`/api/risk/volatility/historical?timeframe=${tf}`, {
+      const response = await fetch(`/api/risk/volatility/historical?timeframe=${tf}&symbol=${currentSymbol}`, {
         signal: controller.signal
       });
 
       if (response.status === 404) {
-        setChartData([]);
+        setChartData(prev => ({ ...prev, [currentSymbol]: [] }));
         setLastUpdated(null);
         return;
       }
@@ -349,7 +362,7 @@ function VolatilityChart({
       const merged = mergeSeries(data?.iv, data?.rv);
 
       if (!mountedRef.current) return;
-      setChartData(merged);
+      setChartData(prev => ({ ...prev, [currentSymbol]: merged }));
       setLastUpdated(Date.now());
     } catch (err) {
       if (controller.signal.aborted || !mountedRef.current) {
@@ -357,13 +370,13 @@ function VolatilityChart({
       }
       console.error('Failed to fetch volatility history:', err);
       setError(err.message || 'Unable to load volatility history');
-      setChartData([]);
+      setChartData(prev => ({ ...prev, [currentSymbol]: [] }));
     } finally {
       if (!controller.signal.aborted && mountedRef.current && showLoader) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [currentSymbol]);
 
   const refreshData = useCallback(
     async (tf, { showLoader = true } = {}) => {
@@ -374,7 +387,7 @@ function VolatilityChart({
 
   const fetchMonthlyAverages = useCallback(async () => {
     try {
-      const response = await fetch('/api/risk/volatility/historical?timeframe=monthly');
+      const response = await fetch(`/api/risk/volatility/historical?timeframe=monthly&symbol=${currentSymbol}`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -473,7 +486,14 @@ function VolatilityChart({
         abortRef.current.abort();
       }
     };
-  }, [refreshData, timeframe, fetchBTCPrice, fetchMonthlyAverages]);
+  }, [refreshData, timeframe, fetchBTCPrice, fetchMonthlyAverages, currentSymbol]);
+
+  // Refetch when symbol changes
+  useEffect(() => {
+    if (!chartData[currentSymbol]) {
+      refreshData(timeframe, { showLoader: true });
+    }
+  }, [currentSymbol, chartData, refreshData, timeframe]);
 
   useEffect(() => {
     if (!autoRefreshMs) return undefined;
@@ -747,6 +767,33 @@ function VolatilityChart({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Symbol Toggle */}
+            <div className="flex rounded-xl border border-slate-800 bg-slate-950/80 p-1 text-xs text-slate-300">
+              {availableSymbols.map((symbol) => {
+                const colors = getSymbolColor(symbol);
+                return (
+                  <button
+                    key={symbol}
+                    type="button"
+                    onClick={() => setCurrentSymbol(symbol)}
+                    className={clsx(
+                      'rounded-lg px-3 py-1.5 font-semibold transition',
+                      symbol === currentSymbol
+                        ? 'shadow-inner'
+                        : 'text-slate-400 hover:text-slate-200'
+                    )}
+                    style={symbol === currentSymbol ? {
+                      backgroundColor: colors.bg,
+                      color: colors.text,
+                      borderColor: colors.border
+                    } : {}}
+                  >
+                    {symbol.replace('USD', '')}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Timeframe Toggle */}
             <div className="flex rounded-xl border border-slate-800 bg-slate-950/80 p-1 text-xs text-slate-300">
               {TIMEFRAMES.map((option) => (
                 <button

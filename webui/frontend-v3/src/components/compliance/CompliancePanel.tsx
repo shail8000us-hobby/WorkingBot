@@ -29,7 +29,7 @@ interface ComplianceResponse {
 }
 
 async function fetchCompliance(): Promise<ComplianceResponse> {
-  const response = await fetch('http://localhost:5555/api/compliance/status');
+  const response = await fetch('http://localhost:5557/api/compliance/status');
   if (!response.ok) {
     throw new Error('Failed to fetch compliance data');
   }

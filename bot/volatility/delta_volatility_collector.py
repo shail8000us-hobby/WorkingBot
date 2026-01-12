@@ -53,21 +53,29 @@ DEFAULT_DB_PATH = str((project_root / "data" / "volatility.db").resolve())
 class DeltaVolatilityCollector:
     """
     Collects and stores IV/RV data from Delta Exchange for charting.
+    Supports multi-symbol (BTCUSD, ETHUSD) with separate databases.
     """
     
-    def __init__(self, db_path: str = DEFAULT_DB_PATH):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH, symbol: str = "BTCUSD"):
         """
         Initialize volatility collector.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (auto-updated for symbol)
+            symbol: Trading symbol (BTCUSD or ETHUSD)
         """
+        self.symbol = symbol
+        
+        # Use symbol-specific database if using default path
+        if db_path == DEFAULT_DB_PATH:
+            db_path = str((project_root / "data" / f"volatility_{symbol}.db").resolve())
+        
         if db_path != ":memory:" and not os.path.isabs(db_path):
             self.db_path = str((project_root / db_path).resolve())
         else:
             self.db_path = db_path
+            
         self.api_base = "https://api.india.delta.exchange"
-        self.symbol = "BTCUSD"
         self.collection_interval = 30  # seconds
         
         # State
@@ -273,10 +281,13 @@ class DeltaVolatilityCollector:
             
             spot_price = float(ticker_data['result']['mark_price'])
             
-            # Get all BTC option tickers
+            # Extract underlying asset from symbol (BTCUSD -> BTC, ETHUSD -> ETH)
+            underlying_asset = self.symbol.replace('USD', '')  # BTCUSD -> BTC, ETHUSD -> ETH
+            
+            # Get all options for this underlying asset
             tickers_url = f"{self.api_base}/v2/tickers"
             params = {
-                'underlying_asset_symbols': 'BTC',
+                'underlying_asset_symbols': underlying_asset,  # BTC or ETH
                 'contract_types': 'call_options,put_options'
             }
             tickers_resp = requests.get(tickers_url, params=params, timeout=10)
@@ -741,16 +752,27 @@ class DeltaVolatilityCollector:
             return {'iv': None, 'rv': {}}
 
 
-# Global singleton instance
-_collector: Optional[DeltaVolatilityCollector] = None
+# Global collector instances (one per symbol)
+_collectors: Dict[str, DeltaVolatilityCollector] = {}
 
 
-def get_collector() -> DeltaVolatilityCollector:
-    """Get or create global collector instance"""
-    global _collector
-    if _collector is None:
-        _collector = DeltaVolatilityCollector(DEFAULT_DB_PATH)
-    return _collector
+def get_collector(symbol: str = "BTCUSD") -> DeltaVolatilityCollector:
+    """
+    Get or create collector instance for specific symbol.
+    
+    Args:
+        symbol: Trading symbol (BTCUSD or ETHUSD)
+        
+    Returns:
+        Symbol-specific collector instance
+    """
+    global _collectors
+    
+    if symbol not in _collectors:
+        _collectors[symbol] = DeltaVolatilityCollector(DEFAULT_DB_PATH, symbol=symbol)
+        log.info(f"✅ Created new volatility collector for {symbol}")
+    
+    return _collectors[symbol]
 
 
 def main():

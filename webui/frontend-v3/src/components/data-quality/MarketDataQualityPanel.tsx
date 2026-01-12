@@ -42,7 +42,7 @@ interface MarketDataQualityResponse {
 }
 
 async function fetchMarketDataQuality(): Promise<MarketDataQualityResponse> {
-  const response = await fetch('http://localhost:5555/api/market-data/quality');
+  const response = await fetch('http://localhost:5557/api/market-data/quality');
   if (!response.ok) {
     throw new Error(`Failed to fetch market data quality: ${response.statusText}`);
   }

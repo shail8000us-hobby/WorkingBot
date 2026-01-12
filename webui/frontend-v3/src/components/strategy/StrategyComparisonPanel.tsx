@@ -30,7 +30,7 @@ interface StrategyComparisonResponse {
 }
 
 async function fetchStrategyComparison(): Promise<StrategyComparisonResponse> {
-  const response = await fetch('http://localhost:5555/api/strategies/comparison');
+  const response = await fetch('http://localhost:5557/api/strategies/comparison');
   if (!response.ok) {
     throw new Error('Failed to fetch strategy comparison');
   }

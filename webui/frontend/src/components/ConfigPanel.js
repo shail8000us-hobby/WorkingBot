@@ -70,6 +70,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   const [configMode, setConfigMode] = useState('instance'); // 'global' or 'instance'
   const [symbolConfig, setSymbolConfig] = useState({});
   const [symbolConfigLoading, setSymbolConfigLoading] = useState(false);
+  const [activeSymbol, setActiveSymbol] = useState('BTCUSD'); // Default symbol for config panel
   
   // Runtime confirmation state
   const [runtimeConfirmNeeded, setRuntimeConfirmNeeded] = useState(false);
@@ -95,12 +96,13 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   }, [config, computeFlatValues]);
 
   // Fetch symbol-specific config when switching to symbol mode
-  const fetchSymbolConfig = useCallback(async () => {
-    if (!selectedSymbol) return;
+  const fetchSymbolConfig = useCallback(async (symbol) => {
+    const targetSymbol = symbol || activeSymbol;
+    if (!targetSymbol) return;
     
     setSymbolConfigLoading(true);
     try {
-      const result = await apiClient.getSymbolConfig(selectedSymbol);
+      const result = await apiClient.getSymbolConfig(targetSymbol);
       if (result.success) {
         setSymbolConfig(result.config || {});
         // When in symbol mode, use symbol config values
@@ -114,14 +116,29 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     } finally {
       setSymbolConfigLoading(false);
     }
-  }, [selectedSymbol, configMode]);
+  }, [activeSymbol, configMode]);
 
-  // Reload symbol config when selectedSymbol changes
+  // Reload symbol config when activeSymbol changes
   useEffect(() => {
-    if (configMode === 'instance') {
-      fetchSymbolConfig();
+    if (configMode === 'instance' && activeSymbol) {
+      fetchSymbolConfig(activeSymbol);
     }
-  }, [selectedSymbol, configMode, fetchSymbolConfig]);
+  }, [activeSymbol, configMode, fetchSymbolConfig]);
+
+  // Handle symbol change
+  const handleSymbolChange = useCallback(async (newSymbol) => {
+    if (newSymbol === activeSymbol) return;
+    
+    if (hasChanges) {
+      const confirmSwitch = window.confirm(`You have unsaved changes for ${activeSymbol}. Switch to ${newSymbol} anyway?`);
+      if (!confirmSwitch) return;
+    }
+    
+    setActiveSymbol(newSymbol);
+    setHasChanges(false);
+    // Update GRIDBOT_SYMBOL field to match selected symbol
+    setValues(prev => ({ ...prev, GRIDBOT_SYMBOL: newSymbol }));
+  }, [activeSymbol, hasChanges]);
 
   // Handle config mode toggle
   const handleConfigModeChange = useCallback((event, newMode) => {
@@ -192,16 +209,16 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     let result;
     
     if (configMode === 'instance') {
-      // Use symbol-specific save endpoint
+      // Use symbol-specific save endpoint with activeSymbol
       try {
-        result = await apiClient.updateSymbolConfig(selectedSymbol, values);
+        result = await apiClient.updateSymbolConfig(activeSymbol, values);
         if (result?.success) {
           setHasChanges(false);
-          alert(`✅ Configuration for ${selectedSymbol} saved successfully!`);
+          alert(`✅ Configuration for ${activeSymbol} saved successfully!`);
           return;
         }
       } catch (error) {
-        alert(`❌ Failed to save ${selectedSymbol} config: ${error.message}`);
+        alert(`❌ Failed to save ${activeSymbol} config: ${error.message}`);
         return;
       }
     } else {
@@ -705,6 +722,54 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
     return (
       <Box>
+        {/* Symbol Selector */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.75rem', color: 'text.secondary', mb: 0.5, display: 'block' }}>
+            Symbol
+          </Typography>
+          <ToggleButtonGroup
+            value={activeSymbol}
+            exclusive
+            onChange={(e, newSymbol) => newSymbol && handleSymbolChange(newSymbol)}
+            fullWidth
+            sx={{ height: 40, mb: 2 }}
+          >
+            <ToggleButton 
+              value="BTCUSD" 
+              sx={{ 
+                bgcolor: activeSymbol === 'BTCUSD' ? '#2196F3 !important' : 'rgba(255, 255, 255, 0.05)',
+                color: activeSymbol === 'BTCUSD' ? 'white !important' : 'text.secondary',
+                fontWeight: 'bold',
+                borderRadius: '20px 0 0 20px',
+                boxShadow: activeSymbol === 'BTCUSD' ? '0 0 12px rgba(33, 150, 243, 0.4)' : 'none',
+                '&:hover': { bgcolor: activeSymbol === 'BTCUSD' ? '#1976D2 !important' : 'rgba(33, 150, 243, 0.1)' }
+              }}
+            >
+              BTCUSD
+            </ToggleButton>
+            <ToggleButton 
+              value="ETHUSD" 
+              sx={{ 
+                bgcolor: activeSymbol === 'ETHUSD' ? '#9C27B0 !important' : 'rgba(255, 255, 255, 0.05)',
+                color: activeSymbol === 'ETHUSD' ? 'white !important' : 'text.secondary',
+                fontWeight: 'bold',
+                borderRadius: '0 20px 20px 0',
+                boxShadow: activeSymbol === 'ETHUSD' ? '0 0 12px rgba(156, 39, 176, 0.4)' : 'none',
+                '&:hover': { bgcolor: activeSymbol === 'ETHUSD' ? '#7B1FA2 !important' : 'rgba(156, 39, 176, 0.1)' }
+              }}
+            >
+              ETHUSD
+            </ToggleButton>
+          </ToggleButtonGroup>
+          {symbolConfigLoading && (
+            <Chip 
+              label="Loading configuration..." 
+              size="small" 
+              sx={{ bgcolor: 'rgba(33, 150, 243, 0.1)', color: '#2196F3', fontSize: '0.75rem' }}
+            />
+          )}
+        </Box>
+
         {/* Grid Mode - Segmented Toggle */}
         <Box sx={{ mb: 2 }}>
           <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.75rem', color: 'text.secondary', mb: 0.5, display: 'block' }}>

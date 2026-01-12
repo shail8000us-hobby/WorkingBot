@@ -70,7 +70,7 @@ const IMPORTANT_DIRS = [
 ];
 
 async function fetchFileList(path: string): Promise<FileListResponse> {
-  const response = await fetch('http://localhost:5555/api/file-manager/list', {
+  const response = await fetch('http://localhost:5557/api/file-manager/list', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: path || '.' }),
@@ -80,7 +80,7 @@ async function fetchFileList(path: string): Promise<FileListResponse> {
 }
 
 async function fetchFileContent(path: string): Promise<string> {
-  const response = await fetch('http://localhost:5555/api/file-manager/read', {
+  const response = await fetch('http://localhost:5557/api/file-manager/read', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path }),
@@ -91,7 +91,7 @@ async function fetchFileContent(path: string): Promise<string> {
 }
 
 async function saveFileContent(path: string, content: string): Promise<void> {
-  const response = await fetch('http://localhost:5555/api/file-manager/write', {
+  const response = await fetch('http://localhost:5557/api/file-manager/write', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, content }),

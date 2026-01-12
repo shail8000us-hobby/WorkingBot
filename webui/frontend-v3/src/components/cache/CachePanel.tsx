@@ -29,7 +29,7 @@ interface CacheResponse {
 }
 
 async function fetchCacheStats(): Promise<CacheResponse> {
-  const response = await fetch('http://localhost:5555/api/cache/stats');
+  const response = await fetch('http://localhost:5557/api/cache/stats');
   if (!response.ok) {
     throw new Error('Failed to fetch cache stats');
   }
@@ -37,7 +37,7 @@ async function fetchCacheStats(): Promise<CacheResponse> {
 }
 
 async function clearCache(category?: string) {
-  const response = await fetch('http://localhost:5555/api/cache/clear', {
+  const response = await fetch('http://localhost:5557/api/cache/clear', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ category }),

@@ -38,7 +38,7 @@ interface SymbolsResponse {
 }
 
 async function fetchSymbols(): Promise<SymbolsResponse> {
-  const response = await fetch('http://localhost:5555/api/symbols/list');
+  const response = await fetch('http://localhost:5557/api/symbols/list');
   if (!response.ok) {
     throw new Error('Failed to fetch symbols');
   }
@@ -46,7 +46,7 @@ async function fetchSymbols(): Promise<SymbolsResponse> {
 }
 
 async function updateSymbol(symbol: Symbol) {
-  const response = await fetch(`http://localhost:5555/api/symbols/${symbol.symbol}/update`, {
+  const response = await fetch(`http://localhost:5557/api/symbols/${symbol.symbol}/update`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(symbol),
@@ -55,7 +55,7 @@ async function updateSymbol(symbol: Symbol) {
 }
 
 async function deleteSymbol(symbolName: string) {
-  const response = await fetch(`http://localhost:5555/api/symbols/${symbolName}/delete`, {
+  const response = await fetch(`http://localhost:5557/api/symbols/${symbolName}/delete`, {
     method: 'DELETE',
   });
   return response.json();

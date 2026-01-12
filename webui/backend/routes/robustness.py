@@ -310,7 +310,9 @@ def update_volatility():
     try:
         from bot.volatility.delta_volatility_collector import get_collector
         
-        collector = get_collector()
+        # v6.0: Multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        collector = get_collector(symbol=symbol)
         
         # Trigger immediate collection
         iv_data = collector._fetch_and_store_iv()

@@ -85,6 +85,9 @@ import ErrorIntelligencePanel from './components/ErrorIntelligencePanel_simple';
 import ErrorIntelligenceLive from './components/ErrorIntelligenceLive';
 import ReconciliationPanelV2 from './components/ReconciliationPanelV2';
 import PositionsPanel from './components/PositionsPanel';
+import { OptionsPanel } from './components/options';
+import { OptionsChainPanel } from './components/optionsChain';
+import { StrategyBuilder } from './components/optionsStrategy';
 import MarketSignalPanel from './components/MarketSignalPanel';
 import ShutdownPanel from './components/ShutdownPanel';
 import OpportunisticRecoveryPanel from './components/OpportunisticRecoveryPanel';
@@ -111,7 +114,7 @@ const LoadingFallback = ({ message = 'Loading component...' }) => (
 );
 
 const MobileNav = ({ sections = [], activeSection, onSelect }) => (
-  <div className="sticky top-[calc(4.5rem+env(safe-area-inset-top))] z-30 flex w-full gap-2 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
+  <div className="sticky top-[calc(9rem+env(safe-area-inset-top))] z-20 flex w-full gap-2 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
     {sections.map(({ id, label }) => {
       const active = activeSection === id;
       return (
@@ -423,6 +426,24 @@ function App() {
       icon: Layers3,
       badge: openPositions ?? undefined,
       description: 'Active grids & execution state'
+    },
+    {
+      id: 'options',
+      label: '📈 Options',
+      icon: TrendingUp,
+      description: 'Options trading - manage calls/puts positions'
+    },
+    {
+      id: 'options_chain',
+      label: '🔗 Options Chain',
+      icon: BarChart3,
+      description: 'Options chain - market data, IV, Greeks, strike selection'
+    },
+    {
+      id: 'strategy_builder',
+      label: '🏗️ Strategy Builder',
+      icon: Layers3,
+      description: 'Multi-leg options strategies - straddles, iron condors, spreads'
     },
     {
       id: 'botmanagement',
@@ -874,6 +895,64 @@ function App() {
     </div>
   );
 
+  // Options Trading Panel (Jan 2026)
+  const renderOptions = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="options-panel"
+        title="📈 Options Trading"
+        subtitle="Manage options positions - Close or add to existing positions"
+        accent="violet"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading options..." />}>
+          <EnhancedErrorBoundary componentName="OptionsPanel">
+            <OptionsPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
+  // Options Chain Panel (Jan 2026) - Market Data Viewer
+  const renderOptionsChain = () => (
+    <div className="grid gap-6">
+      <CollapsibleCard
+        id="options-chain-panel"
+        title="🔗 Options Chain"
+        subtitle="Live options chain - IV, Greeks, strike selection by expiry"
+        accent="cyan"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading options chain..." />}>
+          <EnhancedErrorBoundary componentName="OptionsChainPanel">
+            <OptionsChainPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
+  // Options Strategy Builder (Jan 2026) - Multi-leg strategy builder
+  const renderStrategyBuilder = () => (
+    <div className="grid gap-6">
+      <Suspense fallback={<LoadingFallback message="Loading strategy builder..." />}>
+        <EnhancedErrorBoundary componentName="StrategyBuilder">
+          <StrategyBuilder 
+            onNavigateToTab={(tabId, params) => {
+              setActiveSection(tabId);
+              // Store params for the target tab if needed
+              if (params) {
+                console.log('Navigation params:', params);
+                // TODO: Pass params to OptionsChain component
+              }
+            }}
+          />
+        </EnhancedErrorBoundary>
+      </Suspense>
+    </div>
+  );
+
   const renderRSI = () => (
     <div className="grid gap-6">
       <CollapsibleCard
@@ -1249,6 +1328,9 @@ function App() {
     dashboard: renderDashboard(),
     portfolio: <SymbolPortfolio />,
     positions: renderPositions(),
+    options: renderOptions(),  // Jan 2026: Options Trading Panel
+    options_chain: renderOptionsChain(),  // Jan 2026: Options Chain Market Data
+    strategy_builder: renderStrategyBuilder(),  // Jan 2026: Options Strategy Builder
     risk: renderRisk(),
     rsi: renderRSI(),
     config: renderConfig(),
@@ -1287,11 +1369,11 @@ function App() {
     <SymbolProvider>
       <MobileOptimizationProvider>
         <div className="relative min-h-screen bg-surface text-slate-100">
-          {/* V6.0: Instance Context Bar */}
-          <InstanceContextBar 
+          {/* V6.0: Instance Context Bar - REMOVED: Confusing, instance selection should be in BotManagement only */}
+          {/* <InstanceContextBar 
             status={{ running: botIsRunning }}
             pnl={{ total: totalPnl }}
-          />
+          /> */}
           <TopBar
             mode={mode}
             onToggleTheme={toggleMode}
@@ -1328,7 +1410,7 @@ function App() {
         onSelect={setActiveSection}
       />
 
-      <main className="pt-32 pb-[calc(7rem+env(safe-area-inset-bottom))]">
+      <main className="pt-36 pb-[calc(7rem+env(safe-area-inset-bottom))]" style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
         <MobileNav
           sections={sections}
           activeSection={activeSection}

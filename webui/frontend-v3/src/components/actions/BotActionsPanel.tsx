@@ -36,7 +36,7 @@ interface BotActionsResponse {
 }
 
 async function fetchBotActions(): Promise<BotActionsResponse> {
-  const response = await fetch('http://localhost:5555/api/bot-actions/next');
+  const response = await fetch('http://localhost:5557/api/bot-actions/next');
   if (!response.ok) {
     throw new Error(`Failed to fetch bot actions: ${response.statusText}`);
   }

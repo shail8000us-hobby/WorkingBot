@@ -24,7 +24,7 @@ interface ErrorStats {
 }
 
 async function fetchErrorStats(): Promise<ErrorStats> {
-  const res = await fetch('http://localhost:5555/api/errors/statistics')
+  const res = await fetch('http://localhost:5557/api/errors/statistics')
   if (!res.ok) throw new Error('Failed to fetch error statistics')
   return res.json()
 }

@@ -15,14 +15,31 @@ def get_db_connection():
 
 @trades_bp.route('/api/trades/history', methods=['GET'])
 def get_trade_history():
-    """Get trade history with optional filters"""
+    """
+    Get trade history with optional filters
+    
+    v6.0: Supports per-instance trade history
+    Query params:
+        limit: Max trades to return (default: 50)
+        symbol: Filter by symbol
+        days: Filter by days back
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    """
     try:
         # Get query parameters
         limit = request.args.get('limit', 50, type=int)
         symbol = request.args.get('symbol')
         days = request.args.get('days', type=int)
+        instance = request.args.get('instance')  # v6.0: Instance parameter
         
-        conn = get_db_connection()
+        # v6.0: Use instance-specific database if provided
+        if instance:
+            db_name = f'trading_bot_{instance}.db'
+        else:
+            db_name = 'trading_bot.db'
+        
+        conn = sqlite3.connect(db_name)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         query = 'SELECT * FROM trades WHERE 1=1'

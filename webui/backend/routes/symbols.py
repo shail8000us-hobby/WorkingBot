@@ -393,19 +393,32 @@ def start_symbol_trading(symbol_name):
                 'error': f"Symbol '{symbol_name}' not found"
             }), 404
         
-        if not config.symbols[symbol_name].enabled:
+        # DEBUG: Log the actual enabled value
+        symbol_enabled = config.symbols[symbol_name].enabled
+        log.info(f"Symbol {symbol_name} enabled check: {symbol_enabled} (type: {type(symbol_enabled)})")
+        
+        if not symbol_enabled:
             return jsonify({
                 'success': False,
-                'error': f"Symbol '{symbol_name}' is disabled. Enable it first."
+                'error': f"Symbol '{symbol_name}' is disabled. Enable it first. (enabled={symbol_enabled})"
             }), 400
         
-        data = request.get_json() or {}
+        # Handle request body - may be empty, None, or JSON
+        try:
+            data = request.get_json(silent=True) or {}
+        except Exception:
+            data = {}
         start_guardian = data.get('start_guardian', True)
         
         # Determine PM2 process names
+        # V6.0: Symbol-specific processes (gridbot-btcusd-live, gridbot-ethusd-live)
+        # Fallback: Single-process mode (gridbot-live) for backward compatibility
         mode = 'live' if config.trading_mode == 'live' else 'demo'
-        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
-        guardian_process = f"guardian-{symbol_name.lower()}-{mode}"
+        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"  # e.g., gridbot-btcusd-live
+        guardian_process = f"guardian-{mode}"  # Guardian shared across symbols
+        
+        # Fallback to single-process if symbol-specific doesn't exist
+        fallback_process = f"gridbot-{mode}"
         
         results = {}
         
@@ -422,8 +435,17 @@ def start_symbol_trading(symbol_name):
             if pm2_result.returncode == 0:
                 results['bot'] = {'success': True, 'process': bot_process, 'method': 'pm2'}
             else:
-                # PM2 process might not exist yet - try starting with ecosystem
-                results['bot'] = {'success': False, 'error': pm2_result.stderr, 'method': 'pm2'}
+                # Try fallback to single-process mode
+                fallback_result = subprocess.run(
+                    ['pm2', 'start', fallback_process],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if fallback_result.returncode == 0:
+                    results['bot'] = {'success': True, 'process': fallback_process, 'method': 'pm2', 'note': 'Using single-process mode'}
+                else:
+                    results['bot'] = {'success': False, 'error': pm2_result.stderr, 'method': 'pm2'}
             
             # Start guardian if requested
             if start_guardian:
@@ -487,14 +509,23 @@ def stop_symbol_trading(symbol_name):
         symbol_name = symbol_name.upper()
         config = get_config()
         
-        data = request.get_json() or {}
+        # Handle request body - may be empty, None, or JSON
+        try:
+            data = request.get_json(silent=True) or {}
+        except Exception:
+            data = {}
         stop_guardian = data.get('stop_guardian', True)
         force = data.get('force', False)
         
         # Determine PM2 process names
+        # V6.0: Symbol-specific processes (gridbot-btcusd-live, gridbot-ethusd-live)
+        # Fallback: Single-process mode (gridbot-live) for backward compatibility
         mode = 'live' if config.trading_mode == 'live' else 'demo'
-        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
-        guardian_process = f"guardian-{symbol_name.lower()}-{mode}"
+        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"  # e.g., gridbot-btcusd-live
+        guardian_process = f"guardian-{mode}"  # Guardian shared across symbols
+        
+        # Fallback to single-process if symbol-specific doesn't exist
+        fallback_process = f"gridbot-{mode}"
         
         results = {}
         
@@ -567,9 +598,11 @@ def get_symbol_process_status(symbol_name):
         symbol_name = symbol_name.upper()
         config = get_config()
         
+        # V6.0: Symbol-specific processes (gridbot-btcusd-live, gridbot-ethusd-live)
+        # Fallback: Single-process mode (gridbot-live) for backward compatibility
         mode = 'live' if config.trading_mode == 'live' else 'demo'
-        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
-        guardian_process = f"guardian-{symbol_name.lower()}-{mode}"
+        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"  # e.g., gridbot-btcusd-live
+        guardian_process = f"guardian-{mode}"  # Guardian shared across symbols
         
         processes = {}
         
@@ -654,15 +687,15 @@ def start_all_symbols():
                 'error': 'No symbols configured'
             }), 400
         
+        # V6.0: Start symbol-specific processes for each enabled symbol
+        import subprocess
+        mode = 'live' if config.trading_mode == 'live' else 'demo'
+        
         results = {}
         for symbol_name, symbol_config in config.symbols.items():
             if symbol_config.enabled:
-                # Call the individual start endpoint logic
+                bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
                 try:
-                    import subprocess
-                    mode = 'live' if config.trading_mode == 'live' else 'demo'
-                    bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
-                    
                     result = subprocess.run(
                         ['pm2', 'start', bot_process],
                         capture_output=True,
@@ -703,13 +736,14 @@ def stop_all_symbols():
                 'error': 'No symbols configured'
             }), 400
         
+        # V6.0: Stop symbol-specific processes for each symbol
+        import subprocess
+        mode = 'live' if config.trading_mode == 'live' else 'demo'
+        
         results = {}
         for symbol_name, symbol_config in config.symbols.items():
+            bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
             try:
-                import subprocess
-                mode = 'live' if config.trading_mode == 'live' else 'demo'
-                bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
-                
                 result = subprocess.run(
                     ['pm2', 'stop', bot_process],
                     capture_output=True,
@@ -717,7 +751,7 @@ def stop_all_symbols():
                     timeout=35
                 )
                 results[symbol_name] = {
-                    'success': result.returncode == 0,
+                    'success': result.returncode == 0 or 'not found' not in result.stderr.lower(),
                     'process': bot_process
                 }
             except Exception as e:

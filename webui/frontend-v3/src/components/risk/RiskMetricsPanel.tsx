@@ -27,8 +27,14 @@ interface RiskResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchRiskMetrics(): Promise<RiskResponse> {
-  const response = await fetch('http://localhost:5555/api/risk/metrics');
+  const response = await fetch(`${API_URL}/api/risk/metrics`);
   if (!response.ok) {
     throw new Error('Failed to fetch risk metrics');
   }
@@ -104,12 +110,12 @@ export function RiskMetricsPanel() {
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Current Exposure</span>
             <span className="text-sm font-bold">
-              ₹{metrics?.current_exposure?.toFixed(2) || 0} / ₹{metrics?.max_exposure?.toFixed(2) || 0}
+              ₹{(metrics?.current_exposure ?? 0).toFixed(2)} / ₹{(metrics?.max_exposure ?? 0).toFixed(2)}
             </span>
           </div>
           <Progress value={metrics?.exposure_percentage || 0} className="h-3" />
           <div className="text-xs text-muted-foreground text-right mt-1">
-            {metrics?.exposure_percentage?.toFixed(1) || 0}% utilized
+            {(metrics?.exposure_percentage ?? 0).toFixed(1)}% utilized
           </div>
         </div>
 
@@ -118,7 +124,7 @@ export function RiskMetricsPanel() {
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Margin Utilization</span>
             <Badge variant={marginLevel.variant} className="text-xs">
-              {metrics?.margin_utilization?.toFixed(1) || 0}%
+              {(metrics?.margin_utilization ?? 0).toFixed(1)}%
             </Badge>
           </div>
           <Progress value={metrics?.margin_utilization || 0} className="h-3" />
@@ -131,7 +137,7 @@ export function RiskMetricsPanel() {
               <AlertTriangle className="h-4 w-4 text-orange-500" />
               <span className="text-xs text-muted-foreground">Position Risk</span>
             </div>
-            <div className="text-xl font-bold">{metrics?.position_risk?.toFixed(2) || 0}%</div>
+            <div className="text-xl font-bold">{(metrics?.position_risk ?? 0).toFixed(2)}%</div>
           </div>
 
           <div className="p-3 bg-muted rounded-lg">
@@ -139,7 +145,7 @@ export function RiskMetricsPanel() {
               <TrendingDown className="h-4 w-4 text-red-500" />
               <span className="text-xs text-muted-foreground">VaR (95%)</span>
             </div>
-            <div className="text-xl font-bold">₹{metrics?.var_95?.toFixed(2) || 0}</div>
+            <div className="text-xl font-bold">₹{(metrics?.var_95 ?? 0).toFixed(2)}</div>
           </div>
 
           <div className="p-3 bg-muted rounded-lg">
@@ -147,7 +153,7 @@ export function RiskMetricsPanel() {
               <DollarSign className="h-4 w-4 text-red-500" />
               <span className="text-xs text-muted-foreground">CVaR (95%)</span>
             </div>
-            <div className="text-xl font-bold">₹{metrics?.cvar_95?.toFixed(2) || 0}</div>
+            <div className="text-xl font-bold">₹{(metrics?.cvar_95 ?? 0).toFixed(2)}</div>
           </div>
 
           <div className="p-3 bg-muted rounded-lg">
@@ -155,7 +161,7 @@ export function RiskMetricsPanel() {
               <Activity className="h-4 w-4 text-blue-500" />
               <span className="text-xs text-muted-foreground">Risk/Reward</span>
             </div>
-            <div className="text-xl font-bold">1:{metrics?.risk_reward_ratio?.toFixed(2) || 0}</div>
+            <div className="text-xl font-bold">1:{(metrics?.risk_reward_ratio ?? 0).toFixed(2)}</div>
           </div>
         </div>
 
@@ -164,12 +170,12 @@ export function RiskMetricsPanel() {
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Current Drawdown</span>
             <span className="text-sm font-bold text-red-500">
-              {metrics?.current_drawdown?.toFixed(2) || 0}%
+              {(metrics?.current_drawdown ?? 0).toFixed(2)}%
             </span>
           </div>
           <Progress value={Math.abs(metrics?.current_drawdown || 0)} className="h-3" />
           <div className="text-xs text-muted-foreground text-right mt-1">
-            Max DD: {metrics?.max_drawdown?.toFixed(2) || 0}%
+            Max DD: {(metrics?.max_drawdown ?? 0).toFixed(2)}%
           </div>
         </div>
 
@@ -177,7 +183,7 @@ export function RiskMetricsPanel() {
         <div className="p-4 bg-muted rounded-lg">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Current Leverage</span>
-            <span className="text-2xl font-bold">{metrics?.leverage?.toFixed(2) || 0}x</span>
+            <span className="text-2xl font-bold">{(metrics?.leverage ?? 0).toFixed(2)}x</span>
           </div>
         </div>
 

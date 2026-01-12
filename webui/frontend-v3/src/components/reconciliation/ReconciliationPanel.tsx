@@ -38,8 +38,14 @@ interface ReconciliationResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchReconciliation(): Promise<ReconciliationResponse> {
-  const response = await fetch('http://localhost:5555/api/reconciliation/status');
+  const response = await fetch(`${API_URL}/api/reconciliation/status`);
   if (!response.ok) {
     throw new Error('Failed to fetch reconciliation data');
   }
@@ -47,7 +53,7 @@ async function fetchReconciliation(): Promise<ReconciliationResponse> {
 }
 
 async function runReconciliation() {
-  const response = await fetch('http://localhost:5555/api/reconciliation/run', {
+  const response = await fetch(`${API_URL}/api/reconciliation/run`, {
     method: 'POST',
   });
   return response.json();

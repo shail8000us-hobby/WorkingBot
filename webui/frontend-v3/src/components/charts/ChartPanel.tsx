@@ -46,7 +46,7 @@ interface ChartResponse {
 }
 
 async function fetchChartData(timeframe: string): Promise<ChartResponse> {
-  const response = await fetch(`http://localhost:5555/api/chart/prices?timeframe=${timeframe}`);
+  const response = await fetch(`http://localhost:5557/api/chart/prices?timeframe=${timeframe}`);
   if (!response.ok) {
     throw new Error('Failed to fetch chart data');
   }

@@ -58,7 +58,7 @@ async function fetchErrorLog(filter?: string): Promise<ErrorLogResponse> {
   if (filter && filter !== 'all') {
     params.set('severity', filter);
   }
-  const response = await fetch(`http://localhost:5555/api/errors/list?${params}`);
+  const response = await fetch(`http://localhost:5557/api/errors/list?${params}`);
   if (!response.ok) {
     throw new Error('Failed to fetch error log');
   }
@@ -66,14 +66,14 @@ async function fetchErrorLog(filter?: string): Promise<ErrorLogResponse> {
 }
 
 async function scanForErrors() {
-  const response = await fetch('http://localhost:5555/api/errors/scan', {
+  const response = await fetch('http://localhost:5557/api/errors/scan', {
     method: 'POST',
   });
   return response.json();
 }
 
 async function resolveError(errorId: string) {
-  const response = await fetch('http://localhost:5555/api/errors/resolve', {
+  const response = await fetch('http://localhost:5557/api/errors/resolve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

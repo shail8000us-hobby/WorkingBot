@@ -18,7 +18,7 @@ interface PredictiveResponse {
 }
 
 async function fetchPredictiveIntelligence(): Promise<PredictiveResponse> {
-  const response = await fetch('http://localhost:5555/api/intelligence/predictive');
+  const response = await fetch('http://localhost:5557/api/intelligence/predictive');
   if (!response.ok) {
     throw new Error('Failed to fetch predictive intelligence');
   }

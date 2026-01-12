@@ -14,7 +14,7 @@ import { useState } from 'react';
 
 interface RSIData {
   rsi: number | null;
-  status: 'GO' | 'STOP' | 'ERROR' | 'DISABLED';
+  status: 'GO' | 'STOP' | 'ERROR' | 'DISABLED' | 'UNAVAILABLE';
   status_text: string;
   should_stop: boolean;
   bot_mode: 'LONG' | 'SHORT' | 'HYBRID';
@@ -43,28 +43,146 @@ interface RSIResponse {
   error?: string;
 }
 
+interface BackendRSIData {
+  symbol: string;
+  rsi: number | null;
+  status: string;
+  status_text: string;
+  bot_mode: string;
+  long_threshold: number;
+  short_threshold: number;
+  hysteresis_active: boolean;
+  hysteresis_seconds: number;
+  should_stop: boolean;
+  timestamp: number;
+}
+
+interface BackendRSIResponse {
+  success: boolean;
+  data?: BackendRSIData;
+  error?: string;
+}
+
 async function fetchRSIData(): Promise<RSIResponse> {
-  const response = await fetch('http://localhost:5555/api/guardian/rsi/status');
-  if (!response.ok) {
-    throw new Error(`Failed to fetch RSI data: ${response.statusText}`);
+  const API_URL = typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+    : 'http://localhost:5557';
+  
+  try {
+    const response = await fetch(`${API_URL}/api/guardian/rsi/status`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch RSI data: ${response.status} ${errorText}`);
+    }
+
+    const result: BackendRSIResponse = await response.json();
+
+    if (!result.success || !result.data) {
+      throw new Error(result.error || 'Failed to fetch RSI data');
+    }
+
+    const backendData = result.data;
+
+    // Map backend response to frontend format
+    const rsiData: RSIData = {
+      rsi: backendData.rsi,
+      status: (backendData.status as RSIData['status']) || 'ERROR',
+      status_text: backendData.status_text || 'Unknown',
+      should_stop: backendData.should_stop || false,
+      bot_mode: (backendData.bot_mode as RSIData['bot_mode']) || 'LONG',
+      long_threshold: backendData.long_threshold || 30,
+      short_threshold: backendData.short_threshold || 70,
+      hysteresis_active: backendData.hysteresis_active || false,
+      hysteresis_seconds: backendData.hysteresis_seconds || 60,
+      timeframe: '1h', // Default timeframe, could be fetched from config
+      last_update: backendData.timestamp ? new Date(backendData.timestamp * 1000).toISOString() : new Date().toISOString(),
+    };
+
+    // Construct config from data (with defaults)
+    const config: RSIConfig = {
+      enabled: true, // Assume enabled if we got data
+      period: 14, // Default RSI period
+      long_threshold: backendData.long_threshold || 30,
+      short_threshold: backendData.short_threshold || 70,
+      hysteresis_seconds: backendData.hysteresis_seconds || 60,
+      timeframe: '1h',
+      check_interval: 60, // Default check interval
+    };
+
+    return {
+      data: rsiData,
+      config,
+      status: 'live',
+    };
+  } catch (error) {
+    // Better error message handling
+    let errorMessage = 'Failed to fetch RSI data';
+    
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      // Network error - backend likely down or CORS issue
+      errorMessage = `Unable to connect to backend at ${API_URL}. Please check if the server is running.`;
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
+    return {
+      data: {
+        rsi: null,
+        status: 'ERROR',
+        status_text: errorMessage,
+        should_stop: false,
+        bot_mode: 'LONG',
+        long_threshold: 30,
+        short_threshold: 70,
+        hysteresis_active: false,
+        hysteresis_seconds: 60,
+        timeframe: '1h',
+        last_update: new Date().toISOString(),
+      },
+      config: {
+        enabled: true,
+        period: 14,
+        long_threshold: 30,
+        short_threshold: 70,
+        hysteresis_seconds: 60,
+        timeframe: '1h',
+        check_interval: 60,
+      },
+      status: 'error',
+      error: errorMessage,
+    };
   }
-  return response.json();
 }
 
 async function updateRSIConfig(config: Partial<RSIConfig>): Promise<void> {
+  const API_URL = typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+    : 'http://localhost:5557';
+
   const updates: Record<string, any> = {};
   Object.entries(config).forEach(([key, value]) => {
     updates[`safety.rsi.${key}`] = value;
   });
 
-  const response = await fetch('http://localhost:5555/api/config/update', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ updates }),
-  });
+  try {
+    const response = await fetch(`${API_URL}/api/config/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    });
 
-  if (!response.ok) {
-    throw new Error('Failed to update RSI configuration');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update RSI configuration: ${response.status} ${errorText}`);
+    }
+  } catch (error) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      throw new Error(`Unable to connect to backend at ${API_URL}. Please check if the server is running.`);
+    }
+    throw error;
   }
 }
 
@@ -160,6 +278,7 @@ export function RSIPanel() {
   }
 
   if (error || data?.status === 'error') {
+    const errorMessage = data?.error || (error as Error)?.message || 'Failed to fetch RSI data';
     return (
       <Card>
         <CardHeader>
@@ -171,9 +290,17 @@ export function RSIPanel() {
         <CardContent>
           <Alert variant="destructive">
             <AlertDescription>
-              {data?.error || (error as Error)?.message || 'Failed to load RSI data'}
+              {errorMessage}
             </AlertDescription>
           </Alert>
+          <Button 
+            variant="outline" 
+            className="mt-4" 
+            onClick={() => refetch()}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
         </CardContent>
       </Card>
     );

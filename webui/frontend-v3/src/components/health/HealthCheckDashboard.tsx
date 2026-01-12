@@ -20,11 +20,17 @@ interface HealthCheckData {
   timestamp: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 export default function HealthCheckDashboard() {
   const { data, isLoading } = useQuery<HealthCheckData>({
     queryKey: ['health-check'],
     queryFn: async () => {
-      const res = await fetch('/api/health-check');
+      const res = await fetch(`${API_URL}/api/health-check`);
       if (!res.ok) throw new Error('Failed to fetch health checks');
       return res.json();
     },

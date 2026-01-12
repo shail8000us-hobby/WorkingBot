@@ -282,12 +282,22 @@ class GuardianBot:
         logger.info("💾 Initializing Guardian Signal System (SQL-based)...")
         
         # Initialize EventStore (SQL database)
-        # Use symbol-specific database if in multi-symbol mode (v5.0)
+        # Use symbol-specific database if in multi-symbol mode (v5.0/v6.0)
         # Otherwise use global mode (v4.0)
         if self.symbol_name:
-            # v5.0 multi-symbol mode - use symbol + mode in DB name
-            symbol_config = self.config.symbols.get(self.symbol_name)
-            mode = symbol_config.mode if symbol_config else self.config.bot.mode
+            # v6.0+ multi-instance mode - get symbol config from instances
+            symbol_config = None
+            if hasattr(self.config, 'instances') and self.config.instances:
+                # Try to find instance for this symbol
+                for inst_name, inst_config in self.config.instances.items():
+                    if inst_config.symbol == self.symbol_name:
+                        symbol_config = inst_config
+                        break
+            # Fallback to v5.0 symbols section if it exists
+            elif hasattr(self.config, 'symbols') and self.config.symbols:
+                symbol_config = self.config.symbols.get(self.symbol_name)
+            
+            mode = symbol_config.mode.value if symbol_config and hasattr(symbol_config.mode, 'value') else (symbol_config.mode if symbol_config else self.config.bot.mode)
             db_name = f"bot_events_{self.symbol_name}_{mode}.db"
             logger.info(f"🔧 Multi-symbol mode: Monitoring {self.symbol_name} ({mode})")
         else:

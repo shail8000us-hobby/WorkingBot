@@ -13,6 +13,10 @@ import {
   Divider,
   Button,
   Paper,
+  ToggleButtonGroup,
+  ToggleButton,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -21,25 +25,30 @@ import {
   ShowChart as ShowChartIcon,
   Edit as EditIcon,
   Close as CloseIcon,
+  FilterList,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
 
 const PositionsPanel = () => {
-  const { selectedInstance, withInstance } = useInstance();
+  const { selectedInstance, withInstance, instances } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [positionsData, setPositionsData] = useState(null);
+  const [filterMode, setFilterMode] = useState('all'); // 'all', 'futures', 'options', 'btcusd', 'ethusd'
+  const [showBotOnly, setShowBotOnly] = useState(false);
 
-  // Fetch positions for current instance
+  // Available symbols from instances
+  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+
+  // Fetch ALL positions (futures, options, manual, bot-driven)
   const fetchPositions = async () => {
     try {
-      // v6.0: Use instance parameter for filtering
-      const { data } = await api.get(withInstance('/api/positions'));
+      // Fetch ALL positions without instance filter to get everything
+      const { data } = await api.get('/api/positions?all=true');
       
-      // API returns positions directly without a 'success' wrapper
       if (data?.status === 'NO_DATA' || data?.status === 'UNKNOWN') {
         setPositionsData({ positions: [], status: data.status });
       } else if (data && data.positions) {
@@ -52,7 +61,7 @@ const PositionsPanel = () => {
     }
   };
 
-  // Initial load and refresh when instance changes
+  // Initial load
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -60,7 +69,7 @@ const PositionsPanel = () => {
       setLoading(false);
     };
     loadData();
-  }, [selectedInstance]);
+  }, []);
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
@@ -85,11 +94,44 @@ const PositionsPanel = () => {
     return value.toFixed(decimals);
   };
 
-  // Get PnL color
   const getPnlColor = (pnl) => {
-    if (pnl > 0) return '#10b981'; // Green
-    if (pnl < 0) return '#ef4444'; // Red
-    return '#94a3b8'; // Gray
+    if (pnl > 0) return '#10b981';
+    if (pnl < 0) return '#ef4444';
+    return '#94a3b8';
+  };
+
+  // Get symbol color
+  const getSymbolColor = (symbol) => {
+    const colors = {
+      'BTCUSD': { bg: '#f7931a20', text: '#f7931a' },
+      'ETHUSD': { bg: '#627eea20', text: '#627eea' },
+    };
+    return colors[symbol] || { bg: '#64748b20', text: '#64748b' };
+  };
+
+  // Filter positions based on selected filter
+  const filterPositions = (positions) => {
+    if (!positions) return [];
+    
+    let filtered = positions;
+    
+    // Filter by type
+    if (filterMode === 'futures') {
+      filtered = filtered.filter(p => p.type !== 'OPTION');
+    } else if (filterMode === 'options') {
+      filtered = filtered.filter(p => p.type === 'OPTION');
+    } else if (filterMode === 'btcusd') {
+      filtered = filtered.filter(p => p.symbol?.includes('BTC'));
+    } else if (filterMode === 'ethusd') {
+      filtered = filtered.filter(p => p.symbol?.includes('ETH'));
+    }
+    
+    // Filter bot-only positions
+    if (showBotOnly) {
+      filtered = filtered.filter(p => p.source === 'bot' || p.tags?.includes('DBOT_'));
+    }
+    
+    return filtered;
   };
 
   if (loading) {
@@ -100,7 +142,8 @@ const PositionsPanel = () => {
     );
   }
 
-  const positions = positionsData?.positions || [];
+  const allPositions = positionsData?.positions || [];
+  const positions = filterPositions(allPositions);
   const summary = positionsData?.summary || {};
 
   if (positionsData?.status === 'NO_DATA' || positionsData?.status === 'UNKNOWN') {
@@ -117,16 +160,56 @@ const PositionsPanel = () => {
 
   return (
     <Box>
-      {/* Header with Title and Actions */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      {/* Header with Title and Filter Controls */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
         <Box display="flex" alignItems="center" gap={1}>
           <ShowChartIcon sx={{ fontSize: 28, color: '#3b82f6' }} />
           <Typography variant="h5" fontWeight={600}>
-            Current Positions
+            All Positions
           </Typography>
-          <SymbolBadge symbol={instanceInfo?.symbol || 'BTCUSD'} size="md" variant="solid" />
+          <Chip 
+            label={`${positions.length} of ${allPositions.length}`} 
+            size="small" 
+            color="primary"
+            variant="outlined"
+          />
         </Box>
-        <Box display="flex" gap={1}>
+        
+        {/* Filter Controls */}
+        <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+          <ToggleButtonGroup
+            value={filterMode}
+            exclusive
+            onChange={(e, val) => val && setFilterMode(val)}
+            size="small"
+          >
+            <ToggleButton value="all">All</ToggleButton>
+            <ToggleButton value="futures">Futures</ToggleButton>
+            <ToggleButton value="options">Options</ToggleButton>
+            {availableSymbols.includes('BTCUSD') && (
+              <ToggleButton value="btcusd" sx={{ color: filterMode === 'btcusd' ? '#f7931a' : 'inherit' }}>
+                BTCUSD
+              </ToggleButton>
+            )}
+            {availableSymbols.includes('ETHUSD') && (
+              <ToggleButton value="ethusd" sx={{ color: filterMode === 'ethusd' ? '#627eea' : 'inherit' }}>
+                ETHUSD
+              </ToggleButton>
+            )}
+          </ToggleButtonGroup>
+          
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={showBotOnly}
+                onChange={(e) => setShowBotOnly(e.target.checked)}
+              />
+            }
+            label="Bot Only"
+            sx={{ color: '#94a3b8' }}
+          />
+          
           <Tooltip title="Refresh positions from exchange">
             <IconButton 
               onClick={handleRefresh}
@@ -168,7 +251,13 @@ const PositionsPanel = () => {
                 </CardContent>
               </Card>
             ) : (
-              positions.map((position, index) => (
+              positions.map((position, index) => {
+                // Extract base symbol (BTCUSD, ETHUSD) from position symbol
+                const baseSymbol = position.symbol?.includes('BTC') ? 'BTCUSD' : 
+                                   position.symbol?.includes('ETH') ? 'ETHUSD' : null;
+                const symbolColors = baseSymbol ? getSymbolColor(baseSymbol) : { bg: '#64748b20', text: '#64748b' };
+                
+                return (
                 <Card 
                   key={index}
                   sx={{ 
@@ -186,20 +275,41 @@ const PositionsPanel = () => {
                   <CardContent>
                     {/* Position Header */}
                     <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                      <Box>
-                        <Typography variant="h6" fontWeight={600} color="#f8fafc">
-                          {position.symbol}
-                        </Typography>
-                        <Chip 
-                          label={position.type} 
-                          size="small"
-                          sx={{ 
-                            mt: 0.5,
-                            bgcolor: position.type === 'OPTION' ? '#8b5cf6' : '#3b82f6',
-                            color: 'white',
-                            fontWeight: 500
-                          }}
-                        />
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Box>
+                          <Typography variant="h6" fontWeight={600} color="#f8fafc">
+                            {position.symbol}
+                          </Typography>
+                          <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                            <Chip 
+                              label={position.type} 
+                              size="small"
+                              sx={{ 
+                                bgcolor: position.type === 'OPTION' ? '#8b5cf6' : '#3b82f6',
+                                color: 'white',
+                                fontWeight: 500
+                              }}
+                            />
+                            {baseSymbol && (
+                              <Chip 
+                                label={baseSymbol} 
+                                size="small"
+                                sx={{ 
+                                  bgcolor: symbolColors.bg,
+                                  color: symbolColors.text,
+                                  fontWeight: 600
+                                }}
+                              />
+                            )}
+                            {position.source === 'bot' && (
+                              <Chip 
+                                label="BOT" 
+                                size="small"
+                                sx={{ bgcolor: '#10b98120', color: '#10b981' }}
+                              />
+                            )}
+                          </Box>
+                        </Box>
                       </Box>
                       <Typography
                         component={motion.p}
@@ -243,7 +353,8 @@ const PositionsPanel = () => {
                     </Grid>
                   </CardContent>
                 </Card>
-              ))
+              );
+              })
             )}
           </Box>
         </Grid>

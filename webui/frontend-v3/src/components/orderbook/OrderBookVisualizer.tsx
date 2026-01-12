@@ -33,7 +33,7 @@ interface OrderBookResponse {
 }
 
 async function fetchOrderBook(): Promise<OrderBookResponse> {
-  const response = await fetch('http://localhost:5555/api/orderbook/depth');
+  const response = await fetch('http://localhost:5557/api/orderbook/depth');
   if (!response.ok) {
     throw new Error(`Failed to fetch order book: ${response.statusText}`);
   }

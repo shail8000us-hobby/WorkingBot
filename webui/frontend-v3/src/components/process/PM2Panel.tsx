@@ -87,8 +87,8 @@ interface Notification {
 
 // API URL constant
 const API_URL = typeof window !== 'undefined' 
-  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5555')
-  : 'http://localhost:5555';
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557';
 
 // ===== PM2Panel Component =====
 export default function PM2Panel() {
@@ -401,7 +401,12 @@ export default function PM2Panel() {
   const handleStartAllSymbols = async () => {
     setActionInProgress('start-all');
     try {
-      const res = await fetch('/api/symbols/all/start', { method: 'POST' });
+      // API URL - use the same logic as api.ts
+      const API_URL = (typeof window !== 'undefined' 
+        ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+        : 'http://localhost:5557'
+      ).trim();
+      const res = await fetch(`${API_URL}/api/symbols/all/start`, { method: 'POST' });
       const result: ActionResult = await res.json();
       if (result.success) {
         showNotification('All enabled symbols started', 'success');
@@ -418,7 +423,7 @@ export default function PM2Panel() {
   const handleStopAllSymbols = async () => {
     setActionInProgress('stop-all');
     try {
-      const res = await fetch('/api/symbols/all/stop', { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/symbols/all/stop`, { method: 'POST' });
       const result: ActionResult = await res.json();
       if (result.success) {
         showNotification('All symbol trading stopped', 'success');

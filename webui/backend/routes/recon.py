@@ -16,11 +16,21 @@ BASE_DIR = Path(__file__).parent.parent.parent.parent
 
 @recon_bp.route('/api/recon/status', methods=['GET'])
 def get_reconciliation_status():
-    """Get reconciliation service status with enhanced detection"""
+    """
+    Get reconciliation service status with enhanced detection
+    
+    v6.0: Supports per-instance reconciliation
+    Query params:
+        force_refresh: Force refresh (true/false)
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    """
     try:
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        
         # Use new bulletproof reconciliation system
         from bot.reconciliation import get_reconciliation_engine, get_enhanced_detection_engine
-        engine = get_reconciliation_engine()
+        engine = get_reconciliation_engine(instance=instance) if instance else get_reconciliation_engine()
         detection_engine = get_enhanced_detection_engine()
         
         # Check if force refresh requested

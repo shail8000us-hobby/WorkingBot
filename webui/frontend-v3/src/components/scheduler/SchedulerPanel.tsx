@@ -43,7 +43,7 @@ interface SchedulerResponse {
 }
 
 async function fetchScheduledTasks(): Promise<SchedulerResponse> {
-  const response = await fetch('http://localhost:5555/api/scheduler/tasks');
+  const response = await fetch('http://localhost:5557/api/scheduler/tasks');
   if (!response.ok) {
     throw new Error('Failed to fetch scheduled tasks');
   }
@@ -51,7 +51,7 @@ async function fetchScheduledTasks(): Promise<SchedulerResponse> {
 }
 
 async function toggleTask(taskId: string, enabled: boolean) {
-  const response = await fetch(`http://localhost:5555/api/scheduler/tasks/${taskId}/toggle`, {
+  const response = await fetch(`http://localhost:5557/api/scheduler/tasks/${taskId}/toggle`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),

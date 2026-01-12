@@ -46,7 +46,7 @@ interface BacktestResponse {
 }
 
 async function fetchBacktestResults(): Promise<BacktestResponse> {
-  const response = await fetch('http://localhost:5555/api/backtest/results/latest');
+  const response = await fetch('http://localhost:5557/api/backtest/results/latest');
   if (!response.ok) {
     throw new Error('Failed to fetch backtest results');
   }

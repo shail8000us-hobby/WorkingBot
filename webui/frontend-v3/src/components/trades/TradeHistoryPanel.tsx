@@ -35,8 +35,14 @@ interface TradeHistoryResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchTradeHistory(): Promise<TradeHistoryResponse> {
-  const response = await fetch('http://localhost:5555/api/trades/history?limit=50');
+  const response = await fetch(`${API_URL}/api/trades/history?limit=50`);
   if (!response.ok) {
     throw new Error('Failed to fetch trade history');
   }
@@ -69,6 +75,19 @@ export function TradeHistoryPanel() {
   }
 
   if (error || data?.status === 'error') {
+    // Safely extract error message
+    let errorMessage = 'Failed to load trade history';
+    if (error) {
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null && 'message' in error) {
+        errorMessage = String((error as any).message);
+      }
+    }
+    if (data?.error) {
+      errorMessage = typeof data.error === 'string' ? data.error : String(data.error);
+    }
+    
     return (
       <Card>
         <CardHeader>
@@ -77,7 +96,7 @@ export function TradeHistoryPanel() {
         <CardContent>
           <Alert variant="destructive">
             <AlertDescription>
-              {data?.error || (error as Error)?.message || 'Failed to load trade history'}
+              {errorMessage}
             </AlertDescription>
           </Alert>
         </CardContent>

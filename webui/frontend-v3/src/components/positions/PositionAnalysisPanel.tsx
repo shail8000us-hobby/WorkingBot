@@ -35,8 +35,14 @@ interface PositionAnalysisResponse {
   error?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchPositionAnalysis(): Promise<PositionAnalysisResponse> {
-  const response = await fetch('http://localhost:5555/api/positions/analysis');
+  const response = await fetch(`${API_URL}/api/positions/analysis`);
   if (!response.ok) {
     throw new Error('Failed to fetch position analysis');
   }

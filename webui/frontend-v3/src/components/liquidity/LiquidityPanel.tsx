@@ -30,7 +30,7 @@ interface LiquidityData {
 }
 
 async function fetchLiquidityData(): Promise<LiquidityData> {
-  const response = await fetch('http://localhost:5555/api/liquidity/depth');
+  const response = await fetch('http://localhost:5557/api/liquidity/depth');
   if (!response.ok) {
     throw new Error(`Failed to fetch liquidity data: ${response.statusText}`);
   }

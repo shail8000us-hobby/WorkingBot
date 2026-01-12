@@ -37,8 +37,9 @@ module.exports = {
       listen_timeout: 3000,
     },
     {
-      name: "gridbot-live",
+      name: "gridbot-btc-live",
       script: "bot/strategy/async_gridbot.py",
+      args: "BTCUSD",
       interpreter: "python3",
       cwd: "/Users/ssr/Projects/WorkingBot",
       env: {
@@ -56,9 +57,43 @@ module.exports = {
       max_memory_restart: "500M",
       // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
       // Log settings
-      log_file: "bot/logs/pm2-gridbot-live.log",
-      error_file: "bot/logs/pm2-gridbot-live-error.log",
-      out_file: "bot/logs/pm2-gridbot-live-out.log",
+      log_file: "bot/logs/pm2-gridbot-btc-live.log",
+      error_file: "bot/logs/pm2-gridbot-btc-live-error.log",
+      out_file: "bot/logs/pm2-gridbot-btc-live-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      // Watch for crashes
+      exp_backoff_restart_delay: 100,
+      // Kill timeout - NOV 14: Increased to 15s for graceful shutdown with order cancellation
+      kill_timeout: 15000,
+      // Graceful shutdown
+      wait_ready: false,
+      listen_timeout: 3000,
+    },
+    {
+      name: "gridbot-eth-live",
+      script: "bot/strategy/async_gridbot.py",
+      args: "ETHUSD",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live",
+        USE_ASYNC_BOT: "true",  // Enable AsyncBot (production-ready v2.0)
+        HOT_RELOAD: "1"
+      },
+      // Restart settings - DISABLED (manual start/stop only)
+      autorestart: false,
+      max_restarts: 0,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      // Memory limits - monitoring only (no auto-restart)
+      max_memory_restart: "500M",
+      // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
+      // Log settings
+      log_file: "bot/logs/pm2-gridbot-eth-live.log",
+      error_file: "bot/logs/pm2-gridbot-eth-live-error.log",
+      out_file: "bot/logs/pm2-gridbot-eth-live-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
       // Watch for crashes

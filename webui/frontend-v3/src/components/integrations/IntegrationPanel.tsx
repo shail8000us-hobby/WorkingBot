@@ -28,7 +28,7 @@ interface IntegrationResponse {
 }
 
 async function fetchIntegrations(): Promise<IntegrationResponse> {
-  const response = await fetch('http://localhost:5555/api/integrations/list');
+  const response = await fetch('http://localhost:5557/api/integrations/list');
   if (!response.ok) {
     throw new Error('Failed to fetch integrations');
   }
@@ -36,7 +36,7 @@ async function fetchIntegrations(): Promise<IntegrationResponse> {
 }
 
 async function toggleIntegration(integrationId: string, enabled: boolean) {
-  const response = await fetch(`http://localhost:5555/api/integrations/${integrationId}/toggle`, {
+  const response = await fetch(`http://localhost:5557/api/integrations/${integrationId}/toggle`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),

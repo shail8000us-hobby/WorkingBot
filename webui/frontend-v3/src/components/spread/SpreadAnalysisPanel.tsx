@@ -28,7 +28,7 @@ interface SpreadAnalysisData {
 }
 
 async function fetchSpreadData(): Promise<SpreadAnalysisData> {
-  const response = await fetch('http://localhost:5555/api/spread/analysis');
+  const response = await fetch('http://localhost:5557/api/spread/analysis');
   if (!response.ok) {
     throw new Error(`Failed to fetch spread data: ${response.statusText}`);
   }

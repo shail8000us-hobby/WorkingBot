@@ -5,8 +5,10 @@
 
 import { io } from 'socket.io-client';
 
-const DEFAULT_SOCKET_URL = (process.env.REACT_APP_SOCKET_URL || '').trim() || null;
-const DEFAULT_API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || '').trim().replace(/\/$/, '');
+// Use port 5555 as default (matches config.yaml webui.port)
+// For development with different ports, set REACT_APP_SOCKET_URL in .env
+const DEFAULT_SOCKET_URL = (process.env.REACT_APP_SOCKET_URL || '').trim() || 'http://localhost:5555';
+const DEFAULT_API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:5555';
 
 class ConnectionManager {
   constructor(config = {}) {
@@ -74,12 +76,11 @@ class ConnectionManager {
       ...socketIOConfig
     };
 
-    if (this.config.socketUrl) {
-      this.socket = io(this.config.socketUrl, connectionOptions);
-    } else {
-      this.socket = io(connectionOptions);
-    }
-
+    // Always provide explicit URL to avoid connecting to React dev server port
+    const socketUrl = this.config.socketUrl || 'http://localhost:3001';
+    console.log('🔵 Connecting to:', socketUrl);
+    
+    this.socket = io(socketUrl, connectionOptions);
     this.setupSocketListeners();
   }
 

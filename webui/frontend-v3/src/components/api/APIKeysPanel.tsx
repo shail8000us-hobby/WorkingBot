@@ -36,7 +36,7 @@ interface APIKeysResponse {
 }
 
 async function fetchAPIKeys(): Promise<APIKeysResponse> {
-  const response = await fetch('http://localhost:5555/api/settings/api-keys');
+  const response = await fetch('http://localhost:5557/api/settings/api-keys');
   if (!response.ok) {
     throw new Error('Failed to fetch API keys');
   }

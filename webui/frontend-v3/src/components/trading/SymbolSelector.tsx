@@ -42,8 +42,14 @@ interface SymbolsResponse {
   trading_mode: string
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 async function fetchSymbols(): Promise<SymbolsResponse> {
-  const res = await fetch('http://localhost:5555/api/symbols')
+  const res = await fetch(`${API_URL}/api/symbols`)
   if (!res.ok) throw new Error('Failed to fetch symbols')
   return res.json()
 }

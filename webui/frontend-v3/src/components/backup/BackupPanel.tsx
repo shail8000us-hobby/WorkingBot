@@ -32,7 +32,7 @@ interface BackupResponse {
 }
 
 async function fetchBackups(): Promise<BackupResponse> {
-  const response = await fetch('http://localhost:5555/api/backup/list');
+  const response = await fetch('http://localhost:5557/api/backup/list');
   if (!response.ok) {
     throw new Error('Failed to fetch backups');
   }
@@ -40,7 +40,7 @@ async function fetchBackups(): Promise<BackupResponse> {
 }
 
 async function createBackup() {
-  const response = await fetch('http://localhost:5555/api/backup/create', {
+  const response = await fetch('http://localhost:5557/api/backup/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -51,7 +51,7 @@ async function createBackup() {
 }
 
 async function restoreBackup(backupId: string) {
-  const response = await fetch('http://localhost:5555/api/backup/restore', {
+  const response = await fetch('http://localhost:5557/api/backup/restore', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ backup_id: backupId }),
@@ -60,7 +60,7 @@ async function restoreBackup(backupId: string) {
 }
 
 async function downloadBackup(backupId: string) {
-  const response = await fetch(`http://localhost:5555/api/backup/download/${backupId}`);
+  const response = await fetch(`http://localhost:5557/api/backup/download/${backupId}`);
   if (!response.ok) {
     throw new Error('Failed to download backup');
   }

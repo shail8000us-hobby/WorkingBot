@@ -37,7 +37,7 @@ async function fetchAlertHistory(filter?: string): Promise<AlertHistoryResponse>
   if (filter && filter !== 'all') {
     params.set('severity', filter);
   }
-  const response = await fetch(`http://localhost:5555/api/alerts/history?${params}`);
+  const response = await fetch(`http://localhost:5557/api/alerts/history?${params}`);
   if (!response.ok) {
     throw new Error('Failed to fetch alert history');
   }

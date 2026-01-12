@@ -31,7 +31,7 @@ interface ScriptsResponse {
 }
 
 async function fetchScripts(): Promise<ScriptsResponse> {
-  const response = await fetch('http://localhost:5555/api/scripts/list');
+  const response = await fetch('http://localhost:5557/api/scripts/list');
   if (!response.ok) {
     throw new Error('Failed to fetch scripts');
   }
@@ -39,7 +39,7 @@ async function fetchScripts(): Promise<ScriptsResponse> {
 }
 
 async function executeScript(id: string) {
-  const response = await fetch(`http://localhost:5555/api/scripts/${id}/execute`, {
+  const response = await fetch(`http://localhost:5557/api/scripts/${id}/execute`, {
     method: 'POST',
   });
   return response.json();

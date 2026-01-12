@@ -31,7 +31,7 @@ interface PriceMonitorData {
 }
 
 async function fetchPriceData(): Promise<PriceMonitorData> {
-  const response = await fetch('http://localhost:5555/api/price/current');
+  const response = await fetch('http://localhost:5557/api/price/current');
   if (!response.ok) {
     throw new Error(`Failed to fetch price data: ${response.statusText}`);
   }

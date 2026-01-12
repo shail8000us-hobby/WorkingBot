@@ -194,6 +194,9 @@ class CapitalProtection(BaseModel):
     two_man_rule: TwoManRule
     exposure_growth: ExposureGrowth
     pending_budget: PendingBudget
+    
+    # Backward compatibility for legacy code
+    max_loss_inr: float = Field(10000.0, gt=0, description="Max account loss INR (backward compat)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1178,6 +1181,26 @@ class SymbolConfig(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# OPTIONS TRADING CONFIGURATION (Added: Jan 4, 2026)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class OptionsConfig(BaseModel):
+    """Configuration for options trading module (MVP)
+    
+    This is separate from grid bot - for manual options position management.
+    Added: January 4, 2026
+    """
+    enabled: bool = Field(default=True, description="Enable options trading module")
+    polling_interval_seconds: int = Field(default=5, ge=1, le=60, description="Position refresh interval")
+    rate_limit_seconds: float = Field(default=2.0, ge=0.5, le=10, description="Minimum time between orders")
+    max_spread_pct: float = Field(default=10.0, ge=1, le=50, description="Max acceptable spread percentage")
+    guardian_integration: bool = Field(default=True, description="Respect Guardian GO/STOP signals")
+    expiry_warning_hours: int = Field(default=24, ge=1, le=168, description="Hours before expiry to warn")
+    liquidity_check: bool = Field(default=True, description="Check liquidity before orders")
+    default_order_type: str = Field(default="maker_first", description="Default order type: maker_first, maker_only, market_only")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # ROOT CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1254,6 +1277,9 @@ class RootConfig(BaseModel):
     
     # Exchange maintenance protection (Dec 23, 2025)
     exchange_maintenance: ExchangeMaintenanceConfig = Field(default_factory=ExchangeMaintenanceConfig, description="Exchange maintenance protection")
+    
+    # Options trading module (Jan 4, 2026) - Separate from grid bot
+    options: OptionsConfig = Field(default_factory=OptionsConfig, description="Options trading configuration")
     
     class Config:
         extra = "forbid"  # Reject unknown fields

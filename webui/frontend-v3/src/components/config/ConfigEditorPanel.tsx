@@ -90,6 +90,12 @@ interface ChangesSummary {
   impact_summary: Record<string, any>;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 // ===== Field Help Text =====
 const fieldHelp: Record<string, string> = {
   GRIDBOT_GRID_MODE:
@@ -256,7 +262,7 @@ export default function ConfigEditorPanel() {
 
   const saveMutation = useMutation({
     mutationFn: async (updates: Record<string, string>) => {
-      const res = await fetch('/api/config/update', {
+      const res = await fetch(`${API_URL}/api/config/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -281,7 +287,7 @@ export default function ConfigEditorPanel() {
 
   const clearMemoryMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/bot/clear-memory', {
+      const res = await fetch(`${API_URL}/api/bot/clear-memory`, {
         method: 'POST',
       });
       if (!res.ok) throw new Error('Failed to clear memory');

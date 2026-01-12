@@ -18,7 +18,7 @@ async function exportData(type: ExportType, format: ExportFormat, startDate?: st
   if (startDate) params.append('start_date', startDate);
   if (endDate) params.append('end_date', endDate);
 
-  const response = await fetch(`http://localhost:5555/api/export/${type}?${params}`);
+  const response = await fetch(`http://localhost:5557/api/export/${type}?${params}`);
   if (!response.ok) {
     throw new Error('Export failed');
   }

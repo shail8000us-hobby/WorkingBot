@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import './BotActionsPanel.css';
+import { useInstance } from '../context/InstanceContext';
 
 const BotActionsPanel = () => {
+  const { selectedInstance, withInstance } = useInstance();
   const [nextActions, setNextActions] = useState([]);
   const [marketState, setMarketState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch next actions from the prediction endpoint
+  // Fetch next actions from the prediction endpoint (v6.0: instance-aware)
   const fetchNextActions = async () => {
     try {
       setError(null);
-      const response = await fetch('/api/bot-actions/next');
+      const response = await fetch(withInstance('/api/bot-actions/next'));
       const data = await response.json();
       
       if (data.success && data.actions) {
@@ -28,12 +30,12 @@ const BotActionsPanel = () => {
     }
   };
 
-  // Initial fetch and auto-refresh every 15 seconds
+  // Initial fetch and auto-refresh every 15 seconds (v6.0: refetch on instance change)
   useEffect(() => {
     fetchNextActions();
     const interval = setInterval(fetchNextActions, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedInstance]); // Refetch when instance changes
 
   const getImportanceIcon = (importance) => {
     switch (importance) {

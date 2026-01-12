@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebUI PM2 Test</title>
+</head>
+<body>
+    <h1>WebUI PM2 Control Test</h1>
+    <div id="status"></div>
+    <button onclick="testStart()">Start gridbot-demo</button>
+    <button onclick="testStop()">Stop gridbot-demo</button>
+    <button onclick="testStatus()">Check Status</button>
+    <pre id="output"></pre>
+
+    <script>
+        const API_BASE = 'http://localhost:5555';
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+
+        async function testStart() {
+            try {
+                const response = await fetch(`${API_BASE}/api/pm2/start/gridbot-demo`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+                status.textContent = `Status: ${response.status} ${response.ok ? 'OK' : 'ERROR'}`;
+            } catch (err) {
+                output.textContent = `Error: ${err.message}`;
+                status.textContent = 'FAILED';
+            }
+        }
+
+        async function testStop() {
+            try {
+                const response = await fetch(`${API_BASE}/api/pm2/stop/gridbot-demo`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+                status.textContent = `Status: ${response.status} ${response.ok ? 'OK' : 'ERROR'}`;
+            } catch (err) {
+                output.textContent = `Error: ${err.message}`;
+                status.textContent = 'FAILED';
+            }
+        }
+
+        async function testStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/pm2/status`);
+                const data = await response.json();
+                output.textContent = JSON.stringify(data, null, 2);
+                status.textContent = `Status: ${response.status} ${response.ok ? 'OK' : 'ERROR'}`;
+            } catch (err) {
+                output.textContent = `Error: ${err.message}`;
+                status.textContent = 'FAILED';
+            }
+        }
+
+        // Auto-check on load
+        testStatus();
+    </script>
+</body>
+</html>

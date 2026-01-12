@@ -221,14 +221,28 @@ def reset_emergency_overrides():
 
 @emergency_bp.route('/api/emergency/check_flag', methods=['GET'])
 def check_emergency_flag():
-    """Check if emergency stop flag exists"""
+    """Check if emergency stop flag exists
+    
+    v6.0: Supports per-instance emergency flags
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
+    """
     try:
-        emergency_flag = BASE_DIR / '.guardian_emergency_stop'
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        
+        if instance:
+            # Per-instance emergency flag
+            emergency_flag = BASE_DIR / f'.guardian_emergency_stop_{instance}'
+        else:
+            # Global emergency flag (legacy)
+            emergency_flag = BASE_DIR / '.guardian_emergency_stop'
         
         return jsonify({
             'success': True,
             'flag_exists': emergency_flag.exists(),
-            'flag_location': str(emergency_flag.absolute()) if emergency_flag.exists() else None
+            'flag_location': str(emergency_flag.absolute()) if emergency_flag.exists() else None,
+            'instance': instance
         }), 200
             
     except Exception as e:
@@ -246,22 +260,38 @@ def clear_emergency_flag():
     Clear Emergency Flag
     
     Clears the emergency flag, allowing the bot to resume normal operations.
+    
+    v6.0: Supports per-instance emergency flags
+    Query params:
+        instance: Optional instance name (e.g., BTCUSD_LONG)
     """
     try:
-        emergency_flag = BASE_DIR / '.guardian_emergency_stop'
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        
+        if instance:
+            # Per-instance emergency flag
+            emergency_flag = BASE_DIR / f'.guardian_emergency_stop_{instance}'
+            instance_msg = f' for {instance}'
+        else:
+            # Global emergency flag (legacy)
+            emergency_flag = BASE_DIR / '.guardian_emergency_stop'
+            instance_msg = ''
         
         if emergency_flag.exists():
             emergency_flag.unlink()
             return jsonify({
                 'success': True,
-                'message': 'Emergency stop flag cleared successfully',
-                'action': 'clear_emergency_flag'
+                'message': f'Emergency stop flag cleared successfully{instance_msg}',
+                'action': 'clear_emergency_flag',
+                'instance': instance
             }), 200
         else:
             return jsonify({
                 'success': True,
-                'message': 'No emergency flag found - already clear',
-                'action': 'clear_emergency_flag'
+                'message': f'No emergency flag found{instance_msg} - already clear',
+                'action': 'clear_emergency_flag',
+                'instance': instance
             }), 200
             
     except Exception as e:

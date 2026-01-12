@@ -37,27 +37,64 @@ def get_logs():
     """
     Get recent logs from bot log file
     
+    v6.0: Supports per-instance log filtering
+    
     Query Parameters:
         lines (int): Number of log lines to return (default: 100)
+        instance (str): Optional instance name (e.g., BTCUSD_LONG)
     
     Returns:
         JSON response with log lines
     
     Example:
-        GET /api/logs?lines=50
-        Response: {"logs": ["line 1", "line 2", ...]}
+        GET /api/logs?lines=50&instance=BTCUSD_LONG
+        Response: {"logs": ["line 1", "line 2", ...], "instance": "BTCUSD_LONG"}
     """
     try:
         lines = request.args.get('lines', 100, type=int)
+        instance = request.args.get('instance')
         
         # Cap at reasonable limit to prevent memory issues
         lines = min(lines, 10000)
         
-        log_lines = get_recent_logs(lines)
+        # v6.0: Use instance-specific log file if provided
+        if instance:
+            from pathlib import Path
+            BASE_DIR = Path(__file__).parent.parent.parent.parent
+            
+            # Map instance name to PM2 process name
+            # BTCUSD_LONG -> gridbot-btcusd-live
+            # ETHUSD_LONG -> gridbot-ethusd-live
+            # BTCUSD_SHORT -> gridbot-btcusd-short
+            instance_lower = instance.lower()
+            symbol = instance_lower.split('_')[0] if '_' in instance_lower else instance_lower
+            mode = instance_lower.split('_')[1] if '_' in instance_lower else 'long'
+            
+            # PM2 process naming: gridbot-{symbol}-{live|short}
+            # LONG mode uses "live", SHORT mode uses "short"
+            pm2_suffix = 'live' if mode == 'long' else mode
+            pm2_process = f'gridbot-{symbol}-{pm2_suffix}'
+            
+            # Try PM2 log file first (most common for multi-instance setup)
+            pm2_log = BASE_DIR / 'reports' / f'pm2-{pm2_process}-out.log'
+            
+            # Fallback to direct log file
+            direct_log = BASE_DIR / f'gridbot_{instance.lower()}.log'
+            
+            if pm2_log.exists():
+                log_lines = get_recent_logs(lines, log_file=str(pm2_log))
+            elif direct_log.exists():
+                log_lines = get_recent_logs(lines, log_file=str(direct_log))
+            else:
+                log.warning(f"No log file found for instance {instance}. Tried: {pm2_log}, {direct_log}")
+                log_lines = []
+        else:
+            log_lines = get_recent_logs(lines)
         
         return jsonify({
             'logs': log_lines,
-            'count': len(log_lines)
+            'count': len(log_lines),
+            'instance': instance
         }), 200
         
     except Exception as e:
@@ -75,29 +112,60 @@ def get_logs_recent():
     
     This endpoint supports bot-specific log file selection.
     
+    v6.0: Supports per-instance log filtering
+    
     Query Parameters:
         lines (int): Number of log lines to return (default: 50)
         bot_type (str): Bot type ('trading', 'guardian', 'monitoring') - optional
         log_file (str): Specific log file path - optional, overrides bot_type
+        instance (str): Instance name (e.g., BTCUSD_LONG) - overrides bot_type
     
     Returns:
         JSON response with success status and log lines
     
     Example:
-        GET /api/logs/recent?lines=100&bot_type=guardian
-        Response: {"success": true, "logs": [...], "bot_type": "guardian"}
+        GET /api/logs/recent?lines=100&instance=BTCUSD_LONG
+        Response: {"success": true, "logs": [...], "instance": "BTCUSD_LONG"}
     """
     try:
         lines = request.args.get('lines', 50, type=int)
         bot_type = request.args.get('bot_type', 'trading', type=str)
         log_file = request.args.get('log_file', None, type=str)
+        instance = request.args.get('instance')
         
         # Cap at reasonable limit
         lines = min(lines, 10000)
         
+        # v6.0: Determine log file based on instance first
+        if instance:
+            from pathlib import Path
+            BASE_DIR = Path(__file__).parent.parent.parent.parent
+            
+            # Map instance name to PM2 process name
+            instance_lower = instance.lower()
+            symbol = instance_lower.split('_')[0] if '_' in instance_lower else instance_lower
+            mode = instance_lower.split('_')[1] if '_' in instance_lower else 'long'
+            
+            # PM2 process naming: gridbot-{symbol}-{live|short}
+            pm2_suffix = 'live' if mode == 'long' else mode
+            pm2_process = f'gridbot-{symbol}-{pm2_suffix}'
+            
+            # Try PM2 log file first
+            pm2_log = BASE_DIR / 'reports' / f'pm2-{pm2_process}-out.log'
+            
+            # Fallback to direct log file
+            direct_log = BASE_DIR / f'gridbot_{instance.lower()}.log'
+            
+            if pm2_log.exists():
+                log_file = str(pm2_log)
+            elif direct_log.exists():
+                log_file = str(direct_log)
+            else:
+                log.warning(f"No log file found for instance {instance}. Tried: {pm2_log}, {direct_log}")
+                log_file = None
+        
         # Determine log file based on bot_type if not explicitly specified
         if not log_file:
-            from pathlib import Path
             base_path = Path(__file__).parent.parent.parent.parent
             
             log_file_map = {

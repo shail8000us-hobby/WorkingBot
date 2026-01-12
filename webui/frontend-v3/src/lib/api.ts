@@ -18,8 +18,8 @@ import type {
 // API URL - must use NEXT_PUBLIC_ prefix to be available in client-side code
 // This is embedded at BUILD time, so rebuild if you change .env.local
 const API_URL = (typeof window !== 'undefined' 
-  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5555')
-  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5555')
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
 ).trim();
 
 /**
@@ -56,9 +56,19 @@ async function fetchApi<T>(
       timestamp: Date.now(),
     };
   } catch (error) {
+    // Better error message handling for network errors
+    let errorMessage = 'Network error';
+    
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      // Network error - backend likely down, CORS issue, or network problem
+      errorMessage = `Unable to connect to backend at ${API_URL}. Please check if the server is running and accessible.`;
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Network error',
+      error: errorMessage,
       timestamp: Date.now(),
     };
   }
@@ -415,9 +425,19 @@ export async function getVolatilitySignal(): Promise<ApiResponse<{
       timestamp: Date.now(),
     };
   } catch (error) {
+    // Better error message handling for network errors
+    let errorMessage = 'Network error';
+    
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      // Network error - backend likely down, CORS issue, or network problem
+      errorMessage = `Unable to connect to backend at ${API_URL}. Please check if the server is running and accessible.`;
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Network error',
+      error: errorMessage,
       timestamp: Date.now(),
     };
   }
@@ -496,9 +516,19 @@ export async function getHealthDetailed(): Promise<ApiResponse<{
       timestamp: Date.now(),
     };
   } catch (error) {
+    // Better error message handling for network errors
+    let errorMessage = 'Network error';
+    
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      // Network error - backend likely down, CORS issue, or network problem
+      errorMessage = `Unable to connect to backend at ${API_URL}. Please check if the server is running and accessible.`;
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Network error',
+      error: errorMessage,
       timestamp: Date.now(),
     };
   }

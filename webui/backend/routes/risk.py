@@ -37,12 +37,21 @@ def get_risk_analytics():
     """
     Get comprehensive risk analytics including VaR, CVaR, volatility, and stress tests.
     Returns professional-grade risk metrics used by institutional traders.
+    
+    v6.0: Supports per-instance risk analytics
+    Query params:
+        lookback_days: Lookback period (default: 30)
+        force_refresh: Force recalculation (true/false)
+        instance: Optional instance name (e.g., BTCUSD_LONG)
     """
     try:
+        # v6.0: Extract instance parameter
+        instance = request.args.get('instance')
+        
         from bot.ai.analytics.risk import get_risk_analytics
         
-        # Get risk analytics engine
-        analytics = get_risk_analytics()
+        # Get risk analytics engine (with instance if provided)
+        analytics = get_risk_analytics(instance=instance) if instance else get_risk_analytics()
         
         # Get lookback period from query params (default 30 days)
         lookback_days = int(request.args.get('lookback_days', 30))
@@ -314,7 +323,9 @@ def get_risk_volatility_history():
         if timeframe not in ['hourly', 'daily', 'weekly', 'monthly']:
             timeframe = 'daily'
 
-        collector = get_collector()
+        # v6.0: Multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        collector = get_collector(symbol=symbol)
         data = collector.get_historical_data(timeframe=timeframe, limit=periods)
 
         merged = {}
@@ -404,7 +415,9 @@ def get_risk_volatility_historical():
                 'error': f'Invalid timeframe: {timeframe}. Must be hourly, daily, weekly, or monthly.'
             }), 400
         
-        collector = get_collector()
+        # v6.0: Multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        collector = get_collector(symbol=symbol)
         data = collector.get_historical_data(timeframe=timeframe, limit=limit)
         
         # Fallback: If hourly data is empty, try daily data
@@ -559,7 +572,9 @@ def get_risk_volatility_latest():
     try:
         from bot.volatility.delta_volatility_collector import get_collector
         
-        collector = get_collector()
+        # v6.0: Multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        collector = get_collector(symbol=symbol)
         data = collector.get_latest_values()
         
         return jsonify({
@@ -589,8 +604,11 @@ def get_risk_volatility_stats():
         from bot.volatility.delta_volatility_collector import get_collector
         from config.loader import get_config
         
+        # v6.0: Multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        
         # Get latest IV/RV from DeltaVolatilityCollector (SINGLE SOURCE)
-        collector = get_collector()
+        collector = get_collector(symbol=symbol)
         latest = collector.get_latest_values()
         
         # Get safety limits from config.yaml (SINGLE SOURCE)
@@ -793,6 +811,9 @@ def get_market_signal():
     Get comprehensive market signal including volatility, regime, grid suitability, and position risk.
     Uses robust delta_volatility_collector for accurate IV/RV data.
     
+    Query Parameters:
+        symbol (optional): Symbol name (e.g., "BTCUSD", "ETHUSD"). Default: "BTCUSD"
+    
     Returns:
         - Volatility Signal (NEUTRAL/IV_HIGH/IV_LOW)
         - Market Regime (LOW_VOL/NORMAL/HIGH_VOL/EXTREME)
@@ -804,8 +825,11 @@ def get_market_signal():
         import json
         from bot.volatility.delta_volatility_collector import get_collector
         
-        # Get IV/RV data from robust collector
-        collector = get_collector()
+        # v6.0: Get symbol from query parameter
+        symbol = request.args.get('symbol', 'BTCUSD')
+        
+        # Get IV/RV data from robust collector (symbol-aware)
+        collector = get_collector(symbol=symbol)
         latest = collector.get_latest_values()
         
         # Extract IV and RV values
@@ -857,7 +881,7 @@ def get_market_signal():
             regime_color = "red"
             regime_risk = "EXTREME"
         
-        # Get Position Risk Data from Guardian Bot
+        # Get Position Risk Data from Guardian Bot (filtered by symbol if multi-symbol)
         liq_distance = None
         margin_utilized = None
         total_pnl = 0
@@ -1066,7 +1090,9 @@ def get_risk_volatility_signal():
     """Get volatility trading signal (BUY/SELL/HOLD based on IV/RV)"""
     try:
         from bot.volatility.delta_volatility_collector import get_collector
-        collector = get_collector()
+        # v6.0: Multi-symbol support
+        symbol = request.args.get('symbol', 'BTCUSD')
+        collector = get_collector(symbol=symbol)
         latest = collector.get_latest_values()
         
         # Simple signal logic: High IV = potential reversal

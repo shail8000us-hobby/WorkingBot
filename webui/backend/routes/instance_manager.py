@@ -728,3 +728,59 @@ def get_instances_summary():
     except Exception as e:
         logger.error(f"Error getting instances summary: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+
+@instance_bp.route('/toggle', methods=['POST'])
+def toggle_instance():
+    """
+    Toggle instance enabled/disabled status in config.yaml
+    
+    Request Body:
+        instance: Instance name (e.g., "BTCUSD_LONG", "ETHUSD_LONG")
+    
+    Returns:
+        - Updated instance status
+    """
+    try:
+        data = request.get_json() or {}
+        instance_name = data.get('instance')
+        
+        if not instance_name:
+            return jsonify({'success': False, 'error': 'Instance name is required'}), 400
+        
+        # Load config.yaml
+        config_path = Path('config.yaml')
+        if not config_path.exists():
+            return jsonify({'success': False, 'error': 'config.yaml not found'}), 404
+        
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Check if instances section exists
+        if 'instances' not in config:
+            return jsonify({'success': False, 'error': 'No instances configured in config.yaml'}), 404
+        
+        # Find and toggle the instance
+        if instance_name not in config['instances']:
+            return jsonify({'success': False, 'error': f'Instance {instance_name} not found'}), 404
+        
+        current_enabled = config['instances'][instance_name].get('enabled', False)
+        new_enabled = not current_enabled
+        config['instances'][instance_name]['enabled'] = new_enabled
+        
+        # Save config.yaml
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        logger.info(f"✅ Toggled instance {instance_name}: enabled={new_enabled}")
+        
+        return jsonify({
+            'success': True,
+            'instance': instance_name,
+            'enabled': new_enabled,
+            'message': f'Instance {instance_name} {"enabled" if new_enabled else "disabled"}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error toggling instance: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500

@@ -14,26 +14,22 @@ interface PnLPoint {
 }
 
 interface PnLHistoryData {
-  history: Array<{ timestamp: string; total_pnl: number }>;
-  current_pnl: number;
-  peak_pnl: number;
-  trough_pnl: number;
-  avg_pnl: number;
-  volatility: number;
+  history: Array<{ timestamp: string; total_pnl: number; position_count?: number; time?: string }>;
   meta?: {
     guardian_running: boolean;
-    last_update: string;
+    last_update?: string;
+    data_points?: number;
   };
 }
 
-interface PnLResponse {
-  data: PnLHistoryData;
-  status: 'live' | 'stale' | 'error';
-  error?: string;
-}
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
 
-async function fetchPnLHistory(): Promise<PnLResponse> {
-  const response = await fetch('http://localhost:5555/api/pnl-history/hourly');
+async function fetchPnLHistory(): Promise<PnLHistoryData> {
+  const response = await fetch(`${API_URL}/api/pnl-history/hourly`);
   if (!response.ok) {
     throw new Error(`Failed to fetch P&L history: ${response.statusText}`);
   }
@@ -80,7 +76,7 @@ export function UnrealizedPnLPanel() {
     );
   }
 
-  if (error || data?.status === 'error') {
+  if (error) {
     return (
       <Card>
         <CardHeader>
@@ -92,7 +88,7 @@ export function UnrealizedPnLPanel() {
         <CardContent>
           <Alert variant="destructive">
             <AlertDescription>
-              {data?.error || (error as Error)?.message || 'Failed to load P&L data'}
+              {(error as Error)?.message || 'Failed to load P&L data'}
             </AlertDescription>
           </Alert>
         </CardContent>
@@ -100,14 +96,23 @@ export function UnrealizedPnLPanel() {
     );
   }
 
-  const pnlData = data?.data;
+  const pnlData = data;
   const chartData: PnLPoint[] =
     pnlData?.history?.map((point) => ({
       timestamp: new Date(point.timestamp).getTime(),
       pnl: point.total_pnl,
     })) || [];
 
-  const currentPnL = pnlData?.current_pnl || 0;
+  // Calculate stats from history
+  const pnlValues = chartData.map(p => p.pnl);
+  const currentPnL = pnlValues.length > 0 ? pnlValues[pnlValues.length - 1] : 0;
+  const peakPnL = pnlValues.length > 0 ? Math.max(...pnlValues) : 0;
+  const troughPnL = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+  const avgPnL = pnlValues.length > 0 ? pnlValues.reduce((a, b) => a + b, 0) / pnlValues.length : 0;
+  const volatility = pnlValues.length > 1 
+    ? Math.sqrt(pnlValues.reduce((acc, val) => acc + Math.pow(val - avgPnL, 2), 0) / pnlValues.length)
+    : 0;
+  
   const isProfitable = currentPnL >= 0;
 
   return (
@@ -125,7 +130,7 @@ export function UnrealizedPnLPanel() {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Guardian Warning */}
-        {pnlData?.meta && !pnlData.meta.guardian_running && (
+        {pnlData?.meta && !pnlData.meta.guardian_running && pnlData.meta.last_update && (
           <Alert>
             <AlertDescription className="text-xs">
               ⚠️ Guardian not running. Showing historical data from{' '}
@@ -147,21 +152,19 @@ export function UnrealizedPnLPanel() {
         <div className="grid grid-cols-4 gap-4">
           <div className="p-3 bg-muted rounded-lg space-y-1 text-center">
             <div className="text-xs text-muted-foreground">Avg P&L</div>
-            <div className="text-lg font-semibold">{formatCurrency(pnlData?.avg_pnl)}</div>
+            <div className="text-lg font-semibold">{formatCurrency(avgPnL)}</div>
           </div>
           <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg space-y-1 text-center">
             <div className="text-xs text-green-400">Peak</div>
-            <div className="text-lg font-semibold text-green-500">{formatCurrency(pnlData?.peak_pnl)}</div>
+            <div className="text-lg font-semibold text-green-500">{formatCurrency(peakPnL)}</div>
           </div>
           <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg space-y-1 text-center">
             <div className="text-xs text-red-400">Trough</div>
-            <div className="text-lg font-semibold text-red-500">{formatCurrency(pnlData?.trough_pnl)}</div>
+            <div className="text-lg font-semibold text-red-500">{formatCurrency(troughPnL)}</div>
           </div>
           <div className="p-3 bg-muted rounded-lg space-y-1 text-center">
             <div className="text-xs text-muted-foreground">Volatility</div>
-            <div className="text-lg font-semibold">
-              {pnlData?.volatility !== undefined ? formatCurrency(pnlData.volatility) : '—'}
-            </div>
+            <div className="text-lg font-semibold">{formatCurrency(volatility)}</div>
           </div>
         </div>
 
@@ -214,8 +217,8 @@ export function UnrealizedPnLPanel() {
         {/* Info */}
         <Alert>
           <AlertDescription className="text-xs">
-            <strong>Unrealized P&L:</strong> Shows the profit/loss trend of open positions over the last 2 hours
-            (120 data points at 1-minute intervals). This updates in real-time as market prices change.
+            <strong>Unrealized P&L:</strong> Shows the profit/loss trend of open positions over the last 24 hours
+            (hourly sampled data). This updates in real-time as market prices change.
           </AlertDescription>
         </Alert>
       </CardContent>

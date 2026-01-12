@@ -169,6 +169,84 @@ module.exports = {
     },
 
     // ========================================================================
+    // BTCUSD TRADING BOT (Real Money) - v6.0 Multi-Symbol
+    // ========================================================================
+    {
+      name: "gridbot-btcusd-live",
+      script: "start_bot_with_recovery.py",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot:/Users/ssr/Library/Python/3.9/lib/python/site-packages",
+        TRADING_MODE: "live",
+        SYMBOL: "BTCUSD",  // Symbol-specific
+        HOT_RELOAD: "1",
+        PYTHONUNBUFFERED: "1",
+      },
+      
+      kill_timeout: 30000,
+      kill_signal: "SIGTERM",
+      wait_ready: false,
+      listen_timeout: 10000,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "30s",
+      restart_delay: 10000,
+      exp_backoff_restart_delay: 100,
+      max_memory_restart: "1G",
+      
+      log_file: "reports/pm2-gridbot-btcusd-live-combined.log",
+      error_file: "reports/pm2-gridbot-btcusd-live-error.log",
+      out_file: "reports/pm2-gridbot-btcusd-live-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+      merge_logs: true,
+      pmx: true,
+      instance_var: "INSTANCE_ID",
+      source_map_support: false,
+      stop_exit_codes: [0],
+    },
+
+    // ========================================================================
+    // ETHUSD TRADING BOT (Real Money) - v6.0 Multi-Symbol
+    // ========================================================================
+    {
+      name: "gridbot-ethusd-live",
+      script: "start_bot_with_recovery.py",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot:/Users/ssr/Library/Python/3.9/lib/python/site-packages",
+        TRADING_MODE: "live",
+        SYMBOL: "ETHUSD",  // Symbol-specific
+        HOT_RELOAD: "1",
+        PYTHONUNBUFFERED: "1",
+      },
+      
+      kill_timeout: 30000,
+      kill_signal: "SIGTERM",
+      wait_ready: false,
+      listen_timeout: 10000,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "30s",
+      restart_delay: 10000,
+      exp_backoff_restart_delay: 100,
+      max_memory_restart: "1G",
+      
+      log_file: "reports/pm2-gridbot-ethusd-live-combined.log",
+      error_file: "reports/pm2-gridbot-ethusd-live-error.log",
+      out_file: "reports/pm2-gridbot-ethusd-live-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+      merge_logs: true,
+      pmx: true,
+      instance_var: "INSTANCE_ID",
+      source_map_support: false,
+      stop_exit_codes: [0],
+    },
+
+    // ========================================================================
     // GUARDIAN BOT (Position Protection - LIVE)
     // ========================================================================
     {
@@ -180,6 +258,7 @@ module.exports = {
       env: {
         PYTHONPATH: "/Users/ssr/Projects/WorkingBot:/Users/ssr/Library/Python/3.9/lib/python/site-packages",
         TRADING_MODE: "live",
+        SYMBOL: "BTCUSD",  // Guardian monitors BTCUSD (primary symbol)
         PYTHONUNBUFFERED: "1",
       },
       

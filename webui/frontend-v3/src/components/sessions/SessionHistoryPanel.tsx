@@ -27,7 +27,7 @@ interface SessionHistoryResponse {
 }
 
 async function fetchSessionHistory(): Promise<SessionHistoryResponse> {
-  const response = await fetch('http://localhost:5555/api/sessions/history');
+  const response = await fetch('http://localhost:5557/api/sessions/history');
   if (!response.ok) {
     throw new Error('Failed to fetch session history');
   }

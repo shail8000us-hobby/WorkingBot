@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +38,7 @@ interface ModeSwitcherConfig {
 }
 
 async function fetchModeSwitcherConfig(): Promise<ModeSwitcherConfig> {
-  const response = await fetch('http://localhost:5555/api/bot/mode-switcher/config');
+  const response = await fetch(`${API_URL}/api/bot/mode-switcher/config`);
   if (!response.ok) {
     throw new Error('Failed to fetch mode switcher config');
   }
@@ -41,9 +47,9 @@ async function fetchModeSwitcherConfig(): Promise<ModeSwitcherConfig> {
 }
 
 async function updateModeSwitcherConfig(config: Partial<ModeSwitcherConfig>): Promise<ModeSwitcherConfig> {
-  const response = await fetch('http://localhost:5555/api/bot/mode-switcher/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+      const response = await fetch(`${API_URL}/api/bot/mode-switcher/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
   if (!response.ok) throw new Error('Failed to update config');

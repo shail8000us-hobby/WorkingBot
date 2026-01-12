@@ -96,6 +96,15 @@ try:
     from .routes.recovery import bp as recovery_bp  # NOV 20: Recovery systems
     from .routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
     from .routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
+    from .routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
+    from .routes.market import market_bp  # JAN 2026: Market data (spot price)
+    # JAN 2026: WebUI v3 API endpoints
+    from .routes.trades import trades_bp
+    from .routes.analytics import analytics_bp
+    from .routes.performance import performance_bp
+    from .routes.chart import chart_bp
+    from .routes.backtest import backtest_bp
+    from .routes.strategies import strategies_bp
 except ImportError:
     from routes import (
         utility_bp, health_bp, logs_bp, docs_bp, metrics_bp,
@@ -118,6 +127,7 @@ except ImportError:
     from routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
     from routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
+    from routes.market import market_bp  # JAN 2026: Market data (spot price)
     # JAN 2026: WebUI v3 API endpoints
     from routes.trades import trades_bp
     from routes.analytics import analytics_bp
@@ -147,16 +157,18 @@ compress.init_app(app)
 ALLOWED_ORIGINS = cfg.webui.allowed_origins
 CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)
 
-# SocketIO
+# SocketIO (configured for socket.io-client v4.x compatibility)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode='threading',
-    engineio_logger=False,
-    logger=False,
+    engineio_logger=True,  # Enable for debugging
+    logger=True,  # Enable for debugging
     ping_timeout=120,
-    ping_interval=30,
-    allow_upgrades=True
+    ping_interval=60,
+    allow_upgrades=True,
+    # max_http_buffer_size increased for larger payloads
+    max_http_buffer_size=1000000
 )
 
 # ============================================================================
@@ -185,6 +197,7 @@ blueprints = [
     robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
     dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp,
     unified_safety_bp,  # DEC 27: Unified Risk & Safety Dashboard
+    market_bp,  # JAN 2026: Market data API (spot price)
     # JAN 2026: WebUI v3 endpoints
     trades_bp, analytics_bp, performance_bp, chart_bp, backtest_bp, strategies_bp
 ]
@@ -241,6 +254,33 @@ app.register_blueprint(symbols_bp)
 print(f"✅ Registered symbols blueprint (v5.0 multi-symbol)")
 
 # Unified safety blueprint is now part of blueprints list (registered above)
+
+# Register Options Control blueprint (JAN 2026: Options trading module)
+try:
+    from webui.backend.routes.options.options_control import options_bp
+    app.register_blueprint(options_bp)
+    print(f"✅ Registered options blueprint (options trading module)")
+except Exception as e:
+    print(f"⚠️ Could not register options blueprint: {e}")
+    log.warning(f"Options routes not available: {e}")
+
+# Register Options Chain blueprint (JAN 2026: Options chain market data - ISOLATED MODULE)
+try:
+    from webui.backend.options_chain import options_chain_bp
+    app.register_blueprint(options_chain_bp)
+    print(f"✅ Registered options_chain blueprint (options chain market data)")
+except Exception as e:
+    print(f"⚠️ Could not register options_chain blueprint: {e}")
+    log.warning(f"Options chain routes not available: {e}")
+
+# Register Options Strategy blueprint (JAN 2026: Multi-leg strategy builder - ISOLATED MODULE)
+try:
+    from webui.backend.options_strategy import options_strategy_bp
+    app.register_blueprint(options_strategy_bp)
+    print(f"✅ Registered options_strategy blueprint (multi-leg strategy builder)")
+except Exception as e:
+    print(f"⚠️ Could not register options_strategy blueprint: {e}")
+    log.warning(f"Options strategy routes not available: {e}")
 
 # Register Position & Liquidation Metrics blueprint (DEC 28: Delta Exchange India improvements)
 try:

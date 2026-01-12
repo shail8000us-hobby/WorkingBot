@@ -12,7 +12,11 @@ import {
   LinearProgress,
   IconButton,
   Collapse,
-  Divider
+  Divider,
+  ToggleButtonGroup,
+  ToggleButton,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   SignalCellularAlt,
@@ -29,18 +33,21 @@ import {
 } from '@mui/icons-material';
 
 const MarketSignalPanel = () => {
-  const [signalData, setSignalData] = useState(null);
+  const [signalData, setSignalData] = useState({});
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState('BTCUSD');
+  const availableSymbols = ['BTCUSD', 'ETHUSD'];
 
-  const fetchSignalData = async () => {
+  // Fetch signal data for a specific symbol
+  const fetchSignalData = async (symbol = selectedSymbol) => {
     try {
       setLoading(true);
-      // Fetch both signal data and liquidation data in parallel
+      // Fetch signal data with symbol parameter
       const [signalResponse, liquidationResponse] = await Promise.all([
-        fetch('/api/volatility/signal'),
-        fetch('/api/liquidation/status')
+        fetch(`/api/volatility/signal?symbol=${symbol}`),
+        fetch(`/api/liquidation/status?symbol=${symbol}`)
       ]);
       
       const signalResult = await signalResponse.json();
@@ -49,7 +56,7 @@ const MarketSignalPanel = () => {
       if (signalResult.success) {
         const data = signalResult.data;
         
-        // Merge liquidation data into position_risk if available
+        // Merge liquidation data
         if (liquidationResult.success && liquidationResult.distance && liquidationResult.margin) {
           data.position_risk = {
             ...data.position_risk,
@@ -60,7 +67,11 @@ const MarketSignalPanel = () => {
           };
         }
         
-        setSignalData(data);
+        // Store data per symbol
+        setSignalData(prev => ({
+          ...prev,
+          [symbol]: data
+        }));
         setLastUpdate(new Date());
       } else {
         console.error('API returned error:', signalResult.error);
@@ -72,13 +83,36 @@ const MarketSignalPanel = () => {
     }
   };
 
+  // Fetch data for all symbols on mount
   useEffect(() => {
-    fetchSignalData();
+    // Fetch all symbols' data
+    availableSymbols.forEach(sym => fetchSignalData(sym));
     
-    // Auto-refresh every 30 seconds for real-time updates
-    const interval = setInterval(fetchSignalData, 30000);
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(() => {
+      fetchSignalData(selectedSymbol);
+    }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedSymbol]);
+
+  // Handle symbol change
+  const handleSymbolChange = (event, newSymbol) => {
+    if (newSymbol) {
+      setSelectedSymbol(newSymbol);
+      if (!signalData[newSymbol]) {
+        fetchSignalData(newSymbol);
+      }
+    }
+  };
+
+  // Get symbol color
+  const getSymbolColor = (symbol) => {
+    const colors = {
+      'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
+      'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' },
+    };
+    return colors[symbol] || { bg: '#64748b20', border: '#64748b', text: '#64748b' };
+  };
 
   const getColorFromValue = (color) => {
     const colorMap = {
@@ -113,7 +147,7 @@ const MarketSignalPanel = () => {
     return `${hours}h ago`;
   };
 
-  if (loading && !signalData) {
+  if (loading && !signalData[selectedSymbol]) {
     return (
       <Paper sx={{ p: 3, mb: 2 }}>
         <Typography variant="h6" gutterBottom>Loading Market Signal...</Typography>
@@ -122,21 +156,39 @@ const MarketSignalPanel = () => {
     );
   }
 
-  if (!signalData) {
+  const currentData = signalData[selectedSymbol];
+  
+  if (!currentData) {
     return (
       <Paper sx={{ p: 3, mb: 2 }}>
-        <Typography variant="h6" color="error">Failed to load market signal</Typography>
-        <Button onClick={fetchSignalData} variant="outlined" sx={{ mt: 2 }}>
+        <Typography variant="h6" color="error">Failed to load market signal for {selectedSymbol}</Typography>
+        <Button onClick={() => fetchSignalData(selectedSymbol)} variant="outlined" sx={{ mt: 2 }}>
           <Refresh /> Retry
         </Button>
       </Paper>
     );
   }
 
-  if (!loading && (signalData.status === 'NO_DATA' || signalData.status === 'UNKNOWN')) {
+  if (!loading && (currentData.status === 'NO_DATA' || currentData.status === 'UNKNOWN')) {
     return (
       <Paper sx={{ p: 3, mb: 2, textAlign: 'center' }}>
-        <Typography variant="h6" gutterBottom>Waiting for market data…</Typography>
+        <ToggleButtonGroup
+          value={selectedSymbol}
+          exclusive
+          onChange={handleSymbolChange}
+          size="small"
+          sx={{ mb: 2 }}
+        >
+          {availableSymbols.map(sym => {
+            const colors = getSymbolColor(sym);
+            return (
+              <ToggleButton key={sym} value={sym} sx={{ color: colors.text }}>
+                {sym}
+              </ToggleButton>
+            );
+          })}
+        </ToggleButtonGroup>
+        <Typography variant="h6" gutterBottom>Waiting for {selectedSymbol} market data…</Typography>
         <Typography variant="body2" color="text.secondary">
           The bot is still syncing with the exchange. Market readiness metrics will appear automatically once feeds warm up.
         </Typography>
@@ -147,27 +199,58 @@ const MarketSignalPanel = () => {
     );
   }
 
-  const vol = signalData.volatility_signal || {};
-  const regime = signalData.market_regime || {};
-  const suitability = signalData.grid_suitability || {};
-  const positionRisk = signalData.position_risk || {};
-  const overallRisk = signalData.overall_risk_status || {};
+  const vol = currentData.volatility_signal || {};
+  const regime = currentData.market_regime || {};
+  const suitability = currentData.grid_suitability || {};
+  const positionRisk = currentData.position_risk || {};
+  const overallRisk = currentData.overall_risk_status || {};
+  const symbolColors = getSymbolColor(selectedSymbol);
 
   return (
     <Paper sx={{ p: 3, mb: 2 }}>
-      {/* Header */}
+      {/* Header with Symbol Selector */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <SignalCellularAlt sx={{ fontSize: 28, color: 'primary.main' }} />
+          <SignalCellularAlt sx={{ fontSize: 28, color: symbolColors.text }} />
           <Typography variant="h6" component="div">
             Market Signal & Risk Dashboard
           </Typography>
+          <Chip 
+            label={selectedSymbol} 
+            size="small" 
+            sx={{ bgcolor: symbolColors.bg, color: symbolColors.text, fontWeight: 'bold', ml: 1 }} 
+          />
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Symbol Toggle */}
+          <ToggleButtonGroup
+            value={selectedSymbol}
+            exclusive
+            onChange={handleSymbolChange}
+            size="small"
+          >
+            {availableSymbols.map(sym => {
+              const colors = getSymbolColor(sym);
+              return (
+                <ToggleButton 
+                  key={sym} 
+                  value={sym} 
+                  sx={{ 
+                    color: selectedSymbol === sym ? colors.text : 'inherit',
+                    borderColor: selectedSymbol === sym ? colors.border : 'inherit',
+                    '&.Mui-selected': { bgcolor: colors.bg }
+                  }}
+                >
+                  {sym}
+                </ToggleButton>
+              );
+            })}
+          </ToggleButtonGroup>
+          
           <Typography variant="body2" color="text.secondary">
             Last Update: {formatLastUpdate() || 'Never'}
           </Typography>
-          <IconButton size="small" onClick={fetchSignalData} disabled={loading}>
+          <IconButton size="small" onClick={() => fetchSignalData(selectedSymbol)} disabled={loading}>
             <Refresh />
           </IconButton>
         </Box>

@@ -44,10 +44,15 @@ class ConfigLoader:
         
     def _detect_config(self) -> Path:
         """Auto-detect configuration file"""
+        # Get the project root directory (3 levels up from config/loader.py)
+        project_root = Path(__file__).parent.parent
+        
         candidates = [
-            Path('config.yaml'),
-            Path('config/config.yaml'),
-            Path('config.yaml'),
+            Path('config.yaml'),  # Current directory
+            Path('config/config.yaml'),  # Config subdirectory
+            project_root / 'config.yaml',  # Project root (absolute path)
+            Path('../config.yaml'),  # Parent directory
+            Path('../../config.yaml'),  # Two levels up (from webui/backend)
         ]
         
         for path in candidates:

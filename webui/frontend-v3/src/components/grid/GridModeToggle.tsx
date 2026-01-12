@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,7 +42,7 @@ export function GridModeToggle() {
   const { data: modeData, isLoading } = useQuery({
     queryKey: ['grid-mode'],
     queryFn: async () => {
-      const res = await fetch('/api/bot/grid-mode');
+      const res = await fetch(`${API_URL}/api/bot/grid-mode`);
       if (!res.ok) throw new Error('Failed to fetch grid mode');
       return res.json() as Promise<GridModeData>;
     },
@@ -46,7 +52,7 @@ export function GridModeToggle() {
   // Switch mode mutation
   const switchModeMutation = useMutation({
     mutationFn: async (newMode: GridMode) => {
-      const res = await fetch('/api/bot/grid-mode', {
+      const res = await fetch(`${API_URL}/api/bot/grid-mode`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

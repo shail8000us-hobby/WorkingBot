@@ -50,13 +50,22 @@ class PerformanceMonitor {
   }
 
   /**
+   * Check if a timer exists
+   * @param {string} label - Timer label
+   * @returns {boolean}
+   */
+  hasTimer(label) {
+    return !!this.metrics[label];
+  }
+
+  /**
    * End a performance timer
    * @param {string} label - Timer label
    * @returns {number} Duration in milliseconds
    */
   endTimer(label) {
     if (!this.metrics[label]) {
-      console.warn(`⚠️  No timer found for: ${label}`);
+      // Silently return - timer was already ended
       return null;
     }
 

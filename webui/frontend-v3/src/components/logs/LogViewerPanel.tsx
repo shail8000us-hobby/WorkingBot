@@ -29,7 +29,7 @@ interface LogsResponse {
 
 async function fetchLogs(source: string, lines: number = 200): Promise<LogsResponse> {
   const botType = source === 'guardian' ? 'guardian' : 'trading';
-  const response = await fetch(`http://localhost:5555/api/logs/recent?lines=${lines}&bot_type=${botType}`);
+  const response = await fetch(`http://localhost:5557/api/logs/recent?lines=${lines}&bot_type=${botType}`);
   if (!response.ok) {
     throw new Error('Failed to fetch logs');
   }

@@ -29,7 +29,7 @@ interface TemplatesResponse {
 }
 
 async function fetchTemplates(): Promise<TemplatesResponse> {
-  const response = await fetch('http://localhost:5555/api/templates/list');
+  const response = await fetch('http://localhost:5557/api/templates/list');
   if (!response.ok) {
     throw new Error('Failed to fetch templates');
   }
@@ -37,7 +37,7 @@ async function fetchTemplates(): Promise<TemplatesResponse> {
 }
 
 async function applyTemplate(id: string) {
-  const response = await fetch(`http://localhost:5555/api/templates/${id}/apply`, {
+  const response = await fetch(`http://localhost:5557/api/templates/${id}/apply`, {
     method: 'POST',
   });
   return response.json();

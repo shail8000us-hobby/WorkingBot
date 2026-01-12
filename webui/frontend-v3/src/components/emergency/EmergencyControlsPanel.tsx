@@ -25,6 +25,12 @@ interface EmergencyStatus {
   reason?: string;
 }
 
+// API URL - use the same logic as api.ts
+const API_URL = (typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5557')
+  : 'http://localhost:5557'
+).trim();
+
 export function EmergencyControlsPanel() {
   const queryClient = useQueryClient();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -34,7 +40,7 @@ export function EmergencyControlsPanel() {
   const { data: emergencyData, isLoading } = useQuery({
     queryKey: ['emergency-flag'],
     queryFn: async () => {
-      const res = await fetch('/api/emergency/check_flag');
+      const res = await fetch(`${API_URL}/api/emergency/check_flag`);
       if (!res.ok) throw new Error('Failed to check emergency flag');
       return res.json() as Promise<EmergencyStatus>;
     },
@@ -44,7 +50,7 @@ export function EmergencyControlsPanel() {
   // Clear emergency flag mutation
   const clearFlagMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/emergency/clear_flag', { method: 'POST' });
+      const res = await fetch(`${API_URL}/api/emergency/clear_flag`, { method: 'POST' });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || 'Failed to clear emergency flag');

@@ -18,15 +18,20 @@ import {
   Info
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
+import { useInstance, parseInstanceName } from '../context/InstanceContext';
+import SymbolBadge from './common/SymbolBadge';
 
 export default function EmergencyControlsPanel() {
+  const { selectedInstance, withInstance } = useInstance();
+  const instanceInfo = parseInstanceName(selectedInstance);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const checkEmergencyFlag = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/api/emergency/check_flag');
+      // v6.0: Use instance parameter for per-instance emergency flags
+      const response = await api.get(withInstance('/api/emergency/check_flag'));
       setStatus(response.data);
     } catch (err) {
       console.error('Error checking flag:', err);
@@ -36,15 +41,17 @@ export default function EmergencyControlsPanel() {
   };
 
   const clearEmergencyFlag = async () => {
-    if (!window.confirm('Are you sure you want to clear the emergency stop flag? This will resume trading.')) {
+    const instanceLabel = selectedInstance || 'all instances';
+    if (!window.confirm(`Are you sure you want to clear the emergency stop flag for ${instanceLabel}? This will resume trading.`)) {
       return;
     }
 
     try {
       setLoading(true);
-      const response = await api.post('/api/emergency/clear_flag');
+      // v6.0: Use instance parameter for per-instance emergency flag clear
+      const response = await api.post(withInstance('/api/emergency/clear_flag'));
       if (response.data.success) {
-        alert('✅ Emergency flag cleared successfully! Trading can now resume.');
+        alert(`✅ Emergency flag cleared successfully for ${instanceLabel}! Trading can now resume.`);
         checkEmergencyFlag();
       } else {
         alert('❌ Failed to clear flag: ' + response.data.message);
@@ -62,9 +69,12 @@ export default function EmergencyControlsPanel() {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
-        🚨 Emergency Controls
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+          🚨 Emergency Controls
+        </Typography>
+        {selectedInstance && <SymbolBadge symbol={instanceInfo.symbol} mode={instanceInfo.mode} />}
+      </Box>
 
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         Use these controls to manage emergency stop flags and other critical safety mechanisms.

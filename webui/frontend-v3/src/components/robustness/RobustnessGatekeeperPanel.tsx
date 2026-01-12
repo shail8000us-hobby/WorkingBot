@@ -17,7 +17,7 @@ interface GatekeeperStatus {
 }
 
 async function fetchGatekeeperStatus(): Promise<GatekeeperStatus> {
-  const res = await fetch('http://localhost:5555/api/robustness/gatekeeper/status')
+  const res = await fetch('http://localhost:5557/api/robustness/gatekeeper/status')
   if (!res.ok) throw new Error('Failed to fetch gatekeeper status')
   return res.json()
 }

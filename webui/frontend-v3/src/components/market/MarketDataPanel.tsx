@@ -37,7 +37,7 @@ interface MarketDataResponse {
 }
 
 async function fetchMarketData(): Promise<MarketDataResponse> {
-  const response = await fetch('http://localhost:5555/api/market/realtime');
+  const response = await fetch('http://localhost:5557/api/market/realtime');
   if (!response.ok) {
     throw new Error('Failed to fetch market data');
   }

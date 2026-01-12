@@ -521,9 +521,9 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
               </Typography>
               {resolvedState.warning_list.map((warning, index) => {
                   // Generate actionable steps based on blocker category
-                  const getActionSteps = (blocker) => {
-                    if (blocker.category === 'SAFETY_GATEKEEPER') {
-                      if (blocker.id === 'gatekeeper_execute_orders') {
+                  const getActionSteps = (warning) => {
+                    if (warning.category === 'SAFETY_GATEKEEPER') {
+                      if (warning.id === 'gatekeeper_execute_orders') {
                         return [
                           '1. Navigate to Configuration tab',
                           '2. Find EXECUTE_ORDERS setting',
@@ -532,21 +532,21 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                           '5. Trading will resume automatically'
                         ];
                       }
-                    } else if (blocker.category === 'RISK_MANAGER') {
+                    } else if (warning.category === 'RISK_MANAGER') {
                       return [
                         '1. Review current risk metrics',
                         '2. Either reduce position sizes or adjust risk limits',
                         '3. Wait for risk levels to normalize',
                         '4. Trading will resume when safe'
                       ];
-                    } else if (blocker.category === 'POSITION_MONITOR') {
+                    } else if (warning.category === 'POSITION_MONITOR') {
                       return [
                         '1. Add more margin to your account',
                         '2. Or close some positions to reduce risk',
                         '3. Wait for liquidation distance to increase',
                         '4. Trading will resume when safe distance restored'
                       ];
-                    } else if (blocker.category === 'EXCHANGE_CONNECTION') {
+                    } else if (warning.category === 'EXCHANGE_CONNECTION') {
                       return [
                         '1. Check your internet connection',
                         '2. Verify API keys are valid',
@@ -557,7 +557,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                     return ['Click to navigate to fix location'];
                   };
 
-                  const actionSteps = getActionSteps(blocker);
+                  const actionSteps = getActionSteps(warning);
 
                   return (
                     <Alert

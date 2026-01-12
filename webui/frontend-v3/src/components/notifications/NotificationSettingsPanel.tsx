@@ -44,7 +44,7 @@ interface NotificationSettingsResponse {
 }
 
 async function fetchNotificationSettings(): Promise<NotificationSettingsResponse> {
-  const response = await fetch('http://localhost:5555/api/settings/notifications');
+  const response = await fetch('http://localhost:5557/api/settings/notifications');
   if (!response.ok) {
     throw new Error('Failed to fetch notification settings');
   }
@@ -52,7 +52,7 @@ async function fetchNotificationSettings(): Promise<NotificationSettingsResponse
 }
 
 async function saveNotificationSettings(settings: NotificationSettings) {
-  const response = await fetch('http://localhost:5555/api/settings/notifications/update', {
+  const response = await fetch('http://localhost:5557/api/settings/notifications/update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),

@@ -20,7 +20,7 @@ interface AIAdvisorResponse {
 }
 
 async function fetchAIAdvice(): Promise<AIAdvisorResponse> {
-  const response = await fetch('http://localhost:5555/api/ai/advisor');
+  const response = await fetch('http://localhost:5557/api/ai/advisor');
   if (!response.ok) {
     throw new Error('Failed to fetch AI advice');
   }

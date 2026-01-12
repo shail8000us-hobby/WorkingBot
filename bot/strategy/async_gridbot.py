@@ -248,6 +248,64 @@ class AsyncGridBot:
             log.info(f"   Grid: {self.lower_price}-{self.upper_price}, step {self.grid_step}")
             log.info(f"   RSI: stop={self.rsi_config.stop_threshold}, resume={self.rsi_config.resume_threshold}")
             
+        elif symbol_name and hasattr(config, 'instances') and config.instances:
+            # V6.0: Find instance for this symbol (when symbol_name provided but not instance_name)
+            # This allows backward compat: `python async_gridbot.py BTCUSD` finds BTCUSD_LONG automatically
+            matching_instance = None
+            matching_instance_name = None
+            
+            for inst_name, inst_config in config.instances.items():
+                if inst_config.symbol == symbol_name:
+                    matching_instance = inst_config
+                    matching_instance_name = inst_name
+                    break
+            
+            if not matching_instance:
+                available = sorted(set(inst.symbol for inst in config.instances.values()))
+                raise ValueError(
+                    f"Symbol '{symbol_name}' not found in any instance in config.yaml\n"
+                    f"Available symbols: {available}"
+                )
+            
+            from config.loader import get_instance_config
+            instance_config = get_instance_config(matching_instance_name)
+            
+            # Set instance-specific attributes
+            self.instance_name = matching_instance_name
+            self.symbol_name = instance_config.symbol
+            self.symbol = instance_config.symbol
+            self.product_id = instance_config.product_id
+            self.mode = instance_config.mode.value
+            self.lower_price = int(instance_config.grid.geometry.lower)
+            self.upper_price = int(instance_config.grid.geometry.upper)
+            self.grid_step = int(instance_config.grid.geometry.step)
+            self.ref_price = int(instance_config.grid.geometry.reference)
+            self.max_positions = int(instance_config.grid.limits.max_open_positions)
+            self.lot_size = int(instance_config.grid.limits.lot_size)
+            self.max_qty_per_order = int(instance_config.grid.limits.max_qty_per_order)
+            self.strict_grid = instance_config.grid.behavior.strict_grid.lower() == 'true'
+            self.rung_snap_mode = instance_config.grid.behavior.rung_snap_mode
+            self.seed_initial_count = int(instance_config.grid.behavior.seed_initial_count) if instance_config.grid.behavior.seed_initial_count else 0
+            
+            # Instance-specific safety limits
+            self.max_account_loss_inr_display = float(instance_config.safety.max_account_loss_inr)
+            self.min_liq_distance_pct_display = instance_config.safety.min_liquidation_distance_pct
+            
+            # Instance RSI config (for logging)
+            self.rsi_config = instance_config.get_rsi_config()
+            
+            # Smart gap fill
+            if instance_config.grid.smart_gap_fill:
+                self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled.lower() == 'true'
+            else:
+                self.smart_gap_fill = False
+            
+            log.info(f"🎯 Initialized bot for {symbol_name} → {matching_instance_name} (v6.0 symbol→instance lookup)")
+            log.info(f"   Symbol: {self.symbol}, Mode: {self.mode}")
+            log.info(f"   Product ID: {self.product_id}")
+            log.info(f"   Grid: {self.lower_price}-{self.upper_price}, step {self.grid_step}")
+            log.info(f"   RSI: stop={self.rsi_config.stop_threshold}, resume={self.rsi_config.resume_threshold}")
+            
         elif symbol_name and config.symbols:
             # V5.0: Multi-symbol mode (backward compat)
             if symbol_name not in config.symbols:
@@ -5076,15 +5134,15 @@ class AsyncGridBot:
 
 
 async def main():
-    """Main entry point with multi-symbol support (v5.0)."""
+    """Main entry point with multi-symbol support (v5.0+, v6.0+)."""
     import sys
     from config.loader import get_api_credentials
     
     # Parse CLI arguments
     if len(sys.argv) > 1:
-        # V5.0: Multi-symbol mode - python async_gridbot.py BTCUSD
+        # V5.0+: Multi-symbol mode - python async_gridbot.py BTCUSD
         symbol_name = sys.argv[1].upper()
-        log.info(f"🎯 Starting bot for {symbol_name} (v5.0 multi-symbol mode)")
+        log.info(f"🎯 Starting bot for {symbol_name} (multi-symbol mode)")
     else:
         # V4.0: Backward compatibility - No argument, use config.bot.symbol
         symbol_name = None
@@ -5093,17 +5151,37 @@ async def main():
     # Get configuration from YAML
     config = get_config()
     
-    # V5.0 validation
-    if symbol_name and not config.symbols:
+    # V5.0/V6.0 validation - support both symbols (v5.0) and instances (v6.0)
+    has_symbols = hasattr(config, 'symbols') and config.symbols
+    has_instances = hasattr(config, 'instances') and config.instances
+    
+    if symbol_name and not (has_symbols or has_instances):
         log.error(f"❌ Symbol argument provided but config.yaml is v4.0")
         log.error(f"   Run: python scripts/migrate_config_to_multi_symbol.py")
         sys.exit(1)
     
-    if symbol_name and symbol_name not in config.symbols:
-        available = list(config.symbols.keys()) if config.symbols else []
-        log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml")
-        log.error(f"   Available symbols: {available}")
-        sys.exit(1)
+    # V6.0 instance mode - check if symbol exists in instances
+    if symbol_name and has_instances:
+        # Find instance for this symbol
+        found = False
+        for inst_name, inst_config in config.instances.items():
+            if inst_config.symbol == symbol_name:
+                found = True
+                break
+        
+        if not found:
+            available = sorted(set(inst.symbol for inst in config.instances.values()))
+            log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml instances")
+            log.error(f"   Available symbols: {available}")
+            sys.exit(1)
+    
+    # V5.0 symbol mode - check if symbol exists in symbols
+    elif symbol_name and has_symbols:
+        if symbol_name not in config.symbols:
+            available = list(config.symbols.keys())
+            log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml symbols")
+            log.error(f"   Available symbols: {available}")
+            sys.exit(1)
     
     # Get API credentials from secrets/api_keys.env (via centralized loader)
     credentials = get_api_credentials(config.trading_mode)
@@ -5113,7 +5191,7 @@ async def main():
     # Get testnet mode
     testnet = (config.trading_mode == 'demo')
     
-    # Create bot with symbol_name (v5.0) or without (v4.0)
+    # Create bot with symbol_name (v5.0+) or without (v4.0)
     bot = AsyncGridBot(
         api_key=api_key,
         api_secret=api_secret,

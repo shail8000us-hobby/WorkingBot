@@ -74,8 +74,18 @@ async def main():
         
         # Step 3: Start main bot with integrated recovery and reconciliation
         from bot.strategy.async_gridbot import AsyncGridBot
+        import os
         
-        bot_instance = AsyncGridBot()
+        # Read SYMBOL from environment (set by PM2)
+        symbol_name = os.environ.get('SYMBOL')
+        
+        if symbol_name:
+            print(f"🎯 Starting bot for symbol: {symbol_name}")
+            bot_instance = AsyncGridBot(symbol_name=symbol_name)
+        else:
+            print("⚠️  No SYMBOL env var - using default config")
+            bot_instance = AsyncGridBot()
+        
         await bot_instance.start()
         
     except KeyboardInterrupt:

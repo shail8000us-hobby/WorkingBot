@@ -1,6 +1,7 @@
 'use client';
 
 import { SystemHealthPanel } from '@/components/health/SystemHealthPanel';
+import HealthCheckDashboard from '@/components/health/HealthCheckDashboard';
 
 export default function HealthPage() {
   return (
@@ -12,7 +13,10 @@ export default function HealthPage() {
             Real-time system health monitoring and metrics
           </p>
         </div>
-        <SystemHealthPanel />
+        <div className="grid gap-6">
+          <SystemHealthPanel />
+          <HealthCheckDashboard />
+        </div>
       </div>
     </div>
   );

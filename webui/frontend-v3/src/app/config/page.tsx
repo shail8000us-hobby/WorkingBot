@@ -1,6 +1,7 @@
 'use client';
 
 import ConfigEditorPanel from '@/components/config/ConfigEditorPanel';
+import { ReconciliationPanel } from '@/components/reconciliation/ReconciliationPanel';
 
 export default function ConfigPage() {
   return (
@@ -12,7 +13,10 @@ export default function ConfigPage() {
             Bot parameters and reconciliation tools
           </p>
         </div>
-        <ConfigEditorPanel />
+        <div className="grid gap-6">
+          <ConfigEditorPanel />
+          <ReconciliationPanel />
+        </div>
       </div>
     </div>
   );
