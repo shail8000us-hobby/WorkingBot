@@ -68,6 +68,7 @@ import ConfigPanel from './components/ConfigPanel';
 import LogsPanel from './components/LogsPanel';
 import MonitoringPanel from './components/MonitoringPanel';
 import MonitoringDashboard from './components/MonitoringDashboard';
+import ProductionMonitoringDashboard from './components/ProductionMonitoringDashboard';
 import GuardianPanel from './components/GuardianPanel';
 import PM2Panel from './components/PM2Panel';
 import BotManagementDashboard from './components/BotManagement/BotManagementDashboard';
@@ -850,6 +851,20 @@ function App() {
         <Suspense fallback={<LoadingFallback message="Loading monitoring & recovery..." />}>
           <EnhancedErrorBoundary componentName="MonitoringRecoveryPanel">
             <MonitoringRecoveryPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="production-monitoring"
+        title="🔒 Production Monitoring"
+        subtitle="Health, risk metrics, rate limits, and execution statistics"
+        accent="purple"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading production monitoring..." />}>
+          <EnhancedErrorBoundary componentName="ProductionMonitoringDashboard">
+            <ProductionMonitoringDashboard />
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
