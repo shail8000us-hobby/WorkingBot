@@ -282,6 +282,15 @@ except Exception as e:
     print(f"⚠️ Could not register options_strategy blueprint: {e}")
     log.warning(f"Options strategy routes not available: {e}")
 
+# Register Production Monitoring blueprint (JAN 12, 2026: Enhanced monitoring from OptionBot)
+try:
+    from webui.backend.routes.production_monitoring import production_monitoring_bp
+    app.register_blueprint(production_monitoring_bp)
+    print(f"✅ Registered production_monitoring blueprint (health, risk, rate limits)")
+except Exception as e:
+    print(f"⚠️ Could not register production_monitoring blueprint: {e}")
+    log.warning(f"Production monitoring routes not available: {e}")
+
 # Register Position & Liquidation Metrics blueprint (DEC 28: Delta Exchange India improvements)
 try:
     from webui.backend.routes.position_liquidation import position_liquidation_bp

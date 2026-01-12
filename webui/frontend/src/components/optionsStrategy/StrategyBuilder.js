@@ -5,6 +5,7 @@
  * 
  * Created: January 5, 2026
  * Updated: Phase 3 - Added Automation tab
+ * Updated: January 12, 2026 - Added pre-execution validation
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -25,7 +26,8 @@ import {
   TrendingUp as TrendingUpIcon,
   AccountTree as StrategyIcon,
   Assessment as AssessmentIcon,
-  AutoMode as AutoModeIcon
+  AutoMode as AutoModeIcon,
+  Verified as ValidationIcon
 } from '@mui/icons-material';
 
 import StrategyTypeSelector from './StrategyTypeSelector';
@@ -35,6 +37,7 @@ import ActiveStrategies from './ActiveStrategies';
 import StrategyDetails from './StrategyDetails';
 import AutomationControls from './AutomationControls';
 import StrikeSuggestions from './StrikeSuggestions';
+import StrategyValidationStatus from './StrategyValidationStatus';
 
 const API_BASE = '/api/options-strategy';
 
@@ -58,6 +61,9 @@ export default function StrategyBuilder({ onNavigateToTab }) {
   // Strategy creation state
   const [selectedType, setSelectedType] = useState(null);
   const [templates, setTemplates] = useState([]);
+  
+  // Validation state (JAN 12, 2026)
+  const [validationResult, setValidationResult] = useState(null);
   const [createdStrategy, setCreatedStrategy] = useState(null);
   
   // Active strategies state
@@ -147,6 +153,12 @@ export default function StrategyBuilder({ onNavigateToTab }) {
   };
 
   const handleExecuteStrategy = async (strategyId, options = {}) => {
+    // Pre-execution validation check (JAN 12, 2026)
+    if (validationResult && !validationResult.is_valid) {
+      showNotification('Cannot execute: Strategy validation failed. Please fix errors first.', 'error');
+      return;
+    }
+    
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/execute/${strategyId}`, {
@@ -181,6 +193,14 @@ export default function StrategyBuilder({ onNavigateToTab }) {
       setLoading(false);
     }
   };
+  
+  // Validation callback (JAN 12, 2026)
+  const handleValidationComplete = useCallback((isValid, result) => {
+    setValidationResult(result);
+    if (!isValid && result?.errors?.length > 0) {
+      showNotification(`Validation issues found: ${result.errors.length} error(s)`, 'warning');
+    }
+  }, []);
 
   const handleCloseStrategy = async (strategyId) => {
     setLoading(true);
@@ -368,12 +388,20 @@ export default function StrategyBuilder({ onNavigateToTab }) {
           <Grid item xs={12} md={6}>
             {createdStrategy ? (
               <>
+                {/* Pre-Execution Validation (JAN 12, 2026) */}
+                <StrategyValidationStatus
+                  strategy={createdStrategy}
+                  onValidationComplete={handleValidationComplete}
+                  autoValidate={true}
+                />
+                
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <StrategyDetails
                     strategy={createdStrategy}
                     onExecute={handleExecuteStrategy}
                     onDelete={handleDeleteStrategy}
                     loading={loading}
+                    validationResult={validationResult}
                   />
                 </Paper>
                 

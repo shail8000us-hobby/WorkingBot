@@ -9,6 +9,7 @@ Execution Modes:
 3. BRACKET: Single atomic order (if supported by exchange)
 
 Created: January 5, 2026
+Updated: January 12, 2026 - Added rate limiting, validation, and custom exceptions
 """
 
 import sys
@@ -27,6 +28,15 @@ from .strategy_models import (
     Strategy, StrategyLeg, StrategyExecutionResult,
     LegStatus, StrategyStatus
 )
+
+# Import production-ready utilities
+from ..utils.rate_limiter import DELTA_ORDER_LIMITER, DELTA_API_LIMITER
+from ..utils.exceptions import (
+    OrderError, ValidationError, RateLimitError,
+    APIError, handle_api_error
+)
+from .option_validator import OptionValidator, ValidationLevel, ValidationResult
+from .data_validator import MarketDataValidator
 
 log = logging.getLogger(__name__)
 
@@ -48,12 +58,30 @@ class LegExecutor:
     - Multi-leg sequential execution
     - Rollback on partial fills
     - Order status tracking
+    - Pre-execution validation (NEW)
+    - API rate limiting (NEW)
     """
     
-    def __init__(self):
+    def __init__(self, validation_level: ValidationLevel = ValidationLevel.STANDARD):
         self._client = None
         self._max_retries = 3
         self._retry_delay = 1.0  # seconds
+        
+        # Production-ready utilities
+        self._validator = OptionValidator(validation_level=validation_level)
+        self._data_validator = MarketDataValidator()
+        self._order_limiter = DELTA_ORDER_LIMITER
+        self._api_limiter = DELTA_API_LIMITER
+        
+        # Execution statistics
+        self._stats = {
+            'orders_placed': 0,
+            'orders_filled': 0,
+            'orders_failed': 0,
+            'rate_limit_waits': 0,
+            'validation_failures': 0,
+            'last_execution': None
+        }
         
     def _get_client(self):
         """Get or create UnifiedAPIClient"""
@@ -131,34 +159,80 @@ class LegExecutor:
     
     async def _validate_legs(self, strategy: Strategy) -> List[str]:
         """
-        Validate all legs before execution
+        Validate all legs before execution using production-ready validators
         
         Checks:
-        - Symbol exists
+        - Symbol format and validity (via OptionValidator)
+        - Strike price reasonableness
+        - Expiry validity
+        - Order parameters
+        - Market data quality (via DataValidator)
         - Sufficient liquidity
-        - Valid strike/expiry
         """
         errors = []
+        warnings = []
         client = self._get_client()
         
+        # First: Validate strategy structure using OptionValidator
+        legs_for_validation = []
         for leg in strategy.legs:
-            # Check symbol format
             if not leg.symbol:
                 leg.generate_symbol(strategy.underlying)
             
+            legs_for_validation.append({
+                'symbol': leg.symbol,
+                'side': leg.side,
+                'quantity': leg.quantity,
+                'option_type': leg.option_type,
+                'strike': leg.strike,
+                'expiry': leg.expiry
+            })
+        
+        # Validate strategy legs as a whole
+        strategy_validation = self._validator.validate_strategy_legs(legs_for_validation)
+        if not strategy_validation.is_valid:
+            self._stats['validation_failures'] += 1
+            for error in strategy_validation.errors:
+                errors.append(f"Strategy validation: {error}")
+        
+        # Add warnings for logging (don't fail on warnings)
+        for warning in strategy_validation.warnings:
+            log.warning(f"⚠️ Strategy warning: {warning}")
+            warnings.append(warning)
+        
+        # Validate each leg individually and fetch prices
+        for leg in strategy.legs:
             log.info(f"Validating leg {leg.leg_id}: {leg.symbol}")
             
+            # Quick format check (additional to validator)
             if not leg.symbol.startswith(('C-', 'P-')):
                 errors.append(f"Leg {leg.leg_id}: Invalid symbol format {leg.symbol}")
                 continue
             
-            # Check if option exists (get ticker)
+            # Validate order parameters
+            order_validation = self._validator.validate_order_parameters({
+                'symbol': leg.symbol,
+                'side': leg.side,
+                'quantity': leg.quantity,
+                'order_type': 'limit'
+            })
+            
+            if not order_validation.is_valid:
+                for error in order_validation.errors:
+                    errors.append(f"Leg {leg.leg_id}: {error}")
+            
+            # Check if option exists (get ticker) - with rate limiting
             try:
+                # Use rate limiter for API call
+                if not self._api_limiter.acquire():
+                    self._stats['rate_limit_waits'] += 1
+                    log.info(f"  Rate limiting - waiting before ticker fetch...")
+                    await asyncio.sleep(1.0)
+                    self._api_limiter.acquire()
+                
                 ticker = await self._get_ticker(leg.symbol)
                 if not ticker:
                     log.warning(f"Leg {leg.leg_id}: No ticker found for {leg.symbol} - will try to execute anyway")
-                    # Don't fail validation - the option might exist but not be cached
-                    # Set reasonable defaults for limit orders
                     leg.current_bid = 0
                     leg.current_ask = 0
                     leg.current_price = 0
@@ -335,7 +409,7 @@ class LegExecutor:
     
     async def _execute_leg(self, leg: StrategyLeg, order_type: str) -> Dict[str, Any]:
         """
-        Execute a single leg order
+        Execute a single leg order with rate limiting and proper error handling
         
         Args:
             leg: Strategy leg to execute
@@ -343,12 +417,32 @@ class LegExecutor:
             
         Returns:
             dict with success status and order details
+            
+        Features:
+            - Rate limiting to prevent API throttling
+            - Custom exceptions for better error handling
+            - Execution statistics tracking
         """
         client = self._get_client()
         
         leg.status = LegStatus.SUBMITTED.value
+        self._stats['orders_placed'] += 1
+        self._stats['last_execution'] = datetime.utcnow().isoformat()
         
         log.info(f"Executing leg {leg.leg_id}: {leg.side} {leg.quantity} {leg.symbol}")
+        
+        # Rate limit check - wait if needed
+        if not self._order_limiter.acquire():
+            self._stats['rate_limit_waits'] += 1
+            wait_time = self._order_limiter.get_reset_time()
+            log.warning(f"  ⏳ Rate limit reached, waiting {wait_time:.1f}s before order...")
+            await asyncio.sleep(min(wait_time + 0.5, 5.0))  # Max 5 second wait
+            if not self._order_limiter.acquire():
+                self._stats['orders_failed'] += 1
+                raise RateLimitError(
+                    "Order rate limit exceeded, please wait",
+                    retry_after=wait_time
+                )
         
         # Try market order first for reliability, fallback handled below
         use_market = order_type == 'market' or leg.current_price == 0
@@ -402,6 +496,7 @@ class LegExecutor:
                         continue
                     else:
                         # Market order failed - this is a real failure
+                        self._stats['orders_failed'] += 1
                         return {
                             'success': False,
                             'error': f"Order {state}: {cancel_reason}"
@@ -420,6 +515,7 @@ class LegExecutor:
                     # For GTC orders, we consider submission as success
                     # The order will fill eventually or user can manage it
                 
+                self._stats['orders_filled'] += 1
                 return {
                     'success': True,
                     'order_id': order_id,
@@ -432,6 +528,13 @@ class LegExecutor:
                 error_msg = str(e)
                 log.warning(f"  Attempt {attempt + 1}/{self._max_retries} failed: {error_msg}")
                 
+                # Check if it's a rate limit error
+                if 'rate' in error_msg.lower() and 'limit' in error_msg.lower():
+                    self._stats['rate_limit_waits'] += 1
+                    log.warning(f"  Rate limit detected, waiting before retry...")
+                    await asyncio.sleep(2.0)  # Wait longer for rate limits
+                    continue
+                
                 # Check if it's a liquidity error - retry with market
                 if 'order_size_not_available' in error_msg or 'insufficient' in error_msg.lower():
                     log.info(f"  Liquidity issue detected, switching to market order")
@@ -440,12 +543,51 @@ class LegExecutor:
                 if attempt < self._max_retries - 1:
                     await asyncio.sleep(self._retry_delay)
                 else:
+                    self._stats['orders_failed'] += 1
                     return {
                         'success': False,
                         'error': error_msg
                     }
         
+        self._stats['orders_failed'] += 1
         return {'success': False, 'error': 'Max retries exceeded'}
+    
+    def get_execution_stats(self) -> Dict[str, Any]:
+        """
+        Get current execution statistics
+        
+        Returns:
+            dict with execution statistics including:
+            - orders_placed: Total orders placed
+            - orders_filled: Successfully filled orders
+            - orders_failed: Failed orders
+            - rate_limit_waits: Times rate limiting triggered
+            - validation_failures: Validation failures
+            - fill_rate: Percentage of successful fills
+            - last_execution: Timestamp of last execution
+        """
+        total = self._stats['orders_placed']
+        fill_rate = (self._stats['orders_filled'] / total * 100) if total > 0 else 0
+        
+        return {
+            **self._stats,
+            'fill_rate': round(fill_rate, 1),
+            'rate_limiter_status': {
+                'order_requests_remaining': self._order_limiter.get_remaining_requests(),
+                'api_requests_remaining': self._api_limiter.get_remaining_requests()
+            }
+        }
+    
+    def reset_stats(self):
+        """Reset execution statistics"""
+        self._stats = {
+            'orders_placed': 0,
+            'orders_filled': 0,
+            'orders_failed': 0,
+            'rate_limit_waits': 0,
+            'validation_failures': 0,
+            'last_execution': None
+        }
     
     async def _handle_partial_fills(self, strategy: Strategy):
         """
