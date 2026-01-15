@@ -291,6 +291,22 @@ except Exception as e:
     print(f"⚠️ Could not register production_monitoring blueprint: {e}")
     log.warning(f"Production monitoring routes not available: {e}")
 
+# Register 0DTE Strategy blueprint (JAN 13, 2026: Autonomous 0DTE strangle with premium balancing)
+try:
+    from bot.api.zero_dte_api import zero_dte_bp, init_engine
+    from bot.api.unified_api_client import UnifiedAPIClient
+    
+    # Initialize 0DTE engine with API client (needs credentials from config)
+    api_key, api_secret = get_api_credentials()
+    _zero_dte_client = UnifiedAPIClient(api_key, api_secret, enable_websocket=False)
+    init_engine(_zero_dte_client)
+    
+    app.register_blueprint(zero_dte_bp, url_prefix='/api/zero-dte')
+    print(f"✅ Registered zero_dte blueprint (0DTE autonomous strangle strategy)")
+except Exception as e:
+    print(f"⚠️ Could not register zero_dte blueprint: {e}")
+    log.warning(f"0DTE routes not available: {e}")
+
 # Register Position & Liquidation Metrics blueprint (DEC 28: Delta Exchange India improvements)
 try:
     from webui.backend.routes.position_liquidation import position_liquidation_bp
@@ -299,6 +315,25 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register position_liquidation blueprint: {e}")
     log.warning(f"Position liquidation routes not available: {e}")
+
+# Register ML Trading blueprint (JAN 14: Trade learning and automation)
+try:
+    # First ensure the backend path is available for imports
+    import sys
+    from pathlib import Path
+    backend_path = str(Path(__file__).parent)
+    if backend_path not in sys.path:
+        sys.path.insert(0, backend_path)
+    
+    try:
+        from .routes.ml_trading import ml_trading_bp
+    except ImportError:
+        from routes.ml_trading import ml_trading_bp
+    app.register_blueprint(ml_trading_bp)
+    print(f"✅ Registered ml_trading blueprint (ML trade learning and automation)")
+except Exception as e:
+    print(f"⚠️ Could not register ml_trading blueprint: {e}")
+    log.warning(f"ML trading routes not available: {e}")
 
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance

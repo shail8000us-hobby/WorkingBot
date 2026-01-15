@@ -46,6 +46,9 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Menu,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -65,6 +68,9 @@ import {
   ArrowUpward as ArrowUpwardIcon,
   ArrowDownward as ArrowDownwardIcon,
   UnfoldMore as UnfoldMoreIcon,
+  Settings as SettingsIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -85,6 +91,9 @@ import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/apiShim';
 import OptionsPayoffDiagram from './OptionsPayoffDiagram';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
+import SLTPDialog from './SLTPDialog';
+import SLTPIndicator from './SLTPIndicator';
+import MLInsightsPanel from './MLInsightsPanel';
 
 // Sortable Row Component
 const SortableRow = ({ pos, children }) => {
@@ -158,6 +167,66 @@ const OptionsPanel = () => {
   const [symbolSort, setSymbolSort] = useState(null); // null = no sort, 'grouped' = CE/PE grouped
   const [strikeSort, setStrikeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
   
+  // SL/TP Dialog state
+  const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
+  const [selectedPositionForSLTP, setSelectedPositionForSLTP] = useState(null);
+  const [slTpSettings, setSlTpSettings] = useState({}); // Map of symbol -> settings
+  
+  // Column visibility state (persisted)
+  const [columnMenuAnchor, setColumnMenuAnchor] = useState(null);
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_visible_columns');
+      return saved ? JSON.parse(saved) : {
+        symbol: true,
+        strike: true,
+        auto: true,
+        expiry: true,
+        size: true,
+        batchQty: true,
+        cashflow: true,
+        entry: true,
+        bid: true,
+        ask: true,
+        sltp: true,
+        pnl: true,
+        actions: true,
+      };
+    } catch {
+      return {
+        symbol: true, strike: true, auto: true, expiry: true, size: true,
+        batchQty: true, cashflow: true, entry: true, bid: true, ask: true,
+        sltp: true, pnl: true, actions: true,
+      };
+    }
+  });
+  
+  // Column definitions for the menu
+  const columnDefs = [
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'strike', label: 'Strike' },
+    { key: 'auto', label: 'Auto' },
+    { key: 'expiry', label: 'Expiry' },
+    { key: 'size', label: 'Size' },
+    { key: 'batchQty', label: 'Batch Qty' },
+    { key: 'cashflow', label: 'Cashflow' },
+    { key: 'entry', label: 'Entry' },
+    { key: 'bid', label: 'Bid' },
+    { key: 'ask', label: 'Ask' },
+    { key: 'sltp', label: 'SL/TP' },
+    { key: 'pnl', label: 'PnL' },
+    { key: 'actions', label: 'Actions' },
+  ];
+  
+  // Toggle column visibility
+  const toggleColumn = (columnKey) => {
+    setVisibleColumns(prev => {
+      const updated = { ...prev, [columnKey]: !prev[columnKey] };
+      localStorage.setItem('options_visible_columns', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // Skip confirmation per strike (persisted in localStorage)
   const [skipConfirmStrikes, setSkipConfirmStrikes] = useState(() => {
     try {
@@ -335,7 +404,7 @@ const OptionsPanel = () => {
   // Parse expiry date and calculate days to expiration
   const getDaysToExpiry = (symbol) => {
     try {
-      const parts = symbol.split('-');
+      const parts = symbol?.split('-') || [];
       if (parts.length >= 4) {
         const expiry = parts[3]; // DDMMYY
         const day = parseInt(expiry.substring(0, 2));
@@ -345,7 +414,7 @@ const OptionsPanel = () => {
         const now = new Date();
         const diffMs = expiryDate - now;
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        return diffDays;
+        return isNaN(diffDays) ? 999 : diffDays;
       }
     } catch (e) {
       console.error('Error parsing expiry:', e);
@@ -519,35 +588,36 @@ const OptionsPanel = () => {
     
     // Use sortedPositions which already has expiry filter + hidden positions filter applied
     sortedPositions.forEach(pos => {
+      // Backend now returns position-level Greeks directly (already multiplied by size)
+      // pos.delta, pos.theta, etc. are position-level values
+      // pos.greeks.delta, pos.greeks.theta are per-contract values
+      const size = pos.size || 0;
+      
       if (pos.greeks) {
-        // ✅ CRITICAL: Use actual size (with sign), not Math.abs()
-        // Positive size = long position (negative theta)
-        // Negative size = short position (positive theta)
-        const size = pos.size || 0;
+        // Use per-contract Greeks from pos.greeks and calculate position Greeks correctly
+        const perContractDelta = parseFloat(pos.greeks.delta || 0);
+        const perContractGamma = parseFloat(pos.greeks.gamma || 0);
+        const perContractTheta = parseFloat(pos.greeks.theta || 0);
+        const perContractVega = parseFloat(pos.greeks.vega || 0);
         
-        // Parse greeks (backend returns per-contract values from Delta Exchange API)
-        const positionDelta = parseFloat(pos.greeks.delta || 0);
-        const positionGamma = parseFloat(pos.greeks.gamma || 0);
-        const positionTheta = parseFloat(pos.greeks.theta || 0);
-        const positionVega = parseFloat(pos.greeks.vega || 0);
+        // ✅ CORRECT FORMULA:
+        // Delta Exchange theta/vega are in internal units (divide by 1000 for USD)
+        // For SHORT positions (size < 0): we EARN theta (option loses value = our profit)
+        // theta_usd = (theta_per_contract / 1000) * size
+        // When size is negative (short), theta becomes positive (earning theta)
         
-        // ✅ VERIFIED FORMULA (Delta Exchange API Documentation):
-        // Delta Exchange uses internal pricing units where 1000 units = $1 USD
-        // Same scaling as option prices: cashflow_usd = entry_price / 1000
-        // Therefore: Theta (USD/day) = (API_theta / 1000) × size
-        
-        // Aggregate: multiply by size (preserving sign for directional exposure)
-        greeks.delta += positionDelta * size;
-        greeks.gamma += positionGamma * size;
-        greeks.theta += (positionTheta / 1000) * size;  // Convert from Delta units to USD
-        greeks.vega += (positionVega / 1000) * size;    // Convert from Delta units to USD
+        greeks.delta += perContractDelta * size;
+        greeks.gamma += perContractGamma * Math.abs(size);
+        // Theta: short position (size < 0) with negative per-contract theta = positive portfolio theta (earning)
+        greeks.theta += (perContractTheta / 1000) * size;
+        greeks.vega += (perContractVega / 1000) * Math.abs(size);
         greeks.count++;
         
         // Separate delta by underlying asset for futures equivalent display
         const parts = pos.product_symbol.split('-');
         if (parts.length >= 2) {
           const underlying = parts[1]; // BTC or ETH
-          const deltaContribution = positionDelta * size;
+          const deltaContribution = perContractDelta * size;
           
           if (underlying === 'BTC') {
             greeks.btcDelta += deltaContribution;
@@ -587,7 +657,7 @@ const OptionsPanel = () => {
     if (pnlPct < scalingParams.lossThreshold) {
       recommendation.action = 'reduce';
       recommendation.size = Math.floor(currentSize * 0.25); // Reduce by 25%
-      recommendation.reason = `Loss ${pnlPct.toFixed(1)}% exceeds threshold (${scalingParams.lossThreshold}%)`;
+      recommendation.reason = `Loss ${(Number(pnlPct) || 0).toFixed(1)}% exceeds threshold (${scalingParams.lossThreshold}%)`;
       recommendation.confidence = 'high';
       recommendation.riskLevel = 'high';
       return recommendation;
@@ -616,7 +686,7 @@ const OptionsPanel = () => {
           const scaleFactor = Math.min(pnlPct / scalingParams.profitThreshold, 3); // Max 3x
           recommendation.action = 'scale';
           recommendation.size = Math.floor(scalingParams.stepSize * scaleFactor);
-          recommendation.reason = `${isShort ? 'SHORT' : 'LONG'} profit ${pnlPct.toFixed(1)}% > threshold (${scalingParams.profitThreshold}%). Winner scaling.`;
+          recommendation.reason = `${isShort ? 'SHORT' : 'LONG'} profit ${(Number(pnlPct) || 0).toFixed(1)}% > threshold (${scalingParams.profitThreshold}%). Winner scaling.`;
           recommendation.confidence = 'high';
           recommendation.riskLevel = 'low';
         } else if (pnlPct < 0 && pnlPct > scalingParams.lossThreshold) {
@@ -625,12 +695,12 @@ const OptionsPanel = () => {
           // For longs: price went DOWN (bad), adding more = buying cheaper options
           recommendation.action = 'scale';
           recommendation.size = Math.floor(scalingParams.stepSize * 0.5); // Half size when averaging down
-          recommendation.reason = `${isShort ? 'SHORT' : 'LONG'} at ${pnlPct.toFixed(1)}% loss. Averaging down (cautious).`;
+          recommendation.reason = `${isShort ? 'SHORT' : 'LONG'} at ${(Number(pnlPct) || 0).toFixed(1)}% loss. Averaging down (cautious).`;
           recommendation.confidence = 'low';
           recommendation.riskLevel = 'high';
         } else {
           recommendation.action = 'hold';
-          recommendation.reason = `${isShort ? 'SHORT' : 'LONG'} P&L ${pnlPct.toFixed(1)}% - waiting for ${scalingParams.profitThreshold}% profit`;
+          recommendation.reason = `${isShort ? 'SHORT' : 'LONG'} P&L ${(Number(pnlPct) || 0).toFixed(1)}% - waiting for ${scalingParams.profitThreshold}% profit`;
         }
         break;
         
@@ -657,16 +727,16 @@ const OptionsPanel = () => {
               scalingParams.stepSize,
               Math.ceil(deltaDeviation / Math.abs(position.greeks?.delta || 1))
             );
-            recommendation.reason = `Portfolio delta ${portfolioDelta.toFixed(2)} → target ${scalingParams.deltaTarget}. Rebalancing.`;
+            recommendation.reason = `Portfolio delta ${(Number(portfolioDelta) || 0).toFixed(2)} → target ${scalingParams.deltaTarget}. Rebalancing.`;
             recommendation.confidence = 'high';
             recommendation.riskLevel = 'medium';
           } else {
             recommendation.action = 'hold';
-            recommendation.reason = `Portfolio delta ${portfolioDelta.toFixed(2)}. This position won't help rebalance.`;
+            recommendation.reason = `Portfolio delta ${(Number(portfolioDelta) || 0).toFixed(2)}. This position won't help rebalance.`;
           }
         } else {
           recommendation.action = 'hold';
-          recommendation.reason = `Portfolio delta balanced: ${portfolioDelta.toFixed(2)} (target: ${scalingParams.deltaTarget})`;
+          recommendation.reason = `Portfolio delta balanced: ${(Number(portfolioDelta) || 0).toFixed(2)} (target: ${scalingParams.deltaTarget})`;
         }
         break;
         
@@ -751,15 +821,32 @@ const OptionsPanel = () => {
     }
   }, []); // No dependencies - safe
 
+  // Load SL/TP settings for all positions
+  const loadSLTPSettings = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/options/sl-tp/all');
+      if (data?.success && data.settings) {
+        // Convert array to map by symbol
+        const settingsMap = {};
+        data.settings.forEach(s => {
+          settingsMap[s.symbol] = s;
+        });
+        setSlTpSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Failed to load SL/TP settings:', err);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchStatus(), fetchPositions()]);
+      await Promise.all([fetchStatus(), fetchPositions(), loadSLTPSettings()]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStatus, fetchPositions]);
+  }, [fetchStatus, fetchPositions, loadSLTPSettings]);
 
   // Auto-refresh every pollInterval ms
   useEffect(() => {
@@ -1574,13 +1661,15 @@ const OptionsPanel = () => {
 
   // Format helpers
   const formatPnl = (pnl) => {
-    const formatted = Math.abs(pnl).toFixed(4);
-    return pnl >= 0 ? `+$${formatted}` : `-$${formatted}`;
+    const numPnl = Number(pnl) || 0;
+    const formatted = Math.abs(numPnl).toFixed(4);
+    return numPnl >= 0 ? `+$${formatted}` : `-$${formatted}`;
   };
 
   const formatPnlPct = (pct) => {
-    const formatted = Math.abs(pct).toFixed(2);
-    return pct >= 0 ? `+${formatted}%` : `-${formatted}%`;
+    const numPct = Number(pct) || 0;
+    const formatted = Math.abs(numPct).toFixed(2);
+    return numPct >= 0 ? `+${formatted}%` : `-${formatted}%`;
   };
 
   const getPnlColor = (pnl) => {
@@ -2020,7 +2109,45 @@ const OptionsPanel = () => {
                         sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
                       />
                     </TableCell>
-                    <TableCell width="30px"></TableCell>
+                    <TableCell width="30px">
+                      <Tooltip title="Column settings">
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => setColumnMenuAnchor(e.currentTarget)}
+                          sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
+                        >
+                          <SettingsIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                      <Menu
+                        anchorEl={columnMenuAnchor}
+                        open={Boolean(columnMenuAnchor)}
+                        onClose={() => setColumnMenuAnchor(null)}
+                        PaperProps={{ sx: { maxHeight: 400, width: 200 } }}
+                      >
+                        <Typography variant="subtitle2" sx={{ px: 2, py: 1, fontWeight: 'bold' }}>
+                          Show/Hide Columns
+                        </Typography>
+                        <Divider />
+                        {columnDefs.map(col => (
+                          <MenuItem 
+                            key={col.key} 
+                            onClick={() => toggleColumn(col.key)}
+                            dense
+                          >
+                            <ListItemIcon>
+                              {visibleColumns[col.key] ? (
+                                <VisibilityIcon fontSize="small" color="primary" />
+                              ) : (
+                                <VisibilityOffIcon fontSize="small" sx={{ opacity: 0.4 }} />
+                              )}
+                            </ListItemIcon>
+                            <ListItemText>{col.label}</ListItemText>
+                          </MenuItem>
+                        ))}
+                      </Menu>
+                    </TableCell>
+                    {visibleColumns.symbol && (
                     <TableCell 
                       sx={{ cursor: 'pointer', userSelect: 'none' }}
                       onClick={toggleSymbolSort}
@@ -2034,6 +2161,8 @@ const OptionsPanel = () => {
                         )}
                       </Box>
                     </TableCell>
+                    )}
+                    {visibleColumns.strike && (
                     <TableCell 
                       align="right"
                       sx={{ cursor: 'pointer', userSelect: 'none' }}
@@ -2050,24 +2179,36 @@ const OptionsPanel = () => {
                         )}
                       </Box>
                     </TableCell>
+                    )}
+                    {visibleColumns.auto && (
                     <TableCell align="center" width="50px">
                       <Tooltip title="Automation rules">
                         <Box>Auto</Box>
                       </Tooltip>
                     </TableCell>
-                    <TableCell align="right">Expiry</TableCell>
-                    <TableCell align="right">Size</TableCell>
+                    )}
+                    {visibleColumns.expiry && <TableCell align="right">Expiry</TableCell>}
+                    {visibleColumns.size && <TableCell align="right">Size</TableCell>}
+                    {visibleColumns.batchQty && (
                     <TableCell align="center" sx={{ minWidth: 90 }}>
                       <Tooltip title="Enter quantity for batch order. Positive = BUY, Negative = SELL">
                         <Box>Batch Qty</Box>
                       </Tooltip>
                     </TableCell>
-                    <TableCell align="right">Cashflow</TableCell>
-                    <TableCell align="right">Entry</TableCell>
-                    <TableCell align="right">Bid</TableCell>
-                    <TableCell align="right">Ask</TableCell>
-                    <TableCell align="right">PnL</TableCell>
-                    <TableCell align="center">Actions</TableCell>
+                    )}
+                    {visibleColumns.cashflow && <TableCell align="right">Cashflow</TableCell>}
+                    {visibleColumns.entry && <TableCell align="right">Entry</TableCell>}
+                    {visibleColumns.bid && <TableCell align="right">Bid</TableCell>}
+                    {visibleColumns.ask && <TableCell align="right">Ask</TableCell>}
+                    {visibleColumns.sltp && (
+                    <TableCell align="center" sx={{ minWidth: 50 }}>
+                      <Tooltip title="Stop-Loss / Take-Profit settings">
+                        <Box>SL/TP</Box>
+                      </Tooltip>
+                    </TableCell>
+                    )}
+                    {visibleColumns.pnl && <TableCell align="right">PnL</TableCell>}
+                    {visibleColumns.actions && <TableCell align="center">Actions</TableCell>}
                   </TableRow>
                 </TableHead>
                 <DndContext
@@ -2202,6 +2343,7 @@ const OptionsPanel = () => {
                                 </TableCell>
                                 
                                 {/* Symbol */}
+                                {visibleColumns.symbol && (
                                 <TableCell
                                   sx={{ 
                                     backgroundColor: `${rowBgColor} !important`,
@@ -2250,22 +2392,28 @@ const OptionsPanel = () => {
                               )}
                             </Box>
                           </TableCell>
+                          )}
                           
                           {/* Strike */}
+                          {visibleColumns.strike && (
                           <TableCell align="right" sx={cellSx}>
                             <Typography fontWeight="bold">
                               ${optionInfo.strike.toLocaleString()}
                             </Typography>
                           </TableCell>
+                          )}
                           
                           {/* Automation */}
+                          {visibleColumns.auto && (
                           <TableCell align="center" sx={{ ...cellSx, p: 0.5 }}>
                             <AutomationButton position={pos} />
                           </TableCell>
+                          )}
                           
                           {/* Expiry with days remaining */}
+                          {visibleColumns.expiry && (
                           <TableCell align="right" sx={cellSx}>
-                            <Tooltip title={`${daysToExp.toFixed(1)} days to expiry`}>
+                            <Tooltip title={`${(Number(daysToExp) || 0).toFixed(1)} days to expiry`}>
                               <Chip 
                                 label={optionInfo.expiry} 
                                 size="small" 
@@ -2278,8 +2426,10 @@ const OptionsPanel = () => {
                               />
                             </Tooltip>
                           </TableCell>
+                          )}
                           
                           {/* Size */}
+                          {visibleColumns.size && (
                           <TableCell align="right" sx={cellSx}>
                             <Chip
                               icon={isLong ? <TrendingUp /> : <TrendingDown />}
@@ -2291,8 +2441,10 @@ const OptionsPanel = () => {
                               }}
                             />
                           </TableCell>
+                          )}
                           
-                          {/* Batch Quantity Input - Always visible */}
+                          {/* Batch Quantity Input */}
+                          {visibleColumns.batchQty && (
                           <TableCell align="center" sx={cellSx}>
                             <TextField
                               size="small"
@@ -2324,8 +2476,10 @@ const OptionsPanel = () => {
                               }}
                             />
                           </TableCell>
+                          )}
                           
                           {/* Cashflow */}
+                          {visibleColumns.cashflow && (
                           <TableCell align="right" sx={cellSx}>
                             <Tooltip title="Premium paid/received for this position">
                               <Typography
@@ -2333,31 +2487,53 @@ const OptionsPanel = () => {
                                 fontWeight="medium"
                                 sx={{ color: isLong ? '#ef4444' : '#10b981' }}
                               >
-                                {cashflow.toFixed(2)} USD
+                                {(Number(cashflow) || 0).toFixed(2)} USD
                               </Typography>
                             </Tooltip>
                           </TableCell>
+                          )}
                           
                           {/* Entry Price */}
+                          {visibleColumns.entry && (
                           <TableCell align="right" sx={cellSx}>
-                            ${pos.entry_price?.toFixed(2) || '0.00'}
+                            ${(Number(pos.entry_price) || 0).toFixed(2)}
                           </TableCell>
+                          )}
                           
                           {/* Bid Price */}
+                          {visibleColumns.bid && (
                           <TableCell align="right" sx={cellSx}>
                             <Typography variant="body2" sx={{ color: '#10b981' }}>
-                              ${pos.best_bid?.toFixed(2) || '0.00'}
+                              ${(Number(pos.best_bid) || 0).toFixed(2)}
                             </Typography>
                           </TableCell>
+                          )}
                           
                           {/* Ask Price */}
+                          {visibleColumns.ask && (
                           <TableCell align="right" sx={cellSx}>
                             <Typography variant="body2" sx={{ color: '#ef4444' }}>
-                              ${pos.best_ask?.toFixed(2) || '0.00'}
+                              ${(Number(pos.best_ask) || 0).toFixed(2)}
                             </Typography>
                           </TableCell>
+                          )}
+                          
+                          {/* SL/TP Indicator */}
+                          {visibleColumns.sltp && (
+                          <TableCell align="center" sx={cellSx}>
+                            <SLTPIndicator
+                              settings={slTpSettings[pos.product_symbol]}
+                              position={pos}
+                              onEdit={() => {
+                                setSelectedPositionForSLTP(pos);
+                                setSlTpDialogOpen(true);
+                              }}
+                            />
+                          </TableCell>
+                          )}
                           
                           {/* PnL */}
+                          {visibleColumns.pnl && (
                           <TableCell align="right" sx={cellSx}>
                             <Box>
                               <Typography 
@@ -2374,8 +2550,10 @@ const OptionsPanel = () => {
                               </Typography>
                             </Box>
                           </TableCell>
+                          )}
                           
                           {/* Actions */}
+                          {visibleColumns.actions && (
                           <TableCell align="center" sx={cellSx}>
                             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', alignItems: 'center' }}>
                               {(() => {
@@ -2454,6 +2632,7 @@ const OptionsPanel = () => {
                               </Tooltip>
                             </Box>
                           </TableCell>
+                          )}
                               </>
                             )}
                           </SortableRow>
@@ -2805,8 +2984,8 @@ const OptionsPanel = () => {
                     <Tooltip title="Portfolio delta - sensitivity to underlying price change">
                       <Box>
                         <Typography variant="caption" color="text.secondary">Delta</Typography>
-                        <Typography variant="body2" fontWeight="bold" sx={{ color: aggregatedGreeks.delta >= 0 ? '#10b981' : '#ef4444' }}>
-                          {aggregatedGreeks.delta >= 0 ? '+' : ''}{aggregatedGreeks.delta.toFixed(4)}
+                        <Typography variant="body2" fontWeight="bold" sx={{ color: (Number(aggregatedGreeks.delta) || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                          {(Number(aggregatedGreeks.delta) || 0) >= 0 ? '+' : ''}{(Number(aggregatedGreeks.delta) || 0).toFixed(4)}
                         </Typography>
                       </Box>
                     </Tooltip>
@@ -2814,15 +2993,15 @@ const OptionsPanel = () => {
                       <Box>
                         <Typography variant="caption" color="text.secondary">Gamma</Typography>
                         <Typography variant="body2" fontWeight="bold">
-                          {aggregatedGreeks.gamma.toFixed(6)}
+                          {(Number(aggregatedGreeks.gamma) || 0).toFixed(6)}
                         </Typography>
                       </Box>
                     </Tooltip>
                     <Tooltip title="Portfolio theta - daily time decay (P&L change per day)">
                       <Box>
                         <Typography variant="caption" color="text.secondary">Theta</Typography>
-                        <Typography variant="body2" fontWeight="bold" sx={{ color: aggregatedGreeks.theta >= 0 ? '#10b981' : '#ef4444' }}>
-                          {aggregatedGreeks.theta >= 0 ? '+' : ''}{aggregatedGreeks.theta.toFixed(2)}
+                        <Typography variant="body2" fontWeight="bold" sx={{ color: (Number(aggregatedGreeks.theta) || 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                          {(Number(aggregatedGreeks.theta) || 0) >= 0 ? '+' : ''}{(Number(aggregatedGreeks.theta) || 0).toFixed(2)}
                         </Typography>
                       </Box>
                     </Tooltip>
@@ -2830,7 +3009,7 @@ const OptionsPanel = () => {
                       <Box>
                         <Typography variant="caption" color="text.secondary">Vega</Typography>
                         <Typography variant="body2" fontWeight="bold">
-                          {aggregatedGreeks.vega.toFixed(2)}
+                          {(Number(aggregatedGreeks.vega) || 0).toFixed(2)}
                         </Typography>
                       </Box>
                     </Tooltip>
@@ -2841,6 +3020,11 @@ const OptionsPanel = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* ML Trading Insights - Show prominently at top */}
+      <Box sx={{ mt: 2, mb: 2 }}>
+        <MLInsightsPanel />
+      </Box>
 
       {/* Payoff Diagram */}
       {positions.length > 0 && (
@@ -2874,7 +3058,7 @@ const OptionsPanel = () => {
           </Box>
           {!closeDialog.position?.is_liquid && (
             <Alert severity="warning" sx={{ mt: 2 }}>
-              Warning: This position has a wide spread ({closeDialog.position?.spread_pct?.toFixed(1)}%). 
+              Warning: This position has a wide spread ({(Number(closeDialog.position?.spread_pct) || 0).toFixed(1)}%). 
               You may get unfavorable fill prices.
             </Alert>
           )}
@@ -3052,7 +3236,7 @@ const OptionsPanel = () => {
           
           {!addDialog.position?.is_liquid && (
             <Alert severity="warning" sx={{ mt: 2 }}>
-              Warning: This option has a wide spread ({addDialog.position?.spread_pct?.toFixed(1)}%).
+              Warning: This option has a wide spread ({(Number(addDialog.position?.spread_pct) || 0).toFixed(1)}%).
             </Alert>
           )}
           
@@ -3137,6 +3321,21 @@ const OptionsPanel = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* SL/TP Configuration Dialog */}
+      <SLTPDialog
+        open={slTpDialogOpen}
+        onClose={() => {
+          setSlTpDialogOpen(false);
+          setSelectedPositionForSLTP(null);
+        }}
+        position={selectedPositionForSLTP}
+        onSave={() => {
+          loadSLTPSettings();
+          setSlTpDialogOpen(false);
+          setSelectedPositionForSLTP(null);
+        }}
+      />
     </motion.div>
   );
 };

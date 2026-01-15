@@ -1,0 +1,92 @@
+# Prometheus Configuration for WorkingBot
+# ========================================
+#
+# Copy this file to: /opt/homebrew/etc/prometheus.yml (macOS with Homebrew)
+# Or: /etc/prometheus/prometheus.yml (Linux)
+#
+# Then restart Prometheus:
+#   macOS: brew services restart prometheus
+#   Linux: sudo systemctl restart prometheus
+#
+# Verify configuration:
+#   promtool check config /opt/homebrew/etc/prometheus.yml
+
+# Global configuration
+global:
+  # How frequently to scrape targets (collect metrics)
+  scrape_interval: 15s
+  
+  # How frequently to evaluate rules (alerting rules)
+  evaluation_interval: 15s
+  
+  # Timeout for scraping a target
+  scrape_timeout: 10s
+  
+  # Labels added to all time series and alerts
+  external_labels:
+    monitor: 'workingbot-monitor'
+    environment: 'production'
+
+# Alertmanager configuration (optional - uncomment when alertmanager is set up)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - 'localhost:9093'
+
+# Rule files (optional - uncomment when alert rules are created)
+# rule_files:
+#   - '/opt/homebrew/etc/prometheus/rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # =========================================================================
+  # Prometheus self-monitoring
+  # =========================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # =========================================================================
+  # WorkingBot Metrics Server (MAIN TARGET)
+  # =========================================================================
+  - job_name: 'workingbot'
+    # Scrape more frequently for trading metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    
+    # Metrics path
+    metrics_path: '/metrics'
+    
+    static_configs:
+      - targets: ['localhost:9091']
+        labels:
+          service: 'gridbot'
+          component: 'metrics-server'
+    
+    # Relabel to add instance name
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.+):.*'
+        replacement: '${1}'
+
+  # =========================================================================
+  # Node Exporter (optional - for detailed OS metrics)
+  # Install with: brew install node_exporter
+  # =========================================================================
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['localhost:9100']
+  #       labels:
+  #         service: 'node-exporter'
+
+# Storage configuration
+# Prometheus will use default settings:
+# - Data directory: /opt/homebrew/var/prometheus (macOS)
+# - Retention: 15 days (default)
+#
+# To increase retention, start prometheus with:
+#   prometheus --storage.tsdb.retention.time=30d

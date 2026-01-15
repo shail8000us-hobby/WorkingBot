@@ -94,11 +94,38 @@ class PM2Adapter:
         if USE_PM2 and not PM2_AVAILABLE:
             log.warning("PM2 is enabled but not installed. Falling back to direct process management.")
         
-        # Bot name mapping
+        # Bot name mapping (v5.0: Support multi-instance names)
+        # For backward compatibility, check for both old and new naming conventions
         self.bot_names = {
-            'live': 'gridbot-live',
-            'demo': 'gridbot-demo'
+            'live': 'gridbot-live',  # Legacy single-bot name
+            'demo': 'gridbot-demo'   # Legacy demo name
         }
+        # v5.0: Try to detect active instance from PM2
+        self._detect_active_instance()
+    
+    def _detect_active_instance(self):
+        """Detect which bot instance is actually running in PM2 (v5.0 multi-instance support)"""
+        if not self.enabled:
+            return
+        
+        try:
+            success, stdout, _ = self._run_pm2_command(['jlist'])
+            if success:
+                processes = json.loads(stdout)
+                for proc in processes:
+                    name = proc.get('name', '')
+                    pm2_env = proc.get('pm2_env', {})
+                    status = pm2_env.get('status')
+                    
+                    # Check for gridbot-SYMBOL-MODE pattern (v5.0) or gridbot-live/demo (legacy)
+                    if name.startswith('gridbot-') and status == 'online':
+                        # Map to 'live' mode for API compatibility
+                        if 'LONG' in name or 'SHORT' in name or name == 'gridbot-live':
+                            self.bot_names['live'] = name
+                            log.info(f"✅ Detected active bot instance: {name}")
+                            return
+        except Exception as e:
+            log.debug(f"Could not detect active instance: {e}")
     
     def _run_pm2_command(self, args: List[str], timeout: int = 10) -> Tuple[bool, str, str]:
         """

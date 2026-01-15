@@ -6,3 +6,4 @@
  */
 
 export { default as OptionsPanel } from './OptionsPanel';
+export { default as MLInsightsPanel } from './MLInsightsPanel';

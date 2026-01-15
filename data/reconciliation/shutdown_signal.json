@@ -1,9 +1,9 @@
 {
   "event": "bot_shutdown",
-  "timestamp": 1767699140.113951,
+  "timestamp": 1768448128.554817,
   "mode": "LONG",
   "pending_buy": null,
   "pending_sell": null,
   "reason": "graceful_shutdown",
-  "bot_uptime": 1767699140.113971
+  "bot_uptime": 193.45035314559937
 }

@@ -83,6 +83,8 @@ export default function StrategyReviewDialog({
   const [orderType, setOrderType] = useState('limit');
   const [slippage, setSlippage] = useState(0.5);
   const [confirmChecked, setConfirmChecked] = useState(false);
+  const [executionProgress, setExecutionProgress] = useState([]);
+  const [executionStep, setExecutionStep] = useState('');
 
   // Calculate strategy costs and metrics
   const strategyMetrics = useMemo(() => {
@@ -161,6 +163,8 @@ export default function StrategyReviewDialog({
     if (!confirmChecked) return;
     
     setExecuting(true);
+    setExecutionProgress([]);
+    setExecutionStep('Creating strategy...');
     
     try {
       // First create the strategy, then execute it
@@ -179,6 +183,7 @@ export default function StrategyReviewDialog({
       };
 
       // Create strategy
+      setExecutionProgress(prev => [...prev, '📝 Creating strategy...']);
       const createResponse = await fetch('/api/options-strategy/create-custom', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -197,12 +202,18 @@ export default function StrategyReviewDialog({
         throw new Error('No strategy ID returned');
       }
 
+      setExecutionProgress(prev => [...prev, `✅ Strategy created (ID: ${strategyId.slice(0, 8)}...)`]);
+      setExecutionStep('Validating and executing legs...');
+
       // Now execute the strategy
       const executePayload = {
         execution_mode: executionMode,
         order_type: orderType
       };
 
+      setExecutionProgress(prev => [...prev, `🔍 Validating ${selectedLegs.length} legs...`]);
+      setExecutionProgress(prev => [...prev, `📤 Placing ${orderType} orders (${executionMode} mode)...`]);
+      
       const executeResponse = await fetch(`/api/options-strategy/execute/${strategyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -223,10 +234,28 @@ export default function StrategyReviewDialog({
         throw new Error(errorMsg);
       }
 
+      // Show execution results
+      if (executeResult.legs_filled) {
+        setExecutionProgress(prev => [...prev, `✅ Filled ${executeResult.legs_filled}/${executeResult.legs_total} legs`]);
+      }
+      if (executeResult.total_cost !== undefined) {
+        setExecutionProgress(prev => [...prev, `💰 Total cost: $${executeResult.total_cost.toFixed(2)}`]);
+      }
+      setExecutionStep('Execution complete!');
+      
+      // Wait a moment to show final status
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       onExecutionSuccess?.(executeResult);
       
     } catch (error) {
       console.error('Strategy execution error:', error);
+      setExecutionProgress(prev => [...prev, `❌ Error: ${error.message}`]);
+      setExecutionStep('Execution failed');
+      
+      // Keep error visible for a moment
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       onExecutionError?.(error.message);
     } finally {
       setExecuting(false);
@@ -433,6 +462,46 @@ export default function StrategyReviewDialog({
           </Grid>
         </Grid>
       </DialogContent>
+
+      {/* Execution Progress Panel */}
+      {executing && (
+        <Box sx={{ px: 3, py: 2, bgcolor: 'primary.dark', borderTop: 1, borderColor: 'divider' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+            <CircularProgress size={20} color="inherit" />
+            <Typography variant="subtitle2" fontWeight="bold" color="primary.light">
+              {executionStep}
+            </Typography>
+          </Box>
+          
+          {executionProgress.length > 0 && (
+            <Box sx={{ 
+              mt: 1, 
+              p: 1.5, 
+              bgcolor: 'background.paper', 
+              borderRadius: 1,
+              maxHeight: 120,
+              overflowY: 'auto'
+            }}>
+              {executionProgress.map((msg, idx) => (
+                <Typography 
+                  key={idx} 
+                  variant="caption" 
+                  component="div" 
+                  sx={{ 
+                    fontFamily: 'monospace',
+                    mb: 0.5,
+                    color: msg.includes('❌') ? 'error.main' : 
+                           msg.includes('✅') ? 'success.main' : 
+                           'text.primary'
+                  }}
+                >
+                  {msg}
+                </Typography>
+              ))}
+            </Box>
+          )}
+        </Box>
+      )}
 
       <DialogActions sx={{ p: 2, bgcolor: 'action.hover' }}>
         <FormControlLabel

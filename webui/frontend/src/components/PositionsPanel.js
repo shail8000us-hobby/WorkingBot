@@ -46,8 +46,9 @@ const PositionsPanel = () => {
   // Fetch ALL positions (futures, options, manual, bot-driven)
   const fetchPositions = async () => {
     try {
-      // Fetch ALL positions without instance filter to get everything
-      const { data } = await api.get('/api/positions?all=true');
+      // Fetch ALL positions from exchange (no filtering)
+      // This returns complete portfolio: futures (BTCUSD, ETHUSD) + all options
+      const { data } = await api.get('/api/positions');
       
       if (data?.status === 'NO_DATA' || data?.status === 'UNKNOWN') {
         setPositionsData({ positions: [], status: data.status });

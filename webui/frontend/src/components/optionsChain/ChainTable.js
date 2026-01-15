@@ -111,7 +111,7 @@ const TradeButtons = ({ onBuy, onSell, disabled, selected }) => (
   </ButtonGroup>
 );
 
-const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, strategyContext, selectedLegs }) => {
+const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, strategyContext, selectedLegs, builderMode }) => {
   const [moneynessFilter, setMoneynessFilter] = useState('atm10');
   
   // Get suggested strikes from strategy context
@@ -125,10 +125,16 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
     return suggestedStrikes.some(s => Math.abs(s - strike) < strike * 0.01);
   };
   
-  // Check if an option is already selected
+  // Check if an option is already selected (for strategy mode or builder mode)
   const isLegSelected = (symbol, side) => {
     if (!selectedLegs) return false;
     return selectedLegs.some(leg => leg.symbol === symbol && leg.side === side);
+  };
+  
+  // Check if option is selected in any way (for highlighting)
+  const isOptionSelected = (symbol) => {
+    if (!selectedLegs) return false;
+    return selectedLegs.some(leg => leg.symbol === symbol);
   };
   
   // Filter strikes based on moneyness
@@ -161,6 +167,7 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
       side: side,
       bid: optionData.bid,
       ask: optionData.ask,
+      ltp: optionData.ltp || optionData.mark_price || ((optionData.bid + optionData.ask) / 2),
       iv: optionData.iv,
       delta: optionData.delta
     });
@@ -300,12 +307,13 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
               const hasCall = call.symbol;
               const hasPut = put.symbol;
               
-              // Strategy mode: check if suggested or selected
-              const isSuggested = strategyMode && isStrikeSuggested(row.strike);
-              const isCallSelectedBuy = strategyMode && isLegSelected(call.symbol, 'buy');
-              const isCallSelectedSell = strategyMode && isLegSelected(call.symbol, 'sell');
-              const isPutSelectedBuy = strategyMode && isLegSelected(put.symbol, 'buy');
-              const isPutSelectedSell = strategyMode && isLegSelected(put.symbol, 'sell');
+              // Strategy mode or Builder mode: check if suggested or selected
+              const isInSelectionMode = strategyMode || builderMode;
+              const isSuggested = strategyMode && !builderMode && isStrikeSuggested(row.strike);
+              const isCallSelectedBuy = isInSelectionMode && isLegSelected(call.symbol, 'buy');
+              const isCallSelectedSell = isInSelectionMode && isLegSelected(call.symbol, 'sell');
+              const isPutSelectedBuy = isInSelectionMode && isLegSelected(put.symbol, 'buy');
+              const isPutSelectedSell = isInSelectionMode && isLegSelected(put.symbol, 'sell');
               
               // Calculate spread percentage
               const callSpread = call.bid && call.ask 
@@ -321,12 +329,12 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
                   sx={{
                     '&:hover': { bgcolor: 'action.hover' },
                     bgcolor: isATM ? 'rgba(255, 193, 7, 0.2)' : 
-                             isSuggested && strategyMode ? 'rgba(33, 150, 243, 0.15)' : 'inherit',
+                             isSuggested && strategyMode && !builderMode ? 'rgba(33, 150, 243, 0.15)' : 'inherit',
                     borderTop: isATM ? '2px solid #ffc107' : 
-                               isSuggested && strategyMode ? '1px solid #2196f3' : 'none',
+                               isSuggested && strategyMode && !builderMode ? '1px solid #2196f3' : 'none',
                     borderBottom: isATM ? '2px solid #ffc107' : 
-                                  isSuggested && strategyMode ? '1px solid #2196f3' : 'none',
-                    animation: isSuggested && strategyMode ? 'suggestedPulse 2s infinite' : 'none'
+                                  isSuggested && strategyMode && !builderMode ? '1px solid #2196f3' : 'none',
+                    animation: isSuggested && strategyMode && !builderMode ? 'suggestedPulse 2s infinite' : 'none'
                   }}
                 >
                   {/* CALL Trade */}
@@ -359,7 +367,7 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
                       <TradeButtons 
                         onBuy={() => handleTrade(call, 'call', 'buy')}
                         onSell={() => handleTrade(call, 'call', 'sell')}
-                        disabled={!onTrade || isCallSelectedBuy || isCallSelectedSell}
+                        disabled={!onTrade || (!builderMode && (isCallSelectedBuy || isCallSelectedSell))}
                         selected={isCallSelectedBuy || isCallSelectedSell}
                       />
                     )}
@@ -537,7 +545,7 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
                       <TradeButtons 
                         onBuy={() => handleTrade(put, 'put', 'buy')}
                         onSell={() => handleTrade(put, 'put', 'sell')}
-                        disabled={!onTrade || isPutSelectedBuy || isPutSelectedSell}
+                        disabled={!onTrade || (!builderMode && (isPutSelectedBuy || isPutSelectedSell))}
                         selected={isPutSelectedBuy || isPutSelectedSell}
                       />
                     )}

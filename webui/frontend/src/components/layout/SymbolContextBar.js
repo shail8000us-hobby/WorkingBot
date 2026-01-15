@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useInstanceSafe, parseInstanceName } from '../../context/InstanceContext';
 import { Chip, Box, Typography, Menu, MenuItem, IconButton, Tooltip } from '@mui/material';
 import { TrendingUp, TrendingDown, KeyboardArrowDown, SwapHoriz, Refresh } from '@mui/icons-material';
+import api from '../../utils/apiShim';
 
 /**
  * SymbolContextBar - Persistent header showing current instance context
@@ -9,7 +10,7 @@ import { TrendingUp, TrendingDown, KeyboardArrowDown, SwapHoriz, Refresh } from 
  * 
  * Features:
  * - Always visible sticky header below TopBar
- * - Shows: Current instance | Mode | Grid range | Status | Live PnL
+ * - Shows: BTC/ETH prices | Grid levels | Active modes | Live PnL
  * - Color-coded by symbol (BTCUSD = blue, ETHUSD = purple)
  * - Mode badge (LONG = green, SHORT = red)
  * - Mobile: Collapsible to icon + instance name only
@@ -55,6 +56,12 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   const changeInstance = instanceContext?.changeInstance || (() => {});
   const loadInstances = instanceContext?.loadInstances || (() => {});
   
+  // Market data state
+  const [marketData, setMarketData] = useState({
+    BTCUSD: { price: null, grid: null, mode: null },
+    ETHUSD: { price: null, grid: null, mode: null }
+  });
+  
   // Derive symbol-level info from instance
   const parsed = parseInstanceName(selectedInstance);
   const selectedSymbol = parsed?.symbol || null;
@@ -72,6 +79,54 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   
   const [anchorEl, setAnchorEl] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Fetch market data for all symbols
+  useEffect(() => {
+    const fetchMarketData = async () => {
+      try {
+        const symbols = ['BTCUSD', 'ETHUSD'];
+        const promises = symbols.map(async (symbol) => {
+          try {
+            // Fetch market price and grid config
+            const [statusRes, configRes] = await Promise.all([
+              api.get(`/api/symbols/${symbol}/status`).catch(() => ({ data: {} })),
+              api.get(`/api/config/symbols/${symbol}`).catch(() => ({ data: {} }))
+            ]);
+            
+            const price = statusRes.data?.market_price || null;
+            const config = configRes.data?.config || {};
+            const mode = configRes.data?.mode || null;
+            
+            const grid = {
+              lower: config.GRIDBOT_LOWER || null,
+              upper: config.GRIDBOT_UPPER || null,
+              step: config.GRIDBOT_STEP || null
+            };
+            
+            return { symbol, price, grid, mode };
+          } catch (err) {
+            console.error(`Error fetching ${symbol} data:`, err);
+            return { symbol, price: null, grid: null, mode: null };
+          }
+        });
+        
+        const results = await Promise.all(promises);
+        const newMarketData = {};
+        results.forEach(({ symbol, price, grid, mode }) => {
+          newMarketData[symbol] = { price, grid, mode };
+        });
+        
+        setMarketData(newMarketData);
+      } catch (err) {
+        console.error('Error fetching market data:', err);
+      }
+    };
+    
+    fetchMarketData();
+    const interval = setInterval(fetchMarketData, 5000); // Update every 5 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
   
   // Don't render until symbol context is loaded
   if (loading || !selectedSymbol) {
@@ -96,12 +151,6 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   const currentSymbol = symbols.find(s => s.name === selectedSymbol) || {};
   const colors = getSymbolColor(selectedSymbol);
   
-  // Grid range from gridInfo or symbol config
-  const gridRange = gridInfo || currentSymbol.grid || {};
-  const lower = gridRange.lower || 'N/A';
-  const upper = gridRange.upper || 'N/A';
-  const step = gridRange.step || 'N/A';
-  
   // Status indicator
   const isActive = status?.running || currentSymbol.enabled || false;
   
@@ -110,154 +159,124 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   const pnlFormatted = pnlValue >= 0 ? `+$${pnlValue.toFixed(2)}` : `-$${Math.abs(pnlValue).toFixed(2)}`;
   const pnlColor = pnlValue >= 0 ? '#10B981' : '#EF4444';
   
+  // Helper to format price
+  const formatPrice = (price) => {
+    if (!price) return 'N/A';
+    return `$${Number(price).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  };
+  
+  // Helper to get mode badge color
+  const getModeColor = (mode) => {
+    if (!mode) return '#64748B';
+    return mode === 'LONG' ? '#10B981' : '#EF4444';
+  };
+  
   return (
     <Box
       sx={{
         position: 'sticky',
-        top: { xs: '72px', md: '80px' }, // Below TopBar (adjust for TopBar height + safe area)
-        zIndex: 30, // Below TopBar (z-index: 40)
-        background: colors.gradient,
-        borderBottom: `2px solid ${colors.border}`,
-        backdropFilter: 'blur(10px)',
-        padding: { xs: '8px 12px', md: '12px 24px' },
+        top: { xs: '72px', md: '80px' }, // Below TopBar
+        zIndex: 30,
+        background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)',
+        borderBottom: '2px solid rgba(59, 130, 246, 0.3)',
+        backdropFilter: 'blur(12px)',
+        padding: { xs: '10px 12px', md: '12px 24px' },
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: 2,
+        gap: { xs: 1, md: 2 },
         transition: 'all 0.3s ease',
-        '&:hover': {
-          borderBottomColor: colors.primary,
-        }
       }}
     >
-      {/* Left: Symbol Badge with Quick Switch */}
+      {/* Left: BTC Market Info */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Tooltip title="Click to switch symbol" placement="bottom">
-          <Chip
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                {selectedSymbol || 'No Symbol'}
-                <KeyboardArrowDown sx={{ fontSize: 18, opacity: 0.8 }} />
-              </Box>
-            }
-            onClick={handleOpenMenu}
-          sx={{
-            backgroundColor: colors.primary,
-            color: '#fff',
-            fontWeight: 700,
-            fontSize: { xs: '0.875rem', md: '1rem' },
-            padding: '6px 4px',
-            height: 'auto',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              transform: 'scale(1.02)',
-              boxShadow: `0 0 12px ${colors.primary}60`,
-            },
-            '& .MuiChip-label': {
-              padding: '6px 12px'
-            }
-          }}
-        />
-        </Tooltip>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: SYMBOL_COLORS.BTCUSD.primary,
+              animation: marketData.BTCUSD.price ? 'pulse 2s infinite' : 'none',
+              '@keyframes pulse': {
+                '0%, 100%': { opacity: 1 },
+                '50%': { opacity: 0.5 }
+              }
+            }}
+          />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: SYMBOL_COLORS.BTCUSD.primary, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+            BTC
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600, color: '#E2E8F0', fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+            {formatPrice(marketData.BTCUSD.price)}
+          </Typography>
+          {marketData.BTCUSD.mode && (
+            <Chip
+              label={marketData.BTCUSD.mode}
+              size="small"
+              sx={{
+                height: 18,
+                fontSize: '0.65rem',
+                fontWeight: 600,
+                backgroundColor: `${getModeColor(marketData.BTCUSD.mode)}30`,
+                color: getModeColor(marketData.BTCUSD.mode),
+                display: { xs: 'none', sm: 'flex' }
+              }}
+            />
+          )}
+        </Box>
         
-        {/* Symbol Quick Switch Menu */}
-        <Menu
-          anchorEl={anchorEl}
-          open={Boolean(anchorEl)}
-          onClose={handleCloseMenu}
-          PaperProps={{
-            sx: {
-              backgroundColor: '#1e293b',
-              border: '1px solid #334155',
-              borderRadius: 2,
-              minWidth: 160,
-            }
-          }}
-        >
-          {symbols.map((sym) => {
-            const symColors = getSymbolColor(sym.name);
-            return (
-              <MenuItem
-                key={sym.name}
-                onClick={() => handleSymbolSwitch(sym.name)}
-                selected={sym.name === selectedSymbol}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.5,
-                  py: 1.5,
-                  '&.Mui-selected': {
-                    backgroundColor: `${symColors.primary}20`,
-                  },
-                  '&:hover': {
-                    backgroundColor: `${symColors.primary}30`,
-                  }
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    backgroundColor: symColors.primary,
-                  }}
-                />
-                <Typography sx={{ fontWeight: 500, color: '#e2e8f0' }}>
-                  {sym.name}
-                </Typography>
-                {sym.enabled && (
-                  <Chip
-                    label="Active"
-                    size="small"
-                    sx={{
-                      ml: 'auto',
-                      height: 18,
-                      fontSize: '0.65rem',
-                      backgroundColor: 'rgba(16,185,129,0.2)',
-                      color: '#10b981'
-                    }}
-                  />
-                )}
-              </MenuItem>
-            );
-          })}
-        </Menu>
-        
-        {/* Status Badge with pulse animation */}
-        <Chip
-          label={isActive ? 'Active' : 'Inactive'}
-          size="small"
-          sx={{
-            backgroundColor: isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)',
-            color: isActive ? '#10B981' : '#64748B',
-            fontWeight: 600,
-            display: { xs: 'none', sm: 'flex' },
-            animation: isActive ? 'pulse 2s infinite' : 'none',
-            '@keyframes pulse': {
-              '0%, 100%': { opacity: 1 },
-              '50%': { opacity: 0.7 }
-            }
-          }}
-        />
+        <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.5, opacity: 0.7 }}>
+          <Typography variant="caption" sx={{ color: '#94A3B8', fontSize: '0.7rem' }}>
+            Grid: {marketData.BTCUSD.grid?.lower || 'N/A'} - {marketData.BTCUSD.grid?.upper || 'N/A'}
+          </Typography>
+        </Box>
       </Box>
       
-      {/* Center: Grid Info */}
-      <Box 
-        sx={{ 
-          display: { xs: 'none', md: 'flex' }, 
-          alignItems: 'center', 
-          gap: 3,
-          color: '#E2E8F0'
-        }}
-      >
-        <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
-          <strong style={{ color: colors.primary }}>Grid:</strong> {lower} - {upper}
-        </Typography>
-        <Typography variant="body2" sx={{ fontSize: '0.875rem', opacity: 0.8 }}>
-          Step: {step}
-        </Typography>
+      {/* Center: ETH Market Info */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: SYMBOL_COLORS.ETHUSD.primary,
+              animation: marketData.ETHUSD.price ? 'pulse 2s infinite' : 'none',
+              '@keyframes pulse': {
+                '0%, 100%': { opacity: 1 },
+                '50%': { opacity: 0.5 }
+              }
+            }}
+          />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: SYMBOL_COLORS.ETHUSD.primary, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+            ETH
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600, color: '#E2E8F0', fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+            {formatPrice(marketData.ETHUSD.price)}
+          </Typography>
+          {marketData.ETHUSD.mode && (
+            <Chip
+              label={marketData.ETHUSD.mode}
+              size="small"
+              sx={{
+                height: 18,
+                fontSize: '0.65rem',
+                fontWeight: 600,
+                backgroundColor: `${getModeColor(marketData.ETHUSD.mode)}30`,
+                color: getModeColor(marketData.ETHUSD.mode),
+                display: { xs: 'none', sm: 'flex' }
+              }}
+            />
+          )}
+        </Box>
+        
+        <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.5, opacity: 0.7 }}>
+          <Typography variant="caption" sx={{ color: '#94A3B8', fontSize: '0.7rem' }}>
+            Grid: {marketData.ETHUSD.grid?.lower || 'N/A'} - {marketData.ETHUSD.grid?.upper || 'N/A'}
+          </Typography>
+        </Box>
       </Box>
       
       {/* Right: PnL + Refresh */}
@@ -273,7 +292,7 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
             sx={{ 
               fontWeight: 700,
               color: pnlColor,
-              fontSize: { xs: '1rem', md: '1.125rem' }
+              fontSize: { xs: '0.875rem', md: '1rem' }
             }}
           >
             {pnlFormatted}
@@ -281,7 +300,7 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
         </Box>
         
         {/* Refresh Button */}
-        <Tooltip title="Refresh symbol data">
+        <Tooltip title="Refresh market data">
           <IconButton
             onClick={handleRefresh}
             size="small"
@@ -293,32 +312,14 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
                 '100%': { transform: 'rotate(360deg)' }
               },
               '&:hover': {
-                color: colors.primary,
-                backgroundColor: `${colors.primary}20`
+                color: '#3B82F6',
+                backgroundColor: 'rgba(59, 130, 246, 0.2)'
               }
             }}
           >
             <Refresh sx={{ fontSize: 18 }} />
           </IconButton>
         </Tooltip>
-      </Box>
-      
-      {/* Mobile: Compact Grid Info */}
-      <Box 
-        sx={{ 
-          display: { xs: 'flex', md: 'none' }, 
-          width: '100%',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 1,
-          paddingTop: 1,
-          borderTop: `1px solid ${colors.border}`,
-          color: '#CBD5E1',
-          fontSize: '0.75rem'
-        }}
-      >
-        <span><strong>Grid:</strong> {lower} - {upper}</span>
-        <span><strong>Step:</strong> {step}</span>
       </Box>
     </Box>
   );

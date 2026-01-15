@@ -1,0 +1,193 @@
+// ============================================================================
+// PM2 Production Configuration for WorkingBot Trading System
+// ============================================================================
+//
+// This configuration provides clear separation for:
+//   - BTC LONG
+//   - BTC SHORT  
+//   - ETH LONG
+//   - ETH SHORT
+//   - Guardian Bots (auto-restart enabled)
+//   - WebUI Backend
+//
+// Usage:
+//   pm2 start ecosystem.production.config.js
+//   pm2 start ecosystem.production.config.js --only gridbot-btc-long
+//   pm2 start ecosystem.production.config.js --only guardian-live
+//
+// Features:
+//   ✅ Separate process for each trading instrument
+//   ✅ Guardian auto-starts and auto-restarts
+//   ✅ Clear naming: gridbot-btc-long, gridbot-btc-short, etc.
+//   ✅ Individual log files per instrument
+//   ✅ Graceful shutdown with 15s timeout
+//   ✅ Memory limits per process
+//
+// Updated: January 13, 2026
+// ============================================================================
+
+module.exports = {
+  apps: [
+    // ========================================================================
+    // TRADING BOTS - BTC & ETH, LONG & SHORT
+    // ========================================================================
+    
+    // BTC LONG - Primary trading instance
+    {
+      name: 'gridbot-btc-long',
+      script: 'bot/strategy/async_gridbot.py',
+      args: 'BTCUSD',  // Symbol argument for multi-symbol support
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      instances: 1,
+      autorestart: false,  // Manual restart only for trading bots
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot',
+        TRADING_MODE: 'live',
+        SYMBOL: 'BTCUSD',
+        MODE: 'LONG'
+      },
+      error_file: 'logs/pm2-gridbot-btc-long-error.log',
+      out_file: 'logs/pm2-gridbot-btc-long-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      kill_timeout: 15000,  // 15 seconds for graceful shutdown
+      restart_delay: 3000,
+      min_uptime: '10s'
+    },
+    
+    // BTC SHORT - Secondary BTC instance
+    {
+      name: 'gridbot-btc-short',
+      script: 'bot/strategy/async_gridbot.py',
+      args: 'BTCUSD',  // Same symbol, different config via MODE
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      instances: 1,
+      autorestart: false,  // Manual restart only
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot',
+        TRADING_MODE: 'live',
+        SYMBOL: 'BTCUSD',
+        MODE: 'SHORT'
+      },
+      error_file: 'logs/pm2-gridbot-btc-short-error.log',
+      out_file: 'logs/pm2-gridbot-btc-short-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      kill_timeout: 15000,
+      restart_delay: 3000,
+      min_uptime: '10s'
+    },
+    
+    // ETH LONG - Primary ETH instance
+    {
+      name: 'gridbot-eth-long',
+      script: 'bot/strategy/async_gridbot.py',
+      args: 'ETHUSD',
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      instances: 1,
+      autorestart: false,  // Manual restart only
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot',
+        TRADING_MODE: 'live',
+        SYMBOL: 'ETHUSD',
+        MODE: 'LONG'
+      },
+      error_file: 'logs/pm2-gridbot-eth-long-error.log',
+      out_file: 'logs/pm2-gridbot-eth-long-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      kill_timeout: 15000,
+      restart_delay: 3000,
+      min_uptime: '10s'
+    },
+    
+    // ETH SHORT - Secondary ETH instance
+    {
+      name: 'gridbot-eth-short',
+      script: 'bot/strategy/async_gridbot.py',
+      args: 'ETHUSD',
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      instances: 1,
+      autorestart: false,  // Manual restart only
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot',
+        TRADING_MODE: 'live',
+        SYMBOL: 'ETHUSD',
+        MODE: 'SHORT'
+      },
+      error_file: 'logs/pm2-gridbot-eth-short-error.log',
+      out_file: 'logs/pm2-gridbot-eth-short-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      kill_timeout: 15000,
+      restart_delay: 3000,
+      min_uptime: '10s'
+    },
+    
+    // ========================================================================
+    // GUARDIAN BOT - Auto-restart enabled for 24/7 monitoring
+    // ========================================================================
+    
+    {
+      name: 'guardian-live',
+      script: 'start_guardian.py',
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      instances: 1,
+      autorestart: true,  // ✅ Auto-restart enabled
+      watch: false,
+      max_memory_restart: '300M',
+      max_restarts: 10,
+      env: {
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot',
+        TRADING_MODE: 'live'
+      },
+      error_file: 'logs/pm2-guardian-live-error.log',
+      out_file: 'logs/pm2-guardian-live-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      kill_timeout: 5000,
+      restart_delay: 5000,
+      min_uptime: '10s'
+    },
+    
+    // ========================================================================
+    // WEBUI BACKEND - Production server on port 5555
+    // ========================================================================
+    
+    {
+      name: 'webui-backend',
+      script: 'webui/backend/app.py',
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      instances: 1,
+      autorestart: true,  // ✅ Auto-restart enabled
+      watch: false,
+      max_memory_restart: '400M',
+      env: {
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot',
+        FLASK_ENV: 'production',
+        PORT: '5555'
+      },
+      error_file: 'logs/pm2-webui-backend-error.log',
+      out_file: 'logs/pm2-webui-backend-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      kill_timeout: 5000,
+      restart_delay: 3000,
+      min_uptime: '10s'
+    }
+  ]
+};

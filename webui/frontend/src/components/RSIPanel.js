@@ -48,6 +48,7 @@ const RSIPanel = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState('current'); // 'current' or 'all'
+  const [currentSymbol, setCurrentSymbol] = useState(selectedSymbol || 'BTCUSD'); // Track current symbol for single view
   const [rsiData, setRsiData] = useState(null);
   const [allSymbolsRsi, setAllSymbolsRsi] = useState({});
   const [config, setConfig] = useState({
@@ -63,23 +64,39 @@ const RSIPanel = () => {
   const [botMode, setBotMode] = useState(selectedMode);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
+  // Update current symbol when instance changes
+  useEffect(() => {
+    if (selectedSymbol) {
+      setCurrentSymbol(selectedSymbol);
+    }
+  }, [selectedSymbol]);
+
   // Fetch RSI data - now instance-aware  
   const fetchRSIData = useCallback(async () => {
     try {
       if (viewMode === 'all') {
         // Fetch RSI for all symbols
         const response = await api.get('/api/guardian/rsi/status');
-        if (response.data.success && response.data.symbols) {
-          setAllSymbolsRsi(response.data.symbols);
-          // Also update current symbol data
-          if (selectedSymbol && response.data.symbols[selectedSymbol]) {
-            setRsiData(response.data.symbols[selectedSymbol]);
+        if (response.data.success) {
+          // Handle both response formats (symbols array or data object)
+          if (response.data.symbols) {
+            setAllSymbolsRsi(response.data.symbols);
+            // Also update current symbol data
+            if (currentSymbol && response.data.symbols[currentSymbol]) {
+              setRsiData(response.data.symbols[currentSymbol]);
+            }
+          } else if (response.data.data) {
+            // Single symbol response - convert to all symbols format
+            const symbolData = { [currentSymbol || 'BTCUSD']: response.data.data };
+            setAllSymbolsRsi(symbolData);
+            setRsiData(response.data.data);
           }
         }
       } else {
-        // Fetch RSI for selected instance
-        const response = await api.get(withInstance('/api/guardian/rsi/status'));
-        if (response.data.success) {
+        // Fetch RSI for current selected symbol with explicit symbol parameter
+        const symbolParam = currentSymbol || 'BTCUSD';
+        const response = await api.get(`/api/guardian/rsi/status?symbol=${symbolParam}`);
+        if (response.data.success && response.data.data) {
           setRsiData(response.data.data);
           if (response.data.data?.bot_mode) {
             setBotMode(response.data.data.bot_mode);
@@ -94,7 +111,7 @@ const RSIPanel = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedSymbol, selectedInstance, viewMode, withInstance]);
+  }, [currentSymbol, viewMode]);
 
   useEffect(() => {
     fetchRSIData();
@@ -206,30 +223,51 @@ const RSIPanel = () => {
   return (
     <Box sx={{ width: '100%', py: 2 }}>
       {/* View Mode Toggle & Symbol Indicator */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Activity size={20} />
             RSI Safety Monitor
           </Typography>
-          {viewMode === 'current' && selectedSymbol && (
-            <SymbolBadge symbol={selectedSymbol} />
+          {viewMode === 'current' && currentSymbol && (
+            <SymbolBadge symbol={currentSymbol} />
           )}
         </Box>
         
-        <ToggleButtonGroup
-          value={viewMode}
-          exclusive
-          onChange={(e, newMode) => newMode && setViewMode(newMode)}
-          size="small"
-        >
-          <ToggleButton value="current">
-            Current Symbol
-          </ToggleButton>
-          <ToggleButton value="all">
-            All Symbols
-          </ToggleButton>
-        </ToggleButtonGroup>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          {/* Symbol Selector for Current View */}
+          {viewMode === 'current' && (
+            <ToggleButtonGroup
+              value={currentSymbol}
+              exclusive
+              onChange={(e, newSymbol) => newSymbol && setCurrentSymbol(newSymbol)}
+              size="small"
+              sx={{ mr: 1 }}
+            >
+              <ToggleButton value="BTCUSD">
+                BTC
+              </ToggleButton>
+              <ToggleButton value="ETHUSD">
+                ETH
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
+          
+          {/* View Mode Toggle */}
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={(e, newMode) => newMode && setViewMode(newMode)}
+            size="small"
+          >
+            <ToggleButton value="current">
+              Current Symbol
+            </ToggleButton>
+            <ToggleButton value="all">
+              All Symbols
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
       </Box>
 
       {/* All Symbols View */}
@@ -263,7 +301,7 @@ const RSIPanel = () => {
               <Typography variant="h6">
                 Current Status
               </Typography>
-              <SymbolBadge symbol={selectedSymbol} size="small" />
+              <SymbolBadge symbol={currentSymbol} size="small" />
             </Box>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid item xs={12} md={6}>

@@ -120,7 +120,7 @@ class LegExecutor:
         log.info(f"   Mode: {execution_mode}, Order type: {order_type}")
         
         # Phase 1: Validate all legs
-        validation_errors = await self._validate_legs(strategy)
+        validation_errors = await self._validate_legs(strategy, order_type)
         if validation_errors:
             return StrategyExecutionResult(
                 success=False,
@@ -157,9 +157,13 @@ class LegExecutor:
         
         return result
     
-    async def _validate_legs(self, strategy: Strategy) -> List[str]:
+    async def _validate_legs(self, strategy: Strategy, order_type: str = 'limit') -> List[str]:
         """
         Validate all legs before execution using production-ready validators
+        
+        Args:
+            strategy: Strategy to validate
+            order_type: Order type to use (market or limit)
         
         Checks:
         - Symbol format and validity (via OptionValidator)
@@ -173,20 +177,34 @@ class LegExecutor:
         warnings = []
         client = self._get_client()
         
+        # Map frontend order types to backend format
+        order_type_map = {
+            'market': 'market_order',
+            'limit': 'limit_order'
+        }
+        backend_order_type = order_type_map.get(order_type, 'limit_order')
+        
         # First: Validate strategy structure using OptionValidator
         legs_for_validation = []
         for leg in strategy.legs:
             if not leg.symbol:
                 leg.generate_symbol(strategy.underlying)
             
-            legs_for_validation.append({
+            leg_params = {
                 'symbol': leg.symbol,
                 'side': leg.side,
                 'quantity': leg.quantity,
                 'option_type': leg.option_type,
                 'strike': leg.strike,
-                'expiry': leg.expiry
-            })
+                'expiry': leg.expiry,
+                'order_type': backend_order_type
+            }
+            
+            # Add placeholder limit_price for limit orders to pass validation
+            if backend_order_type == 'limit_order':
+                leg_params['limit_price'] = 1.0  # Placeholder, will be updated with actual price
+            
+            legs_for_validation.append(leg_params)
         
         # Validate strategy legs as a whole
         strategy_validation = self._validator.validate_strategy_legs(legs_for_validation)
@@ -210,12 +228,20 @@ class LegExecutor:
                 continue
             
             # Validate order parameters
-            order_validation = self._validator.validate_order_parameters({
+            # For validation purposes, provide a placeholder limit_price
+            # The actual price will be fetched later in the execution flow
+            order_params = {
                 'symbol': leg.symbol,
                 'side': leg.side,
                 'quantity': leg.quantity,
-                'order_type': 'limit'
-            })
+                'order_type': backend_order_type
+            }
+            
+            # Add placeholder limit_price for limit orders to pass validation
+            if backend_order_type == 'limit_order':
+                order_params['limit_price'] = 1.0  # Placeholder, will be updated with actual price
+            
+            order_validation = self._validator.validate_order_parameters(order_params)
             
             if not order_validation.is_valid:
                 for error in order_validation.errors:

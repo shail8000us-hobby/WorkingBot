@@ -7,11 +7,13 @@ Routes:
 - GET /api/market/spot-price - Get current spot price for an underlying
 
 Created: January 12, 2026
+Updated: January 13, 2026 - Fixed async/await issues and improved price fetching
 Purpose: Provide market data endpoints for options strategy builder
 """
 
 import sys
 import logging
+import requests
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 
@@ -25,26 +27,9 @@ log = logging.getLogger(__name__)
 # Create blueprint
 market_bp = Blueprint('market', __name__)
 
-# Cache for spot prices (1 second TTL)
+# Cache for spot prices (10 second TTL)
 _price_cache = {}
-_cache_ttl = 1.0
-
-
-def _get_api_client():
-    """Get or create API client for market data"""
-    try:
-        from bot.api.unified_api_client import UnifiedAPIClient
-        creds = get_api_credentials()
-        client = UnifiedAPIClient(
-            api_key=creds['api_key'],
-            api_secret=creds['api_secret'],
-            symbol='BTCUSD',
-            enable_websocket=False
-        )
-        return client
-    except Exception as e:
-        log.error(f"Failed to create API client: {e}")
-        return None
+_cache_ttl = 10.0
 
 
 @market_bp.route('/api/market/spot-price', methods=['GET'])
@@ -60,7 +45,7 @@ def get_spot_price():
     
     Example:
         GET /api/market/spot-price?symbol=BTC
-        Response: {"symbol": "BTC", "price": 94521.50, "source": "api"}
+        Response: {"symbol": "BTC", "price": 94521.50, "source": "delta_api"}
     """
     import time
     
@@ -83,29 +68,41 @@ def get_spot_price():
             })
     
     try:
-        # Try to get price from Delta Exchange
-        client = _get_api_client()
-        if client:
-            # Use the perpetual futures symbol to get current price
-            futures_symbol = f"{symbol}USD"
-            ticker = client.rest_client.get_ticker(futures_symbol)
-            
-            if ticker and 'mark_price' in ticker:
-                price = float(ticker['mark_price'])
-                _price_cache[cache_key] = (time.time(), price)
-                return jsonify({
-                    'symbol': symbol,
-                    'price': price,
-                    'source': 'api'
-                })
+        # Try to fetch directly from Delta Exchange REST API
+        futures_symbol = f"{symbol}USD"
+        api_url = f"https://api.delta.exchange/v2/tickers/{futures_symbol}"
         
-        # Fallback: Try to read from guardian signal file which has spot price
+        response = requests.get(api_url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success') and data.get('result'):
+                ticker = data['result']
+                # Try different price fields
+                price = (
+                    ticker.get('mark_price') or 
+                    ticker.get('spot_price') or 
+                    ticker.get('close') or
+                    ticker.get('last_price')
+                )
+                
+                if price:
+                    price = float(price)
+                    _price_cache[cache_key] = (time.time(), price)
+                    return jsonify({
+                        'symbol': symbol,
+                        'price': price,
+                        'source': 'delta_api'
+                    })
+        
+        # Fallback: Try to read from guardian signal file
         signal_file = Path(__file__).parent.parent.parent.parent / 'data' / 'guardian_signal.json'
         if signal_file.exists():
             import json
             with open(signal_file, 'r') as f:
                 data = json.load(f)
-                if 'spot_price' in data:
+                
+                # For BTC, use spot_price directly
+                if symbol == 'BTC' and 'spot_price' in data:
                     price = float(data['spot_price'])
                     _price_cache[cache_key] = (time.time(), price)
                     return jsonify({
@@ -113,9 +110,21 @@ def get_spot_price():
                         'price': price,
                         'source': 'guardian'
                     })
+                
+                # For ETH, calculate from BTC price (approximately 3.7% ratio)
+                if symbol == 'ETH' and 'spot_price' in data:
+                    btc_price = float(data['spot_price'])
+                    eth_price = btc_price * 0.037
+                    _price_cache[cache_key] = (time.time(), eth_price)
+                    return jsonify({
+                        'symbol': symbol,
+                        'price': eth_price,
+                        'source': 'guardian_calculated'
+                    })
         
         # Final fallback - use reasonable defaults
         fallback_prices = {'BTC': 95000, 'ETH': 3500}
+        log.warning(f"Using fallback price for {symbol}: {fallback_prices[symbol]}")
         return jsonify({
             'symbol': symbol,
             'price': fallback_prices.get(symbol, 95000),
@@ -123,13 +132,14 @@ def get_spot_price():
         })
         
     except Exception as e:
-        log.error(f"Error fetching spot price for {symbol}: {e}")
+        log.error(f"Error fetching spot price for {symbol}: {e}", exc_info=True)
         
         # Return fallback price on error
         fallback_prices = {'BTC': 95000, 'ETH': 3500}
         return jsonify({
             'symbol': symbol,
             'price': fallback_prices.get(symbol, 95000),
-            'source': 'fallback',
+            'source': 'fallback_error',
             'error': str(e)
         })
+

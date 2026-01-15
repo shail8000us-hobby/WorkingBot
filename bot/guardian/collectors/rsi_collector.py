@@ -72,7 +72,7 @@ class RSICollector:
             self.symbol = "BTCUSD"
         
         # Get bot mode (LONG/SHORT) - check symbol config first, then global
-        if symbol_name and hasattr(config, 'symbols') and symbol_name in config.symbols:
+        if symbol_name and hasattr(config, 'symbols') and config.symbols and symbol_name in config.symbols:
             self.bot_mode = config.symbols[symbol_name].mode.upper()
         elif hasattr(config, 'bot') and hasattr(config.bot, 'mode'):
             self.bot_mode = config.bot.mode.upper()  # LONG or SHORT

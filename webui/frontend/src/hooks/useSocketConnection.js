@@ -87,8 +87,9 @@ export function useSocketConnection({
     });
 
     manager.on('config_updated', (newConfig) => {
-      setConfig(newConfig);
-      setConfigMeta(buildMetaFromStructured(newConfig));
+      const { structured, meta } = transformFlatConfig(newConfig);
+      setConfig(structured);
+      setConfigMeta(meta);
     });
 
     manager.on('bot_status', (status) => {

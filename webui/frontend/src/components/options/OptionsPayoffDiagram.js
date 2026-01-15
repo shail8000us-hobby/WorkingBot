@@ -165,7 +165,13 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       
       const size = parseFloat(pos.size || 0);
       const entryPrice = parseFloat(pos.entry_price || 0);
-      const markPrice = parseFloat(pos.mark_price || pos.mid_price || entryPrice);
+      
+      // Use mid_price (bid+ask)/2 for accurate current value, fallback to mark_price
+      // This matches how PnL is calculated in the backend
+      const bestBid = parseFloat(pos.best_bid || 0);
+      const bestAsk = parseFloat(pos.best_ask || 0);
+      const midPrice = (bestBid > 0 && bestAsk > 0) ? (bestBid + bestAsk) / 2 : 0;
+      const markPrice = midPrice > 0 ? midPrice : parseFloat(pos.mid_price || pos.mark_price || entryPrice);
       
       let iv = 0.80;
       if (markPrice > 0 && yearsToExpiry > 0.001) {
@@ -214,16 +220,30 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       const price = minPrice + i * priceStep;
       const point = { price: Math.round(price) };
       
-      // Calculate "On Expiry" payoff (intrinsic value + current unrealized PnL)
+      // Calculate "On Expiry" payoff
+      // For SHORT positions (size < 0): You SOLD the option, received premium
+      //   P&L = (entryPrice - intrinsicAtExpiry) * |size| * multiplier
+      //   If OTM at expiry (intrinsic=0): P&L = entryPrice * |size| * 0.001 (keep full premium)
+      // For LONG positions (size > 0): You BOUGHT the option, paid premium
+      //   P&L = (intrinsicAtExpiry - entryPrice) * size * multiplier
       let expiryPayoff = 0;
       parsedPos.forEach(pos => {
-        const intrinsic = pos.type === 'call' ? Math.max(0, price - pos.strike) : Math.max(0, pos.strike - price);
-        // Current P&L at spot price
-        const currentIntrinsic = pos.type === 'call' ? Math.max(0, spotPrice - pos.strike) : Math.max(0, pos.strike - spotPrice);
-        const currentPnL = (pos.markPrice - pos.entryPrice) * pos.size * 0.001;
-        // Projected P&L = current P&L + change from spot to this price point
-        const intrinsicChange = (intrinsic - currentIntrinsic) * pos.size * 0.001;
-        expiryPayoff += currentPnL + intrinsicChange;
+        const intrinsic = pos.type === 'call' 
+          ? Math.max(0, price - pos.strike) 
+          : Math.max(0, pos.strike - price);
+        
+        const absSize = Math.abs(pos.size);
+        const isShort = pos.size < 0;
+        
+        if (isShort) {
+          // SHORT: profit = (premium received - intrinsic value owed) * size * multiplier
+          const pnl = (pos.entryPrice - intrinsic) * absSize * 0.001;
+          expiryPayoff += pnl;
+        } else {
+          // LONG: profit = (intrinsic value - premium paid) * size * multiplier
+          const pnl = (intrinsic - pos.entryPrice) * absSize * 0.001;
+          expiryPayoff += pnl;
+        }
       });
       
       // Split into profit/loss for colored areas
@@ -231,17 +251,41 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       point.expiryLoss = expiryPayoff < 0 ? expiryPayoff : 0;
       point.expiry = expiryPayoff;
       
-      // Calculate "On Target Date" payoff (Black-Scholes + current unrealized PnL)
+      // Calculate "On Target Date" payoff
+      // ANCHORED to actual current unrealized P&L, then project change using Black-Scholes
       let targetPayoff = 0;
       parsedPos.forEach(pos => {
-        const remainingYears = Math.max(0, (pos.daysToExpiry - targetDaysFromNow) / 365.25);
-        const theoreticalPrice = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
-        // Current P&L at spot price
-        const currentPnL = (pos.markPrice - pos.entryPrice) * pos.size * 0.001;
-        // Projected P&L = current P&L + change from current mark to theoretical price at target date
-        const theoreticalPriceAtSpot = blackScholesPrice(spotPrice, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
-        const priceChange = (theoreticalPrice - theoreticalPriceAtSpot) * pos.size * 0.001;
-        targetPayoff += currentPnL + priceChange;
+        const absSize = Math.abs(pos.size);
+        const isShort = pos.size < 0;
+        
+        // Current unrealized P&L (from actual market data)
+        // SHORT: profit when mark < entry (option decayed)
+        // LONG: profit when mark > entry (option gained value)
+        let currentUnrealizedPnL;
+        if (isShort) {
+          currentUnrealizedPnL = (pos.entryPrice - pos.markPrice) * absSize * 0.001;
+        } else {
+          currentUnrealizedPnL = (pos.markPrice - pos.entryPrice) * absSize * 0.001;
+        }
+        
+        const remainingYears = Math.max(0.0001, (pos.daysToExpiry - targetDaysFromNow) / 365.25);
+        
+        // Calculate theoretical prices at current spot and at this price point
+        const theoAtCurrentSpot = blackScholesPrice(spotPrice, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
+        const theoAtThisPrice = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
+        
+        // Projected change from current spot to this price point
+        // SHORT: loses money when option price goes up
+        // LONG: gains money when option price goes up
+        let projectedChange;
+        if (isShort) {
+          projectedChange = (theoAtCurrentSpot - theoAtThisPrice) * absSize * 0.001;
+        } else {
+          projectedChange = (theoAtThisPrice - theoAtCurrentSpot) * absSize * 0.001;
+        }
+        
+        // Total P&L = current actual P&L + projected change
+        targetPayoff += currentUnrealizedPnL + projectedChange;
       });
       point.target = targetPayoff;
       
@@ -250,11 +294,14 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
     
     // Statistics
     let maxProfit = -Infinity, maxLoss = Infinity;
+    let maxTargetProfit = -Infinity, maxTargetLoss = Infinity;
     const breakevens = [];
     
     data.forEach((point, idx) => {
       if (point.expiry > maxProfit) maxProfit = point.expiry;
       if (point.expiry < maxLoss) maxLoss = point.expiry;
+      if (point.target > maxTargetProfit) maxTargetProfit = point.target;
+      if (point.target < maxTargetLoss) maxTargetLoss = point.target;
       
       if (idx > 0) {
         const prev = data[idx - 1].expiry;
@@ -265,11 +312,34 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       }
     });
     
-    // Find projected profit at target price (not spot)
+    // Calculate Y-axis domain with sensible bounds
+    // User requested: lower bound around -500, upper bound around +200
+    const overallMax = Math.max(maxProfit, maxTargetProfit);
+    const overallMin = Math.min(maxLoss, maxTargetLoss);
+    
+    // Apply sensible bounds with some flexibility based on actual data
+    // Lower bound: use actual min but cap at -500 (or extend if needed)
+    // Upper bound: use actual max but ensure at least +200
+    const rawYMin = Math.min(overallMin, -100);  // Ensure we show at least some loss area
+    const rawYMax = Math.max(overallMax, 50);    // Ensure we show at least some profit area
+    
+    // Apply user-requested bounds: -500 to +200 with flexibility
+    const yMin = Math.max(rawYMin * 1.1, -500);  // Cap lower at -500, with 10% padding
+    const yMax = Math.min(Math.max(rawYMax * 1.2, 200), 500); // At least +200, cap at +500
+    
+    // Find projected profit at target price (at current spot when targetPricePercent = 0)
     const targetPricePoint = data.find(d => Math.abs(d.price - targetPrice) < priceStep * 1.5);
     const projectedProfit = targetPricePoint?.target ?? 0;
-    const projectedProfitPct = parsedPos.reduce((sum, p) => sum + Math.abs(p.entryPrice * p.size * 0.001), 0);
-    const profitPct = projectedProfitPct > 0 ? ((projectedProfit / projectedProfitPct) * 100).toFixed(2) : 0;
+    
+    // Calculate total premium collected (for short positions, this is what we received)
+    // For longs, it's what we paid (negative)
+    const totalPremiumCollected = parsedPos.reduce((sum, p) => {
+      // For shorts (size < 0): entry * |size| * 0.001 = premium received
+      // For longs (size > 0): -entry * size * 0.001 = premium paid (negative)
+      return sum + (p.entryPrice * Math.abs(p.size) * 0.001);
+    }, 0);
+    
+    const profitPct = totalPremiumCollected > 0 ? ((projectedProfit / totalPremiumCollected) * 100).toFixed(2) : 0;
     
     return {
       data,
@@ -286,6 +356,8 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       nearestExpiry,
       minPrice,
       maxPrice,
+      yMin: isFinite(yMin) ? yMin : -10,
+      yMax: isFinite(yMax) ? yMax : 10,
     };
   }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent]);
   
@@ -332,6 +404,57 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
     setIsZoomed(false);
   }, []);
   
+  // Zoom in (reduce range by 50%, centered on current view)
+  const handleZoomIn = useCallback(() => {
+    if (!chartData) return;
+    
+    const { minPrice, maxPrice, spotPrice } = chartData;
+    const currentLeft = isZoomed && zoomDomain.left ? zoomDomain.left : minPrice;
+    const currentRight = isZoomed && zoomDomain.right ? zoomDomain.right : maxPrice;
+    const currentCenter = (currentLeft + currentRight) / 2;
+    const currentRange = currentRight - currentLeft;
+    const newRange = currentRange * 0.5; // Reduce by 50%
+    
+    // Ensure minimum zoom range (at least $2000 for BTC)
+    if (newRange < 2000) return;
+    
+    const newLeft = Math.max(minPrice, currentCenter - newRange / 2);
+    const newRight = Math.min(maxPrice, currentCenter + newRange / 2);
+    
+    setZoomDomain({ left: newLeft, right: newRight });
+    setIsZoomed(true);
+  }, [chartData, isZoomed, zoomDomain]);
+  
+  // Zoom out (increase range by 100%, centered on current view)
+  const handleZoomOut = useCallback(() => {
+    if (!chartData) return;
+    
+    const { minPrice, maxPrice } = chartData;
+    
+    if (!isZoomed) return; // Can't zoom out if not zoomed
+    
+    const currentLeft = zoomDomain.left || minPrice;
+    const currentRight = zoomDomain.right || maxPrice;
+    const currentCenter = (currentLeft + currentRight) / 2;
+    const currentRange = currentRight - currentLeft;
+    const newRange = currentRange * 2; // Double the range
+    
+    let newLeft = currentCenter - newRange / 2;
+    let newRight = currentCenter + newRange / 2;
+    
+    // If we've zoomed out to full range, reset zoom
+    if (newLeft <= minPrice && newRight >= maxPrice) {
+      handleResetZoom();
+      return;
+    }
+    
+    // Clamp to bounds
+    newLeft = Math.max(minPrice, newLeft);
+    newRight = Math.min(maxPrice, newRight);
+    
+    setZoomDomain({ left: newLeft, right: newRight });
+  }, [chartData, isZoomed, zoomDomain, handleResetZoom]);
+  
   // Toggle zoom (zoom in to center 50% or zoom out)
   const handleToggleZoom = useCallback(() => {
     if (isZoomed) {
@@ -356,6 +479,28 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
     return chartData.data.filter(d => d.price >= zoomDomain.left && d.price <= zoomDomain.right);
   }, [chartData, isZoomed, zoomDomain]);
   
+  // Calculate Y-axis domain for zoomed view (recalculate based on visible data)
+  const zoomedYDomain = useMemo(() => {
+    if (!displayData || displayData.length === 0) return [chartData?.yMin || -500, chartData?.yMax || 200];
+    
+    let minY = Infinity, maxY = -Infinity;
+    displayData.forEach(d => {
+      if (d.expiry < minY) minY = d.expiry;
+      if (d.expiry > maxY) maxY = d.expiry;
+      if (d.target < minY) minY = d.target;
+      if (d.target > maxY) maxY = d.target;
+    });
+    
+    // Add padding
+    const range = maxY - minY;
+    const padding = Math.max(range * 0.15, 20); // At least $20 padding
+    
+    return [
+      Math.max(minY - padding, -500),  // Cap at -500
+      Math.min(maxY + padding, 500)    // Cap at +500
+    ];
+  }, [displayData, chartData]);
+  
   // ========================================================================
   // RENDER
   // ========================================================================
@@ -368,7 +513,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
     );
   }
   
-  const { data, spotPrice, targetPrice, maxProfit, maxLoss, breakevens, projectedProfit, profitPct, targetDate, daysToExpiryFromTarget, minDaysToExpiry, nearestExpiry } = chartData;
+  const { data, spotPrice, targetPrice, maxProfit, maxLoss, breakevens, projectedProfit, profitPct, targetDate, daysToExpiryFromTarget, minDaysToExpiry, nearestExpiry, yMin, yMax } = chartData;
   
   // Custom Tooltip
   const CustomTooltip = ({ active, payload, label }) => {
@@ -417,33 +562,45 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
             <Typography variant="caption" color="text.secondary">On Target Date</Typography>
           </Box>
           
-          {/* Zoom Button - Sensibull Style */}
-          <Box 
-            onClick={handleToggleZoom}
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 0.5, 
-              ml: 2,
-              px: 1.5,
-              py: 0.5,
-              borderRadius: 1,
-              bgcolor: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              cursor: 'pointer',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
-            }}
-          >
-            {isZoomed ? <ZoomOutIcon fontSize="small" /> : <ZoomInIcon fontSize="small" />}
-            <Typography variant="caption">{isZoomed ? 'Zoom Out' : 'Zoom In'}</Typography>
-          </Box>
-          
-          {/* Reset button when zoomed */}
-          {isZoomed && (
-            <IconButton size="small" onClick={handleResetZoom} title="Reset Zoom">
-              <RestartAltIcon fontSize="small" />
+          {/* Zoom Controls - Improved */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 2 }}>
+            <IconButton 
+              size="small" 
+              onClick={handleZoomIn}
+              title="Zoom In (50%)"
+              sx={{ 
+                border: '1px solid rgba(255,255,255,0.1)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+              }}
+            >
+              <ZoomInIcon fontSize="small" />
             </IconButton>
-          )}
+            <IconButton 
+              size="small" 
+              onClick={handleZoomOut}
+              disabled={!isZoomed}
+              title="Zoom Out (200%)"
+              sx={{ 
+                border: '1px solid rgba(255,255,255,0.1)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+              }}
+            >
+              <ZoomOutIcon fontSize="small" />
+            </IconButton>
+            {isZoomed && (
+              <IconButton 
+                size="small" 
+                onClick={handleResetZoom} 
+                title="Reset Zoom"
+                sx={{ 
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+                }}
+              >
+                <RestartAltIcon fontSize="small" />
+              </IconButton>
+            )}
+          </Box>
         </Box>
       </Box>
       
@@ -513,6 +670,8 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
             tickFormatter={(v) => `$${v.toFixed(0)}`}
             stroke="#666"
             tick={{ fontSize: 11 }}
+            domain={isZoomed ? zoomedYDomain : [yMin, yMax]}
+            allowDataOverflow={true}
             label={{ value: 'Profit / Loss', angle: -90, position: 'insideLeft', fill: '#888', fontSize: 12 }}
           />
           

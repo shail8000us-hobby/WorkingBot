@@ -35,6 +35,15 @@ from bot.options.utils.options_helper import (
     determine_close_side,
 )
 
+# Import trade logger for ML learning
+try:
+    from ...options_strategy.trade_logger import trade_logger
+    TRADE_LOGGING_ENABLED = True
+except Exception as e:
+    print(f"⚠️ Trade logger not available: {e}")
+    trade_logger = None
+    TRADE_LOGGING_ENABLED = False
+
 log = logging.getLogger(__name__)
 
 # Create blueprint
@@ -646,6 +655,31 @@ def close_options_position():
         _last_order_time = time.time()
         
         execution_type = result.get('execution_type', 'unknown')
+        fill_price = result.get('fill_price') or result.get('average_fill_price') or 0
+        
+        # Log trade for ML learning
+        if TRADE_LOGGING_ENABLED and trade_logger:
+            try:
+                trade_logger.log_trade(
+                    symbol=symbol,
+                    action='SELL' if side == 'sell' else 'BUY',
+                    quantity=int(close_size),
+                    price=float(fill_price),
+                    side='CLOSE',
+                    position_before={
+                        'size': position_size,
+                        'entry_price': position.get('entry_price', 0),
+                        'unrealized_pnl': position.get('unrealized_pnl', 0),
+                    },
+                    market_data={
+                        'spot_price': position.get('greeks', {}).get('spot', 0),
+                    },
+                    greeks=position.get('greeks', {}),
+                    strategy_tag='manual_close',
+                )
+            except Exception as e:
+                log.warning(f"Failed to log trade: {e}")
+        
         log.info(f"📉 OPTIONS CLOSE: {symbol} size={close_size} side={side} exec={execution_type}")
         
         return jsonify({
@@ -783,6 +817,39 @@ def add_to_options_position():
         execution_type = result.get('execution_type', 'unknown')
         fill_price = result.get('fill_price') or result.get('limit_price') or result.get('average_fill_price')
         
+        # Log trade for ML learning
+        if TRADE_LOGGING_ENABLED and trade_logger:
+            try:
+                # Get current position for context
+                async def get_position():
+                    positions = await client.get_all_positions_with_options()
+                    for pos in positions['options']:
+                        if pos.get('product_symbol') == symbol:
+                            return pos
+                    return {}
+                
+                position = asyncio.run(get_position())
+                
+                trade_logger.log_trade(
+                    symbol=symbol,
+                    action=side.upper(),
+                    quantity=int(size),
+                    price=float(fill_price) if fill_price else float(mid_price),
+                    side='OPEN',
+                    position_before={
+                        'size': position.get('size', 0) - (int(size) if side == 'buy' else -int(size)),
+                        'entry_price': position.get('entry_price', 0),
+                        'unrealized_pnl': 0,
+                    },
+                    market_data={
+                        'spot_price': position.get('greeks', {}).get('spot', 0),
+                    },
+                    greeks=position.get('greeks', {}),
+                    strategy_tag='manual_add',
+                )
+            except Exception as e:
+                log.warning(f"Failed to log trade: {e}")
+        
         log.info(f"📈 OPTIONS ADD: {symbol} size={size} side={side} exec={execution_type} price={fill_price}")
         
         return jsonify({
@@ -826,3 +893,235 @@ def get_options_status():
         'index_prices': index_prices,  # Will be populated by frontend from positions
         'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
     })
+
+
+# =============================================================================
+# STOP-LOSS / TAKE-PROFIT API ENDPOINTS
+# =============================================================================
+
+from webui.backend.options_strategy.sl_tp_manager import get_sl_tp_manager
+from webui.backend.options_strategy.sl_tp_monitor import get_sl_tp_monitor
+
+@options_bp.route('/sl-tp/set', methods=['POST'])
+def set_sl_tp():
+    """
+    Set stop-loss and take-profit for an options position.
+    
+    Request Body:
+        {
+            "symbol": "P-BTC-94000-140126",
+            "stop_loss_pct": -20,          // % loss to trigger (negative)
+            "stop_loss_price": 30.0,       // Or absolute price
+            "take_profit_pct": 50,         // % profit to trigger
+            "take_profit_price": 100.0,    // Or absolute price
+            "trailing_stop_enabled": false,
+            "trailing_stop_pct": 10,       // Trail by this %
+            "auto_execute": true,          // Auto-close when triggered
+            "alert_only": false            // Only alert, don't execute
+        }
+    """
+    try:
+        data = request.get_json()
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return jsonify({"success": False, "error": "Symbol required"}), 400
+        
+        manager = get_sl_tp_manager()
+        result = manager.set_sl_tp(
+            symbol=symbol,
+            stop_loss_price=data.get('stop_loss_price'),
+            stop_loss_pct=data.get('stop_loss_pct'),
+            take_profit_price=data.get('take_profit_price'),
+            take_profit_pct=data.get('take_profit_pct'),
+            trailing_stop_enabled=data.get('trailing_stop_enabled', False),
+            trailing_stop_pct=data.get('trailing_stop_pct'),
+            auto_execute=data.get('auto_execute', True),
+            alert_only=data.get('alert_only', False)
+        )
+        
+        log.info(f"SL/TP set for {symbol}: {result}")
+        return jsonify(result)
+    
+    except Exception as e:
+        log.error(f"Error setting SL/TP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/get/<symbol>', methods=['GET'])
+def get_sl_tp(symbol):
+    """Get SL/TP settings for a specific symbol"""
+    try:
+        manager = get_sl_tp_manager()
+        settings = manager.get_sl_tp(symbol)
+        
+        return jsonify({
+            "success": True,
+            "settings": settings
+        })
+    
+    except Exception as e:
+        log.error(f"Error getting SL/TP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/remove/<symbol>', methods=['DELETE'])
+def remove_sl_tp(symbol):
+    """Remove SL/TP settings for a symbol"""
+    try:
+        manager = get_sl_tp_manager()
+        result = manager.remove_sl_tp(symbol)
+        return jsonify(result)
+    
+    except Exception as e:
+        log.error(f"Error removing SL/TP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/all', methods=['GET'])
+def get_all_sl_tp():
+    """Get all active SL/TP settings"""
+    try:
+        manager = get_sl_tp_manager()
+        settings = manager.get_all_active_sl_tp()
+        return jsonify({
+            "success": True,
+            "settings": settings,
+            "count": len(settings)
+        })
+    
+    except Exception as e:
+        log.error(f"Error getting all SL/TP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/history', methods=['GET'])
+def get_sl_tp_history():
+    """Get SL/TP trigger history"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        symbol = request.args.get('symbol')
+        
+        manager = get_sl_tp_manager()
+        history = manager.get_history(limit=limit, symbol=symbol)
+        
+        return jsonify({
+            "success": True,
+            "history": history,
+            "count": len(history)
+        })
+    
+    except Exception as e:
+        log.error(f"Error getting SL/TP history: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/monitor/status', methods=['GET'])
+def get_monitor_status():
+    """Get SL/TP monitor status"""
+    try:
+        monitor = get_sl_tp_monitor()
+        return jsonify({
+            "success": True,
+            "status": monitor.get_status()
+        })
+    
+    except Exception as e:
+        log.error(f"Error getting monitor status: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/monitor/start', methods=['POST'])
+def start_monitor():
+    """Start SL/TP monitor service"""
+    try:
+        from webui.backend.options_strategy.sl_tp_monitor import init_sl_tp_monitoring
+        from bot.api.unified_api_client import UnifiedAPIClient
+        
+        config = get_config()
+        api_client = UnifiedAPIClient(config)
+        manager = get_sl_tp_manager()
+        
+        monitor = init_sl_tp_monitoring(api_client, manager, auto_start=True)
+        
+        return jsonify({
+            "success": True,
+            "message": "SL/TP monitor started",
+            "status": monitor.get_status()
+        })
+    
+    except Exception as e:
+        log.error(f"Error starting monitor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/sl-tp/monitor/stop', methods=['POST'])
+def stop_monitor():
+    """Stop SL/TP monitor service"""
+    try:
+        monitor = get_sl_tp_monitor()
+        monitor.stop()
+        
+        return jsonify({
+            "success": True,
+            "message": "SL/TP monitor stopped"
+        })
+    
+    except Exception as e:
+        log.error(f"Error stopping monitor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def execute_close_order(symbol: str, order_preference: str = 'market_only') -> dict:
+    """
+    Execute close order - used by SL/TP monitor.
+    
+    Args:
+        symbol: Option symbol to close
+        order_preference: Order type preference
+        
+    Returns:
+        dict with success status and order info
+    """
+    try:
+        from bot.api.unified_api_client import UnifiedAPIClient
+        config = get_config()
+        client = UnifiedAPIClient(config)
+        
+        # Get position
+        response = client.get_all_positions_with_options()
+        positions = response.get('options_positions', [])
+        position = next((p for p in positions if p.get('product_symbol') == symbol), None)
+        
+        if not position:
+            return {'success': False, 'error': f'Position {symbol} not found'}
+        
+        size = abs(position.get('size', 0))
+        close_side = determine_close_side(position.get('size', 0))
+        
+        if size == 0:
+            return {'success': False, 'error': 'Position size is 0'}
+        
+        # Execute close order
+        async def place_close():
+            return await place_smart_order(
+                client=client,
+                symbol=symbol,
+                size=float(size),
+                side=close_side,
+                order_preference=order_preference
+            )
+        
+        result = asyncio.run(place_close())
+        
+        return {
+            'success': True,
+            'order_id': result.get('order_id'),
+            'execution_type': result.get('execution_type'),
+            'fill_price': result.get('fill_price') or result.get('average_fill_price')
+        }
+        
+    except Exception as e:
+        log.error(f"Error executing close order: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+

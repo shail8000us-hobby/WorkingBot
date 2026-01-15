@@ -25,6 +25,12 @@ log = logging.getLogger(__name__)
 symbols_bp = Blueprint('symbols', __name__)
 
 
+def instance_to_pm2_name(instance_name: str) -> str:
+    """Convert instance name (BTCUSD_LONG) to PM2 process name (gridbot-BTCUSD-LONG)"""
+    # Replace underscore with dash for PM2 naming
+    return f"gridbot-{instance_name.replace('_', '-')}"
+
+
 @symbols_bp.route('/api/instances', methods=['GET'])
 def list_instances():
     """
@@ -386,22 +392,15 @@ def start_symbol_trading(symbol_name):
         symbol_name = symbol_name.upper()
         config = get_config()
         
-        # Validate symbol
-        if not config.symbols or symbol_name not in config.symbols:
+        # V6.0: Validate symbol by checking if any instances exist for it
+        all_instances = get_all_instances(enabled_only=False)
+        symbol_exists = any(inst.symbol == symbol_name for inst in all_instances.values())
+        
+        if not symbol_exists:
             return jsonify({
                 'success': False,
                 'error': f"Symbol '{symbol_name}' not found"
             }), 404
-        
-        # DEBUG: Log the actual enabled value
-        symbol_enabled = config.symbols[symbol_name].enabled
-        log.info(f"Symbol {symbol_name} enabled check: {symbol_enabled} (type: {type(symbol_enabled)})")
-        
-        if not symbol_enabled:
-            return jsonify({
-                'success': False,
-                'error': f"Symbol '{symbol_name}' is disabled. Enable it first. (enabled={symbol_enabled})"
-            }), 400
         
         # Handle request body - may be empty, None, or JSON
         try:
@@ -410,42 +409,42 @@ def start_symbol_trading(symbol_name):
             data = {}
         start_guardian = data.get('start_guardian', True)
         
-        # Determine PM2 process names
-        # V6.0: Symbol-specific processes (gridbot-btcusd-live, gridbot-ethusd-live)
-        # Fallback: Single-process mode (gridbot-live) for backward compatibility
-        mode = 'live' if config.trading_mode == 'live' else 'demo'
-        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"  # e.g., gridbot-btcusd-live
-        guardian_process = f"guardian-{mode}"  # Guardian shared across symbols
+        # V6.0 Multi-Instance Architecture
+        # Find all enabled instances for this symbol (e.g., BTCUSD_LONG, BTCUSD_SHORT)
+        symbol_instances = []
+        for inst_name, inst_config in all_instances.items():
+            if inst_config.symbol == symbol_name and inst_config.enabled:
+                symbol_instances.append((inst_name, inst_config))
         
-        # Fallback to single-process if symbol-specific doesn't exist
-        fallback_process = f"gridbot-{mode}"
+        if not symbol_instances:
+            return jsonify({
+                'success': False,
+                'error': f"No enabled instances found for symbol '{symbol_name}'"
+            }), 400
         
         results = {}
+        mode = 'live' if config.trading_mode == 'live' else 'demo'
+        guardian_process = f"guardian-{mode}"  # Guardian shared across symbols
         
         # Try PM2 first
         try:
-            # Start bot process
-            pm2_result = subprocess.run(
-                ['pm2', 'start', bot_process],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if pm2_result.returncode == 0:
-                results['bot'] = {'success': True, 'process': bot_process, 'method': 'pm2'}
-            else:
-                # Try fallback to single-process mode
-                fallback_result = subprocess.run(
-                    ['pm2', 'start', fallback_process],
+            # Start all instances for this symbol
+            for instance_name, inst_config in symbol_instances:
+                bot_process = instance_to_pm2_name(instance_name)  # e.g., gridbot-BTCUSD-LONG
+                
+                pm2_result = subprocess.run(
+                    ['pm2', 'start', bot_process],
                     capture_output=True,
                     text=True,
                     timeout=10
                 )
-                if fallback_result.returncode == 0:
-                    results['bot'] = {'success': True, 'process': fallback_process, 'method': 'pm2', 'note': 'Using single-process mode'}
-                else:
-                    results['bot'] = {'success': False, 'error': pm2_result.stderr, 'method': 'pm2'}
+                
+                results[instance_name] = {
+                    'success': pm2_result.returncode == 0,
+                    'process': bot_process,
+                    'method': 'pm2',
+                    'error': pm2_result.stderr if pm2_result.returncode != 0 else None
+                }
             
             # Start guardian if requested
             if start_guardian:
@@ -464,9 +463,11 @@ def start_symbol_trading(symbol_name):
         except FileNotFoundError:
             # PM2 not available - fallback to direct Python execution
             results['error'] = 'PM2 not available. Install PM2 or use launchctl.'
-            results['bot'] = {'success': False, 'error': 'PM2 not installed'}
         
-        overall_success = results.get('bot', {}).get('success', False)
+        # Calculate overall success - at least one instance started successfully
+        successful_count = sum(1 for key, val in results.items() 
+                              if isinstance(val, dict) and val.get('success', False))
+        overall_success = successful_count > 0
         
         return jsonify({
             'success': overall_success,
@@ -486,9 +487,9 @@ def start_symbol_trading(symbol_name):
 @symbols_bp.route('/api/symbols/<symbol_name>/process/stop', methods=['POST'])
 def stop_symbol_trading(symbol_name):
     """
-    Stop trading for a specific symbol
+    Stop trading for a specific symbol (all instances)
     
-    This gracefully stops the gridbot and guardian processes for the specified symbol.
+    V6.0: Stops all instances for this symbol (e.g., BTCUSD_LONG and BTCUSD_SHORT).
     The bot will have 30 seconds to cancel pending orders before force stop.
     
     Args:
@@ -496,7 +497,7 @@ def stop_symbol_trading(symbol_name):
     
     Request Body (optional):
         {
-            "stop_guardian": true,  // Whether to also stop guardian (default: true)
+            "stop_guardian": true,  // Whether to also stop guardian (default: false)
             "force": false          // Force immediate stop without graceful shutdown
         }
     
@@ -514,39 +515,49 @@ def stop_symbol_trading(symbol_name):
             data = request.get_json(silent=True) or {}
         except Exception:
             data = {}
-        stop_guardian = data.get('stop_guardian', True)
+        stop_guardian = data.get('stop_guardian', False)  # Changed default to false
         force = data.get('force', False)
         
-        # Determine PM2 process names
-        # V6.0: Symbol-specific processes (gridbot-btcusd-live, gridbot-ethusd-live)
-        # Fallback: Single-process mode (gridbot-live) for backward compatibility
-        mode = 'live' if config.trading_mode == 'live' else 'demo'
-        bot_process = f"gridbot-{symbol_name.lower()}-{mode}"  # e.g., gridbot-btcusd-live
-        guardian_process = f"guardian-{mode}"  # Guardian shared across symbols
+        # V6.0 Multi-Instance Architecture
+        # Find all instances for this symbol
+        instances = get_all_instances(enabled_only=False)  # Get all including disabled
+        symbol_instances = []
+        for inst_name, inst_config in instances.items():
+            if inst_config.symbol == symbol_name:
+                symbol_instances.append((inst_name, inst_config))
         
-        # Fallback to single-process if symbol-specific doesn't exist
-        fallback_process = f"gridbot-{mode}"
+        if not symbol_instances:
+            return jsonify({
+                'success': False,
+                'error': f"No instances found for symbol '{symbol_name}'"
+            }), 404
         
         results = {}
+        mode = 'live' if config.trading_mode == 'live' else 'demo'
+        guardian_process = f"guardian-{mode}"
         
         try:
-            # Stop bot process
-            stop_cmd = ['pm2', 'stop', bot_process]
-            if force:
-                stop_cmd = ['pm2', 'delete', bot_process]
-            
-            pm2_result = subprocess.run(
-                stop_cmd,
-                capture_output=True,
-                text=True,
-                timeout=35  # Allow 30s for graceful shutdown + 5s buffer
-            )
-            
-            results['bot'] = {
-                'success': pm2_result.returncode == 0 or 'not found' not in pm2_result.stderr.lower(),
-                'process': bot_process,
-                'method': 'pm2'
-            }
+            # Stop all instances for this symbol
+            for instance_name, inst_config in symbol_instances:
+                bot_process = instance_to_pm2_name(instance_name)  # e.g., gridbot-BTCUSD-LONG
+                
+                stop_cmd = ['pm2', 'stop', bot_process]
+                if force:
+                    stop_cmd = ['pm2', 'delete', bot_process]
+                
+                pm2_result = subprocess.run(
+                    stop_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=35  # Allow 30s for graceful shutdown + 5s buffer
+                )
+                
+                results[instance_name] = {
+                    'success': pm2_result.returncode == 0 or 'not found' not in pm2_result.stderr.lower(),
+                    'process': bot_process,
+                    'method': 'pm2',
+                    'error': pm2_result.stderr if pm2_result.returncode != 0 else None
+                }
             
             # Stop guardian if requested
             if stop_guardian:
@@ -565,9 +576,11 @@ def stop_symbol_trading(symbol_name):
                 
         except FileNotFoundError:
             results['error'] = 'PM2 not available'
-            results['bot'] = {'success': False, 'error': 'PM2 not installed'}
         
-        overall_success = results.get('bot', {}).get('success', False)
+        # Calculate overall success - at least one instance stopped successfully
+        successful_count = sum(1 for key, val in results.items() 
+                              if isinstance(val, dict) and val.get('success', False))
+        overall_success = successful_count > 0
         
         return jsonify({
             'success': overall_success,
@@ -679,35 +692,34 @@ def start_all_symbols():
     Start trading for ALL enabled symbols
     """
     try:
-        config = get_config()
+        # V6.0: Start all enabled instances
+        import subprocess
         
-        if not config.symbols:
+        instances = get_all_instances(enabled_only=True)  # Only enabled instances
+        
+        if not instances:
             return jsonify({
                 'success': False,
-                'error': 'No symbols configured'
+                'error': 'No enabled instances found'
             }), 400
         
-        # V6.0: Start symbol-specific processes for each enabled symbol
-        import subprocess
-        mode = 'live' if config.trading_mode == 'live' else 'demo'
-        
         results = {}
-        for symbol_name, symbol_config in config.symbols.items():
-            if symbol_config.enabled:
-                bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
-                try:
-                    result = subprocess.run(
-                        ['pm2', 'start', bot_process],
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    results[symbol_name] = {
-                        'success': result.returncode == 0,
-                        'process': bot_process
-                    }
-                except Exception as e:
-                    results[symbol_name] = {'success': False, 'error': str(e)}
+        for instance_name, inst_config in instances.items():
+            bot_process = instance_to_pm2_name(instance_name)  # e.g., gridbot-BTCUSD-LONG
+            try:
+                result = subprocess.run(
+                    ['pm2', 'start', bot_process],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                results[instance_name] = {
+                    'success': result.returncode == 0,
+                    'process': bot_process,
+                    'error': result.stderr if result.returncode != 0 else None
+                }
+            except Exception as e:
+                results[instance_name] = {'success': False, 'error': str(e)}
         
         successful = sum(1 for r in results.values() if r.get('success'))
         
@@ -728,21 +740,14 @@ def stop_all_symbols():
     Stop trading for ALL symbols
     """
     try:
-        config = get_config()
-        
-        if not config.symbols:
-            return jsonify({
-                'success': False,
-                'error': 'No symbols configured'
-            }), 400
-        
-        # V6.0: Stop symbol-specific processes for each symbol
+        # V6.0: Stop all instances
         import subprocess
-        mode = 'live' if config.trading_mode == 'live' else 'demo'
+        
+        instances = get_all_instances(enabled_only=False)  # Get all instances
         
         results = {}
-        for symbol_name, symbol_config in config.symbols.items():
-            bot_process = f"gridbot-{symbol_name.lower()}-{mode}"
+        for instance_name, inst_config in instances.items():
+            bot_process = instance_to_pm2_name(instance_name)  # e.g., gridbot-BTCUSD-LONG
             try:
                 result = subprocess.run(
                     ['pm2', 'stop', bot_process],
@@ -750,12 +755,13 @@ def stop_all_symbols():
                     text=True,
                     timeout=35
                 )
-                results[symbol_name] = {
+                results[instance_name] = {
                     'success': result.returncode == 0 or 'not found' not in result.stderr.lower(),
-                    'process': bot_process
+                    'process': bot_process,
+                    'error': result.stderr if result.returncode != 0 else None
                 }
             except Exception as e:
-                results[symbol_name] = {'success': False, 'error': str(e)}
+                results[instance_name] = {'success': False, 'error': str(e)}
         
         successful = sum(1 for r in results.values() if r.get('success'))
         
@@ -768,3 +774,66 @@ def stop_all_symbols():
     except Exception as e:
         log.error(f"Error stopping all symbols: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@symbols_bp.route('/api/symbols/<symbol_name>/status', methods=['GET'])
+def get_symbol_status(symbol_name):
+    """
+    Get market status for a specific symbol
+    
+    Returns:
+        JSON with market price and bot status
+    """
+    try:
+        symbol_name = symbol_name.upper()
+        
+        # Get all instances for this symbol
+        all_instances = get_all_instances(enabled_only=False)
+        symbol_instances = {
+            inst_name: inst_config 
+            for inst_name, inst_config in all_instances.items() 
+            if inst_config.symbol == symbol_name
+        }
+        
+        if not symbol_instances:
+            return jsonify({
+                'success': False,
+                'error': f"Symbol '{symbol_name}' not found"
+            }), 404
+        
+        # Try to get market price from bot's market data file
+        market_price = None
+        try:
+            import json
+            market_data_file = Path(__file__).parent.parent.parent / 'data' / 'market_data.json'
+            if market_data_file.exists():
+                with open(market_data_file, 'r') as f:
+                    market_data = json.load(f)
+                    market_price = market_data.get(symbol_name, {}).get('price')
+        except Exception as e:
+            log.warning(f"Could not load market data: {e}")
+        
+        # If no market data file, try to get from live bot status
+        if not market_price:
+            try:
+                from bot.utils.file_manager import get_bot_status
+                bot_status = get_bot_status()
+                if bot_status and 'market_price' in bot_status:
+                    market_price = bot_status['market_price']
+            except Exception:
+                pass
+        
+        return jsonify({
+            'success': True,
+            'symbol': symbol_name,
+            'market_price': market_price,
+            'instances': list(symbol_instances.keys()),
+            'timestamp': __import__('datetime').datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        log.error(f"Error getting symbol status for {symbol_name}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

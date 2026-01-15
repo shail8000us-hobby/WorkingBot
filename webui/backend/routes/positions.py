@@ -316,7 +316,12 @@ def get_state():
 
 def _get_positions_from_delta():
     """
-    Get positions directly from Delta Exchange API (with circuit breaker protection)
+    Get ALL positions directly from Delta Exchange API (with circuit breaker protection)
+    
+    Fetches COMPLETE portfolio including:
+    - Futures positions (BTCUSD, ETHUSD, etc.)
+    - Options positions (calls and puts)
+    - All underlying assets
     
     Returns position data with Greeks (delta, vega, theta) and PnL.
     Greeks are fetched from ticker endpoint as they're not available in positions endpoint.
@@ -327,6 +332,7 @@ def _get_positions_from_delta():
         def _fetch_from_delta():
             """Inner function wrapped by circuit breaker"""
             delta_client = DeltaClient()
+            # Use /v2/positions/margined to get ALL positions (futures + options)
             response = delta_client._req('GET', '/v2/positions/margined')
             
             if not response.get('success'):
@@ -338,6 +344,7 @@ def _get_positions_from_delta():
         response = delta_api_breaker.call(_fetch_from_delta, fallback=None)
         
         if not response:
+            log.warning("Delta API circuit breaker open - falling back to other sources")
             return None
         
         positions_data = []
@@ -349,6 +356,7 @@ def _get_positions_from_delta():
         usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
         
         pos_list = response.get('result', [])
+        log.info(f"📊 Fetched {len(pos_list)} positions from Delta Exchange (futures + options)")
         
         # Initialize Delta client for ticker requests
         delta_client = DeltaClient()
@@ -392,25 +400,42 @@ def _get_positions_from_delta():
                         ticker_data = ticker_response.get('result', {})
                         greeks = ticker_data.get('greeks', {})
                         if greeks:
-                            # Get per-contract Greeks
-                            delta_per_contract = float(greeks.get('delta', 0))
-                            vega_per_contract = float(greeks.get('vega', 0))
-                            theta_per_contract = float(greeks.get('theta', 0))
-                            gamma_per_contract = float(greeks.get('gamma', 0))
+                            # Return PER-CONTRACT Greeks (frontend handles position scaling)
+                            # Delta Exchange API returns per-contract values
+                            delta = float(greeks.get('delta', 0))
+                            vega = float(greeks.get('vega', 0))
+                            theta = float(greeks.get('theta', 0))
+                            gamma = float(greeks.get('gamma', 0))
                             
-                            # Calculate position Greeks (Greeks × Size)
-                            delta = delta_per_contract * size
-                            vega = vega_per_contract * abs(size)
-                            theta = theta_per_contract * abs(size)
-                            gamma = gamma_per_contract * abs(size)
-                            
-                            log.debug(f"Greeks for {product_symbol}: delta={delta:.4f}, vega={vega:.4f}, theta={theta:.4f}")
+                            log.debug(f"Greeks (per-contract) for {product_symbol}: delta={delta:.4f}, vega={vega:.4f}, theta={theta:.4f}")
                 except Exception as e:
                     log.debug(f"Could not fetch Greeks for {product_symbol}: {e}")
             
             # Notional
             notional_usd = abs(size * mark_price * CONTRACT_MULTIPLIER)
             notional_deployed = notional_usd * usd_to_inr_rate
+            
+            # Calculate position-level Greeks for summary (multiply per-contract by size)
+            # 
+            # CRITICAL THETA LOGIC (Fixed Jan 14, 2026 - v2):
+            # - Delta Exchange returns theta as "daily P&L contribution from time decay"
+            # - Theta convention: POSITIVE = earning money, NEGATIVE = losing money
+            # - For LONG positions (size > 0): theta is NEGATIVE (option decays, you lose)
+            # - For SHORT positions (size < 0): theta is POSITIVE (option decays, you earn)
+            #
+            # Example:
+            # - SHORT Call: size = -1, per-contract theta = +0.31
+            # - position theta = +0.31 * (-1) = -0.31 ❌ WRONG!
+            # - We want: position theta = +0.31 (you earn $0.31/day) ✅
+            #
+            # The cashflow display shows POSITIVE values (0.36 USD, 0.26 USD) for short positions
+            # This means Delta API already returns theta from seller's perspective
+            # So we should just multiply by abs(size) to get total earning rate
+            #
+            pos_delta = delta * size  # Delta direction same as position
+            pos_gamma = gamma * abs(size)  # Gamma always positive magnitude
+            pos_theta = theta * abs(size)  # Theta * absolute size (preserve sign from API)
+            pos_vega = vega * abs(size)  # Vega always positive magnitude
             
             positions_data.append({
                 'symbol': product_symbol,
@@ -421,18 +446,25 @@ def _get_positions_from_delta():
                 'entry_price': entry_price,
                 'current_price': mark_price,
                 'unrealized_pnl': unrealized_pnl,
-                'delta': delta,
-                'vega': vega,
-                'theta': theta,
-                'gamma': gamma,
+                'delta': pos_delta,
+                'vega': pos_vega,
+                'theta': pos_theta,
+                'gamma': pos_gamma,
+                # Also include per-contract Greeks for frontend calculations
+                'greeks': {
+                    'delta': delta,
+                    'vega': vega,
+                    'theta': theta,
+                    'gamma': gamma
+                },
                 'notional_deployed': round(notional_deployed, 2),
                 'exchange': 'delta_exchange'
             })
             
             total_pnl += unrealized_pnl
-            total_delta += delta
-            total_vega += vega
-            total_theta += theta
+            total_delta += pos_delta  # Use position-level delta
+            total_vega += pos_vega    # Use position-level vega
+            total_theta += pos_theta  # Use position-level theta
             total_notional_deployed += notional_deployed
         
         return {
@@ -690,3 +722,90 @@ def get_position_analysis():
         return jsonify(analysis)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@positions_bp.route('/api/positions/pending-orders', methods=['GET'])
+def get_pending_orders():
+    """
+    Get all pending/open orders from Delta Exchange
+    
+    Returns:
+        {
+            "success": true,
+            "orders": [
+                {
+                    "id": 12345,
+                    "symbol": "C-BTC-100000-140126",
+                    "side": "buy",
+                    "size": 1,
+                    "price": 2500.0,
+                    "order_type": "limit_order",
+                    "state": "open",
+                    "created_at": "2026-01-14T10:30:00Z",
+                    "product_id": 123456
+                }
+            ],
+            "count": 1
+        }
+    """
+    try:
+        from bot.api.delta_client import DeltaClient
+        
+        def _fetch_pending_orders():
+            """Inner function wrapped by circuit breaker"""
+            delta_client = DeltaClient()
+            # Get all open orders (no product_id filter = all products)
+            response = delta_client._req('GET', '/v2/orders', params={'state': 'open'})
+            
+            if not response.get('success'):
+                raise Exception("Delta API returned unsuccessful response")
+            
+            return response
+        
+        # Call through circuit breaker
+        response = delta_api_breaker.call(_fetch_pending_orders, fallback=None)
+        
+        if not response:
+            log.warning("Delta API circuit breaker open - cannot fetch pending orders")
+            return jsonify({
+                'success': False,
+                'error': 'Delta API temporarily unavailable',
+                'orders': [],
+                'count': 0
+            }), 503
+        
+        orders_list = response.get('result', [])
+        
+        # Format orders for frontend
+        formatted_orders = []
+        for order in orders_list:
+            formatted_orders.append({
+                'id': order.get('id'),
+                'symbol': order.get('product', {}).get('symbol', 'UNKNOWN'),
+                'product_id': order.get('product_id'),
+                'side': order.get('side'),
+                'size': order.get('size'),
+                'unfilled_size': order.get('unfilled_size'),
+                'price': float(order.get('limit_price', 0)),
+                'order_type': order.get('order_type'),
+                'state': order.get('state'),
+                'created_at': order.get('created_at'),
+                'client_order_id': order.get('client_order_id'),
+            })
+        
+        log.info(f"📊 Fetched {len(formatted_orders)} pending orders from Delta Exchange")
+        
+        return jsonify({
+            'success': True,
+            'orders': formatted_orders,
+            'count': len(formatted_orders)
+        }), 200
+        
+    except Exception as e:
+        log.error(f"Error getting pending orders: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'orders': [],
+            'count': 0
+        }), 500

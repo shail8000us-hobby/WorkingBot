@@ -3,7 +3,7 @@
 **Created:** January 5, 2026  
 **Last Updated:** January 12, 2026  
 **Purpose:** Comprehensive documentation of all options-related code and documentation in the WorkingBot project  
-**Status:** Production Ready (MVP + Enhancements + Strategy Builder Fixes)
+**Status:** Production Ready (MVP + Enhancements + Strategy Builder + Build Your Own Strategy)
 
 ---
 
@@ -30,14 +30,52 @@ The Options Trading Module is a **completely isolated** system for managing opti
 - ✅ **Order Execution**: One-click close/add to positions
 - ✅ **Options Chain**: Market data viewer for all strikes/expiries
 - ✅ **Strategy Builder**: Multi-leg strategy execution (Straddle, Strangle, Iron Condor, etc.)
+- ✅ **Build Your Own Strategy**: Custom multi-leg, multi-expiry strategies with one-click execution
 - ✅ **Automation**: Rule-based entry/exit conditions
 - ✅ **Payoff Diagrams**: Visual P&L projections
 
 **Design Principle:** Zero conflict with existing GridBot - complete separation of concerns.
 
+### Production-Ready Utilities (Imported from OptionBot - Jan 12, 2026)
+
+| Utility | Location | Purpose |
+|---------|----------|---------|
+| Rate Limiter | `webui/backend/utils/rate_limiter.py` | API rate limiting |
+| Custom Exceptions | `webui/backend/utils/exceptions.py` | Error hierarchy |
+| Option Validator | `webui/backend/options_strategy/option_validator.py` | Pre-execution validation |
+| Data Validator | `webui/backend/options_strategy/data_validator.py` | Market data quality |
+| Advanced Risk Manager | `webui/backend/options_strategy/advanced_risk_manager.py` | VaR, Sharpe metrics |
+| Health Monitor | `webui/backend/utils/health_monitor.py` | System health |
+
 ---
 
 ## ⚠️ CRITICAL FIX LOG - January 2026
+
+### January 12, 2026 - Build Your Own Strategy Feature
+
+**NEW FEATURE: Custom Multi-Leg Strategy Builder**
+
+Added "Build Your Own Strategy" tab to Strategy Builder that allows:
+- Any number of legs (unlimited)
+- Different expiries per leg (multi-expiry strategies)
+- Real-time premium calculation
+- Net Greeks calculation (Delta, Gamma, Theta, Vega)
+- Credit/Debit classification
+- One-click execution
+
+**File:** `webui/frontend/src/components/optionsStrategy/CustomStrategyBuilder.js`
+
+**Features:**
+- Add/remove legs dynamically
+- Auto-fetch available expiries from Delta Exchange
+- Strike selection with ATM highlighting
+- Per-leg quantity adjustment
+- Validation before execution
+- Strategy summary with net premium
+
+**API Endpoint:** `POST /api/options-strategy/create-custom`
+
+---
 
 ### January 12, 2026 - Strategy Builder Critical Fixes
 

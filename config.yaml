@@ -14,7 +14,7 @@ instances:
         lower: '85000'
         upper: '95000'
         step: '500'
-        reference: '88500'
+        reference: '91500'
       limits:
         max_open_positions: '50'
         lot_size: '5'
@@ -29,9 +29,9 @@ instances:
       smart_gap_fill:
         enabled: 'false'
         order_type: maker
-        max_levels: '0'
+        max_levels: '3'
     safety:
-      max_account_loss_inr: '10000'
+      max_account_loss_inr: 10000
       min_liquidation_distance_pct: '10.0'
       rsi:
         enabled: true
@@ -132,7 +132,6 @@ capital_allocation:
       capital_usd: 3000
       percentage: 30
       max_position_value_usd: 2000
-
 capital_protection:
   max_loss_inr: 10000
   equity_floor:
@@ -382,12 +381,6 @@ emergency:
   market_disruption_cooldown: '300'
   max_disruption_events: '5'
   max_drift_alerts: '10'
-
-# ============================================================================
-# OPTIONS TRADING MODULE (Added: January 4, 2026)
-# ============================================================================
-# Manages options positions separately from grid bot
-# Only affects options - does NOT touch futures/grid bot trading
 options:
   enabled: true
   polling_interval_seconds: 5

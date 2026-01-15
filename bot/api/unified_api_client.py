@@ -557,12 +557,16 @@ class UnifiedAPIClient:
             {
                 'symbol': str,
                 'mark_price': float,
+                'spot_price': float,
+                'strike_price': float,
                 'ask': float,
                 'bid': float,
                 'spread_pct': float,
-                'greeks': {...},  # If available
+                'greeks': {...},  # Delta, Gamma, Theta, Vega, Rho
+                'quotes': {...},  # Best bid/ask with sizes
                 'volume': float,
-                'open_interest': int
+                'open_interest': int,
+                'mark_vol': float  # Implied volatility
             }
         """
         await self.rate_limiter.acquire()
@@ -571,28 +575,48 @@ class UnifiedAPIClient:
             raise Exception("Circuit breaker open")
         
         try:
-            # Get ticker data
+            # Get ticker data from Delta Exchange
             ticker = await self.rest_client.get_ticker(symbol)
             
-            # Calculate spread percentage
-            ask = ticker.get('close', 0)  # Delta uses 'close' for ask
-            bid = ticker.get('open', 0)   # Delta uses 'open' for bid
+            # Extract quotes (bid/ask with sizes)
+            quotes = ticker.get('quotes', {})
+            best_bid = float(quotes.get('best_bid', 0))
+            best_ask = float(quotes.get('best_ask', 0))
             
+            # Calculate spread percentage
             spread_pct = 0
-            if bid > 0:
-                spread_pct = ((ask - bid) / bid) * 100
+            if best_bid > 0 and best_ask > 0:
+                spread_pct = ((best_ask - best_bid) / best_bid) * 100
+            
+            # Extract Greeks (Delta Exchange provides these in ticker)
+            greeks = ticker.get('greeks', {})
+            
+            # Log if Greeks are missing
+            if not greeks or not greeks.get('delta'):
+                log.warning(f"Greeks missing or incomplete for {symbol}: {greeks}")
             
             # Enrich with calculated fields
             enriched_ticker = {
                 'symbol': symbol,
-                'mark_price': ticker.get('mark_price', 0),
-                'ask': ask,
-                'bid': bid,
+                'mark_price': float(ticker.get('mark_price', 0)),
+                'spot_price': float(ticker.get('spot_price', 0)),  # Underlying spot price
+                'strike_price': float(ticker.get('strike_price', 0)),  # Option strike
+                'ask': best_ask,
+                'bid': best_bid,
                 'spread_pct': round(spread_pct, 2),
-                'volume': ticker.get('volume', 0),
-                'open_interest': ticker.get('oi', 0),
-                'greeks': ticker.get('greeks', {}),  # Greeks if available
-                'raw': ticker  # Keep original data
+                'volume': float(ticker.get('volume', 0)),
+                'open_interest': int(float(ticker.get('oi', 0))),  # Convert via float first to handle decimal strings
+                'greeks': {
+                    'delta': float(greeks.get('delta', 0)),
+                    'gamma': float(greeks.get('gamma', 0)),
+                    'theta': float(greeks.get('theta', 0)),
+                    'vega': float(greeks.get('vega', 0)),
+                    'rho': float(greeks.get('rho', 0)),
+                    'spot': float(ticker.get('spot_price', 0)),  # Include spot in Greeks for convenience
+                },
+                'quotes': quotes,  # Include full quotes object
+                'mark_vol': float(ticker.get('mark_vol', 0)),  # Implied volatility
+                'raw': ticker  # Keep original data for debugging
             }
             
             self.circuit_breaker.record_success()

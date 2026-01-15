@@ -49,12 +49,14 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import BuildIcon from '@mui/icons-material/Build';
 
 import { optionsChainAPI } from './services/chainAPI';
 import ChainTable from './ChainTable';
 import OrderDialog from './OrderDialog';
 import StrategyLegSelector from './StrategyLegSelector';
 import StrategyReviewDialog from './StrategyReviewDialog';
+import StrategyBuilderPanel from './StrategyBuilderPanel';
 
 // Formatting helpers
 const formatDate = (dateStr) => {
@@ -80,7 +82,7 @@ const formatPrice = (price) => {
   return `$${Number(price).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 };
 
-const OptionsChainPanel = ({ strategyParams }) => {
+const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   // State
   const [underlying, setUnderlying] = useState('BTC');
   const [expiry, setExpiry] = useState('');
@@ -89,12 +91,29 @@ const OptionsChainPanel = ({ strategyParams }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  // Strategy selection mode
+  // Strategy selection mode (template-based from Strategy Builder)
   const [strategyMode, setStrategyMode] = useState(false);
   const [strategyContext, setStrategyContext] = useState(null);
   const [selectedLegs, setSelectedLegs] = useState([]);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
+  
+  // Build Your Own mode (free-form strategy building)
+  const [builderMode, setBuilderMode] = useState(buildYourOwnMode);
+  const [builderLegs, setBuilderLegs] = useState([]);
+  
+  // Enable builder mode from prop or sessionStorage
+  useEffect(() => {
+    if (buildYourOwnMode) {
+      setBuilderMode(true);
+    }
+    // Check sessionStorage for "build_your_own" flag
+    const buildFlag = sessionStorage.getItem('build_your_own_strategy');
+    if (buildFlag === 'true') {
+      setBuilderMode(true);
+      sessionStorage.removeItem('build_your_own_strategy');
+    }
+  }, [buildYourOwnMode]);
   
   // Check for strategy context on mount (from Strategy Builder navigation)
   useEffect(() => {
@@ -187,6 +206,113 @@ const OptionsChainPanel = ({ strategyParams }) => {
       });
     }
   }, [strategyMode, strategyContext, selectedLegs]);
+  
+  // Handle Build Your Own mode leg selection (free-form)
+  const handleBuilderLegSelected = useCallback((optionData) => {
+    // Check if this exact leg already exists
+    const existingIndex = builderLegs.findIndex(
+      leg => leg.symbol === optionData.symbol && leg.side === optionData.side
+    );
+    
+    if (existingIndex >= 0) {
+      // Remove if already selected
+      setBuilderLegs(prev => {
+        const newLegs = [...prev];
+        newLegs.splice(existingIndex, 1);
+        return newLegs;
+      });
+      setSnackbar({
+        open: true,
+        message: `Removed: ${optionData.side.toUpperCase()} ${optionData.type} @ $${optionData.strike}`,
+        severity: 'info'
+      });
+    } else {
+      // Add new leg with current expiry
+      const newLeg = {
+        ...optionData,
+        expiry: expiry,
+        quantity: 1,
+        premium: optionData.ltp || optionData.bid || 0
+      };
+      setBuilderLegs(prev => [...prev, newLeg]);
+      setSnackbar({
+        open: true,
+        message: `Added: ${optionData.side.toUpperCase()} ${optionData.type} @ $${optionData.strike}`,
+        severity: 'success'
+      });
+    }
+  }, [builderLegs, expiry]);
+  
+  // Update builder leg
+  const handleUpdateBuilderLeg = useCallback((index, field, value) => {
+    setBuilderLegs(prev => {
+      const newLegs = [...prev];
+      newLegs[index] = { ...newLegs[index], [field]: value };
+      return newLegs;
+    });
+  }, []);
+  
+  // Remove builder leg
+  const handleRemoveBuilderLeg = useCallback((index) => {
+    setBuilderLegs(prev => {
+      const newLegs = [...prev];
+      newLegs.splice(index, 1);
+      return newLegs;
+    });
+  }, []);
+  
+  // Clear all builder legs
+  const handleClearBuilderLegs = useCallback(() => {
+    setBuilderLegs([]);
+  }, []);
+  
+  // Execute builder strategy
+  const handleExecuteBuilderStrategy = useCallback(async (strategyData) => {
+    setExecuting(true);
+    try {
+      // Create strategy
+      const createRes = await fetch('/api/options-strategy/create-custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(strategyData)
+      });
+      
+      const createData = await createRes.json();
+      
+      if (!createData.success) {
+        throw new Error(createData.error || 'Failed to create strategy');
+      }
+      
+      // Execute strategy
+      const execRes = await fetch(`/api/options-strategy/execute/${createData.strategy.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'market' })
+      });
+      
+      const execData = await execRes.json();
+      
+      if (execData.success) {
+        setSnackbar({
+          open: true,
+          message: `✅ Strategy executed! ${execData.legs_filled || 0} legs placed.`,
+          severity: 'success'
+        });
+        setBuilderLegs([]);
+        fetchChainData();
+      } else {
+        throw new Error(execData.error || execData.message || 'Execution failed');
+      }
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: `❌ ${err.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setExecuting(false);
+    }
+  }, []);
   
   // Handle removing a leg
   const handleRemoveLeg = useCallback((index) => {
@@ -401,6 +527,26 @@ const OptionsChainPanel = ({ strategyParams }) => {
       
       {/* Controls */}
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2, alignItems: 'center' }}>
+        {/* Build Your Own Button */}
+        {!strategyMode && (
+          <Button
+            variant={builderMode ? "contained" : "outlined"}
+            color="primary"
+            startIcon={<BuildIcon />}
+            onClick={() => {
+              if (builderMode) {
+                setBuilderMode(false);
+                setBuilderLegs([]);
+              } else {
+                setBuilderMode(true);
+              }
+            }}
+            sx={{ mr: 1 }}
+          >
+            {builderMode ? 'Exit Builder' : 'Build Your Own'}
+          </Button>
+        )}
+        
         {/* Underlying Selector */}
         <ToggleButtonGroup
           value={underlying}
@@ -531,6 +677,34 @@ const OptionsChainPanel = ({ strategyParams }) => {
         </Alert>
       )}
       
+      {/* Builder Mode Banner */}
+      {builderMode && !strategyMode && (
+        <Alert 
+          severity="info" 
+          icon={<BuildIcon />}
+          sx={{ mb: 2, bgcolor: 'rgba(33, 150, 243, 0.1)' }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => {
+                setBuilderMode(false);
+                setBuilderLegs([]);
+              }}
+            >
+              Exit Builder
+            </Button>
+          }
+        >
+          <Typography variant="subtitle2" fontWeight="bold">
+            Build Your Own Strategy
+          </Typography>
+          <Typography variant="caption">
+            Click B (Buy) or S (Sell) on any strike to add legs • {builderLegs.length} leg{builderLegs.length !== 1 ? 's' : ''} selected
+          </Typography>
+        </Alert>
+      )}
+      
       {/* Strategy Leg Selector (sticky on side) */}
       {strategyMode && strategyContext && (
         <Grid container spacing={2}>
@@ -561,13 +735,44 @@ const OptionsChainPanel = ({ strategyParams }) => {
       )}
       
       {/* Normal Mode - Chain Table without leg selector */}
-      {!strategyMode && chainData && (
+      {!strategyMode && !builderMode && chainData && (
         <ChainTable 
           chainData={chainData} 
           spotPrice={chainData.spot_price}
           atmStrike={chainData.atm_strike}
           onTrade={handleTrade}
         />
+      )}
+      
+      {/* Builder Mode - Chain Table with Strategy Builder Panel */}
+      {builderMode && !strategyMode && chainData && (
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={builderLegs.length > 0 ? 8 : 12}>
+            <ChainTable 
+              chainData={chainData} 
+              spotPrice={chainData.spot_price}
+              atmStrike={chainData.atm_strike}
+              onTrade={handleBuilderLegSelected}
+              strategyMode={true}
+              builderMode={true}
+              selectedLegs={builderLegs}
+            />
+          </Grid>
+          {builderLegs.length > 0 && (
+            <Grid item xs={12} md={4}>
+              <StrategyBuilderPanel
+                legs={builderLegs}
+                underlying={underlying}
+                spotPrice={chainData.spot_price}
+                onUpdateLeg={handleUpdateBuilderLeg}
+                onRemoveLeg={handleRemoveBuilderLeg}
+                onClearAll={handleClearBuilderLegs}
+                onExecute={handleExecuteBuilderStrategy}
+                executing={executing}
+              />
+            </Grid>
+          )}
+        </Grid>
       )}
       
       {/* Strategy Review Dialog */}

@@ -1,0 +1,215 @@
+# =============================================================================
+# Zero DTE Options Trading Bot Configuration
+# Delta Exchange India - 0DTE Strangle Strategy
+# =============================================================================
+
+# Strategy Identification
+strategy:
+  name: "0DTE Premium Balancer"
+  version: "1.0.0"
+  description: "Autonomous 0DTE strangle with premium rebalancing"
+
+# =============================================================================
+# ENTRY CONFIGURATION
+# =============================================================================
+entry:
+  # Default underlying (BTC or ETH)
+  default_underlying: "BTC"
+  
+  # Initial lot size for each leg
+  initial_lots: 5
+  
+  # Strike selection offset from ATM (percentage)
+  strike_offset_pct: 2.5
+  
+  # Premium range for initial strike selection (in INR)
+  premium_range:
+    min: 15
+    max: 30
+  
+  # Minimum liquidity required (bid-ask spread percentage)
+  max_spread_pct: 2.0
+  
+  # Earliest entry time (IST) - after market open
+  earliest_entry_time: "09:30"
+  
+  # Latest entry time (IST) - don't enter too close to expiry
+  latest_entry_time: "16:30"
+
+# =============================================================================
+# REBALANCING CONFIGURATION  
+# =============================================================================
+rebalancing:
+  # Premium imbalance threshold to trigger rebalancing (percentage)
+  imbalance_threshold_pct: 20
+  
+  # Minimum premium difference to trigger (absolute INR)
+  min_premium_diff: 5
+  
+  # Lot adjustment settings
+  adjustment:
+    # Minimum lots to adjust per rebalance
+    min_lot_adjustment: 1
+    
+    # Maximum lots to adjust per rebalance
+    max_lot_adjustment: 10
+    
+    # Maximum total lots per leg
+    max_lots_per_leg: 20
+  
+  # Order execution settings
+  orders:
+    # Order type preference: 'maker_first' or 'market'
+    preference: "maker_first"
+    
+    # Timeout for maker order before converting to market (seconds)
+    timeout_seconds: 2
+    
+    # Maximum slippage allowed for market orders (percentage)
+    max_slippage_pct: 0.5
+
+# =============================================================================
+# STRIKE ROLLOVER CONFIGURATION
+# =============================================================================
+rollover:
+  # Premium threshold below which to roll strike (INR)
+  min_premium_threshold: 5
+  
+  # Target premium after rollover (INR)
+  target_premium:
+    min: 20
+    max: 25
+  
+  # Maximum strikes to search for new position
+  max_strike_search: 5
+  
+  # Cooldown between rollovers for same leg (seconds)
+  cooldown_seconds: 300
+
+# =============================================================================
+# EXIT CONFIGURATION
+# =============================================================================
+exit:
+  # Exit when BOTH legs premium below this (INR) - PRIMARY EXIT CONDITION
+  both_legs_below: 5
+  
+  # Forced exit time (IST) - 15 minutes before settlement
+  forced_exit_time: "17:15"
+  
+  # Settlement time (IST) - Delta Exchange India
+  settlement_time: "17:30"
+  
+  # Stop loss - Maximum loss before emergency exit (INR)
+  stop_loss_amount: 5000
+  
+  # Profit target percentage of premium collected (optional, 0 = disabled)
+  profit_target_pct: 0
+
+# =============================================================================
+# MONITORING CONFIGURATION
+# =============================================================================
+monitoring:
+  # How often to check positions and premiums (seconds)
+  poll_interval_seconds: 30
+  
+  # How often to save monitoring snapshot to database (seconds)
+  snapshot_interval_seconds: 60
+  
+  # Greeks limits for portfolio
+  greeks_limits:
+    max_delta: 0.5
+    max_gamma: 0.1
+    max_vega: 100
+  
+  # Margin utilization warning threshold (percentage)
+  margin_warning_threshold_pct: 75
+
+# =============================================================================
+# RISK MANAGEMENT
+# =============================================================================
+risk:
+  # Enable Guardian integration (reads guardian_signal.txt)
+  guardian_enabled: true
+  
+  # Guardian signal file path
+  guardian_signal_file: "guardian_signal.txt"
+  
+  # Maximum margin utilization before halting (percentage)
+  max_margin_utilization_pct: 80
+  
+  # Minimum margin buffer to maintain (INR)
+  min_margin_buffer: 50000
+  
+  # Emergency actions
+  emergency:
+    # Auto-close all positions if Guardian says STOP
+    close_on_guardian_stop: true
+    
+    # Auto-close if margin utilization exceeds limit
+    close_on_margin_breach: true
+
+# =============================================================================
+# ALERT CONFIGURATION
+# =============================================================================
+alerts:
+  # Enable Telegram alerts
+  telegram_enabled: false
+  
+  # Telegram bot token (from credentials.json if enabled)
+  telegram_bot_token: ""
+  
+  # Telegram chat ID
+  telegram_chat_id: ""
+  
+  # Alert events
+  events:
+    session_start: true
+    session_end: true
+    rebalance: true
+    rollover: true
+    stop_loss_warning: true
+    profit_milestone: true
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database:
+  # Database directory
+  directory: "database"
+  
+  # Database files
+  sessions_db: "zero_dte_sessions.db"
+  trades_db: "zero_dte_trades.db"
+  rebalances_db: "zero_dte_rebalances.db"
+  
+  # Auto-cleanup old records (days)
+  retention_days: 30
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  
+  # Log file path
+  file: "logs/zero_dte_engine.log"
+  
+  # Log rotation
+  rotation: "50 MB"
+  retention: "7 days"
+  compression: "gz"
+
+# =============================================================================
+# CONTRACT SPECIFICATIONS (Delta Exchange India)
+# =============================================================================
+contracts:
+  BTC:
+    contract_size: 0.001  # BTC per contract
+    tick_size: 0.5
+    symbol_format: "{type}-BTC-{strike}-{expiry}"  # C-BTC-95000-30012026
+  
+  ETH:
+    contract_size: 0.01   # ETH per contract
+    tick_size: 0.05
+    symbol_format: "{type}-ETH-{strike}-{expiry}"  # P-ETH-3200-30012026

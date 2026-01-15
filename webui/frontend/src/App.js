@@ -106,6 +106,7 @@ import MonitoringRecoveryPanel from './components/panels/MonitoringRecoveryPanel
 import RSIPanel from './components/RSIPanel';
 import SymbolPortfolio from './components/SymbolPortfolio';
 import RiskSafetyDashboard from './components/RiskSafetyDashboard';
+import ZeroDTEDashboard from './components/zero_dte/ZeroDTEDashboard';
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
   <div className="flex items-center justify-center py-10 text-sm text-slate-400">
@@ -156,6 +157,7 @@ function App() {
     reconciliation_v2_dry_run: true
   });
   const [activeSection, setActiveSection] = useState(userPreferences.selectedSection || 'dashboard');
+  const [navParams, setNavParams] = useState(null); // Navigation params for section switches
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -524,6 +526,12 @@ function App() {
       label: 'Todo List',
       icon: BookOpen,
       description: 'Track improvements and ideas for the trading bot'
+    },
+    {
+      id: 'zero_dte',
+      label: '⏱️ 0DTE Trading',
+      icon: Zap,
+      description: '0DTE options - autonomous strangle with premium balancing'
     }
   ], [openPositions, pendingOrders]);
 
@@ -578,6 +586,13 @@ function App() {
       showNotification(`Navigated to ${sectionId.replace('_', ' ')}`, 'info');
     }
   }, [showNotification]);
+  
+  // Navigation handler that clears params when navigating via sidebar
+  const handleSectionSelect = useCallback((sectionId) => {
+    setActiveSection(sectionId);
+    // Clear nav params when navigating via normal sidebar click
+    setNavParams(null);
+  }, []);
 
 
 
@@ -706,6 +721,16 @@ function App() {
           <MultiInstanceManager />
         </EnhancedErrorBoundary>
       </CollapsibleCard>
+    </div>
+  );
+
+  const renderZeroDTE = () => (
+    <div className="grid gap-6">
+      <Suspense fallback={<LoadingFallback message="Loading 0DTE Dashboard..." />}>
+        <EnhancedErrorBoundary componentName="ZeroDTEDashboard">
+          <ZeroDTEDashboard />
+        </EnhancedErrorBoundary>
+      </Suspense>
     </div>
   );
 
@@ -941,7 +966,9 @@ function App() {
       >
         <Suspense fallback={<LoadingFallback message="Loading options chain..." />}>
           <EnhancedErrorBoundary componentName="OptionsChainPanel">
-            <OptionsChainPanel />
+            <OptionsChainPanel 
+              buildYourOwnMode={navParams?.buildYourOwnMode || false}
+            />
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
@@ -956,10 +983,11 @@ function App() {
           <StrategyBuilder 
             onNavigateToTab={(tabId, params) => {
               setActiveSection(tabId);
-              // Store params for the target tab if needed
+              // Store params for the target tab (e.g., buildYourOwnMode for Options Chain)
               if (params) {
-                console.log('Navigation params:', params);
-                // TODO: Pass params to OptionsChain component
+                setNavParams(params);
+              } else {
+                setNavParams(null);
               }
             }}
           />
@@ -1369,7 +1397,9 @@ function App() {
           </Suspense>
         </CollapsibleCard>
       </div>
-    ) : null
+    ) : null,
+    // 0DTE Autonomous Trading
+    zero_dte: renderZeroDTE()
   };
 
   const activeContent = sectionContent[activeSection] || renderDashboard();
@@ -1422,14 +1452,14 @@ function App() {
       <Sidebar
         sections={sections}
         activeSection={activeSection}
-        onSelect={setActiveSection}
+        onSelect={handleSectionSelect}
       />
 
       <main className="pt-36 pb-[calc(7rem+env(safe-area-inset-bottom))]" style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
         <MobileNav
           sections={sections}
           activeSection={activeSection}
-          onSelect={setActiveSection}
+          onSelect={handleSectionSelect}
         />
         <div className="w-full">
           <AnimatePresence mode="wait">

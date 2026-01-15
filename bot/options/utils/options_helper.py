@@ -18,12 +18,15 @@ def calculate_unrealized_pnl(position: Dict, mid_price: float) -> float:
     """
     Calculate unrealized PnL for options position using mid price (bid+ask)/2.
     
+    For SHORT (size < 0): profit when price drops (mid < entry)
+    For LONG (size > 0): profit when price rises (mid > entry)
+    
     Args:
         position: Position dict with size, entry_price
         mid_price: Mid price calculated as (bid+ask)/2
         
     Returns:
-        float: Unrealized PnL in USD
+        float: Unrealized PnL in USD (positive = profit, negative = loss)
     """
     # Convert to float (API may return strings)
     size = float(position.get('size', 0))
@@ -31,6 +34,8 @@ def calculate_unrealized_pnl(position: Dict, mid_price: float) -> float:
     mid_price = float(mid_price)
     contract_value = 0.001  # BTC contracts = 0.001 BTC each
     
+    # For SHORT: size is negative, so (mid - entry) * negative_size = positive when mid < entry (profit)
+    # For LONG: size is positive, so (mid - entry) * positive_size = positive when mid > entry (profit)
     pnl = (mid_price - entry_price) * size * contract_value
     return pnl
 
@@ -39,22 +44,34 @@ def calculate_pnl_percentage(position: Dict, mid_price: float) -> float:
     """
     Calculate PnL percentage using mid price.
     
+    Returns positive percentage for profit, negative for loss.
+    - For SHORT positions: profit when mid_price < entry_price
+    - For LONG positions: profit when mid_price > entry_price
+    
     Args:
-        position: Position dict with entry_price
+        position: Position dict with entry_price, size
         mid_price: Mid price calculated as (bid+ask)/2
         
     Returns:
-        float: PnL percentage
+        float: PnL percentage (positive = profit, negative = loss)
     """
     # Convert to float (API may return strings)
     entry_price = float(position.get('entry_price', 0))
     mid_price = float(mid_price)
+    size = float(position.get('size', 0))
     
     if entry_price == 0:
         return 0.0
     
-    pnl_pct = ((mid_price - entry_price) / entry_price) * 100
-    return pnl_pct
+    # Price change percentage
+    price_change_pct = ((mid_price - entry_price) / entry_price) * 100
+    
+    # For SHORT positions (size < 0): invert sign so profit shows as positive
+    # If mid_price dropped 50% (price_change = -50%), short profit = +50%
+    if size < 0:
+        return -price_change_pct
+    else:
+        return price_change_pct
 
 
 def check_expiry_warning(settlement_time: str) -> Dict:

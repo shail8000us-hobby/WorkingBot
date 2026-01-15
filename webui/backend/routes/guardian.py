@@ -640,7 +640,7 @@ def rsi_status():
             })
         
         # No symbol specified - return RSI for ALL enabled symbols (v5.0+)
-        if config.symbols:
+        if hasattr(config, 'symbols') and config.symbols:
             symbols_rsi = {}
             for symbol_name, symbol_config in config.symbols.items():
                 if symbol_config.enabled:
@@ -697,7 +697,7 @@ def _get_rsi_for_symbol(symbol_name: str, config) -> dict:
     exchange = ccxt.delta({'enableRateLimit': True})
     
     # Get symbol-specific config (v5.0) or fallback to global (v4.0)
-    if symbol_name and config.symbols and symbol_name in config.symbols:
+    if symbol_name and hasattr(config, 'symbols') and config.symbols and symbol_name in config.symbols:
         symbol_config = config.symbols[symbol_name]
         bot_mode = symbol_config.mode
         product_symbol = symbol_name
@@ -709,18 +709,32 @@ def _get_rsi_for_symbol(symbol_name: str, config) -> dict:
             hysteresis_seconds = getattr(symbol_config.safety.rsi, 'hysteresis_seconds', 60)
         else:
             # Fallback to global RSI config
-            rsi_config = config.safety.rsi
+            rsi_config = config.safety.rsi if hasattr(config, 'safety') and hasattr(config.safety, 'rsi') else None
+            if rsi_config:
+                long_threshold = rsi_config.long_threshold
+                short_threshold = rsi_config.short_threshold
+                hysteresis_seconds = rsi_config.hysteresis_seconds
+            else:
+                # Defaults if no RSI config available
+                long_threshold = 25
+                short_threshold = 75
+                hysteresis_seconds = 60
+    else:
+        # v4.0 single-symbol mode or fallback
+        product_symbol = symbol_name if symbol_name else (config.bot.symbol if config.bot and hasattr(config.bot, 'symbol') else 'BTCUSD')
+        bot_mode = config.bot.mode if config.bot and hasattr(config.bot, 'mode') else 'LONG'
+        
+        # Get RSI config with fallback
+        rsi_config = config.safety.rsi if hasattr(config, 'safety') and hasattr(config.safety, 'rsi') else None
+        if rsi_config:
             long_threshold = rsi_config.long_threshold
             short_threshold = rsi_config.short_threshold
             hysteresis_seconds = rsi_config.hysteresis_seconds
-    else:
-        # v4.0 single-symbol mode
-        product_symbol = config.bot.symbol if config.bot and hasattr(config.bot, 'symbol') else 'BTCUSD'
-        bot_mode = config.bot.mode if config.bot and hasattr(config.bot, 'mode') else 'LONG'
-        rsi_config = config.safety.rsi
-        long_threshold = rsi_config.long_threshold
-        short_threshold = rsi_config.short_threshold
-        hysteresis_seconds = rsi_config.hysteresis_seconds
+        else:
+            # Defaults if no RSI config available
+            long_threshold = 25
+            short_threshold = 75
+            hysteresis_seconds = 60
     
     # Create RSI collector with symbol-aware config (v5.0 native support)
     rsi_collector = RSICollector(exchange, config, symbol_name=symbol_name)

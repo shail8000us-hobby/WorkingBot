@@ -53,14 +53,22 @@ class PositionMonitor:
     
     def fetch_open_positions(self) -> List[Dict]:
         """
-        Fetch all open positions from exchange
+        Fetch ALL open positions from exchange (futures + options)
+        
+        IMPORTANT: Guardian must protect ALL positions in the portfolio,
+        not just the symbol it's monitoring. This includes:
+        - Futures positions (BTCUSD, ETHUSD, etc.)
+        - Options positions (calls, puts)
+        - Manual positions
+        - Bot-managed positions
         
         Returns:
-            List of position dictionaries
+            List of position dictionaries for ALL instruments
         """
         try:
-            # Fetch positions from exchange
-            positions = self.exchange.fetch_positions([self.symbol])
+            # Fetch ALL positions from exchange (no symbol filter)
+            # This returns futures + options + all other positions
+            positions = self.exchange.fetch_positions()
             
             # Filter only open positions (size != 0 for both LONG and SHORT)
             open_positions = [
@@ -68,8 +76,13 @@ class PositionMonitor:
                 if pos.get('contracts', 0) != 0
             ]
             
-            # Debug: Log what fields are available
+            # Log portfolio composition for visibility
             if open_positions:
+                futures = [p for p in open_positions if 'C-' not in p.get('symbol', '') and 'P-' not in p.get('symbol', '')]
+                options = [p for p in open_positions if 'C-' in p.get('symbol', '') or 'P-' in p.get('symbol', '')]
+                logger.info(f"📊 Portfolio: {len(open_positions)} total positions ({len(futures)} futures, {len(options)} options)")
+                
+                # Debug: Log what fields are available
                 sample_pos = open_positions[0]
                 logger.debug(f"Position keys available: {list(sample_pos.keys())}")
                 logger.debug(f"Sample position data: entryPrice={sample_pos.get('entryPrice')}, "
@@ -77,7 +90,6 @@ class PositionMonitor:
                            f"unrealizedPnl={sample_pos.get('unrealizedPnl')}, "
                            f"info keys={list(sample_pos.get('info', {}).keys()) if sample_pos.get('info') else 'no info'}")
             
-            logger.debug(f"Fetched {len(open_positions)} open position(s)")
             return open_positions
             
         except Exception as e:

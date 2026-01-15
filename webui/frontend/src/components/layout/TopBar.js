@@ -1,6 +1,7 @@
 import { RefreshCw, Activity, Bot, Gauge, SignalHigh, SignalLow, Sun, Moon, Shield, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { useState, useEffect } from 'react';
 import SymbolSelector from '../SymbolSelector';
 import { useInstance } from '../../context/InstanceContext';
 
@@ -67,6 +68,43 @@ function TopBar({
     healthBotPid = null
   } = processStatus;
 
+  // Live prices state
+  const [btcPrice, setBtcPrice] = useState(null);
+  const [ethPrice, setEthPrice] = useState(null);
+  const [priceLoading, setPriceLoading] = useState(true);
+
+  // Fetch live prices on mount and every 10 seconds
+  useEffect(() => {
+    const fetchPrices = async () => {
+      try {
+        const [btcRes, ethRes] = await Promise.all([
+          fetch('/api/market/spot-price?symbol=BTC'),
+          fetch('/api/market/spot-price?symbol=ETH')
+        ]);
+        
+        if (btcRes.ok) {
+          const btcData = await btcRes.json();
+          setBtcPrice(btcData.price);
+        }
+        
+        if (ethRes.ok) {
+          const ethData = await ethRes.json();
+          setEthPrice(ethData.price);
+        }
+        
+        setPriceLoading(false);
+      } catch (error) {
+        console.error('Failed to fetch live prices:', error);
+        setPriceLoading(false);
+      }
+    };
+
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 10000); // Update every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
   const connectionIcon = qualityIconMap[latencyQuality] || qualityIconMap.unknown;
   const latencyDisplay = latency !== null ? `${latency} ms` : '–';
   const pnlColor = unrealizedPnl >= 0 ? 'text-emerald-300' : 'text-rose-300';
@@ -121,6 +159,24 @@ function TopBar({
 
         {/* Center: System Status & Symbol Selector */}
         <div className="flex items-center gap-3">
+          {/* Live Prices */}
+          <StatusSection 
+            title="Market" 
+            icon={Activity}
+            color="border-blue-500/30"
+          >
+            <Badge 
+              label="BTC" 
+              value={priceLoading ? '...' : btcPrice ? `$${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '–'}
+              color="text-orange-300"
+            />
+            <Badge 
+              label="ETH" 
+              value={priceLoading ? '...' : ethPrice ? `$${ethPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '–'}
+              color="text-indigo-300"
+            />
+          </StatusSection>
+          
           {/* Symbol Selector (v5.0 Multi-Symbol) */}
           <SymbolSelector onSymbolChange={(symbol) => {
             console.log('Symbol changed to:', symbol);

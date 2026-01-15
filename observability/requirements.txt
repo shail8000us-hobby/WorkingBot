@@ -1,0 +1,14 @@
+# WorkingBot Observability Module Dependencies
+# Install with: pip install -r observability/requirements.txt
+
+# Core metrics library
+prometheus-client>=0.19.0
+
+# Standalone web server (separate from main WebUI)
+flask>=2.3.0
+
+# System metrics collection
+psutil>=5.9.0
+
+# Optional: Enhanced HTTP server
+gunicorn>=21.0.0

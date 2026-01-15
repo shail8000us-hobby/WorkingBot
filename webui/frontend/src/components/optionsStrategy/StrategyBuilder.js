@@ -27,7 +27,8 @@ import {
   AccountTree as StrategyIcon,
   Assessment as AssessmentIcon,
   AutoMode as AutoModeIcon,
-  Verified as ValidationIcon
+  Verified as ValidationIcon,
+  Build as BuildIcon
 } from '@mui/icons-material';
 
 import StrategyTypeSelector from './StrategyTypeSelector';
@@ -38,6 +39,7 @@ import StrategyDetails from './StrategyDetails';
 import AutomationControls from './AutomationControls';
 import StrikeSuggestions from './StrikeSuggestions';
 import StrategyValidationStatus from './StrategyValidationStatus';
+import CustomStrategyBuilder from './CustomStrategyBuilder';
 
 const API_BASE = '/api/options-strategy';
 
@@ -297,11 +299,25 @@ export default function StrategyBuilder({ onNavigateToTab }) {
       <Paper sx={{ mb: 2 }}>
         <Tabs
           value={activeTab}
-          onChange={(e, v) => setActiveTab(v)}
+          onChange={(e, v) => {
+            // If "Build Your Own" (index 1) is clicked, navigate to Options Chain
+            if (v === 1) {
+              if (onNavigateToTab) {
+                onNavigateToTab('options_chain', { buildYourOwnMode: true });
+              }
+              return; // Don't change local tab
+            }
+            setActiveTab(v);
+          }}
           indicatorColor="primary"
           textColor="primary"
         >
           <Tab label="Build Strategy" />
+          <Tab 
+            label="Build Your Own"
+            icon={<BuildIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+          />
           <Tab label={`Active Strategies (${activeStrategies.length})`} />
           <Tab 
             label={
@@ -424,8 +440,25 @@ export default function StrategyBuilder({ onNavigateToTab }) {
         </Grid>
       </TabPanel>
 
-      {/* Active Strategies Tab */}
+      {/* Build Your Own Strategy Tab */}
       <TabPanel value={activeTab} index={1}>
+        <CustomStrategyBuilder 
+          onStrategyCreated={(strategy) => {
+            setCreatedStrategy(strategy);
+            fetchActiveStrategies();
+            fetchSummary();
+            showNotification(`Strategy "${strategy.name}" created!`, 'success');
+          }}
+          onExecutionComplete={(result) => {
+            fetchActiveStrategies();
+            fetchSummary();
+            showNotification(`Executed successfully! ${result.legs_filled || 0} legs placed.`, 'success');
+          }}
+        />
+      </TabPanel>
+
+      {/* Active Strategies Tab */}
+      <TabPanel value={activeTab} index={2}>
         <ActiveStrategies
           strategies={activeStrategies}
           onRefresh={fetchActiveStrategies}
@@ -437,7 +470,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
       </TabPanel>
 
       {/* Automation Tab */}
-      <TabPanel value={activeTab} index={2}>
+      <TabPanel value={activeTab} index={3}>
         <AutomationControls onStatusChange={handleAutomationStatusChange} />
       </TabPanel>
 

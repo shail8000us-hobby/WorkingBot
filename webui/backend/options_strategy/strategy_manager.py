@@ -276,23 +276,33 @@ class StrategyManager:
             # Fallback - use as-is
             expiry_formatted = expiry
         
-        log.info(f"Creating strategy: expiry input={expiry}, formatted={expiry_formatted}")
+        log.info(f"Creating custom strategy: expiry input={expiry}, formatted={expiry_formatted}, legs={len(legs)}")
             
         strategy_legs = []
         for i, leg_data in enumerate(legs, 1):
-            leg = StrategyLeg(
-                leg_id=str(i),
-                option_type=leg_data['option_type'],
-                strike=leg_data['strike'],
-                side=leg_data['side'],
-                quantity=leg_data.get('quantity', 1),
-                expiry=expiry_formatted
-            )
-            # Use provided symbol if available, otherwise generate
-            if leg_data.get('symbol'):
-                leg.symbol = leg_data['symbol']
-            else:
-                leg.generate_symbol(underlying)
+            # Build complete leg dict with all required fields
+            leg_dict = {
+                'leg_id': i,
+                'option_type': leg_data['option_type'],
+                'strike': float(leg_data['strike']),
+                'expiry': expiry_formatted,
+                'side': leg_data['side'],
+                'quantity': leg_data.get('quantity', 1),
+                'symbol': '',
+                'status': 'pending',
+                'order_id': '',
+                'filled_qty': 0,
+                'avg_fill_price': 0.0,
+                'current_price': 0.0,
+                'current_bid': 0.0,
+                'current_ask': 0.0
+            }
+            
+            # Create StrategyLeg from complete dict
+            leg = StrategyLeg(**leg_dict)
+            
+            # Generate symbol
+            leg.generate_symbol(underlying)
             
             log.info(f"  Leg {i}: {leg.symbol} ({leg.side} {leg.option_type} @ {leg.strike})")
             strategy_legs.append(leg)
