@@ -1,16 +1,32 @@
 {
-  "timestamp": 1768453858.475701,
+  "timestamp": 1768588876.18917,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 5565.063384056091,
+  "uptime": 20884.665760993958,
   "state": {
-    "open_tranches": [],
-    "pending_buy": null,
+    "open_tranches": [
+      {
+        "position_id": "6df4710e-94a9-4266-b03f-95b33fcfbcdd",
+        "entry_price": 95000.0,
+        "tp_price": 95500.0,
+        "size": 5,
+        "correlation_id": "fill-2d62407d91c546fda8cff778e268c88c-1768576794993",
+        "timestamp": 1768576795.589272,
+        "entry_order_id": "6df4710e-94a9-4266-b03f-95b33fcfbcdd",
+        "tp_order_id": "1127270541"
+      }
+    ],
+    "pending_buy": {
+      "order_id": 1127600046,
+      "price": 94500.0,
+      "size": 1,
+      "timestamp": 1768586360.398535
+    },
     "pending_sell": null,
-    "last_buy_order_time": 0,
+    "last_buy_order_time": 1768586360.3985379,
     "last_sell_order_time": 0,
-    "total_positions_opened": 0,
-    "total_positions_closed": 0,
+    "total_positions_opened": 2,
+    "total_positions_closed": 1,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
       "total_recoveries": 0,
@@ -23,30 +39,35 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 0,
-      "total_opened": 0,
-      "total_closed": 0,
-      "avg_entry_price": 0,
-      "total_size": 0,
-      "oldest_position_age": 0,
-      "has_pending_buy": false,
+      "open_count": 1,
+      "total_opened": 2,
+      "total_closed": 1,
+      "avg_entry_price": 95000.0,
+      "total_size": 5,
+      "oldest_position_age": 12080.59952378273,
+      "has_pending_buy": true,
       "has_pending_sell": false
     },
     "orders": {
-      "active_orders": 0,
-      "total_placed": 0,
-      "total_cancelled": 0,
+      "active_orders": 4,
+      "total_placed": 7,
+      "total_cancelled": 2,
       "total_failures": 0,
-      "success_rate": 0.0,
-      "active_order_ids": []
+      "success_rate": 1.0,
+      "active_order_ids": [
+        1127270541,
+        1127316946,
+        1127386259,
+        1127600046
+      ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 0,
-      "total_completed": 0,
+      "total_started": 3,
+      "total_completed": 3,
       "total_failed": 0,
       "total_compensated": 0,
-      "success_rate": 0.0,
+      "success_rate": 1.0,
       "compensation_rate": 0.0,
       "active_saga_ids": []
     },
@@ -56,10 +77,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 2747,
+        "processed_count": 14331,
         "error_count": 0,
-        "avg_processing_time_ms": 0.10019961999205407,
-        "max_processing_time_ms": 0.8527919999323785,
+        "avg_processing_time_ms": 0.04898209015664179,
+        "max_processing_time_ms": 0.40087500019581057,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -67,30 +88,30 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 1039,
-        "error_count": 0,
-        "avg_processing_time_ms": 0.03891747001944168,
-        "max_processing_time_ms": 0.30049999986658804,
-        "error_rate": 0.0
+        "processed_count": 4113,
+        "error_count": 2,
+        "avg_processing_time_ms": 0.04802501010999549,
+        "max_processing_time_ms": 0.3524170024320483,
+        "error_rate": 0.0004862630683199611
       }
     },
-    "fills_processed": 0,
-    "sagas_completed": 0,
+    "fills_processed": 3,
+    "sagas_completed": 3,
     "sagas_failed": 0
   },
   "grid_config": {
-    "lower": 85000.0,
-    "upper": 95000.0,
+    "lower": 92000.0,
+    "upper": 100000.0,
     "step": 500.0,
-    "ref": 91500.0,
+    "ref": 95500.0,
     "tp_offset": 500
   },
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 96324.0,
-      "price_age_seconds": 18.47897696495056,
-      "source": "REST_API",
+      "price": 95099.5,
+      "price_age_seconds": 0.2705831527709961,
+      "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
       "is_critical": false,
@@ -99,10 +120,10 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 132,
+        "total_updates": 4100,
         "websocket_updates": 0,
-        "rest_api_updates": 132,
-        "stale_warnings": 318,
+        "rest_api_updates": 2,
+        "stale_warnings": 0,
         "critical_warnings": 0
       }
     },

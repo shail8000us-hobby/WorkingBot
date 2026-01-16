@@ -93,6 +93,8 @@ import OptionsPayoffDiagram from './OptionsPayoffDiagram';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
+import MaxLossIndicator from './MaxLossIndicator';
+import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
 import MLInsightsPanel from './MLInsightsPanel';
 
 // Sortable Row Component
@@ -134,6 +136,9 @@ const OptionsPanel = () => {
   const [positions, setPositions] = useState([]);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
+  // Pending orders state (from Delta Exchange)
+  const [pendingOrders, setPendingOrders] = useState([]);
+  const [pendingOrdersError, setPendingOrdersError] = useState(null);
   // Focus mode: hidden positions (persisted)
   const [hiddenPositions, setHiddenPositions] = useState(() => {
     try {
@@ -172,6 +177,10 @@ const OptionsPanel = () => {
   const [selectedPositionForSLTP, setSelectedPositionForSLTP] = useState(null);
   const [slTpSettings, setSlTpSettings] = useState({}); // Map of symbol -> settings
   
+  // Max Loss Settings state (per-strike and per-expiry)
+  const [maxLossSettings, setMaxLossSettings] = useState({}); // Map of symbol -> settings
+  const [expiryMaxLossSettings, setExpiryMaxLossSettings] = useState({}); // Map of expiry_code -> settings
+  
   // Column visibility state (persisted)
   const [columnMenuAnchor, setColumnMenuAnchor] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -189,6 +198,7 @@ const OptionsPanel = () => {
         bid: true,
         ask: true,
         sltp: true,
+        maxLoss: true,
         pnl: true,
         actions: true,
       };
@@ -196,7 +206,7 @@ const OptionsPanel = () => {
       return {
         symbol: true, strike: true, auto: true, expiry: true, size: true,
         batchQty: true, cashflow: true, entry: true, bid: true, ask: true,
-        sltp: true, pnl: true, actions: true,
+        sltp: true, maxLoss: true, pnl: true, actions: true,
       };
     }
   });
@@ -214,6 +224,7 @@ const OptionsPanel = () => {
     { key: 'bid', label: 'Bid' },
     { key: 'ask', label: 'Ask' },
     { key: 'sltp', label: 'SL/TP' },
+    { key: 'maxLoss', label: 'Max Loss' },
     { key: 'pnl', label: 'PnL' },
     { key: 'actions', label: 'Actions' },
   ];
@@ -228,10 +239,26 @@ const OptionsPanel = () => {
   };
 
   // Skip confirmation per strike (persisted in localStorage)
+  // Format: { "symbol": { enabled: true, size: 20, side: "sell" } }
   const [skipConfirmStrikes, setSkipConfirmStrikes] = useState(() => {
     try {
       const saved = localStorage.getItem('options_skip_confirm_strikes');
-      return saved ? JSON.parse(saved) : {};
+      if (!saved) return {};
+      
+      const parsed = JSON.parse(saved);
+      
+      // Migrate old format (symbol: true) to new format (symbol: { enabled, size, side })
+      const migrated = {};
+      for (const [symbol, value] of Object.entries(parsed)) {
+        if (value === true) {
+          // Old format - migrate with default size 5
+          migrated[symbol] = { enabled: true, size: 5, side: 'sell' };
+        } else if (typeof value === 'object' && value !== null) {
+          // New format - keep as is
+          migrated[symbol] = value;
+        }
+      }
+      return migrated;
     } catch {
       return {};
     }
@@ -475,6 +502,31 @@ const OptionsPanel = () => {
       return dayA - dayB;
     });
   }, [positions]);
+  
+  // Calculate PnL totals per expiry for max loss tracking
+  const expiryPnlMap = useMemo(() => {
+    const pnlMap = {};
+    positions.forEach(pos => {
+      const code = getExpiryCode(pos.product_symbol);
+      if (code) {
+        if (!pnlMap[code]) pnlMap[code] = 0;
+        pnlMap[code] += pos.unrealized_pnl || 0;
+      }
+    });
+    return pnlMap;
+  }, [positions]);
+  
+  // Handle expiry max loss setting update
+  const handleExpiryMaxLossUpdate = useCallback((expiryCode, settings) => {
+    setExpiryMaxLossSettings(prev => {
+      if (settings === null) {
+        const next = { ...prev };
+        delete next[expiryCode];
+        return next;
+      }
+      return { ...prev, [expiryCode]: settings };
+    });
+  }, []);
   
   // Sort positions by custom order or default (days to expiration)
   const sortedPositions = useMemo(() => {
@@ -838,24 +890,81 @@ const OptionsPanel = () => {
     }
   }, []);
 
+  // Load Max Loss settings for all positions (per-strike and per-expiry)
+  const loadMaxLossSettings = useCallback(async () => {
+    try {
+      // Fetch per-strike max loss settings
+      const { data: strikeData } = await api.get('/api/options/max-loss/strike/all');
+      if (strikeData?.success && strikeData.settings) {
+        const settingsMap = {};
+        strikeData.settings.forEach(s => {
+          settingsMap[s.symbol] = s;
+        });
+        setMaxLossSettings(settingsMap);
+      }
+      
+      // Fetch per-expiry max loss settings
+      const { data: expiryData } = await api.get('/api/options/max-loss/expiry/all');
+      if (expiryData?.success && expiryData.settings) {
+        const settingsMap = {};
+        expiryData.settings.forEach(s => {
+          settingsMap[s.expiry_code] = s;
+        });
+        setExpiryMaxLossSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Failed to load max loss settings:', err);
+    }
+  }, []);
+
+  // Handle max loss setting update from child component
+  const handleMaxLossUpdate = useCallback((symbol, settings) => {
+    setMaxLossSettings(prev => {
+      if (settings === null) {
+        const next = { ...prev };
+        delete next[symbol];
+        return next;
+      }
+      return { ...prev, [symbol]: settings };
+    });
+  }, []);
+
+  // Fetch pending orders from Delta Exchange
+  const fetchPendingOrders = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/positions/pending-orders');
+      if (data?.success) {
+        setPendingOrders(data.orders || []);
+        setPendingOrdersError(null);
+      } else {
+        setPendingOrdersError(data?.error || 'Failed to fetch pending orders');
+      }
+    } catch (err) {
+      console.error('Failed to fetch pending orders:', err);
+      setPendingOrdersError(err.message);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchStatus(), fetchPositions(), loadSLTPSettings()]);
+      await Promise.all([fetchStatus(), fetchPositions(), loadSLTPSettings(), loadMaxLossSettings(), fetchPendingOrders()]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStatus, fetchPositions, loadSLTPSettings]);
+  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders]);
 
   // Auto-refresh every pollInterval ms
   useEffect(() => {
     const interval = setInterval(() => {
       fetchPositions();
       fetchStatus();
+      fetchPendingOrders();
+      loadMaxLossSettings(); // Refresh max loss settings too
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchPositions, fetchStatus, pollInterval]);
+  }, [fetchPositions, fetchStatus, fetchPendingOrders, loadMaxLossSettings, pollInterval]);
   
   // Cleanup active batch polling intervals on unmount
   useEffect(() => {
@@ -971,7 +1080,7 @@ const OptionsPanel = () => {
   // Manual refresh
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStatus(), fetchPositions()]);
+    await Promise.all([fetchStatus(), fetchPositions(), fetchPendingOrders()]);
     setRefreshing(false);
   };
 
@@ -1005,12 +1114,17 @@ const OptionsPanel = () => {
   };
 
   // Quick execute order without confirmation (for skipped strikes)
-  const executeQuickOrder = async (position, side = 'sell') => {
+  // Takes size and side directly to avoid stale closure issues
+  const executeQuickOrderWithSettings = async (position, size, side) => {
+    const symbol = position.product_symbol;
+    
+    console.log(`⚡ Quick order for ${symbol}: size=${size}, side=${side}`);
+    
     try {
       const { data } = await api.post('/api/options/add', {
-        symbol: position.product_symbol,
-        size: parseInt(DEFAULT_SIZE),
-        side,
+        symbol: symbol,
+        size: size,
+        side: side,
         order_preference: 'maker_first',
         confirm: true
       });
@@ -1020,7 +1134,7 @@ const OptionsPanel = () => {
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
         setOrderResult({ 
           type: 'success', 
-          message: `⚡ ${side.toUpperCase()} ${DEFAULT_SIZE} ${position.product_symbol} ${fillPrice} (${execType})`
+          message: `⚡ ${side.toUpperCase()} ${size} ${symbol} ${fillPrice} (${execType})`
         });
         fetchPositions();
       } else {
@@ -1032,6 +1146,19 @@ const OptionsPanel = () => {
     setTimeout(() => setOrderResult(null), 5000);
   };
 
+  // Legacy wrapper for backward compatibility
+  const executeQuickOrder = async (position, side = 'sell') => {
+    const symbol = position.product_symbol;
+    // Get per-symbol saved settings (size and side)
+    const savedSettings = skipConfirmStrikes[symbol] || {};
+    const savedSize = savedSettings.size || parseInt(lastUsedSize) || 5;
+    const savedSide = side || savedSettings.side || 'sell';
+    
+    console.log(`⚡ Quick order (legacy) for ${symbol}: size=${savedSize}, side=${savedSide}, settings=`, savedSettings);
+    
+    executeQuickOrderWithSettings(position, savedSize, savedSide);
+  };
+
   // Add to position - check if strike is in skip list
   const handleAdd = (position, forceSide = null) => {
     const symbol = position.product_symbol;
@@ -1040,10 +1167,12 @@ const OptionsPanel = () => {
     const recommendation = calculateSmartScaling(position);
     const suggestedSize = recommendation.size > 0 ? recommendation.size : parseInt(lastUsedSize) || 5;
     
-    // If this strike is in skip list, execute immediately
-    if (skipConfirmStrikes[symbol]) {
-      const side = forceSide || 'sell';
-      executeQuickOrder(position, side);
+    // If this strike is in skip list, execute immediately with saved settings
+    const savedSettings = skipConfirmStrikes[symbol];
+    if (savedSettings?.enabled) {
+      const side = forceSide || savedSettings.side || 'sell';
+      const size = savedSettings.size || 5;
+      executeQuickOrderWithSettings(position, size, side);
       return;
     }
     
@@ -1059,9 +1188,19 @@ const OptionsPanel = () => {
     });
   };
   
-  // Enable skip confirmation for a strike
-  const enableSkipConfirm = (symbol) => {
-    setSkipConfirmStrikes(prev => ({ ...prev, [symbol]: true }));
+  // Enable skip confirmation for a strike with saved size and side
+  const enableSkipConfirm = (symbol, size = null, side = null) => {
+    const savedSize = size || parseInt(lastUsedSize) || 5;
+    const savedSide = side || 'sell';
+    console.log(`💾 Saving quick mode for ${symbol}: size=${savedSize}, side=${savedSide}`);
+    setSkipConfirmStrikes(prev => ({ 
+      ...prev, 
+      [symbol]: { 
+        enabled: true, 
+        size: savedSize, 
+        side: savedSide 
+      } 
+    }));
   };
   
   // Disable skip confirmation for a strike (reset)
@@ -1084,7 +1223,7 @@ const OptionsPanel = () => {
     }
     
     if (skipFuture && position) {
-      enableSkipConfirm(position.product_symbol);
+      enableSkipConfirm(position.product_symbol, parseInt(size), side);
     }
     
     // Save last used size
@@ -1817,6 +1956,16 @@ const OptionsPanel = () => {
             </Box>
           )}
           
+          {/* Per-Expiry Max Loss Settings */}
+          {positions.length > 0 && uniqueExpiries.length > 0 && (
+            <ExpiryMaxLossPanel
+              uniqueExpiries={uniqueExpiries}
+              expiryPnlMap={expiryPnlMap}
+              expiryMaxLossSettings={expiryMaxLossSettings}
+              onSettingsUpdate={handleExpiryMaxLossUpdate}
+            />
+          )}
+          
           {/* Position Scaling Strategy */}
           <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -2055,6 +2204,89 @@ const OptionsPanel = () => {
             </Alert>
           </Collapse>
 
+          {/* Pending Orders Panel */}
+          {pendingOrders.length > 0 && (
+            <Box sx={{ mb: 2, p: 2, borderRadius: 1, border: '1px solid', borderColor: 'warning.main' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <TimerIcon sx={{ color: 'warning.main' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                  ⏳ Pending Orders ({pendingOrders.length})
+                </Typography>
+                <Chip 
+                  label="Live" 
+                  size="small" 
+                  color="error" 
+                  sx={{ animation: 'pulse 1.5s infinite', ml: 'auto' }}
+                />
+              </Box>
+              <TableContainer component={Paper} sx={{ maxHeight: 200, bgcolor: 'background.paper' }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Symbol</TableCell>
+                      <TableCell align="center">Side</TableCell>
+                      <TableCell align="right">Size</TableCell>
+                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="center">Type</TableCell>
+                      <TableCell align="center">Status</TableCell>
+                      <TableCell align="right">Created</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pendingOrders.map((order) => (
+                      <TableRow key={order.id} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 500 }}>
+                            {order.symbol}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip 
+                            label={order.side?.toUpperCase()} 
+                            size="small" 
+                            color={order.side === 'buy' ? 'success' : 'error'}
+                            sx={{ fontWeight: 'bold', minWidth: 50 }}
+                          />
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {order.unfilled_size || order.size}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                            ${parseFloat(order.price || 0).toFixed(2)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip 
+                            label={order.order_type?.replace('_', ' ') || 'limit'} 
+                            size="small" 
+                            variant="outlined"
+                            sx={{ fontSize: '0.7rem' }}
+                          />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip 
+                            label={order.state || 'open'} 
+                            size="small" 
+                            color="warning"
+                            sx={{ fontWeight: 'bold' }}
+                          />
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="caption" color="text.secondary">
+                            {order.created_at ? new Date(order.created_at).toLocaleTimeString() : '-'}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+
           {/* Error Alert */}
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -2207,6 +2439,13 @@ const OptionsPanel = () => {
                       </Tooltip>
                     </TableCell>
                     )}
+                    {visibleColumns.maxLoss && (
+                    <TableCell align="center" sx={{ minWidth: 60 }}>
+                      <Tooltip title="Max Loss per strike - auto square-off when exceeded">
+                        <Box>Max Loss</Box>
+                      </Tooltip>
+                    </TableCell>
+                    )}
                     {visibleColumns.pnl && <TableCell align="right">PnL</TableCell>}
                     {visibleColumns.actions && <TableCell align="center">Actions</TableCell>}
                   </TableRow>
@@ -2227,7 +2466,7 @@ const OptionsPanel = () => {
                         const pnlColor = getPnlColor(pos.unrealized_pnl);
                         const isLong = pos.size > 0;
                         const daysToExp = getDaysToExpiry(pos.product_symbol);
-                        const isQuickMode = skipConfirmStrikes[pos.product_symbol];
+                        const isQuickMode = skipConfirmStrikes[pos.product_symbol]?.enabled;
                         
                         // Use backend-calculated cashflow
                         const cashflow = pos.cashflow || 0;
@@ -2379,14 +2618,14 @@ const OptionsPanel = () => {
                               <Typography variant="body2" fontWeight="medium">
                                 {optionInfo.underlying}
                               </Typography>
-                              {/* Quick mode indicator */}
+                              {/* Quick mode indicator with per-symbol size */}
                               {isQuickMode && (
-                                <Tooltip title="Quick mode: Click + to instantly sell 5 lots. Click to disable.">
+                                <Tooltip title={`Quick mode: Click + to instantly ${skipConfirmStrikes[pos.product_symbol]?.side || 'sell'} ${skipConfirmStrikes[pos.product_symbol]?.size || DEFAULT_SIZE} lots. Click to disable.`}>
                                   <Chip 
-                                    label="⚡" 
+                                    label={`⚡${skipConfirmStrikes[pos.product_symbol]?.size || DEFAULT_SIZE}`} 
                                     size="small" 
                                     onClick={() => disableSkipConfirm(pos.product_symbol)}
-                                    sx={{ cursor: 'pointer', bgcolor: '#fbbf2420', minWidth: 30 }} 
+                                    sx={{ cursor: 'pointer', bgcolor: '#fbbf2420', minWidth: 40 }} 
                                   />
                                 </Tooltip>
                               )}
@@ -2528,6 +2767,18 @@ const OptionsPanel = () => {
                                 setSelectedPositionForSLTP(pos);
                                 setSlTpDialogOpen(true);
                               }}
+                            />
+                          </TableCell>
+                          )}
+                          
+                          {/* Max Loss Indicator */}
+                          {visibleColumns.maxLoss && (
+                          <TableCell align="center" sx={cellSx}>
+                            <MaxLossIndicator
+                              symbol={pos.product_symbol}
+                              currentPnl={pos.unrealized_pnl || 0}
+                              settings={maxLossSettings[pos.product_symbol]}
+                              onUpdate={handleMaxLossUpdate}
                             />
                           </TableCell>
                           )}
@@ -3241,10 +3492,10 @@ const OptionsPanel = () => {
           )}
           
           {/* Skip confirmation hint */}
-          {addDialog.position && !skipConfirmStrikes[addDialog.position.product_symbol] && (
+          {addDialog.position && !skipConfirmStrikes[addDialog.position.product_symbol]?.enabled && (
             <Alert severity="info" sx={{ mt: 2 }} icon={false}>
               <Typography variant="caption">
-                💡 Click "Don't Ask Again" to instantly execute {DEFAULT_SIZE} lots on future clicks for this strike.
+                💡 Click "Don't Ask Again" to instantly execute {addDialog.size || DEFAULT_SIZE} lots on future clicks for this strike.
               </Typography>
             </Alert>
           )}
