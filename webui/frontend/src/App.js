@@ -98,6 +98,7 @@ import TodoListPanel from './components/TodoListPanel';
 import BotBrainAnalyzer from './components/BotBrainAnalyzer';
 import FileEditor from './components/FileEditor';
 import StrategyEditor from './components/StrategyEditor';
+import FloatingPriceWidget from './components/FloatingPriceWidget';
 import ConfigVisualEditor from './components/ConfigVisualEditor';
 import ModeSwitcherPanel from './components/ModeSwitcherPanel';
 import SystemHealthPanel from './components/SystemHealthPanel';
@@ -1506,6 +1507,9 @@ function App() {
       {/* Mobile indicators removed for cleaner mobile UI */}
       {/* <MobileBatteryIndicator /> */}
       {/* <TailscaleMobileOptimizer /> */}
+      
+      {/* Floating Price Widget - Real-time BTC/ETH prices */}
+      <FloatingPriceWidget />
         </div>
       </MobileOptimizationProvider>
     </SymbolProvider>
