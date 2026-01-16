@@ -902,10 +902,129 @@ def get_options_status():
 from webui.backend.options_strategy.sl_tp_manager import get_sl_tp_manager
 from webui.backend.options_strategy.sl_tp_monitor import get_sl_tp_monitor
 
+@options_bp.route('/sl-tp/test-tp-order/<symbol>', methods=['POST'])
+def test_tp_order(symbol):
+    """
+    TEST ENDPOINT: Debug TP order placement for a specific symbol.
+    
+    Request Body:
+        {
+            "take_profit_price": 1.0
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        take_profit_price = data.get('take_profit_price', 1.0)
+        
+        log.info(f"🧪 TEST: Starting TP order test for {symbol} @ ${take_profit_price}")
+        
+        async def test_place_tp():
+            try:
+                client = get_unified_client()
+                log.info(f"✅ Client created: {type(client).__name__}")
+                
+                # Step 1: Fetch positions
+                log.info(f"🔍 Step 1: Fetching positions...")
+                positions_response = await client.get_all_positions_with_options()
+                log.info(f"✅ Positions fetched: {type(positions_response)}")
+                log.info(f"📊 Keys in response: {list(positions_response.keys()) if isinstance(positions_response, dict) else 'NOT A DICT'}")
+                
+                if isinstance(positions_response, dict):
+                    options_list = positions_response.get('options', [])
+                    log.info(f"📊 Found {len(options_list)} options positions")
+                    
+                    # Step 2: Find the specific position
+                    log.info(f"🔍 Step 2: Looking for position {symbol}...")
+                    position = None
+                    for idx, pos in enumerate(options_list):
+                        pos_symbol = pos.get('product_symbol')
+                        log.info(f"  Position {idx}: {pos_symbol} (size: {pos.get('size')})")
+                        if pos_symbol == symbol:
+                            position = pos
+                            log.info(f"✅ Found target position at index {idx}")
+                            break
+                    
+                    if not position:
+                        return {
+                            'success': False,
+                            'error': f'Position {symbol} not found',
+                            'available_symbols': [p.get('product_symbol') for p in options_list[:5]]
+                        }
+                    
+                    # Step 3: Determine order parameters
+                    position_size = position.get('size', 0)
+                    close_side = 'sell' if position_size > 0 else 'buy'
+                    order_size = abs(position_size)
+                    
+                    log.info(f"📊 Step 3: Order params - size={order_size}, side={close_side}")
+                    
+                    # Step 4: Check for existing TP orders
+                    log.info(f"🔍 Step 4: Checking for existing TP orders...")
+                    try:
+                        open_orders = await client.rest_client.get_open_orders_by_symbol(symbol)
+                        log.info(f"📊 Found {len(open_orders)} open orders")
+                        for order in open_orders:
+                            log.info(f"  Order: {order.get('id')} - {order.get('side')} @ {order.get('limit_price')} (reduce_only: {order.get('reduce_only')})")
+                    except Exception as e:
+                        log.warning(f"⚠️ Could not fetch open orders: {e}")
+                    
+                    # Step 5: Place TP order
+                    log.info(f"🎯 Step 5: Placing TP order: {close_side} {order_size} @ ${take_profit_price}")
+                    order_result = await place_options_order(
+                        client=client,
+                        product_symbol=symbol,
+                        size=order_size,
+                        side=close_side,
+                        order_type='limit_order',
+                        limit_price=take_profit_price,
+                        reduce_only=True
+                    )
+                    
+                    log.info(f"✅ TP order placed! Order ID: {order_result.get('id')}")
+                    
+                    return {
+                        'success': True,
+                        'order_id': order_result.get('id'),
+                        'side': close_side,
+                        'size': order_size,
+                        'price': take_profit_price,
+                        'position': position
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': 'Invalid response type from get_all_positions_with_options',
+                        'response_type': str(type(positions_response))
+                    }
+                    
+            except Exception as e:
+                log.error(f"❌ Test failed: {e}", exc_info=True)
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+        
+        result = asyncio.run(test_place_tp())
+        return jsonify(result)
+        
+    except Exception as e:
+        log.error(f"❌ Test endpoint error: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @options_bp.route('/sl-tp/set', methods=['POST'])
 def set_sl_tp():
     """
     Set stop-loss and take-profit for an options position.
+    
+    ⚠️ CRITICAL: When take_profit_price is set, this will IMMEDIATELY place a 
+    reduce-only LIMIT order on the exchange at that price.
+    
+    Any existing TP orders for this symbol will be cancelled first.
     
     Request Body:
         {
@@ -913,7 +1032,7 @@ def set_sl_tp():
             "stop_loss_pct": -20,          // % loss to trigger (negative)
             "stop_loss_price": 30.0,       // Or absolute price
             "take_profit_pct": 50,         // % profit to trigger
-            "take_profit_price": 100.0,    // Or absolute price
+            "take_profit_price": 100.0,    // Or absolute price - PLACES IMMEDIATE ORDER
             "trailing_stop_enabled": false,
             "trailing_stop_pct": 10,       // Trail by this %
             "auto_execute": true,          // Auto-close when triggered
@@ -927,12 +1046,16 @@ def set_sl_tp():
         if not symbol:
             return jsonify({"success": False, "error": "Symbol required"}), 400
         
+        # Get take profit price if specified
+        take_profit_price = data.get('take_profit_price')
+        
+        # Store SL/TP settings in database
         manager = get_sl_tp_manager()
         result = manager.set_sl_tp(
             symbol=symbol,
             stop_loss_price=data.get('stop_loss_price'),
             stop_loss_pct=data.get('stop_loss_pct'),
-            take_profit_price=data.get('take_profit_price'),
+            take_profit_price=take_profit_price,
             take_profit_pct=data.get('take_profit_pct'),
             trailing_stop_enabled=data.get('trailing_stop_enabled', False),
             trailing_stop_pct=data.get('trailing_stop_pct'),
@@ -941,6 +1064,109 @@ def set_sl_tp():
         )
         
         log.info(f"SL/TP set for {symbol}: {result}")
+        
+        # If take_profit_price is set and alert_only is False, place limit order immediately
+        if take_profit_price and not data.get('alert_only', False):
+            try:
+                # Get current position to determine size and side
+                async def place_tp_order():
+                    try:
+                        client = get_unified_client()
+                        
+                        # Get current position
+                        log.info(f"🔍 Fetching positions to place TP order for {symbol}...")
+                        positions_response = await client.get_all_positions_with_options()
+                        
+                        if not positions_response or not isinstance(positions_response, dict):
+                            log.error(f"❌ Invalid positions response: {type(positions_response)}")
+                            raise Exception("Failed to fetch positions: Invalid response format")
+                        
+                        # Find the position (uses 'options' key from the response)
+                        position = None
+                        options_list = positions_response.get('options', [])
+                        log.info(f"📊 Found {len(options_list)} total options positions")
+                        
+                        for pos in options_list:
+                            if pos.get('product_symbol') == symbol:
+                                position = pos
+                                break
+                        
+                        if not position:
+                            log.error(f"❌ Position {symbol} not found in {len(options_list)} positions")
+                            raise Exception(f"Position not found for symbol {symbol}")
+                    
+                    except Exception as fetch_error:
+                        log.error(f"❌ Error in position fetch: {fetch_error}", exc_info=True)
+                        raise
+                    
+                    # Determine order size and side
+                    position_size = position.get('size', 0)
+                    if position_size == 0:
+                        raise Exception("Position size is zero")
+                    
+                    # For closing: if we have positive size (bought), we SELL to close
+                    # If we have negative size (sold), we BUY to close
+                    close_side = 'sell' if position_size > 0 else 'buy'
+                    order_size = abs(position_size)
+                    
+                    # Cancel any existing TP orders for this symbol first
+                    log.info(f"🔍 Checking for existing TP orders for {symbol}...")
+                    try:
+                        open_orders = await client.rest_client.get_open_orders_by_symbol(symbol)
+                        cancelled_orders = []
+                        
+                        for order in open_orders:
+                            # Check if it's a reduce-only order (likely a TP order)
+                            if order.get('reduce_only'):
+                                order_id = order.get('id')
+                                log.info(f"🗑️  Cancelling existing TP order: {order_id}")
+                                try:
+                                    await client.rest_client.cancel_order(order_id)
+                                    cancelled_orders.append(order_id)
+                                except Exception as e:
+                                    log.warning(f"Failed to cancel order {order_id}: {e}")
+                        
+                        if cancelled_orders:
+                            log.info(f"✅ Cancelled {len(cancelled_orders)} existing TP order(s)")
+                    except Exception as e:
+                        log.warning(f"Failed to check/cancel existing orders: {e}")
+                    
+                    log.info(f"🎯 Placing TP limit order: {close_side} {order_size} {symbol} @ ${take_profit_price}")
+                    
+                    # Place reduce-only limit order at take profit price
+                    order_result = await place_options_order(
+                        client=client,
+                        product_symbol=symbol,
+                        size=order_size,
+                        side=close_side,
+                        order_type='limit_order',
+                        limit_price=take_profit_price,
+                        reduce_only=True
+                    )
+                    
+                    order_id = order_result.get('id')
+                    log.info(f"✅ TP order placed successfully: {order_id}")
+                    
+                    return {
+                        'success': True,
+                        'order_id': order_id,
+                        'side': close_side,
+                        'size': order_size,
+                        'price': take_profit_price
+                    }
+                
+                # Execute the async order placement
+                tp_order_result = asyncio.run(place_tp_order())
+                result['tp_order'] = tp_order_result
+                log.info(f"✅ Take profit order placed on exchange: {tp_order_result}")
+                
+            except Exception as e:
+                log.error(f"❌ CRITICAL: Failed to place TP order on exchange: {e}", exc_info=True)
+                result['success'] = False
+                result['tp_order_error'] = str(e)
+                result['error'] = f"Settings saved but TP order FAILED: {str(e)}"
+                return jsonify(result), 500
+        
         return jsonify(result)
     
     except Exception as e:
@@ -967,15 +1193,83 @@ def get_sl_tp(symbol):
 
 @options_bp.route('/sl-tp/remove/<symbol>', methods=['DELETE'])
 def remove_sl_tp(symbol):
-    """Remove SL/TP settings for a symbol"""
+    """
+    Remove SL/TP settings for a symbol.
+    
+    This will also cancel any existing TP orders on the exchange.
+    """
     try:
+        # Cancel any existing TP orders first
+        async def cancel_tp_orders():
+            client = get_unified_client()
+            
+            try:
+                log.info(f"🔍 Checking for TP orders to cancel for {symbol}...")
+                open_orders = await client.rest_client.get_open_orders_by_symbol(symbol)
+                cancelled_orders = []
+                
+                for order in open_orders:
+                    # Check if it's a reduce-only order (likely a TP order)
+                    if order.get('reduce_only'):
+                        order_id = order.get('id')
+                        product_id = order.get('product_id')
+                        order_side = order.get('side', 'unknown')
+                        order_price = order.get('limit_price', 'N/A')
+                        log.info(f"🗑️  Cancelling TP order: {order_id} ({order_side} @ ${order_price})")
+                        try:
+                            # Cancel order requires both order_id and product_id
+                            await client.rest_client.cancel_order(order_id, product_id)
+                            cancelled_orders.append({
+                                'id': order_id,
+                                'side': order_side,
+                                'price': order_price
+                            })
+                            log.info(f"✅ Successfully cancelled TP order {order_id}")
+                        except Exception as e:
+                            log.error(f"❌ Failed to cancel order {order_id}: {e}")
+                
+                if cancelled_orders:
+                    log.info(f"✅ Cancelled {len(cancelled_orders)} TP order(s)")
+                
+                return {
+                    'cancelled_orders': cancelled_orders,
+                    'count': len(cancelled_orders)
+                }
+            except Exception as e:
+                log.warning(f"Failed to cancel TP orders: {e}")
+                return {'error': str(e)}
+        
+        # Execute cancellation
+        cancel_result = asyncio.run(cancel_tp_orders())
+        
+        # Remove from database
         manager = get_sl_tp_manager()
         result = manager.remove_sl_tp(symbol)
+        
+        # Add cancellation info to result
+        if 'cancelled_orders' in cancel_result:
+            result['cancelled_tp_orders'] = cancel_result['cancelled_orders']
+        
         return jsonify(result)
     
     except Exception as e:
         log.error(f"Error removing SL/TP: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/max-loss/strike/all', methods=['GET'])
+def get_all_max_loss():
+    """Get max loss settings for all strikes."""
+    try:
+        # TODO: Implement max loss tracking if needed
+        # For now, return empty to avoid 404 errors
+        return jsonify({
+            'success': True,
+            'max_loss_settings': {}
+        })
+    except Exception as e:
+        log.error(f"Error getting max loss settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @options_bp.route('/sl-tp/all', methods=['GET'])
@@ -1084,44 +1378,62 @@ def execute_close_order(symbol: str, order_preference: str = 'market_only') -> d
         dict with success status and order info
     """
     try:
-        from bot.api.unified_api_client import UnifiedAPIClient
-        config = get_config()
-        client = UnifiedAPIClient(config)
+        client = get_unified_client()
         
-        # Get position
-        response = client.get_all_positions_with_options()
-        positions = response.get('options_positions', [])
-        position = next((p for p in positions if p.get('product_symbol') == symbol), None)
-        
-        if not position:
-            return {'success': False, 'error': f'Position {symbol} not found'}
-        
-        size = abs(position.get('size', 0))
-        close_side = determine_close_side(position.get('size', 0))
-        
-        if size == 0:
-            return {'success': False, 'error': 'Position size is 0'}
-        
-        # Execute close order
-        async def place_close():
-            return await place_smart_order(
+        # Async wrapper to fetch position and execute close
+        async def fetch_and_close():
+            # Get current position (proper async call)
+            positions_response = await client.get_all_positions_with_options()
+            
+            if not positions_response or not isinstance(positions_response, dict):
+                raise Exception("Failed to fetch positions")
+            
+            # Find the position (uses 'options' key from the response)
+            positions = positions_response.get('options', [])
+            position = next((p for p in positions if p.get('product_symbol') == symbol), None)
+            
+            if not position:
+                raise Exception(f'Position {symbol} not found')
+            
+            size = abs(position.get('size', 0))
+            
+            if size == 0:
+                raise Exception('Position size is 0')
+            
+            close_side = determine_close_side(position.get('size', 0))
+            
+            log.info(f"🔄 SL/TP Monitor: Executing close for {symbol} - size={size} side={close_side}")
+            
+            # Execute close order with reduce_only flag for safety
+            result = await place_smart_order(
                 client=client,
                 symbol=symbol,
                 size=float(size),
                 side=close_side,
-                order_preference=order_preference
+                order_preference=order_preference,
+                reduce_only=True  # Safety flag to prevent opening new positions
             )
+            
+            return {
+                'success': True,
+                'order_id': result.get('id'),  # Correct key from place_options_order response
+                'execution_type': result.get('execution_type'),
+                'fill_price': result.get('fill_price') or result.get('average_fill_price'),
+                'size': size,
+                'side': close_side,
+                'symbol': symbol
+            }
         
-        result = asyncio.run(place_close())
-        
-        return {
-            'success': True,
-            'order_id': result.get('order_id'),
-            'execution_type': result.get('execution_type'),
-            'fill_price': result.get('fill_price') or result.get('average_fill_price')
-        }
+        # Execute async operation
+        result = asyncio.run(fetch_and_close())
+        log.info(f"✅ SL/TP close executed successfully: {result}")
+        return result
         
     except Exception as e:
-        log.error(f"Error executing close order: {e}", exc_info=True)
-        return {'success': False, 'error': str(e)}
+        log.error(f"❌ Error executing SL/TP close order for {symbol}: {e}", exc_info=True)
+        return {
+            'success': False,
+            'error': str(e),
+            'symbol': symbol
+        }
 
