@@ -764,6 +764,15 @@ def get_flat_config_compat():
                     yaml_data['grid']['smart_gap_fill'] = sym_grid.get('smart_gap_fill', {})
                     break
         
+        # Ensure grid structure exists even if no symbol was selected/enabled
+        if 'grid' not in yaml_data:
+            yaml_data['grid'] = {
+                'geometry': {},
+                'limits': {},
+                'behavior': {},
+                'smart_gap_fill': {}
+            }
+        
         # Flatten
         flat_config = flatten_config(yaml_data)
         

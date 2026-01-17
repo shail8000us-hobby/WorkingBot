@@ -1009,6 +1009,38 @@ if __name__ == '__main__':
         traceback.print_exc()
         print("⚠️  Continuing without volatility collector...\n")
     
+    # ============================================================================
+    # Initialize and Start SL/TP Monitor (Options Trading)
+    # ============================================================================
+    try:
+        print("\n🎯 Starting SL/TP Monitor...")
+        from webui.backend.options_strategy.sl_tp_monitor import init_sl_tp_monitoring
+        from webui.backend.options_strategy.sl_tp_manager import get_sl_tp_manager
+        from bot.api.unified_api_client import UnifiedAPIClient
+        
+        # Create API client for options monitoring
+        creds = get_api_credentials()
+        api_client = UnifiedAPIClient(
+            api_key=creds['api_key'],
+            api_secret=creds['api_secret'],
+            symbol='BTCUSD',
+            enable_websocket=False
+        )
+        
+        # Get manager and initialize monitor
+        sl_tp_manager = get_sl_tp_manager()
+        monitor = init_sl_tp_monitoring(api_client, sl_tp_manager, auto_start=True)
+        
+        if monitor.is_running():
+            print("✅ SL/TP Monitor started (checking positions every 5s)\n")
+        else:
+            print("⚠️  SL/TP Monitor failed to start\n")
+    except Exception as e:
+        print(f"⚠️  Failed to start SL/TP Monitor: {e}")
+        import traceback
+        traceback.print_exc()
+        print("   Options SL/TP will not auto-trigger (manual mode only)\n")
+    
     # IMPORTANT: Disable reloader to work with instance lock
     # Reloader spawns child process which conflicts with lock
     socketio.run(

@@ -145,16 +145,20 @@ class SLTPMonitor:
     def _get_positions(self) -> List[Dict]:
         """Get current options positions"""
         try:
-            # Use unified API client to get positions
-            response = self.api_client.get_all_positions_with_options()
+            # Use unified API client to get positions - must use asyncio
+            import asyncio
             
-            if response and response.get('success'):
-                return response.get('options_positions', [])
+            # Create async function to fetch positions
+            async def fetch_positions():
+                response = await self.api_client.get_all_positions_with_options()
+                return response.get('options', []) if response else []
             
-            return []
+            # Run async function in event loop
+            positions = asyncio.run(fetch_positions())
+            return positions
             
         except Exception as e:
-            logger.error(f"Error fetching positions: {e}")
+            logger.error(f"Error fetching positions: {e}", exc_info=True)
             return []
     
     def _handle_trigger(self, trigger: Dict, position: Dict):

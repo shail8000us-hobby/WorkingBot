@@ -52,14 +52,14 @@ options_bp = Blueprint('options', __name__, url_prefix='/api/options')
 # Rate limiting state
 # NOTE: These globals work for single-worker Flask. For production with Gunicorn
 # multiple workers, consider using Redis for shared state across workers.
-_last_order_time = 0
-RATE_LIMIT_SECONDS = 2.0
+_last_order_time = {}
+RATE_LIMIT_SECONDS = 1.0  # Reduced from 2.0 to 1.0 for better UX
 
 # Duplicate order prevention
 # NOTE: In multi-worker environments, this dict won't be shared across workers.
 # Use Redis or a shared cache for production deployments with multiple workers.
 _pending_orders = {}  # {request_hash: timestamp}
-DUPLICATE_WINDOW_SECONDS = 5.0  # Block duplicate requests for 5 seconds
+DUPLICATE_WINDOW_SECONDS = 3.0  # Reduced from 5.0 to 3.0  # Block duplicate requests for 5 seconds
 
 # Guardian cache
 _guardian_cache = {'signal': None, 'time': 0}
@@ -75,17 +75,31 @@ VALID_ORDER_TYPES = {ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_M
 
 
 def rate_limit(f):
-    """Decorator to enforce 2-second cooldown between orders"""
+    """Decorator to enforce per-user cooldown between orders"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         global _last_order_time
-        elapsed = time.time() - _last_order_time
+        
+        # Use IP address as user identifier (better than global limit)
+        user_id = request.remote_addr or 'unknown'
+        now = time.time()
+        
+        # Clean old entries
+        _last_order_time = {k: v for k, v in _last_order_time.items() 
+                           if now - v < RATE_LIMIT_SECONDS * 10}
+        
+        last_time = _last_order_time.get(user_id, 0)
+        elapsed = now - last_time
+        
         if elapsed < RATE_LIMIT_SECONDS:
             wait_time = RATE_LIMIT_SECONDS - elapsed
+            log.warning(f"⏱️ Rate limit for {user_id}: wait {wait_time:.1f}s")
             return jsonify({
                 'success': False,
-                'error': f'Rate limited. Wait {wait_time:.1f}s before next order.'
+                'error': f'Please wait {wait_time:.1f}s before next order'
             }), 429
+        
+        _last_order_time[user_id] = now
         return f(*args, **kwargs)
     return decorated_function
 
@@ -126,10 +140,14 @@ def prevent_duplicate(f):
         
         try:
             result = f(*args, **kwargs)
+            # Remove from pending on successful execution
+            _pending_orders.pop(request_hash, None)
             return result
-        finally:
-            # Keep in pending list (will expire after DUPLICATE_WINDOW_SECONDS)
-            pass
+        except Exception as e:
+            # Remove from pending on error too
+            _pending_orders.pop(request_hash, None)
+            log.error(f"❌ Error in {f.__name__}: {e}")
+            raise
     
     return decorated_function
 
@@ -171,6 +189,96 @@ def get_unified_client():
         symbol='BTCUSD',
         enable_websocket=False
     )
+
+
+async def with_timeout(coro, timeout_seconds=30):
+    """Execute coroutine with timeout to prevent hanging requests"""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        raise Exception(f"Operation timed out after {timeout_seconds}s")
+
+
+async def cancel_order_with_verification(client, order_id, max_retries=3):
+    """
+    Cancel order with verification to prevent race conditions.
+    
+    Returns:
+        dict: {'state': 'cancelled'|'filled'|'unknown', 'safe_to_place_market': bool}
+    """
+    for attempt in range(max_retries):
+        try:
+            # Check current state first
+            status = await client.rest_client.get_order(order_id)
+            current_state = status.get('state', '')
+            
+            if current_state == 'filled':
+                log.info(f"✅ Order {order_id} already filled")
+                return {'state': 'filled', 'safe_to_place_market': False}
+            
+            if current_state == 'cancelled':
+                log.info(f"✅ Order {order_id} already cancelled")
+                return {'state': 'cancelled', 'safe_to_place_market': True}
+            
+            # Attempt cancellation
+            await client.rest_client.cancel_order(order_id)
+            await asyncio.sleep(0.3)
+            
+            # Verify cancellation
+            verify_status = await client.rest_client.get_order(order_id)
+            verify_state = verify_status.get('state', '')
+            
+            if verify_state == 'cancelled':
+                log.info(f"✅ Order {order_id} successfully cancelled")
+                return {'state': 'cancelled', 'safe_to_place_market': True}
+            elif verify_state == 'filled':
+                log.info(f"✅ Order {order_id} filled during cancellation")
+                return {'state': 'filled', 'safe_to_place_market': False}
+            
+            # Still open, retry
+            log.warning(f"⚠️ Order {order_id} still {verify_state}, retry {attempt + 1}/{max_retries}")
+            
+        except Exception as e:
+            log.error(f"Cancel attempt {attempt + 1} failed: {e}")
+            if attempt == max_retries - 1:
+                # Last attempt failed - assume unsafe to place market order
+                log.error(f"❌ All cancel attempts failed for {order_id}")
+                return {'state': 'unknown', 'safe_to_place_market': False}
+    
+    # If we get here, cancellation uncertain - DO NOT place market order
+    log.warning(f"⚠️ Cannot confirm cancellation of {order_id}, NOT safe for market order")
+    return {'state': 'unknown', 'safe_to_place_market': False}
+
+
+async def validate_order_size(client, symbol, requested_size, side, is_close=False):
+    """
+    Validate order size against position and exchange limits.
+    
+    Raises:
+        ValueError: If order size is invalid
+    """
+    if requested_size <= 0:
+        raise ValueError(f"Order size must be positive, got {requested_size}")
+    
+    if requested_size > 10000:
+        raise ValueError(f"Order size {requested_size} exceeds maximum (10000)")
+    
+    if is_close:
+        # Verify we have a position to close
+        positions = await client.get_all_positions_with_options()
+        position = next((p for p in positions.get('options', []) 
+                        if p.get('product_symbol') == symbol), None)
+        
+        if not position:
+            raise ValueError(f"Cannot close non-existent position: {symbol}")
+        
+        position_size = abs(float(position.get('size', 0)))
+        if requested_size > position_size:
+            raise ValueError(
+                f"Close size {requested_size} exceeds position size {position_size}"
+            )
+    
+    return True
 
 
 async def place_options_order(client, product_symbol: str, size: int, side: str, 
@@ -331,79 +439,18 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
             # Not filled - cancel and use market order
             log.warning(f"⏱️ Limit order not filled in 2s, cancelling and using market")
             
-            # Flag to track if we should place market order
-            should_place_market = False
+            # Use verified cancellation to prevent race conditions
+            cancel_result = await cancel_order_with_verification(client, order_id)
             
-            try:
-                await client.rest_client.cancel_order(order_id)
-                log.info(f"📤 Cancel request sent for order {order_id}")
-                
-                # Wait briefly then check if cancel succeeded
-                await asyncio.sleep(0.5)
-                
-                # Verify the order was actually cancelled (not filled during cancel)
-                final_status = await client.rest_client.get_order(order_id)
-                final_state = final_status.get('state', '')
-                log.info(f"📊 Final order state after cancel: {final_state}")
-                
-                if final_state == 'filled':
-                    # Order filled during cancellation - don't place market order!
-                    log.info(f"✅ Limit order filled during cancellation at ${mid_price:.2f}")
-                    limit_order['execution_type'] = 'limit_filled_late'
-                    limit_order['fill_price'] = mid_price
-                    return limit_order
-                
-                elif final_state == 'cancelled':
-                    # Successfully cancelled, safe to place market order
-                    log.info(f"✅ Limit order successfully cancelled")
-                    should_place_market = True
-                    
-                else:
-                    # Order still open or in unknown state - try to cancel again
-                    log.warning(f"⚠️ Order state is {final_state}, attempting force cancel")
-                    try:
-                        await client.rest_client.cancel_order(order_id)
-                        await asyncio.sleep(0.5)
-                        
-                        # Check one more time
-                        recheck_status = await client.rest_client.get_order(order_id)
-                        recheck_state = recheck_status.get('state', '')
-                        log.info(f"📊 Recheck order state: {recheck_state}")
-                        
-                        if recheck_state == 'filled':
-                            log.info(f"✅ Limit order filled on recheck")
-                            limit_order['execution_type'] = 'limit_filled_late'
-                            limit_order['fill_price'] = mid_price
-                            return limit_order
-                        elif recheck_state == 'cancelled':
-                            should_place_market = True
-                    except Exception as recheck_err:
-                        log.error(f"❌ Recheck failed: {recheck_err}, NOT placing market order for safety")
-                        limit_order['execution_type'] = 'limit_unknown_state'
-                        return limit_order
-                
-            except Exception as cancel_err:
-                log.warning(f"Cancel failed: {cancel_err}")
-                # Check if it was filled
-                try:
-                    check_status = await client.rest_client.get_order(order_id)
-                    check_state = check_status.get('state', '')
-                    log.info(f"📊 Order state after cancel exception: {check_state}")
-                    
-                    if check_state == 'filled':
-                        log.info(f"✅ Limit order was filled (cancel failed because already filled)")
-                        limit_order['execution_type'] = 'limit_filled_on_cancel'
-                        limit_order['fill_price'] = mid_price
-                        return limit_order
-                    elif check_state == 'cancelled':
-                        should_place_market = True
-                except Exception as check_err:
-                    log.error(f"❌ Cannot verify order state: {check_err}, NOT placing market order for safety")
-                    limit_order['execution_type'] = 'limit_unknown_state'
-                    return limit_order
+            if cancel_result['state'] == 'filled':
+                # Order filled during cancellation - don't place market order!
+                log.info(f"✅ Limit order filled during cancellation at ${mid_price:.2f}")
+                limit_order['execution_type'] = 'limit_filled_late'
+                limit_order['fill_price'] = mid_price
+                return limit_order
             
-            # Only place market order if explicitly flagged as safe
-            if should_place_market:
+            elif cancel_result['safe_to_place_market']:
+                # Safely cancelled, place market order
                 log.info(f"🔄 Placing market order as fallback (confirmed safe)")
                 market_order = await place_options_order(
                     client, symbol, size, side,
@@ -413,9 +460,11 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
                 market_order['execution_type'] = 'market_fallback'
                 market_order['original_limit_price'] = mid_price
                 return market_order
+            
             else:
-                log.warning(f"⚠️ NOT placing market order - could not confirm limit order was cancelled")
-                limit_order['execution_type'] = 'limit_not_confirmed_cancelled'
+                # Could not confirm cancellation - DO NOT place market order for safety
+                log.warning(f"⚠️ Cannot confirm cancellation, NOT placing market order for safety")
+                limit_order['execution_type'] = 'limit_cancel_unconfirmed'
                 return limit_order
             
         except Exception as status_err:
@@ -505,7 +554,7 @@ def get_options_positions():
         })
         
     except Exception as e:
-        log.exception("Failed to fetch options positions")  # Full traceback
+        log.error(f"Failed to fetch options positions: {e}")  # Single line error
         
         # Return cached data if available during errors
         if _positions_cache['data'] is not None:
@@ -607,9 +656,12 @@ def close_options_position():
         
         client = get_unified_client()
         
-        # Get current position
+        # Get current position with timeout
         async def get_position():
-            positions = await client.get_all_positions_with_options()
+            positions = await with_timeout(
+                client.get_all_positions_with_options(),
+                timeout_seconds=15
+            )
             for pos in positions['options']:
                 if pos.get('product_symbol') == symbol:
                     return pos
@@ -627,6 +679,17 @@ def close_options_position():
         close_size = data.get('size', abs(position_size))
         side = determine_close_side(position_size)
         
+        # Validate close size
+        try:
+            async def validate():
+                await validate_order_size(client, symbol, close_size, side, is_close=True)
+            asyncio.run(validate())
+        except ValueError as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid order size: {str(e)}'
+            }), 400
+        
         # If not confirmed, return confirmation request
         if not confirm:
             return jsonify({
@@ -640,15 +703,18 @@ def close_options_position():
                 'message': f'Confirm close {close_size} {symbol}? Set confirm=true to execute.'
             })
         
-        # Execute close order using smart order
+        # Execute close order using smart order with timeout
         async def place_close_order():
-            return await place_smart_order(
-                client=client,
-                symbol=symbol,
-                size=close_size,
-                side=side,
-                order_preference=order_preference,
-                reduce_only=True
+            return await with_timeout(
+                place_smart_order(
+                    client=client,
+                    symbol=symbol,
+                    size=close_size,
+                    side=side,
+                    order_preference=order_preference,
+                    reduce_only=True
+                ),
+                timeout_seconds=30
             )
         
         result = asyncio.run(place_close_order())
@@ -693,7 +759,7 @@ def close_options_position():
         })
         
     except Exception as e:
-        log.exception("Failed to close options position")  # Full traceback
+        log.error(f"Failed to close options position: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -758,9 +824,23 @@ def add_to_options_position():
         
         client = get_unified_client()
         
-        # Get ticker for liquidity check and mid-price display
+        # Validate order size first
+        try:
+            async def validate():
+                await validate_order_size(client, symbol, float(size), side, is_close=False)
+            asyncio.run(validate())
+        except ValueError as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid order size: {str(e)}'
+            }), 400
+        
+        # Get ticker for liquidity check and mid-price display with timeout
         async def check_liquidity():
-            ticker = await client.get_option_ticker(symbol)
+            ticker = await with_timeout(
+                client.get_option_ticker(symbol),
+                timeout_seconds=10
+            )
             return ticker
         
         ticker = asyncio.run(check_liquidity())
@@ -801,14 +881,17 @@ def add_to_options_position():
                 'message': f'Confirm add {size} {symbol} ({side})? Set confirm=true to execute.'
             })
         
-        # Execute add order using smart order
+        # Execute add order using smart order with timeout
         async def place_add_order():
-            return await place_smart_order(
-                client=client,
-                symbol=symbol,
-                size=float(size),
-                side=side,
-                order_preference=order_preference
+            return await with_timeout(
+                place_smart_order(
+                    client=client,
+                    symbol=symbol,
+                    size=float(size),
+                    side=side,
+                    order_preference=order_preference
+                ),
+                timeout_seconds=30
             )
         
         result = asyncio.run(place_add_order())
@@ -864,7 +947,7 @@ def add_to_options_position():
         })
         
     except Exception as e:
-        log.exception("Failed to add to options position")  # Full traceback
+        log.error(f"Failed to add to options position: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -901,6 +984,7 @@ def get_options_status():
 
 from webui.backend.options_strategy.sl_tp_manager import get_sl_tp_manager
 from webui.backend.options_strategy.sl_tp_monitor import get_sl_tp_monitor
+from webui.backend.options_strategy.max_loss_manager import get_max_loss_manager
 
 @options_bp.route('/sl-tp/test-tp-order/<symbol>', methods=['POST'])
 def test_tp_order(symbol):
@@ -1067,6 +1151,7 @@ def set_sl_tp():
         
         # If take_profit_price is set and alert_only is False, place limit order immediately
         if take_profit_price and not data.get('alert_only', False):
+            tp_order_placed = False
             try:
                 # Get current position to determine size and side
                 async def place_tp_order():
@@ -1155,17 +1240,29 @@ def set_sl_tp():
                         'price': take_profit_price
                     }
                 
-                # Execute the async order placement
-                tp_order_result = asyncio.run(place_tp_order())
+                # Execute the async order placement with timeout
+                tp_order_result = asyncio.run(with_timeout(place_tp_order(), timeout_seconds=30))
                 result['tp_order'] = tp_order_result
+                tp_order_placed = True
                 log.info(f"✅ Take profit order placed on exchange: {tp_order_result}")
                 
             except Exception as e:
                 log.error(f"❌ CRITICAL: Failed to place TP order on exchange: {e}", exc_info=True)
-                result['success'] = False
-                result['tp_order_error'] = str(e)
-                result['error'] = f"Settings saved but TP order FAILED: {str(e)}"
-                return jsonify(result), 500
+                
+                # ROLLBACK: Remove settings from database to prevent inconsistency
+                if not tp_order_placed:
+                    log.warning(f"🔄 Rolling back SL/TP settings for {symbol} due to TP order failure")
+                    try:
+                        manager.remove_sl_tp(symbol)
+                        log.info(f"✅ Successfully rolled back SL/TP settings")
+                    except Exception as rollback_err:
+                        log.error(f"❌ Rollback failed: {rollback_err}")
+                
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to place TP order on exchange: {str(e)}',
+                    'rollback': 'SL/TP settings were not saved (rollback performed)'
+                }), 500
         
         return jsonify(result)
     
@@ -1261,14 +1358,59 @@ def remove_sl_tp(symbol):
 def get_all_max_loss():
     """Get max loss settings for all strikes."""
     try:
-        # TODO: Implement max loss tracking if needed
-        # For now, return empty to avoid 404 errors
+        manager = get_max_loss_manager()
+        settings = manager.get_all_strike_max_loss()
         return jsonify({
             'success': True,
-            'max_loss_settings': {}
+            'settings': settings
         })
     except Exception as e:
         log.error(f"Error getting max loss settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/max-loss/strike/set', methods=['POST'])
+def set_strike_max_loss():
+    """Set max loss for a specific strike."""
+    try:
+        data = request.get_json()
+        symbol = data.get('symbol')
+        max_loss = data.get('max_loss')
+        
+        if not symbol:
+            return jsonify({'success': False, 'error': 'Symbol required'}), 400
+        if not max_loss or max_loss <= 0:
+            return jsonify({'success': False, 'error': 'Valid max_loss required (positive number)'}), 400
+        
+        manager = get_max_loss_manager()
+        result = manager.set_strike_max_loss(symbol, float(max_loss))
+        
+        if result.get('success'):
+            log.info(f"✅ Max loss set for {symbol}: ${max_loss}")
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"Error setting strike max loss: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/max-loss/strike/remove/<path:symbol>', methods=['DELETE'])
+def remove_strike_max_loss(symbol):
+    """Remove max loss setting for a specific strike."""
+    try:
+        manager = get_max_loss_manager()
+        result = manager.remove_strike_max_loss(symbol)
+        
+        if result.get('success'):
+            log.info(f"✅ Max loss removed for {symbol}")
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"Error removing strike max loss: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -1276,14 +1418,59 @@ def get_all_max_loss():
 def get_all_max_loss_by_expiry():
     """Get max loss settings for all expiries."""
     try:
-        # TODO: Implement expiry-based max loss tracking if needed
-        # For now, return empty to avoid 404 errors
+        manager = get_max_loss_manager()
+        settings = manager.get_all_expiry_max_loss()
         return jsonify({
             'success': True,
-            'settings': []
+            'settings': settings
         })
     except Exception as e:
         log.error(f"Error getting expiry max loss settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/max-loss/expiry/set', methods=['POST'])
+def set_expiry_max_loss():
+    """Set max loss for a specific expiry."""
+    try:
+        data = request.get_json()
+        expiry_code = data.get('expiry_code')
+        max_loss = data.get('max_loss')
+        
+        if not expiry_code:
+            return jsonify({'success': False, 'error': 'expiry_code required'}), 400
+        if not max_loss or max_loss <= 0:
+            return jsonify({'success': False, 'error': 'Valid max_loss required (positive number)'}), 400
+        
+        manager = get_max_loss_manager()
+        result = manager.set_expiry_max_loss(expiry_code, float(max_loss))
+        
+        if result.get('success'):
+            log.info(f"✅ Expiry max loss set for {expiry_code}: ${max_loss}")
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"Error setting expiry max loss: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/max-loss/expiry/remove/<expiry_code>', methods=['DELETE'])
+def remove_expiry_max_loss(expiry_code):
+    """Remove max loss setting for a specific expiry."""
+    try:
+        manager = get_max_loss_manager()
+        result = manager.remove_expiry_max_loss(expiry_code)
+        
+        if result.get('success'):
+            log.info(f"✅ Expiry max loss removed for {expiry_code}")
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"Error removing expiry max loss: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -1347,8 +1534,16 @@ def start_monitor():
         from webui.backend.options_strategy.sl_tp_monitor import init_sl_tp_monitoring
         from bot.api.unified_api_client import UnifiedAPIClient
         
-        config = get_config()
-        api_client = UnifiedAPIClient(config)
+        # Get credentials properly
+        creds = get_api_credentials()
+        log.info(f"Starting SL/TP monitor with API key: {creds['api_key'][:8]}...")
+        
+        api_client = UnifiedAPIClient(
+            api_key=creds['api_key'],
+            api_secret=creds['api_secret'],
+            symbol='BTCUSD',
+            enable_websocket=False
+        )
         manager = get_sl_tp_manager()
         
         monitor = init_sl_tp_monitoring(api_client, manager, auto_start=True)
@@ -1358,6 +1553,10 @@ def start_monitor():
             "message": "SL/TP monitor started",
             "status": monitor.get_status()
         })
+    
+    except Exception as e:
+        log.error(f"Error starting monitor: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
     
     except Exception as e:
         log.error(f"Error starting monitor: {e}", exc_info=True)
