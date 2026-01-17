@@ -192,6 +192,11 @@ export default function StrategyReviewDialog({
 
       const createResult = await createResponse.json();
       
+      // Check if feature not implemented (501 status)
+      if (createResponse.status === 501 || createResult.status === 501) {
+        throw new Error('⚠️ Strategy builder not yet implemented. This feature is under development. Please use single-leg orders for now.');
+      }
+      
       if (!createResponse.ok || createResult.error) {
         throw new Error(createResult.error || 'Failed to create strategy');
       }

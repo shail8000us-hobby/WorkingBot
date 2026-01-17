@@ -1,0 +1,395 @@
+version: '6.0'
+trading_mode: live
+instances:
+  BTCUSD_LONG:
+    symbol: BTCUSD
+    mode: LONG
+    product_id: 27
+    enabled: true
+    capital:
+      allocated_usd: 7000
+      max_position_value_usd: 5000
+    grid:
+      geometry:
+        lower: 90000
+        upper: 100000
+        step: 500
+        reference: 95000
+      limits:
+        max_open_positions: 50
+        lot_size: 5
+        max_open_orders: 20
+        max_qty_per_order: 2
+      behavior:
+        strict_grid: true
+        rung_snap_mode: below
+        tick_size: 0.5
+        dynamic_tick_size: true
+        seed_initial_count: 0
+      smart_gap_fill:
+        enabled: false
+        order_type: maker
+        max_levels: 3
+    safety:
+      max_account_loss_inr: 10000
+      min_liquidation_distance_pct: 10.0
+      rsi:
+        enabled: true
+        period: 14
+        stop_threshold: 30.0
+        resume_threshold: 40.0
+        hysteresis_seconds: 60
+        timeframe: 1h
+        check_interval: 300
+        long_threshold: 30
+        short_threshold: 70
+  BTCUSD_SHORT:
+    symbol: BTCUSD
+    mode: SHORT
+    product_id: 27
+    enabled: false
+    capital:
+      allocated_usd: 3000
+      max_position_value_usd: 2000
+    grid:
+      geometry:
+        lower: '95000'
+        upper: '105000'
+        step: '500'
+        reference: '100000'
+      limits:
+        max_open_positions: '30'
+        lot_size: '5'
+        max_open_orders: 15
+        max_qty_per_order: '2'
+      behavior:
+        strict_grid: 'true'
+        rung_snap_mode: above
+        tick_size: '0.5'
+        dynamic_tick_size: 'true'
+        seed_initial_count: '0'
+      smart_gap_fill:
+        enabled: 'false'
+        order_type: maker
+        max_levels: '0'
+    safety:
+      max_account_loss_inr: '5000'
+      min_liquidation_distance_pct: '10.0'
+      rsi:
+        enabled: true
+        period: 14
+        stop_threshold: 70.0
+        resume_threshold: 60.0
+        hysteresis_seconds: 60
+        timeframe: 1h
+        check_interval: 300
+  ETHUSD_LONG:
+    symbol: ETHUSD
+    mode: LONG
+    product_id: 3136
+    enabled: true
+    capital:
+      allocated_usd: 3000
+      max_position_value_usd: 2000
+    grid:
+      geometry:
+        lower: 3000
+        upper: 3800
+        step: 100
+        reference: 3300
+      limits:
+        max_open_positions: 10
+        lot_size: 1
+        max_open_orders: 15
+        max_qty_per_order: 3
+      behavior:
+        strict_grid: true
+        tick_size: 0.05
+        rung_snap_mode: below
+        dynamic_tick_size: false
+        seed_initial_count: 0
+      smart_gap_fill:
+        enabled: false
+        order_type: maker
+        max_levels: 0
+    safety:
+      max_account_loss_inr: 5000
+      min_liquidation_distance_pct: 10.0
+      rsi:
+        enabled: true
+        period: 14
+        stop_threshold: 30.0
+        resume_threshold: 40.0
+        hysteresis_seconds: 60
+        timeframe: 1h
+        check_interval: 300
+        long_threshold: 30
+        short_threshold: 70
+capital_allocation:
+  total_capital_usd: 10000
+  allocations:
+    BTCUSD:
+      capital_usd: 7000
+      percentage: 70
+      max_position_value_usd: 5000
+    ETHUSD:
+      capital_usd: 3000
+      percentage: 30
+      max_position_value_usd: 2000
+capital_protection:
+  max_loss_inr: 10000
+  equity_floor:
+    floor_inr: 70000
+    check_interval: 60
+    require_acknowledgment: true
+    enabled: true
+  drawdown_cap:
+    enabled: true
+    max_pct: 30.0
+    window_days: 30
+    hysteresis_pct: 15.0
+    check_interval: 3600
+  two_man_rule:
+    enabled: true
+    timeout_seconds: 600
+    auto_revert: true
+  exposure_growth:
+    enabled: true
+    max_tranches_per_minute: 2
+    max_notional_inr_per_minute: 999999999
+    queue_enabled: true
+  pending_budget:
+    max_notional_inr: 2000000000000
+    buffer_pct: 10.0
+guardian:
+  enabled: true
+  check_interval: 5
+  max_account_loss_inr: '10000'
+  usd_to_inr_rate: '85.0'
+  liquidation_critical: 1.0
+  liquidation_warning: 5.0
+  auto_close_positions: true
+  health_check:
+    enabled: true
+    api_timeout_seconds: 30
+    websocket_timeout_seconds: 60
+    data_stale_threshold_seconds: 120
+  close_order_type: market
+  cancel_orders_on_emergency: true
+  alert_threshold_80: true
+  alert_threshold_90: true
+  daily_summary: true
+  cooldown: 60
+  hysteresis_80_trigger: 80
+  hysteresis_80_reset: 75
+  hysteresis_90_trigger: 90
+  hysteresis_90_reset: 85
+  hysteresis_100_trigger: 100
+  hysteresis_100_reset: 95
+  health_file: .guardian_health
+  pid_file: .guardian.pid
+  emergency_flag: .guardian_emergency_stop
+  log_file: true
+  log_level: INFO
+  auto_margin_topup: false
+  auto_topup_amount_inr: 1000
+  max_loss: 3000
+safety:
+  execute_orders: true
+  i_understand_live: 'YES'
+  live_acknowledgment: 'YES'
+  max_position_size: 1000
+  min_liquidation_distance_pct: 10.0
+  flash_move: {}
+  spread_guard: {}
+  volatility:
+    enabled: true
+    max_iv: 55.0
+    max_rv: 55.0
+    max_spread: 10.0
+    check_interval: 300.0
+    auto_resume: true
+    resume_buffer: 5.0
+    monitor_enabled: true
+    threshold_elevated: 40
+    threshold_high: 60
+    threshold_extreme: 80
+    halt_threshold: 100
+    rv_window: 24
+    update_interval: 60
+    opportunistic_recovery:
+      enabled: true
+      iv_threshold: 35.0
+      rv_threshold: 40.0
+      spread_threshold: 10.0
+      max_orders_volatility: 5
+      max_orders_startup: 5
+      execution_delay_ms: 300
+      min_profit_margin: 500
+      cooldown_seconds: 60
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 3
+    timeout_seconds: 60
+    timeout: 60
+    half_open_calls: 2
+  confirmation_guard:
+    enabled: true
+    poll_interval: 10
+    chaos_threshold: 60
+  rsi:
+    enabled: true
+    period: 14
+    overbought_threshold: 70.0
+    oversold_threshold: 30.0
+    long_threshold: 25
+    short_threshold: 75
+    hysteresis_seconds: 60
+    timeframe: 1h
+    check_interval: 300
+    cache_ttl: 60
+startup:
+  sync_duration: 60
+  strict_start: 'true'
+  forget_exchange_on_start: 'true'
+  enable_smart_recovery: 'true'
+  cancel_all_on_start: 'false'
+  cancel_scope: tagged
+shutdown:
+  shutdown_duration: 60
+  cancel_buy_orders: true
+  keep_tp_orders: true
+order_execution:
+  post_only_mode: auto
+  price_buffer_pct: '0.1'
+  fill_threshold: '0.98'
+  max_retries: '3'
+  retry_delay: '2.0'
+  cooldown_seconds: '30'
+  tag_prefix: GBOT_
+  adopt_untagged: 'false'
+heartbeat:
+  enabled: 'true'
+  timeout: '15'
+  update_interval: '5'
+  monitor_interval: '10'
+  file: .heartbeat
+  action: cancel_buy_orders
+api:
+  demo:
+    public_url: https://cdn-ind.testnet.deltaex.org
+    private_url: https://cdn-ind.testnet.deltaex.org
+    websocket_url: wss://testnet-api.delta.exchange
+    base_url: https://testnet-api.delta.exchange
+    product_id: 27
+    testnet: true
+  live:
+    public_url: https://api.india.delta.exchange
+    private_url: https://api.india.delta.exchange
+    websocket_url: wss://socket.india.delta.exchange
+    base_url: https://api.india.delta.exchange
+    product_id: 139
+    testnet: false
+  credentials:
+    use_env: true
+  reference_level: 109800
+telegram:
+  bot_token: '***REDACTED***'
+  chat_id: '8170794676'
+  live_bot_token: '***REDACTED***'
+  live_chat_id: '8170794676'
+  demo_bot_token: '***REDACTED***'
+  demo_chat_id: '8170794676'
+  enabled: true
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  guardian_log_file: guardian.log
+  guardian_log_level: INFO
+webui:
+  port: 5555
+  allowed_origins: http://localhost:*,http://127.0.0.1:*,http://100.78.183.110:*,http://shailendras-mac-mini.tail289dc3.ts.net:*,http://*.ts.net:*,http://100.*.*.*:*
+  enabled: true
+  auth_enabled: false
+  flask:
+    debug: false
+    host: 127.0.0.1
+    port: 5001
+    env: production
+  errors:
+    collector_enabled: true
+    db_path: data/errors.db
+    rate_limit_window: 60
+    rate_limit_max: 100
+    burst_threshold: 10
+    allow_destructive: false
+    push_websocket: true
+  logs:
+    trading_bot: bot.log
+    guardian_bot: logs/guardian.log
+    health_bot: logs/health.log
+  auth:
+    enabled: false
+    user: admin
+  pm2:
+    enabled: true
+  url:
+    default: http://localhost:5555
+liquidation_protection:
+  auto_margin_topup: 'true'
+  auto_topup_target: '20.0'
+  auto_topup_threshold: '5000'
+  distance_to_liq_warning: '15.0'
+  maintenance_margin_percent: '3.0'
+  margin_critical_threshold: '5.0'
+  margin_danger_threshold: '10.0'
+  margin_warning_threshold: '20.0'
+  max_topups_per_position: '3'
+  min_balance_reserve_percent: '10.0'
+execution_safety:
+  execute_orders: 'true'
+  i_understand_live: 'YES'
+grid:
+  smart_gap_fill:
+    order_type: maker
+    max_levels: '3'
+    enabled: 'false'
+  behavior:
+    dynamic_tick_size: 'true'
+    rung_snap_mode: below
+    seed_initial_count: '0'
+    strict_grid: 'true'
+    tick_size: '0.5'
+  limits:
+    lot_size: '5'
+    max_open_positions: '50'
+    max_qty_per_order: '2'
+  geometry:
+    lower: '85000'
+    reference: '89000'
+    step: '500'
+    upper: '95000'
+risk_limits:
+  emergency_price_buffer: '500'
+bot:
+  mode: LONG
+  heartbeat_seconds: '60'
+  symbol: BTCUSD
+health_check:
+  enabled: 'true'
+  interval: '30'
+performance_logging:
+  enabled: 'true'
+  interval: '60'
+emergency:
+  market_disruption_cooldown: '300'
+  max_disruption_events: '5'
+  max_drift_alerts: '10'
+options:
+  enabled: true
+  polling_interval_seconds: 5
+  rate_limit_seconds: 2
+  max_spread_pct: 10.0
+  guardian_integration: true
+  expiry_warning_hours: 24
+  liquidity_check: true

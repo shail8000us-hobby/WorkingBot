@@ -1272,6 +1272,21 @@ def get_all_max_loss():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@options_bp.route('/max-loss/expiry/all', methods=['GET'])
+def get_all_max_loss_by_expiry():
+    """Get max loss settings for all expiries."""
+    try:
+        # TODO: Implement expiry-based max loss tracking if needed
+        # For now, return empty to avoid 404 errors
+        return jsonify({
+            'success': True,
+            'settings': []
+        })
+    except Exception as e:
+        log.error(f"Error getting expiry max loss settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @options_bp.route('/sl-tp/all', methods=['GET'])
 def get_all_sl_tp():
     """Get all active SL/TP settings"""

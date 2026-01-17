@@ -559,14 +559,44 @@ const PM2Panel = () => {
                       <div key={process.name} className={`mini-process-card ${process.status}`}>
                         <div className="mini-process-info">
                           {getProcessIcon(process.name)}
-                          <span className="mini-process-name">
-                            {process.name.includes('gridbot') ? 'Trading' : 'Guardian'}
-                          </span>
+                          <div className="mini-process-name-container">
+                            <span className="mini-process-name">{process.name}</span>
+                            <span className="mini-process-type">
+                              {process.name.includes('gridbot') ? 'Trading Bot' : 'Monitor'}
+                            </span>
+                          </div>
                           {getStatusIcon(process.status)}
                         </div>
                         <div className="mini-process-stats">
                           <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
                           <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
+                        </div>
+                        {/* Individual Process Controls */}
+                        <div className="mini-process-actions">
+                          <button
+                            onClick={() => handleStart(process.name)}
+                            disabled={process.status === 'online' || actionInProgress === `start-${process.name}`}
+                            className="mini-action-button start"
+                            title={`Start ${process.name}`}
+                          >
+                            <PlayCircle size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleStop(process.name)}
+                            disabled={process.status !== 'online' || actionInProgress === `stop-${process.name}`}
+                            className="mini-action-button stop"
+                            title={`Stop ${process.name}`}
+                          >
+                            <StopCircle size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleRestart(process.name)}
+                            disabled={actionInProgress === `restart-${process.name}`}
+                            className="mini-action-button restart"
+                            title={`Restart ${process.name}`}
+                          >
+                            <RotateCw size={12} />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -598,6 +628,41 @@ const PM2Panel = () => {
                         <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
                         <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
                       </div>
+                      {/* Individual Process Controls */}
+                      {!process.name.includes('guardian') && (
+                        <div className="mini-process-actions">
+                          <button
+                            onClick={() => handleStart(process.name)}
+                            disabled={process.status === 'online' || actionInProgress === `start-${process.name}`}
+                            className="mini-action-button start"
+                            title={`Start ${process.name}`}
+                          >
+                            <PlayCircle size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleStop(process.name)}
+                            disabled={process.status !== 'online' || actionInProgress === `stop-${process.name}`}
+                            className="mini-action-button stop"
+                            title={`Stop ${process.name}`}
+                          >
+                            <StopCircle size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleRestart(process.name)}
+                            disabled={actionInProgress === `restart-${process.name}`}
+                            className="mini-action-button restart"
+                            title={`Restart ${process.name}`}
+                          >
+                            <RotateCw size={12} />
+                          </button>
+                        </div>
+                      )}
+                      {process.name.includes('guardian') && (
+                        <div className="mini-process-info-message">
+                          <Info size={12} />
+                          <span style={{ fontSize: '10px' }}>LaunchAgent</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
