@@ -481,12 +481,6 @@ function App() {
       description: 'AI insights, documentation, market intel'
     },
     {
-      id: 'logs_panel',
-      label: 'Logs Panel',
-      icon: Terminal,
-      description: 'Live log streaming with filtering and export'
-    },
-    {
       id: 'file_editor',
       label: 'File Editor',
       icon: Code,
@@ -894,20 +888,6 @@ function App() {
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
-
-      <CollapsibleCard
-        id="bot-management-dashboard"
-        title="Bot Management Dashboard"
-        subtitle="High-level view of bot orchestration and services"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
-          <EnhancedErrorBoundary componentName="BotManagementDashboard">
-            <BotManagementDashboard />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
     </div>
   );
 
@@ -1237,20 +1217,6 @@ function App() {
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
-
-      <CollapsibleCard
-        id="bot-management-dashboard"
-        title="Bot Management Dashboard"
-        subtitle="High-level view of bot orchestration and services"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
-          <EnhancedErrorBoundary componentName="BotManagementDashboard">
-            <BotManagementDashboard />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
     </div>
   );
 
@@ -1330,17 +1296,29 @@ function App() {
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
-    </div>
-  );
 
-  const renderLogsPanel = () => (
-    <div className="grid gap-6">
+      {/* Bot Management Dashboard */}
       <CollapsibleCard
-        id="live-logs-standalone"
+        id="bot-management-dashboard"
+        title="Bot Management Dashboard"
+        subtitle="High-level view of bot orchestration and services"
+        accent="sky"
+        defaultOpen={!isMobile}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
+          <EnhancedErrorBoundary componentName="BotManagementDashboard">
+            <BotManagementDashboard />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Live Logs Stream */}
+      <CollapsibleCard
+        id="live-logs-botmanagement"
         title="Live Logs Stream"
         subtitle="Real-time bot logs with filtering and export"
         accent="violet"
-        defaultOpen={true}
+        defaultOpen={!isMobile}
       >
         {botIsRunning ? (
           <Suspense fallback={<LoadingFallback message="Streaming logs..." />}>
@@ -1361,7 +1339,6 @@ function App() {
   const sectionContent = {
     actions: renderActions(),
     todos: renderTodos(),
-    logs_panel: renderLogsPanel(),
     file_editor: renderFileEditor(),
     strategy_editor: renderStrategyEditor(),
     config_visual_editor: renderConfigVisualEditor(),

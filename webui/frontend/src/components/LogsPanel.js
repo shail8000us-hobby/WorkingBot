@@ -50,9 +50,13 @@ function LogsPanel() {
   const fetchGuardianLogs = useCallback(async () => {
     try {
       setLoadingGuardian(true);
-      const response = await apiClient.get('/api/logs', { lines: 200, bot_type: 'guardian' });
+      // Use /api/logs/recent endpoint which supports bot_type parameter
+      const response = await apiClient.get('/api/logs/recent', { lines: 200, bot_type: 'guardian' });
       if (response && response.success && response.logs) {
         setGuardianLogs(response.logs);
+      } else {
+        console.warn('[LogsPanel] Guardian logs response:', response);
+        setGuardianLogs([]);
       }
     } catch (error) {
       console.error('Error fetching Guardian logs:', error);

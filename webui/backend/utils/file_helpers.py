@@ -28,13 +28,13 @@ def get_recent_logs(lines: int = 100, log_file: str = "bot/logs/bot.log") -> Lis
     
     # If log_file is not an absolute path, make it relative to project root
     if not log_path.is_absolute():
-        # Get project root (4 levels up from this file)
-        base_dir = Path(__file__).parent.parent.parent
+        # Get project root (webui/backend/utils → webui/backend → webui → WorkingBot)
+        base_dir = Path(__file__).parent.parent.parent.parent
         log_path = base_dir / log_file
     
     if not log_path.exists():
         # Try alternate log paths if primary doesn't exist
-        base_dir = Path(__file__).parent.parent.parent
+        base_dir = Path(__file__).parent.parent.parent.parent
         alternate_paths = [
             base_dir / "logs" / "gridbot.log",
             base_dir / "bot" / "logs" / "gridbot_live.log",
