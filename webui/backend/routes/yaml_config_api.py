@@ -727,8 +727,14 @@ def get_flat_config_compat():
                     yaml_data['bot']['symbol'] = sym_name
                     yaml_data['bot']['mode'] = sym_cfg.get('mode', 'LONG')
                     yaml_data['bot']['product_id'] = sym_cfg.get('product_id', 0)
-                    yaml_data['grid']['geometry'] = sym_cfg.get('grid', {})
-                    yaml_data['grid']['limits'] = sym_cfg.get('limits', {})
+                    # v5.0: grid is nested inside symbol, so create top-level grid for flattening
+                    if 'grid' not in yaml_data:
+                        yaml_data['grid'] = {}
+                    sym_grid = sym_cfg.get('grid', {})
+                    yaml_data['grid']['geometry'] = sym_grid.get('geometry', {})
+                    yaml_data['grid']['limits'] = sym_grid.get('limits', {})
+                    yaml_data['grid']['behavior'] = sym_grid.get('behavior', {})
+                    yaml_data['grid']['smart_gap_fill'] = sym_grid.get('smart_gap_fill', {})
                     break
             
             if not selected_symbol:
@@ -748,8 +754,14 @@ def get_flat_config_compat():
                     yaml_data['bot']['symbol'] = sym_name
                     yaml_data['bot']['mode'] = sym_cfg.get('mode', 'LONG')
                     yaml_data['bot']['product_id'] = sym_cfg.get('product_id', 0)
-                    yaml_data['grid']['geometry'] = sym_cfg.get('grid', {})
-                    yaml_data['grid']['limits'] = sym_cfg.get('limits', {})
+                    # v5.0: grid is nested inside symbol, so create top-level grid for flattening
+                    if 'grid' not in yaml_data:
+                        yaml_data['grid'] = {}
+                    sym_grid = sym_cfg.get('grid', {})
+                    yaml_data['grid']['geometry'] = sym_grid.get('geometry', {})
+                    yaml_data['grid']['limits'] = sym_grid.get('limits', {})
+                    yaml_data['grid']['behavior'] = sym_grid.get('behavior', {})
+                    yaml_data['grid']['smart_gap_fill'] = sym_grid.get('smart_gap_fill', {})
                     break
         
         # Flatten
@@ -1341,37 +1353,55 @@ def get_symbol_config(symbol_name):
         with open(CONFIG_FILE, 'r') as f:
             config = yaml.safe_load(f)
         
-        # V6.0: Check instances instead of symbols
-        instances = config.get('instances', {})
+        # Support both v5.0 (symbols) and v6.0 (instances)
+        config_version = config.get('version', '4.0')
         
-        # Find all instances for this symbol (e.g., BTCUSD_LONG, BTCUSD_SHORT)
-        symbol_instances = {
-            inst_name: inst_config 
-            for inst_name, inst_config in instances.items() 
-            if inst_config.get('symbol') == symbol_name
-        }
-        
-        if not symbol_instances:
-            available = sorted(set(inst.get('symbol') for inst in instances.values() if inst.get('symbol')))
-            return jsonify({
-                'success': False,
-                'error': f"Symbol '{symbol_name}' not found",
-                'available_symbols': available
-            }), 404
-        
-        # Use enabled instance, or first instance if none enabled
-        symbol_config = None
-        instance_name = None
-        for inst_name, inst_config in symbol_instances.items():
-            if inst_config.get('enabled', False):
-                symbol_config = inst_config
-                instance_name = inst_name
-                break
-        
-        if not symbol_config:
-            # No enabled instance, use first one
-            instance_name = list(symbol_instances.keys())[0]
-            symbol_config = symbol_instances[instance_name]
+        if config_version.startswith('6'):
+            # V6.0: Check instances instead of symbols
+            instances = config.get('instances', {})
+            
+            # Find all instances for this symbol (e.g., BTCUSD_LONG, BTCUSD_SHORT)
+            symbol_instances = {
+                inst_name: inst_config 
+                for inst_name, inst_config in instances.items() 
+                if inst_config.get('symbol') == symbol_name
+            }
+            
+            if not symbol_instances:
+                available = sorted(set(inst.get('symbol') for inst in instances.values() if inst.get('symbol')))
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found",
+                    'available_symbols': available
+                }), 404
+            
+            # Use enabled instance, or first instance if none enabled
+            symbol_config = None
+            instance_name = None
+            for inst_name, inst_config in symbol_instances.items():
+                if inst_config.get('enabled', False):
+                    symbol_config = inst_config
+                    instance_name = inst_name
+                    break
+            
+            if not symbol_config:
+                # No enabled instance, use first one
+                instance_name = list(symbol_instances.keys())[0]
+                symbol_config = symbol_instances[instance_name]
+        else:
+            # V5.0: Check symbols section
+            symbols = config.get('symbols', {})
+            
+            if symbol_name not in symbols:
+                available = list(symbols.keys())
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found",
+                    'available_symbols': available
+                }), 404
+            
+            symbol_config = symbols[symbol_name]
+            instance_name = f"{symbol_name}_{symbol_config.get('mode', 'LONG')}"
         
         # Build flattened config for frontend (using legacy field names)
         flat_config = {}
@@ -1466,33 +1496,51 @@ def update_symbol_config(symbol_name):
         with open(CONFIG_FILE, 'r') as f:
             config = yaml.safe_load(f)
         
-        # V6.0: Check instances instead of symbols
-        instances = config.get('instances', {})
+        # Support both v5.0 (symbols) and v6.0 (instances)
+        config_version = config.get('version', '4.0')
         
-        # Find all instances for this symbol
-        symbol_instances = {
-            inst_name: inst_config 
-            for inst_name, inst_config in instances.items() 
-            if inst_config.get('symbol') == symbol_name
-        }
+        if config_version.startswith('6'):
+            # V6.0: Check instances instead of symbols
+            instances = config.get('instances', {})
+            
+            # Find all instances for this symbol
+            symbol_instances = {
+                inst_name: inst_config 
+                for inst_name, inst_config in instances.items() 
+                if inst_config.get('symbol') == symbol_name
+            }
+            
+            if not symbol_instances:
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found"
+                }), 404
+            
+            # Use enabled instance, or first instance if none enabled
+            instance_name = None
+            for inst_name, inst_config in symbol_instances.items():
+                if inst_config.get('enabled', False):
+                    instance_name = inst_name
+                    break
+            
+            if not instance_name:
+                instance_name = list(symbol_instances.keys())[0]
+            
+            symbol_config = config['instances'][instance_name]
+            config_path = ['instances', instance_name]
+        else:
+            # V5.0: Check symbols section
+            symbols = config.get('symbols', {})
+            
+            if symbol_name not in symbols:
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found"
+                }), 404
+            
+            symbol_config = symbols[symbol_name]
+            config_path = ['symbols', symbol_name]
         
-        if not symbol_instances:
-            return jsonify({
-                'success': False,
-                'error': f"Symbol '{symbol_name}' not found"
-            }), 404
-        
-        # Use enabled instance, or first instance if none enabled
-        instance_name = None
-        for inst_name, inst_config in symbol_instances.items():
-            if inst_config.get('enabled', False):
-                instance_name = inst_name
-                break
-        
-        if not instance_name:
-            instance_name = list(symbol_instances.keys())[0]
-        
-        symbol_config = config['instances'][instance_name]
         updated_fields = []
         
         # Map flat keys to nested symbol config paths
@@ -1597,28 +1645,43 @@ def enable_symbol(symbol_name):
         with open(CONFIG_FILE, 'r') as f:
             config = yaml.safe_load(f)
         
-        # V6.0: Check instances instead of symbols
-        instances = config.get('instances', {})
+        # Support both v5.0 (symbols) and v6.0 (instances)
+        config_version = config.get('version', '4.0')
         
-        # Find primary instance for this symbol (first one)
-        instance_name = None
-        for inst_name, inst_config in instances.items():
-            if inst_config.get('symbol') == symbol_name:
-                instance_name = inst_name
-                break
-        
-        if not instance_name:
-            return jsonify({
-                'success': False,
-                'error': f"Symbol '{symbol_name}' not found"
-            }), 404
-        
-        config['instances'][instance_name]['enabled'] = True
+        if config_version.startswith('6'):
+            # V6.0: Check instances instead of symbols
+            instances = config.get('instances', {})
+            
+            # Find primary instance for this symbol (first one)
+            instance_name = None
+            for inst_name, inst_config in instances.items():
+                if inst_config.get('symbol') == symbol_name:
+                    instance_name = inst_name
+                    break
+            
+            if not instance_name:
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found"
+                }), 404
+            
+            config['instances'][instance_name]['enabled'] = True
+        else:
+            # V5.0: Check symbols section
+            symbols = config.get('symbols', {})
+            
+            if symbol_name not in symbols:
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found"
+                }), 404
+            
+            config['symbols'][symbol_name]['enabled'] = True
         
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
         
-        log.info(f"✅ Enabled symbol: {symbol_name} (instance: {instance_name})")
+        log.info(f"✅ Enabled symbol: {symbol_name}")
         
         return jsonify({
             'success': True,
@@ -1646,15 +1709,38 @@ def disable_symbol(symbol_name):
         with open(CONFIG_FILE, 'r') as f:
             config = yaml.safe_load(f)
         
-        # V6.0: Check instances instead of symbols
-        instances = config.get('instances', {})
+        # Support both v5.0 (symbols) and v6.0 (instances)
+        config_version = config.get('version', '4.0')
         
-        # Find primary instance for this symbol (first one)
-        instance_name = None
-        for inst_name, inst_config in instances.items():
-            if inst_config.get('symbol') == symbol_name:
-                instance_name = inst_name
-                break
+        if config_version.startswith('6'):
+            # V6.0: Check instances instead of symbols
+            instances = config.get('instances', {})
+            
+            # Find primary instance for this symbol (first one)
+            instance_name = None
+            for inst_name, inst_config in instances.items():
+                if inst_config.get('symbol') == symbol_name:
+                    instance_name = inst_name
+                    break
+            
+            if not instance_name:
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found"
+                }), 404
+            
+            config['instances'][instance_name]['enabled'] = False
+        else:
+            # V5.0: Check symbols section
+            symbols = config.get('symbols', {})
+            
+            if symbol_name not in symbols:
+                return jsonify({
+                    'success': False,
+                    'error': f"Symbol '{symbol_name}' not found"
+                }), 404
+            
+            config['symbols'][symbol_name]['enabled'] = False
         
         if not instance_name:
             return jsonify({

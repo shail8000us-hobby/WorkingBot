@@ -903,19 +903,23 @@ def _get_grid_mode_impact(old_mode, new_mode):
     })
 
 
-def _load_config(redact=True):
+def _load_config(redact=True, instance=None):
     """
     Load configuration from grid_config.env
     
     Args:
         redact: Whether to redact sensitive keys
+        instance: Optional instance name (ignored for legacy .env config)
         
     Returns:
         Dict of configuration key-value pairs
     """
     config = {}
     
+    # If grid_config.env doesn't exist, return empty config
+    # (system now uses config.yaml as primary source)
     if not CONFIG_FILE.exists():
+        log.warning(f"Legacy config file {CONFIG_FILE} not found - system uses config.yaml")
         return config
     
     with open(CONFIG_FILE, 'r') as f:

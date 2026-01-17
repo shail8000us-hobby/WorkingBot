@@ -501,6 +501,9 @@ class AsyncDeltaClient:
         if client_order_id:
             data["client_order_id"] = client_order_id
         
+        # DEBUG: Log the exact request data
+        log.info(f"🔍 Placing order with data: {data}")
+        
         response = await self._request_with_retry(
             method="POST",
             path="/v2/orders",

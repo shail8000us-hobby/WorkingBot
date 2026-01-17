@@ -129,22 +129,46 @@ module.exports = {
     // GUARDIAN MONITORING SYSTEM
     // ========================================================================
     
+    // Guardian for BTCUSD
     {
-      name: 'guardian-live',
+      name: 'guardian-BTCUSD',
       script: 'bot/guardian/core/guardian_bot.py',
       interpreter: 'python3',
       cwd: '/Users/ssr/Projects/WorkingBot',
-      args: '--instance BTCUSD_LONG',
+      args: '--symbol BTCUSD',
       instances: 1,
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
       env: {
         PYTHONUNBUFFERED: '1',
-        LOG_LEVEL: 'INFO'
+        LOG_LEVEL: 'INFO',
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot'
       },
-      error_file: 'logs/pm2/guardian-live-error.log',
-      out_file: 'logs/pm2/guardian-live-out.log',
+      error_file: 'logs/pm2/guardian-BTCUSD-error.log',
+      out_file: 'logs/pm2/guardian-BTCUSD-out.log',
+      time: true,
+      kill_timeout: 15000
+    },
+
+    // Guardian for ETHUSD
+    {
+      name: 'guardian-ETHUSD',
+      script: 'bot/guardian/core/guardian_bot.py',
+      interpreter: 'python3',
+      cwd: '/Users/ssr/Projects/WorkingBot',
+      args: '--symbol ETHUSD',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        PYTHONUNBUFFERED: '1',
+        LOG_LEVEL: 'INFO',
+        PYTHONPATH: '/Users/ssr/Projects/WorkingBot'
+      },
+      error_file: 'logs/pm2/guardian-ETHUSD-error.log',
+      out_file: 'logs/pm2/guardian-ETHUSD-out.log',
       time: true,
       kill_timeout: 15000
     },

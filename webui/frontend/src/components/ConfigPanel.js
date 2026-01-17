@@ -106,9 +106,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       if (result.success) {
         setSymbolConfig(result.config || {});
         // When in symbol mode, use symbol config values
-        if (configMode === 'instance') {
+        // Only update values if user hasn't made changes (prevents clearing while typing)
+        if (configMode === 'instance' && !hasChanges) {
           setValues(result.config || {});
-          setHasChanges(false);
         }
       }
     } catch (error) {
@@ -116,7 +116,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     } finally {
       setSymbolConfigLoading(false);
     }
-  }, [activeSymbol, configMode]);
+  }, [activeSymbol, configMode, hasChanges]);
 
   // Reload symbol config when activeSymbol changes
   useEffect(() => {
@@ -136,8 +136,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     
     setActiveSymbol(newSymbol);
     setHasChanges(false);
-    // Update GRIDBOT_SYMBOL field to match selected symbol
-    setValues(prev => ({ ...prev, GRIDBOT_SYMBOL: newSymbol }));
+    // Fetch new symbol config will happen via useEffect
   }, [activeSymbol, hasChanges]);
 
   // Handle config mode toggle
