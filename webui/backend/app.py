@@ -282,6 +282,15 @@ except Exception as e:
     print(f"⚠️ Could not register options_strategy blueprint: {e}")
     log.warning(f"Options strategy routes not available: {e}")
 
+# Register Futures Panel blueprint (JAN 17, 2026: Futures positions display - ISOLATED MODULE)
+try:
+    from webui.backend.routes.futures import futures_bp
+    app.register_blueprint(futures_bp)
+    print(f"✅ Registered futures blueprint (futures positions panel)")
+except Exception as e:
+    print(f"⚠️ Could not register futures blueprint: {e}")
+    log.warning(f"Futures routes not available: {e}")
+
 # Register Production Monitoring blueprint (JAN 12, 2026: Enhanced monitoring from OptionBot)
 try:
     from webui.backend.routes.production_monitoring import production_monitoring_bp

@@ -96,6 +96,8 @@ import SLTPIndicator from './SLTPIndicator';
 import MaxLossIndicator from './MaxLossIndicator';
 import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
 import MLInsightsPanel from './MLInsightsPanel';
+// JAN 17, 2026: Futures panel - separate file structure, minimal invasion
+import FuturesPanel from '../futures/FuturesPanel';
 
 // Sortable Row Component
 const SortableRow = ({ pos, children }) => {
@@ -2203,6 +2205,9 @@ const OptionsPanel = () => {
               {orderResult?.message}
             </Alert>
           </Collapse>
+
+          {/* Futures Positions Panel - JAN 17, 2026 */}
+          <FuturesPanel pollInterval={pollInterval} />
 
           {/* Pending Orders Panel */}
           {pendingOrders.length > 0 && (
