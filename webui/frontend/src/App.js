@@ -1456,7 +1456,7 @@ function App() {
         onSelect={handleSectionSelect}
       />
 
-      <main className="pt-52 lg:pt-48 pb-[calc(7rem+env(safe-area-inset-bottom))]" style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
+      <main className="pt-60 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]" style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
         <MobileNav
           sections={sections}
           activeSection={activeSection}

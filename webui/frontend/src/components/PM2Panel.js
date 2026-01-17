@@ -492,6 +492,21 @@ const PM2Panel = () => {
 
           {/* Symbol Groups */}
           <div className="pm2-symbol-groups">
+            {Object.keys(groupedProcesses.symbols).length === 0 && groupedProcesses.system.length === 0 ? (
+              <div className="no-processes">
+                <AlertCircle size={48} />
+                <h3>No Processes Running</h3>
+                <p>No PM2 processes are currently active. Use the "Start All Symbols" button above to launch trading bots.</p>
+                <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', fontSize: '13px', color: '#94a3b8', textAlign: 'left' }}>
+                  <strong>Individual Controls:</strong><br/>
+                  • Each instrument will have its own process card<br/>
+                  • Full process names shown (e.g., gridbot-BTCUSD-LONG)<br/>
+                  • Individual Start/Stop/Restart buttons for each process<br/>
+                  • Symbol-level controls to manage all processes for a symbol
+                </div>
+              </div>
+            ) : (
+              <>
             {Object.entries(groupedProcesses.symbols).map(([symbol, processes]) => {
               const onlineCount = processes.filter(p => p.status === 'online').length;
               const isAllOnline = onlineCount === processes.length && processes.length > 0;
@@ -579,7 +594,7 @@ const PM2Panel = () => {
                             className="mini-action-button start"
                             title={`Start ${process.name}`}
                           >
-                            <PlayCircle size={12} />
+                            <PlayCircle size={14} />
                           </button>
                           <button
                             onClick={() => handleStop(process.name)}
@@ -587,7 +602,7 @@ const PM2Panel = () => {
                             className="mini-action-button stop"
                             title={`Stop ${process.name}`}
                           >
-                            <StopCircle size={12} />
+                            <StopCircle size={14} />
                           </button>
                           <button
                             onClick={() => handleRestart(process.name)}
@@ -595,7 +610,7 @@ const PM2Panel = () => {
                             className="mini-action-button restart"
                             title={`Restart ${process.name}`}
                           >
-                            <RotateCw size={12} />
+                            <RotateCw size={14} />
                           </button>
                         </div>
                       </div>
@@ -667,6 +682,8 @@ const PM2Panel = () => {
                   ))}
                 </div>
               </div>
+            )}
+              </>
             )}
           </div>
         </div>
@@ -747,8 +764,12 @@ const PM2Panel = () => {
             <p>
               {activeTab === 'live' && 'No live trading processes are currently running.'}
               {activeTab === 'demo' && 'No demo trading processes are currently running.'}
-              {activeTab === 'all' && 'No PM2 processes found.'}
+              {activeTab === 'all' && 'No PM2 processes found. Start processes using the "Start All Symbols" button or from the terminal.'}
             </p>
+            <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', fontSize: '13px', color: '#94a3b8' }}>
+              <strong>Note:</strong> When processes are running, each process will have individual Start/Stop/Restart buttons.
+              Process names will show the full instrument (e.g., gridbot-BTCUSD-LONG).
+            </div>
           </div>
         ) : (
           filteredProcesses.map((process) => (

@@ -1025,9 +1025,9 @@
   background: rgba(30, 41, 59, 0.6);
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.1);
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   transition: all 0.2s ease;
+  flex-wrap: nowrap;
 }
 
 .mini-process-card:hover {
@@ -1052,14 +1052,14 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
-  min-width: 200px;
+  flex: 0 0 auto;
 }
 
 .mini-process-info svg {
   width: 16px;
   height: 16px;
   color: #94a3b8;
+  flex-shrink: 0;
 }
 
 .mini-process-name-container {
@@ -1073,6 +1073,7 @@
   font-weight: 600;
   color: #e2e8f0;
   font-family: 'Roboto Mono', monospace;
+  white-space: nowrap;
 }
 
 .mini-process-type {
@@ -1086,67 +1087,73 @@
   gap: 12px;
   font-size: 11px;
   color: #64748b;
-  min-width: 120px;
+  flex: 0 0 auto;
 }
 
 .mini-process-actions {
   display: flex;
   gap: 6px;
+  flex: 0 0 auto;
   margin-left: auto;
 }
 
 .mini-action-button {
-  padding: 6px 8px;
-  background: rgba(30, 41, 59, 0.8);
+  padding: 8px 10px;
+  background: rgba(30, 41, 59, 0.9);
   color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  min-width: 32px;
+  height: 32px;
 }
 
 .mini-action-button:hover:not(:disabled) {
   background: rgba(51, 65, 85, 0.9);
-  border-color: rgba(148, 163, 184, 0.4);
+  border-color: rgba(148, 163, 184, 0.5);
   transform: translateY(-1px);
 }
 
 .mini-action-button:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
 .mini-action-button.start {
   color: #10b981;
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
 .mini-action-button.start:hover:not(:disabled) {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.15);
   border-color: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 }
 
 .mini-action-button.stop {
   color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .mini-action-button.stop:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.15);
   border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
 }
 
 .mini-action-button.restart {
   color: #f59e0b;
-  border-color: rgba(245, 158, 11, 0.3);
+  border-color: rgba(245, 158, 11, 0.4);
 }
 
 .mini-action-button.restart:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.15);
   border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
 }
 
 .mini-process-info-message {
@@ -1157,6 +1164,7 @@
   color: #64748b;
   font-style: italic;
   margin-left: auto;
+  flex: 0 0 auto;
 }
 
 /* Responsive Design */
