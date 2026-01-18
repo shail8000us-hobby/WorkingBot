@@ -1,0 +1,208 @@
+/**
+ * Glassmorphism Design System
+ * Modern frosted glass effects for cards and panels
+ * 
+ * Created: January 18, 2026
+ * Safe: Pure CSS, no functional changes
+ */
+
+/* ============================================================================
+   GLASS CARD VARIANTS
+   ============================================================================ */
+
+.glass-card {
+  background: rgba(51, 65, 85, 0.4);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 16px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 48px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+/* Elevated glass card (more prominent) */
+.glass-card-elevated {
+  background: rgba(51, 65, 85, 0.6);
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 16px;
+  box-shadow: 
+    0 12px 48px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Subtle glass card (less prominent) */
+.glass-card-subtle {
+  background: rgba(51, 65, 85, 0.25);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  border-radius: 12px;
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* ============================================================================
+   ANIMATED BORDER GLOW
+   ============================================================================ */
+
+.glass-card-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-card-glow::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.3) 0%,
+    rgba(168, 85, 247, 0.3) 50%,
+    rgba(236, 72, 153, 0.3) 100%
+  );
+  border-radius: 16px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: -1;
+}
+
+.glass-card-glow:hover::before {
+  opacity: 1;
+}
+
+/* ============================================================================
+   STATUS INDICATORS
+   ============================================================================ */
+
+.glass-card-success {
+  border-color: rgba(34, 197, 94, 0.3);
+  box-shadow: 
+    0 8px 32px rgba(34, 197, 94, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-card-warning {
+  border-color: rgba(251, 146, 60, 0.3);
+  box-shadow: 
+    0 8px 32px rgba(251, 146, 60, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-card-danger {
+  border-color: rgba(239, 68, 68, 0.3);
+  box-shadow: 
+    0 8px 32px rgba(239, 68, 68, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================================================
+   GLASS BUTTON
+   ============================================================================ */
+
+.glass-button {
+  background: rgba(99, 102, 241, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.glass-button:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.glass-button:active {
+  transform: translateY(0);
+}
+
+/* ============================================================================
+   GLASS BADGE
+   ============================================================================ */
+
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(51, 65, 85, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 4px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.glass-badge-success {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: rgb(134, 239, 172);
+}
+
+.glass-badge-warning {
+  background: rgba(251, 146, 60, 0.15);
+  border-color: rgba(251, 146, 60, 0.3);
+  color: rgb(253, 186, 116);
+}
+
+.glass-badge-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: rgb(252, 165, 165);
+}
+
+/* ============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .glass-card {
+    border-radius: 12px;
+  }
+  
+  .glass-card:hover {
+    transform: none; /* Disable hover lift on mobile */
+  }
+}
+
+/* ============================================================================
+   FALLBACK FOR OLDER BROWSERS
+   ============================================================================ */
+
+@supports not (backdrop-filter: blur(16px)) {
+  .glass-card {
+    background: rgba(51, 65, 85, 0.95); /* More opaque fallback */
+  }
+  
+  .glass-card-elevated {
+    background: rgba(51, 65, 85, 0.98);
+  }
+  
+  .glass-card-subtle {
+    background: rgba(51, 65, 85, 0.9);
+  }
+}

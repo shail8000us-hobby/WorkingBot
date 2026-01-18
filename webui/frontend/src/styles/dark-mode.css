@@ -1,0 +1,157 @@
+/**
+ * Enhanced Dark Mode
+ * Refined dark color palette with better contrast
+ * 
+ * Created: January 18, 2026
+ * Safe: Pure CSS, no functional changes
+ */
+
+:root {
+  /* Background colors */
+  --bg-primary: rgb(15, 23, 42);        /* slate-900 */
+  --bg-secondary: rgb(30, 41, 59);      /* slate-800 */
+  --bg-tertiary: rgb(51, 65, 85);       /* slate-700 */
+  --bg-elevated: rgb(71, 85, 105);      /* slate-600 */
+  
+  /* Surface colors (with transparency) */
+  --surface-glass: rgba(51, 65, 85, 0.4);
+  --surface-glass-elevated: rgba(71, 85, 105, 0.6);
+  
+  /* Text colors */
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-tertiary: rgba(255, 255, 255, 0.5);
+  --text-muted: rgba(255, 255, 255, 0.35);
+  
+  /* Border colors */
+  --border-subtle: rgba(148, 163, 184, 0.1);
+  --border-default: rgba(148, 163, 184, 0.2);
+  --border-strong: rgba(148, 163, 184, 0.3);
+  
+  /* Status colors */
+  --color-success: rgb(34, 197, 94);
+  --color-success-bg: rgba(34, 197, 94, 0.1);
+  --color-warning: rgb(251, 146, 60);
+  --color-warning-bg: rgba(251, 146, 60, 0.1);
+  --color-danger: rgb(239, 68, 68);
+  --color-danger-bg: rgba(239, 68, 68, 0.1);
+  --color-info: rgb(59, 130, 246);
+  --color-info-bg: rgba(59, 130, 246, 0.1);
+  
+  /* Shadow system */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.5);
+  
+  /* Glow effects */
+  --glow-primary: 0 0 20px rgba(99, 102, 241, 0.4);
+  --glow-success: 0 0 20px rgba(34, 197, 94, 0.4);
+  --glow-danger: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+
+/* ============================================================================
+   IMPROVED SCROLLBARS
+   ============================================================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  border: 2px solid var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* ============================================================================
+   SELECTION STYLING
+   ============================================================================ */
+
+::selection {
+  background: rgba(99, 102, 241, 0.3);
+  color: white;
+}
+
+::-moz-selection {
+  background: rgba(99, 102, 241, 0.3);
+  color: white;
+}
+
+/* ============================================================================
+   FOCUS VISIBLE
+   ============================================================================ */
+
+*:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================================
+   BACKDROP BLUR SUPPORT
+   ============================================================================ */
+
+@supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
+  .supports-backdrop-blur {
+    background-color: var(--surface-glass) !important;
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+  }
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.text-glow {
+  text-shadow: 0 0 10px currentColor;
+}
+
+.border-glow {
+  box-shadow: 0 0 10px currentColor;
+}
+
+.bg-gradient-primary {
+  background: linear-gradient(135deg, rgb(99, 102, 241) 0%, rgb(168, 85, 247) 100%);
+}
+
+.bg-gradient-success {
+  background: linear-gradient(135deg, rgb(34, 197, 94) 0%, rgb(16, 185, 129) 100%);
+}
+
+.bg-gradient-danger {
+  background: linear-gradient(135deg, rgb(239, 68, 68) 0%, rgb(220, 38, 38) 100%);
+}
+
+/* ============================================================================
+   IMPROVED CONTRAST FOR READABILITY
+   ============================================================================ */
+
+.high-contrast {
+  --text-primary: rgb(255, 255, 255);
+  --text-secondary: rgba(255, 255, 255, 0.85);
+  --border-default: rgba(148, 163, 184, 0.3);
+}
+
+/* ============================================================================
+   REDUCED TRANSPARENCY MODE
+   ============================================================================ */
+
+.no-transparency .glass-card,
+.no-transparency .glass-card-elevated,
+.no-transparency .glass-card-subtle {
+  background: var(--bg-secondary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

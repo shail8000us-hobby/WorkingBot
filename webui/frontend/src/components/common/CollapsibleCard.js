@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import clsx from 'clsx';
 import React from 'react';
+import '../../styles/glassmorphism.css';
 
 const CollapsibleCard = React.memo(function CollapsibleCard({
   title,
@@ -32,7 +33,7 @@ const CollapsibleCard = React.memo(function CollapsibleCard({
       id={id}
       layout
       className={clsx(
-        'relative overflow-hidden rounded-2xl border border-slate-800/60 bg-slate-900/60 shadow-lg ring-1 ring-inset ring-white/5 backdrop-blur',
+        'glass-card relative overflow-visible',
         accent ? accentClasses[accent] : null
       )}
     >

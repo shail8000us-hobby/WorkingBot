@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import modern UI/UX styles */
+@import './styles/animations.css';
+@import './styles/typography.css';
+@import './styles/glassmorphism.css';
+@import './styles/micro-interactions.css';
+@import './styles/dark-mode.css';
+@import './styles/accessibility.css';
+
 :root {
   color-scheme: dark;
 }

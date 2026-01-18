@@ -48,6 +48,11 @@ import { perfMonitor } from './utils/performanceMonitor';
 import { useThemeMode } from './hooks/useThemeMode';
 import { useSystemStatus } from './context/SystemStatusContext';
 import { useBotControl } from './hooks/useBotControl';
+
+// Phase 2: UI/UX Modernization - Import new styles
+import './styles/animations.css';
+import './styles/typography.css';
+import './styles/micro-interactions.css';
 import { useSocketConnection } from './hooks/useSocketConnection';
 import { useConfigManager } from './hooks/useConfigManager';
 import { useTradingData } from './hooks/useTradingData';
