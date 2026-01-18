@@ -3,7 +3,7 @@
  * Automatically saves form state and drafts
  */
 
-import { storage } from './storage';
+import { storage } from './storage.ts';
 import { debounce } from './rateLimiting';
 
 class AutoSaveManager {

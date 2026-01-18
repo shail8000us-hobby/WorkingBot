@@ -4,7 +4,7 @@
  */
 
 import { createTheme } from '@mui/material';
-import { storage } from './storage';
+import { storage } from './storage.ts';
 
 /**
  * Dark theme configuration

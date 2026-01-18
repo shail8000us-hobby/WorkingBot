@@ -43,7 +43,7 @@ import EmergencyKillButton from './components/EmergencyKillButton';
 import TradingModeSwitch from './components/TradingModeSwitch';
 import HealthCheckDashboard from './components/HealthCheckDashboard';
 import EnhancedErrorBoundary from './components/EnhancedErrorBoundary';
-import { userPreferences } from './utils/storage';
+import { userPreferences } from './utils/storage.ts';
 import { perfMonitor } from './utils/performanceMonitor';
 import { useThemeMode } from './hooks/useThemeMode';
 import { useSystemStatus } from './context/SystemStatusContext';
