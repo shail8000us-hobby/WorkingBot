@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from 'react';
 import RobustConnectionManager from '../utils/RobustConnectionManager';
-import { transformFlatConfig, buildMetaFromStructured } from '../utils/configHelpers';
+import { transformFlatConfig, buildMetaFromStructured } from '../utils/configHelpers.ts';
 
 export function useSocketConnection({
   config,

@@ -10,9 +10,9 @@
 import { useState, useCallback, useMemo } from 'react';
 import robustApiClient from '../utils/robustApiClient';
 import apiClient from '../utils/apiClient';
-import { transformFlatConfig } from '../utils/configHelpers';
+import { transformFlatConfig } from '../utils/configHelpers.ts';
 import { perfMonitor } from '../utils/performanceMonitor';
-import { debounce } from '../utils/configHelpers';
+import { debounce } from '../utils/configHelpers.ts';
 import { useSymbolSafe } from '../context/SymbolContext';
 
 export function useConfigManager({
