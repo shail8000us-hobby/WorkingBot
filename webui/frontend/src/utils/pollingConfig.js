@@ -3,14 +3,16 @@
  * 
  * Centralized configuration for all polling intervals to prevent API request storms.
  * 
- * BEFORE: 35+ components polling independently every 3-10 seconds = 284 requests
- * AFTER: Batched polling with smart intervals = ~20 requests
+ * OPTIMIZED: Jan 18, 2026 - Reduced polling frequency for better performance
+ * 
+ * BEFORE OPTIMIZATION: 5-60 seconds intervals
+ * AFTER OPTIMIZATION: 10-120 seconds intervals (50% reduction)
  */
 
 export const POLLING_CONFIG = {
-  // Critical real-time data (5 seconds)
+  // Critical real-time data (10 seconds - was 5)
   CRITICAL: {
-    interval: 5000,
+    interval: 10000,  // INCREASED: 5s -> 10s
     endpoints: [
       '/api/health',
       '/api/bot/status',
@@ -19,9 +21,9 @@ export const POLLING_CONFIG = {
     ]
   },
 
-  // Important data (10 seconds)
+  // Important data (20 seconds - was 10)
   IMPORTANT: {
-    interval: 10000,
+    interval: 20000,  // INCREASED: 10s -> 20s
     endpoints: [
       '/api/trading/snapshot',
       '/api/risk/safety',
@@ -31,9 +33,9 @@ export const POLLING_CONFIG = {
     ]
   },
 
-  // Normal data (30 seconds)
+  // Normal data (60 seconds - was 30)
   NORMAL: {
-    interval: 30000,
+    interval: 60000,  // INCREASED: 30s -> 60s
     endpoints: [
       '/api/config',
       '/api/robustness/loss-limits',
@@ -46,9 +48,9 @@ export const POLLING_CONFIG = {
     ]
   },
 
-  // Low priority (60 seconds)
+  // Low priority (120 seconds - was 60)
   LOW_PRIORITY: {
-    interval: 60000,
+    interval: 120000,  // INCREASED: 60s -> 120s
     endpoints: [
       '/api/system/health',
       '/api/telegram/status',

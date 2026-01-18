@@ -56,7 +56,7 @@ LOG_DIR.mkdir(exist_ok=True)
 
 # Configure root logger
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # CHANGED: INFO -> WARNING to reduce log spam
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         # Console handler
@@ -162,10 +162,10 @@ socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode='threading',
-    engineio_logger=True,  # Enable for debugging
-    logger=True,  # Enable for debugging
-    ping_timeout=120,
-    ping_interval=60,
+    engineio_logger=False,  # DISABLED: Reduce log spam
+    logger=False,  # DISABLED: Reduce log spam
+    ping_timeout=60,  # REDUCED: 120 -> 60 to cleanup stale connections faster
+    ping_interval=25,  # REDUCED: 60 -> 25 to detect disconnects faster
     allow_upgrades=True,
     # max_http_buffer_size increased for larger payloads
     max_http_buffer_size=1000000
