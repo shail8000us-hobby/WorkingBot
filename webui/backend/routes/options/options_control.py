@@ -718,7 +718,7 @@ def close_options_position():
             )
         
         result = asyncio.run(place_close_order())
-        _last_order_time = time.time()
+        # Note: _last_order_time is managed by the @rate_limit decorator
         
         execution_type = result.get('execution_type', 'unknown')
         fill_price = result.get('fill_price') or result.get('average_fill_price') or 0
@@ -895,7 +895,7 @@ def add_to_options_position():
             )
         
         result = asyncio.run(place_add_order())
-        _last_order_time = time.time()
+        # Note: _last_order_time is managed by the @rate_limit decorator
         
         execution_type = result.get('execution_type', 'unknown')
         fill_price = result.get('fill_price') or result.get('limit_price') or result.get('average_fill_price')

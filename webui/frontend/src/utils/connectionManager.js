@@ -76,8 +76,8 @@ class ConnectionManager {
       ...socketIOConfig
     };
 
-    // Always provide explicit URL to avoid connecting to React dev server port
-    const socketUrl = this.config.socketUrl || 'http://localhost:3001';
+    // Always provide explicit URL from config (defaults to port 5555)
+    const socketUrl = this.config.socketUrl || DEFAULT_SOCKET_URL;
     console.log('🔵 Connecting to:', socketUrl);
     
     this.socket = io(socketUrl, connectionOptions);

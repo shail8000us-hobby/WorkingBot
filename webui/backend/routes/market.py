@@ -5,9 +5,10 @@ This module handles market data API routes for options and trading.
 
 Routes:
 - GET /api/market/spot-price - Get current spot price for an underlying
+- GET /api/market/ws-status - Get WebSocket connection status
 
 Created: January 12, 2026
-Updated: January 13, 2026 - Fixed async/await issues and improved price fetching
+Updated: January 18, 2026 - Added WebSocket support for real-time prices
 Purpose: Provide market data endpoints for options strategy builder
 """
 
@@ -27,6 +28,16 @@ log = logging.getLogger(__name__)
 # Create blueprint
 market_bp = Blueprint('market', __name__)
 
+# Import WebSocket service
+try:
+    from webui.backend.services import get_price_websocket
+except ImportError:
+    try:
+        from services import get_price_websocket
+    except ImportError:
+        log.warning("Could not import WebSocket service")
+        get_price_websocket = None
+
 # Cache for spot prices (10 second TTL)
 _price_cache = {}
 _cache_ttl = 10.0
@@ -37,6 +48,13 @@ def get_spot_price():
     """
     Get current spot price for an underlying asset.
     
+    Priority order:
+    1. WebSocket live price (if connected)
+    2. Cache (10 second TTL)
+    3. Delta Exchange REST API
+    4. Guardian signal file
+    5. Fallback static price
+    
     Query Parameters:
         symbol: BTC or ETH (default: BTC)
     
@@ -45,7 +63,7 @@ def get_spot_price():
     
     Example:
         GET /api/market/spot-price?symbol=BTC
-        Response: {"symbol": "BTC", "price": 94521.50, "source": "delta_api"}
+        Response: {"symbol": "BTC", "price": 94521.50, "source": "websocket"}
     """
     import time
     
@@ -56,7 +74,25 @@ def get_spot_price():
             'error': 'Invalid symbol. Must be BTC or ETH'
         }), 400
     
-    # Check cache first
+    # 1. Try WebSocket first (real-time, lowest latency)
+    if get_price_websocket:
+        try:
+            price_ws = get_price_websocket()
+            if price_ws.is_connected():
+                ws_price = price_ws.get_price(symbol)
+                if ws_price and ws_price > 0:
+                    # Update cache with WebSocket price
+                    cache_key = f"spot_{symbol}"
+                    _price_cache[cache_key] = (time.time(), ws_price)
+                    return jsonify({
+                        'symbol': symbol,
+                        'price': ws_price,
+                        'source': 'websocket'
+                    })
+        except Exception as e:
+            log.warning(f"WebSocket price fetch failed: {e}")
+    
+    # 2. Check cache
     cache_key = f"spot_{symbol}"
     if cache_key in _price_cache:
         cached_time, cached_price = _price_cache[cache_key]
@@ -142,4 +178,41 @@ def get_spot_price():
             'source': 'fallback_error',
             'error': str(e)
         })
+        
+
+@market_bp.route('/api/market/ws-status', methods=['GET'])
+def get_ws_status():
+    """
+    Get WebSocket connection status and current prices
+    
+    Returns:
+        JSON response with WebSocket status and latest prices
+    
+    Example:
+        GET /api/market/ws-status
+        Response: {
+            "connected": true,
+            "running": true,
+            "prices": {"BTC": 95174.50, "ETH": 3312.44},
+            "last_update": {"BTC": 1705612800.123, "ETH": 1705612800.456}
+        }
+    """
+    if not get_price_websocket:
+        return jsonify({
+            'error': 'WebSocket service not available',
+            'connected': False,
+            'running': False
+        }), 503
+    
+    try:
+        price_ws = get_price_websocket()
+        status = price_ws.get_status()
+        return jsonify(status)
+    except Exception as e:
+        log.error(f"Error getting WebSocket status: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e),
+            'connected': False,
+            'running': False
+        }), 500
 

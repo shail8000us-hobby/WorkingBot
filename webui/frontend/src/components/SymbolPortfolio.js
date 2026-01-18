@@ -13,6 +13,7 @@ import {
   Tooltip,
   Divider,
   Skeleton,
+  Snackbar,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -27,6 +28,7 @@ import {
 import { motion } from 'framer-motion';
 import { useInstanceSafe, parseInstanceName as parseInstance } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
+import AddSymbolDialog from './AddSymbolDialog';
 import { getSymbolColor } from '../utils/symbolColors';
 
 /**
@@ -68,6 +70,10 @@ const SymbolPortfolio = () => {
   const [totalPnL, setTotalPnL] = useState(0);
   const [totalCapital, setTotalCapital] = useState(0);
   const [lastRefresh, setLastRefresh] = useState(null);
+  
+  // Add Symbol Dialog state
+  const [addSymbolDialogOpen, setAddSymbolDialogOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   // Fetch portfolio data for all symbols
   const fetchPortfolioData = useCallback(async () => {
@@ -162,6 +168,18 @@ const SymbolPortfolio = () => {
     if (pnl < 0) return '#ef4444';
     return '#94a3b8';
   };
+
+  // Handle new symbol creation
+  const handleAddSymbolSuccess = useCallback((symbolName) => {
+    setSnackbar({
+      open: true,
+      message: `Symbol ${symbolName} added successfully! Enable it to start trading.`,
+      severity: 'success'
+    });
+    // Reload symbols to show new one
+    loadSymbols();
+    fetchPortfolioData();
+  }, [loadSymbols, fetchPortfolioData]);
 
   // Loading skeleton component
   const SkeletonCard = () => (
@@ -468,6 +486,7 @@ const SymbolPortfolio = () => {
         {/* Add New Symbol Card */}
         <Grid item xs={12} sm={6} lg={4}>
           <Card
+            onClick={() => setAddSymbolDialogOpen(true)}
             sx={{
               bgcolor: 'background.paper',
               border: '2px dashed',
@@ -494,15 +513,43 @@ const SymbolPortfolio = () => {
               </Typography>
               <Button
                 variant="outlined"
+                startIcon={<Add />}
                 sx={{ mt: 2 }}
-                disabled
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAddSymbolDialogOpen(true);
+                }}
               >
-                Coming Soon
+                Add Symbol
               </Button>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
+
+      {/* Add Symbol Dialog */}
+      <AddSymbolDialog
+        open={addSymbolDialogOpen}
+        onClose={() => setAddSymbolDialogOpen(false)}
+        onSuccess={handleAddSymbolSuccess}
+        existingSymbols={symbols.map(s => s.name)}
+      />
+
+      {/* Success/Error Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

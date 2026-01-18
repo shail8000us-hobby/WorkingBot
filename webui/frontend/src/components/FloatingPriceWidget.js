@@ -1,78 +1,46 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Typography, IconButton } from '@mui/material';
 import { Minimize2 } from 'lucide-react';
+import useMarketPrices from '../hooks/useMarketPrices';
 
 const FloatingPriceWidget = () => {
   const [position, setPosition] = useState({ x: window.innerWidth - 280, y: window.innerHeight - 200 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [btcPrice, setBtcPrice] = useState(null);
-  const [ethPrice, setEthPrice] = useState(null);
-  const [btcChange, setBtcChange] = useState(0);
-  const [ethChange, setEthChange] = useState(0);
-  const [lastUpdate, setLastUpdate] = useState(null);
   const widgetRef = useRef(null);
   const dragHandleRef = useRef(null);
   const prevPricesRef = useRef({ btc: null, eth: null });
 
-  // Fetch prices
+  // Use WebSocket-based market prices hook
+  const { btcPrice, ethPrice, source, wsConnected } = useMarketPrices();
+  
+  // Track price changes for delta display
+  const [btcChange, setBtcChange] = useState(0);
+  const [ethChange, setEthChange] = useState(0);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  
+  // Update changes when prices update
   useEffect(() => {
-    let isMounted = true;
-    
-    const fetchPrices = async () => {
-      try {
-        const timestamp = new Date().toLocaleTimeString();
-        const cacheBuster = Date.now();
-        console.log(`[FloatingPriceWidget] Fetching prices at ${timestamp}`);
-        
-        // Fetch BTC price with cache buster
-        const btcRes = await fetch(`/api/market/spot-price?symbol=BTC&_=${cacheBuster}`);
-        if (btcRes.ok && isMounted) {
-          const btcData = await btcRes.json();
-          console.log('[FloatingPriceWidget] BTC data:', btcData);
-          if (btcData.price) {
-            const prevBtc = prevPricesRef.current.btc;
-            setBtcPrice(btcData.price);
-            if (prevBtc !== null) {
-              setBtcChange(btcData.price - prevBtc);
-            }
-            prevPricesRef.current.btc = btcData.price;
-          }
-        }
-
-        // Fetch ETH price with cache buster
-        const ethRes = await fetch(`/api/market/spot-price?symbol=ETH&_=${cacheBuster}`);
-        if (ethRes.ok && isMounted) {
-          const ethData = await ethRes.json();
-          console.log('[FloatingPriceWidget] ETH data:', ethData);
-          if (ethData.price) {
-            const prevEth = prevPricesRef.current.eth;
-            setEthPrice(ethData.price);
-            if (prevEth !== null) {
-              setEthChange(ethData.price - prevEth);
-            }
-            prevPricesRef.current.eth = ethData.price;
-          }
-        }
-        
-        if (isMounted) {
-          setLastUpdate(new Date());
-        }
-      } catch (error) {
-        console.error('[FloatingPriceWidget] Error fetching prices:', error);
+    if (btcPrice !== null) {
+      const prevBtc = prevPricesRef.current.btc;
+      if (prevBtc !== null && prevBtc !== btcPrice) {
+        setBtcChange(btcPrice - prevBtc);
       }
-    };
-
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 5000); // Update every 5 seconds to match cache TTL
-    console.log('[FloatingPriceWidget] Price update interval started');
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-      console.log('[FloatingPriceWidget] Cleanup: interval cleared');
-    };
-  }, []);
+      prevPricesRef.current.btc = btcPrice;
+      setLastUpdate(new Date());
+    }
+  }, [btcPrice]);
+  
+  useEffect(() => {
+    if (ethPrice !== null) {
+      const prevEth = prevPricesRef.current.eth;
+      if (prevEth !== null && prevEth !== ethPrice) {
+        setEthChange(ethPrice - prevEth);
+      }
+      prevPricesRef.current.eth = ethPrice;
+      setLastUpdate(new Date());
+    }
+  }, [ethPrice]);
 
   // Dragging logic
   const handleMouseDown = useCallback((e) => {
@@ -173,7 +141,25 @@ const FloatingPriceWidget = () => {
         >
           Live Prices {lastUpdate && `• ${lastUpdate.toLocaleTimeString()}`}
         </Typography>
-        <Minimize2 size={14} color="#64748b" />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box 
+            sx={{ 
+              width: 6, 
+              height: 6, 
+              borderRadius: '50%', 
+              backgroundColor: wsConnected ? '#10b981' : '#64748b',
+              animation: wsConnected ? 'pulse 2s ease-in-out infinite' : 'none',
+              '@keyframes pulse': {
+                '0%, 100%': { opacity: 1 },
+                '50%': { opacity: 0.5 }
+              }
+            }} 
+          />
+          <Typography sx={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>
+            {source}
+          </Typography>
+          <Minimize2 size={14} color="#64748b" />
+        </Box>
       </Box>
 
       {/* Price Display */}

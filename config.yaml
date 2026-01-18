@@ -11,7 +11,7 @@ symbols:
     product_id: 27
     grid:
       geometry:
-        reference: '95000'
+        reference: '95500'
         lower: '90000'
         upper: '100000'
         step: '500'
@@ -33,7 +33,7 @@ symbols:
         enabled: 'false'
     safety:
       max_account_loss_inr: '25000'
-      min_liquidation_distance_pct: 50.0
+      min_liquidation_distance_pct: 50
       rsi:
         enabled: true
         long_threshold: 19.5

@@ -1,9 +1,10 @@
-import { RefreshCw, Activity, Bot, Gauge, SignalHigh, SignalLow, Sun, Moon, Shield, TrendingUp } from 'lucide-react';
+import { RefreshCw, Activity, Bot, Gauge, SignalHigh, SignalLow, Sun, Moon, Shield, TrendingUp, Wifi, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { useState, useEffect } from 'react';
 import SymbolSelector from '../SymbolSelector';
 import { useInstance } from '../../context/InstanceContext';
+import useMarketPrices from '../../hooks/useMarketPrices';
 
 const qualityIconMap = {
   excellent: SignalHigh,
@@ -68,42 +69,8 @@ function TopBar({
     healthBotPid = null
   } = processStatus;
 
-  // Live prices state
-  const [btcPrice, setBtcPrice] = useState(null);
-  const [ethPrice, setEthPrice] = useState(null);
-  const [priceLoading, setPriceLoading] = useState(true);
-
-  // Fetch live prices on mount and every 10 seconds
-  useEffect(() => {
-    const fetchPrices = async () => {
-      try {
-        const [btcRes, ethRes] = await Promise.all([
-          fetch('/api/market/spot-price?symbol=BTC'),
-          fetch('/api/market/spot-price?symbol=ETH')
-        ]);
-        
-        if (btcRes.ok) {
-          const btcData = await btcRes.json();
-          setBtcPrice(btcData.price);
-        }
-        
-        if (ethRes.ok) {
-          const ethData = await ethRes.json();
-          setEthPrice(ethData.price);
-        }
-        
-        setPriceLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch live prices:', error);
-        setPriceLoading(false);
-      }
-    };
-
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 10000); // Update every 10 seconds
-
-    return () => clearInterval(interval);
-  }, []);
+  // Use WebSocket-based market prices hook
+  const { btcPrice, ethPrice, loading: priceLoading, source: priceSource, wsConnected } = useMarketPrices();
 
   const connectionIcon = qualityIconMap[latencyQuality] || qualityIconMap.unknown;
   const latencyDisplay = latency !== null ? `${latency} ms` : '–';
@@ -175,6 +142,15 @@ function TopBar({
               value={priceLoading ? '...' : ethPrice ? `$${ethPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '–'}
               color="text-indigo-300"
             />
+            {/* WebSocket Connection Indicator */}
+            <div className="flex items-center gap-1" title={wsConnected ? 'WebSocket Connected' : 'Using REST API'}>
+              {wsConnected ? (
+                <Wifi className="h-3 w-3 text-emerald-400" />
+              ) : (
+                <WifiOff className="h-3 w-3 text-slate-500" />
+              )}
+              <span className="text-[9px] text-slate-500 uppercase">{priceSource}</span>
+            </div>
           </StatusSection>
           
           {/* Symbol Selector (v5.0 Multi-Symbol) */}

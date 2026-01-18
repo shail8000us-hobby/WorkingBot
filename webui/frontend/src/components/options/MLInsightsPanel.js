@@ -73,6 +73,7 @@ export default function MLInsightsPanel() {
     stats: true,
     patterns: false,
     rules: true,
+    features: false,
   });
   const [tradesDialogOpen, setTradesDialogOpen] = useState(false);
   const [recentTrades, setRecentTrades] = useState([]);
@@ -148,12 +149,14 @@ export default function MLInsightsPanel() {
             <MLIcon color="primary" />
             <Typography variant="h6">ML Trading Insights</Typography>
             {model.is_trained && (
-              <Chip 
-                label="Model Trained" 
-                color="success" 
-                size="small" 
-                icon={<CheckCircle />}
-              />
+              <Tooltip title={`Accuracy: ${((model.metadata?.metrics?.accuracy || 0) * 100).toFixed(1)}%`}>
+                <Chip 
+                  label="Model Trained" 
+                  color="success" 
+                  size="small" 
+                  icon={<CheckCircle />}
+                />
+              </Tooltip>
             )}
           </Box>
           <Box display="flex" gap={1}>
@@ -177,6 +180,120 @@ export default function MLInsightsPanel() {
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
             {error}
           </Alert>
+        )}
+        
+        {/* Model Performance Metrics (when trained) */}
+        {model.is_trained && model.metadata && (
+          <Paper sx={{ p: 2, mb: 2, bgcolor: 'success.dark', opacity: 0.95 }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CheckCircle sx={{ fontSize: 18 }} />
+              Model Performance Metrics
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 0.5 }}>
+              <Grid item xs={6} sm={3}>
+                <Box textAlign="center">
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: 'white' }}>
+                    {((model.metadata.metrics?.accuracy || 0) * 100).toFixed(1)}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                    Accuracy
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <Box textAlign="center">
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: 'white' }}>
+                    {((model.metadata.metrics?.precision || 0) * 100).toFixed(1)}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                    Precision
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <Box textAlign="center">
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: 'white' }}>
+                    {((model.metadata.metrics?.recall || 0) * 100).toFixed(1)}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                    Recall
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <Box textAlign="center">
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: 'white' }}>
+                    {((model.metadata.metrics?.f1_score || 0) * 100).toFixed(1)}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                    F1 Score
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+            {model.metadata.trained_at && (
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', mt: 1, textAlign: 'right' }}>
+                Trained: {new Date(model.metadata.trained_at).toLocaleString()} • 
+                {model.metadata.num_trades} trades used
+              </Typography>
+            )}
+          </Paper>
+        )}
+        
+        {/* Feature Importance Section (when trained) */}
+        {model.is_trained && model.metadata?.feature_importance && (
+          <Box mb={2}>
+            <Box 
+              display="flex" 
+              alignItems="center" 
+              justifyContent="space-between"
+              onClick={() => setExpanded(e => ({ ...e, features: !e.features }))}
+              sx={{ cursor: 'pointer' }}
+            >
+              <Typography variant="subtitle1" fontWeight="bold">
+                <TrendingUp sx={{ fontSize: 18, mr: 1, verticalAlign: 'middle' }} />
+                Feature Importance
+              </Typography>
+              {expanded.features ? <ExpandLess /> : <ExpandMore />}
+            </Box>
+            <Collapse in={expanded.features}>
+              <Paper sx={{ p: 2, mt: 1, bgcolor: 'action.hover' }}>
+                {Object.entries(model.metadata.feature_importance)
+                  .filter(([_, val]) => val > 0)
+                  .sort(([, a], [, b]) => b - a)
+                  .slice(0, 6)
+                  .map(([feature, importance]) => (
+                    <Box key={feature} mb={1}>
+                      <Box display="flex" justifyContent="space-between" mb={0.5}>
+                        <Typography variant="caption" sx={{ textTransform: 'capitalize' }}>
+                          {feature.replace(/_/g, ' ')}
+                        </Typography>
+                        <Typography variant="caption" fontWeight="bold">
+                          {(importance * 100).toFixed(1)}%
+                        </Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={importance * 100}
+                        sx={{ 
+                          height: 6, 
+                          borderRadius: 1,
+                          bgcolor: 'action.selected',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: importance > 0.5 ? 'success.main' : importance > 0.2 ? 'warning.main' : 'info.main'
+                          }
+                        }}
+                      />
+                    </Box>
+                  ))}
+                {Object.values(model.metadata.feature_importance).filter(v => v > 0).length === 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    Feature importance will be calculated after more diverse training data.
+                  </Typography>
+                )}
+              </Paper>
+            </Collapse>
+          </Box>
         )}
         
         {/* Readiness Progress */}

@@ -95,7 +95,7 @@ import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
 import MaxLossIndicator from './MaxLossIndicator';
 import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
-import MLInsightsPanel from './MLInsightsPanel';
+import useMarketPrices from '../../hooks/useMarketPrices';
 // JAN 17, 2026: Futures panel - separate file structure, minimal invasion
 import FuturesPanel from '../futures/FuturesPanel';
 
@@ -599,29 +599,12 @@ const OptionsPanel = () => {
     return sorted;
   }, [positions, hiddenPositions, customOrder, expiryFilter, symbolSort, strikeSort]);
   
-  // Extract index prices from positions (underlying asset prices)
-  const indexPrices = useMemo(() => {
-    const prices = { BTC: 0, ETH: 0 };
-    
-    // Extract spot prices from greeks data
-    positions.forEach(pos => {
-      const parts = pos.product_symbol.split('-');
-      if (parts.length >= 4 && pos.greeks?.spot) {
-        const underlying = parts[1];  // BTC or ETH
-        const spotPrice = parseFloat(pos.greeks.spot);
-        
-        if (spotPrice > 0) {
-          if (underlying === 'BTC') {
-            prices.BTC = spotPrice;  // Update with latest price
-          } else if (underlying === 'ETH') {
-            prices.ETH = spotPrice;  // Update with latest price
-          }
-        }
-      }
-    });
-    
-    return prices;
-  }, [positions]);
+  // Live index prices state (fetched from WebSocket, not from positions)
+  const { btcPrice, ethPrice } = useMarketPrices();
+  const indexPrices = useMemo(() => ({
+    BTC: btcPrice || 0,
+    ETH: ethPrice || 0
+  }), [btcPrice, ethPrice]);
   
   // Calculate aggregated greeks for currently visible positions (respects expiry filter and hidden positions)
   const aggregatedGreeks = useMemo(() => {
@@ -3276,11 +3259,6 @@ const OptionsPanel = () => {
           )}
         </CardContent>
       </Card>
-
-      {/* ML Trading Insights - Show prominently at top */}
-      <Box sx={{ mt: 2, mb: 2 }}>
-        <MLInsightsPanel />
-      </Box>
 
       {/* Payoff Diagram */}
       {positions.length > 0 && (

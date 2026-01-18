@@ -23,7 +23,8 @@ import {
   TrendingUp,
   Code,
   Activity,
-  BarChart3
+  BarChart3,
+  Brain
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -89,6 +90,12 @@ import PositionsPanel from './components/PositionsPanel';
 import { OptionsPanel } from './components/options';
 import { OptionsChainPanel } from './components/optionsChain';
 import { StrategyBuilder } from './components/optionsStrategy';
+import MLInsightsPanel from './components/options/MLInsightsPanel';
+import MLStyleProfile from './components/options/MLStyleProfile';
+import MLOpportunityScanner from './components/options/MLOpportunityScanner';
+import MLDecisionCenter from './components/options/MLDecisionCenter';
+import MLModelMonitor from './components/options/MLModelMonitor';
+import DeltaTradeSync from './components/options/DeltaTradeSync';
 import MarketSignalPanel from './components/MarketSignalPanel';
 import ShutdownPanel from './components/ShutdownPanel';
 import OpportunisticRecoveryPanel from './components/OpportunisticRecoveryPanel';
@@ -449,12 +456,6 @@ function App() {
       icon: Layers3,
       description: 'Multi-leg options strategies - straddles, iron condors, spreads'
     },
-    {
-      id: 'botmanagement',
-      label: 'Bot Management',
-      icon: Terminal,
-      description: 'tmux control, process management, and emergency controls'
-    },
     // Week 3: Guardian Dashboard (feature flag controlled)
     ...(guardianEnabled ? [{
       id: 'guardian',
@@ -462,6 +463,18 @@ function App() {
       icon: ShieldCheck,
       description: 'WebUI robustness monitor - circuit breakers, metrics, health'
     }] : []),
+    {
+      id: 'ml_trading',
+      label: 'ML',
+      icon: Brain,
+      description: 'Machine Learning trading insights, style analysis, and autonomous decision engine'
+    },
+    {
+      id: 'botmanagement',
+      label: 'Bot Management',
+      icon: Terminal,
+      description: 'tmux control, process management, and emergency controls'
+    },
     {
       id: 'actions',
       label: 'Bot Actions',
@@ -1280,6 +1293,100 @@ function App() {
     </div>
   );
 
+  const renderMLTrading = () => (
+    <div className="grid gap-6">
+      {/* ML Trading Insights */}
+      <CollapsibleCard
+        id="ml-insights"
+        title="ML Trading Insights"
+        subtitle="Machine learning model performance, trade statistics, and pattern recognition"
+        accent="purple"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading ML insights..." />}>
+          <EnhancedErrorBoundary componentName="MLInsightsPanel">
+            <MLInsightsPanel />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Trading Style Profile */}
+      <CollapsibleCard
+        id="ml-style-profile"
+        title="Trading Style Profile"
+        subtitle="AI-analyzed trading DNA and behavioral patterns"
+        accent="violet"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading style profile..." />}>
+          <EnhancedErrorBoundary componentName="MLStyleProfile">
+            <MLStyleProfile />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Opportunity Scanner */}
+      <CollapsibleCard
+        id="ml-opportunity-scanner"
+        title="Opportunity Scanner"
+        subtitle="AI-detected trading opportunities with style matching"
+        accent="emerald"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading opportunity scanner..." />}>
+          <EnhancedErrorBoundary componentName="MLOpportunityScanner">
+            <MLOpportunityScanner symbol={'BTCUSDT'} />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Decision Center */}
+      <CollapsibleCard
+        id="ml-decision-center"
+        title="Decision Center"
+        subtitle="Autonomous AI decision engine and approval queue"
+        accent="cyan"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading decision center..." />}>
+          <EnhancedErrorBoundary componentName="MLDecisionCenter">
+            <MLDecisionCenter />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Model Monitor */}
+      <CollapsibleCard
+        id="ml-model-monitor"
+        title="Model Monitor"
+        subtitle="ML model drift detection and retraining status"
+        accent="amber"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading model monitor..." />}>
+          <EnhancedErrorBoundary componentName="MLModelMonitor">
+            <MLModelMonitor />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+
+      {/* Delta Exchange Trade Sync */}
+      <CollapsibleCard
+        id="delta-trade-sync"
+        title="Delta Exchange Trade Sync"
+        subtitle="Fetch and sync actual trades from Delta Exchange for accurate PnL/win rate"
+        accent="indigo"
+        defaultOpen={true}
+      >
+        <Suspense fallback={<LoadingFallback message="Loading Delta sync..." />}>
+          <EnhancedErrorBoundary componentName="DeltaTradeSync">
+            <DeltaTradeSync />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </CollapsibleCard>
+    </div>
+  );
+
   const renderBotManagement = () => (
     <div className="grid gap-6">
       {/* PM2 Process Manager */}
@@ -1355,6 +1462,7 @@ function App() {
     risk: renderRisk(),
     rsi: renderRSI(),
     config: renderConfig(),
+    ml_trading: renderMLTrading(),  // Jan 2026: ML Trading Panel
     botmanagement: renderBotManagement(),
     emergency: renderEmergency(),
     intelligence: renderIntelligence(),

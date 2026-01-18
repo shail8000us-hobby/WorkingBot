@@ -1050,6 +1050,23 @@ if __name__ == '__main__':
         traceback.print_exc()
         print("   Options SL/TP will not auto-trigger (manual mode only)\n")
     
+    # ============================================================================
+    # Initialize Delta Exchange Price WebSocket
+    # ============================================================================
+    try:
+        print("\n💹 Starting Delta Price WebSocket...")
+        from webui.backend.services import start_price_service
+        
+        price_ws = start_price_service(socketio)
+        print("✅ Delta Price WebSocket started (BTC & ETH real-time feeds)\n")
+        print("   📡 Connected to wss://socket.india.delta.exchange")
+        print("   📊 Broadcasting prices via Socket.IO on 'market_price_update' event\n")
+    except Exception as e:
+        print(f"⚠️  Failed to start Price WebSocket: {e}")
+        import traceback
+        traceback.print_exc()
+        print("   Will fall back to REST API for price fetching\n")
+    
     # IMPORTANT: Disable reloader to work with instance lock
     # Reloader spawns child process which conflicts with lock
     socketio.run(
