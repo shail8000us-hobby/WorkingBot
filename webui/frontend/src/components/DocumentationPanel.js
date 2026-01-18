@@ -76,7 +76,8 @@ const DocumentationPanel = () => {
         {
           name: 'Restart Trading Bot',
           description: 'Stop and restart the trading bot',
-          command: 'pkill -TERM -f "python.*bot/run" && sleep 5 && cd ~/Projects/WorkingBot && python3 bot/run.py &',
+          command:
+            'pkill -TERM -f "python.*bot/run" && sleep 5 && cd ~/Projects/WorkingBot && python3 bot/run.py &',
           icon: <RefreshIcon />,
           tags: ['restart'],
         },
@@ -90,7 +91,8 @@ const DocumentationPanel = () => {
         {
           name: 'Start Guardian Bot',
           description: 'Start the capital protection guardian',
-          command: 'cd ~/Projects/WorkingBot && python3 -u bot/guardian/guardian_bot.py | tee -a logs/guardian.log &',
+          command:
+            'cd ~/Projects/WorkingBot && python3 -u bot/guardian/guardian_bot.py | tee -a logs/guardian.log &',
           icon: <SecurityIcon />,
           tags: ['guardian', 'start', 'protection'],
         },
@@ -187,7 +189,7 @@ const DocumentationPanel = () => {
         },
         {
           name: 'Check Port Usage',
-          description: 'See what\'s running on WebUI port 5555',
+          description: "See what's running on WebUI port 5555",
           command: 'lsof -i :5555',
           icon: <MonitorHeartIcon />,
           tags: ['network', 'port', 'debug'],
@@ -195,7 +197,8 @@ const DocumentationPanel = () => {
         {
           name: 'View System Resource Usage',
           description: 'Monitor CPU and memory usage of bot processes',
-          command: 'ps aux | grep -E "python.*(bot|guardian|webui)" | grep -v grep | awk \'{print $2, $3"%", $4"%", $11}\'',
+          command:
+            'ps aux | grep -E "python.*(bot|guardian|webui)" | grep -v grep | awk \'{print $2, $3"%", $4"%", $11}\'',
           icon: <MonitorHeartIcon />,
           tags: ['performance', 'resources'],
         },
@@ -209,14 +212,16 @@ const DocumentationPanel = () => {
         {
           name: 'Check Bot PID File',
           description: 'View the current bot process ID',
-          command: 'cat ~/Projects/WorkingBot/reports/bot.pid 2>/dev/null || echo "No PID file found"',
+          command:
+            'cat ~/Projects/WorkingBot/reports/bot.pid 2>/dev/null || echo "No PID file found"',
           icon: <BugReportIcon />,
           tags: ['debug', 'pid'],
         },
         {
           name: 'Check Volatility Halt Status',
           description: 'See if bot is halted due to volatility',
-          command: 'cat ~/Projects/WorkingBot/.volatility_halt.json 2>/dev/null | python3 -m json.tool',
+          command:
+            'cat ~/Projects/WorkingBot/.volatility_halt.json 2>/dev/null | python3 -m json.tool',
           icon: <BugReportIcon />,
           tags: ['debug', 'volatility'],
         },
@@ -230,7 +235,8 @@ const DocumentationPanel = () => {
         {
           name: 'Clean Lock Files',
           description: 'Remove stale lock files that prevent startup',
-          command: 'rm -f ~/Projects/WorkingBot/.bot_instance.lock ~/Projects/WorkingBot/.bot.lock /tmp/webui_backend.lock',
+          command:
+            'rm -f ~/Projects/WorkingBot/.bot_instance.lock ~/Projects/WorkingBot/.bot.lock /tmp/webui_backend.lock',
           icon: <BugReportIcon />,
           tags: ['fix', 'lock', 'cleanup'],
         },
@@ -321,18 +327,20 @@ const DocumentationPanel = () => {
   };
 
   // Filter commands based on search
-  const filteredCategories = commandCategories.map(category => ({
-    ...category,
-    commands: category.commands.filter(cmd => {
-      const searchLower = searchQuery.toLowerCase();
-      return (
-        cmd.name.toLowerCase().includes(searchLower) ||
-        cmd.description.toLowerCase().includes(searchLower) ||
-        cmd.command.toLowerCase().includes(searchLower) ||
-        cmd.tags.some(tag => tag.includes(searchLower))
-      );
-    }),
-  })).filter(category => category.commands.length > 0);
+  const filteredCategories = commandCategories
+    .map((category) => ({
+      ...category,
+      commands: category.commands.filter((cmd) => {
+        const searchLower = searchQuery.toLowerCase();
+        return (
+          cmd.name.toLowerCase().includes(searchLower) ||
+          cmd.description.toLowerCase().includes(searchLower) ||
+          cmd.command.toLowerCase().includes(searchLower) ||
+          cmd.tags.some((tag) => tag.includes(searchLower))
+        );
+      }),
+    }))
+    .filter((category) => category.commands.length > 0);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -356,7 +364,8 @@ const DocumentationPanel = () => {
 
       {/* Alert */}
       <Alert severity="info" sx={{ mb: 3 }}>
-        <strong>Tip:</strong> Click "Open" to read documentation in a popup, or "Download" for offline reading.
+        <strong>Tip:</strong> Click "Open" to read documentation in a popup, or "Download" for
+        offline reading.
       </Alert>
 
       {/* Documentation Categories */}
@@ -407,9 +416,7 @@ const DocumentationPanel = () => {
                 >
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <Box sx={{ color: category.color, mr: 1 }}>
-                        {doc.icon}
-                      </Box>
+                      <Box sx={{ color: category.color, mr: 1 }}>{doc.icon}</Box>
                       <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                         {doc.name}
                       </Typography>
@@ -449,18 +456,18 @@ const DocumentationPanel = () => {
       ))}
 
       {/* Footer */}
-      <Paper 
-        elevation={1} 
-        sx={{ 
-          p: 2, 
-          mt: 3, 
+      <Paper
+        elevation={1}
+        sx={{
+          p: 2,
+          mt: 3,
           bgcolor: 'rgba(0, 230, 118, 0.05)',
           border: '1px solid rgba(0, 230, 118, 0.2)',
         }}
       >
         <Typography variant="body2" align="center" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-          💡 <strong style={{ color: '#00e676' }}>Pro Tip:</strong> Read the User Manual and README first for a complete overview.
-          Then explore specific guides based on your needs.
+          💡 <strong style={{ color: '#00e676' }}>Pro Tip:</strong> Read the User Manual and README
+          first for a complete overview. Then explore specific guides based on your needs.
         </Typography>
       </Paper>
 
@@ -476,12 +483,12 @@ const DocumentationPanel = () => {
           },
         }}
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <DialogTitle
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             {selectedDoc?.icon && (
-              <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>
-                {selectedDoc.icon}
-              </Box>
+              <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>{selectedDoc.icon}</Box>
             )}
             <Typography variant="h6">{selectedDoc?.name}</Typography>
           </Box>
@@ -491,81 +498,111 @@ const DocumentationPanel = () => {
         </DialogTitle>
         <DialogContent dividers>
           {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: 400,
+              }}
+            >
               <CircularProgress />
             </Box>
           ) : (
-            <Box sx={{ 
-              '& h1': { fontSize: '2rem', fontWeight: 'bold', mt: 3, mb: 2, color: 'text.primary' },
-              '& h2': { fontSize: '1.5rem', fontWeight: 'bold', mt: 2, mb: 1, color: 'text.primary' },
-              '& h3': { fontSize: '1.25rem', fontWeight: 'bold', mt: 2, mb: 1, color: 'text.primary' },
-              '& p': { mb: 2, color: 'text.primary' },
-              '& code': { 
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
-                color: '#00e676',
-                p: '2px 6px',
-                borderRadius: 1,
-                fontFamily: 'monospace',
-                fontSize: '0.9em',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-              },
-              '& pre': { 
-                bgcolor: '#0a0e27',
-                color: '#d4d4d4',
-                p: 2, 
-                borderRadius: 1,
-                overflow: 'auto',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+            <Box
+              sx={{
+                '& h1': {
+                  fontSize: '2rem',
+                  fontWeight: 'bold',
+                  mt: 3,
+                  mb: 2,
+                  color: 'text.primary',
+                },
+                '& h2': {
+                  fontSize: '1.5rem',
+                  fontWeight: 'bold',
+                  mt: 2,
+                  mb: 1,
+                  color: 'text.primary',
+                },
+                '& h3': {
+                  fontSize: '1.25rem',
+                  fontWeight: 'bold',
+                  mt: 2,
+                  mb: 1,
+                  color: 'text.primary',
+                },
+                '& p': { mb: 2, color: 'text.primary' },
                 '& code': {
-                  bgcolor: 'transparent',
+                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  color: '#00e676',
+                  p: '2px 6px',
+                  borderRadius: 1,
+                  fontFamily: 'monospace',
+                  fontSize: '0.9em',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                },
+                '& pre': {
+                  bgcolor: '#0a0e27',
                   color: '#d4d4d4',
-                  border: 'none',
-                  p: 0,
+                  p: 2,
+                  borderRadius: 1,
+                  overflow: 'auto',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  '& code': {
+                    bgcolor: 'transparent',
+                    color: '#d4d4d4',
+                    border: 'none',
+                    p: 0,
+                  },
                 },
-              },
-              '& ul, & ol': { ml: 3, mb: 2, color: 'text.primary' },
-              '& li': { mb: 1, color: 'text.primary' },
-              '& blockquote': {
-                borderLeft: '4px solid #00e676',
-                pl: 2,
-                ml: 0,
-                fontStyle: 'italic',
-                color: 'text.secondary',
-                bgcolor: 'rgba(0, 230, 118, 0.05)',
-                py: 1,
-              },
-              '& table': {
-                width: '100%',
-                borderCollapse: 'collapse',
-                mb: 2,
-              },
-              '& th, & td': {
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                p: 1,
-                color: 'text.primary',
-              },
-              '& th': {
-                bgcolor: 'rgba(0, 230, 118, 0.1)',
-                fontWeight: 'bold',
-              },
-              '& strong': {
-                color: '#00e676',
-                fontWeight: 'bold',
-              },
-              '& a': {
-                color: '#00e676',
-                textDecoration: 'none',
-                '&:hover': {
-                  textDecoration: 'underline',
+                '& ul, & ol': { ml: 3, mb: 2, color: 'text.primary' },
+                '& li': { mb: 1, color: 'text.primary' },
+                '& blockquote': {
+                  borderLeft: '4px solid #00e676',
+                  pl: 2,
+                  ml: 0,
+                  fontStyle: 'italic',
+                  color: 'text.secondary',
+                  bgcolor: 'rgba(0, 230, 118, 0.05)',
+                  py: 1,
                 },
-              },
-            }}>
+                '& table': {
+                  width: '100%',
+                  borderCollapse: 'collapse',
+                  mb: 2,
+                },
+                '& th, & td': {
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  p: 1,
+                  color: 'text.primary',
+                },
+                '& th': {
+                  bgcolor: 'rgba(0, 230, 118, 0.1)',
+                  fontWeight: 'bold',
+                },
+                '& strong': {
+                  color: '#00e676',
+                  fontWeight: 'bold',
+                },
+                '& a': {
+                  color: '#00e676',
+                  textDecoration: 'none',
+                  '&:hover': {
+                    textDecoration: 'underline',
+                  },
+                },
+              }}
+            >
               <ReactMarkdown>{docContent}</ReactMarkdown>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => handleDownloadDoc(selectedDoc?.file)} startIcon={<DescriptionIcon />}>
+          <Button
+            onClick={() => handleDownloadDoc(selectedDoc?.file)}
+            startIcon={<DescriptionIcon />}
+          >
             Download
           </Button>
           <Button onClick={handleCloseDialog} variant="contained">

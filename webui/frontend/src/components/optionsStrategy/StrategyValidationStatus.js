@@ -3,7 +3,7 @@
  * ====================================
  * Real-time validation feedback for options strategies before execution.
  * Shows validation errors, warnings, and pre-flight checks.
- * 
+ *
  * Created: January 12, 2026
  */
 
@@ -22,7 +22,7 @@ import {
   Button,
   CircularProgress,
   Collapse,
-  IconButton
+  IconButton,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -31,7 +31,7 @@ import {
   Verified as VerifiedIcon,
   PlayArrow as ValidateIcon,
   ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 
 const API_BASE = '/api/production';
@@ -53,9 +53,9 @@ function ValidationResult({ result, title }) {
           <ErrorIcon sx={{ color: 'error.main' }} />
         )}
         <Typography variant="subtitle2">{title}</Typography>
-        <Chip 
-          label={is_valid ? 'VALID' : 'INVALID'} 
-          color={is_valid ? 'success' : 'error'} 
+        <Chip
+          label={is_valid ? 'VALID' : 'INVALID'}
+          color={is_valid ? 'success' : 'error'}
           size="small"
         />
       </Box>
@@ -69,10 +69,7 @@ function ValidationResult({ result, title }) {
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <ErrorIcon fontSize="small" color="error" />
                 </ListItemIcon>
-                <ListItemText 
-                  primary={error}
-                  primaryTypographyProps={{ variant: 'body2' }}
-                />
+                <ListItemText primary={error} primaryTypographyProps={{ variant: 'body2' }} />
               </ListItem>
             ))}
           </List>
@@ -88,10 +85,7 @@ function ValidationResult({ result, title }) {
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <WarningIcon fontSize="small" color="warning" />
                 </ListItemIcon>
-                <ListItemText 
-                  primary={warning}
-                  primaryTypographyProps={{ variant: 'body2' }}
-                />
+                <ListItemText primary={warning} primaryTypographyProps={{ variant: 'body2' }} />
               </ListItem>
             ))}
           </List>
@@ -99,9 +93,7 @@ function ValidationResult({ result, title }) {
       )}
 
       {is_valid && errors?.length === 0 && warnings?.length === 0 && (
-        <Alert severity="success">
-          All validation checks passed
-        </Alert>
+        <Alert severity="success">All validation checks passed</Alert>
       )}
     </Box>
   );
@@ -133,8 +125,8 @@ function RiskCheck({ onResult }) {
     <Box sx={{ mb: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
         <Typography variant="subtitle2">Risk Check</Typography>
-        <Button 
-          size="small" 
+        <Button
+          size="small"
           startIcon={loading ? <CircularProgress size={14} /> : <ValidateIcon />}
           onClick={checkRisk}
           disabled={loading}
@@ -145,16 +137,20 @@ function RiskCheck({ onResult }) {
 
       {result && (
         <Alert severity={result.can_trade ? 'success' : 'error'}>
-          <AlertTitle>
-            {result.can_trade ? 'Trading Allowed' : 'Trading Blocked'}
-          </AlertTitle>
+          <AlertTitle>{result.can_trade ? 'Trading Allowed' : 'Trading Blocked'}</AlertTitle>
           <Typography variant="body2">{result.reason}</Typography>
           {result.risk_level && (
-            <Chip 
+            <Chip
               label={`Risk Level: ${result.risk_level.toUpperCase()}`}
               size="small"
               sx={{ mt: 1 }}
-              color={result.risk_level === 'low' ? 'success' : result.risk_level === 'medium' ? 'warning' : 'error'}
+              color={
+                result.risk_level === 'low'
+                  ? 'success'
+                  : result.risk_level === 'medium'
+                    ? 'warning'
+                    : 'error'
+              }
             />
           )}
         </Alert>
@@ -165,16 +161,16 @@ function RiskCheck({ onResult }) {
 
 /**
  * Main Strategy Validation Status Component
- * 
+ *
  * Props:
  *   - strategy: Strategy object with legs
  *   - onValidationComplete: Callback when validation completes (isValid, result)
  *   - autoValidate: Auto-validate when strategy changes
  */
-export default function StrategyValidationStatus({ 
-  strategy, 
+export default function StrategyValidationStatus({
+  strategy,
   onValidationComplete,
-  autoValidate = false 
+  autoValidate = false,
 }) {
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -186,7 +182,7 @@ export default function StrategyValidationStatus({
       setValidationResult({
         is_valid: false,
         errors: ['No strategy legs to validate'],
-        warnings: []
+        warnings: [],
       });
       onValidationComplete?.(false, null);
       return;
@@ -199,15 +195,15 @@ export default function StrategyValidationStatus({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           strategy_type: strategy.type || '',
-          legs: strategy.legs.map(leg => ({
+          legs: strategy.legs.map((leg) => ({
             symbol: leg.symbol,
             side: leg.side,
             quantity: leg.quantity,
             option_type: leg.option_type,
             strike: leg.strike,
-            expiry: leg.expiry
-          }))
-        })
+            expiry: leg.expiry,
+          })),
+        }),
       });
 
       const data = await response.json();
@@ -217,7 +213,7 @@ export default function StrategyValidationStatus({
       const errorResult = {
         is_valid: false,
         errors: [`Validation request failed: ${err.message}`],
-        warnings: []
+        warnings: [],
       };
       setValidationResult(errorResult);
       onValidationComplete?.(false, errorResult);
@@ -238,7 +234,8 @@ export default function StrategyValidationStatus({
     if (validating) return { color: 'info', label: 'Validating...' };
     if (!validationResult) return { color: 'default', label: 'Not Validated' };
     if (!validationResult.is_valid) return { color: 'error', label: 'Invalid' };
-    if (validationResult.warnings?.length > 0) return { color: 'warning', label: 'Valid with Warnings' };
+    if (validationResult.warnings?.length > 0)
+      return { color: 'warning', label: 'Valid with Warnings' };
     return { color: 'success', label: 'Valid' };
   };
 
@@ -247,12 +244,12 @@ export default function StrategyValidationStatus({
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
       {/* Header */}
-      <Box 
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: 'pointer'
+          cursor: 'pointer',
         }}
         onClick={() => setExpanded(!expanded)}
       >
@@ -261,9 +258,7 @@ export default function StrategyValidationStatus({
           <Typography variant="subtitle1">Pre-Execution Validation</Typography>
           <Chip label={status.label} color={status.color} size="small" />
         </Box>
-        <IconButton size="small">
-          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-        </IconButton>
+        <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
       </Box>
 
       <Collapse in={expanded}>
@@ -271,7 +266,9 @@ export default function StrategyValidationStatus({
           {/* Validate Button */}
           <Button
             variant="contained"
-            startIcon={validating ? <CircularProgress size={16} color="inherit" /> : <ValidateIcon />}
+            startIcon={
+              validating ? <CircularProgress size={16} color="inherit" /> : <ValidateIcon />
+            }
             onClick={validateStrategy}
             disabled={validating || !strategy?.legs?.length}
             sx={{ mb: 2 }}
@@ -282,10 +279,7 @@ export default function StrategyValidationStatus({
 
           {/* Validation Results */}
           {validationResult && (
-            <ValidationResult 
-              result={validationResult} 
-              title="Strategy Validation"
-            />
+            <ValidationResult result={validationResult} title="Strategy Validation" />
           )}
 
           {/* Risk Check */}
@@ -293,7 +287,7 @@ export default function StrategyValidationStatus({
 
           {/* Pre-flight Summary */}
           {validationResult && canTrade !== null && (
-            <Alert 
+            <Alert
               severity={validationResult.is_valid && canTrade ? 'success' : 'warning'}
               icon={validationResult.is_valid && canTrade ? <CheckIcon /> : <WarningIcon />}
             >
@@ -301,19 +295,21 @@ export default function StrategyValidationStatus({
               <List dense disablePadding>
                 <ListItem disablePadding>
                   <ListItemIcon sx={{ minWidth: 28 }}>
-                    {validationResult.is_valid ? 
-                      <CheckIcon fontSize="small" color="success" /> : 
+                    {validationResult.is_valid ? (
+                      <CheckIcon fontSize="small" color="success" />
+                    ) : (
                       <ErrorIcon fontSize="small" color="error" />
-                    }
+                    )}
                   </ListItemIcon>
                   <ListItemText primary="Strategy Validation" />
                 </ListItem>
                 <ListItem disablePadding>
                   <ListItemIcon sx={{ minWidth: 28 }}>
-                    {canTrade ? 
-                      <CheckIcon fontSize="small" color="success" /> : 
+                    {canTrade ? (
+                      <CheckIcon fontSize="small" color="success" />
+                    ) : (
                       <ErrorIcon fontSize="small" color="error" />
-                    }
+                    )}
                   </ListItemIcon>
                   <ListItemText primary="Risk Limits" />
                 </ListItem>
@@ -336,43 +332,16 @@ export default function StrategyValidationStatus({
  */
 export function ValidationBadge({ isValid, hasWarnings }) {
   if (isValid === null || isValid === undefined) {
-    return (
-      <Chip 
-        label="Not Validated" 
-        size="small" 
-        variant="outlined"
-      />
-    );
+    return <Chip label="Not Validated" size="small" variant="outlined" />;
   }
 
   if (!isValid) {
-    return (
-      <Chip 
-        icon={<ErrorIcon />}
-        label="Invalid" 
-        size="small" 
-        color="error"
-      />
-    );
+    return <Chip icon={<ErrorIcon />} label="Invalid" size="small" color="error" />;
   }
 
   if (hasWarnings) {
-    return (
-      <Chip 
-        icon={<WarningIcon />}
-        label="Valid (warnings)" 
-        size="small" 
-        color="warning"
-      />
-    );
+    return <Chip icon={<WarningIcon />} label="Valid (warnings)" size="small" color="warning" />;
   }
 
-  return (
-    <Chip 
-      icon={<CheckIcon />}
-      label="Valid" 
-      size="small" 
-      color="success"
-    />
-  );
+  return <Chip icon={<CheckIcon />} label="Valid" size="small" color="success" />;
 }

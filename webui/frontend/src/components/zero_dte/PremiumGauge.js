@@ -1,6 +1,6 @@
 /**
  * Premium Gauge - Visual CE vs PE balance
- * 
+ *
  * Shows total premium exposure for each leg.
  * Color codes imbalance level:
  * - Green: < 10% (balanced)
@@ -23,21 +23,18 @@ const PremiumGauge = ({ ceTotal, peTotal, imbalancePct, isBalanced, threshold })
   };
 
   // Determine which leg is heavier
-  const heavierLeg = ceTotal > peTotal ? 'CE' : (peTotal > ceTotal ? 'PE' : 'Equal');
+  const heavierLeg = ceTotal > peTotal ? 'CE' : peTotal > ceTotal ? 'PE' : 'Equal';
 
   return (
     <div className="premium-gauge card">
       <h3>Premium Balance</h3>
-      
+
       <div className="gauge-container">
         {/* CE Bar */}
         <div className="gauge-row">
           <span className="gauge-label ce-label">CE</span>
           <div className="gauge-bar-container">
-            <div 
-              className="gauge-bar gauge-bar-ce"
-              style={{ width: `${ceWidth}%` }}
-            >
+            <div className="gauge-bar gauge-bar-ce" style={{ width: `${ceWidth}%` }}>
               <span className="gauge-value">₹{ceTotal.toFixed(2)}</span>
             </div>
           </div>
@@ -47,10 +44,7 @@ const PremiumGauge = ({ ceTotal, peTotal, imbalancePct, isBalanced, threshold })
         <div className="gauge-row">
           <span className="gauge-label pe-label">PE</span>
           <div className="gauge-bar-container">
-            <div 
-              className="gauge-bar gauge-bar-pe"
-              style={{ width: `${peWidth}%` }}
-            >
+            <div className="gauge-bar gauge-bar-pe" style={{ width: `${peWidth}%` }}>
               <span className="gauge-value">₹{peTotal.toFixed(2)}</span>
             </div>
           </div>
@@ -64,14 +58,11 @@ const PremiumGauge = ({ ceTotal, peTotal, imbalancePct, isBalanced, threshold })
           <span className="imbalance-value">{imbalancePct.toFixed(1)}%</span>
         </div>
         <div className="imbalance-bar-bg">
-          <div 
+          <div
             className="imbalance-bar-fill"
             style={{ width: `${Math.min(imbalancePct, 100)}%` }}
           />
-          <div 
-            className="threshold-marker"
-            style={{ left: `${threshold}%` }}
-          />
+          <div className="threshold-marker" style={{ left: `${threshold}%` }} />
         </div>
         <div className="imbalance-status">
           {isBalanced ? (

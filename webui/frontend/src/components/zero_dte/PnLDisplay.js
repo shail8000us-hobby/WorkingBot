@@ -1,6 +1,6 @@
 /**
  * P&L Display Component
- * 
+ *
  * Shows realized, unrealized, and total P&L.
  * Displays premium collected vs current position value.
  */
@@ -22,14 +22,14 @@ const PnLDisplay = ({ status, positions }) => {
     let premiumCollected = 0;
     let currentExposure = 0;
 
-    ['CE', 'PE'].forEach(side => {
+    ['CE', 'PE'].forEach((side) => {
       const pos = positions[side];
       if (pos) {
         const entryValue = pos.entry_premium * pos.lots;
         const currentValue = pos.current_premium * pos.lots;
-        
+
         // For short positions: profit when current < entry
-        unrealizedPnL += (entryValue - currentValue);
+        unrealizedPnL += entryValue - currentValue;
         premiumCollected += entryValue;
         currentExposure += currentValue;
       }
@@ -45,11 +45,11 @@ const PnLDisplay = ({ status, positions }) => {
 
   const pnl = calculatePnL();
   const totalPnL = pnl.unrealizedPnL + pnl.realizedPnL;
-  
+
   // Stop loss from config (default 5000)
   const stopLoss = status?.config?.stop_loss || 5000;
   const stopLossUsed = Math.min(100, Math.max(0, (-totalPnL / stopLoss) * 100));
-  
+
   const formatCurrency = (value) => {
     const prefix = value >= 0 ? '+' : '';
     return `${prefix}₹${value.toFixed(2)}`;
@@ -78,7 +78,7 @@ const PnLDisplay = ({ status, positions }) => {
             <span className="pnl-item-label">Unrealized</span>
             <span className="pnl-item-value">{formatCurrency(pnl.unrealizedPnL)}</span>
           </div>
-          
+
           <div className={`pnl-item ${getPnLClass(pnl.realizedPnL)}`}>
             <span className="pnl-item-label">Realized</span>
             <span className="pnl-item-value">{formatCurrency(pnl.realizedPnL)}</span>
@@ -91,7 +91,7 @@ const PnLDisplay = ({ status, positions }) => {
             <span className="premium-label">Premium Collected</span>
             <span className="premium-value">₹{pnl.premiumCollected.toFixed(2)}</span>
           </div>
-          
+
           <div className="premium-item">
             <span className="premium-label">Current Exposure</span>
             <span className="premium-value">₹{pnl.currentExposure.toFixed(2)}</span>
@@ -102,18 +102,18 @@ const PnLDisplay = ({ status, positions }) => {
         <div className="stop-loss-indicator">
           <div className="stop-loss-header">
             <span>Stop Loss Progress</span>
-            <span>{stopLossUsed.toFixed(1)}% of ₹{stopLoss}</span>
+            <span>
+              {stopLossUsed.toFixed(1)}% of ₹{stopLoss}
+            </span>
           </div>
           <div className="stop-loss-bar">
-            <div 
+            <div
               className={`stop-loss-fill ${stopLossUsed > 80 ? 'danger' : stopLossUsed > 50 ? 'warning' : 'safe'}`}
               style={{ width: `${stopLossUsed}%` }}
             />
           </div>
           {stopLossUsed > 80 && (
-            <div className="stop-loss-warning">
-              ⚠️ Approaching stop loss trigger
-            </div>
+            <div className="stop-loss-warning">⚠️ Approaching stop loss trigger</div>
           )}
         </div>
       </div>

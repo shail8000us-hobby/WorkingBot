@@ -1,9 +1,9 @@
 /**
  * SL/TP Indicator Component
- * 
+ *
  * Compact visual indicator showing SL/TP status in the positions table.
  * Shows colored chips for active stop-loss and take-profit levels.
- * 
+ *
  * Created: January 14, 2026
  */
 
@@ -21,14 +21,14 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
       </Tooltip>
     );
   }
-  
+
   const hasStopLoss = settings.stop_loss_price || settings.stop_loss_pct;
   const hasTakeProfit = settings.take_profit_price || settings.take_profit_pct;
   const hasTrailingStop = settings.trailing_stop_enabled;
-  
+
   const currentPrice = position?.mid_price || position?.mark_price || 0;
   const entryPrice = position?.entry_price || 0;
-  
+
   // Calculate stop-loss display
   const getStopLossDisplay = () => {
     if (settings.stop_loss_price) {
@@ -38,7 +38,7 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
     }
     return null;
   };
-  
+
   // Calculate take-profit display
   const getTakeProfitDisplay = () => {
     if (settings.take_profit_price) {
@@ -48,11 +48,11 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
     }
     return null;
   };
-  
+
   // Calculate distance to SL/TP
   const getStopLossDistance = () => {
     if (!currentPrice || !entryPrice) return null;
-    
+
     if (settings.stop_loss_price) {
       const distance = ((currentPrice - settings.stop_loss_price) / currentPrice) * 100;
       return distance.toFixed(1);
@@ -63,10 +63,10 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
     }
     return null;
   };
-  
+
   const getTakeProfitDistance = () => {
     if (!currentPrice || !entryPrice) return null;
-    
+
     if (settings.take_profit_price) {
       const distance = ((settings.take_profit_price - currentPrice) / currentPrice) * 100;
       return distance.toFixed(1);
@@ -77,26 +77,26 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
     }
     return null;
   };
-  
+
   const slDisplay = getStopLossDisplay();
   const tpDisplay = getTakeProfitDisplay();
   const slDistance = getStopLossDistance();
   const tpDistance = getTakeProfitDistance();
-  
+
   // Check if close to trigger
   const isCloseToSL = slDistance !== null && parseFloat(slDistance) < 5;
   const isCloseToTP = tpDistance !== null && parseFloat(tpDistance) < 5;
-  
+
   return (
-    <Box 
-      display="flex" 
-      gap={0.5} 
+    <Box
+      display="flex"
+      gap={0.5}
       alignItems="center"
       onClick={onEdit}
       sx={{ cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
     >
       {hasStopLoss && (
-        <Tooltip 
+        <Tooltip
           title={
             <Box>
               <Typography variant="caption" display="block">
@@ -117,7 +117,11 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
                   Distance: {slDistance}% away
                 </Typography>
               )}
-              <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.light' }}>
+              <Typography
+                variant="caption"
+                display="block"
+                sx={{ mt: 0.5, color: 'warning.light' }}
+              >
                 {settings.auto_execute ? '⚡ Auto-execute' : '🔔 Alert only'}
               </Typography>
             </Box>
@@ -129,9 +133,9 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
             label={slDisplay}
             size="small"
             color="error"
-            variant={isCloseToSL ? "filled" : "outlined"}
-            sx={{ 
-              height: 20, 
+            variant={isCloseToSL ? 'filled' : 'outlined'}
+            sx={{
+              height: 20,
               fontSize: 10,
               '& .MuiChip-icon': { fontSize: 12 },
               animation: isCloseToSL ? 'pulse 1s infinite' : 'none',
@@ -139,14 +143,14 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
                 '0%': { opacity: 1 },
                 '50%': { opacity: 0.6 },
                 '100%': { opacity: 1 },
-              }
+              },
             }}
           />
         </Tooltip>
       )}
-      
+
       {hasTakeProfit && (
-        <Tooltip 
+        <Tooltip
           title={
             <Box>
               <Typography variant="caption" display="block">
@@ -167,7 +171,11 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
                   Distance: {tpDistance}% away
                 </Typography>
               )}
-              <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.light' }}>
+              <Typography
+                variant="caption"
+                display="block"
+                sx={{ mt: 0.5, color: 'warning.light' }}
+              >
                 {settings.auto_execute ? '⚡ Auto-execute' : '🔔 Alert only'}
               </Typography>
             </Box>
@@ -179,9 +187,9 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
             label={tpDisplay}
             size="small"
             color="success"
-            variant={isCloseToTP ? "filled" : "outlined"}
-            sx={{ 
-              height: 20, 
+            variant={isCloseToTP ? 'filled' : 'outlined'}
+            sx={{
+              height: 20,
               fontSize: 10,
               '& .MuiChip-icon': { fontSize: 12 },
               animation: isCloseToTP ? 'pulse 1s infinite' : 'none',
@@ -189,7 +197,7 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
           />
         </Tooltip>
       )}
-      
+
       {hasTrailingStop && (
         <Tooltip title={`Trailing Stop: ${settings.trailing_stop_pct}%`}>
           <Chip
@@ -197,15 +205,15 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
             size="small"
             color="warning"
             variant="outlined"
-            sx={{ 
-              height: 20, 
+            sx={{
+              height: 20,
               fontSize: 10,
               minWidth: 20,
             }}
           />
         </Tooltip>
       )}
-      
+
       {/* Edit button */}
       <Tooltip title="Edit SL/TP">
         <IconButton size="small" sx={{ p: 0.25, ml: 0.25 }}>

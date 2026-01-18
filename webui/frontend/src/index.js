@@ -46,8 +46,10 @@ const Root = () => {
                 },
                 onTabChange: (tabIndex) => {
                   console.log('Keyboard: Tab change', tabIndex);
-                  window.dispatchEvent(new CustomEvent('keyboard-tab-change', { detail: tabIndex }));
-                }
+                  window.dispatchEvent(
+                    new CustomEvent('keyboard-tab-change', { detail: tabIndex })
+                  );
+                },
               }}
             >
               <App />

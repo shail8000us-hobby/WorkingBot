@@ -1,7 +1,7 @@
 /**
  * API Polling Configuration
  * Centralized configuration for all polling intervals
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 
@@ -20,12 +20,7 @@ export interface PollingConfigType {
 export const POLLING_CONFIG: PollingConfigType = {
   CRITICAL: {
     interval: 10000,
-    endpoints: [
-      '/api/health',
-      '/api/bot/status',
-      '/api/positions',
-      '/api/orders'
-    ]
+    endpoints: ['/api/health', '/api/bot/status', '/api/positions', '/api/orders'],
   },
 
   IMPORTANT: {
@@ -35,8 +30,8 @@ export const POLLING_CONFIG: PollingConfigType = {
       '/api/risk/safety',
       '/api/capital-protection',
       '/api/monitoring/dashboard',
-      '/api/rsi/status'
-    ]
+      '/api/rsi/status',
+    ],
   },
 
   NORMAL: {
@@ -49,8 +44,8 @@ export const POLLING_CONFIG: PollingConfigType = {
       '/api/reconciliation',
       '/api/errors',
       '/api/market/news',
-      '/api/institutional-ai'
-    ]
+      '/api/institutional-ai',
+    ],
   },
 
   LOW_PRIORITY: {
@@ -61,9 +56,9 @@ export const POLLING_CONFIG: PollingConfigType = {
       '/api/pm2/status',
       '/api/tmux/status',
       '/api/multi-instance',
-      '/api/predictions/spike'
-    ]
-  }
+      '/api/predictions/spike',
+    ],
+  },
 };
 
 export const getIntervalForEndpoint = (endpoint: string): number => {

@@ -49,11 +49,13 @@ function OfflineIndicator() {
         try {
           const actions = await offlineStorage.getPendingActions();
           console.log(`🔄 Syncing ${actions.length} pending actions...`);
-          
+
           // Emit event for connection manager to handle
-          window.dispatchEvent(new CustomEvent('sync-pending-actions', {
-            detail: { actions }
-          }));
+          window.dispatchEvent(
+            new CustomEvent('sync-pending-actions', {
+              detail: { actions },
+            })
+          );
         } catch (error) {
           console.error('Error syncing pending actions:', error);
         }
@@ -79,14 +81,8 @@ function OfflineIndicator() {
         <div className="flex items-center gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-2 backdrop-blur">
           <WifiOff className="h-5 w-5 text-amber-400" />
           <div>
-            <p className="text-sm font-semibold text-amber-100">
-              Offline Mode
-            </p>
-            {hasCachedData && (
-              <p className="text-xs text-amber-300">
-                Showing cached data
-              </p>
-            )}
+            <p className="text-sm font-semibold text-amber-100">Offline Mode</p>
+            {hasCachedData && <p className="text-xs text-amber-300">Showing cached data</p>}
             {pendingActions > 0 && (
               <p className="text-xs text-amber-300">
                 {pendingActions} action{pendingActions > 1 ? 's' : ''} pending sync

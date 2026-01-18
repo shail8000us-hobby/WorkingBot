@@ -1,6 +1,6 @@
 /**
  * AutomationStorage - Persist automation rules to localStorage
- * 
+ *
  * Features:
  * - Save/load automation rules
  * - Export/import as JSON
@@ -106,7 +106,7 @@ class AutomationStorage {
   getByPosition(symbol) {
     try {
       const allAutomations = this.loadAll();
-      return Object.values(allAutomations).filter(a => a.position?.symbol === symbol);
+      return Object.values(allAutomations).filter((a) => a.position?.symbol === symbol);
     } catch (error) {
       console.error('Failed to get automations by position:', error);
       return [];
@@ -121,7 +121,7 @@ class AutomationStorage {
     try {
       const allAutomations = this.loadAll();
       return Object.values(allAutomations).filter(
-        a => a.status !== 'inactive' && a.status !== 'completed'
+        (a) => a.status !== 'inactive' && a.status !== 'completed'
       );
     } catch (error) {
       console.error('Failed to get active automations:', error);

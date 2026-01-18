@@ -1,14 +1,14 @@
 /**
  * Frontend Circuit Breaker
  * Prevents hammering dead backend by failing fast
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 
 export enum CircuitState {
   CLOSED = 'CLOSED',
   OPEN = 'OPEN',
-  HALF_OPEN = 'HALF_OPEN'
+  HALF_OPEN = 'HALF_OPEN',
 }
 
 export class CircuitBreaker {
@@ -107,15 +107,15 @@ export function getAllCircuitStates(): CircuitStateInfo[] {
       state: apiCircuit.getState(),
       failureCount: apiCircuit.failureCount,
       lastFailureTime: apiCircuit.lastFailureTime,
-      nextAttemptTime: apiCircuit.nextAttemptTime
+      nextAttemptTime: apiCircuit.nextAttemptTime,
     },
     {
       name: wsCircuit.name,
       state: wsCircuit.getState(),
       failureCount: wsCircuit.failureCount,
       lastFailureTime: wsCircuit.lastFailureTime,
-      nextAttemptTime: wsCircuit.nextAttemptTime
-    }
+      nextAttemptTime: wsCircuit.nextAttemptTime,
+    },
   ];
 }
 

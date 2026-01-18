@@ -1,12 +1,12 @@
 /**
  * Mobile Optimization Context
- * 
+ *
  * Provides mobile-specific optimizations globally:
  * - Battery monitoring
  * - Network type detection (WiFi vs Cellular)
  * - Adaptive polling intervals
  * - Power save mode for low battery
- * 
+ *
  * Perfect for Tailscale mobile access!
  */
 
@@ -26,7 +26,7 @@ const MobileOptimizationContext = createContext({
   pollingInterval: 30000,
   idleTimeout: 60000,
   shouldReduceAnimations: false,
-  shouldPauseCharts: false
+  shouldPauseCharts: false,
 });
 
 /**
@@ -34,7 +34,7 @@ const MobileOptimizationContext = createContext({
  */
 export function MobileOptimizationProvider({ children }) {
   const mobileState = useMobileOptimization();
-  
+
   // Show notification when entering power save mode
   useEffect(() => {
     if (mobileState.isPowerSaveMode) {
@@ -44,14 +44,18 @@ export function MobileOptimizationProvider({ children }) {
       console.log(`   Polling: ${mobileState.pollingInterval / 1000}s`);
       console.log(`   Idle Timeout: ${mobileState.idleTimeout / 1000}s`);
     }
-  }, [mobileState.isPowerSaveMode, mobileState.batteryLevel, mobileState.networkType, mobileState.pollingInterval, mobileState.idleTimeout]);
+  }, [
+    mobileState.isPowerSaveMode,
+    mobileState.batteryLevel,
+    mobileState.networkType,
+    mobileState.pollingInterval,
+    mobileState.idleTimeout,
+  ]);
 
   // Wrap with IdleProvider using mobile-optimized timeout
   return (
     <MobileOptimizationContext.Provider value={mobileState}>
-      <IdleProvider timeout={mobileState.idleTimeout}>
-        {children}
-      </IdleProvider>
+      <IdleProvider timeout={mobileState.idleTimeout}>{children}</IdleProvider>
     </MobileOptimizationContext.Provider>
   );
 }
@@ -64,4 +68,3 @@ export function useMobile() {
 }
 
 export default MobileOptimizationContext;
-

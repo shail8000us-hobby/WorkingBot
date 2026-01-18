@@ -12,10 +12,7 @@ import {
   Chip,
   Alert,
 } from '@mui/material';
-import {
-  CompareArrows as CompareIcon,
-  Error as ErrorIcon,
-} from '@mui/icons-material';
+import { CompareArrows as CompareIcon, Error as ErrorIcon } from '@mui/icons-material';
 
 /**
  * Side-by-side comparison of GRIDBOT_* vs legacy parameter mismatches
@@ -51,8 +48,8 @@ const ParamSyncDiff = ({ mismatches }) => {
           Parameter Synchronization Mismatch Detected
         </Typography>
         <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Your GRIDBOT_* parameters (source of truth) don't match the legacy
-          parameters. This can cause unexpected behavior.
+          Your GRIDBOT_* parameters (source of truth) don't match the legacy parameters. This can
+          cause unexpected behavior.
         </Typography>
       </Alert>
 
@@ -109,11 +106,7 @@ const ParamSyncDiff = ({ mismatches }) => {
                   <Typography variant="body2" fontFamily="monospace">
                     {mismatch.gridbot_param}
                   </Typography>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    fontFamily="monospace"
-                  >
+                  <Typography variant="caption" color="text.secondary" fontFamily="monospace">
                     → {mismatch.legacy_param}
                   </Typography>
                 </TableCell>
@@ -153,9 +146,8 @@ const ParamSyncDiff = ({ mismatches }) => {
           💡 Recommended Fix
         </Typography>
         <Typography variant="body2">
-          Run the <code>sync_gridbot_params</code> fix to automatically copy all
-          GRIDBOT_* values to their legacy counterparts. This is safe and
-          non-destructive.
+          Run the <code>sync_gridbot_params</code> fix to automatically copy all GRIDBOT_* values to
+          their legacy counterparts. This is safe and non-destructive.
         </Typography>
       </Box>
     </Box>

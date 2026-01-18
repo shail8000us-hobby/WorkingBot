@@ -28,9 +28,7 @@ describe('useBotControl', () => {
   });
 
   test('handleStartBot makes API call and shows notification', async () => {
-    const { result } = renderHook(() =>
-      useBotControl({ setBusy, showNotification, onSuccess })
-    );
+    const { result } = renderHook(() => useBotControl({ setBusy, showNotification, onSuccess }));
 
     await act(async () => {
       await result.current.handleStartBot();
@@ -52,9 +50,7 @@ describe('useBotControl', () => {
   });
 
   test('handleStopBot makes API call and shows notification', async () => {
-    const { result } = renderHook(() =>
-      useBotControl({ setBusy, showNotification, onSuccess })
-    );
+    const { result } = renderHook(() => useBotControl({ setBusy, showNotification, onSuccess }));
 
     await act(async () => {
       await result.current.handleStopBot();
@@ -73,9 +69,7 @@ describe('useBotControl', () => {
   });
 
   test('handleRestartBot makes API call and shows notification', async () => {
-    const { result } = renderHook(() =>
-      useBotControl({ setBusy, showNotification, onSuccess })
-    );
+    const { result } = renderHook(() => useBotControl({ setBusy, showNotification, onSuccess }));
 
     await act(async () => {
       await result.current.handleRestartBot();
@@ -86,25 +80,20 @@ describe('useBotControl', () => {
       expect.any(Object)
     );
     await waitFor(() => {
-      expect(showNotification).toHaveBeenCalledWith(
-        expect.stringContaining('restart'),
-        'success'
-      );
+      expect(showNotification).toHaveBeenCalledWith(expect.stringContaining('restart'), 'success');
     });
   });
 
   test('handles API errors gracefully', async () => {
     jest.setTimeout(10000); // Increase timeout for this test
-    
+
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 500,
       json: async () => ({ error: 'Server error' }),
     });
 
-    const { result } = renderHook(() =>
-      useBotControl({ setBusy, showNotification, onSuccess })
-    );
+    const { result } = renderHook(() => useBotControl({ setBusy, showNotification, onSuccess }));
 
     await act(async () => {
       await result.current.handleStartBot();
@@ -113,10 +102,7 @@ describe('useBotControl', () => {
     // Wait longer for retries to complete
     await waitFor(
       () => {
-        expect(showNotification).toHaveBeenCalledWith(
-          expect.stringContaining('Failed'),
-          'error'
-        );
+        expect(showNotification).toHaveBeenCalledWith(expect.stringContaining('Failed'), 'error');
       },
       { timeout: 8000 }
     );

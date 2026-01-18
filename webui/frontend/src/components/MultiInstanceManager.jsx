@@ -20,7 +20,7 @@ import {
   MenuItem,
   Alert,
   LinearProgress,
-  Divider
+  Divider,
 } from '@mui/material';
 import {
   Play,
@@ -32,13 +32,13 @@ import {
   TrendingUp,
   Activity,
   Cpu,
-  HardDrive
+  HardDrive,
 } from 'lucide-react';
 
 const InstanceCard = ({ instance, onStart, onStop, onRestart, onViewLogs, onConfigure }) => {
   const isRunning = instance.status === 'running';
   const statusColor = isRunning ? 'success' : 'default';
-  
+
   return (
     <Card variant="outlined" sx={{ height: '100%' }}>
       <CardContent>
@@ -47,17 +47,13 @@ const InstanceCard = ({ instance, onStart, onStop, onRestart, onViewLogs, onConf
             <Typography variant="h6" gutterBottom>
               {instance.mode === 'live' ? '🔴' : '🟢'} {instance.name}
             </Typography>
-            <Chip 
-              label={instance.status.toUpperCase()} 
+            <Chip
+              label={instance.status.toUpperCase()}
               color={statusColor}
               size="small"
               sx={{ mr: 1 }}
             />
-            <Chip 
-              label={instance.mode.toUpperCase()} 
-              size="small"
-              variant="outlined"
-            />
+            <Chip label={instance.mode.toUpperCase()} size="small" variant="outlined" />
           </Box>
           <Tooltip title="Configure">
             <IconButton size="small" onClick={() => onConfigure(instance)}>
@@ -103,7 +99,8 @@ const InstanceCard = ({ instance, onStart, onStop, onRestart, onViewLogs, onConf
                   Grid Range
                 </Typography>
                 <Typography variant="body2">
-                  ${instance.grid?.lower?.toLocaleString() || '0'} - ${instance.grid?.upper?.toLocaleString() || '0'}
+                  ${instance.grid?.lower?.toLocaleString() || '0'} - $
+                  {instance.grid?.upper?.toLocaleString() || '0'}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
@@ -126,7 +123,7 @@ const InstanceCard = ({ instance, onStart, onStop, onRestart, onViewLogs, onConf
                 <Typography variant="caption" color="text.secondary">
                   P&L
                 </Typography>
-                <Typography 
+                <Typography
                   variant="body2"
                   color={instance.pnl >= 0 ? 'success.main' : 'error.main'}
                   fontWeight="bold"
@@ -213,15 +210,15 @@ const MultiInstanceManager = () => {
   const fetchInstances = useCallback(async () => {
     try {
       const response = await fetch('/api/instances/list');
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch instances: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      
+
       // Transform API response to component format
-      const transformedInstances = data.instances.map(inst => ({
+      const transformedInstances = data.instances.map((inst) => ({
         id: inst.id,
         name: inst.name,
         mode: inst.mode,
@@ -234,12 +231,12 @@ const MultiInstanceManager = () => {
           lower: inst.grid.lower_range,
           upper: inst.grid.upper_range,
           step: inst.grid.grid_step,
-          lot_size: inst.grid.lot_size
+          lot_size: inst.grid.lot_size,
         },
         pnl: inst.pnl,
-        positions: inst.positions
+        positions: inst.positions,
       }));
-      
+
       setInstances(transformedInstances);
     } catch (error) {
       console.error('Failed to fetch instances:', error);
@@ -264,14 +261,14 @@ const MultiInstanceManager = () => {
   const handleStart = async (instance) => {
     try {
       const response = await fetch(`/api/instances/${instance.id}/start`, {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to start instance');
       }
-      
+
       console.log('Started instance:', instance.id);
       // Refresh instances
       fetchInstances();
@@ -284,14 +281,14 @@ const MultiInstanceManager = () => {
   const handleStop = async (instance) => {
     try {
       const response = await fetch(`/api/instances/${instance.id}/stop`, {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to stop instance');
       }
-      
+
       console.log('Stopped instance:', instance.id);
       // Refresh instances
       fetchInstances();
@@ -304,14 +301,14 @@ const MultiInstanceManager = () => {
   const handleRestart = async (instance) => {
     try {
       const response = await fetch(`/api/instances/${instance.id}/restart`, {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to restart instance');
       }
-      
+
       console.log('Restarted instance:', instance.id);
       // Refresh instances
       fetchInstances();
@@ -337,26 +334,26 @@ const MultiInstanceManager = () => {
       const response = await fetch('/api/instances/create', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           name: newInstanceName,
           mode: newInstanceMode,
-          strategy: newInstanceTemplate
-        })
+          strategy: newInstanceTemplate,
+        }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to create instance');
       }
-      
+
       console.log('Created instance:', newInstanceName);
-      
+
       // Close dialog and reset form
       setCreateDialogOpen(false);
       setNewInstanceName('');
-      
+
       // Refresh instances
       fetchInstances();
     } catch (error) {
@@ -367,7 +364,7 @@ const MultiInstanceManager = () => {
 
   useEffect(() => {
     fetchInstances();
-    
+
     // Auto-refresh every 30 seconds
     const interval = setInterval(fetchInstances, 30000);
     return () => clearInterval(interval);
@@ -378,8 +375,8 @@ const MultiInstanceManager = () => {
     return <LinearProgress />;
   }
 
-  const runningInstances = instances.filter(i => i.status === 'running').length;
-  const stoppedInstances = instances.filter(i => i.status === 'stopped').length;
+  const runningInstances = instances.filter((i) => i.status === 'running').length;
+  const stoppedInstances = instances.filter((i) => i.status === 'stopped').length;
   const totalCpu = instances.reduce((sum, i) => sum + (i.cpu || 0), 0);
   const totalMemory = instances.reduce((sum, i) => sum + (i.memory || 0), 0);
 
@@ -395,19 +392,13 @@ const MultiInstanceManager = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5">
-            🤖 Bot Instance Manager
-          </Typography>
+          <Typography variant="h5">🤖 Bot Instance Manager</Typography>
           <Typography variant="body2" color="text.secondary">
             Run multiple bot instances simultaneously (demo + live)
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshCw size={16} />}
-            onClick={fetchInstances}
-          >
+          <Button variant="outlined" startIcon={<RefreshCw size={16} />} onClick={fetchInstances}>
             Refresh
           </Button>
           <Button
@@ -431,9 +422,7 @@ const MultiInstanceManager = () => {
                   <Typography variant="caption" color="text.secondary">
                     Total Instances
                   </Typography>
-                  <Typography variant="h6">
-                    {instances.length}
-                  </Typography>
+                  <Typography variant="h6">{instances.length}</Typography>
                 </Box>
               </Box>
             </Grid>
@@ -457,9 +446,7 @@ const MultiInstanceManager = () => {
                   <Typography variant="caption" color="text.secondary">
                     Total CPU
                   </Typography>
-                  <Typography variant="h6">
-                    {totalCpu.toFixed(1)}%
-                  </Typography>
+                  <Typography variant="h6">{totalCpu.toFixed(1)}%</Typography>
                 </Box>
               </Box>
             </Grid>
@@ -470,9 +457,7 @@ const MultiInstanceManager = () => {
                   <Typography variant="caption" color="text.secondary">
                     Total Memory
                   </Typography>
-                  <Typography variant="h6">
-                    {totalMemory.toFixed(0)}MB
-                  </Typography>
+                  <Typography variant="h6">{totalMemory.toFixed(0)}MB</Typography>
                 </Box>
               </Box>
             </Grid>
@@ -497,9 +482,7 @@ const MultiInstanceManager = () => {
       </Grid>
 
       {instances.length === 0 && (
-        <Alert severity="info">
-          No bot instances found. Click "New Instance" to create one.
-        </Alert>
+        <Alert severity="info">No bot instances found. Click "New Instance" to create one.</Alert>
       )}
 
       {/* Create Instance Dialog */}
@@ -542,17 +525,14 @@ const MultiInstanceManager = () => {
             </FormControl>
 
             <Alert severity="info">
-              Instance will be created with default configuration. You can customize it after creation.
+              Instance will be created with default configuration. You can customize it after
+              creation.
             </Alert>
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={handleCreateInstance} 
-            variant="contained"
-            disabled={!newInstanceName}
-          >
+          <Button onClick={handleCreateInstance} variant="contained" disabled={!newInstanceName}>
             Create & Start
           </Button>
         </DialogActions>
@@ -564,8 +544,8 @@ const MultiInstanceManager = () => {
         <DialogContent>
           <Box sx={{ pt: 2, minWidth: 400 }}>
             <Alert severity="info">
-              Instance configuration editor will be available here.
-              For now, use the Config Editor to modify settings.
+              Instance configuration editor will be available here. For now, use the Config Editor
+              to modify settings.
             </Alert>
           </Box>
         </DialogContent>

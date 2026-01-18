@@ -3,7 +3,7 @@
  * ================================
  * Real-time monitoring of system health, risk metrics, rate limits, and execution statistics.
  * Integrates with new production-ready backend utilities.
- * 
+ *
  * Created: January 12, 2026
  */
 
@@ -23,7 +23,7 @@ import {
   Card,
   CardContent,
   Collapse,
-  Button
+  Button,
 } from '@mui/material';
 import {
   MonitorHeart as HealthIcon,
@@ -36,7 +36,7 @@ import {
   CheckCircle as OkIcon,
   Warning as WarningIcon,
   Error as ErrorIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
 } from '@mui/icons-material';
 
 const API_BASE = '/api/production';
@@ -92,9 +92,7 @@ function HealthPanel({ data, loading }) {
   }
 
   if (!data) {
-    return (
-      <Alert severity="info">Health monitor not available</Alert>
-    );
+    return <Alert severity="info">Health monitor not available</Alert>;
   }
 
   return (
@@ -105,36 +103,46 @@ function HealthPanel({ data, loading }) {
           Status: <strong>{data.overall_status?.toUpperCase()}</strong>
         </Typography>
       </Box>
-      
+
       <Grid container spacing={2}>
         <Grid item xs={4}>
-          <Typography variant="caption" color="text.secondary">CPU</Typography>
-          <LinearProgress 
-            variant="determinate" 
-            value={data.cpu_percent || 0} 
+          <Typography variant="caption" color="text.secondary">
+            CPU
+          </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={data.cpu_percent || 0}
             color={data.cpu_percent > 80 ? 'error' : data.cpu_percent > 60 ? 'warning' : 'success'}
             sx={{ height: 8, borderRadius: 1 }}
           />
           <Typography variant="body2">{data.cpu_percent?.toFixed(1)}%</Typography>
         </Grid>
-        
+
         <Grid item xs={4}>
-          <Typography variant="caption" color="text.secondary">Memory</Typography>
-          <LinearProgress 
-            variant="determinate" 
+          <Typography variant="caption" color="text.secondary">
+            Memory
+          </Typography>
+          <LinearProgress
+            variant="determinate"
             value={data.memory_percent || 0}
-            color={data.memory_percent > 85 ? 'error' : data.memory_percent > 70 ? 'warning' : 'success'}
+            color={
+              data.memory_percent > 85 ? 'error' : data.memory_percent > 70 ? 'warning' : 'success'
+            }
             sx={{ height: 8, borderRadius: 1 }}
           />
           <Typography variant="body2">{data.memory_percent?.toFixed(1)}%</Typography>
         </Grid>
-        
+
         <Grid item xs={4}>
-          <Typography variant="caption" color="text.secondary">Disk</Typography>
-          <LinearProgress 
-            variant="determinate" 
+          <Typography variant="caption" color="text.secondary">
+            Disk
+          </Typography>
+          <LinearProgress
+            variant="determinate"
             value={data.disk_percent || 0}
-            color={data.disk_percent > 90 ? 'error' : data.disk_percent > 80 ? 'warning' : 'success'}
+            color={
+              data.disk_percent > 90 ? 'error' : data.disk_percent > 80 ? 'warning' : 'success'
+            }
             sx={{ height: 8, borderRadius: 1 }}
           />
           <Typography variant="body2">{data.disk_percent?.toFixed(1)}%</Typography>
@@ -155,9 +163,7 @@ function RateLimitsPanel({ data, loading }) {
   }
 
   if (!data) {
-    return (
-      <Alert severity="info">Rate limiters not available</Alert>
-    );
+    return <Alert severity="info">Rate limiters not available</Alert>;
   }
 
   return (
@@ -167,10 +173,12 @@ function RateLimitsPanel({ data, loading }) {
           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>
             {name} API
           </Typography>
-          <LinearProgress 
-            variant="determinate" 
+          <LinearProgress
+            variant="determinate"
             value={limit.usage_percent || 0}
-            color={limit.usage_percent > 80 ? 'error' : limit.usage_percent > 50 ? 'warning' : 'success'}
+            color={
+              limit.usage_percent > 80 ? 'error' : limit.usage_percent > 50 ? 'warning' : 'success'
+            }
             sx={{ height: 8, borderRadius: 1 }}
           />
           <Typography variant="body2">
@@ -193,9 +201,7 @@ function RiskPanel({ data, loading }) {
   }
 
   if (!data) {
-    return (
-      <Alert severity="info">Risk manager not available</Alert>
-    );
+    return <Alert severity="info">Risk manager not available</Alert>;
   }
 
   return (
@@ -205,23 +211,27 @@ function RiskPanel({ data, loading }) {
         <Typography variant="subtitle1">
           Risk Level: <strong>{data.risk_level?.toUpperCase()}</strong>
         </Typography>
-        <Chip 
-          label={data.can_trade !== false ? 'Trading Allowed' : 'Trading Blocked'} 
+        <Chip
+          label={data.can_trade !== false ? 'Trading Allowed' : 'Trading Blocked'}
           color={data.can_trade !== false ? 'success' : 'error'}
           size="small"
         />
       </Box>
-      
+
       <Grid container spacing={2}>
         {data.volatility_regime && (
           <Grid item xs={6}>
-            <Typography variant="caption" color="text.secondary">Volatility Regime</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Volatility Regime
+            </Typography>
             <Typography variant="body2">{data.volatility_regime}</Typography>
           </Grid>
         )}
         {data.drawdown !== undefined && (
           <Grid item xs={6}>
-            <Typography variant="caption" color="text.secondary">Max Drawdown</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Max Drawdown
+            </Typography>
             <Typography variant="body2" color={data.drawdown > 15 ? 'error.main' : 'text.primary'}>
               {data.drawdown?.toFixed(2)}%
             </Typography>
@@ -243,30 +253,40 @@ function ExecutionPanel({ data, loading }) {
   }
 
   if (!data) {
-    return (
-      <Alert severity="info">Execution statistics not available</Alert>
-    );
+    return <Alert severity="info">Execution statistics not available</Alert>;
   }
 
   return (
     <Grid container spacing={2}>
       <Grid item xs={3}>
-        <Typography variant="caption" color="text.secondary">Orders Placed</Typography>
+        <Typography variant="caption" color="text.secondary">
+          Orders Placed
+        </Typography>
         <Typography variant="h6">{data.orders_placed || 0}</Typography>
       </Grid>
       <Grid item xs={3}>
-        <Typography variant="caption" color="text.secondary">Orders Filled</Typography>
-        <Typography variant="h6" color="success.main">{data.orders_filled || 0}</Typography>
+        <Typography variant="caption" color="text.secondary">
+          Orders Filled
+        </Typography>
+        <Typography variant="h6" color="success.main">
+          {data.orders_filled || 0}
+        </Typography>
       </Grid>
       <Grid item xs={3}>
-        <Typography variant="caption" color="text.secondary">Orders Failed</Typography>
-        <Typography variant="h6" color="error.main">{data.orders_failed || 0}</Typography>
+        <Typography variant="caption" color="text.secondary">
+          Orders Failed
+        </Typography>
+        <Typography variant="h6" color="error.main">
+          {data.orders_failed || 0}
+        </Typography>
       </Grid>
       <Grid item xs={3}>
-        <Typography variant="caption" color="text.secondary">Fill Rate</Typography>
+        <Typography variant="caption" color="text.secondary">
+          Fill Rate
+        </Typography>
         <Typography variant="h6">{data.fill_rate?.toFixed(1) || 0}%</Typography>
       </Grid>
-      
+
       {data.rate_limit_waits > 0 && (
         <Grid item xs={12}>
           <Alert severity="info" sx={{ py: 0.5 }}>
@@ -274,7 +294,7 @@ function ExecutionPanel({ data, loading }) {
           </Alert>
         </Grid>
       )}
-      
+
       {data.validation_failures > 0 && (
         <Grid item xs={12}>
           <Alert severity="warning" sx={{ py: 0.5 }}>
@@ -296,14 +316,14 @@ export default function ProductionMonitoringDashboard() {
     health: true,
     rateLimits: true,
     risk: true,
-    execution: true
+    execution: true,
   });
 
   const fetchDashboardData = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/dashboard`);
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         setDashboardData(data.dashboard);
         setLastUpdate(new Date().toLocaleTimeString());
@@ -325,7 +345,7 @@ export default function ProductionMonitoringDashboard() {
   }, [fetchDashboardData]);
 
   const toggleSection = (section) => {
-    setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
+    setExpanded((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
   const handleRefresh = () => {
@@ -335,11 +355,14 @@ export default function ProductionMonitoringDashboard() {
 
   if (error) {
     return (
-      <Alert severity="error" action={
-        <Button color="inherit" size="small" onClick={handleRefresh}>
-          Retry
-        </Button>
-      }>
+      <Alert
+        severity="error"
+        action={
+          <Button color="inherit" size="small" onClick={handleRefresh}>
+            Retry
+          </Button>
+        }
+      >
         {error}
       </Alert>
     );
@@ -349,9 +372,7 @@ export default function ProductionMonitoringDashboard() {
     <Paper sx={{ p: 2 }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          🔒 Production Monitoring
-        </Typography>
+        <Typography variant="h6">🔒 Production Monitoring</Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {lastUpdate && (
             <Typography variant="caption" color="text.secondary">
@@ -371,12 +392,14 @@ export default function ProductionMonitoringDashboard() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
-              <Box 
+              <Box
                 sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
                 onClick={() => toggleSection('health')}
               >
                 <HealthIcon sx={{ mr: 1, color: 'primary.main' }} />
-                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>System Health</Typography>
+                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                  System Health
+                </Typography>
                 {expanded.health ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               </Box>
               <Collapse in={expanded.health}>
@@ -392,12 +415,14 @@ export default function ProductionMonitoringDashboard() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
-              <Box 
+              <Box
                 sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
                 onClick={() => toggleSection('rateLimits')}
               >
                 <RateLimitIcon sx={{ mr: 1, color: 'info.main' }} />
-                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>API Rate Limits</Typography>
+                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                  API Rate Limits
+                </Typography>
                 {expanded.rateLimits ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               </Box>
               <Collapse in={expanded.rateLimits}>
@@ -413,12 +438,14 @@ export default function ProductionMonitoringDashboard() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
-              <Box 
+              <Box
                 sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
                 onClick={() => toggleSection('risk')}
               >
                 <RiskIcon sx={{ mr: 1, color: 'warning.main' }} />
-                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>Risk Status</Typography>
+                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                  Risk Status
+                </Typography>
                 {expanded.risk ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               </Box>
               <Collapse in={expanded.risk}>
@@ -434,12 +461,14 @@ export default function ProductionMonitoringDashboard() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
-              <Box 
+              <Box
                 sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
                 onClick={() => toggleSection('execution')}
               >
                 <ExecutionIcon sx={{ mr: 1, color: 'success.main' }} />
-                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>Execution Stats</Typography>
+                <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>
+                  Execution Stats
+                </Typography>
                 {expanded.execution ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               </Box>
               <Collapse in={expanded.execution}>

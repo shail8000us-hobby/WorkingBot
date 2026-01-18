@@ -9,7 +9,7 @@ function FloatingActionBar({
   onEmergency,
   running = false,
   loading = false,
-  isMobile = false
+  isMobile = false,
 }) {
   if (isMobile) {
     return (
@@ -19,7 +19,7 @@ function FloatingActionBar({
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 220, damping: 24 }}
         style={{
-          paddingBottom: `calc(env(safe-area-inset-bottom) + 0.75rem)`
+          paddingBottom: `calc(env(safe-area-inset-bottom) + 0.75rem)`,
         }}
       >
         <div className="flex items-stretch justify-between gap-2 rounded-2xl border border-slate-800/70 bg-slate-950/90 px-3 py-2 shadow-2xl backdrop-blur">
@@ -85,7 +85,7 @@ function FloatingActionBar({
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 220, damping: 24 }}
       style={{
-        paddingBottom: `calc(env(safe-area-inset-bottom) + 1.25rem)`
+        paddingBottom: `calc(env(safe-area-inset-bottom) + 1.25rem)`,
       }}
     >
       <div

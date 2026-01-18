@@ -4,12 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
  * Custom hook for auto-saving form data with draft recovery
  */
 export const useAutoSave = (key, initialData = {}, options = {}) => {
-  const {
-    autoSaveDelay = 2000,
-    enableAutoSave = true,
-    onSave = null,
-    onRestore = null
-  } = options;
+  const { autoSaveDelay = 2000, enableAutoSave = true, onSave = null, onRestore = null } = options;
 
   const storageKey = `autosave_${key}`;
   const [data, setData] = useState(() => {
@@ -56,13 +51,13 @@ export const useAutoSave = (key, initialData = {}, options = {}) => {
         const saveData = {
           data,
           timestamp: new Date().toISOString(),
-          version: 1
+          version: 1,
         };
         localStorage.setItem(storageKey, JSON.stringify(saveData));
         setLastSaved(new Date());
         setIsDirty(false);
         setHasDraft(true);
-        
+
         if (onSave) {
           onSave(data);
         }
@@ -75,7 +70,7 @@ export const useAutoSave = (key, initialData = {}, options = {}) => {
   }, [data, isDirty, enableAutoSave, autoSaveDelay, storageKey, onSave]);
 
   const updateData = useCallback((updates) => {
-    setData(prev => ({ ...prev, ...updates }));
+    setData((prev) => ({ ...prev, ...updates }));
     setIsDirty(true);
   }, []);
 
@@ -113,13 +108,13 @@ export const useAutoSave = (key, initialData = {}, options = {}) => {
       const saveData = {
         data,
         timestamp: new Date().toISOString(),
-        version: 1
+        version: 1,
       };
       localStorage.setItem(storageKey, JSON.stringify(saveData));
       setLastSaved(new Date());
       setIsDirty(false);
       setHasDraft(true);
-      
+
       if (onSave) {
         onSave(data);
       }
@@ -139,7 +134,7 @@ export const useAutoSave = (key, initialData = {}, options = {}) => {
     clearDraft,
     restoreDraft,
     forceSave,
-    setData
+    setData,
   };
 };
 

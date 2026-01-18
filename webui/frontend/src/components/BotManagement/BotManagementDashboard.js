@@ -25,7 +25,7 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   FormControlLabel,
-  Switch
+  Switch,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -39,7 +39,7 @@ import {
   Error,
   Warning,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import api from '../../utils/apiShim';
@@ -80,22 +80,22 @@ const BotManagementDashboard = () => {
     try {
       const response = await api.get('/api/instances');
       const instancesData = response.data?.instances || [];
-      
+
       console.log('✅ Fetched instances:', instancesData); // Debug log
-      
+
       // Initialize instance status from config
       const status = {};
-      instancesData.forEach(inst => {
+      instancesData.forEach((inst) => {
         status[inst.name] = {
           name: inst.name,
           symbol: inst.symbol,
           mode: inst.mode,
           enabled: inst.enabled,
           running: false,
-          pid: null
+          pid: null,
         };
       });
-      
+
       // Ensure ETHUSD instance exists if not in config
       if (!status['ETHUSD_LONG']) {
         status['ETHUSD_LONG'] = {
@@ -104,32 +104,32 @@ const BotManagementDashboard = () => {
           mode: 'LONG',
           enabled: false,
           running: false,
-          pid: null
+          pid: null,
         };
       }
-      
+
       console.log('📊 Instance status initialized:', status); // Debug log
       setInstanceStatus(status);
     } catch (error) {
       console.error('❌ Error fetching instances:', error);
       // Fallback: Add default instances if API fails
       setInstanceStatus({
-        'BTCUSD_LONG': {
+        BTCUSD_LONG: {
           name: 'BTCUSD_LONG',
           symbol: 'BTCUSD',
           mode: 'LONG',
           enabled: false,
           running: false,
-          pid: null
+          pid: null,
         },
-        'ETHUSD_LONG': {
+        ETHUSD_LONG: {
           name: 'ETHUSD_LONG',
           symbol: 'ETHUSD',
           mode: 'LONG',
           enabled: false,
           running: false,
-          pid: null
-        }
+          pid: null,
+        },
       });
     }
   }, []);
@@ -140,10 +140,10 @@ const BotManagementDashboard = () => {
       // Fetch bot processes
       const botsResponse = await api.get('/api/bots/status');
       const bots = botsResponse.data.bots || [];
-      
+
       // Convert array to object keyed by type for compatibility
       const botStatus = {};
-      bots.forEach(bot => {
+      bots.forEach((bot) => {
         botStatus[bot.type] = {
           name: bot.name,
           running: bot.status === 'running',
@@ -153,28 +153,28 @@ const BotManagementDashboard = () => {
           last_modified: bot.startedAt,
           uptime: bot.uptime,
           cpu: bot.cpuPercent,
-          memory: bot.memoryMb
+          memory: bot.memoryMb,
         };
-        
+
         // Update instance status if this is a trading bot
         if (bot.type === 'gridbot' && bot.status === 'running') {
           // Parse instance from bot name/env
           const instanceMatch = bot.command?.match(/--instance[= ](\w+)/);
           if (instanceMatch) {
-            setInstanceStatus(prev => ({
+            setInstanceStatus((prev) => ({
               ...prev,
               [instanceMatch[1]]: {
                 ...prev[instanceMatch[1]],
                 running: true,
-                pid: bot.pid
-              }
+                pid: bot.pid,
+              },
             }));
           }
         }
       });
-      
+
       setBotStatus(botStatus);
-      
+
       // Fetch system info
       const systemResponse = await api.get('/api/system/status');
       setSystemInfo(systemResponse.data || {});
@@ -188,15 +188,15 @@ const BotManagementDashboard = () => {
     try {
       const response = await api.get('/api/bots/status');
       const bots = response.data.bots || [];
-      
+
       // Convert to process format
-      const processes = bots.map(bot => ({
+      const processes = bots.map((bot) => ({
         pid: bot.pid,
         cpu: bot.cpuPercent,
         memory: (bot.memoryMb / 1024) * 100, // Convert to percentage (approximate)
-        command: bot.command
+        command: bot.command,
       }));
-      
+
       setProcesses(processes);
     } catch (error) {
       console.error('Error fetching processes:', error);
@@ -208,14 +208,14 @@ const BotManagementDashboard = () => {
     setLoading(true);
     try {
       let response;
-      
+
       // Map actions to API endpoints based on bot type
       if (action === 'start') {
         if (botType === 'guardian') {
           response = await api.post('/api/guardian/start');
         } else {
           response = await api.post('/api/bot/start', {
-            bot_type: botType || 'all'
+            bot_type: botType || 'all',
           });
         }
       } else if (action === 'stop') {
@@ -225,11 +225,11 @@ const BotManagementDashboard = () => {
           // Stop specific bot by finding its PID
           const statusResponse = await api.get('/api/bots/status');
           const bots = statusResponse.data.bots || [];
-          const targetBot = bots.find(b => b.type === botType);
-          
+          const targetBot = bots.find((b) => b.type === botType);
+
           if (targetBot) {
             response = await api.post('/api/bots/stop', {
-              pid: targetBot.pid
+              pid: targetBot.pid,
             });
           } else {
             throw new Error(`Bot ${botType} not found`);
@@ -243,25 +243,25 @@ const BotManagementDashboard = () => {
           response = await api.post('/api/guardian/restart');
         } else {
           response = await api.post('/api/bot/restart', {
-            bot_type: botType || 'all'
+            bot_type: botType || 'all',
           });
         }
       }
-      
+
       if (response && response.data.success) {
         setSnackbar({
           open: true,
           message: `${action.charAt(0).toUpperCase() + action.slice(1)} ${botType || 'all bots'} successful`,
-          severity: 'success'
+          severity: 'success',
         });
       } else {
         setSnackbar({
           open: true,
           message: `Failed to ${action} ${botType || 'all bots'}: ${response?.data?.error || 'Unknown error'}`,
-          severity: 'error'
+          severity: 'error',
         });
       }
-      
+
       // Refresh status after action
       setTimeout(() => {
         fetchBotStatus();
@@ -271,7 +271,7 @@ const BotManagementDashboard = () => {
       setSnackbar({
         open: true,
         message: `Error: ${error.message}`,
-        severity: 'error'
+        severity: 'error',
       });
     } finally {
       setLoading(false);
@@ -283,38 +283,38 @@ const BotManagementDashboard = () => {
     setLoading(true);
     try {
       let response;
-      
+
       if (action === 'start') {
         response = await api.post('/api/bot/start', {
-          instance: instanceName
+          instance: instanceName,
         });
       } else if (action === 'stop') {
         response = await api.post('/api/bot/stop', {
-          instance: instanceName
+          instance: instanceName,
         });
       } else if (action === 'toggle_enabled') {
         response = await api.post('/api/instances/toggle', {
-          instance: instanceName
+          instance: instanceName,
         });
       }
-      
+
       if (response && response.data.success) {
         setSnackbar({
           open: true,
           message: `${action.charAt(0).toUpperCase() + action.slice(1)} ${instanceName} successful`,
-          severity: 'success'
+          severity: 'success',
         });
-        
+
         // Refresh instances
         fetchInstances();
       } else {
         setSnackbar({
           open: true,
           message: `Failed to ${action} ${instanceName}: ${response?.data?.error || 'Unknown error'}`,
-          severity: 'error'
+          severity: 'error',
         });
       }
-      
+
       setTimeout(() => {
         fetchBotStatus();
         fetchProcesses();
@@ -323,7 +323,7 @@ const BotManagementDashboard = () => {
       setSnackbar({
         open: true,
         message: `Error: ${error.message}`,
-        severity: 'error'
+        severity: 'error',
       });
     } finally {
       setLoading(false);
@@ -342,8 +342,8 @@ const BotManagementDashboard = () => {
   // Get instance color by symbol
   const getInstanceColor = (symbol) => {
     const colors = {
-      'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' }, // Bitcoin orange
-      'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' }, // Ethereum purple
+      BTCUSD: { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' }, // Bitcoin orange
+      ETHUSD: { bg: '#627eea20', border: '#627eea', text: '#627eea' }, // Ethereum purple
     };
     return colors[symbol] || { bg: '#64748b20', border: '#64748b', text: '#64748b' };
   };
@@ -353,13 +353,13 @@ const BotManagementDashboard = () => {
     fetchInstances();
     fetchBotStatus();
     fetchProcesses();
-    
+
     // Set up auto-refresh
     const interval = setInterval(() => {
       fetchBotStatus();
       fetchProcesses();
     }, 10000);
-    
+
     return () => clearInterval(interval);
   }, [fetchInstances]);
 
@@ -392,18 +392,20 @@ const BotManagementDashboard = () => {
           const colors = getInstanceColor(symbol);
           return (
             <Grid item xs={12} md={6} key={symbol}>
-              <Card sx={{ 
-                borderLeft: `4px solid ${colors.border}`,
-                bgcolor: colors.bg
-              }}>
+              <Card
+                sx={{
+                  borderLeft: `4px solid ${colors.border}`,
+                  bgcolor: colors.bg,
+                }}
+              >
                 <CardHeader
                   title={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Typography variant="h6" sx={{ color: colors.text, fontWeight: 'bold' }}>
                         {symbol}
                       </Typography>
-                      <Chip 
-                        label={`${symbolInstances.filter(i => i.enabled).length}/${symbolInstances.length} enabled`}
+                      <Chip
+                        label={`${symbolInstances.filter((i) => i.enabled).length}/${symbolInstances.length} enabled`}
                         size="small"
                         color="primary"
                         variant="outlined"
@@ -413,20 +415,25 @@ const BotManagementDashboard = () => {
                 />
                 <CardContent>
                   <Grid container spacing={2}>
-                    {symbolInstances.map(instance => (
+                    {symbolInstances.map((instance) => (
                       <Grid item xs={12} key={instance.name}>
-                        <Paper sx={{ 
-                          p: 2, 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between',
-                          bgcolor: instance.enabled ? 'background.paper' : 'action.disabledBackground'
-                        }}>
+                        <Paper
+                          sx={{
+                            p: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            bgcolor: instance.enabled
+                              ? 'background.paper'
+                              : 'action.disabledBackground',
+                          }}
+                        >
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            {instance.mode === 'LONG' ? 
-                              <TrendingUp sx={{ color: '#10b981' }} /> : 
+                            {instance.mode === 'LONG' ? (
+                              <TrendingUp sx={{ color: '#10b981' }} />
+                            ) : (
                               <TrendingDown sx={{ color: '#ef4444' }} />
-                            }
+                            )}
                             <Box>
                               <Typography variant="subtitle1" fontWeight="bold">
                                 {instance.name}
@@ -435,13 +442,13 @@ const BotManagementDashboard = () => {
                                 {instance.mode} Mode • {instance.running ? 'Running' : 'Stopped'}
                               </Typography>
                             </Box>
-                            <Chip 
+                            <Chip
                               label={instance.enabled ? 'Enabled' : 'Disabled'}
                               size="small"
                               color={instance.enabled ? 'success' : 'default'}
                             />
                             {instance.running && (
-                              <Chip 
+                              <Chip
                                 icon={<CheckCircle sx={{ fontSize: 14 }} />}
                                 label={`PID: ${instance.pid}`}
                                 size="small"
@@ -456,7 +463,12 @@ const BotManagementDashboard = () => {
                                 size="small"
                                 variant={instance.running ? 'outlined' : 'contained'}
                                 color={instance.running ? 'error' : 'success'}
-                                onClick={() => handleInstanceAction(instance.running ? 'stop' : 'start', instance.name)}
+                                onClick={() =>
+                                  handleInstanceAction(
+                                    instance.running ? 'stop' : 'start',
+                                    instance.name
+                                  )
+                                }
                                 disabled={loading || !instance.enabled}
                                 startIcon={instance.running ? <Stop /> : <PlayArrow />}
                               >
@@ -468,7 +480,9 @@ const BotManagementDashboard = () => {
                                 <Switch
                                   size="small"
                                   checked={instance.enabled}
-                                  onChange={() => handleInstanceAction('toggle_enabled', instance.name)}
+                                  onChange={() =>
+                                    handleInstanceAction('toggle_enabled', instance.name)
+                                  }
                                   disabled={loading}
                                 />
                               }
@@ -487,23 +501,31 @@ const BotManagementDashboard = () => {
       </Grid>
 
       {/* System Info */}
-      <Paper sx={{ p: 2, mb: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+      <Paper
+        sx={{
+          p: 2,
+          mb: 3,
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+        }}
+      >
         <Grid container spacing={2}>
           <Grid item xs={12} md={8}>
             <Typography variant="h6" gutterBottom>
               System Status
             </Typography>
             <Typography variant="body2">
-              Load: {systemInfo.load_avg ? systemInfo.load_avg.map(l => l.toFixed(2)).join(', ') : 'N/A'}
+              Load:{' '}
+              {systemInfo.load_avg
+                ? systemInfo.load_avg.map((l) => l.toFixed(2)).join(', ')
+                : 'N/A'}
             </Typography>
             <Typography variant="body2">
               Bot Memory: {formatBytes(systemInfo.bot_memory || 0)}
             </Typography>
           </Grid>
           <Grid item xs={12} md={4} sx={{ textAlign: 'right' }}>
-            <Typography variant="body2">
-              Last Updated: {systemInfo.timestamp || 'N/A'}
-            </Typography>
+            <Typography variant="body2">Last Updated: {systemInfo.timestamp || 'N/A'}</Typography>
           </Grid>
         </Grid>
       </Paper>
@@ -667,7 +689,7 @@ const BotManagementDashboard = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999
+            zIndex: 9999,
           }}
         >
           <CircularProgress color="primary" />

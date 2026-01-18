@@ -1,12 +1,12 @@
 /**
  * ML Decision Center Component - Phase 4 UI
- * 
+ *
  * Displays AI decision pipeline with:
  * - Pending decisions for approval
  * - Circuit breaker status
  * - Autonomy level controls
  * - Decision history
- * 
+ *
  * Created: January 18, 2026
  */
 
@@ -58,23 +58,38 @@ const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5555';
 
 // Autonomy level descriptions
 const AUTONOMY_LEVELS = {
-  advisory: { label: 'Manual / Advisory', description: 'AI provides suggestions only, human executes all trades', color: '#9e9e9e', sliderValue: 0 },
-  semi_auto: { label: 'Semi-Automatic', description: 'AI can execute trades with approval', color: '#ff9800', sliderValue: 1 },
-  full_auto: { label: 'Full Automatic', description: 'AI executes all trades within risk limits', color: '#4caf50', sliderValue: 2 },
+  advisory: {
+    label: 'Manual / Advisory',
+    description: 'AI provides suggestions only, human executes all trades',
+    color: '#9e9e9e',
+    sliderValue: 0,
+  },
+  semi_auto: {
+    label: 'Semi-Automatic',
+    description: 'AI can execute trades with approval',
+    color: '#ff9800',
+    sliderValue: 1,
+  },
+  full_auto: {
+    label: 'Full Automatic',
+    description: 'AI executes all trades within risk limits',
+    color: '#4caf50',
+    sliderValue: 2,
+  },
 };
 
 // Slider value to backend level mapping
 const SLIDER_TO_LEVEL = {
   0: 'advisory',
-  1: 'semi_auto', 
-  2: 'full_auto'
+  1: 'semi_auto',
+  2: 'full_auto',
 };
 
 // Backend level to slider value mapping
 const LEVEL_TO_SLIDER = {
   advisory: 0,
   semi_auto: 1,
-  full_auto: 2
+  full_auto: 2,
 };
 
 const MLDecisionCenter = () => {
@@ -83,12 +98,12 @@ const MLDecisionCenter = () => {
   const [circuitBreaker, setCircuitBreaker] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
   const [error, setError] = useState(null);
-  
+
   // Dialog states
   const [rejectDialog, setRejectDialog] = useState({ open: false, decisionId: null });
   const [rejectReason, setRejectReason] = useState('');
   const [settingsDialog, setSettingsDialog] = useState(false);
-  
+
   // Fetch pending decisions
   const fetchPendingDecisions = useCallback(async () => {
     try {
@@ -132,7 +147,7 @@ const MLDecisionCenter = () => {
   const approveDecision = async (decisionId) => {
     try {
       const response = await fetch(`${API_BASE}/api/ml/decision/${decisionId}/approve`, {
-        method: 'POST'
+        method: 'POST',
       });
       const data = await response.json();
       if (data.success) {
@@ -148,13 +163,16 @@ const MLDecisionCenter = () => {
   // Reject decision
   const rejectDecision = async () => {
     if (!rejectDialog.decisionId) return;
-    
+
     try {
-      const response = await fetch(`${API_BASE}/api/ml/decision/${rejectDialog.decisionId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: rejectReason || 'Manual rejection' })
-      });
+      const response = await fetch(
+        `${API_BASE}/api/ml/decision/${rejectDialog.decisionId}/reject`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: rejectReason || 'Manual rejection' }),
+        }
+      );
       const data = await response.json();
       if (data.success) {
         fetchPendingDecisions();
@@ -173,11 +191,11 @@ const MLDecisionCenter = () => {
     try {
       // Map slider value to backend enum
       const level = SLIDER_TO_LEVEL[sliderValue] || 'advisory';
-      
+
       const response = await fetch(`${API_BASE}/api/ml/decision/autonomy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level })
+        body: JSON.stringify({ level }),
       });
       const data = await response.json();
       if (data.success) {
@@ -194,7 +212,7 @@ const MLDecisionCenter = () => {
   const resetCircuitBreaker = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/ml/circuit-breaker/reset`, {
-        method: 'POST'
+        method: 'POST',
       });
       const data = await response.json();
       if (data.success) {
@@ -209,15 +227,16 @@ const MLDecisionCenter = () => {
 
   // Initial load
   useEffect(() => {
-    Promise.all([fetchPendingDecisions(), fetchCircuitBreaker(), fetchEngineStatus()])
-      .finally(() => setLoading(false));
-    
+    Promise.all([fetchPendingDecisions(), fetchCircuitBreaker(), fetchEngineStatus()]).finally(() =>
+      setLoading(false)
+    );
+
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => {
       fetchPendingDecisions();
       fetchCircuitBreaker();
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, [fetchPendingDecisions, fetchCircuitBreaker, fetchEngineStatus]);
 
@@ -226,27 +245,29 @@ const MLDecisionCenter = () => {
     if (!circuitBreaker) return null;
 
     const isTripped = circuitBreaker.is_tripped;
-    
+
     return (
-      <Card sx={{ 
-        mb: 2,
-        bgcolor: isTripped ? 'rgba(244, 67, 54, 0.1)' : 'rgba(76, 175, 80, 0.1)',
-        border: `2px solid ${isTripped ? '#f44336' : '#4caf50'}`
-      }}>
+      <Card
+        sx={{
+          mb: 2,
+          bgcolor: isTripped ? 'rgba(244, 67, 54, 0.1)' : 'rgba(76, 175, 80, 0.1)',
+          border: `2px solid ${isTripped ? '#f44336' : '#4caf50'}`,
+        }}
+      >
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SecurityIcon sx={{ color: isTripped ? '#f44336' : '#4caf50' }} />
-              <Typography variant="h6">
-                Circuit Breaker
-              </Typography>
-              <Chip 
+              <Typography variant="h6">Circuit Breaker</Typography>
+              <Chip
                 label={isTripped ? 'TRIPPED' : 'ACTIVE'}
                 color={isTripped ? 'error' : 'success'}
                 size="small"
               />
             </Box>
-            
+
             {isTripped && (
               <Button
                 variant="outlined"
@@ -269,16 +290,20 @@ const MLDecisionCenter = () => {
 
           <Grid container spacing={3}>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Trades Today</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Trades Today
+              </Typography>
               <Typography variant="h6">{circuitBreaker.trades_today || 0}</Typography>
               <Typography variant="caption" color="text.secondary">
                 Limit: {circuitBreaker.daily_trade_limit || 'N/A'}
               </Typography>
             </Grid>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Daily PnL</Typography>
-              <Typography 
-                variant="h6" 
+              <Typography variant="caption" color="text.secondary">
+                Daily PnL
+              </Typography>
+              <Typography
+                variant="h6"
                 color={circuitBreaker.daily_pnl >= 0 ? 'success.main' : 'error.main'}
               >
                 ${circuitBreaker.daily_pnl?.toFixed(2) || '0.00'}
@@ -288,8 +313,10 @@ const MLDecisionCenter = () => {
               </Typography>
             </Grid>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Consecutive Losses</Typography>
-              <Typography 
+              <Typography variant="caption" color="text.secondary">
+                Consecutive Losses
+              </Typography>
+              <Typography
                 variant="h6"
                 color={circuitBreaker.consecutive_losses >= 3 ? 'error.main' : 'inherit'}
               >
@@ -300,7 +327,9 @@ const MLDecisionCenter = () => {
               </Typography>
             </Grid>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Win Rate</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Win Rate
+              </Typography>
               <Typography variant="h6">
                 {(circuitBreaker.recent_win_rate * 100)?.toFixed(0) || 0}%
               </Typography>
@@ -323,7 +352,9 @@ const MLDecisionCenter = () => {
     return (
       <Card sx={{ mb: 2, bgcolor: 'rgba(30, 35, 50, 0.9)' }}>
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SpeedIcon />
               <Typography variant="h6">Autonomy Level</Typography>
@@ -340,7 +371,7 @@ const MLDecisionCenter = () => {
               </Typography>
               <Chip label={levelInfo?.label} size="small" />
             </Box>
-            
+
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {levelInfo?.description}
             </Typography>
@@ -354,7 +385,7 @@ const MLDecisionCenter = () => {
               marks={[
                 { value: 0, label: 'Manual' },
                 { value: 1, label: 'Semi-Auto' },
-                { value: 2, label: 'Full Auto' }
+                { value: 2, label: 'Full Auto' },
               ]}
               sx={{
                 '& .MuiSlider-thumb': {
@@ -365,10 +396,14 @@ const MLDecisionCenter = () => {
                 },
               }}
             />
-            
+
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-              <Typography variant="caption" color="text.secondary">Manual</Typography>
-              <Typography variant="caption" color="text.secondary">Full Auto</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Manual
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Full Auto
+              </Typography>
             </Box>
           </Box>
         </CardContent>
@@ -381,23 +416,22 @@ const MLDecisionCenter = () => {
     return (
       <Card sx={{ bgcolor: 'rgba(30, 35, 50, 0.9)' }}>
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <GavelIcon />
               <Typography variant="h6">Pending Decisions</Typography>
               {pendingDecisions.length > 0 && (
-                <Chip 
-                  label={pendingDecisions.length} 
-                  color="warning" 
-                  size="small"
-                />
+                <Chip label={pendingDecisions.length} color="warning" size="small" />
               )}
             </Box>
           </Box>
 
           {pendingDecisions.length === 0 ? (
             <Alert severity="info" sx={{ bgcolor: 'rgba(33, 150, 243, 0.1)' }}>
-              No pending decisions. AI is either operating autonomously or waiting for opportunities.
+              No pending decisions. AI is either operating autonomously or waiting for
+              opportunities.
             </Alert>
           ) : (
             <TableContainer>
@@ -416,7 +450,7 @@ const MLDecisionCenter = () => {
                   {pendingDecisions.map((decision, i) => (
                     <TableRow key={decision.decision_id || i}>
                       <TableCell>
-                        <Chip 
+                        <Chip
                           label={`${decision.action} ${decision.option_type?.toUpperCase()}`}
                           color={decision.option_type === 'call' ? 'success' : 'error'}
                           size="small"
@@ -429,8 +463,8 @@ const MLDecisionCenter = () => {
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <LinearProgress 
-                            variant="determinate" 
+                          <LinearProgress
+                            variant="determinate"
                             value={(decision.confidence || 0) * 100}
                             sx={{ width: 50, height: 6, borderRadius: 3 }}
                           />
@@ -440,11 +474,14 @@ const MLDecisionCenter = () => {
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Chip 
+                        <Chip
                           label={decision.risk_level || 'UNKNOWN'}
                           color={
-                            decision.risk_level === 'LOW' ? 'success' :
-                            decision.risk_level === 'MEDIUM' ? 'warning' : 'error'
+                            decision.risk_level === 'LOW'
+                              ? 'success'
+                              : decision.risk_level === 'MEDIUM'
+                                ? 'warning'
+                                : 'error'
                           }
                           size="small"
                           variant="outlined"
@@ -452,7 +489,11 @@ const MLDecisionCenter = () => {
                       </TableCell>
                       <TableCell>
                         <Tooltip title={decision.requires_approval_reason || 'Pending review'}>
-                          <Typography variant="caption" noWrap sx={{ maxWidth: 150, display: 'block' }}>
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            sx={{ maxWidth: 150, display: 'block' }}
+                          >
                             {decision.requires_approval_reason || 'Manual review'}
                           </Typography>
                         </Tooltip>
@@ -460,8 +501,8 @@ const MLDecisionCenter = () => {
                       <TableCell align="right">
                         <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
                           <Tooltip title="Approve">
-                            <IconButton 
-                              color="success" 
+                            <IconButton
+                              color="success"
                               size="small"
                               onClick={() => approveDecision(decision.decision_id)}
                             >
@@ -469,10 +510,12 @@ const MLDecisionCenter = () => {
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="Reject">
-                            <IconButton 
-                              color="error" 
+                            <IconButton
+                              color="error"
                               size="small"
-                              onClick={() => setRejectDialog({ open: true, decisionId: decision.decision_id })}
+                              onClick={() =>
+                                setRejectDialog({ open: true, decisionId: decision.decision_id })
+                              }
                             >
                               <ThumbDownIcon />
                             </IconButton>
@@ -506,20 +549,20 @@ const MLDecisionCenter = () => {
           <GavelIcon />
           Decision Center
         </Typography>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {engineStatus?.is_enabled ? (
-            <Chip 
-              icon={<PlayCircleIcon />} 
-              label="Engine Active" 
-              color="success" 
+            <Chip
+              icon={<PlayCircleIcon />}
+              label="Engine Active"
+              color="success"
               variant="outlined"
             />
           ) : (
-            <Chip 
-              icon={<PauseCircleIcon />} 
-              label="Engine Paused" 
-              color="warning" 
+            <Chip
+              icon={<PauseCircleIcon />}
+              label="Engine Paused"
+              color="warning"
               variant="outlined"
             />
           )}
@@ -542,7 +585,10 @@ const MLDecisionCenter = () => {
       {renderPendingDecisions()}
 
       {/* Reject Dialog */}
-      <Dialog open={rejectDialog.open} onClose={() => setRejectDialog({ open: false, decisionId: null })}>
+      <Dialog
+        open={rejectDialog.open}
+        onClose={() => setRejectDialog({ open: false, decisionId: null })}
+      >
         <DialogTitle>Reject Decision</DialogTitle>
         <DialogContent>
           <TextField
@@ -558,9 +604,7 @@ const MLDecisionCenter = () => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRejectDialog({ open: false, decisionId: null })}>
-            Cancel
-          </Button>
+          <Button onClick={() => setRejectDialog({ open: false, decisionId: null })}>Cancel</Button>
           <Button onClick={rejectDecision} color="error" variant="contained">
             Reject
           </Button>
@@ -568,12 +612,19 @@ const MLDecisionCenter = () => {
       </Dialog>
 
       {/* Settings Dialog */}
-      <Dialog open={settingsDialog} onClose={() => setSettingsDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={settingsDialog}
+        onClose={() => setSettingsDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Decision Engine Settings</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>Risk Limits</Typography>
-            
+            <Typography variant="subtitle2" gutterBottom>
+              Risk Limits
+            </Typography>
+
             <Grid container spacing={2}>
               <Grid item xs={6}>
                 <TextField
@@ -615,20 +666,16 @@ const MLDecisionCenter = () => {
 
             <Divider sx={{ my: 3 }} />
 
-            <Typography variant="subtitle2" gutterBottom>Features</Typography>
-            
+            <Typography variant="subtitle2" gutterBottom>
+              Features
+            </Typography>
+
             <FormControlLabel
               control={<Switch defaultChecked />}
               label="Enable style matching requirement"
             />
-            <FormControlLabel
-              control={<Switch defaultChecked />}
-              label="Require regime analysis"
-            />
-            <FormControlLabel
-              control={<Switch />}
-              label="Allow after-hours trading"
-            />
+            <FormControlLabel control={<Switch defaultChecked />} label="Require regime analysis" />
+            <FormControlLabel control={<Switch />} label="Allow after-hours trading" />
           </Box>
         </DialogContent>
         <DialogActions>

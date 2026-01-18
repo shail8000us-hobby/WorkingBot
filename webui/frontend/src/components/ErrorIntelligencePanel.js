@@ -249,7 +249,8 @@ const SimpleErrorIntelligencePanel = ({
             <Alert severity="error" sx={{ mb: 2 }} icon={<ErrorIcon />}>
               <Typography variant="body2" fontWeight={500}>
                 🚨 {statistics.by_severity.critical} critical{' '}
-                {statistics.by_severity.critical === 1 ? 'issue' : 'issues'} detected - Immediate attention required!
+                {statistics.by_severity.critical === 1 ? 'issue' : 'issues'} detected - Immediate
+                attention required!
               </Typography>
             </Alert>
           )}
@@ -279,7 +280,15 @@ const SimpleErrorIntelligencePanel = ({
                     position: 'relative',
                   }}
                 >
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1.5, gap: 2 }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'start',
+                      mb: 1.5,
+                      gap: 2,
+                    }}
+                  >
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="h6" fontWeight={600} color="#d32f2f">
                         {error.code || error.error_code}
@@ -289,7 +298,15 @@ const SimpleErrorIntelligencePanel = ({
                       </Typography>
                     </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, flexWrap: 'wrap' }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        flexShrink: 0,
+                        flexWrap: 'wrap',
+                      }}
+                    >
                       <Chip
                         label={error.severity}
                         color={error.severity === 'critical' ? 'error' : 'warning'}
@@ -303,7 +320,13 @@ const SimpleErrorIntelligencePanel = ({
                         variant="outlined"
                         size="small"
                         color="success"
-                        startIcon={resolvingErrors[resolvingKey] ? <CircularProgress size={16} /> : <ResolveIcon />}
+                        startIcon={
+                          resolvingErrors[resolvingKey] ? (
+                            <CircularProgress size={16} />
+                          ) : (
+                            <ResolveIcon />
+                          )
+                        }
                         onClick={() => markAsResolved(error)}
                         disabled={resolvingErrors[resolvingKey]}
                         sx={{ minWidth: 130 }}
@@ -329,7 +352,12 @@ const SimpleErrorIntelligencePanel = ({
                       </Typography>
                       <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
                         {error.likely_causes.map((cause, idx) => (
-                          <Typography key={idx} component="li" variant="body2" color="text.secondary">
+                          <Typography
+                            key={idx}
+                            component="li"
+                            variant="body2"
+                            color="text.secondary"
+                          >
                             {cause}
                           </Typography>
                         ))}
@@ -360,12 +388,26 @@ const SimpleErrorIntelligencePanel = ({
                               {fix.description}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              <Chip label={`⏱️ ${fix.estimated_duration_sec}s`} size="small" variant="outlined" />
+                              <Chip
+                                label={`⏱️ ${fix.estimated_duration_sec}s`}
+                                size="small"
+                                variant="outlined"
+                              />
                               {fix.requires_confirmation && (
-                                <Chip label="⚠️ Requires Confirmation" size="small" color="warning" variant="outlined" />
+                                <Chip
+                                  label="⚠️ Requires Confirmation"
+                                  size="small"
+                                  color="warning"
+                                  variant="outlined"
+                                />
                               )}
                               {fix.is_destructive && (
-                                <Chip label="🔥 Destructive" size="small" color="error" variant="outlined" />
+                                <Chip
+                                  label="🔥 Destructive"
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                />
                               )}
                             </Box>
                           </Paper>
@@ -376,11 +418,12 @@ const SimpleErrorIntelligencePanel = ({
 
                   <Box sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
                     <Typography variant="caption" color="text.secondary">
-                      Bot: <strong>{error.bot_id}</strong> • Source: <strong>{error.source}</strong> • First seen:
-                      {' '}
-                      <strong>{error.first_seen ? new Date(error.first_seen).toLocaleString() : 'n/a'}</strong> • Count:
-                      {' '}
-                      <strong>{occurrenceTotal}</strong>
+                      Bot: <strong>{error.bot_id}</strong> • Source: <strong>{error.source}</strong>{' '}
+                      • First seen:{' '}
+                      <strong>
+                        {error.first_seen ? new Date(error.first_seen).toLocaleString() : 'n/a'}
+                      </strong>{' '}
+                      • Count: <strong>{occurrenceTotal}</strong>
                     </Typography>
                   </Box>
                 </Paper>
@@ -506,11 +549,7 @@ const AdvancedErrorIntelligencePanel = ({
       <Collapse in={expanded && hasErrors} timeout="auto" unmountOnExit>
         <Box sx={{ p: 2 }}>
           <Divider sx={{ mb: 2 }} />
-          <ErrorList
-            errors={errors}
-            onErrorUpdate={fetchErrors}
-            onStatsUpdate={fetchStatistics}
-          />
+          <ErrorList errors={errors} onErrorUpdate={fetchErrors} onStatsUpdate={fetchStatistics} />
         </Box>
       </Collapse>
 
@@ -530,9 +569,10 @@ const AdvancedErrorIntelligencePanel = ({
 
 const ErrorIntelligencePanel = ({ simple = false }) => {
   const socket = useSocket();
-  const { errors, statistics, aggregatedErrors, fetchErrors, fetchStatistics } = useErrorIntelligence({
-    socket,
-  });
+  const { errors, statistics, aggregatedErrors, fetchErrors, fetchStatistics } =
+    useErrorIntelligence({
+      socket,
+    });
   const [expanded, setExpanded] = useState(true);
 
   const { hasErrors } = useMemo(() => deriveStatusMeta(statistics), [statistics]);

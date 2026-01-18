@@ -12,7 +12,7 @@ export const ErrorState = ({
   title = 'Error',
   showHomeButton = false,
   onHomeClick,
-  severity = 'error'
+  severity = 'error',
 }) => {
   const getMessage = () => {
     if (typeof error === 'string') return error;
@@ -33,7 +33,7 @@ export const ErrorState = ({
       icon={<AlertTriangle size={24} />}
       sx={{
         mb: 2,
-        '& .MuiAlert-message': { width: '100%' }
+        '& .MuiAlert-message': { width: '100%' },
       }}
     >
       <AlertTitle sx={{ fontWeight: 600 }}>{title}</AlertTitle>
@@ -51,12 +51,10 @@ export const ErrorState = ({
             borderRadius: 1,
             fontFamily: 'monospace',
             fontSize: '0.75rem',
-            overflowX: 'auto'
+            overflowX: 'auto',
           }}
         >
-          {typeof getDetails() === 'string'
-            ? getDetails()
-            : JSON.stringify(getDetails(), null, 2)}
+          {typeof getDetails() === 'string' ? getDetails() : JSON.stringify(getDetails(), null, 2)}
         </Box>
       )}
 
@@ -99,7 +97,7 @@ export const InlineError = ({ error, onRetry }) => (
       p: 1,
       bgcolor: 'rgba(211, 47, 47, 0.1)',
       border: '1px solid rgba(211, 47, 47, 0.3)',
-      borderRadius: 1
+      borderRadius: 1,
     }}
   >
     <AlertTriangle size={18} color="#d32f2f" />
@@ -107,24 +105,14 @@ export const InlineError = ({ error, onRetry }) => (
       {typeof error === 'string' ? error : error?.message || 'Error'}
     </Typography>
     {onRetry && (
-      <Button
-        size="small"
-        onClick={onRetry}
-        sx={{ minWidth: 'auto', p: 0.5 }}
-      >
+      <Button size="small" onClick={onRetry} sx={{ minWidth: 'auto', p: 0.5 }}>
         <RefreshCw size={16} />
       </Button>
     )}
   </Box>
 );
 
-export const EmptyState = ({
-  icon: Icon,
-  title,
-  description,
-  actionLabel,
-  onAction
-}) => (
+export const EmptyState = ({ icon: Icon, title, description, actionLabel, onAction }) => (
   <Box
     display="flex"
     flexDirection="column"
@@ -140,7 +128,7 @@ export const EmptyState = ({
           mb: 2,
           p: 2,
           borderRadius: '50%',
-          bgcolor: 'rgba(255, 255, 255, 0.05)'
+          bgcolor: 'rgba(255, 255, 255, 0.05)',
         }}
       >
         <Icon size={48} style={{ opacity: 0.5 }} />
@@ -196,5 +184,5 @@ export default {
   EmptyState,
   NetworkError,
   NotFoundError,
-  UnauthorizedError
+  UnauthorizedError,
 };

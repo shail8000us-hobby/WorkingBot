@@ -1,7 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import EmptyState, { NoDataEmptyState, SearchEmptyState, NoPositionsEmptyState } from './EmptyState';
+import EmptyState, {
+  NoDataEmptyState,
+  SearchEmptyState,
+  NoPositionsEmptyState,
+} from './EmptyState';
 import { Package, TrendingUp, Search } from 'lucide-react';
 
 describe('EmptyState', () => {
@@ -66,10 +70,10 @@ describe('EmptyState', () => {
     it('calls action function when button is clicked', () => {
       const mockAction = jest.fn();
       render(<EmptyState action={mockAction} actionLabel="Click Me" />);
-      
+
       const button = screen.getByText('Click Me');
       fireEvent.click(button);
-      
+
       expect(mockAction).toHaveBeenCalledTimes(1);
     });
 
@@ -106,10 +110,10 @@ describe('EmptyState', () => {
     it('calls onRefresh when button is clicked', () => {
       const mockRefresh = jest.fn();
       render(<NoDataEmptyState onRefresh={mockRefresh} />);
-      
+
       const button = screen.getByText('Refresh');
       fireEvent.click(button);
-      
+
       expect(mockRefresh).toHaveBeenCalledTimes(1);
     });
   });
@@ -139,10 +143,10 @@ describe('EmptyState', () => {
     it('calls onClear when button is clicked', () => {
       const mockClear = jest.fn();
       render(<SearchEmptyState searchTerm="test" onClear={mockClear} />);
-      
+
       const button = screen.getByText('Clear Search');
       fireEvent.click(button);
-      
+
       expect(mockClear).toHaveBeenCalledTimes(1);
     });
   });
@@ -172,10 +176,10 @@ describe('EmptyState', () => {
     it('calls onAddPosition when button is clicked', () => {
       const mockAdd = jest.fn();
       render(<NoPositionsEmptyState onAddPosition={mockAdd} />);
-      
+
       const button = screen.getByText('Open Position');
       fireEvent.click(button);
-      
+
       expect(mockAdd).toHaveBeenCalledTimes(1);
     });
   });
@@ -197,7 +201,7 @@ describe('EmptyState', () => {
       render(<EmptyState title="Title" description="Description" />);
       const title = screen.getByText('Title');
       const description = screen.getByText('Description');
-      
+
       expect(title).toHaveClass('text-xl');
       expect(description).toHaveClass('text-sm');
     });

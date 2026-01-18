@@ -19,15 +19,12 @@ const Input = React.memo(function Input({
   return (
     <div className={clsx('flex flex-col gap-1.5', fullWidth && 'w-full')}>
       {label && (
-        <label
-          htmlFor={inputId}
-          className="text-sm font-medium text-slate-200"
-        >
+        <label htmlFor={inputId} className="text-sm font-medium text-slate-200">
           {label}
           {props.required && <span className="ml-1 text-rose-400">*</span>}
         </label>
       )}
-      
+
       <input
         id={inputId}
         className={clsx(
@@ -42,14 +39,9 @@ const Input = React.memo(function Input({
         )}
         {...props}
       />
-      
+
       {(error || helperText) && (
-        <p
-          className={clsx(
-            'text-xs',
-            error ? 'text-rose-400' : 'text-slate-400'
-          )}
-        >
+        <p className={clsx('text-xs', error ? 'text-rose-400' : 'text-slate-400')}>
           {error || helperText}
         </p>
       )}

@@ -1,6 +1,26 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Paper, Box, Typography, IconButton, Chip, Select, MenuItem, FormControl, InputLabel, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import { Terminal, Clear, Download, Refresh, Shield, TrendingUp, TrendingDown } from '@mui/icons-material';
+import {
+  Paper,
+  Box,
+  Typography,
+  IconButton,
+  Chip,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  ToggleButton,
+  ToggleButtonGroup,
+} from '@mui/material';
+import {
+  Terminal,
+  Clear,
+  Download,
+  Refresh,
+  Shield,
+  TrendingUp,
+  TrendingDown,
+} from '@mui/icons-material';
 import apiClient from '../utils/apiClient';
 import SymbolBadge from './common/SymbolBadge';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
@@ -21,7 +41,9 @@ function LogsPanel() {
   const [loadingEth, setLoadingEth] = useState(false);
 
   // Get available symbols from instances
-  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+  const availableSymbols = [
+    ...new Set(instances.map((i) => parseInstanceName(i.name)?.symbol).filter(Boolean)),
+  ];
 
   // Fetch Trading logs (instance-aware)
   const fetchTradingLogs = useCallback(async () => {
@@ -51,7 +73,10 @@ function LogsPanel() {
     try {
       setLoadingGuardian(true);
       // Use /api/logs/recent endpoint which supports bot_type parameter
-      const response = await apiClient.get('/api/logs/recent', { lines: 200, bot_type: 'guardian' });
+      const response = await apiClient.get('/api/logs/recent', {
+        lines: 200,
+        bot_type: 'guardian',
+      });
       if (response && response.success && response.logs) {
         setGuardianLogs(response.logs);
       } else {
@@ -103,7 +128,7 @@ function LogsPanel() {
     fetchGuardianLogs();
     fetchBtcLogs();
     fetchEthLogs();
-    
+
     // Refresh logs every 5 seconds
     const interval = setInterval(() => {
       if (logSource === 'guardian') {
@@ -117,7 +142,14 @@ function LogsPanel() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchTradingLogs, fetchGuardianLogs, fetchBtcLogs, fetchEthLogs, logSource, selectedInstance]);
+  }, [
+    fetchTradingLogs,
+    fetchGuardianLogs,
+    fetchBtcLogs,
+    fetchEthLogs,
+    logSource,
+    selectedInstance,
+  ]);
 
   // Fetch logs when source changes
   useEffect(() => {
@@ -169,28 +201,31 @@ function LogsPanel() {
 
   const getLogColor = (log) => {
     if (log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error')) return '#ff1744';
-    if (log.includes('[WARNING]') || log.includes('WARNING') || log.includes('warning')) return '#ff9800';
+    if (log.includes('[WARNING]') || log.includes('WARNING') || log.includes('warning'))
+      return '#ff9800';
     if (log.includes('[INFO]') || log.includes('INFO')) return '#00e676';
     if (log.includes('[DEBUG]')) return '#06b6d4';
     return '#9ca3af';
   };
 
   // Determine which logs to display
-  const displayLogs = logSource === 'guardian' 
-    ? guardianLogs 
-    : logSource === 'btcusd'
-    ? btcLogs
-    : logSource === 'ethusd'
-    ? ethLogs
-    : tradingLogs;
-  
-  const logSourceLabel = logSource === 'guardian'
-    ? 'Guardian Bot (LaunchAgent)'
-    : logSource === 'btcusd'
-    ? 'BTCUSD Trading Logs'
-    : logSource === 'ethusd'
-    ? 'ETHUSD Trading Logs'
-    : `Trading Bot (${selectedInstance || 'Instance'})`;
+  const displayLogs =
+    logSource === 'guardian'
+      ? guardianLogs
+      : logSource === 'btcusd'
+        ? btcLogs
+        : logSource === 'ethusd'
+          ? ethLogs
+          : tradingLogs;
+
+  const logSourceLabel =
+    logSource === 'guardian'
+      ? 'Guardian Bot (LaunchAgent)'
+      : logSource === 'btcusd'
+        ? 'BTCUSD Trading Logs'
+        : logSource === 'ethusd'
+          ? 'ETHUSD Trading Logs'
+          : `Trading Bot (${selectedInstance || 'Instance'})`;
 
   const handleRefresh = () => {
     if (logSource === 'guardian') {
@@ -204,31 +239,59 @@ function LogsPanel() {
     }
   };
 
-  const isLoading = logSource === 'guardian' ? loadingGuardian 
-    : logSource === 'btcusd' ? loadingBtc
-    : logSource === 'ethusd' ? loadingEth
-    : loadingTrading;
+  const isLoading =
+    logSource === 'guardian'
+      ? loadingGuardian
+      : logSource === 'btcusd'
+        ? loadingBtc
+        : logSource === 'ethusd'
+          ? loadingEth
+          : loadingTrading;
 
   // Get symbol color
   const getSymbolColor = (symbol) => {
     const colors = {
-      'BTCUSD': '#f7931a',
-      'ETHUSD': '#627eea',
+      BTCUSD: '#f7931a',
+      ETHUSD: '#627eea',
     };
     return colors[symbol] || '#64748b';
   };
 
   return (
     <Paper sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box sx={{ flex: 1, minWidth: 200 }}>
-          <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            {logSource === 'guardian' ? <Shield /> : <Terminal />} 
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
+          >
+            {logSource === 'guardian' ? <Shield /> : <Terminal />}
             Live Logs
-            {logSource === 'btcusd' && <Chip label="BTCUSD" size="small" sx={{ bgcolor: '#f7931a20', color: '#f7931a', fontWeight: 'bold' }} />}
-            {logSource === 'ethusd' && <Chip label="ETHUSD" size="small" sx={{ bgcolor: '#627eea20', color: '#627eea', fontWeight: 'bold' }} />}
+            {logSource === 'btcusd' && (
+              <Chip
+                label="BTCUSD"
+                size="small"
+                sx={{ bgcolor: '#f7931a20', color: '#f7931a', fontWeight: 'bold' }}
+              />
+            )}
+            {logSource === 'ethusd' && (
+              <Chip
+                label="ETHUSD"
+                size="small"
+                sx={{ bgcolor: '#627eea20', color: '#627eea', fontWeight: 'bold' }}
+              />
+            )}
           </Typography>
-          
+
           {/* Multi-source toggle buttons */}
           <ToggleButtonGroup
             value={logSource}
@@ -244,33 +307,44 @@ function LogsPanel() {
               <Shield sx={{ mr: 0.5, fontSize: 16 }} /> Guardian
             </ToggleButton>
             {availableSymbols.includes('BTCUSD') && (
-              <ToggleButton value="btcusd" sx={{ color: logSource === 'btcusd' ? '#f7931a' : 'inherit' }}>
+              <ToggleButton
+                value="btcusd"
+                sx={{ color: logSource === 'btcusd' ? '#f7931a' : 'inherit' }}
+              >
                 <TrendingUp sx={{ mr: 0.5, fontSize: 16 }} /> BTCUSD
               </ToggleButton>
             )}
             {availableSymbols.includes('ETHUSD') && (
-              <ToggleButton value="ethusd" sx={{ color: logSource === 'ethusd' ? '#627eea' : 'inherit' }}>
+              <ToggleButton
+                value="ethusd"
+                sx={{ color: logSource === 'ethusd' ? '#627eea' : 'inherit' }}
+              >
                 <TrendingUp sx={{ mr: 0.5, fontSize: 16 }} /> ETHUSD
               </ToggleButton>
             )}
           </ToggleButtonGroup>
-          
+
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             {logSourceLabel}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Chip label={`${displayLogs.length} entries`} sx={{ mr: 1 }} />
-          <IconButton 
-            onClick={handleRefresh} 
-            color="primary" 
-            title="Refresh Logs" 
+          <IconButton
+            onClick={handleRefresh}
+            color="primary"
+            title="Refresh Logs"
             aria-label="Refresh logs"
             disabled={isLoading}
           >
             <Refresh className={isLoading ? 'spin' : ''} />
           </IconButton>
-          <IconButton onClick={handleDownload} color="primary" title="Download Logs" aria-label="Download logs">
+          <IconButton
+            onClick={handleDownload}
+            color="primary"
+            title="Download Logs"
+            aria-label="Download logs"
+          >
             <Download />
           </IconButton>
         </Box>
@@ -284,18 +358,21 @@ function LogsPanel() {
           height: '600px',
           overflowY: 'auto',
           fontFamily: 'monospace',
-          fontSize: '13px'
+          fontSize: '13px',
         }}
       >
         {displayLogs.length === 0 ? (
           <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 10 }}>
-            {isLoading ? 'Loading logs...' : `No ${logSource === 'guardian' ? 'Guardian' : 'trading bot'} logs available. ${logSource === 'guardian' ? 'Guardian should be running via LaunchAgent.' : 'Start the bot to see live logs.'}`}
+            {isLoading
+              ? 'Loading logs...'
+              : `No ${logSource === 'guardian' ? 'Guardian' : 'trading bot'} logs available. ${logSource === 'guardian' ? 'Guardian should be running via LaunchAgent.' : 'Start the bot to see live logs.'}`}
           </Typography>
         ) : (
           displayLogs.map((log, index) => {
             const logColor = getLogColor(log);
-            const isError = log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error');
-            
+            const isError =
+              log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error');
+
             return (
               <Box
                 key={index}
@@ -309,8 +386,8 @@ function LogsPanel() {
                   fontWeight: isError ? 600 : 400,
                   backgroundColor: isError ? 'rgba(255, 23, 68, 0.1)' : 'transparent',
                   '&:hover': {
-                    background: isError ? 'rgba(255, 23, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)'
-                  }
+                    background: isError ? 'rgba(255, 23, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  },
                 }}
               >
                 {log}
@@ -325,4 +402,3 @@ function LogsPanel() {
 }
 
 export default LogsPanel;
-

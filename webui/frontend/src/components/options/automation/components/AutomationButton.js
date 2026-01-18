@@ -1,6 +1,6 @@
 /**
  * AutomationButton - Small ⚡ icon button placed between Strike and Symbol
- * 
+ *
  * Features:
  * - Shows ⚡ icon
  * - Status indicator (🟢🟡🔴) based on automation state

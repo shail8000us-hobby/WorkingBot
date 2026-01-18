@@ -1,6 +1,6 @@
 /**
  * useAutomation - Main React hook for automation UI
- * 
+ *
  * Features:
  * - Manage dialog open/close state
  * - Load/save automation rules
@@ -35,10 +35,8 @@ export const useAutomation = (position) => {
     const existing = automationStorage.getByPosition(position.product_symbol);
     if (existing.length > 0) {
       // Load most recent automation
-      const latest = existing.sort((a, b) => 
-        new Date(b.createdAt) - new Date(a.createdAt)
-      )[0];
-      
+      const latest = existing.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+
       setRules(latest.rules);
       setStatus(latest.status || AUTOMATION_STATUS.INACTIVE);
       setAutomationId(latest.id);
@@ -64,40 +62,43 @@ export const useAutomation = (position) => {
   }, []);
 
   // Start automation
-  const startAutomation = useCallback((newRules) => {
-    if (!position) {
-      console.error('Cannot start automation: no position provided');
-      return;
-    }
+  const startAutomation = useCallback(
+    (newRules) => {
+      if (!position) {
+        console.error('Cannot start automation: no position provided');
+        return;
+      }
 
-    const id = automationId || generateAutomationId();
-    
-    const automationData = {
-      id,
-      rules: newRules || rules,
-      position: {
-        symbol: position.product_symbol,
-        strike: position.strike,
-        type: position.type,
-        underlying: position.underlying,
-        expiry: position.expiry,
-      },
-      status: AUTOMATION_STATUS.WAITING,
-      createdAt: new Date().toISOString(),
-    };
+      const id = automationId || generateAutomationId();
 
-    // Save to storage
-    automationStorage.save(id, automationData);
+      const automationData = {
+        id,
+        rules: newRules || rules,
+        position: {
+          symbol: position.product_symbol,
+          strike: position.strike,
+          type: position.type,
+          underlying: position.underlying,
+          expiry: position.expiry,
+        },
+        status: AUTOMATION_STATUS.WAITING,
+        createdAt: new Date().toISOString(),
+      };
 
-    // Register with monitor
-    automationMonitor.register(id, automationData);
+      // Save to storage
+      automationStorage.save(id, automationData);
 
-    setAutomationId(id);
-    setStatus(AUTOMATION_STATUS.WAITING);
-    setRules(newRules || rules);
+      // Register with monitor
+      automationMonitor.register(id, automationData);
 
-    console.log(`Started automation: ${id}`);
-  }, [position, rules, automationId, generateAutomationId]);
+      setAutomationId(id);
+      setStatus(AUTOMATION_STATUS.WAITING);
+      setRules(newRules || rules);
+
+      console.log(`Started automation: ${id}`);
+    },
+    [position, rules, automationId, generateAutomationId]
+  );
 
   // Stop automation
   const stopAutomation = useCallback(() => {
@@ -149,15 +150,15 @@ export const useAutomation = (position) => {
     isDialogOpen,
     openDialog,
     closeDialog,
-    
+
     // Rules
     rules,
     updateRules,
-    
+
     // Status
     status,
     automationId,
-    
+
     // Actions
     startAutomation,
     stopAutomation,

@@ -7,8 +7,10 @@ import { io } from 'socket.io-client';
 
 // Use port 5555 as default (matches config.yaml webui.port)
 // For development with different ports, set REACT_APP_SOCKET_URL in .env
-const DEFAULT_SOCKET_URL = (process.env.REACT_APP_SOCKET_URL || '').trim() || 'http://localhost:5555';
-const DEFAULT_API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:5555';
+const DEFAULT_SOCKET_URL =
+  (process.env.REACT_APP_SOCKET_URL || '').trim() || 'http://localhost:5555';
+const DEFAULT_API_BASE_URL =
+  (process.env.REACT_APP_API_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:5555';
 
 class ConnectionManager {
   constructor(config = {}) {
@@ -20,7 +22,7 @@ class ConnectionManager {
       syncInterval: 10000,
       socketUrl: config.socketUrl !== undefined ? config.socketUrl : DEFAULT_SOCKET_URL,
       apiBaseUrl: config.apiBaseUrl !== undefined ? config.apiBaseUrl : DEFAULT_API_BASE_URL,
-      ...config
+      ...config,
     };
 
     this.socket = null;
@@ -43,7 +45,7 @@ class ConnectionManager {
       console.log('🔵 Already connected');
       return;
     }
- 
+
     console.log('🔵 Initializing connection...');
     this.setConnectionState('connecting');
 
@@ -54,14 +56,14 @@ class ConnectionManager {
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
-      timeout: 60000,  // Increased from 20s to 60s for mobile networks
+      timeout: 60000, // Increased from 20s to 60s for mobile networks
       // Enable transport upgrade (polling → websocket)
       upgrade: true,
       // Remember transport for faster subsequent connections
       rememberUpgrade: true,
       // Mobile-specific: longer intervals for battery optimization
-      pingInterval: 60000,  // Ping every 60s (matches backend)
-      pingTimeout: 120000,  // 120s timeout (matches backend)
+      pingInterval: 60000, // Ping every 60s (matches backend)
+      pingTimeout: 120000, // 120s timeout (matches backend)
       // Enable credentials for authenticated connections
       withCredentials: true,
       // Transports-specific options
@@ -69,17 +71,17 @@ class ConnectionManager {
         polling: {
           // Extra headers for mobile clients
           extraHeaders: {
-            'X-Client-Type': 'mobile-web'
-          }
-        }
+            'X-Client-Type': 'mobile-web',
+          },
+        },
       },
-      ...socketIOConfig
+      ...socketIOConfig,
     };
 
     // Always provide explicit URL from config (defaults to port 5555)
     const socketUrl = this.config.socketUrl || DEFAULT_SOCKET_URL;
     console.log('🔵 Connecting to:', socketUrl);
-    
+
     this.socket = io(socketUrl, connectionOptions);
     this.setupSocketListeners();
   }
@@ -180,7 +182,7 @@ class ConnectionManager {
     );
 
     console.log(`⏳ Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt + 1})`);
-    
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectAttempt++;
@@ -197,7 +199,7 @@ class ConnectionManager {
     }
 
     this.lastHeartbeat = Date.now();
-    
+
     this.heartbeatTimer = setInterval(() => {
       if (!this.socket || !this.socket.connected) {
         return;
@@ -276,7 +278,7 @@ class ConnectionManager {
 
       const [configRes, statusRes] = await Promise.all([
         api.get(buildApiUrl('/api/config')),
-        api.get(buildApiUrl('/api/bot/status'))
+        api.get(buildApiUrl('/api/bot/status')),
       ]);
 
       // Check for differences and emit updates
@@ -303,7 +305,7 @@ class ConnectionManager {
   setConnectionState(state) {
     const oldState = this.connectionState;
     this.connectionState = state;
-    
+
     if (oldState !== state) {
       this.emit('connection_state_changed', { oldState, newState: state });
     }
@@ -324,7 +326,7 @@ class ConnectionManager {
       state: this.connectionState,
       connected: this.isConnected(),
       reconnectAttempt: this.reconnectAttempt,
-      lastHeartbeat: this.lastHeartbeat
+      lastHeartbeat: this.lastHeartbeat,
     };
   }
 
@@ -352,7 +354,7 @@ class ConnectionManager {
    */
   emit(event, data) {
     if (this.listeners.has(event)) {
-      this.listeners.get(event).forEach(callback => {
+      this.listeners.get(event).forEach((callback) => {
         try {
           callback(data);
         } catch (error) {
@@ -367,10 +369,10 @@ class ConnectionManager {
    */
   disconnect() {
     console.log('🔴 Disconnecting...');
-    
+
     this.stopHeartbeat();
     this.stopSync();
-    
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

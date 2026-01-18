@@ -7,25 +7,25 @@ import ConnectionManager from './connectionManager';
 class RobustConnectionManager extends ConnectionManager {
   constructor(options = {}) {
     super(options);
-    
+
     // Recovery settings - mobile-optimized
     this.retryAttempts = 0;
-    this.maxRetries = options.maxRetries || 20;  // Increased from 10 for mobile networks
+    this.maxRetries = options.maxRetries || 20; // Increased from 10 for mobile networks
     this.retryDelay = options.retryDelay || 1000; // Start with 1 second
     this.maxRetryDelay = options.maxRetryDelay || 60000; // Increased from 30s to 60s for mobile
     this.reconnectOnClose = options.reconnectOnClose !== false;
-    
+
     // Ping/Pong for connection health - mobile-optimized
     this.pingInterval = null;
     this.lastPingTime = null;
     this.lastPongTime = null;
-    this.pingTimeout = options.pingTimeout || 10000;  // Increased from 5s to 10s for mobile latency
-    
+    this.pingTimeout = options.pingTimeout || 10000; // Increased from 5s to 10s for mobile latency
+
     // Connection quality tracking
     this.connectionQuality = 'unknown';
     this.latencyHistory = [];
     this.maxLatencyHistory = 10;
-    
+
     // Mobile-specific: track network changes
     this.isOnline = navigator.onLine;
     this.setupNetworkMonitoring();
@@ -59,7 +59,7 @@ class RobustConnectionManager extends ConnectionManager {
       this.stopPingPong();
       this.connectionQuality = 'disconnected';
       this.emit('connection_quality', { quality: 'disconnected', reason });
-      
+
       if (this.reconnectOnClose && reason !== 'io client disconnect') {
         this.handleConnectionError(new Error('Disconnected: ' + reason));
       }
@@ -96,10 +96,10 @@ class RobustConnectionManager extends ConnectionManager {
   handleConnectionError(error) {
     if (this.retryAttempts >= this.maxRetries) {
       console.error('❌ Max retries reached');
-      this.emit('connection_failed', { 
+      this.emit('connection_failed', {
         message: 'Max retries reached',
         retries: this.retryAttempts,
-        error: error.message
+        error: error.message,
       });
       this.connectionQuality = 'failed';
       return;
@@ -112,11 +112,11 @@ class RobustConnectionManager extends ConnectionManager {
     );
 
     console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.retryAttempts}/${this.maxRetries})`);
-    
+
     this.emit('connection_retry', {
       attempt: this.retryAttempts,
       maxRetries: this.maxRetries,
-      delay: delay
+      delay: delay,
     });
 
     setTimeout(() => this.establishConnection(), delay);
@@ -126,12 +126,12 @@ class RobustConnectionManager extends ConnectionManager {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
     }
-    
+
     this.pingInterval = setInterval(() => {
       if (this.socket?.connected) {
         this.lastPingTime = Date.now();
         this.socket.emit('ping', { timestamp: this.lastPingTime });
-        
+
         // Check for pong timeout
         setTimeout(() => {
           if (this.lastPongTime < this.lastPingTime) {
@@ -140,7 +140,7 @@ class RobustConnectionManager extends ConnectionManager {
               console.warn('⚠️  Ping timeout, connection may be dead');
               this.connectionQuality = 'poor';
               this.emit('connection_quality', { quality: 'poor', latency: timeSincePing });
-              
+
               // Force reconnect
               this.socket.disconnect();
               this.establishConnection();
@@ -165,7 +165,7 @@ class RobustConnectionManager extends ConnectionManager {
     }
 
     const avgLatency = this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length;
-    
+
     // Determine connection quality
     let quality = 'excellent';
     if (avgLatency > 500) quality = 'poor';
@@ -188,9 +188,10 @@ class RobustConnectionManager extends ConnectionManager {
       connected: this.socket?.connected || false,
       quality: this.connectionQuality,
       retryAttempts: this.retryAttempts,
-      avgLatency: this.latencyHistory.length > 0 
-        ? Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length)
-        : null
+      avgLatency:
+        this.latencyHistory.length > 0
+          ? Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length)
+          : null,
     };
   }
 
@@ -223,7 +224,7 @@ class RobustConnectionManager extends ConnectionManager {
       console.log('📶 Network online - attempting reconnection');
       this.isOnline = true;
       this.emit('network_status', { online: true });
-      
+
       // Force reconnect when network comes back
       if (!this.socket?.connected) {
         this.retryAttempts = 0; // Reset retry counter
@@ -263,4 +264,3 @@ class RobustConnectionManager extends ConnectionManager {
 }
 
 export default RobustConnectionManager;
-

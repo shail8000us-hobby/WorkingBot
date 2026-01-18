@@ -69,5 +69,5 @@ export default {
   StatusSkeleton,
   TableSkeleton,
   ChartSkeleton,
-  ListSkeleton
+  ListSkeleton,
 };

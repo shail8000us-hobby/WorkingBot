@@ -15,13 +15,13 @@ export const MONEYNESS = {
 };
 
 export const AUTOMATION_STATUS = {
-  INACTIVE: 'inactive',      // Not running
-  WAITING: 'waiting',         // Running but conditions not met
-  TRIGGERED: 'triggered',     // Conditions met, about to execute
-  ACTIVE: 'active',           // Position opened, monitoring exit
-  PAUSED: 'paused',          // Temporarily disabled
-  COMPLETED: 'completed',     // Exit executed successfully
-  ERROR: 'error',            // Error occurred
+  INACTIVE: 'inactive', // Not running
+  WAITING: 'waiting', // Running but conditions not met
+  TRIGGERED: 'triggered', // Conditions met, about to execute
+  ACTIVE: 'active', // Position opened, monitoring exit
+  PAUSED: 'paused', // Temporarily disabled
+  COMPLETED: 'completed', // Exit executed successfully
+  ERROR: 'error', // Error occurred
 };
 
 export const ACTION_TYPES = {
@@ -72,7 +72,7 @@ export const EXIT_TYPES = {
 };
 
 export const EXIT_LOGIC = {
-  OR: 'or',   // Exit if ANY condition met
+  OR: 'or', // Exit if ANY condition met
   AND: 'and', // Exit only if ALL conditions met
 };
 
@@ -191,9 +191,9 @@ export const DEFAULT_RULES = {
 };
 
 export const POLLING_INTERVALS = {
-  FAST: 1000,      // 1 second
-  NORMAL: 5000,    // 5 seconds
-  SLOW: 10000,     // 10 seconds
+  FAST: 1000, // 1 second
+  NORMAL: 5000, // 5 seconds
+  SLOW: 10000, // 10 seconds
 };
 
 export const STORAGE_KEYS = {
@@ -205,10 +205,10 @@ export const STORAGE_KEYS = {
 
 // Moneyness thresholds (% distance from spot)
 export const MONEYNESS_THRESHOLDS = {
-  ITM_MIN: -10,    // Strike < spot by >10%
-  ATM_MIN: -2.5,   // Strike within ±2.5% of spot
+  ITM_MIN: -10, // Strike < spot by >10%
+  ATM_MIN: -2.5, // Strike within ±2.5% of spot
   ATM_MAX: 2.5,
-  OTM_MIN: 2.5,    // Strike > spot by >2.5%
+  OTM_MIN: 2.5, // Strike > spot by >2.5%
 };
 
 // UI Colors

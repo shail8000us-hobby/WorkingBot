@@ -10,7 +10,7 @@ import {
   Box,
   Chip,
   Divider,
-  Paper
+  Paper,
 } from '@mui/material';
 import { Keyboard } from '@mui/icons-material';
 
@@ -130,16 +130,13 @@ export const KeyboardProvider = ({ children, callbacks = {} }) => {
   const value = {
     showHelp,
     setShowHelp,
-    shortcuts
+    shortcuts,
   };
 
   return (
     <KeyboardContext.Provider value={value}>
       {children}
-      <KeyboardHelpDialog 
-        open={showHelp} 
-        onClose={() => setShowHelp(false)} 
-      />
+      <KeyboardHelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </KeyboardContext.Provider>
   );
 };
@@ -154,12 +151,7 @@ const KeyboardHelpDialog = ({ open, onClose }) => {
   }, {});
 
   return (
-    <Dialog 
-      open={open} 
-      onClose={onClose}
-      maxWidth="sm"
-      fullWidth
-    >
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Keyboard />
@@ -169,11 +161,7 @@ const KeyboardHelpDialog = ({ open, onClose }) => {
       <DialogContent>
         {Object.entries(groupedShortcuts).map(([category, shortcuts], index) => (
           <Box key={category} sx={{ mb: index < Object.keys(groupedShortcuts).length - 1 ? 3 : 0 }}>
-            <Typography 
-              variant="subtitle2" 
-              color="primary" 
-              sx={{ mb: 1, fontWeight: 'bold' }}
-            >
+            <Typography variant="subtitle2" color="primary" sx={{ mb: 1, fontWeight: 'bold' }}>
               {category}
             </Typography>
             <Paper variant="outlined" sx={{ p: 1 }}>
@@ -181,19 +169,19 @@ const KeyboardHelpDialog = ({ open, onClose }) => {
                 {shortcuts.map((shortcut, idx) => (
                   <React.Fragment key={idx}>
                     <ListItem sx={{ py: 1 }}>
-                      <ListItemText 
+                      <ListItemText
                         primary={shortcut.description}
                         primaryTypographyProps={{ variant: 'body2' }}
                       />
-                      <Chip 
-                        label={shortcut.key} 
-                        size="small" 
-                        sx={{ 
+                      <Chip
+                        label={shortcut.key}
+                        size="small"
+                        sx={{
                           fontFamily: 'monospace',
                           fontWeight: 'bold',
                           minWidth: 80,
-                          textAlign: 'center'
-                        }} 
+                          textAlign: 'center',
+                        }}
                       />
                     </ListItem>
                     {idx < shortcuts.length - 1 && <Divider />}

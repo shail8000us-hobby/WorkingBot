@@ -28,13 +28,13 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon
+  ListItemIcon,
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
   CheckCircle as CheckCircleIcon,
   Settings as SettingsIcon,
-  Timeline as TimelineIcon
+  Timeline as TimelineIcon,
 } from '@mui/icons-material';
 import {
   AreaChart,
@@ -43,7 +43,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from 'recharts';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
@@ -61,13 +61,13 @@ const OpportunisticRecoveryPanel = ({ socket }) => {
     successfulRecoveries: 0,
     totalExtraProfit: 0,
     avgExtraProfit: 0,
-    levelsFilled: 0
+    levelsFilled: 0,
   });
   const [config, setConfig] = useState({
     enabled: true,
     maxOrders: 5,
     delayMs: 300,
-    minProfitInr: 500
+    minProfitInr: 500,
   });
   const [loading, setLoading] = useState(true);
 
@@ -160,9 +160,8 @@ const OpportunisticRecoveryPanel = ({ socket }) => {
       successfulRecoveries: prev.successfulRecoveries + 1,
       totalExtraProfit: prev.totalExtraProfit + newRecovery.totalExtraProfit,
       avgExtraProfit:
-        (prev.totalExtraProfit + newRecovery.totalExtraProfit) /
-        (prev.successfulRecoveries + 1),
-      levelsFilled: prev.levelsFilled + newRecovery.levelsFilled
+        (prev.totalExtraProfit + newRecovery.totalExtraProfit) / (prev.successfulRecoveries + 1),
+      levelsFilled: prev.levelsFilled + newRecovery.levelsFilled,
     }));
   };
 
@@ -188,7 +187,8 @@ const OpportunisticRecoveryPanel = ({ socket }) => {
       <Alert severity="info" sx={{ mb: 3 }} icon={<TrendingUpIcon />}>
         <strong>Trading halts are blessings, not missed opportunities.</strong>
         <Typography variant="body2" sx={{ mt: 0.5 }}>
-          When volatility halts trading and price drops, we fill missed grid levels at better prices for extra profit.
+          When volatility halts trading and price drops, we fill missed grid levels at better prices
+          for extra profit.
         </Typography>
       </Alert>
 
@@ -223,9 +223,7 @@ const OpportunisticRecoveryPanel = ({ socket }) => {
 
 const StatsCard = ({ stats }) => {
   const successRate =
-    stats.totalHalts > 0
-      ? ((stats.successfulRecoveries / stats.totalHalts) * 100).toFixed(1)
-      : 0;
+    stats.totalHalts > 0 ? ((stats.successfulRecoveries / stats.totalHalts) * 100).toFixed(1) : 0;
 
   return (
     <Card>
@@ -286,7 +284,7 @@ const StatsCard = ({ stats }) => {
                 p: 2,
                 bgcolor: 'success.dark',
                 border: '2px solid',
-                borderColor: 'success.main'
+                borderColor: 'success.main',
               }}
             >
               <Typography variant="caption" sx={{ color: 'success.light' }}>
@@ -347,8 +345,8 @@ const RecoveryHistory = ({ history }) => {
                   primary={
                     <Typography variant="body2" fontWeight="bold">
                       {new Date(recovery.timestamp).toLocaleString()} - Filled{' '}
-                      {recovery.levelsFilled} level{recovery.levelsFilled > 1 ? 's' : ''} @{' '}
-                      ₹{recovery.fillPrice?.toLocaleString()}
+                      {recovery.levelsFilled} level{recovery.levelsFilled > 1 ? 's' : ''} @ ₹
+                      {recovery.fillPrice?.toLocaleString()}
                     </Typography>
                   }
                   secondary={
@@ -398,7 +396,7 @@ const ProfitChart = ({ history }) => {
       cumulative += recovery.totalExtraProfit || 0;
       chartData.push({
         timestamp: new Date(recovery.timestamp).toLocaleDateString(),
-        profit: cumulative
+        profit: cumulative,
       });
     });
 
@@ -422,7 +420,7 @@ const ProfitChart = ({ history }) => {
               contentStyle={{
                 backgroundColor: '#1a1a1a',
                 border: '1px solid #333',
-                borderRadius: '8px'
+                borderRadius: '8px',
               }}
               formatter={(value) => `₹${value.toLocaleString()}`}
             />
@@ -466,18 +464,14 @@ const ConfigPanel = ({ config, setConfig, socket }) => {
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
           <SettingsIcon />
-          <Typography variant="h6">
-            Recovery Settings
-          </Typography>
+          <Typography variant="h6">Recovery Settings</Typography>
         </Box>
 
         <FormControlLabel
           control={
             <Switch
               checked={localConfig.enabled}
-              onChange={(e) =>
-                setLocalConfig({ ...localConfig, enabled: e.target.checked })
-              }
+              onChange={(e) => setLocalConfig({ ...localConfig, enabled: e.target.checked })}
             />
           }
           label="Enable Opportunistic Recovery"
@@ -488,9 +482,7 @@ const ConfigPanel = ({ config, setConfig, socket }) => {
             <InputLabel>Max Levels per Recovery</InputLabel>
             <Select
               value={localConfig.maxOrders}
-              onChange={(e) =>
-                setLocalConfig({ ...localConfig, maxOrders: e.target.value })
-              }
+              onChange={(e) => setLocalConfig({ ...localConfig, maxOrders: e.target.value })}
               label="Max Levels per Recovery"
             >
               <MenuItem value={1}>1</MenuItem>
@@ -504,9 +496,7 @@ const ConfigPanel = ({ config, setConfig, socket }) => {
             <InputLabel>Execution Delay (ms)</InputLabel>
             <Select
               value={localConfig.delayMs}
-              onChange={(e) =>
-                setLocalConfig({ ...localConfig, delayMs: e.target.value })
-              }
+              onChange={(e) => setLocalConfig({ ...localConfig, delayMs: e.target.value })}
               label="Execution Delay (ms)"
             >
               <MenuItem value={100}>100</MenuItem>
@@ -521,9 +511,7 @@ const ConfigPanel = ({ config, setConfig, socket }) => {
             <InputLabel>Min Profit Margin (₹)</InputLabel>
             <Select
               value={localConfig.minProfitInr}
-              onChange={(e) =>
-                setLocalConfig({ ...localConfig, minProfitInr: e.target.value })
-              }
+              onChange={(e) => setLocalConfig({ ...localConfig, minProfitInr: e.target.value })}
               label="Min Profit Margin (₹)"
             >
               <MenuItem value={100}>100</MenuItem>
@@ -533,12 +521,7 @@ const ConfigPanel = ({ config, setConfig, socket }) => {
             </Select>
           </FormControl>
 
-          <Button
-            variant="contained"
-            color="primary"
-            fullWidth
-            onClick={handleSave}
-          >
+          <Button variant="contained" color="primary" fullWidth onClick={handleSave}>
             Save Changes
           </Button>
         </Box>

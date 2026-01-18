@@ -16,7 +16,7 @@ import {
   Slider,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -25,7 +25,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Timer,
-  Activity
+  Activity,
 } from 'lucide-react';
 import api from '../utils/apiShim';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
@@ -33,7 +33,7 @@ import SymbolBadge from './common/SymbolBadge';
 
 /**
  * RSIPanel - Multi-Symbol RSI Monitoring (v5.0)
- * 
+ *
  * Features:
  * - Shows RSI for current symbol or all symbols
  * - Symbol-aware configuration
@@ -44,7 +44,9 @@ const RSIPanel = () => {
   const instanceInfo = parseInstanceName(selectedInstance);
   const selectedSymbol = instanceInfo?.symbol; // backward compat
   const selectedMode = instanceInfo?.mode || 'LONG';
-  const symbols = instances.map(i => ({ name: parseInstanceName(i.name)?.symbol })).filter((v, i, a) => a.findIndex(t => t.name === v.name) === i);
+  const symbols = instances
+    .map((i) => ({ name: parseInstanceName(i.name)?.symbol }))
+    .filter((v, i, a) => a.findIndex((t) => t.name === v.name) === i);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState('current'); // 'current' or 'all'
@@ -59,7 +61,7 @@ const RSIPanel = () => {
     hysteresis_seconds: 60,
     timeframe: '1h',
     check_interval: 300,
-    cache_ttl: 60
+    cache_ttl: 60,
   });
   const [botMode, setBotMode] = useState(selectedMode);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -71,7 +73,7 @@ const RSIPanel = () => {
     }
   }, [selectedSymbol]);
 
-  // Fetch RSI data - now instance-aware  
+  // Fetch RSI data - now instance-aware
   const fetchRSIData = useCallback(async () => {
     try {
       if (viewMode === 'all') {
@@ -102,12 +104,20 @@ const RSIPanel = () => {
             setBotMode(response.data.data.bot_mode);
           }
         } else {
-          setRsiData({ rsi: null, status: 'ERROR', status_text: response.data.error || 'Failed to fetch RSI' });
+          setRsiData({
+            rsi: null,
+            status: 'ERROR',
+            status_text: response.data.error || 'Failed to fetch RSI',
+          });
         }
       }
     } catch (error) {
       console.error('Error fetching RSI data:', error);
-      setRsiData({ rsi: null, status: 'ERROR', status_text: error.message || 'Failed to fetch RSI data' });
+      setRsiData({
+        rsi: null,
+        status: 'ERROR',
+        status_text: error.message || 'Failed to fetch RSI data',
+      });
     } finally {
       setLoading(false);
     }
@@ -116,7 +126,7 @@ const RSIPanel = () => {
   useEffect(() => {
     fetchRSIData();
     fetchConfig();
-    
+
     const interval = setInterval(fetchRSIData, 30000);
     return () => clearInterval(interval);
   }, [fetchRSIData]);
@@ -132,9 +142,9 @@ const RSIPanel = () => {
       // Fetch instance-specific RSI config if available
       const response = await api.get(withInstance('/api/yaml-config?section=safety.rsi'));
       if (response.data.success && response.data.data) {
-        setConfig(prev => ({
+        setConfig((prev) => ({
           ...prev,
-          ...response.data.data
+          ...response.data.data,
         }));
       }
     } catch (error) {
@@ -143,9 +153,9 @@ const RSIPanel = () => {
   };
 
   const handleConfigChange = (field, value) => {
-    setConfig(prev => ({
+    setConfig((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
   };
 
@@ -160,18 +170,18 @@ const RSIPanel = () => {
         'safety.rsi.hysteresis_seconds': config.hysteresis_seconds,
         'safety.rsi.timeframe': config.timeframe,
         'safety.rsi.check_interval': config.check_interval,
-        'safety.rsi.cache_ttl': config.cache_ttl
+        'safety.rsi.cache_ttl': config.cache_ttl,
       };
 
       const response = await api.post('/api/config/update', {
-        updates: updates
+        updates: updates,
       });
 
       if (response.data.success) {
         setSnackbar({
           open: true,
           message: 'RSI configuration saved successfully',
-          severity: 'success'
+          severity: 'success',
         });
         setTimeout(() => {
           fetchConfig();
@@ -184,7 +194,7 @@ const RSIPanel = () => {
       setSnackbar({
         open: true,
         message: error.message || 'Failed to save configuration',
-        severity: 'error'
+        severity: 'error',
       });
     } finally {
       setSaving(false);
@@ -207,9 +217,15 @@ const RSIPanel = () => {
   const getSymbolColor = (symbol) => {
     const colors = {
       BTCUSD: { bg: 'bg-orange-500/20', border: 'border-orange-500', text: 'text-orange-400' },
-      ETHUSD: { bg: 'bg-blue-500/20', border: 'border-blue-500', text: 'text-blue-400' }
+      ETHUSD: { bg: 'bg-blue-500/20', border: 'border-blue-500', text: 'text-blue-400' },
     };
-    return colors[symbol] || { bg: 'bg-slate-500/20', border: 'border-slate-500', text: 'text-slate-400' };
+    return (
+      colors[symbol] || {
+        bg: 'bg-slate-500/20',
+        border: 'border-slate-500',
+        text: 'text-slate-400',
+      }
+    );
   };
 
   if (loading && !rsiData) {
@@ -223,17 +239,24 @@ const RSIPanel = () => {
   return (
     <Box sx={{ width: '100%', py: 2 }}>
       {/* View Mode Toggle & Symbol Indicator */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 2,
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Activity size={20} />
             RSI Safety Monitor
           </Typography>
-          {viewMode === 'current' && currentSymbol && (
-            <SymbolBadge symbol={currentSymbol} />
-          )}
+          {viewMode === 'current' && currentSymbol && <SymbolBadge symbol={currentSymbol} />}
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           {/* Symbol Selector for Current View */}
           {viewMode === 'current' && (
@@ -244,15 +267,11 @@ const RSIPanel = () => {
               size="small"
               sx={{ mr: 1 }}
             >
-              <ToggleButton value="BTCUSD">
-                BTC
-              </ToggleButton>
-              <ToggleButton value="ETHUSD">
-                ETH
-              </ToggleButton>
+              <ToggleButton value="BTCUSD">BTC</ToggleButton>
+              <ToggleButton value="ETHUSD">ETH</ToggleButton>
             </ToggleButtonGroup>
           )}
-          
+
           {/* View Mode Toggle */}
           <ToggleButtonGroup
             value={viewMode}
@@ -260,12 +279,8 @@ const RSIPanel = () => {
             onChange={(e, newMode) => newMode && setViewMode(newMode)}
             size="small"
           >
-            <ToggleButton value="current">
-              Current Symbol
-            </ToggleButton>
-            <ToggleButton value="all">
-              All Symbols
-            </ToggleButton>
+            <ToggleButton value="current">Current Symbol</ToggleButton>
+            <ToggleButton value="all">All Symbols</ToggleButton>
           </ToggleButtonGroup>
         </Box>
       </Box>
@@ -275,8 +290,8 @@ const RSIPanel = () => {
         <Grid container spacing={2} sx={{ mb: 3 }}>
           {Object.entries(allSymbolsRsi).map(([symbol, data]) => (
             <Grid item xs={12} md={6} key={symbol}>
-              <RSISymbolCard 
-                symbol={symbol} 
+              <RSISymbolCard
+                symbol={symbol}
                 data={data}
                 getStatusColor={getStatusColor}
                 getSymbolColor={getSymbolColor}
@@ -298,9 +313,7 @@ const RSIPanel = () => {
         <Card sx={{ mb: 3, bgcolor: 'background.paper' }}>
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <Typography variant="h6">
-                Current Status
-              </Typography>
+              <Typography variant="h6">Current Status</Typography>
               <SymbolBadge symbol={currentSymbol} size="small" />
             </Box>
             <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -310,7 +323,11 @@ const RSIPanel = () => {
                     Current RSI:
                   </Typography>
                   <Chip
-                    label={rsiData?.rsi !== null && rsiData?.rsi !== undefined ? rsiData.rsi.toFixed(2) : 'N/A'}
+                    label={
+                      rsiData?.rsi !== null && rsiData?.rsi !== undefined
+                        ? rsiData.rsi.toFixed(2)
+                        : 'N/A'
+                    }
                     color={getStatusColor()}
                     size="medium"
                     sx={{ fontSize: '1rem', fontWeight: 'bold' }}
@@ -325,7 +342,13 @@ const RSIPanel = () => {
                   <Chip
                     label={getStatusText()}
                     color={getStatusColor()}
-                    icon={getStatusColor() === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                    icon={
+                      getStatusColor() === 'error' ? (
+                        <AlertTriangle size={16} />
+                      ) : (
+                        <CheckCircle2 size={16} />
+                      )
+                    }
                     size="medium"
                   />
                 </Box>
@@ -337,11 +360,11 @@ const RSIPanel = () => {
               </Grid>
               <Grid item xs={12} md={6}>
                 <Typography variant="body2" color="text.secondary">
-                  Threshold: <strong>
-                    {(rsiData?.bot_mode || botMode) === 'LONG' 
-                      ? `RSI <= ${rsiData?.long_threshold || config.long_threshold} (STOP)` 
-                      : `RSI >= ${rsiData?.short_threshold || config.short_threshold} (STOP)`
-                    }
+                  Threshold:{' '}
+                  <strong>
+                    {(rsiData?.bot_mode || botMode) === 'LONG'
+                      ? `RSI <= ${rsiData?.long_threshold || config.long_threshold} (STOP)`
+                      : `RSI >= ${rsiData?.short_threshold || config.short_threshold} (STOP)`}
                   </strong>
                 </Typography>
               </Grid>
@@ -363,7 +386,7 @@ const RSIPanel = () => {
           <Typography variant="h6" gutterBottom>
             Configuration (Global RSI Settings)
           </Typography>
-          
+
           <FormControlLabel
             control={
               <Switch
@@ -380,9 +403,7 @@ const RSIPanel = () => {
 
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
-              <Typography gutterBottom>
-                RSI Period: {config.period}
-              </Typography>
+              <Typography gutterBottom>RSI Period: {config.period}</Typography>
               <Slider
                 value={config.period}
                 onChange={(e, value) => handleConfigChange('period', value)}
@@ -391,15 +412,13 @@ const RSIPanel = () => {
                 step={1}
                 marks={[
                   { value: 14, label: '14' },
-                  { value: 30, label: '30' }
+                  { value: 30, label: '30' },
                 ]}
               />
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <Typography gutterBottom>
-                LONG Mode Threshold: {config.long_threshold}
-              </Typography>
+              <Typography gutterBottom>LONG Mode Threshold: {config.long_threshold}</Typography>
               <Slider
                 value={config.long_threshold}
                 onChange={(e, value) => handleConfigChange('long_threshold', value)}
@@ -409,7 +428,7 @@ const RSIPanel = () => {
                 marks={[
                   { value: 20, label: '20' },
                   { value: 25, label: '25' },
-                  { value: 30, label: '30' }
+                  { value: 30, label: '30' },
                 ]}
               />
               <Typography variant="caption" color="text.secondary">
@@ -418,9 +437,7 @@ const RSIPanel = () => {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <Typography gutterBottom>
-                SHORT Mode Threshold: {config.short_threshold}
-              </Typography>
+              <Typography gutterBottom>SHORT Mode Threshold: {config.short_threshold}</Typography>
               <Slider
                 value={config.short_threshold}
                 onChange={(e, value) => handleConfigChange('short_threshold', value)}
@@ -430,7 +447,7 @@ const RSIPanel = () => {
                 marks={[
                   { value: 70, label: '70' },
                   { value: 75, label: '75' },
-                  { value: 80, label: '80' }
+                  { value: 80, label: '80' },
                 ]}
               />
               <Typography variant="caption" color="text.secondary">
@@ -439,9 +456,7 @@ const RSIPanel = () => {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <Typography gutterBottom>
-                Hysteresis Delay: {config.hysteresis_seconds}s
-              </Typography>
+              <Typography gutterBottom>Hysteresis Delay: {config.hysteresis_seconds}s</Typography>
               <Slider
                 value={config.hysteresis_seconds}
                 onChange={(e, value) => handleConfigChange('hysteresis_seconds', value)}
@@ -451,7 +466,7 @@ const RSIPanel = () => {
                 marks={[
                   { value: 60, label: '60s' },
                   { value: 120, label: '120s' },
-                  { value: 300, label: '300s' }
+                  { value: 300, label: '300s' },
                 ]}
               />
               <Typography variant="caption" color="text.secondary">
@@ -489,11 +504,7 @@ const RSIPanel = () => {
           </Grid>
 
           <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-            <Button
-              variant="outlined"
-              startIcon={<RefreshCw />}
-              onClick={fetchRSIData}
-            >
+            <Button variant="outlined" startIcon={<RefreshCw />} onClick={fetchRSIData}>
               Refresh
             </Button>
             <Button
@@ -511,8 +522,8 @@ const RSIPanel = () => {
       {/* Info Alert */}
       <Alert severity="info" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>Multi-Symbol RSI:</strong> RSI is calculated independently for each symbol.
-          Use "All Symbols" view to monitor RSI across all enabled instruments simultaneously.
+          <strong>Multi-Symbol RSI:</strong> RSI is calculated independently for each symbol. Use
+          "All Symbols" view to monitor RSI across all enabled instruments simultaneously.
         </Typography>
       </Alert>
 
@@ -535,13 +546,13 @@ const RSIPanel = () => {
  */
 const RSISymbolCard = ({ symbol, data, getStatusColor, getSymbolColor }) => {
   const colors = getSymbolColor(symbol);
-  
+
   return (
-    <Card 
-      sx={{ 
+    <Card
+      sx={{
         bgcolor: 'background.paper',
         borderLeft: 4,
-        borderColor: symbol === 'BTCUSD' ? 'warning.main' : 'info.main'
+        borderColor: symbol === 'BTCUSD' ? 'warning.main' : 'info.main',
       }}
     >
       <CardContent>
@@ -552,13 +563,9 @@ const RSISymbolCard = ({ symbol, data, getStatusColor, getSymbolColor }) => {
               {data?.bot_mode || 'LONG'} Mode
             </Typography>
           </Box>
-          <Chip
-            label={data?.status || 'UNKNOWN'}
-            color={getStatusColor(data)}
-            size="small"
-          />
+          <Chip label={data?.status || 'UNKNOWN'} color={getStatusColor(data)} size="small" />
         </Box>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1 }}>
           <Typography variant="h3" sx={{ fontWeight: 700 }}>
             {data?.rsi !== null && data?.rsi !== undefined ? data.rsi.toFixed(1) : '—'}
@@ -567,12 +574,12 @@ const RSISymbolCard = ({ symbol, data, getStatusColor, getSymbolColor }) => {
             RSI
           </Typography>
         </Box>
-        
+
         <Typography variant="caption" color="text.secondary">
-          Threshold: {data?.bot_mode === 'SHORT' 
-            ? `≥ ${data?.short_threshold || 70}` 
-            : `≤ ${data?.long_threshold || 30}`
-          }
+          Threshold:{' '}
+          {data?.bot_mode === 'SHORT'
+            ? `≥ ${data?.short_threshold || 70}`
+            : `≤ ${data?.long_threshold || 30}`}
         </Typography>
       </CardContent>
     </Card>
@@ -580,4 +587,3 @@ const RSISymbolCard = ({ symbol, data, getStatusColor, getSymbolColor }) => {
 };
 
 export default RSIPanel;
-

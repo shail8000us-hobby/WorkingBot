@@ -1,6 +1,6 @@
 /**
  * Add Symbol Dialog
- * 
+ *
  * Dialog for adding a new trading symbol to the portfolio.
  * Creates a new symbol configuration in config.yaml.
  */
@@ -59,13 +59,13 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
     max_open_positions: '10',
     tick_size: '0.5',
   });
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [useCustomSymbol, setUseCustomSymbol] = useState(false);
 
   const handleInputChange = useCallback((field, value) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
@@ -73,7 +73,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
   }, []);
 
   const handleGridChange = useCallback((field, value) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       grid: {
         ...prev.grid,
@@ -85,7 +85,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
 
   const handlePresetSelect = useCallback((preset) => {
     if (preset) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         symbol: preset.symbol,
         product_id: preset.product_id.toString(),
@@ -110,11 +110,11 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
       setError('Grid configuration (lower, upper, step) is required');
       return;
     }
-    
+
     const lower = parseFloat(formData.grid.lower);
     const upper = parseFloat(formData.grid.upper);
     const step = parseFloat(formData.grid.step);
-    
+
     if (lower >= upper) {
       setError('Grid lower must be less than upper');
       return;
@@ -130,7 +130,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
 
     // Check if symbol already exists
     const symbolName = formData.symbol.toUpperCase();
-    if (existingSymbols.some(s => s.toUpperCase() === symbolName)) {
+    if (existingSymbols.some((s) => s.toUpperCase() === symbolName)) {
       setError(`Symbol '${symbolName}' already exists in portfolio`);
       return;
     }
@@ -148,7 +148,9 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
           lower: lower,
           upper: upper,
           step: step,
-          reference: formData.grid.reference ? parseFloat(formData.grid.reference) : (lower + upper) / 2,
+          reference: formData.grid.reference
+            ? parseFloat(formData.grid.reference)
+            : (lower + upper) / 2,
         },
         lot_size: parseInt(formData.lot_size) || 1,
         max_open_positions: parseInt(formData.max_open_positions) || 10,
@@ -156,7 +158,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
       };
 
       const response = await apiClient.request('PUT', '/api/config/symbols', payload);
-      
+
       if (response.success) {
         onSuccess && onSuccess(symbolName);
         handleClose();
@@ -189,24 +191,24 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
 
   // Filter out already configured symbols from presets
   const availablePresets = COMMON_PRODUCTS.filter(
-    p => !existingSymbols.some(s => s.toUpperCase() === p.symbol)
+    (p) => !existingSymbols.some((s) => s.toUpperCase() === p.symbol)
   );
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: { bgcolor: 'background.paper' }
+        sx: { bgcolor: 'background.paper' },
       }}
     >
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <AddIcon color="primary" />
         Add New Symbol
       </DialogTitle>
-      
+
       <DialogContent>
         <Box sx={{ pt: 1 }}>
           {error && (
@@ -216,15 +218,15 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
           )}
 
           <Alert severity="info" sx={{ mb: 3 }}>
-            New symbols are created as <strong>disabled</strong> for safety. 
-            Enable them from the Portfolio view after verifying the configuration.
+            New symbols are created as <strong>disabled</strong> for safety. Enable them from the
+            Portfolio view after verifying the configuration.
           </Alert>
 
           {/* Symbol Selection */}
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
             Select Symbol
           </Typography>
-          
+
           {!useCustomSymbol && availablePresets.length > 0 ? (
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>Choose from common symbols</InputLabel>
@@ -232,7 +234,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
                 value={formData.symbol}
                 label="Choose from common symbols"
                 onChange={(e) => {
-                  const preset = COMMON_PRODUCTS.find(p => p.symbol === e.target.value);
+                  const preset = COMMON_PRODUCTS.find((p) => p.symbol === e.target.value);
                   handlePresetSelect(preset);
                 }}
               >
@@ -251,11 +253,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
                 ))}
               </Select>
               <FormHelperText>
-                <Button 
-                  size="small" 
-                  onClick={() => setUseCustomSymbol(true)}
-                  sx={{ mt: 0.5 }}
-                >
+                <Button size="small" onClick={() => setUseCustomSymbol(true)} sx={{ mt: 0.5 }}>
                   Or enter custom symbol
                 </Button>
               </FormHelperText>
@@ -299,7 +297,7 @@ export default function AddSymbolDialog({ open, onClose, onSuccess, existingSymb
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
             Grid Configuration
           </Typography>
-          
+
           <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
             <TextField
               label="Lower Bound"

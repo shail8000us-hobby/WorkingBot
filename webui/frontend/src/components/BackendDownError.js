@@ -98,7 +98,7 @@ const BackendDownError = ({ onRetry }) => {
     },
     {
       title: 'Check Port 5555',
-      description: 'See what\'s running on the WebUI port',
+      description: "See what's running on the WebUI port",
       command: 'lsof -i :5555',
       icon: <TerminalIcon />,
       color: '#F44336',
@@ -141,9 +141,9 @@ const BackendDownError = ({ onRetry }) => {
         </Paper>
 
         {/* Alert Box */}
-        <Alert 
-          severity="warning" 
-          sx={{ 
+        <Alert
+          severity="warning"
+          sx={{
             mb: 3,
             fontSize: '1rem',
             '& .MuiAlert-icon': {
@@ -151,12 +151,16 @@ const BackendDownError = ({ onRetry }) => {
             },
           }}
         >
-          <strong>Quick Fix:</strong> Run the first command below in your Mac Terminal to start the backend via LaunchAgent.
+          <strong>Quick Fix:</strong> Run the first command below in your Mac Terminal to start the
+          backend via LaunchAgent.
         </Alert>
 
         {/* Commands List */}
         <Paper elevation={4} sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+          <Typography
+            variant="h5"
+            sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center' }}
+          >
             <TerminalIcon sx={{ mr: 1 }} />
             Recovery Commands
           </Typography>
@@ -177,9 +181,7 @@ const BackendDownError = ({ onRetry }) => {
             >
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1 }}>
-                  <Box sx={{ color: cmd.color, mr: 1.5, mt: 0.5 }}>
-                    {cmd.icon}
-                  </Box>
+                  <Box sx={{ color: cmd.color, mr: 1.5, mt: 0.5 }}>{cmd.icon}</Box>
                   <Box sx={{ flexGrow: 1 }}>
                     <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                       {cmd.title}
@@ -207,7 +209,7 @@ const BackendDownError = ({ onRetry }) => {
                         <IconButton
                           size="small"
                           onClick={() => handleCopyCommand(cmd.command, cmd.title)}
-                          sx={{ 
+                          sx={{
                             color: copiedCommand === cmd.title ? '#4CAF50' : '#00e676',
                             ml: 1,
                           }}
@@ -232,7 +234,9 @@ const BackendDownError = ({ onRetry }) => {
             <Button
               variant="contained"
               size="large"
-              startIcon={isChecking ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+              startIcon={
+                isChecking ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />
+              }
               onClick={handleRetry}
               disabled={isChecking}
               sx={{
@@ -264,8 +268,8 @@ const BackendDownError = ({ onRetry }) => {
         {/* Additional Info */}
         <Alert severity="info" sx={{ mt: 3 }}>
           <Typography variant="body2">
-            <strong>Need more help?</strong> Once the backend is running, check the "Know Your Bot" section in the WebUI 
-            for a complete command reference.
+            <strong>Need more help?</strong> Once the backend is running, check the "Know Your Bot"
+            section in the WebUI for a complete command reference.
           </Typography>
         </Alert>
       </Box>

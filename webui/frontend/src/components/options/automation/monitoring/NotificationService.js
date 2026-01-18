@@ -1,6 +1,6 @@
 /**
  * NotificationService - Send alerts when automation triggers
- * 
+ *
  * Features:
  * - Toast notifications (using browser Notification API or Material-UI Snackbar)
  * - Sound alerts
@@ -13,12 +13,12 @@ class NotificationService {
   constructor() {
     this.soundEnabled = true;
     this.toastCallback = null; // Will be set by UI component
-    
+
     // Pre-load sound effects (you'll need to add actual sound files)
     this.sounds = {
       success: null, // new Audio('/sounds/success.mp3')
       warning: null, // new Audio('/sounds/warning.mp3')
-      error: null,   // new Audio('/sounds/error.mp3')
+      error: null, // new Audio('/sounds/error.mp3')
     };
   }
 
@@ -39,12 +39,12 @@ class NotificationService {
   notify(typeOrObj, message, options = {}) {
     // Support both object and positional argument styles
     let type, displayMessage, notifyOptions;
-    
+
     if (typeof typeOrObj === 'object' && typeOrObj !== null) {
       // Object style: notify({ type, title, message, ... })
       type = typeOrObj.type;
-      displayMessage = typeOrObj.title 
-        ? `${typeOrObj.title}: ${typeOrObj.message || ''}` 
+      displayMessage = typeOrObj.title
+        ? `${typeOrObj.title}: ${typeOrObj.message || ''}`
         : typeOrObj.message;
       notifyOptions = { browserNotification: typeOrObj.browserNotification, ...typeOrObj };
     } else {
@@ -53,22 +53,22 @@ class NotificationService {
       displayMessage = message;
       notifyOptions = options;
     }
-    
+
     const config = this._getConfigForType(type);
-    
+
     // Show toast notification
     this._showToast(displayMessage, config.severity);
-    
+
     // Play sound if enabled
     if (this.soundEnabled && config.sound) {
       this._playSound(config.sound);
     }
-    
+
     // Browser notification (if permission granted)
     if (notifyOptions.browserNotification) {
       this._showBrowserNotification(displayMessage, config);
     }
-    
+
     // Log to console for debugging
     console.log(`[${type}] ${displayMessage}`, notifyOptions);
   }
@@ -96,7 +96,7 @@ class NotificationService {
       const sound = this.sounds[soundType];
       if (sound) {
         sound.currentTime = 0;
-        sound.play().catch(err => {
+        sound.play().catch((err) => {
           console.warn('Failed to play sound:', err);
         });
       } else {
@@ -117,23 +117,23 @@ class NotificationService {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      
+
       // Different frequencies for different types
       const frequencies = {
-        success: 880,  // A5
-        warning: 660,  // E5
-        error: 440,    // A4
+        success: 880, // A5
+        warning: 660, // E5
+        error: 440, // A4
       };
-      
+
       oscillator.frequency.value = frequencies[type] || 440;
       oscillator.type = 'sine';
-      
+
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-      
+
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.2);
     } catch (error) {
@@ -151,7 +151,7 @@ class NotificationService {
       console.warn('Browser does not support notifications');
       return;
     }
-    
+
     if (Notification.permission === 'granted') {
       new Notification('Options Automation', {
         body: message,
@@ -159,7 +159,7 @@ class NotificationService {
         tag: 'automation-notification',
       });
     } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then(permission => {
+      Notification.requestPermission().then((permission) => {
         if (permission === 'granted') {
           this._showBrowserNotification(message, config);
         }
@@ -215,12 +215,14 @@ class NotificationService {
         icon: '⚠️',
       },
     };
-    
-    return configs[type] || {
-      severity: 'info',
-      sound: null,
-      icon: 'ℹ️',
-    };
+
+    return (
+      configs[type] || {
+        severity: 'info',
+        sound: null,
+        icon: 'ℹ️',
+      }
+    );
   }
 
   /**

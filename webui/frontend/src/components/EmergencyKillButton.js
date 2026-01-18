@@ -15,13 +15,13 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
-  Chip
+  Chip,
 } from '@mui/material';
 import {
   Warning as WarningIcon,
   Cancel as CancelIcon,
   CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import HelpIcon from './help/HelpIcon';
 import api from '../utils/apiShim';
@@ -47,31 +47,30 @@ const EmergencyKillButton = () => {
     console.log('🚨 [EMERGENCY KILL] Setting loading state...');
     setLoading(true);
     setConfirmOpen(false);
-    
+
     try {
       console.log('🚨 [EMERGENCY KILL] Making POST request to /api/emergency/kill-all...');
       console.log('🚨 [EMERGENCY KILL] Timestamp:', new Date().toISOString());
-      
+
       const { data } = await api.post('/api/emergency/kill-all');
-      
+
       console.log('🚨 [EMERGENCY KILL] API Response received:', data);
       console.log('🚨 [EMERGENCY KILL] Success:', data.success);
       console.log('🚨 [EMERGENCY KILL] Total killed:', data.total_killed);
-      
+
       setResult(data);
       setResultOpen(true);
-      
     } catch (error) {
       console.error('🚨 [EMERGENCY KILL] Error occurred:', error);
       console.error('🚨 [EMERGENCY KILL] Error message:', error.message);
       console.error('🚨 [EMERGENCY KILL] Error stack:', error.stack);
       console.error('🚨 [EMERGENCY KILL] Error response:', error.response);
-      
+
       setResult({
         success: false,
         message: `Failed to kill bots: ${error.message}`,
         killed: [],
-        errors: [error.message]
+        errors: [error.message],
       });
       setResultOpen(true);
     } finally {
@@ -113,13 +112,16 @@ const EmergencyKillButton = () => {
       </Box>
 
       {/* Confirmation Dialog */}
-      <Dialog
-        open={confirmOpen}
-        onClose={handleCloseConfirm}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{ bgcolor: 'error.main', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Dialog open={confirmOpen} onClose={handleCloseConfirm} maxWidth="sm" fullWidth>
+        <DialogTitle
+          sx={{
+            bgcolor: 'error.main',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+          }}
+        >
           <WarningIcon />
           Emergency Kill All Bots
         </DialogTitle>
@@ -128,62 +130,48 @@ const EmergencyKillButton = () => {
             <AlertTitle>⚠️ WARNING: This is a HARD KILL!</AlertTitle>
             This will immediately terminate ALL bot processes using kill -9
           </Alert>
-          
-          <DialogContentText sx={{ mb: 2 }}>
-            This action will forcefully stop:
-          </DialogContentText>
-          
+
+          <DialogContentText sx={{ mb: 2 }}>This action will forcefully stop:</DialogContentText>
+
           <List dense>
             <ListItem>
               <ListItemIcon>
                 <CancelIcon color="error" />
               </ListItemIcon>
-              <ListItemText 
-                primary="Trading Bot" 
-                secondary="Main grid trading bot"
-              />
+              <ListItemText primary="Trading Bot" secondary="Main grid trading bot" />
             </ListItem>
             <ListItem>
               <ListItemIcon>
                 <CancelIcon color="error" />
               </ListItemIcon>
-              <ListItemText 
-                primary="Heartbeat Monitor" 
-                secondary="Dead man's switch monitor"
-              />
+              <ListItemText primary="Heartbeat Monitor" secondary="Dead man's switch monitor" />
             </ListItem>
             <ListItem>
               <ListItemIcon>
                 <CancelIcon color="error" />
               </ListItemIcon>
-              <ListItemText 
-                primary="Guardian Bot" 
-                secondary="Position safety monitor"
-              />
+              <ListItemText primary="Guardian Bot" secondary="Position safety monitor" />
             </ListItem>
             <ListItem>
               <ListItemIcon>
                 <CancelIcon color="error" />
               </ListItemIcon>
-              <ListItemText 
-                primary="tmux Session" 
-                secondary="Terminal multiplexer session"
-              />
+              <ListItemText primary="tmux Session" secondary="Terminal multiplexer session" />
             </ListItem>
           </List>
 
           <Alert severity="warning" sx={{ mt: 2 }}>
-            <strong>Note:</strong> This does NOT cancel open orders or close positions on the exchange.
-            It only stops the bot processes.
+            <strong>Note:</strong> This does NOT cancel open orders or close positions on the
+            exchange. It only stops the bot processes.
           </Alert>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={handleCloseConfirm} variant="outlined">
             Cancel
           </Button>
-          <Button 
-            onClick={handleKillAll} 
-            variant="contained" 
+          <Button
+            onClick={handleKillAll}
+            variant="contained"
             color="error"
             startIcon={<CancelIcon />}
           >
@@ -193,19 +181,16 @@ const EmergencyKillButton = () => {
       </Dialog>
 
       {/* Result Dialog */}
-      <Dialog
-        open={resultOpen}
-        onClose={handleCloseResult}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{ 
-          bgcolor: result?.success ? 'success.main' : 'error.main', 
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1
-        }}>
+      <Dialog open={resultOpen} onClose={handleCloseResult} maxWidth="sm" fullWidth>
+        <DialogTitle
+          sx={{
+            bgcolor: result?.success ? 'success.main' : 'error.main',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+          }}
+        >
           {result?.success ? <CheckCircleIcon /> : <ErrorIcon />}
           {result?.success ? 'Success' : 'Failed'}
         </DialogTitle>
@@ -234,7 +219,11 @@ const EmergencyKillButton = () => {
 
           {result?.errors && result.errors.length > 0 && (
             <Box sx={{ mb: 2 }}>
-              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: 'error.main' }}>
+              <Typography
+                variant="subtitle2"
+                gutterBottom
+                sx={{ fontWeight: 'bold', color: 'error.main' }}
+              >
                 ⚠️ Errors:
               </Typography>
               <List dense>
@@ -252,7 +241,11 @@ const EmergencyKillButton = () => {
 
           {result?.still_running && result.still_running.length > 0 && (
             <Box sx={{ mb: 2 }}>
-              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: 'warning.main' }}>
+              <Typography
+                variant="subtitle2"
+                gutterBottom
+                sx={{ fontWeight: 'bold', color: 'warning.main' }}
+              >
                 ⚠️ Still Running:
               </Typography>
               <List dense>
@@ -261,13 +254,13 @@ const EmergencyKillButton = () => {
                     <ListItemIcon>
                       <ErrorIcon color="warning" fontSize="small" />
                     </ListItemIcon>
-                    <ListItemText 
+                    <ListItemText
                       primary={proc}
-                      sx={{ 
-                        '& .MuiListItemText-primary': { 
+                      sx={{
+                        '& .MuiListItemText-primary': {
                           fontSize: '0.8rem',
-                          fontFamily: 'monospace'
-                        }
+                          fontFamily: 'monospace',
+                        },
                       }}
                     />
                   </ListItem>

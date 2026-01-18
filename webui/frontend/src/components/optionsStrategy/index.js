@@ -2,7 +2,7 @@
  * Options Strategy Components
  * ===========================
  * Export all strategy builder components.
- * 
+ *
  * Created: January 5, 2026
  * Updated: Phase 3 - Added AutomationControls
  * Updated: January 12, 2026 - Added StrategyValidationStatus

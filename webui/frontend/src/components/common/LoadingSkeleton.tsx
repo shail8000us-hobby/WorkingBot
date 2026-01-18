@@ -5,12 +5,21 @@ import '../../styles/animations.css';
 /**
  * LoadingSkeleton Component
  * Animated placeholder for loading states
- * 
+ *
  * Created: January 18, 2026 (Migrated to TypeScript)
  * Safe: Pure UI component, no functional changes
  */
 
-type SkeletonVariant = 'text' | 'title' | 'subtitle' | 'card' | 'button' | 'avatar' | 'badge' | 'metric' | 'chart';
+type SkeletonVariant =
+  | 'text'
+  | 'title'
+  | 'subtitle'
+  | 'card'
+  | 'button'
+  | 'avatar'
+  | 'badge'
+  | 'metric'
+  | 'chart';
 
 interface LoadingSkeletonProps {
   variant?: SkeletonVariant;
@@ -29,10 +38,10 @@ const LoadingSkeleton: React.FC<LoadingSkeletonProps> = ({
   className,
   count = 1,
   circle = false,
-  borderRadius
+  borderRadius,
 }) => {
   const baseClasses = 'loading-shimmer rounded';
-  
+
   const variantStyles: Record<SkeletonVariant, string> = {
     text: 'h-4 w-full mb-2',
     title: 'h-6 w-3/4 mb-3',
@@ -42,17 +51,17 @@ const LoadingSkeleton: React.FC<LoadingSkeletonProps> = ({
     avatar: 'h-10 w-10 rounded-full',
     badge: 'h-6 w-16 rounded-full',
     metric: 'h-16 w-full',
-    chart: 'h-64 w-full'
+    chart: 'h-64 w-full',
   };
-  
+
   const variantClass = variantStyles[variant] || variantStyles.text;
-  
+
   const style: React.CSSProperties = {
     width: width || undefined,
     height: height || undefined,
-    borderRadius: circle ? '50%' : borderRadius || undefined
+    borderRadius: circle ? '50%' : borderRadius || undefined,
   };
-  
+
   return (
     <>
       {Array.from({ length: count }).map((_, index) => (

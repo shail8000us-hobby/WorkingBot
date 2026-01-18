@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   Activity,
@@ -37,12 +37,12 @@ import {
   TrendingDown,
   Minus,
   Eye,
-  X
+  X,
 } from 'lucide-react';
 
 /**
  * System Health Monitor Dashboard
- * 
+ *
  * Features:
  * - Real-time system resource monitoring (CPU, memory, disk)
  * - Process health tracking with status indicators
@@ -64,7 +64,7 @@ const SystemHealthPanel = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
-  
+
   // Dialog state
   const [alertHistoryDialogOpen, setAlertHistoryDialogOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
@@ -90,7 +90,7 @@ const SystemHealthPanel = () => {
           metricsData = data.metrics;
         }
       }
-      
+
       // Fallback to /api/health/detailed if system-health endpoints don't work
       if (!metricsData) {
         const detailedRes = await fetch('/api/health/detailed');
@@ -102,22 +102,27 @@ const SystemHealthPanel = () => {
             metricsData = {
               cpu_percent: resources.cpu?.percent || resources.cpu?.percent_used || 0,
               cpu_count: resources.cpu?.cores || 0,
-              load_average_1m: resources.cpu?.load_avg_1m || resources.cpu?.load_average?.get?.(0) || 0,
-              load_average_5m: resources.cpu?.load_avg_5m || resources.cpu?.load_average?.get?.(1) || 0,
-              load_average_15m: resources.cpu?.load_avg_15m || resources.cpu?.load_average?.get?.(2) || 0,
+              load_average_1m:
+                resources.cpu?.load_avg_1m || resources.cpu?.load_average?.get?.(0) || 0,
+              load_average_5m:
+                resources.cpu?.load_avg_5m || resources.cpu?.load_average?.get?.(1) || 0,
+              load_average_15m:
+                resources.cpu?.load_avg_15m || resources.cpu?.load_average?.get?.(2) || 0,
               memory_percent: resources.memory?.percent_used || resources.memory?.percent || 0,
-              memory_used_mb: resources.memory?.used_gb ? (resources.memory.used_gb * 1024) : 
-                             (resources.memory?.total_gb && resources.memory?.available_gb ? 
-                              ((resources.memory.total_gb - resources.memory.available_gb) * 1024) : 0),
-              memory_total_mb: resources.memory?.total_gb ? (resources.memory.total_gb * 1024) : 0,
+              memory_used_mb: resources.memory?.used_gb
+                ? resources.memory.used_gb * 1024
+                : resources.memory?.total_gb && resources.memory?.available_gb
+                  ? (resources.memory.total_gb - resources.memory.available_gb) * 1024
+                  : 0,
+              memory_total_mb: resources.memory?.total_gb ? resources.memory.total_gb * 1024 : 0,
               disk_percent: resources.disk?.percent_used || resources.disk?.percent || 0,
               disk_used_gb: resources.disk?.used_gb || 0,
-              disk_total_gb: resources.disk?.total_gb || 0
+              disk_total_gb: resources.disk?.total_gb || 0,
             };
           }
         }
       }
-      
+
       if (metricsData) {
         setSystemMetrics(metricsData);
       }
@@ -176,9 +181,9 @@ const SystemHealthPanel = () => {
   const acknowledgeAlert = async (alertId) => {
     try {
       const res = await fetch(`/api/system-health/alerts/${alertId}/acknowledge`, {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       if (res.ok) {
         // Refresh alerts
         fetchHealthData();
@@ -192,9 +197,9 @@ const SystemHealthPanel = () => {
   const clearAcknowledgedAlerts = async () => {
     try {
       const res = await fetch('/api/system-health/alerts/clear', {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       if (res.ok) {
         fetchHealthData();
       }
@@ -216,7 +221,7 @@ const SystemHealthPanel = () => {
       critical: 'error',
       error: 'error',
       warning: 'warning',
-      info: 'info'
+      info: 'info',
     };
     return colors[severity] || 'default';
   };
@@ -262,7 +267,7 @@ const SystemHealthPanel = () => {
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   };
 
   // Format uptime
@@ -270,7 +275,7 @@ const SystemHealthPanel = () => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m`;
     } else if (minutes > 0) {
@@ -327,16 +332,17 @@ const SystemHealthPanel = () => {
 
       {/* Overall Health Status */}
       {summary && (
-        <Alert 
+        <Alert
           severity={
-            summary.overall_health === 'healthy' ? 'success' :
-            summary.overall_health === 'warning' ? 'warning' : 'error'
+            summary.overall_health === 'healthy'
+              ? 'success'
+              : summary.overall_health === 'warning'
+                ? 'warning'
+                : 'error'
           }
           sx={{ mb: 3 }}
         >
-          <AlertTitle>
-            Overall Status: {summary.overall_health.toUpperCase()}
-          </AlertTitle>
+          <AlertTitle>Overall Status: {summary.overall_health.toUpperCase()}</AlertTitle>
           {summary.summary.alerts.critical > 0 && (
             <Typography variant="body2">
               {summary.summary.alerts.critical} critical alert(s) active
@@ -349,7 +355,9 @@ const SystemHealthPanel = () => {
       {activeAlerts.length > 0 && (
         <Card sx={{ mb: 3, borderLeft: 4, borderColor: 'error.main' }}>
           <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+            >
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <AlertTriangle size={20} color="#f44336" />
                 Active Alerts ({activeAlerts.length})
@@ -368,7 +376,7 @@ const SystemHealthPanel = () => {
                 <Button
                   size="small"
                   onClick={clearAcknowledgedAlerts}
-                  disabled={!activeAlerts.some(a => a.acknowledged)}
+                  disabled={!activeAlerts.some((a) => a.acknowledged)}
                 >
                   Clear Acknowledged
                 </Button>
@@ -397,15 +405,10 @@ const SystemHealthPanel = () => {
                       </TableCell>
                       <TableCell>{alert.category}</TableCell>
                       <TableCell>{alert.message}</TableCell>
-                      <TableCell>
-                        {new Date(alert.timestamp).toLocaleTimeString()}
-                      </TableCell>
+                      <TableCell>{new Date(alert.timestamp).toLocaleTimeString()}</TableCell>
                       <TableCell>
                         {!alert.acknowledged && (
-                          <Button
-                            size="small"
-                            onClick={() => acknowledgeAlert(alert.id)}
-                          >
+                          <Button size="small" onClick={() => acknowledgeAlert(alert.id)}>
                             Acknowledge
                           </Button>
                         )}
@@ -425,7 +428,14 @@ const SystemHealthPanel = () => {
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 2,
+                }}
+              >
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Cpu size={20} />
                   CPU Usage
@@ -446,7 +456,9 @@ const SystemHealthPanel = () => {
                 {systemMetrics?.cpu_count || 'N/A'} cores
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Load: {(systemMetrics?.load_average_1m || 0).toFixed(2)} / {(systemMetrics?.load_average_5m || 0).toFixed(2)} / {(systemMetrics?.load_average_15m || 0).toFixed(2)}
+                Load: {(systemMetrics?.load_average_1m || 0).toFixed(2)} /{' '}
+                {(systemMetrics?.load_average_5m || 0).toFixed(2)} /{' '}
+                {(systemMetrics?.load_average_15m || 0).toFixed(2)}
               </Typography>
             </CardContent>
           </Card>
@@ -456,7 +468,14 @@ const SystemHealthPanel = () => {
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 2,
+                }}
+              >
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Activity size={20} />
                   Memory Usage
@@ -474,7 +493,13 @@ const SystemHealthPanel = () => {
                 sx={{ height: 8, borderRadius: 1 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {systemMetrics?.memory_used_mb ? `${systemMetrics.memory_used_mb.toFixed(0)} MB` : 'N/A'} / {systemMetrics?.memory_total_mb ? `${systemMetrics.memory_total_mb.toFixed(0)} MB` : 'N/A'}
+                {systemMetrics?.memory_used_mb
+                  ? `${systemMetrics.memory_used_mb.toFixed(0)} MB`
+                  : 'N/A'}{' '}
+                /{' '}
+                {systemMetrics?.memory_total_mb
+                  ? `${systemMetrics.memory_total_mb.toFixed(0)} MB`
+                  : 'N/A'}
               </Typography>
             </CardContent>
           </Card>
@@ -484,7 +509,14 @@ const SystemHealthPanel = () => {
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 2,
+                }}
+              >
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <HardDrive size={20} />
                   Disk Usage
@@ -502,7 +534,13 @@ const SystemHealthPanel = () => {
                 sx={{ height: 8, borderRadius: 1 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {systemMetrics?.disk_used_gb ? `${systemMetrics.disk_used_gb.toFixed(1)} GB` : 'N/A'} / {systemMetrics?.disk_total_gb ? `${systemMetrics.disk_total_gb.toFixed(1)} GB` : 'N/A'}
+                {systemMetrics?.disk_used_gb
+                  ? `${systemMetrics.disk_used_gb.toFixed(1)} GB`
+                  : 'N/A'}{' '}
+                /{' '}
+                {systemMetrics?.disk_total_gb
+                  ? `${systemMetrics.disk_total_gb.toFixed(1)} GB`
+                  : 'N/A'}
               </Typography>
             </CardContent>
           </Card>
@@ -565,7 +603,10 @@ const SystemHealthPanel = () => {
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
-              <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="h6"
+                sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}
+              >
                 <Network size={20} />
                 API Health
               </Typography>
@@ -629,9 +670,7 @@ const SystemHealthPanel = () => {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>
-          Alert History (Last 24 Hours)
-        </DialogTitle>
+        <DialogTitle>Alert History (Last 24 Hours)</DialogTitle>
         <DialogContent>
           <TableContainer>
             <Table size="small">

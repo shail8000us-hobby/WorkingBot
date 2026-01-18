@@ -116,7 +116,9 @@ export async function getReconciliationStatus(): Promise<ReconciliationStatus> {
   return request<ReconciliationStatus>('/api/recon/status', { schema: ReconciliationStatusSchema });
 }
 
-export async function getReconciliationTable(params: ReconciliationTableParams): Promise<ReconciliationTableResponse> {
+export async function getReconciliationTable(
+  params: ReconciliationTableParams
+): Promise<ReconciliationTableResponse> {
   const query = buildQuery({
     filter: params.filter,
     sort_by: params.sortBy,
@@ -134,7 +136,9 @@ export async function getReconciliationOrdersStatus(): Promise<ReconciliationOrd
   });
 }
 
-export async function resyncReconciliationOrders(orderIds: string[]): Promise<ReconciliationActionResponse> {
+export async function resyncReconciliationOrders(
+  orderIds: string[]
+): Promise<ReconciliationActionResponse> {
   return request<ReconciliationActionResponse>('/api/recon/resync-json', {
     method: 'POST',
     body: { order_ids: orderIds },
@@ -142,7 +146,9 @@ export async function resyncReconciliationOrders(orderIds: string[]): Promise<Re
   });
 }
 
-export async function acknowledgeReconciliationOrders(orderIds: string[]): Promise<ReconciliationActionResponse> {
+export async function acknowledgeReconciliationOrders(
+  orderIds: string[]
+): Promise<ReconciliationActionResponse> {
   return request<ReconciliationActionResponse>('/api/recon/acknowledge', {
     method: 'POST',
     body: { order_ids: orderIds },
@@ -152,7 +158,7 @@ export async function acknowledgeReconciliationOrders(orderIds: string[]): Promi
 
 export async function ignoreReconciliationOrders(
   orderIds: string[],
-  durationHours = 24,
+  durationHours = 24
 ): Promise<ReconciliationActionResponse> {
   return request<ReconciliationActionResponse>('/api/recon/ignore', {
     method: 'POST',
@@ -175,7 +181,7 @@ export interface ClearOrdersMemoryRequest {
 }
 
 export async function clearReconciliationOrdersMemory(
-  payload: ClearOrdersMemoryRequest,
+  payload: ClearOrdersMemoryRequest
 ): Promise<ReconciliationOrdersStatus> {
   return request<ReconciliationOrdersStatus>('/api/recon/clear-orders-memory', {
     method: 'POST',
@@ -196,7 +202,9 @@ export async function getReconciliationV2Status(): Promise<unknown> {
   return request('/api/recon/v2/status');
 }
 
-export async function getReconciliationV2Mismatches(params: Record<string, string>): Promise<unknown> {
+export async function getReconciliationV2Mismatches(
+  params: Record<string, string>
+): Promise<unknown> {
   const query = buildQuery(params);
   return request(`/api/recon/v2/mismatches${query}`);
 }
@@ -210,7 +218,9 @@ export async function runReconciliationV2(): Promise<unknown> {
 // ---------------------------------------------------------------------------
 
 export async function getTradingStatus(): Promise<TradingStatusResponse> {
-  return request<TradingStatusResponse>('/api/trading_status', { schema: TradingStatusResponseSchema });
+  return request<TradingStatusResponse>('/api/trading_status', {
+    schema: TradingStatusResponseSchema,
+  });
 }
 
 export async function startTrading(force = false): Promise<TradingStatusCommandResponse> {

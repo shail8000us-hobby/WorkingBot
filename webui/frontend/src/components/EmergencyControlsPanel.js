@@ -8,15 +8,9 @@ import {
   AlertTitle,
   Grid,
   Divider,
-  Chip
+  Chip,
 } from '@mui/material';
-import {
-  Warning,
-  CheckCircle,
-  Delete,
-  Refresh,
-  Info
-} from '@mui/icons-material';
+import { Warning, CheckCircle, Delete, Refresh, Info } from '@mui/icons-material';
 import api from '../utils/apiShim';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
@@ -42,7 +36,11 @@ export default function EmergencyControlsPanel() {
 
   const clearEmergencyFlag = async () => {
     const instanceLabel = selectedInstance || 'all instances';
-    if (!window.confirm(`Are you sure you want to clear the emergency stop flag for ${instanceLabel}? This will resume trading.`)) {
+    if (
+      !window.confirm(
+        `Are you sure you want to clear the emergency stop flag for ${instanceLabel}? This will resume trading.`
+      )
+    ) {
       return;
     }
 
@@ -51,7 +49,9 @@ export default function EmergencyControlsPanel() {
       // v6.0: Use instance parameter for per-instance emergency flag clear
       const response = await api.post(withInstance('/api/emergency/clear_flag'));
       if (response.data.success) {
-        alert(`✅ Emergency flag cleared successfully for ${instanceLabel}! Trading can now resume.`);
+        alert(
+          `✅ Emergency flag cleared successfully for ${instanceLabel}! Trading can now resume.`
+        );
         checkEmergencyFlag();
       } else {
         alert('❌ Failed to clear flag: ' + response.data.message);
@@ -105,15 +105,14 @@ export default function EmergencyControlsPanel() {
                   <strong>Flag Location:</strong> {status.flag_location}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  <strong>Effect:</strong> All trading is blocked. The Safety Gatekeeper is intercepting all order placement requests.
+                  <strong>Effect:</strong> All trading is blocked. The Safety Gatekeeper is
+                  intercepting all order placement requests.
                 </Typography>
               </Alert>
             ) : (
               <Alert severity="success" icon={<CheckCircle />}>
                 <AlertTitle>No Emergency Flag Detected</AlertTitle>
-                <Typography variant="body2">
-                  Trading is not blocked by emergency flag.
-                </Typography>
+                <Typography variant="body2">Trading is not blocked by emergency flag.</Typography>
               </Alert>
             )}
           </Box>
@@ -158,18 +157,34 @@ export default function EmergencyControlsPanel() {
               The emergency stop flag (`.guardian_emergency_stop`) is created when:
             </Typography>
             <ul style={{ margin: 0, paddingLeft: 20 }}>
-              <li><Typography variant="body2">Account loss exceeds configured limits</Typography></li>
-              <li><Typography variant="body2">Guardian bot detects critical risk conditions</Typography></li>
-              <li><Typography variant="body2">Manual emergency stop is triggered</Typography></li>
+              <li>
+                <Typography variant="body2">Account loss exceeds configured limits</Typography>
+              </li>
+              <li>
+                <Typography variant="body2">
+                  Guardian bot detects critical risk conditions
+                </Typography>
+              </li>
+              <li>
+                <Typography variant="body2">Manual emergency stop is triggered</Typography>
+              </li>
             </ul>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
               <strong>⚠️ Important:</strong> Before clearing the flag, make sure you've:
             </Typography>
             <ol style={{ margin: 0, paddingLeft: 20 }}>
-              <li><Typography variant="body2">Investigated why the flag was created</Typography></li>
-              <li><Typography variant="body2">Fixed the underlying issue</Typography></li>
-              <li><Typography variant="body2">Verified account balance and positions</Typography></li>
-              <li><Typography variant="body2">Confirmed trading conditions are safe</Typography></li>
+              <li>
+                <Typography variant="body2">Investigated why the flag was created</Typography>
+              </li>
+              <li>
+                <Typography variant="body2">Fixed the underlying issue</Typography>
+              </li>
+              <li>
+                <Typography variant="body2">Verified account balance and positions</Typography>
+              </li>
+              <li>
+                <Typography variant="body2">Confirmed trading conditions are safe</Typography>
+              </li>
             </ol>
           </Box>
         </Box>

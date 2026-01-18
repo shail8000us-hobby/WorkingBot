@@ -3,7 +3,7 @@
  * =====================
  * Allows selecting multiple option legs for a strategy from the chain.
  * Shows which legs are needed and tracks selections.
- * 
+ *
  * Created: January 5, 2026
  */
 
@@ -21,25 +21,26 @@ import {
   ListItem,
   ListItemText,
   IconButton,
-  Divider
+  Divider,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
   Cancel as CancelIcon,
   ArrowForward as NextIcon,
-  Replay as ResetIcon
+  Replay as ResetIcon,
 } from '@mui/icons-material';
 
-export default function StrategyLegSelector({ 
-  strategyContext, 
+export default function StrategyLegSelector({
+  strategyContext,
   selectedLegs,
   onLegSelected,
   onComplete,
-  onCancel 
+  onCancel,
 }) {
   if (!strategyContext) return null;
 
-  const { strategyName, requiredLegs, suggestedStrikes, legHints, legDefinitions } = strategyContext;
+  const { strategyName, requiredLegs, suggestedStrikes, legHints, legDefinitions } =
+    strategyContext;
   const progress = (selectedLegs.length / requiredLegs) * 100;
   const isComplete = selectedLegs.length === requiredLegs;
 
@@ -50,16 +51,16 @@ export default function StrategyLegSelector({
       const strikeValue = suggestedStrikes?.[leg.strikeKey];
       const sideText = leg.side === 'buy' ? 'BUY' : 'SELL';
       const typeText = leg.type.toUpperCase();
-      return strikeValue 
+      return strikeValue
         ? `${sideText} ${typeText} @ ~$${strikeValue.toLocaleString()}`
         : `${sideText} ${typeText}`;
     }
-    
+
     // Fallback to leg hints if available
     if (legHints && legHints[index]) {
       return legHints[index];
     }
-    
+
     // Last fallback to suggested strikes
     const legKeys = Object.keys(suggestedStrikes || {});
     if (index < legKeys.length) {
@@ -71,14 +72,14 @@ export default function StrategyLegSelector({
   };
 
   return (
-    <Card 
-      sx={{ 
+    <Card
+      sx={{
         position: 'sticky',
         top: 16,
         zIndex: 1000,
         border: 2,
         borderColor: 'primary.main',
-        boxShadow: 4
+        boxShadow: 4,
       }}
     >
       <CardContent>
@@ -107,9 +108,9 @@ export default function StrategyLegSelector({
               {selectedLegs.length} / {requiredLegs} legs selected
             </Typography>
           </Box>
-          <LinearProgress 
-            variant="determinate" 
-            value={progress} 
+          <LinearProgress
+            variant="determinate"
+            value={progress}
             sx={{ height: 8, borderRadius: 1 }}
           />
         </Box>
@@ -119,15 +120,15 @@ export default function StrategyLegSelector({
           {Array.from({ length: requiredLegs }).map((_, index) => {
             const leg = selectedLegs[index];
             const isSelected = !!leg;
-            
+
             return (
               <React.Fragment key={index}>
                 {index > 0 && <Divider />}
                 <ListItem
                   secondaryAction={
                     isSelected && (
-                      <IconButton 
-                        edge="end" 
+                      <IconButton
+                        edge="end"
                         size="small"
                         onClick={() => {
                           const newLegs = [...selectedLegs];
@@ -144,29 +145,30 @@ export default function StrategyLegSelector({
                     {isSelected ? (
                       <CheckIcon color="success" fontSize="small" />
                     ) : (
-                      <Box 
-                        sx={{ 
-                          width: 20, 
-                          height: 20, 
-                          border: 2, 
+                      <Box
+                        sx={{
+                          width: 20,
+                          height: 20,
+                          border: 2,
                           borderColor: 'divider',
-                          borderRadius: '50%'
-                        }} 
+                          borderRadius: '50%',
+                        }}
                       />
                     )}
                     <ListItemText
                       primary={isSelected ? leg.symbol : getLegDescription(index)}
-                      secondary={isSelected ? 
-                        `${leg.side.toUpperCase()} @ $${leg.strike} • IV: ${leg.iv || 'N/A'}` :
-                        'Click a row in the chain below to select'
+                      secondary={
+                        isSelected
+                          ? `${leg.side.toUpperCase()} @ $${leg.strike} • IV: ${leg.iv || 'N/A'}`
+                          : 'Click a row in the chain below to select'
                       }
                       primaryTypographyProps={{
                         variant: 'body2',
                         fontWeight: isSelected ? 'bold' : 'normal',
-                        color: isSelected ? 'text.primary' : 'text.secondary'
+                        color: isSelected ? 'text.primary' : 'text.secondary',
                       }}
                       secondaryTypographyProps={{
-                        variant: 'caption'
+                        variant: 'caption',
                       }}
                     />
                   </Box>
@@ -182,8 +184,13 @@ export default function StrategyLegSelector({
             {legDefinitions && legDefinitions[selectedLegs.length] ? (
               <>
                 <strong>Next: </strong>
-                Click the <strong>{legDefinitions[selectedLegs.length].side === 'buy' ? 'B (Buy)' : 'S (Sell)'}</strong> button 
-                {' '}for a <strong>{legDefinitions[selectedLegs.length].type.toUpperCase()}</strong> option near the suggested strike.
+                Click the{' '}
+                <strong>
+                  {legDefinitions[selectedLegs.length].side === 'buy' ? 'B (Buy)' : 'S (Sell)'}
+                </strong>{' '}
+                button for a{' '}
+                <strong>{legDefinitions[selectedLegs.length].type.toUpperCase()}</strong> option
+                near the suggested strike.
               </>
             ) : (
               'Click on option rows in the chain below to add them to your strategy. Suggested strikes are highlighted.'

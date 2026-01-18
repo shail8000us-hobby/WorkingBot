@@ -47,7 +47,8 @@ const CommandKnowledgeBase = () => {
       commands: [
         {
           name: 'Start Async Trading Bot via PM2',
-          description: '🚀 Start the async trading bot (production-ready with WebSocket + Actor model)',
+          description:
+            '🚀 Start the async trading bot (production-ready with WebSocket + Actor model)',
           command: 'cd ~/Projects/WorkingBot && pm2 start gridbot-live',
           icon: <PlayArrowIcon />,
           tags: ['bot', 'start', 'live', 'pm2', 'trading', 'async'],
@@ -132,7 +133,8 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Start Async Bot (Demo Mode)',
           description: 'Start async bot in demo mode with paper trading',
-          command: 'cd ~/Projects/WorkingBot && TRADING_MODE=demo USE_ASYNC_BOT=true python3 bot/run.py',
+          command:
+            'cd ~/Projects/WorkingBot && TRADING_MODE=demo USE_ASYNC_BOT=true python3 bot/run.py',
           icon: <PlayArrowIcon />,
           tags: ['start', 'demo', 'paper', 'async'],
         },
@@ -153,7 +155,8 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Restart Async Bot',
           description: 'Stop and restart the async trading bot',
-          command: 'pkill -TERM -f "python.*bot/run" && sleep 5 && cd ~/Projects/WorkingBot && USE_ASYNC_BOT=true python3 bot/run.py &',
+          command:
+            'pkill -TERM -f "python.*bot/run" && sleep 5 && cd ~/Projects/WorkingBot && USE_ASYNC_BOT=true python3 bot/run.py &',
           icon: <RefreshIcon />,
           tags: ['restart', 'async'],
         },
@@ -174,7 +177,8 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Start Guardian Bot',
           description: 'Start the capital protection guardian',
-          command: 'cd ~/Projects/WorkingBot && python3 -u bot/guardian/guardian_bot.py | tee -a logs/guardian.log &',
+          command:
+            'cd ~/Projects/WorkingBot && python3 -u bot/guardian/guardian_bot.py | tee -a logs/guardian.log &',
           icon: <SecurityIcon />,
           tags: ['guardian', 'start', 'protection'],
         },
@@ -334,7 +338,8 @@ const CommandKnowledgeBase = () => {
         },
         {
           name: 'Watch Async Bot Logs',
-          description: 'Stream live async trading bot logs with human-readable narrative (PM2-aware)',
+          description:
+            'Stream live async trading bot logs with human-readable narrative (PM2-aware)',
           command: 'cd ~/Projects/WorkingBot && ./watch_bot_logs.sh main',
           icon: <ViewListIcon />,
           tags: ['logs', 'bot', 'pm2', 'live', 'async'],
@@ -405,13 +410,14 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Check WebSocket Connection',
           description: 'Check if async bot WebSocket is connected to Delta Exchange',
-          command: 'pm2 logs gridbot-live --lines 20 | grep -E "WebSocket|authenticated|subscribed"',
+          command:
+            'pm2 logs gridbot-live --lines 20 | grep -E "WebSocket|authenticated|subscribed"',
           icon: <MonitorHeartIcon />,
           tags: ['websocket', 'connection', 'async', 'debug'],
         },
         {
           name: 'Check Port Usage',
-          description: 'See what\'s running on WebUI port 5555',
+          description: "See what's running on WebUI port 5555",
           command: 'lsof -i :5555',
           icon: <MonitorHeartIcon />,
           tags: ['network', 'port', 'debug'],
@@ -419,7 +425,8 @@ const CommandKnowledgeBase = () => {
         {
           name: 'View System Resource Usage',
           description: 'Monitor CPU and memory usage of async bot processes',
-          command: 'ps aux | grep -E "python.*(bot|guardian|webui)" | grep -v grep | awk \'{print $2, $3"%", $4"%", $11}\'',
+          command:
+            'ps aux | grep -E "python.*(bot|guardian|webui)" | grep -v grep | awk \'{print $2, $3"%", $4"%", $11}\'',
           icon: <MonitorHeartIcon />,
           tags: ['performance', 'resources', 'async'],
         },
@@ -432,7 +439,7 @@ const CommandKnowledgeBase = () => {
       commands: [
         {
           name: 'Fix Async Bot Instance Lock',
-          description: '🔥 FIX: Async bot won\'t start due to instance lock conflict',
+          description: "🔥 FIX: Async bot won't start due to instance lock conflict",
           command: 'cd ~/Projects/WorkingBot && ./fix_bot_instance_lock.sh',
           icon: <BugReportIcon />,
           tags: ['fix', 'lock', 'instance', 'emergency', 'async'],
@@ -440,35 +447,40 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Check Async Bot Status & Health',
           description: 'Comprehensive async bot status check (PM2 + WebSocket + locks)',
-          command: 'cd ~/Projects/WorkingBot && pm2 status && echo "---" && ps aux | grep -E "python.*bot" | grep -v grep',
+          command:
+            'cd ~/Projects/WorkingBot && pm2 status && echo "---" && ps aux | grep -E "python.*bot" | grep -v grep',
           icon: <MonitorHeartIcon />,
           tags: ['debug', 'status', 'health', 'async'],
         },
         {
           name: 'Clean All Lock Files',
           description: 'Remove all stale lock files (async bot, webui, instance locks)',
-          command: 'cd ~/Projects/WorkingBot && rm -f .bot_instance_*.lock .bot.lock /tmp/webui_backend.lock && echo "✅ All locks removed"',
+          command:
+            'cd ~/Projects/WorkingBot && rm -f .bot_instance_*.lock .bot.lock /tmp/webui_backend.lock && echo "✅ All locks removed"',
           icon: <BugReportIcon />,
           tags: ['fix', 'lock', 'cleanup', 'emergency', 'async'],
         },
         {
           name: 'Check WebSocket Health',
           description: 'Check if async bot WebSocket is authenticated and receiving data',
-          command: 'pm2 logs gridbot-live --lines 100 | grep -E "WebSocket authenticated|Subscriptions active|Price.*flowing|Connection stable"',
+          command:
+            'pm2 logs gridbot-live --lines 100 | grep -E "WebSocket authenticated|Subscriptions active|Price.*flowing|Connection stable"',
           icon: <BugReportIcon />,
           tags: ['debug', 'websocket', 'async', 'health'],
         },
         {
           name: 'Check Actor System Health',
           description: 'Verify async bot actor system (OrderManager, PositionTracker, etc.)',
-          command: 'pm2 logs gridbot-live --lines 100 | grep -E "Actor.*processing|actor.*active|OrderManager|PositionTracker"',
+          command:
+            'pm2 logs gridbot-live --lines 100 | grep -E "Actor.*processing|actor.*active|OrderManager|PositionTracker"',
           icon: <BugReportIcon />,
           tags: ['debug', 'actors', 'async', 'health'],
         },
         {
           name: 'Check Volatility Halt Status',
           description: 'See if async bot is halted due to high volatility',
-          command: 'cat ~/Projects/WorkingBot/.volatility_halt.json 2>/dev/null | python3 -m json.tool || echo "No halt active"',
+          command:
+            'cat ~/Projects/WorkingBot/.volatility_halt.json 2>/dev/null | python3 -m json.tool || echo "No halt active"',
           icon: <BugReportIcon />,
           tags: ['debug', 'volatility', 'status', 'async'],
         },
@@ -510,7 +522,8 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Check for Duplicate Async Bots',
           description: '⚠️ CRITICAL: Check if multiple async bot instances are running',
-          command: 'ps aux | grep -E "python.*bot.run" | grep -v grep || echo "✅ No duplicate bots"',
+          command:
+            'ps aux | grep -E "python.*bot.run" | grep -v grep || echo "✅ No duplicate bots"',
           icon: <SecurityIcon />,
           tags: ['debug', 'critical', 'duplicate', 'safety', 'async'],
         },
@@ -538,7 +551,8 @@ const CommandKnowledgeBase = () => {
         {
           name: 'Debug WebSocket Reconnections',
           description: 'Check for WebSocket disconnection/reconnection patterns',
-          command: 'pm2 logs gridbot-live --lines 200 | grep -E "disconnected|reconnecting|CONNECTION LOST|RECONNECTING NOW"',
+          command:
+            'pm2 logs gridbot-live --lines 200 | grep -E "disconnected|reconnecting|CONNECTION LOST|RECONNECTING NOW"',
           icon: <BugReportIcon />,
           tags: ['debug', 'websocket', 'reconnect', 'async'],
         },
@@ -608,18 +622,20 @@ const CommandKnowledgeBase = () => {
   };
 
   // Filter commands based on search
-  const filteredCategories = commandCategories.map(category => ({
-    ...category,
-    commands: category.commands.filter(cmd => {
-      const searchLower = searchQuery.toLowerCase();
-      return (
-        cmd.name.toLowerCase().includes(searchLower) ||
-        cmd.description.toLowerCase().includes(searchLower) ||
-        cmd.command.toLowerCase().includes(searchLower) ||
-        cmd.tags.some(tag => tag.includes(searchLower))
-      );
-    }),
-  })).filter(category => category.commands.length > 0);
+  const filteredCategories = commandCategories
+    .map((category) => ({
+      ...category,
+      commands: category.commands.filter((cmd) => {
+        const searchLower = searchQuery.toLowerCase();
+        return (
+          cmd.name.toLowerCase().includes(searchLower) ||
+          cmd.description.toLowerCase().includes(searchLower) ||
+          cmd.command.toLowerCase().includes(searchLower) ||
+          cmd.tags.some((tag) => tag.includes(searchLower))
+        );
+      }),
+    }))
+    .filter((category) => category.commands.length > 0);
 
   const displayCategories = searchQuery ? filteredCategories : commandCategories;
 
@@ -635,7 +651,11 @@ const CommandKnowledgeBase = () => {
           color: 'white',
         }}
       >
-        <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+        <Typography
+          variant="h4"
+          gutterBottom
+          sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center' }}
+        >
           <TerminalIcon sx={{ mr: 2, fontSize: 40 }} />
           KNOW YOUR BOT - ASYNC EDITION
         </Typography>
@@ -667,7 +687,8 @@ const CommandKnowledgeBase = () => {
 
       {/* Alert */}
       <Alert severity="info" sx={{ mb: 3 }}>
-        <strong>Tip:</strong> Click "Copy" to copy command to clipboard, then paste in your Mac Terminal. All commands use zsh shell and are optimized for the async bot.
+        <strong>Tip:</strong> Click "Copy" to copy command to clipboard, then paste in your Mac
+        Terminal. All commands use zsh shell and are optimized for the async bot.
       </Alert>
 
       {/* Command Categories */}
@@ -718,9 +739,7 @@ const CommandKnowledgeBase = () => {
                 >
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1 }}>
-                      <Box sx={{ color: category.color, mr: 1, mt: 0.5 }}>
-                        {cmd.icon}
-                      </Box>
+                      <Box sx={{ color: category.color, mr: 1, mt: 0.5 }}>{cmd.icon}</Box>
                       <Box sx={{ flexGrow: 1 }}>
                         <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                           {cmd.name}
@@ -760,7 +779,9 @@ const CommandKnowledgeBase = () => {
                     <Tooltip title="Copy to clipboard">
                       <Button
                         size="small"
-                        startIcon={copiedCommand === cmd.name ? <CheckCircleIcon /> : <ContentCopyIcon />}
+                        startIcon={
+                          copiedCommand === cmd.name ? <CheckCircleIcon /> : <ContentCopyIcon />
+                        }
                         onClick={() => handleCopyCommand(cmd.command, cmd.name)}
                         color={copiedCommand === cmd.name ? 'success' : 'primary'}
                       >
@@ -798,18 +819,18 @@ const CommandKnowledgeBase = () => {
       )}
 
       {/* Footer */}
-      <Paper 
-        elevation={1} 
-        sx={{ 
-          p: 2, 
-          mt: 3, 
+      <Paper
+        elevation={1}
+        sx={{
+          p: 2,
+          mt: 3,
           bgcolor: 'rgba(0, 230, 118, 0.05)',
           border: '1px solid rgba(0, 230, 118, 0.2)',
         }}
       >
         <Typography variant="body2" align="center" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-          💡 <strong style={{ color: '#00e676' }}>Pro Tip:</strong> All commands are designed for macOS with zsh shell. 
-          Adjust paths if your WorkingBot folder is in a different location.
+          💡 <strong style={{ color: '#00e676' }}>Pro Tip:</strong> All commands are designed for
+          macOS with zsh shell. Adjust paths if your WorkingBot folder is in a different location.
         </Typography>
       </Paper>
 

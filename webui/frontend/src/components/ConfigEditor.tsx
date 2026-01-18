@@ -65,7 +65,11 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
   const [validating, setValidating] = useState(false);
   const [isValid, setIsValid] = useState<boolean | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' });
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'info' as 'success' | 'error' | 'info',
+  });
   const [hasChanges, setHasChanges] = useState(false);
 
   // Load config on mount
@@ -98,7 +102,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
 
   const validateConfig = async () => {
     if (!config) return;
-    
+
     try {
       setValidating(true);
       const response = await fetch(`${apiBaseUrl}/api/config/validate`, {
@@ -107,10 +111,10 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
         body: JSON.stringify(config),
       });
       const data = await response.json();
-      
+
       setIsValid(data.valid);
       setValidationErrors(data.errors || []);
-      
+
       if (data.valid) {
         showSnackbar('Config is valid ✓', 'success');
       } else {
@@ -126,7 +130,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
 
   const saveConfig = async () => {
     if (!config) return;
-    
+
     try {
       setSaving(true);
       const response = await fetch(`${apiBaseUrl}/api/config/update`, {
@@ -135,7 +139,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
         body: JSON.stringify(config),
       });
       const data = await response.json();
-      
+
       if (data.success) {
         setOriginalConfig(JSON.parse(JSON.stringify(config)));
         setHasChanges(false);
@@ -157,7 +161,7 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
         method: 'POST',
       });
       const data = await response.json();
-      
+
       if (data.success) {
         setConfig(data.config);
         setOriginalConfig(JSON.parse(JSON.stringify(data.config)));
@@ -190,24 +194,32 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
 
   const updateConfig = (path: string[], value: any) => {
     if (!config) return;
-    
+
     const newConfig = JSON.parse(JSON.stringify(config));
     let current: any = newConfig;
-    
+
     for (let i = 0; i < path.length - 1; i++) {
       current = current[path[i]];
     }
-    
+
     current[path[path.length - 1]] = value;
     setConfig(newConfig);
   };
 
   if (loading) {
-    return <Box sx={{ p: 3 }}><Typography>Loading configuration...</Typography></Box>;
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography>Loading configuration...</Typography>
+      </Box>
+    );
   }
 
   if (!config) {
-    return <Box sx={{ p: 3 }}><Typography>Failed to load configuration</Typography></Box>;
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography>Failed to load configuration</Typography>
+      </Box>
+    );
   }
 
   return (
@@ -223,9 +235,13 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
           </Tooltip>
           <Tooltip title="Validate config">
             <IconButton onClick={validateConfig} disabled={validating}>
-              {isValid === true ? <CheckCircleIcon color="success" /> : 
-               isValid === false ? <ErrorIcon color="error" /> : 
-               <HistoryIcon />}
+              {isValid === true ? (
+                <CheckCircleIcon color="success" />
+              ) : isValid === false ? (
+                <ErrorIcon color="error" />
+              ) : (
+                <HistoryIcon />
+              )}
             </IconButton>
           </Tooltip>
         </Box>
@@ -299,7 +315,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
                 type="number"
                 label="Lower Bound"
                 value={config.grid.geometry.lower}
-                onChange={(e) => updateConfig(['grid', 'geometry', 'lower'], parseFloat(e.target.value))}
+                onChange={(e) =>
+                  updateConfig(['grid', 'geometry', 'lower'], parseFloat(e.target.value))
+                }
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -308,7 +326,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
                 type="number"
                 label="Upper Bound"
                 value={config.grid.geometry.upper}
-                onChange={(e) => updateConfig(['grid', 'geometry', 'upper'], parseFloat(e.target.value))}
+                onChange={(e) =>
+                  updateConfig(['grid', 'geometry', 'upper'], parseFloat(e.target.value))
+                }
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -317,7 +337,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
                 type="number"
                 label="Step Size"
                 value={config.grid.geometry.step}
-                onChange={(e) => updateConfig(['grid', 'geometry', 'step'], parseFloat(e.target.value))}
+                onChange={(e) =>
+                  updateConfig(['grid', 'geometry', 'step'], parseFloat(e.target.value))
+                }
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -326,7 +348,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
                 type="number"
                 label="Reference Price"
                 value={config.grid.geometry.reference}
-                onChange={(e) => updateConfig(['grid', 'geometry', 'reference'], parseFloat(e.target.value))}
+                onChange={(e) =>
+                  updateConfig(['grid', 'geometry', 'reference'], parseFloat(e.target.value))
+                }
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -335,7 +359,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
                 type="number"
                 label="Max Open Positions"
                 value={config.grid.limits.max_open_positions}
-                onChange={(e) => updateConfig(['grid', 'limits', 'max_open_positions'], parseInt(e.target.value))}
+                onChange={(e) =>
+                  updateConfig(['grid', 'limits', 'max_open_positions'], parseInt(e.target.value))
+                }
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -344,7 +370,9 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
                 type="number"
                 label="Lot Size"
                 value={config.grid.limits.lot_size}
-                onChange={(e) => updateConfig(['grid', 'limits', 'lot_size'], parseFloat(e.target.value))}
+                onChange={(e) =>
+                  updateConfig(['grid', 'limits', 'lot_size'], parseFloat(e.target.value))
+                }
               />
             </Grid>
           </Grid>
@@ -362,18 +390,10 @@ const ConfigEditor: React.FC<ConfigEditorProps> = ({ apiBaseUrl = 'http://localh
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>
-        <Button
-          variant="outlined"
-          onClick={resetChanges}
-          disabled={!hasChanges || saving}
-        >
+        <Button variant="outlined" onClick={resetChanges} disabled={!hasChanges || saving}>
           Discard Changes
         </Button>
-        <Button
-          variant="outlined"
-          onClick={validateConfig}
-          disabled={validating}
-        >
+        <Button variant="outlined" onClick={validateConfig} disabled={validating}>
           {validating ? 'Validating...' : 'Validate'}
         </Button>
       </Box>

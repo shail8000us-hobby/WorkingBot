@@ -10,7 +10,7 @@ import { useToast } from '../components/common/ToastProvider';
 
 /**
  * Example component showing how to use the new utilities
- * 
+ *
  * This demonstrates:
  * - Enhanced API client with retry
  * - Loading skeletons
@@ -34,20 +34,15 @@ function BotControlPanel() {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Use enhanced API client - automatically retries on failure
       const data = await enhancedApiClient.get('/api/bot/status');
       setBotStatus(data);
-      
     } catch (err) {
       setError(err);
-      
+
       // Show user-friendly toast notification
-      toast.error(
-        enhancedApiClient.getErrorMessage(err),
-        { title: 'Failed to load bot status' }
-      );
-      
+      toast.error(enhancedApiClient.getErrorMessage(err), { title: 'Failed to load bot status' });
     } finally {
       setLoading(false);
     }
@@ -56,35 +51,31 @@ function BotControlPanel() {
   const startBot = async () => {
     try {
       setActionLoading(true);
-      
+
       // POST request with data
       await enhancedApiClient.post('/api/bot/start', {
         with_monitor: true,
-        reason: 'User initiated from WebUI'
+        reason: 'User initiated from WebUI',
       });
-      
+
       // Show success toast
       toast.success('Bot started successfully', {
         title: 'Success',
-        duration: 3000
+        duration: 3000,
       });
-      
+
       // Refresh status
       await fetchBotStatus();
-      
     } catch (err) {
       // Show error toast with retry action
-      toast.error(
-        enhancedApiClient.getErrorMessage(err),
-        {
-          title: 'Failed to start bot',
-          action: {
-            label: 'Retry',
-            onClick: startBot
-          },
-          autoHide: false // Don't auto-hide errors
-        }
-      );
+      toast.error(enhancedApiClient.getErrorMessage(err), {
+        title: 'Failed to start bot',
+        action: {
+          label: 'Retry',
+          onClick: startBot,
+        },
+        autoHide: false, // Don't auto-hide errors
+      });
     } finally {
       setActionLoading(false);
     }
@@ -93,27 +84,23 @@ function BotControlPanel() {
   const stopBot = async () => {
     try {
       setActionLoading(true);
-      
+
       await enhancedApiClient.post('/api/bot/stop');
-      
+
       toast.warning('Bot stopped', {
         title: 'Bot Stopped',
-        duration: 3000
+        duration: 3000,
       });
-      
+
       await fetchBotStatus();
-      
     } catch (err) {
-      toast.error(
-        enhancedApiClient.getErrorMessage(err),
-        {
-          title: 'Failed to stop bot',
-          action: {
-            label: 'Retry',
-            onClick: stopBot
-          }
-        }
-      );
+      toast.error(enhancedApiClient.getErrorMessage(err), {
+        title: 'Failed to stop bot',
+        action: {
+          label: 'Retry',
+          onClick: stopBot,
+        },
+      });
     } finally {
       setActionLoading(false);
     }
@@ -135,11 +122,7 @@ function BotControlPanel() {
     return (
       <Card>
         <CardContent>
-          <ErrorState
-            error={error}
-            onRetry={fetchBotStatus}
-            title="Failed to load bot status"
-          />
+          <ErrorState error={error} onRetry={fetchBotStatus} title="Failed to load bot status" />
         </CardContent>
       </Card>
     );
@@ -174,7 +157,7 @@ function BotControlPanel() {
               py: 0.5,
               borderRadius: 1,
               bgcolor: botStatus.running ? 'success.main' : 'error.main',
-              color: 'white'
+              color: 'white',
             }}
           >
             {botStatus.running ? 'Running' : 'Stopped'}
@@ -235,15 +218,12 @@ function PositionsTable() {
     try {
       setLoading(true);
       setError(null);
-      
+
       // GET with query parameters
-      const response = await enhancedApiClient.get(
-        `/api/positions?page=${page}&per_page=10`
-      );
-      
+      const response = await enhancedApiClient.get(`/api/positions?page=${page}&per_page=10`);
+
       setPositions(response.data || response); // Handle both formats
       setTotalPages(response.meta?.total_pages || 1);
-      
     } catch (err) {
       setError(err);
       toast.error(enhancedApiClient.getErrorMessage(err));
@@ -261,34 +241,23 @@ function PositionsTable() {
   }
 
   if (positions.length === 0) {
-    return (
-      <EmptyState
-        title="No positions"
-        description="You don't have any open positions"
-      />
-    );
+    return <EmptyState title="No positions" description="You don't have any open positions" />;
   }
 
   return (
     <Box>
       {/* Your table rendering here */}
       <Typography>Showing {positions.length} positions</Typography>
-      
+
       {/* Pagination */}
       <Box display="flex" gap={1} mt={2}>
-        <Button
-          onClick={() => setPage(p => Math.max(1, p - 1))}
-          disabled={page === 1}
-        >
+        <Button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
           Previous
         </Button>
         <Typography sx={{ px: 2, py: 1 }}>
           Page {page} of {totalPages}
         </Typography>
-        <Button
-          onClick={() => setPage(p => p + 1)}
-          disabled={page >= totalPages}
-        >
+        <Button onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}>
           Next
         </Button>
       </Box>
@@ -308,22 +277,22 @@ function ConfigUpdateForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!key || !value) {
       toast.warning('Please fill in all fields', {
-        title: 'Validation Error'
+        title: 'Validation Error',
       });
       return;
     }
 
     try {
       setSubmitting(true);
-      
+
       await enhancedApiClient.post('/api/config/update', {
         key,
-        value
+        value,
       });
-      
+
       toast.success(`Configuration "${key}" updated successfully`, {
         title: 'Config Updated',
         action: {
@@ -331,28 +300,27 @@ function ConfigUpdateForm() {
           onClick: () => {
             // Undo logic here
             toast.info('Undo not implemented yet');
-          }
-        }
+          },
+        },
       });
-      
+
       // Clear form
       setKey('');
       setValue('');
-      
     } catch (err) {
       // Check if it's a validation error
       if (err.type === 'ValidationError') {
         toast.error('Please check your input', {
           title: 'Validation Error',
-          details: err.details
+          details: err.details,
         });
       } else {
         toast.error(enhancedApiClient.getErrorMessage(err), {
           title: 'Update Failed',
           action: {
             label: 'Retry',
-            onClick: () => handleSubmit(e)
-          }
+            onClick: () => handleSubmit(e),
+          },
         });
       }
     } finally {

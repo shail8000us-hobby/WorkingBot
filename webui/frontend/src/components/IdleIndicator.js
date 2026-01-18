@@ -1,6 +1,6 @@
 /**
  * Idle Indicator Component
- * 
+ *
  * Shows when WebUI is in idle mode (paused to save CPU)
  * Appears in bottom-right corner
  */
@@ -31,22 +31,32 @@ function IdleIndicator() {
           position: 'fixed',
           bottom: 20,
           right: 20,
-          zIndex: 9999
+          zIndex: 9999,
         }}
       >
-        <Tooltip 
+        <Tooltip
           title={
             <div style={{ fontSize: '0.875rem', padding: '4px' }}>
-              <div><strong>💤 Idle Mode Active</strong></div>
+              <div>
+                <strong>💤 Idle Mode Active</strong>
+              </div>
               <div style={{ marginTop: 4 }}>WebUI polling paused to save CPU</div>
-              <div style={{ marginTop: 8, padding: '6px', backgroundColor: 'rgba(0, 255, 0, 0.1)', borderRadius: '4px', border: '1px solid rgba(0, 255, 0, 0.3)' }}>
-                <strong>✅ Trading Bot: RUNNING</strong><br/>
-                <strong>✅ Guardian Bot: RUNNING</strong><br/>
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '6px',
+                  backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(0, 255, 0, 0.3)',
+                }}
+              >
+                <strong>✅ Trading Bot: RUNNING</strong>
+                <br />
+                <strong>✅ Guardian Bot: RUNNING</strong>
+                <br />
                 <strong>✅ Safety: ACTIVE</strong>
               </div>
-              <div style={{ marginTop: 4, opacity: 0.8 }}>
-                Move mouse to resume WebUI updates
-              </div>
+              <div style={{ marginTop: 4, opacity: 0.8 }}>Move mouse to resume WebUI updates</div>
               <div style={{ marginTop: 4, opacity: 0.6, fontSize: '0.75rem' }}>
                 Idle for: {formatTime(timeSinceActivity)}
               </div>
@@ -68,7 +78,7 @@ function IdleIndicator() {
               px: 1,
               py: 2,
               boxShadow: 3,
-              cursor: 'help'
+              cursor: 'help',
             }}
           />
         </Tooltip>
@@ -94,11 +104,10 @@ export function IdleStatusChip() {
       sx={{
         height: 24,
         fontSize: '0.7rem',
-        fontWeight: 'bold'
+        fontWeight: 'bold',
       }}
     />
   );
 }
 
 export default IdleIndicator;
-

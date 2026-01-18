@@ -13,27 +13,19 @@ import { KeyboardProvider } from '../../components/KeyboardProvider';
 /**
  * Custom render function that wraps component with all providers
  */
-export function renderWithProviders(
-  ui,
-  {
-    themeMode = 'dark',
-    ...renderOptions
-  } = {}
-) {
+export function renderWithProviders(ui, { themeMode = 'dark', ...renderOptions } = {}) {
   function Wrapper({ children }) {
     return (
       <ThemeModeProvider initialMode={themeMode}>
         <SystemStatusProvider>
           <NotificationProvider>
-            <KeyboardProvider>
-              {children}
-            </KeyboardProvider>
+            <KeyboardProvider>{children}</KeyboardProvider>
           </NotificationProvider>
         </SystemStatusProvider>
       </ThemeModeProvider>
     );
   }
-  
+
   return render(ui, { wrapper: Wrapper, ...renderOptions });
 }
 
@@ -60,15 +52,6 @@ describe('testUtils', () => {
     expect(renderWithProviders).toBeDefined();
   });
 });
-            </KeyboardProvider>
-          </NotificationProvider>
-        </SystemStatusProvider>
-      </ThemeModeProvider>
-    );
-  }
-
-  return render(ui, { wrapper: Wrapper, ...renderOptions });
-}
 
 /**
  * Mock trading data factory
@@ -83,10 +66,10 @@ export const mockTradingData = {
       entryPrice: 45000,
       currentPrice: 46000,
       unrealizedPnl: 100,
-      leverage: 10
-    }
+      leverage: 10,
+    },
   ],
-  
+
   orders: [
     {
       id: 'order-1',
@@ -95,40 +78,40 @@ export const mockTradingData = {
       type: 'limit',
       price: 44000,
       size: 0.1,
-      status: 'open'
-    }
+      status: 'open',
+    },
   ],
-  
+
   config: {
     bot: {
       symbol: 'BTCUSDT',
       mode: 'LONG',
-      leverage: 10
+      leverage: 10,
     },
     grid: {
       num_grids: 20,
-      grid_spacing_pct: 0.5
+      grid_spacing_pct: 0.5,
     },
     risk: {
       max_drawdown_pct: 10,
-      max_position_size: 1000
-    }
+      max_position_size: 1000,
+    },
   },
-  
+
   botStatus: {
     running: true,
     pid: 12345,
     uptime: 3600,
-    lastUpdate: new Date().toISOString()
+    lastUpdate: new Date().toISOString(),
   },
-  
+
   pnl: {
-    total_pnl_usd: 250.50,
+    total_pnl_usd: 250.5,
     total_pnl_inr: 20875,
     daily_pnl: 50.25,
     realized_pnl: 150,
-    unrealized_pnl: 100.50
-  }
+    unrealized_pnl: 100.5,
+  },
 };
 
 /**
@@ -136,7 +119,7 @@ export const mockTradingData = {
  */
 export function createMockSocket() {
   const eventHandlers = {};
-  
+
   return {
     connected: true,
     on: jest.fn((event, handler) => {
@@ -151,7 +134,7 @@ export function createMockSocket() {
         eventHandlers[event](data);
       }
     },
-    _eventHandlers: eventHandlers
+    _eventHandlers: eventHandlers,
   };
 }
 
@@ -175,7 +158,7 @@ export function mockApiResponse(data, status = 200, delay = 0) {
  * Wait for async updates
  */
 export function waitForAsync(ms = 0) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -184,24 +167,24 @@ export function waitForAsync(ms = 0) {
 export function setupMockFetch(responses = {}) {
   global.fetch = jest.fn((url) => {
     const endpoint = url.replace(/^.*\/api/, '/api');
-    
+
     if (responses[endpoint]) {
       return mockApiResponse(responses[endpoint]);
     }
-    
+
     // Default responses
     if (endpoint.includes('/health')) {
       return mockApiResponse({ status: 'healthy' });
     }
-    
+
     if (endpoint.includes('/config')) {
       return mockApiResponse(mockTradingData.config);
     }
-    
+
     if (endpoint.includes('/positions')) {
       return mockApiResponse({ positions: mockTradingData.positions });
     }
-    
+
     return mockApiResponse({ error: 'Not mocked' }, 404);
   });
 }

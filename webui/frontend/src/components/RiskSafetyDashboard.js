@@ -1,6 +1,6 @@
 /**
  * Risk & Safety Dashboard - Modern Unified Safety Control Center
- * 
+ *
  * Consolidates all safety layers into one beautiful, user-friendly interface:
  * - 6-Layer Guardian Safety System
  * - Real-time monitoring with visual indicators
@@ -8,7 +8,7 @@
  * - Modern glassmorphism design
  * - Quick actions and emergency controls
  * - Multi-symbol support (BTCUSD/ETHUSD) v6.0
- * 
+ *
  * Created: December 27, 2025
  * Updated: Multi-symbol support January 2025
  * Author: Senior Developer
@@ -32,7 +32,7 @@ import {
   CircularProgress,
   Paper,
   ToggleButtonGroup,
-  ToggleButton
+  ToggleButton,
 } from '@mui/material';
 import {
   Shield,
@@ -51,7 +51,7 @@ import {
   TrendingUpIcon,
   Power,
   PowerOff,
-  Info
+  Info,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/apiShim';
@@ -59,8 +59,8 @@ import { useInstance, parseInstanceName } from '../context/InstanceContext';
 
 // Symbol colors for theming
 const symbolColors = {
-  'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
-  'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' }
+  BTCUSD: { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
+  ETHUSD: { bg: '#627eea20', border: '#627eea', text: '#627eea' },
 };
 
 const RiskSafetyDashboard = () => {
@@ -68,19 +68,21 @@ const RiskSafetyDashboard = () => {
   const { selectedInstance, instances } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
   const [currentSymbol, setCurrentSymbol] = useState(instanceInfo?.symbol || 'BTCUSD');
-  
+
   // Get available symbols from instances
-  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+  const availableSymbols = [
+    ...new Set(instances.map((i) => parseInstanceName(i.name)?.symbol).filter(Boolean)),
+  ];
   if (availableSymbols.length === 0) {
     availableSymbols.push('BTCUSD', 'ETHUSD');
   }
-  
+
   const handleSymbolChange = (event, newSymbol) => {
     if (newSymbol !== null) {
       setCurrentSymbol(newSymbol);
     }
   };
-  
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState(null);
@@ -155,7 +157,7 @@ const RiskSafetyDashboard = () => {
     liquidation = {},
     system_health = {},
     rsi = {},
-    quick_stats = {}
+    quick_stats = {},
   } = data || {};
 
   const getStatusColor = (status) => {
@@ -163,19 +165,31 @@ const RiskSafetyDashboard = () => {
       case 'SAFE':
       case 'OK':
       case 'GO':
-        return { bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' };
+        return {
+          bg: 'rgba(16, 185, 129, 0.1)',
+          border: 'rgba(16, 185, 129, 0.3)',
+          text: '#10b981',
+        };
       case 'WARNING':
       case 'YELLOW':
       case 'ORANGE':
       case 'CAUTION':
-        return { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', text: '#f59e0b' };
+        return {
+          bg: 'rgba(245, 158, 11, 0.1)',
+          border: 'rgba(245, 158, 11, 0.3)',
+          text: '#f59e0b',
+        };
       case 'CRITICAL':
       case 'STOP':
       case 'RED':
       case 'DANGER':
         return { bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444' };
       default:
-        return { bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8' };
+        return {
+          bg: 'rgba(148, 163, 184, 0.1)',
+          border: 'rgba(148, 163, 184, 0.3)',
+          text: '#94a3b8',
+        };
     }
   };
 
@@ -206,9 +220,21 @@ const RiskSafetyDashboard = () => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          mb: 4,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography
+            variant="h4"
+            sx={{ fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 2 }}
+          >
             <Shield className="w-8 h-8" style={{ color: statusColors.text }} />
             Risk & Safety Control Center
             <Chip
@@ -218,7 +244,7 @@ const RiskSafetyDashboard = () => {
                 bgcolor: currentSymbolColors.bg,
                 color: currentSymbolColors.text,
                 fontWeight: 600,
-                border: `1px solid ${currentSymbolColors.border}`
+                border: `1px solid ${currentSymbolColors.border}`,
               }}
             />
           </Typography>
@@ -238,11 +264,11 @@ const RiskSafetyDashboard = () => {
                 textTransform: 'none',
                 fontWeight: 600,
                 px: 2,
-                py: 0.5
-              }
+                py: 0.5,
+              },
             }}
           >
-            {availableSymbols.map(symbol => {
+            {availableSymbols.map((symbol) => {
               const colors = symbolColors[symbol] || symbolColors['BTCUSD'];
               return (
                 <ToggleButton
@@ -254,9 +280,9 @@ const RiskSafetyDashboard = () => {
                       color: colors.text,
                       borderColor: colors.border,
                       '&:hover': {
-                        bgcolor: colors.bg
-                      }
-                    }
+                        bgcolor: colors.bg,
+                      },
+                    },
                   }}
                 >
                   {symbol.replace('USD', '')}
@@ -289,7 +315,7 @@ const RiskSafetyDashboard = () => {
             background: `linear-gradient(135deg, ${statusColors.bg}, ${statusColors.bg})`,
             border: `2px solid ${statusColors.border}`,
             borderRadius: 3,
-            overflow: 'hidden'
+            overflow: 'hidden',
           }}
         >
           <CardContent sx={{ p: 3 }}>
@@ -301,35 +327,43 @@ const RiskSafetyDashboard = () => {
                     System Status: {overall_status}
                   </Typography>
                 </Box>
-                
+
                 {critical_issues.length > 0 && (
                   <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
                     <AlertTitle sx={{ fontWeight: 700 }}>Critical Issues</AlertTitle>
                     {critical_issues.map((issue, idx) => (
-                      <Typography key={idx} variant="body2">• {issue}</Typography>
+                      <Typography key={idx} variant="body2">
+                        • {issue}
+                      </Typography>
                     ))}
                   </Alert>
                 )}
-                
+
                 {warnings.length > 0 && (
                   <Alert severity="warning" sx={{ borderRadius: 2 }}>
                     <AlertTitle sx={{ fontWeight: 700 }}>Warnings</AlertTitle>
                     {warnings.map((warning, idx) => (
-                      <Typography key={idx} variant="body2">• {warning}</Typography>
+                      <Typography key={idx} variant="body2">
+                        • {warning}
+                      </Typography>
                     ))}
                   </Alert>
                 )}
-                
+
                 {critical_issues.length === 0 && warnings.length === 0 && (
                   <Typography variant="body1" color="text.secondary">
                     ✅ All safety systems operational. Trading conditions optimal.
                   </Typography>
                 )}
               </Grid>
-              
+
               <Grid item xs={12} md={4}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ mb: 1, display: 'block' }}
+                  >
                     Protection Score
                   </Typography>
                   <Box sx={{ position: 'relative', display: 'inline-flex' }}>
@@ -339,7 +373,12 @@ const RiskSafetyDashboard = () => {
                       size={120}
                       thickness={6}
                       sx={{
-                        color: quick_stats.protection_score >= 80 ? '#10b981' : quick_stats.protection_score >= 60 ? '#f59e0b' : '#ef4444'
+                        color:
+                          quick_stats.protection_score >= 80
+                            ? '#10b981'
+                            : quick_stats.protection_score >= 60
+                              ? '#f59e0b'
+                              : '#ef4444',
                       }}
                     />
                     <Box
@@ -352,7 +391,7 @@ const RiskSafetyDashboard = () => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        flexDirection: 'column'
+                        flexDirection: 'column',
                       }}
                     >
                       <Typography variant="h4" sx={{ fontWeight: 700 }}>
@@ -378,7 +417,14 @@ const RiskSafetyDashboard = () => {
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%', borderRadius: 3 }}>
             <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 2,
+                }}
+              >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Shield className="w-5 h-5" style={{ color: '#3b82f6' }} />
                   <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -389,23 +435,37 @@ const RiskSafetyDashboard = () => {
                   label={guardian.running ? 'ACTIVE' : 'STANDBY'}
                   color={guardian.running ? 'success' : 'default'}
                   size="small"
-                  icon={guardian.running ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                  icon={
+                    guardian.running ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )
+                  }
                 />
               </Box>
-              
+
               <Grid container spacing={2} sx={{ mb: 3 }}>
                 <Grid item xs={4}>
-                  <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2 }}>
+                  <Paper
+                    elevation={0}
+                    sx={{ p: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2 }}
+                  >
                     <Typography variant="caption" color="text.secondary" display="block">
                       Uptime
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                      {guardian.running ? `${Math.floor(guardian.uptime_seconds / 3600)}h ${Math.floor((guardian.uptime_seconds % 3600) / 60)}m` : '—'}
+                      {guardian.running
+                        ? `${Math.floor(guardian.uptime_seconds / 3600)}h ${Math.floor((guardian.uptime_seconds % 3600) / 60)}m`
+                        : '—'}
                     </Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={4}>
-                  <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2 }}>
+                  <Paper
+                    elevation={0}
+                    sx={{ p: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2 }}
+                  >
                     <Typography variant="caption" color="text.secondary" display="block">
                       Cycles
                     </Typography>
@@ -415,17 +475,26 @@ const RiskSafetyDashboard = () => {
                   </Paper>
                 </Grid>
                 <Grid item xs={4}>
-                  <Paper elevation={0} sx={{ p: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2 }}>
+                  <Paper
+                    elevation={0}
+                    sx={{ p: 2, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2 }}
+                  >
                     <Typography variant="caption" color="text.secondary" display="block">
                       Signal
                     </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: guardian.signal === 'GO' ? '#10b981' : '#ef4444' }}>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 600,
+                        color: guardian.signal === 'GO' ? '#10b981' : '#ef4444',
+                      }}
+                    >
                       {guardian.signal || '—'}
                     </Typography>
                   </Paper>
                 </Grid>
               </Grid>
-              
+
               <Box sx={{ display: 'flex', gap: 2 }}>
                 <Button
                   variant="contained"
@@ -453,7 +522,7 @@ const RiskSafetyDashboard = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%', borderRadius: 3 }}>
             <CardContent sx={{ p: 3 }}>
@@ -463,14 +532,15 @@ const RiskSafetyDashboard = () => {
                   PnL & Loss Protection
                 </Typography>
               </Box>
-              
+
               <Box sx={{ mb: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography variant="body2" color="text.secondary">
                     Loss Utilization
                   </Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    ₹{pnl_loss.total_loss_inr?.toLocaleString() || 0} / ₹{pnl_loss.max_loss_inr?.toLocaleString() || 0}
+                    ₹{pnl_loss.total_loss_inr?.toLocaleString() || 0} / ₹
+                    {pnl_loss.max_loss_inr?.toLocaleString() || 0}
                   </Typography>
                 </Box>
                 <LinearProgress
@@ -481,24 +551,39 @@ const RiskSafetyDashboard = () => {
                     borderRadius: 2,
                     bgcolor: 'rgba(148, 163, 184, 0.1)',
                     '& .MuiLinearProgress-bar': {
-                      bgcolor: pnl_loss.utilization_percent >= 85 ? '#ef4444' : pnl_loss.utilization_percent >= 60 ? '#f59e0b' : '#10b981',
-                      borderRadius: 2
-                    }
+                      bgcolor:
+                        pnl_loss.utilization_percent >= 85
+                          ? '#ef4444'
+                          : pnl_loss.utilization_percent >= 60
+                            ? '#f59e0b'
+                            : '#10b981',
+                      borderRadius: 2,
+                    },
                   }}
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.5, display: 'block' }}
+                >
                   {(pnl_loss.utilization_percent || 0).toFixed(1)}% of loss ceiling
                 </Typography>
               </Box>
-              
+
               <Divider sx={{ my: 2 }} />
-              
+
               <Grid container spacing={2}>
                 <Grid item xs={6}>
                   <Typography variant="caption" color="text.secondary" display="block">
                     Total PnL
                   </Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 600, color: pnl_loss.total_pnl_inr >= 0 ? '#10b981' : '#ef4444' }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 600,
+                      color: pnl_loss.total_pnl_inr >= 0 ? '#10b981' : '#ef4444',
+                    }}
+                  >
                     ₹{pnl_loss.total_pnl_inr?.toLocaleString() || 0}
                   </Typography>
                 </Grid>
@@ -508,7 +593,13 @@ const RiskSafetyDashboard = () => {
                   </Typography>
                   <Chip
                     label={pnl_loss.status || 'UNKNOWN'}
-                    color={pnl_loss.status === 'OK' ? 'success' : pnl_loss.status === 'WARNING' ? 'warning' : 'error'}
+                    color={
+                      pnl_loss.status === 'OK'
+                        ? 'success'
+                        : pnl_loss.status === 'WARNING'
+                          ? 'warning'
+                          : 'error'
+                    }
                     size="small"
                     sx={{ fontWeight: 600, mt: 0.5 }}
                   />
@@ -523,7 +614,7 @@ const RiskSafetyDashboard = () => {
       <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
         Safety Layers Status
       </Typography>
-      
+
       <Grid container spacing={3}>
         {/* Layer 1: Volatility */}
         <Grid item xs={12} sm={6} md={4}>
@@ -533,9 +624,21 @@ const RiskSafetyDashboard = () => {
             icon={<Activity className="w-5 h-5" />}
             status={volatility.status || 'UNKNOWN'}
             metrics={[
-              { label: 'IV', value: `${volatility.iv?.value?.toFixed(1) || '—'}%`, limit: volatility.iv?.limit },
-              { label: 'RV', value: `${volatility.rv?.value?.toFixed(1) || '—'}%`, limit: volatility.rv?.limit },
-              { label: 'Spread', value: `${volatility.spread?.value?.toFixed(1) || '—'}%`, limit: volatility.spread?.limit }
+              {
+                label: 'IV',
+                value: `${volatility.iv?.value?.toFixed(1) || '—'}%`,
+                limit: volatility.iv?.limit,
+              },
+              {
+                label: 'RV',
+                value: `${volatility.rv?.value?.toFixed(1) || '—'}%`,
+                limit: volatility.rv?.limit,
+              },
+              {
+                label: 'Spread',
+                value: `${volatility.spread?.value?.toFixed(1) || '—'}%`,
+                limit: volatility.spread?.limit,
+              },
             ]}
           />
         </Grid>
@@ -548,9 +651,16 @@ const RiskSafetyDashboard = () => {
             icon={<BarChart3 className="w-5 h-5" />}
             status={position_size.status || 'OK'}
             metrics={[
-              { label: 'Total Contracts', value: position_size.total_position?.toLocaleString() || '0', limit: position_size.max_position },
+              {
+                label: 'Total Contracts',
+                value: position_size.total_position?.toLocaleString() || '0',
+                limit: position_size.max_position,
+              },
               { label: 'Positions', value: position_size.position_count || '0' },
-              { label: 'Utilization', value: `${(position_size.utilization_percent || 0).toFixed(1)}%` }
+              {
+                label: 'Utilization',
+                value: `${(position_size.utilization_percent || 0).toFixed(1)}%`,
+              },
             ]}
           />
         </Grid>
@@ -564,8 +674,14 @@ const RiskSafetyDashboard = () => {
             status={liquidation.margin_zone || 'UNKNOWN'}
             metrics={[
               { label: 'Margin Zone', value: liquidation.margin_zone || 'UNKNOWN' },
-              { label: 'Utilization', value: `${(liquidation.margin_utilization || 0).toFixed(1)}%` },
-              { label: 'Safety Buffer', value: `${(liquidation.mtm_safety_buffer || 0).toFixed(1)}%` }
+              {
+                label: 'Utilization',
+                value: `${(liquidation.margin_utilization || 0).toFixed(1)}%`,
+              },
+              {
+                label: 'Safety Buffer',
+                value: `${(liquidation.mtm_safety_buffer || 0).toFixed(1)}%`,
+              },
             ]}
           />
         </Grid>
@@ -579,8 +695,14 @@ const RiskSafetyDashboard = () => {
             status={system_health.api_healthy && system_health.data_fresh ? 'HEALTHY' : 'DEGRADED'}
             metrics={[
               { label: 'API', value: system_health.api_healthy ? '✅ Healthy' : '❌ Issues' },
-              { label: 'WebSocket', value: system_health.websocket_connected ? '✅ Connected' : '❌ Disconnected' },
-              { label: 'Data Freshness', value: system_health.data_fresh ? '✅ Fresh' : '❌ Stale' }
+              {
+                label: 'WebSocket',
+                value: system_health.websocket_connected ? '✅ Connected' : '❌ Disconnected',
+              },
+              {
+                label: 'Data Freshness',
+                value: system_health.data_fresh ? '✅ Fresh' : '❌ Stale',
+              },
             ]}
           />
         </Grid>
@@ -595,7 +717,7 @@ const RiskSafetyDashboard = () => {
             metrics={[
               { label: 'Current RSI', value: rsi.current_rsi?.toFixed(2) || '—' },
               { label: 'Bot Mode', value: rsi.bot_mode || 'UNKNOWN' },
-              { label: 'Threshold', value: rsi.threshold?.toFixed(1) || '—' }
+              { label: 'Threshold', value: rsi.threshold?.toFixed(1) || '—' },
             ]}
           />
         </Grid>
@@ -608,8 +730,14 @@ const RiskSafetyDashboard = () => {
             icon={<Radio className="w-5 h-5" />}
             status={system_health.exchange_operational ? 'OPERATIONAL' : 'MAINTENANCE'}
             metrics={[
-              { label: 'Status', value: system_health.exchange_operational ? '🟢 Operational' : '🔴 Issues' },
-              { label: 'Event Store', value: system_health.event_store_connected ? '✅ Connected' : '❌ Disconnected' }
+              {
+                label: 'Status',
+                value: system_health.exchange_operational ? '🟢 Operational' : '🔴 Issues',
+              },
+              {
+                label: 'Event Store',
+                value: system_health.event_store_connected ? '✅ Connected' : '❌ Disconnected',
+              },
             ]}
           />
         </Grid>
@@ -625,7 +753,11 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
     GO: { bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' },
     GREEN: { bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' },
     HEALTHY: { bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' },
-    OPERATIONAL: { bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' },
+    OPERATIONAL: {
+      bg: 'rgba(16, 185, 129, 0.1)',
+      border: 'rgba(16, 185, 129, 0.3)',
+      text: '#10b981',
+    },
     WARNING: { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', text: '#f59e0b' },
     YELLOW: { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', text: '#f59e0b' },
     ORANGE: { bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)', text: '#f59e0b' },
@@ -634,10 +766,18 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
     RED: { bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444' },
     CRITICAL: { bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444' },
     DANGER: { bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444' },
-    MAINTENANCE: { bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)', text: '#ef4444' }
+    MAINTENANCE: {
+      bg: 'rgba(239, 68, 68, 0.1)',
+      border: 'rgba(239, 68, 68, 0.3)',
+      text: '#ef4444',
+    },
   };
 
-  const colors = statusColors[status] || { bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8' };
+  const colors = statusColors[status] || {
+    bg: 'rgba(148, 163, 184, 0.1)',
+    border: 'rgba(148, 163, 184, 0.3)',
+    text: '#94a3b8',
+  };
 
   return (
     <motion.div
@@ -654,12 +794,14 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
           transition: 'all 0.3s ease',
           '&:hover': {
             transform: 'translateY(-4px)',
-            boxShadow: 4
-          }
+            boxShadow: 4,
+          },
         }}
       >
         <CardContent sx={{ p: 2.5 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box
                 sx={{
@@ -670,7 +812,7 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   bgcolor: colors.border,
-                  color: colors.text
+                  color: colors.text,
                 }}
               >
                 {icon}
@@ -691,7 +833,7 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
                 bgcolor: colors.border,
                 color: colors.text,
                 fontWeight: 600,
-                fontSize: '0.7rem'
+                fontSize: '0.7rem',
               }}
             />
           </Box>
@@ -700,14 +842,22 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {metrics.map((metric, idx) => (
-              <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box
+                key={idx}
+                sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
                 <Typography variant="caption" color="text.secondary">
                   {metric.label}
                 </Typography>
                 <Typography variant="caption" sx={{ fontWeight: 600 }}>
                   {metric.value}
                   {metric.limit && (
-                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ ml: 0.5 }}
+                    >
                       / {metric.limit}
                     </Typography>
                   )}

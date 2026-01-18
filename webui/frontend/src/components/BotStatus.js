@@ -8,26 +8,26 @@ function BotStatus({ status }) {
       label: 'Status',
       value: status.running ? 'Running' : 'Stopped',
       icon: <TrendingUp />,
-      color: status.running ? '#00e676' : '#ff6b6b'
+      color: status.running ? '#00e676' : '#ff6b6b',
     },
     {
       label: 'Process ID',
       value: status.pid || 'N/A',
       icon: <Timer />,
-      color: '#667eea'
+      color: '#667eea',
     },
     {
       label: 'Open Positions',
       value: status.state?.open_tranches || 0,
       icon: <AccountBalance />,
-      color: '#f59e0b'
+      color: '#f59e0b',
     },
     {
       label: 'Pending Orders',
       value: status.state?.pending_buy ? '1' : '0',
       icon: <ShoppingCart />,
-      color: '#06b6d4'
-    }
+      color: '#06b6d4',
+    },
   ];
 
   return (
@@ -36,7 +36,7 @@ function BotStatus({ status }) {
       sx={{
         p: 3,
         background: 'linear-gradient(135deg, #1a1f3a 0%, #2d3561 100%)',
-        border: '1px solid #3d4678'
+        border: '1px solid #3d4678',
       }}
     >
       <Grid container spacing={3}>
@@ -49,12 +49,10 @@ function BotStatus({ status }) {
                 background: 'rgba(255, 255, 255, 0.05)',
                 borderRadius: 2,
                 border: `1px solid ${metric.color}40`,
-                textAlign: 'center'
+                textAlign: 'center',
               }}
             >
-              <Box sx={{ color: metric.color, mb: 1 }}>
-                {metric.icon}
-              </Box>
+              <Box sx={{ color: metric.color, mb: 1 }}>{metric.icon}</Box>
               <Typography variant="h4" sx={{ fontWeight: 'bold', color: metric.color }}>
                 {metric.value}
               </Typography>
@@ -70,4 +68,3 @@ function BotStatus({ status }) {
 }
 
 export default BotStatus;
-

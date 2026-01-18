@@ -1,13 +1,32 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import apiClient from '../utils/apiClient';
 import api from '../utils/apiShim';
-import { Terminal, Activity, Cpu, HardDrive, RefreshCw, PlayCircle, StopCircle, RotateCw, FileText, Trash2, CheckCircle, XCircle, AlertCircle, Shield, Heart, TrendingUp, Info, Layers } from 'lucide-react';
+import {
+  Terminal,
+  Activity,
+  Cpu,
+  HardDrive,
+  RefreshCw,
+  PlayCircle,
+  StopCircle,
+  RotateCw,
+  FileText,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Shield,
+  Heart,
+  TrendingUp,
+  Info,
+  Layers,
+} from 'lucide-react';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 import './PM2Panel.css';
 
 /**
  * PM2Panel - Multi-Symbol Process Manager (v5.0)
- * 
+ *
  * Features:
  * - Groups processes by symbol (BTCUSD, ETHUSD)
  * - Per-symbol start/stop controls
@@ -19,19 +38,19 @@ const PM2Panel = () => {
   const instanceInfo = parseInstanceName(selectedInstance);
   const selectedSymbol = instanceInfo?.symbol; // backward compat
   const selectedMode = instanceInfo?.mode || 'LONG';
-  
+
   // Get all unique instances with their mode info
-  const instancesWithMode = instances.map(i => {
+  const instancesWithMode = instances.map((i) => {
     const parsed = parseInstanceName(i.name);
-    return { 
-      name: i.name, 
-      symbol: parsed?.symbol, 
+    return {
+      name: i.name,
+      symbol: parsed?.symbol,
       mode: parsed?.mode,
-      enabled: i.enabled 
+      enabled: i.enabled,
     };
   });
   const availableSymbols = instancesWithMode
-    .map(i => i.symbol)
+    .map((i) => i.symbol)
     .filter((v, i, a) => a.indexOf(v) === i);
   const [pm2Status, setPM2Status] = useState(null);
   const [pm2Enabled, setPM2Enabled] = useState(false);
@@ -50,9 +69,9 @@ const PM2Panel = () => {
     try {
       const [statusData, enabledData] = await Promise.all([
         apiClient.getPM2Status(),
-        apiClient.getPM2Enabled()
+        apiClient.getPM2Enabled(),
       ]);
-      
+
       setPM2Status(statusData);
       setPM2Enabled(enabledData.enabled);
       setError(null);
@@ -124,7 +143,7 @@ const PM2Panel = () => {
     setSelectedProcess(process);
     setShowLogs(true);
     setLogsLoading(true);
-    
+
     try {
       const result = await apiClient.getPM2Logs(process.name, 100, 'all');
       if (result.success) {
@@ -140,7 +159,7 @@ const PM2Panel = () => {
 
   const handleFlushLogs = async () => {
     if (!window.confirm('Are you sure you want to clear all PM2 logs?')) return;
-    
+
     setActionInProgress('flush-logs');
     try {
       const result = await apiClient.flushPM2Logs();
@@ -189,10 +208,10 @@ const PM2Panel = () => {
   // Group processes by symbol
   const groupedProcesses = useMemo(() => {
     if (!pm2Status?.processes) return { symbols: {}, system: [] };
-    
+
     const groups = { symbols: {}, system: [] };
-    
-    pm2Status.processes.forEach(process => {
+
+    pm2Status.processes.forEach((process) => {
       const symbol = extractSymbolFromProcess(process.name);
       if (symbol) {
         if (!groups.symbols[symbol]) groups.symbols[symbol] = [];
@@ -201,7 +220,7 @@ const PM2Panel = () => {
         groups.system.push(process);
       }
     });
-    
+
     return groups;
   }, [pm2Status?.processes, selectedSymbol]);
 
@@ -297,7 +316,7 @@ const PM2Panel = () => {
       'gridbot-demo': 'Trading Bot (Demo)',
       'guardian-live': 'Guardian Monitor (Live)',
       'guardian-demo': 'Guardian Monitor (Demo)',
-      'heartbeat-monitor': 'Heartbeat Monitor'
+      'heartbeat-monitor': 'Heartbeat Monitor',
     };
     return displayNames[name] || name;
   };
@@ -305,21 +324,23 @@ const PM2Panel = () => {
   // Filter processes based on active tab
   const getFilteredProcesses = () => {
     if (!pm2Status?.processes) return [];
-    
+
     switch (activeTab) {
       case 'live':
         // Show gridbot-live, guardian-live, and heartbeat-monitor
-        return pm2Status.processes.filter(p => 
-          p.name === 'gridbot-live' || 
-          p.name === 'guardian-live' || 
-          p.name === 'heartbeat-monitor'
+        return pm2Status.processes.filter(
+          (p) =>
+            p.name === 'gridbot-live' ||
+            p.name === 'guardian-live' ||
+            p.name === 'heartbeat-monitor'
         );
       case 'demo':
         // Show gridbot-demo, guardian-demo, and heartbeat-monitor
-        return pm2Status.processes.filter(p => 
-          p.name === 'gridbot-demo' || 
-          p.name === 'guardian-demo' || 
-          p.name === 'heartbeat-monitor'
+        return pm2Status.processes.filter(
+          (p) =>
+            p.name === 'gridbot-demo' ||
+            p.name === 'guardian-demo' ||
+            p.name === 'heartbeat-monitor'
         );
       case 'all':
       default:
@@ -340,8 +361,12 @@ const PM2Panel = () => {
           <div className="enable-instructions">
             <h4>To enable PM2:</h4>
             <ol>
-              <li>Run: <code>./toggle_pm2.sh enable</code></li>
-              <li>Restart WebUI backend: <code>launchctl restart com.gridbot.webui.enhanced</code></li>
+              <li>
+                Run: <code>./toggle_pm2.sh enable</code>
+              </li>
+              <li>
+                Restart WebUI backend: <code>launchctl restart com.gridbot.webui.enhanced</code>
+              </li>
               <li>Refresh this page</li>
             </ol>
           </div>
@@ -396,11 +421,7 @@ const PM2Panel = () => {
           <Terminal size={24} />
           <h2>PM2 Process Manager</h2>
         </div>
-        <button 
-          onClick={fetchPM2Status} 
-          className="refresh-button"
-          disabled={loading}
-        >
+        <button onClick={fetchPM2Status} className="refresh-button" disabled={loading}>
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
           Refresh
         </button>
@@ -423,9 +444,7 @@ const PM2Panel = () => {
         >
           <Layers size={16} />
           By Symbol
-          <span className="tab-badge">
-            {Object.keys(groupedProcesses.symbols).length}
-          </span>
+          <span className="tab-badge">{Object.keys(groupedProcesses.symbols).length}</span>
         </button>
         <button
           className={`tab-button ${activeTab === 'live' ? 'active' : ''}`}
@@ -434,10 +453,11 @@ const PM2Panel = () => {
           <Activity size={16} />
           Live Trading
           <span className="tab-badge">
-            {pm2Status?.processes?.filter(p => 
-              p.name === 'gridbot-live' || 
-              p.name === 'guardian-live' || 
-              p.name === 'heartbeat-monitor'
+            {pm2Status?.processes?.filter(
+              (p) =>
+                p.name === 'gridbot-live' ||
+                p.name === 'guardian-live' ||
+                p.name === 'heartbeat-monitor'
             ).length || 0}
           </span>
         </button>
@@ -448,10 +468,11 @@ const PM2Panel = () => {
           <Activity size={16} />
           Demo Trading
           <span className="tab-badge">
-            {pm2Status?.processes?.filter(p => 
-              p.name === 'gridbot-demo' || 
-              p.name === 'guardian-demo' || 
-              p.name === 'heartbeat-monitor'
+            {pm2Status?.processes?.filter(
+              (p) =>
+                p.name === 'gridbot-demo' ||
+                p.name === 'guardian-demo' ||
+                p.name === 'heartbeat-monitor'
             ).length || 0}
           </span>
         </button>
@@ -461,9 +482,7 @@ const PM2Panel = () => {
         >
           <Terminal size={16} />
           All Processes
-          <span className="tab-badge">
-            {pm2Status?.total || 0}
-          </span>
+          <span className="tab-badge">{pm2Status?.total || 0}</span>
         </button>
       </div>
 
@@ -492,197 +511,230 @@ const PM2Panel = () => {
 
           {/* Symbol Groups */}
           <div className="pm2-symbol-groups">
-            {Object.keys(groupedProcesses.symbols).length === 0 && groupedProcesses.system.length === 0 ? (
+            {Object.keys(groupedProcesses.symbols).length === 0 &&
+            groupedProcesses.system.length === 0 ? (
               <div className="no-processes">
                 <AlertCircle size={48} />
                 <h3>No Processes Running</h3>
-                <p>No PM2 processes are currently active. Use the "Start All Symbols" button above to launch trading bots.</p>
-                <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', fontSize: '13px', color: '#94a3b8', textAlign: 'left' }}>
-                  <strong>Individual Controls:</strong><br/>
-                  • Each instrument will have its own process card<br/>
-                  • Full process names shown (e.g., gridbot-BTCUSD-LONG)<br/>
-                  • Individual Start/Stop/Restart buttons for each process<br/>
-                  • Symbol-level controls to manage all processes for a symbol
+                <p>
+                  No PM2 processes are currently active. Use the "Start All Symbols" button above to
+                  launch trading bots.
+                </p>
+                <div
+                  style={{
+                    marginTop: '20px',
+                    padding: '12px',
+                    background: 'rgba(56, 189, 248, 0.1)',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: '#94a3b8',
+                    textAlign: 'left',
+                  }}
+                >
+                  <strong>Individual Controls:</strong>
+                  <br />
+                  • Each instrument will have its own process card
+                  <br />
+                  • Full process names shown (e.g., gridbot-BTCUSD-LONG)
+                  <br />
+                  • Individual Start/Stop/Restart buttons for each process
+                  <br />• Symbol-level controls to manage all processes for a symbol
                 </div>
               </div>
             ) : (
               <>
-            {Object.entries(groupedProcesses.symbols).map(([symbol, processes]) => {
-              const onlineCount = processes.filter(p => p.status === 'online').length;
-              const isAllOnline = onlineCount === processes.length && processes.length > 0;
-              const isAllStopped = onlineCount === 0;
-              
-              // Find instances for this symbol
-              const symbolInstances = instancesWithMode.filter(i => i.symbol === symbol);
-              
-              return (
-                <div 
-                  key={symbol} 
-                  className={`symbol-group ${symbol === selectedSymbol ? 'selected' : ''}`}
-                >
-                  <div className="symbol-group-header">
-                    <div className="symbol-info">
-                      <span className={`symbol-badge ${symbol.toLowerCase()}`}>
-                        {symbol}
-                      </span>
-                      {/* Show instance modes */}
-                      {symbolInstances.map(inst => (
-                        <span 
-                          key={inst.name}
-                          className={`mode-badge ${inst.mode?.toLowerCase()}`}
-                          style={{
-                            fontSize: '10px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            marginLeft: '4px',
-                            backgroundColor: inst.mode === 'LONG' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                            color: inst.mode === 'LONG' ? '#10b981' : '#ef4444',
-                            opacity: inst.enabled ? 1 : 0.5
-                          }}
-                        >
-                          {inst.mode}
-                        </span>
-                      ))}
-                      <span className="symbol-status">
-                        {onlineCount}/{processes.length} online
-                      </span>
-                    </div>
-                    <div className="symbol-controls">
-                      <button
-                        onClick={() => handleStartSymbol(symbol)}
-                        disabled={isAllOnline || actionInProgress === `start-${symbol}`}
-                        className="action-button start"
-                        title={`Start ${symbol} trading`}
-                      >
-                        <PlayCircle size={14} />
-                        {actionInProgress === `start-${symbol}` ? '...' : 'Start'}
-                      </button>
-                      <button
-                        onClick={() => handleStopSymbol(symbol)}
-                        disabled={isAllStopped || actionInProgress === `stop-${symbol}`}
-                        className="action-button stop"
-                        title={`Stop ${symbol} trading`}
-                      >
-                        <StopCircle size={14} />
-                        {actionInProgress === `stop-${symbol}` ? '...' : 'Stop'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="symbol-processes">
-                    {processes.map(process => (
-                      <div key={process.name} className={`mini-process-card ${process.status}`}>
-                        <div className="mini-process-info">
-                          {getProcessIcon(process.name)}
-                          <div className="mini-process-name-container">
-                            <span className="mini-process-name">{process.name}</span>
-                            <span className="mini-process-type">
-                              {process.name.includes('gridbot') ? 'Trading Bot' : 'Monitor'}
+                {Object.entries(groupedProcesses.symbols).map(([symbol, processes]) => {
+                  const onlineCount = processes.filter((p) => p.status === 'online').length;
+                  const isAllOnline = onlineCount === processes.length && processes.length > 0;
+                  const isAllStopped = onlineCount === 0;
+
+                  // Find instances for this symbol
+                  const symbolInstances = instancesWithMode.filter((i) => i.symbol === symbol);
+
+                  return (
+                    <div
+                      key={symbol}
+                      className={`symbol-group ${symbol === selectedSymbol ? 'selected' : ''}`}
+                    >
+                      <div className="symbol-group-header">
+                        <div className="symbol-info">
+                          <span className={`symbol-badge ${symbol.toLowerCase()}`}>{symbol}</span>
+                          {/* Show instance modes */}
+                          {symbolInstances.map((inst) => (
+                            <span
+                              key={inst.name}
+                              className={`mode-badge ${inst.mode?.toLowerCase()}`}
+                              style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                marginLeft: '4px',
+                                backgroundColor:
+                                  inst.mode === 'LONG'
+                                    ? 'rgba(16, 185, 129, 0.2)'
+                                    : 'rgba(239, 68, 68, 0.2)',
+                                color: inst.mode === 'LONG' ? '#10b981' : '#ef4444',
+                                opacity: inst.enabled ? 1 : 0.5,
+                              }}
+                            >
+                              {inst.mode}
                             </span>
-                          </div>
-                          {getStatusIcon(process.status)}
+                          ))}
+                          <span className="symbol-status">
+                            {onlineCount}/{processes.length} online
+                          </span>
                         </div>
-                        <div className="mini-process-stats">
-                          <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
-                          <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
-                        </div>
-                        {/* Individual Process Controls */}
-                        <div className="mini-process-actions">
+                        <div className="symbol-controls">
                           <button
-                            onClick={() => handleStart(process.name)}
-                            disabled={process.status === 'online' || actionInProgress === `start-${process.name}`}
-                            className="mini-action-button start"
-                            title={`Start ${process.name}`}
+                            onClick={() => handleStartSymbol(symbol)}
+                            disabled={isAllOnline || actionInProgress === `start-${symbol}`}
+                            className="action-button start"
+                            title={`Start ${symbol} trading`}
                           >
                             <PlayCircle size={14} />
+                            {actionInProgress === `start-${symbol}` ? '...' : 'Start'}
                           </button>
                           <button
-                            onClick={() => handleStop(process.name)}
-                            disabled={process.status !== 'online' || actionInProgress === `stop-${process.name}`}
-                            className="mini-action-button stop"
-                            title={`Stop ${process.name}`}
+                            onClick={() => handleStopSymbol(symbol)}
+                            disabled={isAllStopped || actionInProgress === `stop-${symbol}`}
+                            className="action-button stop"
+                            title={`Stop ${symbol} trading`}
                           >
                             <StopCircle size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleRestart(process.name)}
-                            disabled={actionInProgress === `restart-${process.name}`}
-                            className="mini-action-button restart"
-                            title={`Restart ${process.name}`}
-                          >
-                            <RotateCw size={14} />
+                            {actionInProgress === `stop-${symbol}` ? '...' : 'Stop'}
                           </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
 
-            {/* System Processes Group */}
-            {groupedProcesses.system.length > 0 && (
-              <div className="symbol-group system">
-                <div className="symbol-group-header">
-                  <div className="symbol-info">
-                    <span className="symbol-badge system">SYSTEM</span>
-                    <span className="symbol-status">
-                      {groupedProcesses.system.filter(p => p.status === 'online').length}/{groupedProcesses.system.length} online
-                    </span>
-                  </div>
-                </div>
-                <div className="symbol-processes">
-                  {groupedProcesses.system.map(process => (
-                    <div key={process.name} className={`mini-process-card ${process.status}`}>
-                      <div className="mini-process-info">
-                        {getProcessIcon(process.name)}
-                        <span className="mini-process-name">{getProcessDisplayName(process.name)}</span>
-                        {getStatusIcon(process.status)}
+                      <div className="symbol-processes">
+                        {processes.map((process) => (
+                          <div key={process.name} className={`mini-process-card ${process.status}`}>
+                            <div className="mini-process-info">
+                              {getProcessIcon(process.name)}
+                              <div className="mini-process-name-container">
+                                <span className="mini-process-name">{process.name}</span>
+                                <span className="mini-process-type">
+                                  {process.name.includes('gridbot') ? 'Trading Bot' : 'Monitor'}
+                                </span>
+                              </div>
+                              {getStatusIcon(process.status)}
+                            </div>
+                            <div className="mini-process-stats">
+                              <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
+                              <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
+                            </div>
+                            {/* Individual Process Controls */}
+                            <div className="mini-process-actions">
+                              <button
+                                onClick={() => handleStart(process.name)}
+                                disabled={
+                                  process.status === 'online' ||
+                                  actionInProgress === `start-${process.name}`
+                                }
+                                className="mini-action-button start"
+                                title={`Start ${process.name}`}
+                              >
+                                <PlayCircle size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleStop(process.name)}
+                                disabled={
+                                  process.status !== 'online' ||
+                                  actionInProgress === `stop-${process.name}`
+                                }
+                                className="mini-action-button stop"
+                                title={`Stop ${process.name}`}
+                              >
+                                <StopCircle size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleRestart(process.name)}
+                                disabled={actionInProgress === `restart-${process.name}`}
+                                className="mini-action-button restart"
+                                title={`Restart ${process.name}`}
+                              >
+                                <RotateCw size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="mini-process-stats">
-                        <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
-                        <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
-                      </div>
-                      {/* Individual Process Controls */}
-                      {!process.name.includes('guardian') && (
-                        <div className="mini-process-actions">
-                          <button
-                            onClick={() => handleStart(process.name)}
-                            disabled={process.status === 'online' || actionInProgress === `start-${process.name}`}
-                            className="mini-action-button start"
-                            title={`Start ${process.name}`}
-                          >
-                            <PlayCircle size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleStop(process.name)}
-                            disabled={process.status !== 'online' || actionInProgress === `stop-${process.name}`}
-                            className="mini-action-button stop"
-                            title={`Stop ${process.name}`}
-                          >
-                            <StopCircle size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleRestart(process.name)}
-                            disabled={actionInProgress === `restart-${process.name}`}
-                            className="mini-action-button restart"
-                            title={`Restart ${process.name}`}
-                          >
-                            <RotateCw size={12} />
-                          </button>
-                        </div>
-                      )}
-                      {process.name.includes('guardian') && (
-                        <div className="mini-process-info-message">
-                          <Info size={12} />
-                          <span style={{ fontSize: '10px' }}>LaunchAgent</span>
-                        </div>
-                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  );
+                })}
+
+                {/* System Processes Group */}
+                {groupedProcesses.system.length > 0 && (
+                  <div className="symbol-group system">
+                    <div className="symbol-group-header">
+                      <div className="symbol-info">
+                        <span className="symbol-badge system">SYSTEM</span>
+                        <span className="symbol-status">
+                          {groupedProcesses.system.filter((p) => p.status === 'online').length}/
+                          {groupedProcesses.system.length} online
+                        </span>
+                      </div>
+                    </div>
+                    <div className="symbol-processes">
+                      {groupedProcesses.system.map((process) => (
+                        <div key={process.name} className={`mini-process-card ${process.status}`}>
+                          <div className="mini-process-info">
+                            {getProcessIcon(process.name)}
+                            <span className="mini-process-name">
+                              {getProcessDisplayName(process.name)}
+                            </span>
+                            {getStatusIcon(process.status)}
+                          </div>
+                          <div className="mini-process-stats">
+                            <span>CPU: {process.cpu?.toFixed(0) || 0}%</span>
+                            <span>Mem: {process.memory?.toFixed(0) || 0}MB</span>
+                          </div>
+                          {/* Individual Process Controls */}
+                          {!process.name.includes('guardian') && (
+                            <div className="mini-process-actions">
+                              <button
+                                onClick={() => handleStart(process.name)}
+                                disabled={
+                                  process.status === 'online' ||
+                                  actionInProgress === `start-${process.name}`
+                                }
+                                className="mini-action-button start"
+                                title={`Start ${process.name}`}
+                              >
+                                <PlayCircle size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleStop(process.name)}
+                                disabled={
+                                  process.status !== 'online' ||
+                                  actionInProgress === `stop-${process.name}`
+                                }
+                                className="mini-action-button stop"
+                                title={`Stop ${process.name}`}
+                              >
+                                <StopCircle size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleRestart(process.name)}
+                                disabled={actionInProgress === `restart-${process.name}`}
+                                className="mini-action-button restart"
+                                title={`Restart ${process.name}`}
+                              >
+                                <RotateCw size={12} />
+                              </button>
+                            </div>
+                          )}
+                          {process.name.includes('guardian') && (
+                            <div className="mini-process-info-message">
+                              <Info size={12} />
+                              <span style={{ fontSize: '10px' }}>LaunchAgent</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -691,226 +743,251 @@ const PM2Panel = () => {
 
       {/* Summary Statistics */}
       {activeTab !== 'symbol' && (
-      <div className="pm2-summary">
-        <div className="summary-card">
-          <div className="summary-icon online">
-            <CheckCircle size={20} />
+        <div className="pm2-summary">
+          <div className="summary-card">
+            <div className="summary-icon online">
+              <CheckCircle size={20} />
+            </div>
+            <div className="summary-content">
+              <div className="summary-label">Online</div>
+              <div className="summary-value">{pm2Status?.online || 0}</div>
+            </div>
           </div>
-          <div className="summary-content">
-            <div className="summary-label">Online</div>
-            <div className="summary-value">{pm2Status?.online || 0}</div>
-          </div>
-        </div>
 
-        <div className="summary-card">
-          <div className="summary-icon stopped">
-            <XCircle size={20} />
+          <div className="summary-card">
+            <div className="summary-icon stopped">
+              <XCircle size={20} />
+            </div>
+            <div className="summary-content">
+              <div className="summary-label">Stopped</div>
+              <div className="summary-value">{pm2Status?.stopped || 0}</div>
+            </div>
           </div>
-          <div className="summary-content">
-            <div className="summary-label">Stopped</div>
-            <div className="summary-value">{pm2Status?.stopped || 0}</div>
-          </div>
-        </div>
 
-        <div className="summary-card">
-          <div className="summary-icon errored">
-            <AlertCircle size={20} />
+          <div className="summary-card">
+            <div className="summary-icon errored">
+              <AlertCircle size={20} />
+            </div>
+            <div className="summary-content">
+              <div className="summary-label">Errored</div>
+              <div className="summary-value">{pm2Status?.errored || 0}</div>
+            </div>
           </div>
-          <div className="summary-content">
-            <div className="summary-label">Errored</div>
-            <div className="summary-value">{pm2Status?.errored || 0}</div>
-          </div>
-        </div>
 
-        <div className="summary-card">
-          <div className="summary-icon cpu">
-            <Cpu size={20} />
+          <div className="summary-card">
+            <div className="summary-icon cpu">
+              <Cpu size={20} />
+            </div>
+            <div className="summary-content">
+              <div className="summary-label">Total CPU</div>
+              <div className="summary-value">{pm2Status?.summary?.total_cpu?.toFixed(1) || 0}%</div>
+            </div>
           </div>
-          <div className="summary-content">
-            <div className="summary-label">Total CPU</div>
-            <div className="summary-value">{pm2Status?.summary?.total_cpu?.toFixed(1) || 0}%</div>
-          </div>
-        </div>
 
-        <div className="summary-card">
-          <div className="summary-icon memory">
-            <HardDrive size={20} />
+          <div className="summary-card">
+            <div className="summary-icon memory">
+              <HardDrive size={20} />
+            </div>
+            <div className="summary-content">
+              <div className="summary-label">Total Memory</div>
+              <div className="summary-value">
+                {pm2Status?.summary?.total_memory?.toFixed(1) || 0} MB
+              </div>
+            </div>
           </div>
-          <div className="summary-content">
-            <div className="summary-label">Total Memory</div>
-            <div className="summary-value">{pm2Status?.summary?.total_memory?.toFixed(1) || 0} MB</div>
-          </div>
-        </div>
 
-        <div className="summary-card">
-          <div className="summary-icon restarts">
-            <RotateCw size={20} />
-          </div>
-          <div className="summary-content">
-            <div className="summary-label">Total Restarts</div>
-            <div className="summary-value">{pm2Status?.summary?.total_restarts || 0}</div>
+          <div className="summary-card">
+            <div className="summary-icon restarts">
+              <RotateCw size={20} />
+            </div>
+            <div className="summary-content">
+              <div className="summary-label">Total Restarts</div>
+              <div className="summary-value">{pm2Status?.summary?.total_restarts || 0}</div>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Process List */}
       {activeTab !== 'symbol' && (
-      <div className="pm2-processes">
-        {filteredProcesses.length === 0 ? (
-          <div className="no-processes">
-            <AlertCircle size={48} />
-            <h3>No Processes Found</h3>
-            <p>
-              {activeTab === 'live' && 'No live trading processes are currently running.'}
-              {activeTab === 'demo' && 'No demo trading processes are currently running.'}
-              {activeTab === 'all' && 'No PM2 processes found. Start processes using the "Start All Symbols" button or from the terminal.'}
-            </p>
-            <div style={{ marginTop: '20px', padding: '12px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '8px', fontSize: '13px', color: '#94a3b8' }}>
-              <strong>Note:</strong> When processes are running, each process will have individual Start/Stop/Restart buttons.
-              Process names will show the full instrument (e.g., gridbot-BTCUSD-LONG).
+        <div className="pm2-processes">
+          {filteredProcesses.length === 0 ? (
+            <div className="no-processes">
+              <AlertCircle size={48} />
+              <h3>No Processes Found</h3>
+              <p>
+                {activeTab === 'live' && 'No live trading processes are currently running.'}
+                {activeTab === 'demo' && 'No demo trading processes are currently running.'}
+                {activeTab === 'all' &&
+                  'No PM2 processes found. Start processes using the "Start All Symbols" button or from the terminal.'}
+              </p>
+              <div
+                style={{
+                  marginTop: '20px',
+                  padding: '12px',
+                  background: 'rgba(56, 189, 248, 0.1)',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#94a3b8',
+                }}
+              >
+                <strong>Note:</strong> When processes are running, each process will have individual
+                Start/Stop/Restart buttons. Process names will show the full instrument (e.g.,
+                gridbot-BTCUSD-LONG).
+              </div>
             </div>
-          </div>
-        ) : (
-          filteredProcesses.map((process) => (
-          <div key={process.name} className={`process-card ${process.status}`}>
-            <div className="process-header">
-              <div className="process-name-section">
-                {getProcessIcon(process.name)}
-                <div className="process-name-details">
-                  <h3>{getProcessDisplayName(process.name)}</h3>
-                  <span className="process-id">{process.name}</span>
+          ) : (
+            filteredProcesses.map((process) => (
+              <div key={process.name} className={`process-card ${process.status}`}>
+                <div className="process-header">
+                  <div className="process-name-section">
+                    {getProcessIcon(process.name)}
+                    <div className="process-name-details">
+                      <h3>{getProcessDisplayName(process.name)}</h3>
+                      <span className="process-id">{process.name}</span>
+                    </div>
+                  </div>
+                  <div className="process-status">
+                    {getStatusIcon(process.status)}
+                    <span className={`status-text ${process.status}`}>
+                      {process.status.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="process-status">
-                {getStatusIcon(process.status)}
-                <span className={`status-text ${process.status}`}>
-                  {process.status.toUpperCase()}
-                </span>
-              </div>
-            </div>
 
-            <div className="process-stats">
-              <div className="stat">
-                <span className="stat-label">PID:</span>
-                <span className="stat-value">{process.pid || 'N/A'}</span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">CPU:</span>
-                <span className="stat-value">{process.cpu?.toFixed(1) || 0}%</span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Memory:</span>
-                <span className="stat-value">{process.memory?.toFixed(1) || 0} MB</span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Uptime:</span>
-                <span className="stat-value">{formatUptime(process.uptime)}</span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Restarts:</span>
-                <span className={`stat-value ${process.restarts > 0 ? 'has-restarts' : ''}`}>
-                  {process.restarts}
-                </span>
-              </div>
-            </div>
+                <div className="process-stats">
+                  <div className="stat">
+                    <span className="stat-label">PID:</span>
+                    <span className="stat-value">{process.pid || 'N/A'}</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-label">CPU:</span>
+                    <span className="stat-value">{process.cpu?.toFixed(1) || 0}%</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-label">Memory:</span>
+                    <span className="stat-value">{process.memory?.toFixed(1) || 0} MB</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-label">Uptime:</span>
+                    <span className="stat-value">{formatUptime(process.uptime)}</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-label">Restarts:</span>
+                    <span className={`stat-value ${process.restarts > 0 ? 'has-restarts' : ''}`}>
+                      {process.restarts}
+                    </span>
+                  </div>
+                </div>
 
-            {/* Guardian runs via LaunchAgent - show status only, no controls */}
-            {process.name.includes('guardian') ? (
-              <div className="process-info-message">
-                <Info size={16} />
-                <span>Guardian runs automatically via LaunchAgent (always-on protection)</span>
+                {/* Guardian runs via LaunchAgent - show status only, no controls */}
+                {process.name.includes('guardian') ? (
+                  <div className="process-info-message">
+                    <Info size={16} />
+                    <span>Guardian runs automatically via LaunchAgent (always-on protection)</span>
+                  </div>
+                ) : (
+                  <div className="process-actions">
+                    <button
+                      onClick={() => handleStart(process.name)}
+                      disabled={
+                        process.status === 'online' || actionInProgress === `start-${process.name}`
+                      }
+                      className="action-button start"
+                      title="Start process"
+                    >
+                      <PlayCircle size={16} />
+                      {actionInProgress === `start-${process.name}` ? 'Starting...' : 'Start'}
+                    </button>
+
+                    <button
+                      onClick={() => handleStop(process.name)}
+                      disabled={
+                        process.status !== 'online' || actionInProgress === `stop-${process.name}`
+                      }
+                      className="action-button stop"
+                      title="Stop process (graceful shutdown)"
+                    >
+                      <StopCircle size={16} />
+                      {actionInProgress === `stop-${process.name}` ? 'Stopping...' : 'Stop'}
+                    </button>
+
+                    <button
+                      onClick={() => handleRestart(process.name)}
+                      disabled={actionInProgress === `restart-${process.name}`}
+                      className="action-button restart"
+                      title="Restart process"
+                    >
+                      <RotateCw size={16} />
+                      {actionInProgress === `restart-${process.name}` ? 'Restarting...' : 'Restart'}
+                    </button>
+
+                    <button
+                      onClick={() => handleViewLogs(process)}
+                      className="action-button logs"
+                      title="View process logs"
+                    >
+                      <FileText size={16} />
+                      Logs
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="process-actions">
-                <button
-                  onClick={() => handleStart(process.name)}
-                  disabled={process.status === 'online' || actionInProgress === `start-${process.name}`}
-                  className="action-button start"
-                  title="Start process"
-                >
-                  <PlayCircle size={16} />
-                  {actionInProgress === `start-${process.name}` ? 'Starting...' : 'Start'}
-                </button>
-
-                <button
-                  onClick={() => handleStop(process.name)}
-                  disabled={process.status !== 'online' || actionInProgress === `stop-${process.name}`}
-                  className="action-button stop"
-                  title="Stop process (graceful shutdown)"
-                >
-                  <StopCircle size={16} />
-                  {actionInProgress === `stop-${process.name}` ? 'Stopping...' : 'Stop'}
-                </button>
-
-                <button
-                  onClick={() => handleRestart(process.name)}
-                  disabled={actionInProgress === `restart-${process.name}`}
-                  className="action-button restart"
-                  title="Restart process"
-                >
-                  <RotateCw size={16} />
-                  {actionInProgress === `restart-${process.name}` ? 'Restarting...' : 'Restart'}
-                </button>
-
-                <button
-                  onClick={() => handleViewLogs(process)}
-                  className="action-button logs"
-                  title="View process logs"
-                >
-                  <FileText size={16} />
-                  Logs
-                </button>
-              </div>
-            )}
-          </div>
-        ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
       )}
 
       {/* Quick Control Actions */}
       {activeTab !== 'symbol' && (
-      <div className="pm2-bulk-controls">
-        <h3>Quick Controls</h3>
-        <div className="bulk-buttons">
-          <button
-            onClick={() => handleStart('gridbot-live')}
-            disabled={actionInProgress === 'start-gridbot-live' || pm2Status?.processes?.find(p => p.name === 'gridbot-live')?.status === 'online'}
-            className="bulk-button start"
-          >
-            <PlayCircle size={16} />
-            {actionInProgress === 'start-gridbot-live' ? 'Starting...' : 'Start Trading Bot'}
-          </button>
+        <div className="pm2-bulk-controls">
+          <h3>Quick Controls</h3>
+          <div className="bulk-buttons">
+            <button
+              onClick={() => handleStart('gridbot-live')}
+              disabled={
+                actionInProgress === 'start-gridbot-live' ||
+                pm2Status?.processes?.find((p) => p.name === 'gridbot-live')?.status === 'online'
+              }
+              className="bulk-button start"
+            >
+              <PlayCircle size={16} />
+              {actionInProgress === 'start-gridbot-live' ? 'Starting...' : 'Start Trading Bot'}
+            </button>
 
-          <button
-            onClick={() => handleStop('gridbot-live')}
-            disabled={actionInProgress === 'stop-gridbot-live' || pm2Status?.processes?.find(p => p.name === 'gridbot-live')?.status !== 'online'}
-            className="bulk-button stop"
-          >
-            <StopCircle size={16} />
-            {actionInProgress === 'stop-gridbot-live' ? 'Stopping...' : 'Stop Trading Bot'}
-          </button>
+            <button
+              onClick={() => handleStop('gridbot-live')}
+              disabled={
+                actionInProgress === 'stop-gridbot-live' ||
+                pm2Status?.processes?.find((p) => p.name === 'gridbot-live')?.status !== 'online'
+              }
+              className="bulk-button stop"
+            >
+              <StopCircle size={16} />
+              {actionInProgress === 'stop-gridbot-live' ? 'Stopping...' : 'Stop Trading Bot'}
+            </button>
 
-          <button
-            onClick={() => handleRestart('heartbeat-monitor')}
-            disabled={actionInProgress === 'restart-heartbeat-monitor'}
-            className="bulk-button restart"
-          >
-            <RotateCw size={16} />
-            {actionInProgress === 'restart-heartbeat-monitor' ? 'Restarting...' : 'Restart Heartbeat'}
-          </button>
+            <button
+              onClick={() => handleRestart('heartbeat-monitor')}
+              disabled={actionInProgress === 'restart-heartbeat-monitor'}
+              className="bulk-button restart"
+            >
+              <RotateCw size={16} />
+              {actionInProgress === 'restart-heartbeat-monitor'
+                ? 'Restarting...'
+                : 'Restart Heartbeat'}
+            </button>
 
-          <button
-            onClick={handleFlushLogs}
-            disabled={actionInProgress === 'flush-logs'}
-            className="bulk-button flush"
-          >
-            <Trash2 size={16} />
-            {actionInProgress === 'flush-logs' ? 'Flushing...' : 'Flush Logs'}
-          </button>
+            <button
+              onClick={handleFlushLogs}
+              disabled={actionInProgress === 'flush-logs'}
+              className="bulk-button flush"
+            >
+              <Trash2 size={16} />
+              {actionInProgress === 'flush-logs' ? 'Flushing...' : 'Flush Logs'}
+            </button>
+          </div>
         </div>
-      </div>
       )}
 
       {/* Logs Modal */}
@@ -940,7 +1017,9 @@ const PM2Panel = () => {
                     <div className="logs-output">
                       {logs.out && logs.out.length > 0 ? (
                         logs.out.map((line, idx) => (
-                          <div key={idx} className="log-line">{line}</div>
+                          <div key={idx} className="log-line">
+                            {line}
+                          </div>
                         ))
                       ) : (
                         <div className="no-logs">No output logs</div>
@@ -953,7 +1032,9 @@ const PM2Panel = () => {
                     <div className="logs-output error">
                       {logs.err && logs.err.length > 0 ? (
                         logs.err.map((line, idx) => (
-                          <div key={idx} className="log-line">{line}</div>
+                          <div key={idx} className="log-line">
+                            {line}
+                          </div>
                         ))
                       ) : (
                         <div className="no-logs">No error logs</div>
@@ -965,7 +1046,10 @@ const PM2Panel = () => {
             </div>
 
             <div className="logs-modal-footer">
-              <button onClick={() => handleViewLogs(selectedProcess)} className="reload-logs-button">
+              <button
+                onClick={() => handleViewLogs(selectedProcess)}
+                className="reload-logs-button"
+              >
                 <RefreshCw size={16} />
                 Reload Logs
               </button>

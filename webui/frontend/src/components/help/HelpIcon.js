@@ -12,7 +12,7 @@ import {
   Collapse,
   Alert,
   CircularProgress,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   HelpOutline,
@@ -22,31 +22,31 @@ import {
   Settings,
   ExpandMore,
   ExpandLess,
-  ErrorOutline
+  ErrorOutline,
 } from '@mui/icons-material';
 import api from '../../utils/apiShim';
 
 /**
  * HelpIcon Component
- * 
+ *
  * Universal help system that displays contextual help for any UI control.
  * Auto-fetches help metadata from the backend registry.
- * 
+ *
  * Usage:
  *   <HelpIcon actionId="bot.start" />
  *   <HelpIcon actionId="guardian.start" placement="bottom" />
- * 
+ *
  * Props:
  *   - actionId: The action identifier (e.g., "bot.start", "config.update")
  *   - placement: Popover placement (default: "right")
  *   - size: Icon size ("small", "medium", "large")
  *   - color: Icon color
  */
-export default function HelpIcon({ 
-  actionId, 
+export default function HelpIcon({
+  actionId,
   placement = 'right',
   size = 'small',
-  color = 'primary'
+  color = 'primary',
 }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [helpData, setHelpData] = useState(null);
@@ -56,7 +56,7 @@ export default function HelpIcon({
     effects: true,
     config: false,
     risks: false,
-    code: false
+    code: false,
   });
 
   const open = Boolean(anchorEl);
@@ -71,30 +71,30 @@ export default function HelpIcon({
   const fetchHelpData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await api.get('/api/help/registry');
-      
+
       if (!response.data.success) {
         throw new Error(response.data.message || 'Failed to load help registry');
       }
-      
+
       // Find the action in the registry
-      const action = response.data.actions.find(a => a.action_id === actionId);
-      
+      const action = response.data.actions.find((a) => a.action_id === actionId);
+
       if (!action) {
         setError(`No help documentation found for action: ${actionId}`);
         // Create inferred help data
         setHelpData({
           action_id: actionId,
-          title: actionId.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          title: actionId.replace(/\./g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
           summary: '📝 Documentation missing for this action',
           effects: ['Action details not yet documented'],
           risks: [],
           related_config: [],
           api: {},
           code_refs: [],
-          inferred: true
+          inferred: true,
         });
       } else {
         setHelpData(action);
@@ -105,12 +105,12 @@ export default function HelpIcon({
       // Create minimal fallback
       setHelpData({
         action_id: actionId,
-        title: actionId.replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        title: actionId.replace(/\./g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
         summary: 'Help system unavailable',
         effects: ['Unable to load help documentation'],
         risks: [],
         related_config: [],
-        inferred: true
+        inferred: true,
       });
     } finally {
       setLoading(false);
@@ -127,20 +127,22 @@ export default function HelpIcon({
   };
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
-      [section]: !prev[section]
+      [section]: !prev[section],
     }));
   };
 
   const isDangerous = () => {
     if (!helpData) return false;
-    
+
     const dangerKeywords = ['delete', 'kill', 'emergency', 'force', 'destroy', 'live'];
     const actionLower = helpData.action_id.toLowerCase();
-    
-    return dangerKeywords.some(keyword => actionLower.includes(keyword)) ||
-           (helpData.risks && helpData.risks.length > 0);
+
+    return (
+      dangerKeywords.some((keyword) => actionLower.includes(keyword)) ||
+      (helpData.risks && helpData.risks.length > 0)
+    );
   };
 
   return (
@@ -153,7 +155,7 @@ export default function HelpIcon({
           sx={{
             ml: 0.5,
             opacity: 0.7,
-            '&:hover': { opacity: 1 }
+            '&:hover': { opacity: 1 },
           }}
           data-help-trigger={actionId}
         >
@@ -178,8 +180,8 @@ export default function HelpIcon({
             maxWidth: 500,
             minWidth: 350,
             maxHeight: '80vh',
-            overflow: 'auto'
-          }
+            overflow: 'auto',
+          },
         }}
       >
         <Box sx={{ p: 2 }}>
@@ -197,7 +199,7 @@ export default function HelpIcon({
                     {helpData.title}
                   </Typography>
                 </Box>
-                
+
                 {helpData.inferred && (
                   <Chip
                     label="Auto-generated"
@@ -207,11 +209,11 @@ export default function HelpIcon({
                     sx={{ mb: 1 }}
                   />
                 )}
-                
+
                 <Typography variant="body2" color="text.secondary">
                   {helpData.summary}
                 </Typography>
-                
+
                 {helpData.api && helpData.api.path && (
                   <Chip
                     label={`${helpData.api.method} ${helpData.api.path}`}
@@ -227,28 +229,31 @@ export default function HelpIcon({
               {/* What it does */}
               {helpData.effects && helpData.effects.length > 0 && (
                 <Box sx={{ mb: 2 }}>
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      mb: 1
+                      mb: 1,
                     }}
                     onClick={() => toggleSection('effects')}
                   >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
                       <Info fontSize="small" color="primary" />
                       What it does
                     </Typography>
                     {expandedSections.effects ? <ExpandLess /> : <ExpandMore />}
                   </Box>
-                  
+
                   <Collapse in={expandedSections.effects}>
                     <List dense>
                       {helpData.effects.slice(0, 5).map((effect, idx) => (
                         <ListItem key={idx} sx={{ pl: 0 }}>
-                          <ListItemText 
+                          <ListItemText
                             primary={`• ${effect}`}
                             primaryTypographyProps={{ variant: 'body2' }}
                           />
@@ -262,28 +267,37 @@ export default function HelpIcon({
               {/* Related Configuration */}
               {helpData.related_config && helpData.related_config.length > 0 && (
                 <Box sx={{ mb: 2 }}>
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      mb: 1
+                      mb: 1,
                     }}
                     onClick={() => toggleSection('config')}
                   >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
                       <Settings fontSize="small" color="action" />
                       Related Config ({helpData.related_config.length})
                     </Typography>
                     {expandedSections.config ? <ExpandLess /> : <ExpandMore />}
                   </Box>
-                  
+
                   <Collapse in={expandedSections.config}>
                     <List dense>
                       {helpData.related_config.map((config, idx) => (
-                        <ListItem key={idx} sx={{ pl: 0, flexDirection: 'column', alignItems: 'flex-start' }}>
-                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                        <ListItem
+                          key={idx}
+                          sx={{ pl: 0, flexDirection: 'column', alignItems: 'flex-start' }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}
+                          >
                             {config.key}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
@@ -299,23 +313,26 @@ export default function HelpIcon({
               {/* Risks & Warnings */}
               {helpData.risks && helpData.risks.length > 0 && (
                 <Box sx={{ mb: 2 }}>
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      mb: 1
+                      mb: 1,
                     }}
                     onClick={() => toggleSection('risks')}
                   >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
                       <Warning fontSize="small" color="error" />
                       Risks & Warnings
                     </Typography>
                     {expandedSections.risks ? <ExpandLess /> : <ExpandMore />}
                   </Box>
-                  
+
                   <Collapse in={expandedSections.risks}>
                     {helpData.risks.map((risk, idx) => (
                       <Alert key={idx} severity="warning" sx={{ mb: 1 }} icon={<ErrorOutline />}>
@@ -329,32 +346,35 @@ export default function HelpIcon({
               {/* Code References */}
               {helpData.code_refs && helpData.code_refs.length > 0 && (
                 <Box sx={{ mb: 1 }}>
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      mb: 1
+                      mb: 1,
                     }}
                     onClick={() => toggleSection('code')}
                   >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
                       <Code fontSize="small" />
                       Code References
                     </Typography>
                     {expandedSections.code ? <ExpandLess /> : <ExpandMore />}
                   </Box>
-                  
+
                   <Collapse in={expandedSections.code}>
                     <List dense>
                       {helpData.code_refs.map((ref, idx) => (
                         <ListItem key={idx} sx={{ pl: 0 }}>
-                          <ListItemText 
+                          <ListItemText
                             primary={ref}
-                            primaryTypographyProps={{ 
-                              variant: 'caption', 
-                              sx: { fontFamily: 'monospace', fontSize: '0.7rem' }
+                            primaryTypographyProps={{
+                              variant: 'caption',
+                              sx: { fontFamily: 'monospace', fontSize: '0.7rem' },
                             }}
                           />
                         </ListItem>
@@ -366,7 +386,11 @@ export default function HelpIcon({
 
               {/* Last Updated */}
               {helpData.last_updated && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, fontStyle: 'italic' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mt: 2, fontStyle: 'italic' }}
+                >
                   Last updated: {new Date(helpData.last_updated).toLocaleString()}
                 </Typography>
               )}
@@ -379,9 +403,7 @@ export default function HelpIcon({
               )}
             </>
           ) : (
-            <Alert severity="error">
-              Failed to load help information
-            </Alert>
+            <Alert severity="error">Failed to load help information</Alert>
           )}
         </Box>
       </Popover>

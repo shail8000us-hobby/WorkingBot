@@ -9,7 +9,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
-  Paper
+  Paper,
 } from '@mui/material';
 import {
   Terminal as TerminalIcon,
@@ -17,14 +17,14 @@ import {
   Stop as StopIcon,
   Refresh as RefreshIcon,
   CheckCircle as CheckIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
 const TmuxPanel = () => {
   const [tmuxStatus, setTmuxStatus] = useState({
     tmux_installed: false,
-    session: { exists: false }
+    session: { exists: false },
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
@@ -52,7 +52,9 @@ const TmuxPanel = () => {
     try {
       const response = await api.post('/api/tmux/start');
       if (response.data.success) {
-        setMessage('✅ tmux session started! Open Terminal and run "tmux -S ~/.tmux-gridbot/default attach -t gridbot" to view the panes.');
+        setMessage(
+          '✅ tmux session started! Open Terminal and run "tmux -S ~/.tmux-gridbot/default attach -t gridbot" to view the panes.'
+        );
         setMessageType('success');
         setTimeout(fetchTmuxStatus, 2000); // Refresh status after 2 seconds
       } else {
@@ -66,12 +68,12 @@ const TmuxPanel = () => {
       const backendMessage = error.response?.data?.message;
       const errorDetail = error.response?.data?.error;
       const fallbackMessage = error.message;
-      
+
       const displayMessage = backendMessage || errorDetail || fallbackMessage || 'Unknown error';
-      
+
       setMessage(`❌ ${displayMessage}`);
       setMessageType('error');
-      
+
       console.error('tmux start error:', error);
       console.error('Response data:', error.response?.data);
     } finally {
@@ -80,7 +82,11 @@ const TmuxPanel = () => {
   };
 
   const handleStopTmux = async () => {
-    if (!window.confirm('Stop all bots in tmux session? This will terminate Guardian, Monitor, and Trading Bot.')) {
+    if (
+      !window.confirm(
+        'Stop all bots in tmux session? This will terminate Guardian, Monitor, and Trading Bot.'
+      )
+    ) {
       return;
     }
 
@@ -110,7 +116,9 @@ const TmuxPanel = () => {
     try {
       const response = await api.post('/api/bot/start');
       if (response.data.success) {
-        setMessage('✅ Bot start command acknowledged. Check status panels or tmux once it spins up.');
+        setMessage(
+          '✅ Bot start command acknowledged. Check status panels or tmux once it spins up.'
+        );
         setMessageType('success');
       } else {
         setMessage(response.data.message || 'Failed to start bot.');
@@ -127,22 +135,17 @@ const TmuxPanel = () => {
   const sessionExists = tmuxStatus.session?.exists;
   const tmuxInstalled = tmuxStatus.tmux_installed;
 
-
   return (
     <Card>
       <CardContent>
         <Box display="flex" alignItems="center" mb={2}>
           <TerminalIcon sx={{ mr: 1, fontSize: 28 }} />
-          <Typography variant="h6">
-            tmux Professional Setup
-          </Typography>
+          <Typography variant="h6">tmux Professional Setup</Typography>
         </Box>
-
 
         <Typography variant="body2" color="text.secondary" paragraph>
           Start all 3 bots (Guardian + Monitor + Trading) in a professional split-pane terminal view
         </Typography>
-
 
         {/* tmux Installation Status */}
         <Box mb={2}>
@@ -157,10 +160,11 @@ const TmuxPanel = () => {
         {!tmuxInstalled && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             <Typography variant="body2">
-              <strong>tmux is not installed.</strong><br />
-              Install it with:<br />
-              • macOS: <code>brew install tmux</code><br />
-              • Linux: <code>sudo apt install tmux</code>
+              <strong>tmux is not installed.</strong>
+              <br />
+              Install it with:
+              <br />• macOS: <code>brew install tmux</code>
+              <br />• Linux: <code>sudo apt install tmux</code>
             </Typography>
           </Alert>
         )}
@@ -186,7 +190,8 @@ const TmuxPanel = () => {
 
             {!sessionExists && (
               <Alert severity="info" sx={{ mt: 2 }}>
-                When you start tmux, Guardian, Monitor, and Trading processes will launch inside a split-pane session automatically.
+                When you start tmux, Guardian, Monitor, and Trading processes will launch inside a
+                split-pane session automatically.
               </Alert>
             )}
 
@@ -197,23 +202,75 @@ const TmuxPanel = () => {
                     <strong>📺 To view bots in terminal:</strong>
                   </Typography>
                   <Typography variant="caption" display="block" sx={{ mb: 1 }}>
-                    1. Open a <strong>NEW terminal window</strong> (Terminal.app on macOS)<br/>
+                    1. Open a <strong>NEW terminal window</strong> (Terminal.app on macOS)
+                    <br />
                     2. Copy and paste this command:
                   </Typography>
-                  <Typography variant="body2" component="div" sx={{ fontFamily: 'monospace', fontSize: '0.8rem', bgcolor: '#000', color: '#0f0', p: 1, borderRadius: 1, mb: 1, cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText('tmux -S ~/.tmux-gridbot/default attach -t gridbot')}>
+                  <Typography
+                    variant="body2"
+                    component="div"
+                    sx={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.8rem',
+                      bgcolor: '#000',
+                      color: '#0f0',
+                      p: 1,
+                      borderRadius: 1,
+                      mb: 1,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() =>
+                      navigator.clipboard.writeText(
+                        'tmux -S ~/.tmux-gridbot/default attach -t gridbot'
+                      )
+                    }
+                  >
                     tmux -S ~/.tmux-gridbot/default attach -t gridbot
                   </Typography>
-                  <Typography variant="caption" display="block" sx={{ bgcolor: 'rgba(255, 152, 0, 0.15)', p: 1, borderRadius: 1, border: '1px solid rgba(255, 152, 0, 0.4)', mb: 1 }}>
+                  <Typography
+                    variant="caption"
+                    display="block"
+                    sx={{
+                      bgcolor: 'rgba(255, 152, 0, 0.15)',
+                      p: 1,
+                      borderRadius: 1,
+                      border: '1px solid rgba(255, 152, 0, 0.4)',
+                      mb: 1,
+                    }}
+                  >
                     💡 Click the command above to copy it to clipboard
                   </Typography>
-                  <Typography variant="caption" display="block" sx={{ bgcolor: 'rgba(33, 150, 243, 0.1)', p: 1, borderRadius: 1, mb: 1, border: '1px solid rgba(33, 150, 243, 0.3)' }}>
+                  <Typography
+                    variant="caption"
+                    display="block"
+                    sx={{
+                      bgcolor: 'rgba(33, 150, 243, 0.1)',
+                      p: 1,
+                      borderRadius: 1,
+                      mb: 1,
+                      border: '1px solid rgba(33, 150, 243, 0.3)',
+                    }}
+                  >
                     ✅ You'll see 3 split panes with bot output
                   </Typography>
-                  <Typography variant="caption" display="block" sx={{ bgcolor: 'rgba(255, 152, 0, 0.15)', p: 1, borderRadius: 1, border: '1px solid rgba(255, 152, 0, 0.4)' }}>
-                    <strong>⌨️ To detach (ONLY works INSIDE tmux window):</strong><br/>
-                    Step 1: Press <strong>Ctrl+B</strong> (then release)<br/>
-                    Step 2: Press <strong>d</strong> key<br/>
-                    <em>📝 This is a keyboard shortcut, NOT a command to type!</em><br/>
+                  <Typography
+                    variant="caption"
+                    display="block"
+                    sx={{
+                      bgcolor: 'rgba(255, 152, 0, 0.15)',
+                      p: 1,
+                      borderRadius: 1,
+                      border: '1px solid rgba(255, 152, 0, 0.4)',
+                    }}
+                  >
+                    <strong>⌨️ To detach (ONLY works INSIDE tmux window):</strong>
+                    <br />
+                    Step 1: Press <strong>Ctrl+B</strong> (then release)
+                    <br />
+                    Step 2: Press <strong>d</strong> key
+                    <br />
+                    <em>📝 This is a keyboard shortcut, NOT a command to type!</em>
+                    <br />
                     <strong>💡 OR just close the terminal - bots keep running!</strong>
                   </Typography>
                 </Alert>
@@ -309,9 +366,18 @@ const TmuxPanel = () => {
             <Typography variant="subtitle2" gutterBottom>
               Terminal Layout:
             </Typography>
-            <Paper variant="outlined" sx={{ p: 1, bgcolor: '#1e1e1e', color: '#00ff00', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1,
+                bgcolor: '#1e1e1e',
+                color: '#00ff00',
+                fontFamily: 'monospace',
+                fontSize: '0.7rem',
+              }}
+            >
               <pre style={{ margin: 0 }}>
-{`┌─────────────┬──────────────┬──────────────┐
+                {`┌─────────────┬──────────────┬──────────────┐
 │   Guardian  │   Monitor    │  Trading Bot │
 │      🛡️      │      💓       │      🤖      │
 └─────────────┴──────────────┴──────────────┘`}

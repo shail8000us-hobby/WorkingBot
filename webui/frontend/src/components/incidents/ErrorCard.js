@@ -196,11 +196,7 @@ const ErrorCard = ({ error, onUpdate }) => {
                 sx={{ textTransform: 'uppercase', fontWeight: 500 }}
               />
               {error.count > 1 && (
-                <Chip
-                  label={`×${error.count}`}
-                  size="small"
-                  variant="outlined"
-                />
+                <Chip label={`×${error.count}`} size="small" variant="outlined" />
               )}
               {getStatusIcon()}
             </Box>
@@ -282,8 +278,8 @@ const ErrorCard = ({ error, onUpdate }) => {
                           action.risk_level === 'high'
                             ? 'error'
                             : action.risk_level === 'medium'
-                            ? 'warning'
-                            : 'default'
+                              ? 'warning'
+                              : 'default'
                         }
                       />
                     )}

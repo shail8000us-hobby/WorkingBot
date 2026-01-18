@@ -229,16 +229,15 @@
   .market-state-summary {
     grid-template-columns: 1fr 1fr;
   }
-  
+
   .action-title {
     font-size: 16px;
   }
-  
+
   .detail-row {
     font-size: 13px;
   }
 }
-
 
 .status-indicator.connected {
   background: #00ff88;
@@ -252,7 +251,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -298,7 +298,7 @@
   cursor: pointer;
 }
 
-.auto-scroll-toggle input[type="checkbox"] {
+.auto-scroll-toggle input[type='checkbox'] {
   cursor: pointer;
 }
 

@@ -48,7 +48,7 @@ const formatNumber = (value) => {
 // Productivity Metrics Component
 const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
   if (!metrics) return null;
-  
+
   const {
     productivity_score = 0,
     capital_utilization_pct = 0,
@@ -59,48 +59,54 @@ const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
     capital_freed_usd = 0,
     profit_recovered_usd = 0,
   } = metrics;
-  
+
   const getScoreColor = (score) => {
     if (score >= 90) return 'success';
     if (score >= 70) return 'warning';
     return 'error';
   };
-  
+
   const getHealthIcon = (status) => {
     switch (status) {
-      case 'healthy': return <CheckCircleIcon sx={{ color: 'success.main' }} />;
-      case 'minor_issues': return <InfoIcon sx={{ color: 'warning.main' }} />;
-      case 'needs_attention': return <WarningIcon sx={{ color: 'warning.main' }} />;
-      case 'critical': return <ErrorIcon sx={{ color: 'error.main' }} />;
-      default: return <InfoIcon />;
+      case 'healthy':
+        return <CheckCircleIcon sx={{ color: 'success.main' }} />;
+      case 'minor_issues':
+        return <InfoIcon sx={{ color: 'warning.main' }} />;
+      case 'needs_attention':
+        return <WarningIcon sx={{ color: 'warning.main' }} />;
+      case 'critical':
+        return <ErrorIcon sx={{ color: 'error.main' }} />;
+      default:
+        return <InfoIcon />;
     }
   };
-  
+
   return (
     <Card sx={{ mb: 2, bgcolor: 'background.paper' }}>
       <CardContent>
         <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
           <Box display="flex" alignItems="center" gap={1}>
             {detectionSummary && getHealthIcon(detectionSummary.health_status)}
-            <Typography variant="h6">
-              Bot Productivity Score
-            </Typography>
+            <Typography variant="h6">Bot Productivity Score</Typography>
           </Box>
-          <Chip 
+          <Chip
             label={`${productivity_score}/100`}
             color={getScoreColor(productivity_score)}
             size="large"
             sx={{ fontSize: '1.1rem', fontWeight: 'bold' }}
           />
         </Box>
-        
+
         <Grid container spacing={2}>
           <Grid item xs={6} sm={3}>
             <Box textAlign="center" p={1}>
               <Typography variant="caption" color="text.secondary">
                 Capital Utilization
               </Typography>
-              <Typography variant="h6" color={capital_utilization_pct >= 80 ? 'success.main' : 'warning.main'}>
+              <Typography
+                variant="h6"
+                color={capital_utilization_pct >= 80 ? 'success.main' : 'warning.main'}
+              >
                 {capital_utilization_pct.toFixed(1)}%
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -108,13 +114,16 @@ const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
               </Typography>
             </Box>
           </Grid>
-          
+
           <Grid item xs={6} sm={3}>
             <Box textAlign="center" p={1}>
               <Typography variant="caption" color="text.secondary">
                 Order Success Rate
               </Typography>
-              <Typography variant="h6" color={order_success_rate_pct >= 95 ? 'success.main' : 'warning.main'}>
+              <Typography
+                variant="h6"
+                color={order_success_rate_pct >= 95 ? 'success.main' : 'warning.main'}
+              >
                 {order_success_rate_pct.toFixed(1)}%
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -122,13 +131,16 @@ const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
               </Typography>
             </Box>
           </Grid>
-          
+
           <Grid item xs={6} sm={3}>
             <Box textAlign="center" p={1}>
               <Typography variant="caption" color="text.secondary">
                 Missed Fills
               </Typography>
-              <Typography variant="h6" color={missed_fills_count === 0 ? 'success.main' : 'error.main'}>
+              <Typography
+                variant="h6"
+                color={missed_fills_count === 0 ? 'success.main' : 'error.main'}
+              >
                 {missed_fills_count}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -136,7 +148,7 @@ const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
               </Typography>
             </Box>
           </Grid>
-          
+
           <Grid item xs={6} sm={3}>
             <Box textAlign="center" p={1}>
               <Typography variant="caption" color="text.secondary">
@@ -151,7 +163,7 @@ const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
             </Box>
           </Grid>
         </Grid>
-        
+
         {(capital_freed_usd > 0 || profit_recovered_usd > 0) && (
           <Box mt={2} p={2} bgcolor="success.dark" borderRadius={1}>
             <Typography variant="subtitle2" gutterBottom>
@@ -181,9 +193,9 @@ const ProductivityMetricsCard = ({ metrics, detectionSummary }) => {
             </Grid>
           </Box>
         )}
-        
+
         {detectionSummary?.recommendation && (
-          <Alert 
+          <Alert
             severity={detectionSummary.health_status === 'healthy' ? 'success' : 'warning'}
             sx={{ mt: 2 }}
           >
@@ -207,7 +219,7 @@ const HistoricalInsightsCard = () => {
       setLoading(true);
       const [insightsData, trendsData] = await Promise.all([
         apiClient.get('/api/recon/insights'),
-        apiClient.get('/api/recon/trends', { params: { period: selectedPeriod } })
+        apiClient.get('/api/recon/trends', { params: { period: selectedPeriod } }),
       ]);
       setInsights(insightsData.insights);
       setTrends(trendsData.trends);
@@ -246,9 +258,12 @@ const HistoricalInsightsCard = () => {
 
   const getTrendIcon = (direction) => {
     switch (direction) {
-      case 'improving': return <CheckCircleIcon sx={{ color: 'success.main' }} />;
-      case 'degrading': return <WarningIcon sx={{ color: 'error.main' }} />;
-      default: return <InfoIcon sx={{ color: 'info.main' }} />;
+      case 'improving':
+        return <CheckCircleIcon sx={{ color: 'success.main' }} />;
+      case 'degrading':
+        return <WarningIcon sx={{ color: 'error.main' }} />;
+      default:
+        return <InfoIcon sx={{ color: 'info.main' }} />;
     }
   };
 
@@ -258,9 +273,7 @@ const HistoricalInsightsCard = () => {
         <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
           <Box display="flex" alignItems="center" gap={1}>
             <InfoIcon color="primary" />
-            <Typography variant="h6">
-              Historical Insights & Trends
-            </Typography>
+            <Typography variant="h6">Historical Insights & Trends</Typography>
           </Box>
           <Box display="flex" gap={1}>
             {['last_hour', 'last_24h', 'last_7d', 'last_30d'].map((period) => (
@@ -284,7 +297,10 @@ const HistoricalInsightsCard = () => {
               <Typography variant="caption" color="text.secondary">
                 System Health Score
               </Typography>
-              <Typography variant="h3" sx={{ color: getHealthColor(insights.health_score), fontWeight: 'bold' }}>
+              <Typography
+                variant="h3"
+                sx={{ color: getHealthColor(insights.health_score), fontWeight: 'bold' }}
+              >
                 {insights.health_score}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -317,18 +333,18 @@ const HistoricalInsightsCard = () => {
               <Typography variant="caption" color="text.secondary">
                 Resolution Rate
               </Typography>
-              <Typography 
-                variant="h3" 
-                sx={{ 
+              <Typography
+                variant="h3"
+                sx={{
                   color: trends.resolution_rate_pct >= 80 ? 'success.main' : 'warning.main',
-                  fontWeight: 'bold' 
+                  fontWeight: 'bold',
                 }}
               >
                 {trends.resolution_rate_pct.toFixed(0)}%
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {trends.avg_resolution_time_seconds > 0 
-                  ? `Avg: ${trends.avg_resolution_time_seconds.toFixed(1)}s` 
+                {trends.avg_resolution_time_seconds > 0
+                  ? `Avg: ${trends.avg_resolution_time_seconds.toFixed(1)}s`
                   : 'No resolutions yet'}
               </Typography>
             </Paper>
@@ -371,7 +387,7 @@ const HistoricalInsightsCard = () => {
               📊 Peak Issue Hours
             </Typography>
             <Typography variant="body2">
-              Most issues occur at: {trends.peak_issue_hours.map(h => `${h}:00`).join(', ')} UTC
+              Most issues occur at: {trends.peak_issue_hours.map((h) => `${h}:00`).join(', ')} UTC
             </Typography>
           </Box>
         )}
@@ -426,48 +442,52 @@ const HistoricalInsightsCard = () => {
 const IssuesListCard = ({ issues = [], onAutoHeal }) => {
   const [healing, setHealing] = React.useState(false);
   const [dryRunMode, setDryRunMode] = React.useState(true);
-  
+
   if (!issues || issues.length === 0) {
     return (
       <Card sx={{ mb: 2 }}>
         <CardContent>
           <Box display="flex" alignItems="center" gap={1} mb={1}>
             <CheckCircleIcon color="success" />
-            <Typography variant="h6">
-              Detected Issues
-            </Typography>
+            <Typography variant="h6">Detected Issues</Typography>
           </Box>
-          <Alert severity="success">
-            ✅ No issues detected! All systems healthy.
-          </Alert>
+          <Alert severity="success">✅ No issues detected! All systems healthy.</Alert>
         </CardContent>
       </Card>
     );
   }
-  
+
   const getSeverityColor = (severity) => {
     switch (severity) {
-      case 'critical': return 'error';
-      case 'high': return 'warning';
-      case 'medium': return 'info';
-      case 'low': return 'default';
-      default: return 'default';
+      case 'critical':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      case 'low':
+        return 'default';
+      default:
+        return 'default';
     }
   };
-  
+
   const getSeverityIcon = (severity) => {
     switch (severity) {
-      case 'critical': return <ErrorIcon />;
-      case 'high': return <WarningIcon />;
-      default: return <InfoIcon />;
+      case 'critical':
+        return <ErrorIcon />;
+      case 'high':
+        return <WarningIcon />;
+      default:
+        return <InfoIcon />;
     }
   };
-  
-  const autoHealableIssues = issues.filter(i => i.auto_healable);
-  
+
+  const autoHealableIssues = issues.filter((i) => i.auto_healable);
+
   const handleAutoHeal = async () => {
     if (autoHealableIssues.length === 0) return;
-    
+
     setHealing(true);
     try {
       await onAutoHeal(issues, dryRunMode);
@@ -475,28 +495,26 @@ const IssuesListCard = ({ issues = [], onAutoHeal }) => {
       setHealing(false);
     }
   };
-  
+
   return (
     <Card sx={{ mb: 2 }}>
       <CardContent>
         <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
           <Box display="flex" alignItems="center" gap={1}>
             <WarningIcon color="warning" />
-            <Typography variant="h6">
-              Detected Issues ({issues.length})
-            </Typography>
+            <Typography variant="h6">Detected Issues ({issues.length})</Typography>
           </Box>
           <Box display="flex" alignItems="center" gap={1}>
             {autoHealableIssues.length > 0 && (
               <>
-                <Chip 
+                <Chip
                   label={`${autoHealableIssues.length} Auto-Healable`}
                   color="success"
                   size="small"
                 />
                 <Button
-                  variant={dryRunMode ? "outlined" : "contained"}
-                  color={dryRunMode ? "info" : "success"}
+                  variant={dryRunMode ? 'outlined' : 'contained'}
+                  color={dryRunMode ? 'info' : 'success'}
                   size="small"
                   onClick={handleAutoHeal}
                   disabled={healing}
@@ -504,28 +522,24 @@ const IssuesListCard = ({ issues = [], onAutoHeal }) => {
                 >
                   {healing ? 'Healing...' : dryRunMode ? 'Preview Auto-Heal' : '⚡ Auto-Heal Now'}
                 </Button>
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={() => setDryRunMode(!dryRunMode)}
-                >
+                <Button variant="text" size="small" onClick={() => setDryRunMode(!dryRunMode)}>
                   {dryRunMode ? '🔍 Dry Run ON' : '🚀 Live Mode'}
                 </Button>
               </>
             )}
           </Box>
         </Box>
-        
+
         <Box display="flex" flexDirection="column" gap={1}>
           {issues.map((issue, index) => (
-            <Paper 
-              key={index} 
-              elevation={1} 
-              sx={{ 
-                p: 2, 
+            <Paper
+              key={index}
+              elevation={1}
+              sx={{
+                p: 2,
                 border: '1px solid',
                 borderColor: `${getSeverityColor(issue.severity)}.main`,
-                bgcolor: 'background.default'
+                bgcolor: 'background.default',
               }}
             >
               <Box display="flex" alignItems="flex-start" justifyContent="space-between" mb={1}>
@@ -534,7 +548,7 @@ const IssuesListCard = ({ issues = [], onAutoHeal }) => {
                   <Typography variant="subtitle2" fontWeight="bold">
                     {issue.issue_type.replace(/_/g, ' ').toUpperCase()}
                   </Typography>
-                  <Chip 
+                  <Chip
                     label={issue.severity.toUpperCase()}
                     color={getSeverityColor(issue.severity)}
                     size="small"
@@ -547,19 +561,15 @@ const IssuesListCard = ({ issues = [], onAutoHeal }) => {
                   Order: {issue.order_id || issue.client_order_id || 'N/A'}
                 </Typography>
               </Box>
-              
+
               <Typography variant="body2" color="text.secondary" mb={1}>
                 {issue.description}
               </Typography>
-              
+
               <Box display="flex" flexWrap="wrap" gap={1} alignItems="center">
-                <Chip 
-                  label={`Impact: ${issue.impact}`}
-                  size="small"
-                  variant="outlined"
-                />
+                <Chip label={`Impact: ${issue.impact}`} size="small" variant="outlined" />
                 {issue.metadata?.side && (
-                  <Chip 
+                  <Chip
                     label={issue.metadata.side}
                     size="small"
                     color={issue.metadata.side === 'BUY' ? 'success' : 'error'}
@@ -567,14 +577,10 @@ const IssuesListCard = ({ issues = [], onAutoHeal }) => {
                   />
                 )}
                 {issue.metadata?.symbol && (
-                  <Chip 
-                    label={issue.metadata.symbol}
-                    size="small"
-                    variant="outlined"
-                  />
+                  <Chip label={issue.metadata.symbol} size="small" variant="outlined" />
                 )}
               </Box>
-              
+
               <Alert severity="info" sx={{ mt: 1 }}>
                 💡 <strong>Action:</strong> {issue.action_recommendation}
               </Alert>
@@ -633,9 +639,9 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
       };
       const data = await apiClient.get('/api/recon/table', { params });
       setRecords(data.records || []);
-      setPaginationMeta({ 
-        total: data.pagination?.total || 0, 
-        totalPages: data.pagination?.total_pages || 0 
+      setPaginationMeta({
+        total: data.pagination?.total || 0,
+        totalPages: data.pagination?.total_pages || 0,
       });
       setError(null);
     } catch (err) {
@@ -682,23 +688,23 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
     try {
       const response = await apiClient.post('/api/recon/auto-heal', {
         issues,
-        dry_run: dryRun
+        dry_run: dryRun,
       });
-      
+
       if (dryRun) {
         // Show preview
         const { would_heal, would_skip, message } = response;
         setSuccessMessage(
           `Preview: ${message}. ` +
-          `Would heal ${would_heal} issues, skip ${would_skip} requiring manual review.`
+            `Would heal ${would_heal} issues, skip ${would_skip} requiring manual review.`
         );
       } else {
         // Show actual results
         const { healed_count, skipped_count, backup_path } = response;
         setSuccessMessage(
           `✅ Auto-heal complete! Healed ${healed_count} issues, ` +
-          `skipped ${skipped_count} requiring manual review. ` +
-          `Backup saved to: ${backup_path}`
+            `skipped ${skipped_count} requiring manual review. ` +
+            `Backup saved to: ${backup_path}`
         );
         // Refresh data
         await refreshStatus();
@@ -711,15 +717,17 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
   };
 
   const handleClearBotMemory = async () => {
-    if (!window.confirm(
-      '🧹 Smart Clear Bot Memory?\n\n' +
-      'This will:\n' +
-      '✅ KEEP all OPEN orders (won\'t break active trades)\n' +
-      '🗑️  REMOVE all CLOSED/FILLED/CANCELLED orders (old data)\n' +
-      '💾 CREATE automatic backup\n' +
-      '⚠️  Does NOT affect volatility recovery system\n\n' +
-      'Continue?'
-    )) {
+    if (
+      !window.confirm(
+        '🧹 Smart Clear Bot Memory?\n\n' +
+          'This will:\n' +
+          "✅ KEEP all OPEN orders (won't break active trades)\n" +
+          '🗑️  REMOVE all CLOSED/FILLED/CANCELLED orders (old data)\n' +
+          '💾 CREATE automatic backup\n' +
+          '⚠️  Does NOT affect volatility recovery system\n\n' +
+          'Continue?'
+      )
+    ) {
       return;
     }
 
@@ -727,19 +735,20 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
       setClearing(true);
       setError(null);
       setSuccessMessage(null);
-      
+
       const response = await apiClient.post('/api/recon/clear-bot-memory');
-      
+
       if (response.success) {
-        const msg = response.kept_orders > 0 
-          ? `✅ Cleared ${response.cleared_orders} old orders, kept ${response.kept_orders} open orders`
-          : `✅ ${response.message}`;
+        const msg =
+          response.kept_orders > 0
+            ? `✅ Cleared ${response.cleared_orders} old orders, kept ${response.kept_orders} open orders`
+            : `✅ ${response.message}`;
         setSuccessMessage(msg);
-        
+
         // Refresh data after clearing
         await refreshStatus();
         await fetchRecords();
-        
+
         // Clear success message after 8 seconds
         setTimeout(() => setSuccessMessage(null), 8000);
       } else {
@@ -791,16 +800,28 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}
+          >
             <SyncIcon sx={{ fontSize: 28 }} />
             Sync & Reconciliation
             {status?.cached && (
-              <Chip 
-                label="⚡ Cached" 
-                size="small" 
-                color="success" 
+              <Chip
+                label="⚡ Cached"
+                size="small"
+                color="success"
                 variant="outlined"
                 sx={{ height: 22, fontSize: '0.7rem' }}
               />
@@ -833,7 +854,9 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
           <Button
             variant="outlined"
             color="warning"
-            startIcon={clearing ? <CircularProgress size={18} color="inherit" /> : <DeleteSweepIcon />}
+            startIcon={
+              clearing ? <CircularProgress size={18} color="inherit" /> : <DeleteSweepIcon />
+            }
             onClick={handleClearBotMemory}
             disabled={clearing || !status}
             sx={{
@@ -847,11 +870,7 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
           >
             {clearing ? 'Clearing...' : 'Clear Bot Memory'}
           </Button>
-          <Button
-            variant="outlined"
-            startIcon={<GetAppIcon />}
-            onClick={handleExport}
-          >
+          <Button variant="outlined" startIcon={<GetAppIcon />} onClick={handleExport}>
             Export Report
           </Button>
         </Box>
@@ -880,21 +899,17 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
 
       {/* NEW: Productivity Metrics */}
       {status && (
-        <ProductivityMetricsCard 
-          metrics={status?.metrics} 
+        <ProductivityMetricsCard
+          metrics={status?.metrics}
           detectionSummary={status?.detection_summary}
         />
       )}
 
       {/* NEW: Historical Insights */}
-      {status && (
-        <HistoricalInsightsCard />
-      )}
+      {status && <HistoricalInsightsCard />}
 
       {/* NEW: Detected Issues */}
-      {status && (
-        <IssuesListCard issues={status?.issues} onAutoHeal={handleAutoHeal} />
-      )}
+      {status && <IssuesListCard issues={status?.issues} onAutoHeal={handleAutoHeal} />}
 
       {/* No Sync Data */}
       {!status && !loadingStatus && (

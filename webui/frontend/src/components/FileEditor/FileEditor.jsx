@@ -22,7 +22,7 @@ import {
   MenuItem,
   Select,
   FormControl,
-  InputLabel
+  InputLabel,
 } from '@mui/material';
 import {
   Folder as FolderIcon,
@@ -35,7 +35,7 @@ import {
   Settings as SettingsIcon,
   Description as DescriptionIcon,
   Storage as DataIcon,
-  Psychology as ExplainIcon
+  Psychology as ExplainIcon,
 } from '@mui/icons-material';
 import CodeEditor from '../CodeEditor/CodeEditor';
 import CodeExplanationPanel from '../CodeExplanationPanel/CodeExplanationPanel';
@@ -55,7 +55,7 @@ const FILE_TYPES = {
   '.yml': { language: 'yaml', icon: <SettingsIcon color="secondary" /> },
   '.md': { language: 'markdown', icon: <DescriptionIcon /> },
   '.txt': { language: 'plaintext', icon: <DescriptionIcon /> },
-  '.log': { language: 'plaintext', icon: <DescriptionIcon /> }
+  '.log': { language: 'plaintext', icon: <DescriptionIcon /> },
 };
 
 const IMPORTANT_DIRS = [
@@ -64,7 +64,7 @@ const IMPORTANT_DIRS = [
   { path: 'bot/utils', label: 'Utilities', icon: '🛠️' },
   { path: 'bot/safety', label: 'Safety Modules', icon: '🛡️' },
   { path: 'webui', label: 'Web UI', icon: '🌐' },
-  { path: 'config', label: 'Configuration', icon: '⚙️' }
+  { path: 'config', label: 'Configuration', icon: '⚙️' },
 ];
 
 const FileEditor = () => {
@@ -76,7 +76,7 @@ const FileEditor = () => {
   const [fileContent, setFileContent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [pathHistory, setPathHistory] = useState(['']);
-  
+
   // Code Explanation State
   const [explanationMode, setExplanationMode] = useState('trader');
   const [explanationOpen, setExplanationOpen] = useState(false);
@@ -92,12 +92,12 @@ const FileEditor = () => {
   const loadDirectory = async (path) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await axios.post(`${API_BASE_URL}/api/file-manager/list`, {
-        path: path || '.'
+        path: path || '.',
       });
-      
+
       if (response.data.status === 'success') {
         // Sort: directories first, then files alphabetically
         const sorted = [...response.data.items].sort((a, b) => {
@@ -121,12 +121,12 @@ const FileEditor = () => {
   const loadFile = async (filePath) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await axios.post(`${API_BASE_URL}/api/file-manager/read`, {
-        path: filePath
+        path: filePath,
       });
-      
+
       if (response.data.status === 'success') {
         setFileContent(response.data.content);
         setSelectedFile(filePath);
@@ -175,9 +175,9 @@ const FileEditor = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/file-manager/save`, {
         path: selectedFile,
-        content: content
+        content: content,
       });
-      
+
       if (response.data.status === 'success') {
         return true;
       } else {
@@ -211,7 +211,7 @@ const FileEditor = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/code-explainer/explain`, {
         file_path: selectedFile,
-        mode: explanationMode
+        mode: explanationMode,
       });
 
       if (response.data.status === 'success') {
@@ -251,10 +251,8 @@ const FileEditor = () => {
 
   const getFilteredFiles = () => {
     if (!searchTerm) return files;
-    
-    return files.filter(item => 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+
+    return files.filter((item) => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
   };
 
   const getBreadcrumbs = () => {
@@ -269,7 +267,7 @@ const FileEditor = () => {
       <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <CodeIcon /> File Editor with AI
       </Typography>
-      
+
       <Grid container spacing={2} sx={{ flexGrow: 1, overflow: 'hidden' }}>
         {/* File Browser */}
         <Grid item xs={12} md={selectedFile ? 3 : 12}>
@@ -279,22 +277,18 @@ const FileEditor = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <Tooltip title="Go Back">
                   <span>
-                    <IconButton 
-                      size="small" 
-                      onClick={handleBack}
-                      disabled={!canGoBack}
-                    >
+                    <IconButton size="small" onClick={handleBack} disabled={!canGoBack}>
                       <BackIcon />
                     </IconButton>
                   </span>
                 </Tooltip>
-                
+
                 <Tooltip title="Refresh">
                   <IconButton size="small" onClick={() => loadDirectory(currentPath)}>
                     <RefreshIcon />
                   </IconButton>
                 </Tooltip>
-                
+
                 <Breadcrumbs sx={{ flexGrow: 1 }}>
                   {getBreadcrumbs().map((part, index) => (
                     <Link
@@ -315,7 +309,7 @@ const FileEditor = () => {
                   ))}
                 </Breadcrumbs>
               </Box>
-              
+
               <TextField
                 size="small"
                 fullWidth
@@ -327,11 +321,11 @@ const FileEditor = () => {
                     <InputAdornment position="start">
                       <SearchIcon />
                     </InputAdornment>
-                  )
+                  ),
                 }}
               />
             </Box>
-            
+
             {/* Quick Access */}
             {!currentPath && !searchTerm && (
               <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
@@ -351,7 +345,7 @@ const FileEditor = () => {
                 </Box>
               </Box>
             )}
-            
+
             {/* File List */}
             <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
               {loading ? (
@@ -359,19 +353,19 @@ const FileEditor = () => {
                   <CircularProgress />
                 </Box>
               ) : error ? (
-                <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>
+                <Alert severity="error" sx={{ m: 2 }}>
+                  {error}
+                </Alert>
               ) : (
                 <List dense>
                   {getFilteredFiles().map((item, index) => (
                     <ListItem key={index} disablePadding>
                       <ListItemButton onClick={() => handleFileClick(item)}>
-                        <ListItemIcon>
-                          {getFileIcon(item)}
-                        </ListItemIcon>
-                        <ListItemText 
+                        <ListItemIcon>{getFileIcon(item)}</ListItemIcon>
+                        <ListItemText
                           primary={item.name}
                           secondary={
-                            item.type === 'file' && item.size 
+                            item.type === 'file' && item.size
                               ? `${(item.size / 1024).toFixed(1)} KB`
                               : undefined
                           }
@@ -381,9 +375,11 @@ const FileEditor = () => {
                   ))}
                   {getFilteredFiles().length === 0 && (
                     <ListItem>
-                      <ListItemText 
+                      <ListItemText
                         primary="No files found"
-                        secondary={searchTerm ? "Try a different search term" : "This directory is empty"}
+                        secondary={
+                          searchTerm ? 'Try a different search term' : 'This directory is empty'
+                        }
                       />
                     </ListItem>
                   )}
@@ -392,16 +388,22 @@ const FileEditor = () => {
             </Box>
           </Paper>
         </Grid>
-        
+
         {/* Code Editor */}
         {selectedFile && (
           <Grid item xs={12} md={9}>
             <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-                <Typography variant="h6">
-                  {selectedFile}
-                </Typography>
-                
+              <Box
+                sx={{
+                  mb: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 2,
+                }}
+              >
+                <Typography variant="h6">{selectedFile}</Typography>
+
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                   {/* Explain Code Section */}
                   {selectedFile.endsWith('.py') && (
@@ -418,7 +420,7 @@ const FileEditor = () => {
                           <MenuItem value="tech">⚙️ Technical</MenuItem>
                         </Select>
                       </FormControl>
-                      
+
                       <Tooltip title="Explain this code in plain English">
                         <Button
                           variant="contained"
@@ -432,17 +434,13 @@ const FileEditor = () => {
                       </Tooltip>
                     </>
                   )}
-                  
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={handleCloseFile}
-                  >
+
+                  <Button variant="outlined" size="small" onClick={handleCloseFile}>
                     Close File
                   </Button>
                 </Box>
               </Box>
-              
+
               <CodeEditor
                 filePath={selectedFile}
                 initialValue={fileContent}
@@ -458,22 +456,26 @@ const FileEditor = () => {
           </Grid>
         )}
       </Grid>
-      
+
       {!selectedFile && (
         <Alert severity="info" sx={{ mt: 2 }}>
           <strong>💡 Getting Started:</strong>
           <ul style={{ marginBottom: 0, paddingLeft: 20 }}>
             <li>Use Quick Access chips to navigate to common directories</li>
             <li>Click folders to browse, click files to open in the editor</li>
-            <li>Files open in <strong>Read-Only mode</strong> by default for safety</li>
+            <li>
+              Files open in <strong>Read-Only mode</strong> by default for safety
+            </li>
             <li>Click the 🔒 button to enable editing (creates auto-backup)</li>
-            <li>Use <strong>AI Fix This</strong> ✨ button for code analysis and suggestions</li>
+            <li>
+              Use <strong>AI Fix This</strong> ✨ button for code analysis and suggestions
+            </li>
             <li>Access code templates via the 📋 button</li>
             <li>Keyboard shortcuts: Ctrl+S (Save), Ctrl+Shift+F (Format)</li>
           </ul>
         </Alert>
       )}
-      
+
       {/* Code Explanation Panel */}
       <CodeExplanationPanel
         open={explanationOpen}

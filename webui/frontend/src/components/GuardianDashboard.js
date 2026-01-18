@@ -1,12 +1,12 @@
 /**
  * Guardian Dashboard - System Health Monitor
- * 
+ *
  * Real-time monitoring of WebUI robustness features:
  * - System health (backend + bot + resources)
  * - Circuit breaker states (live monitoring)
  * - 24h metrics charts (API latency trends)
  * - Resource usage (CPU, memory, disk)
- * 
+ *
  * Date: November 12, 2025
  * Part of: WebUI Robustness Plan Week 3
  */
@@ -23,7 +23,7 @@ import {
   LinearProgress,
   Alert,
   IconButton,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   CheckCircle as HealthyIcon,
@@ -32,7 +32,7 @@ import {
   Refresh as RefreshIcon,
   TrendingUp,
   TrendingDown,
-  Speed as Activity
+  Speed as Activity,
 } from '@mui/icons-material';
 import { useHealth } from '../store';
 import { getAllCircuitStates } from '../utils/circuitBreaker';
@@ -47,7 +47,7 @@ const StatusBadge = ({ status, label }) => {
     unknown: 'default',
     CLOSED: 'success',
     HALF_OPEN: 'warning',
-    OPEN: 'error'
+    OPEN: 'error',
   };
 
   const icons = {
@@ -57,7 +57,7 @@ const StatusBadge = ({ status, label }) => {
     unknown: <Activity fontSize="small" />,
     CLOSED: <HealthyIcon fontSize="small" />,
     HALF_OPEN: <WarningIcon fontSize="small" />,
-    OPEN: <ErrorIcon fontSize="small" />
+    OPEN: <ErrorIcon fontSize="small" />,
   };
 
   return (
@@ -78,15 +78,15 @@ const MetricRow = ({ label, value, unit, trend, healthy = true }) => (
     </Typography>
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <Typography variant="body2" fontWeight="bold" color={healthy ? 'success.main' : 'error.main'}>
-        {value}{unit}
+        {value}
+        {unit}
       </Typography>
-      {trend !== undefined && (
-        trend > 0 ? (
+      {trend !== undefined &&
+        (trend > 0 ? (
           <TrendingUp fontSize="small" color="success" />
         ) : (
           <TrendingDown fontSize="small" color="error" />
-        )
-      )}
+        ))}
     </Box>
   </Box>
 );
@@ -114,12 +114,7 @@ const CircuitBreakerCard = ({ name, state }) => {
             healthy={state.failureCount === 0}
           />
           {state.state === 'OPEN' && (
-            <MetricRow
-              label="Retry in"
-              value={retrySeconds}
-              unit="s"
-              healthy={false}
-            />
+            <MetricRow label="Retry in" value={retrySeconds} unit="s" healthy={false} />
           )}
           {state.lastFailureTime && (
             <Typography variant="caption" color="text.secondary">
@@ -217,9 +212,11 @@ function GuardianDashboard() {
             <CardContent>
               {Object.entries(services).map(([name, service]) => (
                 <Box key={name} sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box
+                    sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
                     <Typography variant="body2">
-                      {name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      {name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                     </Typography>
                     <StatusBadge
                       status={service.healthy ? 'healthy' : 'unhealthy'}

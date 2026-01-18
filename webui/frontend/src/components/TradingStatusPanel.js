@@ -12,7 +12,7 @@ import {
   Grid,
   Divider,
   CircularProgress,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   ExpandMore,
@@ -26,7 +26,7 @@ import {
   Refresh,
   Settings,
   Assessment,
-  Sync as SyncIcon
+  Sync as SyncIcon,
 } from '@mui/icons-material';
 import HelpIcon from './help/HelpIcon';
 import { useSocket } from '../hooks/useSocket';
@@ -157,7 +157,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
     console.log('🔍 Blocker clicked:', blocker);
     console.log('🔍 Deep link:', blocker.deep_link);
     console.log('🔍 onNavigate function:', onNavigate);
-    
+
     // Direct navigation based on blocker type
     if (blocker.id === 'gatekeeper_emergency_flag') {
       console.log('✅ Navigating to Emergency Controls tab (8)');
@@ -165,7 +165,12 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
         onNavigate('emergency_controls', 'emergency_status', null);
       }
     } else if (blocker.deep_link && onNavigate) {
-      console.log('✅ Calling onNavigate with:', blocker.deep_link.tab, blocker.deep_link.section, blocker.deep_link.field);
+      console.log(
+        '✅ Calling onNavigate with:',
+        blocker.deep_link.tab,
+        blocker.deep_link.section,
+        blocker.deep_link.field
+      );
       onNavigate(blocker.deep_link.tab, blocker.deep_link.section, blocker.deep_link.field);
     } else {
       console.log('❌ Navigation failed - missing deep_link or onNavigate');
@@ -183,24 +188,27 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
     try {
       let endpoint = '';
       let confirmMessage = '';
-      
+
       switch (action) {
         case 'clear_emergency_flag':
           endpoint = '/api/emergency/clear_flag';
-          confirmMessage = 'Are you sure you want to clear the emergency stop flag? This will resume trading.';
+          confirmMessage =
+            'Are you sure you want to clear the emergency stop flag? This will resume trading.';
           break;
         case 'reset_gatekeeper':
           endpoint = '/api/emergency/reset_gatekeeper';
-          confirmMessage = 'Are you sure you want to reset the Safety Gatekeeper? This will clear all gatekeeper blocks.';
+          confirmMessage =
+            'Are you sure you want to reset the Safety Gatekeeper? This will clear all gatekeeper blocks.';
           break;
         case 'force_restart':
           endpoint = '/api/emergency/force_restart';
-          confirmMessage = 'Are you sure you want to force restart the bot? This will stop and restart all bot processes.';
+          confirmMessage =
+            'Are you sure you want to force restart the bot? This will stop and restart all bot processes.';
           break;
         default:
           throw new Error('Unknown emergency action');
       }
-      
+
       if (window.confirm(confirmMessage)) {
         const response = await api.post(endpoint);
         if (response.data.success) {
@@ -267,19 +275,19 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
   // Get status text from resolved state
   const getStatusText = () => {
     if (!resolvedState) return 'Loading...';
-    
+
     if (!resolvedState.trading_allowed) {
       // Show why trading is blocked
       if (!resolvedState.guardian_active) {
         return `BLOCKED — ${resolvedState.guardian.reason}`;
       }
-      const criticalWarnings = resolvedState.warning_list.filter(w => w.severity === 'critical');
+      const criticalWarnings = resolvedState.warning_list.filter((w) => w.severity === 'critical');
       if (criticalWarnings.length > 0) {
         return `BLOCKED — ${criticalWarnings[0].message}`;
       }
       return 'BLOCKED — Trading not allowed';
     }
-    
+
     // Trading is allowed
     if (resolvedState.warning_list.length > 0) {
       return `ACTIVE — ${resolvedState.warning_list.length} warning${resolvedState.warning_list.length > 1 ? 's' : ''}`;
@@ -290,22 +298,22 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
   // Get detailed status context from resolved state
   const getStatusContext = () => {
     if (!resolvedState) return null;
-    
+
     if (!resolvedState.trading_allowed) {
       if (!resolvedState.guardian_active) {
         return resolvedState.guardian.reason;
       }
-      const criticalWarnings = resolvedState.warning_list.filter(w => w.severity === 'critical');
+      const criticalWarnings = resolvedState.warning_list.filter((w) => w.severity === 'critical');
       if (criticalWarnings.length > 0) {
         return criticalWarnings[0].message;
       }
       return 'Trading blocked by safety systems';
     }
-    
+
     if (resolvedState.warning_list.length > 0) {
       return `${resolvedState.warning_list.length} warning${resolvedState.warning_list.length > 1 ? 's' : ''} present - proceed with caution`;
     }
-    
+
     return `Guardian ${resolvedState.guardian.state.toLowerCase()}, Safety level: ${resolvedState.safety_level}`;
   };
 
@@ -326,33 +334,33 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
           bgcolor: `rgba(${statusColor === '#4caf50' ? '76, 175, 80' : statusColor === '#f44336' ? '244, 67, 54' : '158, 158, 158'}, 0.1)`,
           borderBottom: `3px solid ${statusColor}`,
           flexWrap: { xs: 'wrap', lg: 'nowrap' },
-          gap: { xs: 1, md: 2 }
+          gap: { xs: 1, md: 2 },
         }}
       >
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: { xs: 1, md: 2 },
-          flex: { xs: '1 1 100%', lg: '1 1 auto' }
-        }}>
-          <Box sx={{ color: statusColor }}>
-            {statusIcon}
-          </Box>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: { xs: 1, md: 2 },
+            flex: { xs: '1 1 100%', lg: '1 1 auto' },
+          }}
+        >
+          <Box sx={{ color: statusColor }}>{statusIcon}</Box>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            <Typography 
-              variant="h6" 
+            <Typography
+              variant="h6"
               fontWeight="bold"
               sx={{ fontSize: { xs: '0.95rem', sm: '1.1rem', md: '1.25rem' } }}
             >
               TRADING: {statusText}
             </Typography>
             {statusContext && (
-              <Typography 
-                variant="caption" 
-                sx={{ 
+              <Typography
+                variant="caption"
+                sx={{
                   fontSize: { xs: '0.7rem', md: '0.75rem' },
                   color: 'text.secondary',
-                  fontStyle: 'italic'
+                  fontStyle: 'italic',
                 }}
               >
                 {statusContext}
@@ -361,16 +369,28 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
           </Box>
           {resolvedState && (
             <>
-              <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
-              <Box sx={{ 
-                display: 'flex', 
-                gap: 0.5,
-                flexWrap: 'wrap'
-              }}>
+              <Divider
+                orientation="vertical"
+                flexItem
+                sx={{ display: { xs: 'none', md: 'block' } }}
+              />
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: 0.5,
+                  flexWrap: 'wrap',
+                }}
+              >
                 <Chip
                   label={resolvedState.net_exposure.label}
                   size="small"
-                  color={resolvedState.net_exposure.label === 'Bullish' ? 'success' : resolvedState.net_exposure.label === 'Bearish' ? 'error' : 'default'}
+                  color={
+                    resolvedState.net_exposure.label === 'Bullish'
+                      ? 'success'
+                      : resolvedState.net_exposure.label === 'Bearish'
+                        ? 'error'
+                        : 'default'
+                  }
                   variant="outlined"
                   sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                 />
@@ -401,12 +421,18 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                         onClick={() => onNavigate && onNavigate('reconciliation', null, null)}
                         sx={{
                           fontSize: { xs: '0.65rem', md: '0.75rem' },
-                          cursor: 'pointer'
+                          cursor: 'pointer',
                         }}
                       />
                     </Tooltip>
                   ) : (
-                    <Tooltip title={reconV2Enabled ? 'Reconciliation snapshot in sync' : 'Reconciliation in sync'}>
+                    <Tooltip
+                      title={
+                        reconV2Enabled
+                          ? 'Reconciliation snapshot in sync'
+                          : 'Reconciliation in sync'
+                      }
+                    >
                       <Chip
                         icon={<CheckCircle sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }} />}
                         label="Recon: ✅ In sync"
@@ -431,20 +457,22 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
           )}
         </Box>
 
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 1,
-          flex: { xs: '0 0 auto', lg: '0 0 auto' }
-        }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flex: { xs: '0 0 auto', lg: '0 0 auto' },
+          }}
+        >
           {/* Removed unnecessary Stop/Start buttons - Trading Active panel handles this */}
-          <IconButton 
-            onClick={() => setExpanded(!expanded)} 
+          <IconButton
+            onClick={() => setExpanded(!expanded)}
             size="small"
-            sx={{ 
+            sx={{
               display: { xs: 'inline-flex', lg: 'inline-flex' },
               minWidth: '40px',
-              minHeight: '40px'
+              minHeight: '40px',
             }}
           >
             {expanded ? <ExpandLess /> : <ExpandMore />}
@@ -465,7 +493,11 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
           <Grid container spacing={{ xs: 1, md: 2 }} sx={{ mb: { xs: 2, md: 3 } }}>
             <Grid item xs={6} md={3}>
               <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: 'rgba(33, 150, 243, 0.1)' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                >
                   Net Exposure
                 </Typography>
                 <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
@@ -477,28 +509,71 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
               </Paper>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: resolvedState.guardian_active ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
+              <Paper
+                sx={{
+                  p: { xs: 1.5, md: 2 },
+                  bgcolor: resolvedState.guardian_active
+                    ? 'rgba(76, 175, 80, 0.1)'
+                    : 'rgba(244, 67, 54, 0.1)',
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                >
                   Guardian
                 </Typography>
-                <Typography variant="h4" color={resolvedState.guardian_active ? 'success.main' : 'error.main'} sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
+                <Typography
+                  variant="h4"
+                  color={resolvedState.guardian_active ? 'success.main' : 'error.main'}
+                  sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}
+                >
                   {resolvedState.guardian.state}
                 </Typography>
               </Paper>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: resolvedState.safety_level === 'SAFE' ? 'rgba(76, 175, 80, 0.1)' : resolvedState.safety_level === 'CAUTION' ? 'rgba(255, 152, 0, 0.1)' : 'rgba(244, 67, 54, 0.1)' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
+              <Paper
+                sx={{
+                  p: { xs: 1.5, md: 2 },
+                  bgcolor:
+                    resolvedState.safety_level === 'SAFE'
+                      ? 'rgba(76, 175, 80, 0.1)'
+                      : resolvedState.safety_level === 'CAUTION'
+                        ? 'rgba(255, 152, 0, 0.1)'
+                        : 'rgba(244, 67, 54, 0.1)',
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                >
                   Safety Level
                 </Typography>
-                <Typography variant="h4" color={resolvedState.safety_level === 'SAFE' ? 'success.main' : resolvedState.safety_level === 'CAUTION' ? 'warning.main' : 'error.main'} sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}>
+                <Typography
+                  variant="h4"
+                  color={
+                    resolvedState.safety_level === 'SAFE'
+                      ? 'success.main'
+                      : resolvedState.safety_level === 'CAUTION'
+                        ? 'warning.main'
+                        : 'error.main'
+                  }
+                  sx={{ fontSize: { xs: '1.5rem', md: '2.125rem' } }}
+                >
                   {resolvedState.safety_level}
                 </Typography>
               </Paper>
             </Grid>
             <Grid item xs={6} md={3}>
               <Paper sx={{ p: { xs: 1.5, md: 2 }, bgcolor: 'rgba(158, 158, 158, 0.1)' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                >
                   Execution Mode
                 </Typography>
                 <Typography variant="h6" sx={{ fontSize: { xs: '0.875rem', md: '1.25rem' } }}>
@@ -511,93 +586,106 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
           {/* Warnings Section - From Resolved State */}
           {resolvedState.warning_list.length > 0 && (
             <Box sx={{ mb: { xs: 2, md: 3 } }}>
-              <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
-                {resolvedState.trading_allowed ? '⚠️' : '🚫'} {resolvedState.trading_allowed ? 'Warnings' : 'Trading Blocked'} - {resolvedState.warning_list.length} Issue{resolvedState.warning_list.length > 1 ? 's' : ''} Found
+              <Typography
+                variant="h6"
+                gutterBottom
+                sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}
+              >
+                {resolvedState.trading_allowed ? '⚠️' : '🚫'}{' '}
+                {resolvedState.trading_allowed ? 'Warnings' : 'Trading Blocked'} -{' '}
+                {resolvedState.warning_list.length} Issue
+                {resolvedState.warning_list.length > 1 ? 's' : ''} Found
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {resolvedState.trading_allowed 
+                {resolvedState.trading_allowed
                   ? 'Review these warnings before proceeding. Trading is allowed but proceed with caution.'
                   : 'Review and fix these conditions to resume trading.'}
               </Typography>
               {resolvedState.warning_list.map((warning, index) => {
-                  // Generate actionable steps based on blocker category
-                  const getActionSteps = (warning) => {
-                    if (warning.category === 'SAFETY_GATEKEEPER') {
-                      if (warning.id === 'gatekeeper_execute_orders') {
-                        return [
-                          '1. Navigate to Configuration tab',
-                          '2. Find EXECUTE_ORDERS setting',
-                          '3. Change value from False to True',
-                          '4. Save configuration',
-                          '5. Trading will resume automatically'
-                        ];
-                      }
-                    } else if (warning.category === 'RISK_MANAGER') {
+                // Generate actionable steps based on blocker category
+                const getActionSteps = (warning) => {
+                  if (warning.category === 'SAFETY_GATEKEEPER') {
+                    if (warning.id === 'gatekeeper_execute_orders') {
                       return [
-                        '1. Review current risk metrics',
-                        '2. Either reduce position sizes or adjust risk limits',
-                        '3. Wait for risk levels to normalize',
-                        '4. Trading will resume when safe'
-                      ];
-                    } else if (warning.category === 'POSITION_MONITOR') {
-                      return [
-                        '1. Add more margin to your account',
-                        '2. Or close some positions to reduce risk',
-                        '3. Wait for liquidation distance to increase',
-                        '4. Trading will resume when safe distance restored'
-                      ];
-                    } else if (warning.category === 'EXCHANGE_CONNECTION') {
-                      return [
-                        '1. Check your internet connection',
-                        '2. Verify API keys are valid',
-                        '3. Check exchange status page',
-                        '4. Restart bot if connection persists'
+                        '1. Navigate to Configuration tab',
+                        '2. Find EXECUTE_ORDERS setting',
+                        '3. Change value from False to True',
+                        '4. Save configuration',
+                        '5. Trading will resume automatically',
                       ];
                     }
-                    return ['Click to navigate to fix location'];
-                  };
+                  } else if (warning.category === 'RISK_MANAGER') {
+                    return [
+                      '1. Review current risk metrics',
+                      '2. Either reduce position sizes or adjust risk limits',
+                      '3. Wait for risk levels to normalize',
+                      '4. Trading will resume when safe',
+                    ];
+                  } else if (warning.category === 'POSITION_MONITOR') {
+                    return [
+                      '1. Add more margin to your account',
+                      '2. Or close some positions to reduce risk',
+                      '3. Wait for liquidation distance to increase',
+                      '4. Trading will resume when safe distance restored',
+                    ];
+                  } else if (warning.category === 'EXCHANGE_CONNECTION') {
+                    return [
+                      '1. Check your internet connection',
+                      '2. Verify API keys are valid',
+                      '3. Check exchange status page',
+                      '4. Restart bot if connection persists',
+                    ];
+                  }
+                  return ['Click to navigate to fix location'];
+                };
 
-                  const actionSteps = getActionSteps(warning);
+                const actionSteps = getActionSteps(warning);
 
-                  return (
-                    <Alert
-                      key={index}
-                      severity={warning.severity === 'critical' ? 'error' : warning.severity === 'warning' ? 'warning' : 'info'}
-                      sx={{ 
-                        mb: 2, 
-                        cursor: 'pointer',
-                        '&:hover': {
-                          transform: 'translateY(-1px)',
-                          boxShadow: 2
-                        },
-                        transition: 'all 0.2s ease-in-out'
-                      }}
-                      action={
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                          <Tooltip title={`Source: ${warning.source}`}>
-                            <IconButton size="small" color="inherit">
-                              <Info />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      }
-                    >
-                      <AlertTitle sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
-                        {warning.severity === 'critical' ? '🚨' : '⚠️'} {warning.source}
-                      </AlertTitle>
-                      
-                      {/* Warning Message */}
-                      <Typography variant="body2" sx={{ mb: 1.5, fontWeight: 500 }}>
-                        {warning.message}
-                      </Typography>
-                      
-                      {/* Timestamp */}
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(warning.timestamp).toLocaleString()}
-                      </Typography>
-                    </Alert>
-                  );
-                })}
+                return (
+                  <Alert
+                    key={index}
+                    severity={
+                      warning.severity === 'critical'
+                        ? 'error'
+                        : warning.severity === 'warning'
+                          ? 'warning'
+                          : 'info'
+                    }
+                    sx={{
+                      mb: 2,
+                      cursor: 'pointer',
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: 2,
+                      },
+                      transition: 'all 0.2s ease-in-out',
+                    }}
+                    action={
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Tooltip title={`Source: ${warning.source}`}>
+                          <IconButton size="small" color="inherit">
+                            <Info />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    }
+                  >
+                    <AlertTitle sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                      {warning.severity === 'critical' ? '🚨' : '⚠️'} {warning.source}
+                    </AlertTitle>
+
+                    {/* Warning Message */}
+                    <Typography variant="body2" sx={{ mb: 1.5, fontWeight: 500 }}>
+                      {warning.message}
+                    </Typography>
+
+                    {/* Timestamp */}
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(warning.timestamp).toLocaleString()}
+                    </Typography>
+                  </Alert>
+                );
+              })}
             </Box>
           )}
 
@@ -617,10 +705,16 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Use these controls to diagnose and fix issues independently without external help.
             </Typography>
-            
+
             <Grid container spacing={2}>
               <Grid item xs={12} md={6}>
-                <Paper sx={{ p: 2, bgcolor: 'rgba(255, 193, 7, 0.1)', border: '1px solid rgba(255, 193, 7, 0.3)' }}>
+                <Paper
+                  sx={{
+                    p: 2,
+                    bgcolor: 'rgba(255, 193, 7, 0.1)',
+                    border: '1px solid rgba(255, 193, 7, 0.3)',
+                  }}
+                >
                   <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
                     🔍 Diagnostic Tools
                   </Typography>
@@ -652,9 +746,15 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                   </Box>
                 </Paper>
               </Grid>
-              
+
               <Grid item xs={12} md={6}>
-                <Paper sx={{ p: 2, bgcolor: 'rgba(244, 67, 54, 0.1)', border: '1px solid rgba(244, 67, 54, 0.3)' }}>
+                <Paper
+                  sx={{
+                    p: 2,
+                    bgcolor: 'rgba(244, 67, 54, 0.1)',
+                    border: '1px solid rgba(244, 67, 54, 0.3)',
+                  }}
+                >
                   <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
                     🚨 Emergency Actions
                   </Typography>
@@ -669,7 +769,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                       Clear Emergency Flag
                     </Button>
                     <HelpIcon actionId="emergency.clear-flag" size="small" />
-                    
+
                     <Button
                       variant="outlined"
                       color="warning"
@@ -680,7 +780,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
                       Reset Gatekeeper
                     </Button>
                     <HelpIcon actionId="emergency.reset-gatekeeper" size="small" />
-                    
+
                     <Button
                       variant="outlined"
                       color="error"
@@ -699,11 +799,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
 
           {/* Action Buttons - Navigation */}
           <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-            <Button
-              variant="outlined"
-              startIcon={<Refresh />}
-              onClick={handleRefresh}
-            >
+            <Button variant="outlined" startIcon={<Refresh />} onClick={handleRefresh}>
               Refresh Status
             </Button>
             <Button
@@ -726,7 +822,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
         width: '100%',
         borderRadius: 2,
         overflow: 'auto',
-        mb: 2
+        mb: 2,
       }}
     >
       {error && (

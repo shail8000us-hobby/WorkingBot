@@ -58,24 +58,26 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   const instanceInfo = parseInstanceName(selectedInstance);
   const selectedSymbol = instanceInfo?.symbol; // backward compat
   const selectedMode = instanceInfo?.mode || 'LONG';
-  const availableSymbols = instances.map(i => ({ name: parseInstanceName(i.name)?.symbol })).filter((v, i, a) => a.findIndex(t => t.name === v.name) === i);
+  const availableSymbols = instances
+    .map((i) => ({ name: parseInstanceName(i.name)?.symbol }))
+    .filter((v, i, a) => a.findIndex((t) => t.name === v.name) === i);
   const [values, setValues] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
   const [copiedField, setCopiedField] = useState('');
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [pendingChanges, setPendingChanges] = useState(null);
   const [changesSummary, setChangesSummary] = useState(null);
-  
+
   // Symbol-specific config state (v5.0) - Default to 'instance' for v6.0
   const [configMode, setConfigMode] = useState('instance'); // 'global' or 'instance'
   const [symbolConfig, setSymbolConfig] = useState({});
   const [symbolConfigLoading, setSymbolConfigLoading] = useState(false);
   const [activeSymbol, setActiveSymbol] = useState('BTCUSD'); // Default symbol for config panel
-  
+
   // Runtime confirmation state
   const [runtimeConfirmNeeded, setRuntimeConfirmNeeded] = useState(false);
   const [confirmFileHint, setConfirmFileHint] = useState('');
-  
+
   // Enhanced UI state
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'changed', 'critical', 'empty'
@@ -96,27 +98,30 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   }, [config, computeFlatValues]);
 
   // Fetch symbol-specific config when switching to symbol mode
-  const fetchSymbolConfig = useCallback(async (symbol) => {
-    const targetSymbol = symbol || activeSymbol;
-    if (!targetSymbol) return;
-    
-    setSymbolConfigLoading(true);
-    try {
-      const result = await apiClient.getSymbolConfig(targetSymbol);
-      if (result.success) {
-        setSymbolConfig(result.config || {});
-        // When in symbol mode, use symbol config values
-        // Only update values if user hasn't made changes (prevents clearing while typing)
-        if (configMode === 'instance' && !hasChanges) {
-          setValues(result.config || {});
+  const fetchSymbolConfig = useCallback(
+    async (symbol) => {
+      const targetSymbol = symbol || activeSymbol;
+      if (!targetSymbol) return;
+
+      setSymbolConfigLoading(true);
+      try {
+        const result = await apiClient.getSymbolConfig(targetSymbol);
+        if (result.success) {
+          setSymbolConfig(result.config || {});
+          // When in symbol mode, use symbol config values
+          // Only update values if user hasn't made changes (prevents clearing while typing)
+          if (configMode === 'instance' && !hasChanges) {
+            setValues(result.config || {});
+          }
         }
+      } catch (error) {
+        console.error('Failed to fetch symbol config:', error);
+      } finally {
+        setSymbolConfigLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to fetch symbol config:', error);
-    } finally {
-      setSymbolConfigLoading(false);
-    }
-  }, [activeSymbol, configMode, hasChanges]);
+    },
+    [activeSymbol, configMode, hasChanges]
+  );
 
   // Reload symbol config when activeSymbol changes
   useEffect(() => {
@@ -126,36 +131,44 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   }, [activeSymbol, configMode, fetchSymbolConfig]);
 
   // Handle symbol change
-  const handleSymbolChange = useCallback(async (newSymbol) => {
-    if (newSymbol === activeSymbol) return;
-    
-    if (hasChanges) {
-      const confirmSwitch = window.confirm(`You have unsaved changes for ${activeSymbol}. Switch to ${newSymbol} anyway?`);
-      if (!confirmSwitch) return;
-    }
-    
-    setActiveSymbol(newSymbol);
-    setHasChanges(false);
-    // Fetch new symbol config will happen via useEffect
-  }, [activeSymbol, hasChanges]);
+  const handleSymbolChange = useCallback(
+    async (newSymbol) => {
+      if (newSymbol === activeSymbol) return;
 
-  // Handle config mode toggle
-  const handleConfigModeChange = useCallback((event, newMode) => {
-    if (newMode && newMode !== configMode) {
       if (hasChanges) {
-        const confirmSwitch = window.confirm('You have unsaved changes. Switch anyway?');
+        const confirmSwitch = window.confirm(
+          `You have unsaved changes for ${activeSymbol}. Switch to ${newSymbol} anyway?`
+        );
         if (!confirmSwitch) return;
       }
-      setConfigMode(newMode);
+
+      setActiveSymbol(newSymbol);
       setHasChanges(false);
-      
-      if (newMode === 'symbol') {
-        fetchSymbolConfig();
-      } else {
-        setValues(computeFlatValues(config));
+      // Fetch new symbol config will happen via useEffect
+    },
+    [activeSymbol, hasChanges]
+  );
+
+  // Handle config mode toggle
+  const handleConfigModeChange = useCallback(
+    (event, newMode) => {
+      if (newMode && newMode !== configMode) {
+        if (hasChanges) {
+          const confirmSwitch = window.confirm('You have unsaved changes. Switch anyway?');
+          if (!confirmSwitch) return;
+        }
+        setConfigMode(newMode);
+        setHasChanges(false);
+
+        if (newMode === 'symbol') {
+          fetchSymbolConfig();
+        } else {
+          setValues(computeFlatValues(config));
+        }
       }
-    }
-  }, [configMode, hasChanges, config, fetchSymbolConfig, computeFlatValues]);
+    },
+    [configMode, hasChanges, config, fetchSymbolConfig, computeFlatValues]
+  );
 
   // Check for runtime confirmation periodically
   useEffect(() => {
@@ -185,7 +198,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       const response = await fetch('http://localhost:5555/api/config/confirm-runtime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm_file: confirmFileHint })
+        body: JSON.stringify({ confirm_file: confirmFileHint }),
       });
       const result = await response.json();
       if (result.success) {
@@ -200,13 +213,13 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   };
 
   const handleChange = (key, value) => {
-    setValues(prev => ({ ...prev, [key]: value }));
+    setValues((prev) => ({ ...prev, [key]: value }));
     setHasChanges(true);
   };
 
   const handleSave = async () => {
     let result;
-    
+
     if (configMode === 'instance') {
       // Use symbol-specific save endpoint with activeSymbol
       try {
@@ -224,7 +237,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       // Use global config save
       result = await onUpdate(values);
     }
-    
+
     // Check if confirmation is required (global mode only)
     if (result?.requiresConfirmation) {
       setPendingChanges(result.updates);
@@ -237,14 +250,14 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
   const handleConfirmChanges = async () => {
     setConfirmDialogOpen(false);
-    
+
     // Send the changes again with confirmed flag
     const result = await onUpdate(pendingChanges, true);
-    
+
     if (result?.success) {
       setHasChanges(false);
     }
-    
+
     setPendingChanges(null);
     setChangesSummary(null);
   };
@@ -267,16 +280,16 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   const handleClearMemory = async () => {
     const confirmed = window.confirm(
       '⚠️ Clear Bot Memory\n\n' +
-      'This will:\n' +
-      '• Delete bot\'s state file\n' +
-      '• Clear position/order tracking\n' +
-      '• Create backup of current state\n\n' +
-      'This will NOT:\n' +
-      '✗ Cancel orders on exchange\n' +
-      '✗ Close positions\n' +
-      '✗ Stop the bot\n\n' +
-      '⚠️ Have you cancelled all orders on Delta Exchange?\n\n' +
-      'Continue?'
+        'This will:\n' +
+        "• Delete bot's state file\n" +
+        '• Clear position/order tracking\n' +
+        '• Create backup of current state\n\n' +
+        'This will NOT:\n' +
+        '✗ Cancel orders on exchange\n' +
+        '✗ Close positions\n' +
+        '✗ Stop the bot\n\n' +
+        '⚠️ Have you cancelled all orders on Delta Exchange?\n\n' +
+        'Continue?'
     );
 
     if (!confirmed) return;
@@ -284,7 +297,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     try {
       const response = await fetch('http://localhost:5555/api/bot/clear-memory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
 
       const data = await response.json();
@@ -292,10 +305,10 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       if (data.success) {
         alert(
           '✅ Bot Memory Cleared!\n\n' +
-          `Mode: ${data.trading_mode}\n` +
-          `Backup: ${data.backup_created ? 'Yes' : 'No'}\n` +
-          (data.backup_path ? `Backup file: ${data.backup_path}\n` : '') +
-          '\nYou can now safely change grid configuration.'
+            `Mode: ${data.trading_mode}\n` +
+            `Backup: ${data.backup_created ? 'Yes' : 'No'}\n` +
+            (data.backup_path ? `Backup file: ${data.backup_path}\n` : '') +
+            '\nYou can now safely change grid configuration.'
         );
       } else {
         alert(`❌ Error: ${data.error || 'Failed to clear memory'}`);
@@ -315,66 +328,88 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
   // Helper: Reset single field to original value
   const handleFieldReset = (key) => {
     const originalValue = config[key]?.value ?? '';
-    setValues(prev => ({ ...prev, [key]: originalValue }));
-    const hasOtherChanges = Object.keys(values).some(k => 
-      k !== key && values[k] !== (config[k]?.value ?? '')
+    setValues((prev) => ({ ...prev, [key]: originalValue }));
+    const hasOtherChanges = Object.keys(values).some(
+      (k) => k !== key && values[k] !== (config[k]?.value ?? '')
     );
     setHasChanges(hasOtherChanges);
   };
 
   // Comprehensive help text for all configuration fields
   const fieldHelp = {
-    GRIDBOT_GRID_MODE: 'LONG: Buy below current price (bullish) | SHORT: Sell above current price (bearish). Affects new order placement direction.',
-    GRIDBOT_SYMBOL: 'Trading pair symbol (e.g., BTCUSDT). Must match Delta Exchange symbol exactly.',
-    GRIDBOT_REF: 'Reference price for grid calculation. Usually set to current market price at bot start.',
-    GRIDBOT_STEP: 'Price difference between grid levels. Example: $1000 means grids at $109k, $110k, $111k, etc.',
+    GRIDBOT_GRID_MODE:
+      'LONG: Buy below current price (bullish) | SHORT: Sell above current price (bearish). Affects new order placement direction.',
+    GRIDBOT_SYMBOL:
+      'Trading pair symbol (e.g., BTCUSDT). Must match Delta Exchange symbol exactly.',
+    GRIDBOT_REF:
+      'Reference price for grid calculation. Usually set to current market price at bot start.',
+    GRIDBOT_STEP:
+      'Price difference between grid levels. Example: $1000 means grids at $109k, $110k, $111k, etc.',
     GRIDBOT_LOT: 'Position size per grid level in base currency (e.g., 3 = 0.003 BTC per level).',
-    GRIDBOT_LOWER: 'Minimum price boundary. Bot won\'t place orders below this level.',
-    GRIDBOT_UPPER: 'Maximum price boundary. Bot won\'t place orders above this level.',
+    GRIDBOT_LOWER: "Minimum price boundary. Bot won't place orders below this level.",
+    GRIDBOT_UPPER: "Maximum price boundary. Bot won't place orders above this level.",
     GRIDBOT_MAX_OPEN: 'Maximum number of simultaneous open positions allowed.',
     GRIDBOT_HB_SEC: 'Interval in seconds for bot health heartbeat updates.',
-    GRIDBOT_SEED_INITIAL_COUNT: 'Number of grid orders to place immediately at startup. 0 = disabled. Works with current Grid Mode (LONG/SHORT).',
-    SMART_GAP_FILL: 'Automatically fill missed grid levels when price moves quickly through multiple grids.',
+    GRIDBOT_SEED_INITIAL_COUNT:
+      'Number of grid orders to place immediately at startup. 0 = disabled. Works with current Grid Mode (LONG/SHORT).',
+    SMART_GAP_FILL:
+      'Automatically fill missed grid levels when price moves quickly through multiple grids.',
     GAP_FILL_ORDER_TYPE: 'Order type for gap filling: "auto", "market", or "limit".',
     MAX_GAP_FILL_LEVELS: 'Maximum number of grid levels to fill in one gap-fill operation.',
-    GRIDBOT_STRICT_GRID: 'ON: Only trade at exact grid levels | OFF: Allow slight price deviations for faster fills.',
-    GRIDBOT_RUNG_SNAP_MODE: 'How to align filled orders to grid: "nearest", "floor", "ceil", or "none".',
+    GRIDBOT_STRICT_GRID:
+      'ON: Only trade at exact grid levels | OFF: Allow slight price deviations for faster fills.',
+    GRIDBOT_RUNG_SNAP_MODE:
+      'How to align filled orders to grid: "nearest", "floor", "ceil", or "none".',
     GRIDBOT_TICK_SIZE: 'Minimum price increment (e.g., 0.01). Orders round to this precision.',
-    GRIDBOT_DYNAMIC_TICK_SIZE: 'ON: Automatically adjust tick size based on price level | OFF: Use fixed tick size.',
-    GRIDBOT_STRICT_START: 'ON: Abort if startup conditions aren\'t perfect | OFF: Continue with warnings.',
-    GRIDBOT_FORGET_EXCHANGE_ON_START: 'ON: Ignore existing exchange state and start fresh | OFF: Resume from exchange state.',
-    GRIDBOT_ENABLE_SMART_RECOVERY: 'ON: Automatically recover from grid drift and position mismatches | OFF: Manual intervention required.',
-    GRIDBOT_CANCEL_ALL_ON_START: 'ON: Cancel all existing orders before starting | OFF: Keep existing orders.',
+    GRIDBOT_DYNAMIC_TICK_SIZE:
+      'ON: Automatically adjust tick size based on price level | OFF: Use fixed tick size.',
+    GRIDBOT_STRICT_START:
+      "ON: Abort if startup conditions aren't perfect | OFF: Continue with warnings.",
+    GRIDBOT_FORGET_EXCHANGE_ON_START:
+      'ON: Ignore existing exchange state and start fresh | OFF: Resume from exchange state.',
+    GRIDBOT_ENABLE_SMART_RECOVERY:
+      'ON: Automatically recover from grid drift and position mismatches | OFF: Manual intervention required.',
+    GRIDBOT_CANCEL_ALL_ON_START:
+      'ON: Cancel all existing orders before starting | OFF: Keep existing orders.',
     GRIDBOT_CANCEL_SCOPE: 'Scope for order cancellation: "all", "symbol", or "grid-tagged".',
-    GRIDBOT_TAG_PREFIX: 'Prefix for order tags to identify bot orders (e.g., "GRIDBOT_"). Used for tracking.',
-    GRIDBOT_ADOPT_UNTAGGED: 'ON: Adopt untagged positions matching grid criteria | OFF: Only manage tagged orders.',
-    GRIDBOT_POST_ONLY_MODE: 'ON: Only use POST orders (never take liquidity) | OFF: Allow market taker orders.',
+    GRIDBOT_TAG_PREFIX:
+      'Prefix for order tags to identify bot orders (e.g., "GRIDBOT_"). Used for tracking.',
+    GRIDBOT_ADOPT_UNTAGGED:
+      'ON: Adopt untagged positions matching grid criteria | OFF: Only manage tagged orders.',
+    GRIDBOT_POST_ONLY_MODE:
+      'ON: Only use POST orders (never take liquidity) | OFF: Allow market taker orders.',
     GRIDBOT_FILL_THRESHOLD: 'Minimum fill percentage to consider order filled (0.95 = 95% filled).',
     GRIDBOT_MAX_RETRIES: 'Maximum retry attempts for failed operations before giving up.',
     GRIDBOT_RETRY_DELAY: 'Delay in seconds between retry attempts.',
     GRIDBOT_COOLDOWN_SECONDS: 'Cooldown period after errors before resuming normal operations.',
-    GRIDBOT_HEALTH_CHECK_ENABLED: 'ON: Enable periodic health monitoring | OFF: Disable health checks.',
+    GRIDBOT_HEALTH_CHECK_ENABLED:
+      'ON: Enable periodic health monitoring | OFF: Disable health checks.',
     GRIDBOT_HEALTH_CHECK_INTERVAL: 'Interval in seconds for health check operations.',
     GRIDBOT_LOG_PERFORMANCE: 'ON: Log detailed performance metrics | OFF: Minimal logging.',
     GRIDBOT_PERFORMANCE_INTERVAL: 'Interval in seconds for performance metric logging.',
-    GRIDBOT_MAX_DRIFT_ALERTS: 'Maximum number of price drift alerts before triggering emergency mode.',
+    GRIDBOT_MAX_DRIFT_ALERTS:
+      'Maximum number of price drift alerts before triggering emergency mode.',
     GRIDBOT_MAX_DISRUPTION_EVENTS: 'Maximum market disruption events before pausing trading.',
-    GRIDBOT_EMERGENCY_PRICE_BUFFER: 'Price buffer percentage for emergency stop triggers (e.g., 2.0 = 2%).',
-    GRIDBOT_MARKET_DISRUPTION_COOLDOWN: 'Cooldown period in seconds after market disruption detection.',
+    GRIDBOT_EMERGENCY_PRICE_BUFFER:
+      'Price buffer percentage for emergency stop triggers (e.g., 2.0 = 2%).',
+    GRIDBOT_MARKET_DISRUPTION_COOLDOWN:
+      'Cooldown period in seconds after market disruption detection.',
     I_UNDERSTAND_LIVE: 'CRITICAL: Must be ON to enable live trading. Safety acknowledgment.',
     EXECUTE_ORDERS: 'CRITICAL: ON = Place real orders | OFF = Dry-run simulation mode.',
     MAX_ACCOUNT_LOSS_INR: 'Maximum acceptable account loss in INR before emergency shutdown.',
     USD_TO_INR_RATE: 'USD to INR conversion rate for loss calculation.',
     MAX_QTY_PER_ORDER: 'Maximum position size per single order (safety limit).',
     MAINTENANCE_MARGIN_PERCENT: 'Maintenance margin percentage required by exchange.',
-    AUTO_MARGIN_TOPUP_ENABLED: 'ON: Automatically add margin when approaching liquidation | OFF: Manual top-up only.',
+    AUTO_MARGIN_TOPUP_ENABLED:
+      'ON: Automatically add margin when approaching liquidation | OFF: Manual top-up only.',
     AUTO_TOPUP_THRESHOLD: 'Margin ratio threshold to trigger automatic top-up (e.g., 1.5 = 150%).',
     AUTO_TOPUP_TARGET: 'Target margin ratio after automatic top-up (e.g., 3.0 = 300%).',
     MAX_TOPUPS_PER_POSITION: 'Maximum number of automatic margin top-ups per position.',
-    MIN_BALANCE_RESERVE_PERCENT: 'Minimum balance to reserve, won\'t use for margin (percentage).',
+    MIN_BALANCE_RESERVE_PERCENT: "Minimum balance to reserve, won't use for margin (percentage).",
     MARGIN_WARNING_THRESHOLD: 'Margin ratio for warning alerts (e.g., 2.0 = 200%).',
     MARGIN_DANGER_THRESHOLD: 'Margin ratio for danger alerts (e.g., 1.5 = 150%).',
-    MARGIN_CRITICAL_THRESHOLD: 'Margin ratio for critical alerts and emergency actions (e.g., 1.2 = 120%).',
+    MARGIN_CRITICAL_THRESHOLD:
+      'Margin ratio for critical alerts and emergency actions (e.g., 1.2 = 120%).',
     DISTANCE_TO_LIQ_WARNING: 'Distance to liquidation price warning threshold (percentage).',
     TELEGRAM_BOT_TOKEN: 'Telegram bot token for notifications. Get from @BotFather.',
     TELEGRAM_CHAT_ID: 'Telegram chat ID for receiving bot notifications.',
@@ -396,7 +431,12 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       compact: true, // Show in compact 3-column layout
       description: 'Core grid parameters and trading direction (LONG/SHORT)',
       fields: [
-        { key: 'GRIDBOT_GRID_MODE', label: '⚡ Grid Mode (LONG/SHORT)', placeholder: 'LONG', highlight: true },
+        {
+          key: 'GRIDBOT_GRID_MODE',
+          label: '⚡ Grid Mode (LONG/SHORT)',
+          placeholder: 'LONG',
+          highlight: true,
+        },
         { key: 'GRIDBOT_SYMBOL', label: 'Symbol', placeholder: 'BTCUSDT' },
         { key: 'GRIDBOT_REF', label: 'Reference Price', placeholder: '110000' },
         { key: 'GRIDBOT_STEP', label: 'Step Size', placeholder: '1000' },
@@ -415,7 +455,12 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       compact: false,
       description: 'Automatically place multiple grid orders at startup instead of waiting',
       fields: [
-        { key: 'GRIDBOT_SEED_INITIAL_COUNT', label: 'Number of Orders to Seed', placeholder: '0', highlight: true },
+        {
+          key: 'GRIDBOT_SEED_INITIAL_COUNT',
+          label: 'Number of Orders to Seed',
+          placeholder: '0',
+          highlight: true,
+        },
       ],
     },
     {
@@ -558,7 +603,12 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       importance: 'important',
       compact: false,
       fields: [
-        { key: 'TELEGRAM_BOT_TOKEN', label: 'Bot Token', type: 'password', placeholder: '123456:ABC-DEF...' },
+        {
+          key: 'TELEGRAM_BOT_TOKEN',
+          label: 'Bot Token',
+          type: 'password',
+          placeholder: '123456:ABC-DEF...',
+        },
         { key: 'TELEGRAM_CHAT_ID', label: 'Chat ID', placeholder: '-1001234567890' },
       ],
     },
@@ -587,44 +637,53 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       safety: [],
       advanced: [],
     };
-    
-    sections.forEach(section => {
+
+    sections.forEach((section) => {
       const title = section.title.toLowerCase();
       if (title.includes('grid geometry') || title.includes('simple seeding')) {
         tabs.essential.push(section);
-      } else if (title.includes('gap fill') || title.includes('grid behavior') || 
-                 title.includes('start behavior') || title.includes('order & execution')) {
+      } else if (
+        title.includes('gap fill') ||
+        title.includes('grid behavior') ||
+        title.includes('start behavior') ||
+        title.includes('order & execution')
+      ) {
         tabs.trading.push(section);
-      } else if (title.includes('execution safety') || title.includes('loss limits') || 
-                 title.includes('margin') || title.includes('emergency')) {
+      } else if (
+        title.includes('execution safety') ||
+        title.includes('loss limits') ||
+        title.includes('margin') ||
+        title.includes('emergency')
+      ) {
         tabs.safety.push(section);
       } else {
         tabs.advanced.push(section);
       }
     });
-    
+
     return tabs;
   }, []);
 
   // Filter sections for a tab
   const filterSectionsForTab = (tabSectionsArray) => {
-    let filtered = tabSectionsArray.map(section => {
+    let filtered = tabSectionsArray.map((section) => {
       let sectionFields = section.fields;
-      
+
       // Apply search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        sectionFields = sectionFields.filter(field => 
-          field.key.toLowerCase().includes(query) ||
-          field.label.toLowerCase().includes(query) ||
-          (fieldHelp[field.key] || '').toLowerCase().includes(query) ||
-          section.title.toLowerCase().includes(query)
+        sectionFields = sectionFields.filter(
+          (field) =>
+            field.key.toLowerCase().includes(query) ||
+            field.label.toLowerCase().includes(query) ||
+            (fieldHelp[field.key] || '').toLowerCase().includes(query) ||
+            section.title.toLowerCase().includes(query)
         );
       }
-      
+
       // Apply filter mode
       if (filterMode === 'changed') {
-        sectionFields = sectionFields.filter(field => {
+        sectionFields = sectionFields.filter((field) => {
           const current = values[field.key] || '';
           const original = config[field.key]?.value ?? '';
           return current !== original;
@@ -632,17 +691,17 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       } else if (filterMode === 'critical') {
         sectionFields = section.importance === 'critical' ? sectionFields : [];
       } else if (filterMode === 'empty') {
-        sectionFields = sectionFields.filter(field => !values[field.key]);
+        sectionFields = sectionFields.filter((field) => !values[field.key]);
       }
-      
+
       return { ...section, filteredFields: sectionFields };
     });
-    
+
     // Filter out sections with no fields (only when search/filter active)
     if (searchQuery.trim() || filterMode !== 'all') {
-      filtered = filtered.filter(section => section.filteredFields.length > 0);
+      filtered = filtered.filter((section) => section.filteredFields.length > 0);
     }
-    
+
     return filtered;
   };
 
@@ -655,7 +714,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
   // Count changed fields
   const changedCount = useMemo(() => {
-    return Object.keys(values).filter(k => values[k] !== (config[k]?.value ?? '')).length;
+    return Object.keys(values).filter((k) => values[k] !== (config[k]?.value ?? '')).length;
   }, [values, config]);
 
   // Tab definitions
@@ -675,7 +734,16 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     const gridSpan = upper - lower;
 
     // Core fields (always visible)
-    const coreFields = ['GRIDBOT_GRID_MODE', 'GRIDBOT_SYMBOL', 'GRIDBOT_REF', 'GRIDBOT_STEP', 'GRIDBOT_LOT', 'GRIDBOT_LOWER', 'GRIDBOT_UPPER', 'GRIDBOT_MAX_OPEN'];
+    const coreFields = [
+      'GRIDBOT_GRID_MODE',
+      'GRIDBOT_SYMBOL',
+      'GRIDBOT_REF',
+      'GRIDBOT_STEP',
+      'GRIDBOT_LOT',
+      'GRIDBOT_LOWER',
+      'GRIDBOT_UPPER',
+      'GRIDBOT_MAX_OPEN',
+    ];
     // Advanced fields (collapsible)
     const advancedFields = ['GRIDBOT_HB_SEC'];
 
@@ -687,7 +755,10 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       return (
         <Box key={key} sx={{ mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-            <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.75rem', color: 'text.secondary' }}>
+            <Typography
+              variant="caption"
+              sx={{ fontWeight: 500, fontSize: '0.75rem', color: 'text.secondary' }}
+            >
               {label}
             </Typography>
             {help && (
@@ -704,8 +775,12 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             type={numeric ? 'number' : 'text'}
             variant="outlined"
             InputProps={{
-              endAdornment: unit ? <InputAdornment position="end"><Typography variant="caption">{unit}</Typography></InputAdornment> : null,
-              sx: { height: 36, fontSize: '0.875rem' }
+              endAdornment: unit ? (
+                <InputAdornment position="end">
+                  <Typography variant="caption">{unit}</Typography>
+                </InputAdornment>
+              ) : null,
+              sx: { height: 36, fontSize: '0.875rem' },
             }}
             sx={{
               '& .MuiOutlinedInput-root': {
@@ -723,7 +798,16 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
       <Box>
         {/* Symbol Selector */}
         <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.75rem', color: 'text.secondary', mb: 0.5, display: 'block' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 500,
+              fontSize: '0.75rem',
+              color: 'text.secondary',
+              mb: 0.5,
+              display: 'block',
+            }}
+          >
             Symbol
           </Typography>
           <ToggleButtonGroup
@@ -733,37 +817,45 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             fullWidth
             sx={{ height: 40, mb: 2 }}
           >
-            <ToggleButton 
-              value="BTCUSD" 
-              sx={{ 
-                bgcolor: activeSymbol === 'BTCUSD' ? '#2196F3 !important' : 'rgba(255, 255, 255, 0.05)',
+            <ToggleButton
+              value="BTCUSD"
+              sx={{
+                bgcolor:
+                  activeSymbol === 'BTCUSD' ? '#2196F3 !important' : 'rgba(255, 255, 255, 0.05)',
                 color: activeSymbol === 'BTCUSD' ? 'white !important' : 'text.secondary',
                 fontWeight: 'bold',
                 borderRadius: '20px 0 0 20px',
                 boxShadow: activeSymbol === 'BTCUSD' ? '0 0 12px rgba(33, 150, 243, 0.4)' : 'none',
-                '&:hover': { bgcolor: activeSymbol === 'BTCUSD' ? '#1976D2 !important' : 'rgba(33, 150, 243, 0.1)' }
+                '&:hover': {
+                  bgcolor:
+                    activeSymbol === 'BTCUSD' ? '#1976D2 !important' : 'rgba(33, 150, 243, 0.1)',
+                },
               }}
             >
               BTCUSD
             </ToggleButton>
-            <ToggleButton 
-              value="ETHUSD" 
-              sx={{ 
-                bgcolor: activeSymbol === 'ETHUSD' ? '#9C27B0 !important' : 'rgba(255, 255, 255, 0.05)',
+            <ToggleButton
+              value="ETHUSD"
+              sx={{
+                bgcolor:
+                  activeSymbol === 'ETHUSD' ? '#9C27B0 !important' : 'rgba(255, 255, 255, 0.05)',
                 color: activeSymbol === 'ETHUSD' ? 'white !important' : 'text.secondary',
                 fontWeight: 'bold',
                 borderRadius: '0 20px 20px 0',
                 boxShadow: activeSymbol === 'ETHUSD' ? '0 0 12px rgba(156, 39, 176, 0.4)' : 'none',
-                '&:hover': { bgcolor: activeSymbol === 'ETHUSD' ? '#7B1FA2 !important' : 'rgba(156, 39, 176, 0.1)' }
+                '&:hover': {
+                  bgcolor:
+                    activeSymbol === 'ETHUSD' ? '#7B1FA2 !important' : 'rgba(156, 39, 176, 0.1)',
+                },
               }}
             >
               ETHUSD
             </ToggleButton>
           </ToggleButtonGroup>
           {symbolConfigLoading && (
-            <Chip 
-              label="Loading configuration..." 
-              size="small" 
+            <Chip
+              label="Loading configuration..."
+              size="small"
               sx={{ bgcolor: 'rgba(33, 150, 243, 0.1)', color: '#2196F3', fontSize: '0.75rem' }}
             />
           )}
@@ -771,7 +863,16 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
         {/* Grid Mode - Segmented Toggle */}
         <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.75rem', color: 'text.secondary', mb: 0.5, display: 'block' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 500,
+              fontSize: '0.75rem',
+              color: 'text.secondary',
+              mb: 0.5,
+              display: 'block',
+            }}
+          >
             Trading Direction
           </Typography>
           <ToggleButtonGroup
@@ -781,29 +882,29 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             fullWidth
             sx={{ height: 40 }}
           >
-            <ToggleButton 
-              value="LONG" 
-              sx={{ 
+            <ToggleButton
+              value="LONG"
+              sx={{
                 bgcolor: isLong ? '#4CAF50 !important' : 'rgba(255, 255, 255, 0.05)',
                 color: isLong ? 'white !important' : 'text.secondary',
                 fontWeight: 'bold',
                 borderRadius: '20px 0 0 20px',
                 boxShadow: isLong ? '0 0 12px rgba(76, 175, 80, 0.4)' : 'none',
-                '&:hover': { bgcolor: isLong ? '#45a049 !important' : 'rgba(76, 175, 80, 0.1)' }
+                '&:hover': { bgcolor: isLong ? '#45a049 !important' : 'rgba(76, 175, 80, 0.1)' },
               }}
             >
               <TrendingUpIcon sx={{ fontSize: 18, mr: 0.5 }} />
               LONG
             </ToggleButton>
-            <ToggleButton 
-              value="SHORT" 
-              sx={{ 
+            <ToggleButton
+              value="SHORT"
+              sx={{
                 bgcolor: !isLong ? '#f44336 !important' : 'rgba(255, 255, 255, 0.05)',
                 color: !isLong ? 'white !important' : 'text.secondary',
                 fontWeight: 'bold',
                 borderRadius: '0 20px 20px 0',
                 boxShadow: !isLong ? '0 0 12px rgba(244, 67, 54, 0.4)' : 'none',
-                '&:hover': { bgcolor: !isLong ? '#e53935 !important' : 'rgba(244, 67, 54, 0.1)' }
+                '&:hover': { bgcolor: !isLong ? '#e53935 !important' : 'rgba(244, 67, 54, 0.1)' },
               }}
             >
               <TrendingDownIcon sx={{ fontSize: 18, mr: 0.5 }} />
@@ -814,31 +915,54 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
         {/* Core Parameters - 2 Column Grid */}
         <Grid container spacing={1.5}>
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_REF', 'Reference Price', 'USD', true)}</Grid>
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_SYMBOL', 'Symbol')}</Grid>
-          
-          <Grid item xs={12}><Divider sx={{ my: 0.5, opacity: 0.3 }} /></Grid>
-          
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_LOWER', 'Lower Bound', 'USD', true)}</Grid>
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_UPPER', 'Upper Bound', 'USD', true)}</Grid>
-          
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_REF', 'Reference Price', 'USD', true)}
+          </Grid>
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_SYMBOL', 'Symbol')}
+          </Grid>
+
+          <Grid item xs={12}>
+            <Divider sx={{ my: 0.5, opacity: 0.3 }} />
+          </Grid>
+
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_LOWER', 'Lower Bound', 'USD', true)}
+          </Grid>
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_UPPER', 'Upper Bound', 'USD', true)}
+          </Grid>
+
           {gridSpan > 0 && (
             <Grid item xs={12}>
-              <Chip 
+              <Chip
                 label={`Grid Span: ${lower.toLocaleString()} → ${upper.toLocaleString()} (${gridSpan.toLocaleString()} USD)`}
                 size="small"
-                sx={{ width: '100%', bgcolor: isLong ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)', color: isLong ? '#4CAF50' : '#f44336', fontWeight: 600 }}
+                sx={{
+                  width: '100%',
+                  bgcolor: isLong ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)',
+                  color: isLong ? '#4CAF50' : '#f44336',
+                  fontWeight: 600,
+                }}
               />
             </Grid>
           )}
-          
-          <Grid item xs={12}><Divider sx={{ my: 0.5, opacity: 0.3 }} /></Grid>
-          
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_STEP', 'Step Size', 'USD', true)}</Grid>
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_LOT', 'Lot Size', 'units', true)}</Grid>
-          
-          <Grid item xs={6}>{renderCompactField('GRIDBOT_MAX_OPEN', 'Max Open Positions', '', true)}</Grid>
-          
+
+          <Grid item xs={12}>
+            <Divider sx={{ my: 0.5, opacity: 0.3 }} />
+          </Grid>
+
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_STEP', 'Step Size', 'USD', true)}
+          </Grid>
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_LOT', 'Lot Size', 'units', true)}
+          </Grid>
+
+          <Grid item xs={6}>
+            {renderCompactField('GRIDBOT_MAX_OPEN', 'Max Open Positions', '', true)}
+          </Grid>
+
           {/* Advanced Options Toggle */}
           <Grid item xs={6}>
             <Button
@@ -846,7 +970,14 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
               size="small"
               variant="outlined"
               onClick={() => setShowAdvancedGeometry(!showAdvancedGeometry)}
-              endIcon={<ExpandMoreIcon sx={{ transform: showAdvancedGeometry ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }} />}
+              endIcon={
+                <ExpandMoreIcon
+                  sx={{
+                    transform: showAdvancedGeometry ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.3s',
+                  }}
+                />
+              }
               sx={{ mt: 3, height: 36, textTransform: 'none', fontSize: '0.75rem' }}
             >
               Advanced
@@ -858,7 +989,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
         {showAdvancedGeometry && (
           <Box sx={{ mt: 2, pt: 2, borderTop: '1px dashed rgba(255, 255, 255, 0.1)' }}>
             <Grid container spacing={1.5}>
-              <Grid item xs={12}>{renderCompactField('GRIDBOT_HB_SEC', 'Heartbeat Interval', 'sec', true)}</Grid>
+              <Grid item xs={12}>
+                {renderCompactField('GRIDBOT_HB_SEC', 'Heartbeat Interval', 'sec', true)}
+              </Grid>
             </Grid>
           </Box>
         )}
@@ -894,9 +1027,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
               {field.label}
             </Typography>
             {fieldHelp[field.key] && (
-              <Tooltip 
-                title={fieldHelp[field.key]} 
-                arrow 
+              <Tooltip
+                title={fieldHelp[field.key]}
+                arrow
                 placement="top"
                 PopperProps={{
                   sx: {
@@ -950,9 +1083,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
               {field.label}
             </Typography>
             {fieldHelp[field.key] && (
-              <Tooltip 
-                title={fieldHelp[field.key]} 
-                arrow 
+              <Tooltip
+                title={fieldHelp[field.key]}
+                arrow
                 placement="top"
                 PopperProps={{
                   sx: {
@@ -997,7 +1130,8 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           />
           {parseInt(value) > 0 && (
             <Alert severity="info" sx={{ mt: 1, fontSize: '0.85rem' }}>
-              Bot will place <strong>{value}</strong> grid orders at startup using <strong>{values['GRIDBOT_GRID_MODE'] || 'LONG'}</strong> mode
+              Bot will place <strong>{value}</strong> grid orders at startup using{' '}
+              <strong>{values['GRIDBOT_GRID_MODE'] || 'LONG'}</strong> mode
             </Alert>
           )}
         </Box>
@@ -1013,8 +1147,8 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
               {field.label}
             </Typography>
             {fieldHelp[field.key] && (
-              <Tooltip 
-                title={fieldHelp[field.key]} 
+              <Tooltip
+                title={fieldHelp[field.key]}
                 arrow
                 placement="top"
                 PopperProps={{
@@ -1085,9 +1219,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {field.label}
             {fieldHelp[field.key] && (
-              <Tooltip 
-                title={fieldHelp[field.key]} 
-                arrow 
+              <Tooltip
+                title={fieldHelp[field.key]}
+                arrow
                 placement="top"
                 PopperProps={{
                   sx: {
@@ -1130,16 +1264,19 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           },
         }}
         InputProps={{
-          style: { fontFamily: field.type === 'password' ? 'monospace' : 'inherit', fontSize: '0.9rem' },
+          style: {
+            fontFamily: field.type === 'password' ? 'monospace' : 'inherit',
+            fontSize: '0.9rem',
+          },
           endAdornment: (
             <InputAdornment position="end">
               {changed && (
-                <Tooltip 
+                <Tooltip
                   title="Reset to original value"
                   arrow
                   placement="top"
                   PopperProps={{
-                    sx: { zIndex: 9999 }
+                    sx: { zIndex: 9999 },
                   }}
                 >
                   <IconButton
@@ -1153,19 +1290,15 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                 </Tooltip>
               )}
               {value && (
-                <Tooltip 
+                <Tooltip
                   title={copiedField === field.key ? 'Copied!' : 'Copy value'}
                   arrow
                   placement="top"
                   PopperProps={{
-                    sx: { zIndex: 9999 }
+                    sx: { zIndex: 9999 },
                   }}
                 >
-                  <IconButton
-                    size="small"
-                    onClick={() => handleCopy(value, field.key)}
-                    edge="end"
-                  >
+                  <IconButton size="small" onClick={() => handleCopy(value, field.key)} edge="end">
                     {copiedField === field.key ? (
                       <CheckIcon sx={{ fontSize: 18, color: '#4CAF50' }} />
                     ) : (
@@ -1181,29 +1314,43 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
     );
   };
 
-  const legacyEntries = Object.entries(meta || {}).filter(([, info]) => (info?.legacy_sources || []).length > 0);
+  const legacyEntries = Object.entries(meta || {}).filter(
+    ([, info]) => (info?.legacy_sources || []).length > 0
+  );
 
   return (
     <Box sx={{ p: 0 }}>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}
+          >
             <SettingsIcon sx={{ fontSize: 28 }} />
             GridBot Configuration
             <SymbolBadge symbol={selectedSymbol} size="md" variant="solid" />
             {selectedMode && (
-              <Chip 
-                label={selectedMode} 
-                size="small" 
-                color={selectedMode === 'LONG' ? 'success' : 'error'} 
+              <Chip
+                label={selectedMode}
+                size="small"
+                color={selectedMode === 'LONG' ? 'success' : 'error'}
                 sx={{ ml: 0.5, fontSize: '0.7rem', height: 20 }}
               />
             )}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {configMode === 'instance' 
-              ? `Editing instance ${selectedSymbol}_${selectedMode} settings` 
+            {configMode === 'instance'
+              ? `Editing instance ${selectedSymbol}_${selectedMode} settings`
               : `Edit global bot parameters (applies to all instances)`}
           </Typography>
         </Box>
@@ -1233,7 +1380,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
               </Tooltip>
             </ToggleButton>
           </ToggleButtonGroup>
-          
+
           <Button
             variant="outlined"
             startIcon={<ResetIcon />}
@@ -1268,13 +1415,15 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             disabled={!hasChanges || loading || symbolConfigLoading}
             size="medium"
             sx={{
-              background: configMode === 'instance' 
-                ? 'linear-gradient(135deg, #f7931a 0%, #d77b10 100%)'
-                : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              background:
+                configMode === 'instance'
+                  ? 'linear-gradient(135deg, #f7931a 0%, #d77b10 100%)'
+                  : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               '&:hover': {
-                background: configMode === 'instance'
-                  ? 'linear-gradient(135deg, #d77b10 0%, #f7931a 100%)'
-                  : 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
+                background:
+                  configMode === 'instance'
+                    ? 'linear-gradient(135deg, #d77b10 0%, #f7931a 100%)'
+                    : 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
               },
             }}
           >
@@ -1285,22 +1434,19 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
       {/* Symbol Config Mode Info Banner */}
       {configMode === 'instance' && (
-        <Alert 
-          severity="info" 
-          sx={{ mb: 3 }}
-          icon={<LayersIcon />}
-        >
+        <Alert severity="info" sx={{ mb: 3 }} icon={<LayersIcon />}>
           <Typography variant="body2">
-            <strong>Symbol-Specific Config:</strong> Changes here only affect <strong>{selectedSymbol}</strong> trading. 
-            Grid parameters (Reference, Step, Lower/Upper bounds) are saved to <code>symbols.{selectedSymbol}</code> in config.
+            <strong>Symbol-Specific Config:</strong> Changes here only affect{' '}
+            <strong>{selectedSymbol}</strong> trading. Grid parameters (Reference, Step, Lower/Upper
+            bounds) are saved to <code>symbols.{selectedSymbol}</code> in config.
           </Typography>
         </Alert>
       )}
 
       {/* Runtime Confirmation Banner */}
       {runtimeConfirmNeeded && (
-        <Alert 
-          severity="warning" 
+        <Alert
+          severity="warning"
           sx={{ mb: 3 }}
           action={
             <Button color="inherit" size="small" onClick={handleManualConfirm}>
@@ -1312,8 +1458,8 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             ⚠️ Bot Waiting for Configuration Confirmation
           </Typography>
           <Typography variant="body2">
-            The bot has detected configuration changes and is paused. Click "Confirm Now" to proceed, 
-            or wait 10 minutes for automatic revert.
+            The bot has detected configuration changes and is paused. Click "Confirm Now" to
+            proceed, or wait 10 minutes for automatic revert.
           </Typography>
           <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.8 }}>
             File: {confirmFileHint}
@@ -1362,9 +1508,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                   onChange={(e, newMode) => newMode && setFilterMode(newMode)}
                   size="small"
                 >
-                  <ToggleButton value="all">
-                    All
-                  </ToggleButton>
+                  <ToggleButton value="all">All</ToggleButton>
                   <ToggleButton value="changed">
                     <Badge badgeContent={changedCount} color="warning">
                       Changed
@@ -1374,9 +1518,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                     <StarIcon sx={{ fontSize: 16, mr: 0.5 }} />
                     Critical
                   </ToggleButton>
-                  <ToggleButton value="empty">
-                    Empty
-                  </ToggleButton>
+                  <ToggleButton value="empty">Empty</ToggleButton>
                 </ToggleButtonGroup>
               </Box>
             </Grid>
@@ -1384,7 +1526,11 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           {searchQuery && (
             <Alert severity="info" sx={{ mt: 2, py: 0.5 }}>
               <Typography variant="body2">
-                Found <strong>{activeTabSections.reduce((sum, s) => sum + (s.filteredFields?.length || 0), 0)}</strong> settings matching "{searchQuery}"
+                Found{' '}
+                <strong>
+                  {activeTabSections.reduce((sum, s) => sum + (s.filteredFields?.length || 0), 0)}
+                </strong>{' '}
+                settings matching "{searchQuery}"
               </Typography>
             </Alert>
           )}
@@ -1461,7 +1607,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             <Tab
               key={tab.key}
               label={
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                <Box
+                  sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}
+                >
                   <Typography variant="body1">{tab.label}</Typography>
                   <Chip
                     label={tabSections[tab.key].reduce((sum, s) => sum + s.fields.length, 0)}
@@ -1489,9 +1637,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           <Grid container spacing={3}>
             {activeTabSections.map((section, index) => {
               const sectionFields = section.filteredFields || section.fields;
-              
+
               // Count changed fields in this section
-              const sectionChangedCount = sectionFields.filter(f => {
+              const sectionChangedCount = sectionFields.filter((f) => {
                 const current = values[f.key] || '';
                 const original = config[f.key]?.value ?? '';
                 return current !== original;
@@ -1516,7 +1664,9 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                       },
                     }}
                   >
-                    <CardContent sx={{ p: 2.5, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                    <CardContent
+                      sx={{ p: 2.5, flexGrow: 1, display: 'flex', flexDirection: 'column' }}
+                    >
                       {/* Section Header */}
                       <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Box sx={{ color: section.color, display: 'flex', alignItems: 'center' }}>
@@ -1540,7 +1690,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                           sx={{ borderColor: section.color, color: section.color }}
                         />
                       </Box>
-                      
+
                       {section.description && (
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, ml: 4 }}>
                           {section.description}
@@ -1555,12 +1705,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                       ) : (
                         <Grid container spacing={3} sx={{ mt: 0.5 }}>
                           {sectionFields.map((field) => (
-                            <Grid
-                              item
-                              xs={12}
-                              sm={6}
-                              key={field.key}
-                            >
+                            <Grid item xs={12} sm={6} key={field.key}>
                               {renderField(field)}
                             </Grid>
                           ))}
@@ -1588,15 +1733,17 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           ⚠️ CRITICAL SAFETY NOTICE
         </Typography>
         <Typography variant="body2" component="div">
-          • Configuration changes affect live trading immediately after save<br />
-          • Verify all settings before clicking "Save Configuration"<br />
-          • Stop the bot before modifying critical execution settings<br />
-          • Changes to Emergency Limits and Execution Safety require bot restart
+          • Configuration changes affect live trading immediately after save
+          <br />
+          • Verify all settings before clicking "Save Configuration"
+          <br />
+          • Stop the bot before modifying critical execution settings
+          <br />• Changes to Emergency Limits and Execution Safety require bot restart
         </Typography>
       </Alert>
 
       {/* Confirmation Dialog */}
-      <ConfigChangeConfirmDialog 
+      <ConfigChangeConfirmDialog
         open={confirmDialogOpen}
         onClose={handleCancelConfirm}
         onConfirm={handleConfirmChanges}

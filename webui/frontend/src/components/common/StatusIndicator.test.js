@@ -1,7 +1,11 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import StatusIndicator, { BotStatusIndicator, ConnectionStatusIndicator, OrderStatusIndicator } from './StatusIndicator';
+import StatusIndicator, {
+  BotStatusIndicator,
+  ConnectionStatusIndicator,
+  OrderStatusIndicator,
+} from './StatusIndicator';
 
 describe('StatusIndicator', () => {
   describe('Basic StatusIndicator', () => {
@@ -63,7 +67,7 @@ describe('StatusIndicator', () => {
 
     it('applies correct size classes', () => {
       const sizes = ['xs', 'sm', 'md', 'lg', 'xl'];
-      sizes.forEach(size => {
+      sizes.forEach((size) => {
         const { container } = render(<StatusIndicator size={size} />);
         const dot = container.querySelector('.relative.inline-flex span:last-child');
         expect(dot).toBeInTheDocument();

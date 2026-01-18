@@ -1,6 +1,6 @@
 /**
  * ConditionChecks - Display detailed condition check results
- * 
+ *
  * Shows which entry conditions passed/failed with explanations
  */
 
@@ -28,7 +28,7 @@ const ConditionChecks = ({ rules }) => {
       name: 'IV Filter',
       enabled: true,
       detail: `IV ${rules.entry.ivFilter.operator} ${rules.entry.ivFilter.value}%`,
-      type: 'entry'
+      type: 'entry',
     });
   }
 
@@ -38,7 +38,7 @@ const ConditionChecks = ({ rules }) => {
       name: 'Moneyness',
       enabled: true,
       detail: `Must be ${rules.entry.moneyness.toUpperCase()}`,
-      type: 'entry'
+      type: 'entry',
     });
   }
 
@@ -48,7 +48,7 @@ const ConditionChecks = ({ rules }) => {
       name: 'Premium Range',
       enabled: true,
       detail: `₹${rules.entry.premiumRange.min} - ₹${rules.entry.premiumRange.max}`,
-      type: 'entry'
+      type: 'entry',
     });
   }
 
@@ -58,7 +58,7 @@ const ConditionChecks = ({ rules }) => {
       name: 'Trading Hours',
       enabled: true,
       detail: `${rules.entry.timeFilter.startTime} - ${rules.entry.timeFilter.endTime}`,
-      type: 'entry'
+      type: 'entry',
     });
   }
 
@@ -68,7 +68,7 @@ const ConditionChecks = ({ rules }) => {
       name: 'Spot Price Range',
       enabled: true,
       detail: `$${rules.entry.underlyingPrice.min.toLocaleString()} - $${rules.entry.underlyingPrice.max.toLocaleString()}`,
-      type: 'entry'
+      type: 'entry',
     });
   }
 
@@ -78,7 +78,7 @@ const ConditionChecks = ({ rules }) => {
       name: 'Safe Mode',
       enabled: true,
       detail: 'Orders will be simulated only (no real trades)',
-      type: 'risk'
+      type: 'risk',
     });
   }
 
@@ -93,28 +93,28 @@ const ConditionChecks = ({ rules }) => {
   }
 
   return (
-    <Paper 
-      elevation={0} 
-      sx={{ 
-        p: 2, 
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
         bgcolor: 'background.default',
         border: '1px solid',
-        borderColor: 'divider'
+        borderColor: 'divider',
       }}
     >
       <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
         Active Conditions ({checks.length})
       </Typography>
-      
+
       <List dense>
         {checks.map((check, index) => (
-          <ListItem 
+          <ListItem
             key={index}
-            sx={{ 
+            sx={{
               py: 0.5,
               px: 1,
               borderRadius: 1,
-              '&:hover': { bgcolor: 'action.hover' }
+              '&:hover': { bgcolor: 'action.hover' },
             }}
           >
             <ListItemIcon sx={{ minWidth: 32 }}>
@@ -126,11 +126,7 @@ const ConditionChecks = ({ rules }) => {
                   <Typography variant="body2" fontWeight="medium">
                     {check.name}
                   </Typography>
-                  <Chip 
-                    label={check.type} 
-                    size="small" 
-                    sx={{ height: 16, fontSize: '9px' }}
-                  />
+                  <Chip label={check.type} size="small" sx={{ height: 16, fontSize: '9px' }} />
                 </Box>
               }
               secondary={

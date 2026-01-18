@@ -6,7 +6,7 @@ import { SymbolContext } from '../context/SymbolContext'; // Reference for conte
 
 /**
  * Multi-Instance Selector Component (v6.0)
- * 
+ *
  * Features:
  * - Dropdown instance selector (SYMBOL_MODE format: BTCUSD_LONG, ETHUSD_LONG)
  * - Real-time status indicators (active/stale/disabled)
@@ -33,19 +33,19 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
   useEffect(() => {
     if (instances.length === 0) return; // Wait for instances to load
     if (selectedInstance) return; // Already have selection
-    
+
     const saved = localStorage.getItem('selectedInstance');
     if (saved) {
-      const instance = instances.find(i => i.name === saved);
+      const instance = instances.find((i) => i.name === saved);
       if (instance) {
         setSelectedInstance(instance);
         if (onSymbolChange) onSymbolChange(instance.name);
         return;
       }
     }
-    
+
     // Auto-select first enabled instance
-    const firstEnabled = instances.find(i => i.enabled) || instances[0];
+    const firstEnabled = instances.find((i) => i.enabled) || instances[0];
     if (firstEnabled) {
       setSelectedInstance(firstEnabled);
       if (onSymbolChange) onSymbolChange(firstEnabled.name);
@@ -56,7 +56,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
     try {
       const response = await fetch('/api/instances');
       const data = await response.json();
-      
+
       if (data.instances) {
         // V6.0: Use instances array
         setInstances(data.instances);
@@ -64,12 +64,12 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
         setError(null);
       } else if (data.symbols) {
         // V5.0 fallback: Convert symbols to pseudo-instances
-        const pseudoInstances = data.symbols.map(s => ({
+        const pseudoInstances = data.symbols.map((s) => ({
           name: s.name,
           symbol: s.name,
           mode: 'LONG',
           enabled: s.enabled,
-          ...s
+          ...s,
         }));
         setInstances(pseudoInstances);
         setIsV6(false);
@@ -94,10 +94,10 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
 
   const getStatusIcon = (instance) => {
     if (!instance || !instance.enabled) return <AlertCircle className="h-4 w-4 text-slate-500" />;
-    
+
     // Check monitoring file status from instances API
     const status = instance.status || 'unknown';
-    
+
     switch (status) {
       case 'active':
         return <Activity className="h-4 w-4 text-emerald-400" />;
@@ -112,7 +112,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
 
   const getStatusColor = (instance) => {
     if (!instance || !instance.enabled) return 'bg-slate-700/50 border-slate-600';
-    
+
     const status = instance.status || 'unknown';
     switch (status) {
       case 'active':
@@ -128,7 +128,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
 
   const getStatusText = (instance) => {
     if (!instance || !instance.enabled) return 'Disabled';
-    
+
     const status = instance.status || 'unknown';
     switch (status) {
       case 'active':
@@ -146,7 +146,12 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
 
   if (loading) {
     return (
-      <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800/40', className)}>
+      <div
+        className={clsx(
+          'flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800/40',
+          className
+        )}
+      >
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-transparent" />
         <span className="text-xs text-slate-400">Loading instances...</span>
       </div>
@@ -155,7 +160,12 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
 
   if (error || instances.length === 0) {
     return (
-      <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg border border-rose-700/50 bg-rose-500/10', className)}>
+      <div
+        className={clsx(
+          'flex items-center gap-2 px-3 py-2 rounded-lg border border-rose-700/50 bg-rose-500/10',
+          className
+        )}
+      >
         <AlertCircle className="h-4 w-4 text-rose-400" />
         <span className="text-xs text-rose-400">{error || 'No instances'}</span>
       </div>
@@ -181,19 +191,15 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
               {selectedInstance?.name || 'Select Instance'}
             </p>
             <p className="text-[10px] text-slate-400">
-              {selectedInstance && (
-                isV6 
-                  ? `${selectedInstance.symbol} • ${selectedInstance.mode}` 
-                  : getStatusText(selectedInstance)
-              )}
+              {selectedInstance &&
+                (isV6
+                  ? `${selectedInstance.symbol} • ${selectedInstance.mode}`
+                  : getStatusText(selectedInstance))}
             </p>
           </div>
         </div>
         <ChevronDown
-          className={clsx(
-            'h-4 w-4 text-slate-400 transition-transform',
-            isOpen && 'rotate-180'
-          )}
+          className={clsx('h-4 w-4 text-slate-400 transition-transform', isOpen && 'rotate-180')}
         />
       </button>
 
@@ -221,22 +227,23 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
                 <div className="flex items-center gap-2">
                   {getStatusIcon(instance)}
                   <div className="text-left">
-                    <p className="text-xs font-semibold text-slate-100">
-                      {instance.name}
-                    </p>
+                    <p className="text-xs font-semibold text-slate-100">{instance.name}</p>
                     <p className="text-[10px] text-slate-400">
-                      {isV6 
-                        ? `${instance.symbol} • ${instance.mode}` 
-                        : `Product ID: ${instance.product_id}`
-                      }
+                      {isV6
+                        ? `${instance.symbol} • ${instance.mode}`
+                        : `Product ID: ${instance.product_id}`}
                     </p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
-                  <span className={clsx(
-                    'text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded',
-                    instance && instance.enabled ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'
-                  )}>
+                  <span
+                    className={clsx(
+                      'text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded',
+                      instance && instance.enabled
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-slate-700 text-slate-400'
+                    )}
+                  >
                     {getStatusText(instance)}
                   </span>
                   {instance.grid && (
@@ -252,12 +259,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
       </AnimatePresence>
 
       {/* Close dropdown on outside click */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-[18]"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+      {isOpen && <div className="fixed inset-0 z-[18]" onClick={() => setIsOpen(false)} />}
     </div>
   );
 };

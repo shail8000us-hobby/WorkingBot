@@ -1,12 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Paper, Typography, Grid, Chip, LinearProgress, 
-  Card, CardContent, Divider, Alert, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, Button
+  Box,
+  Paper,
+  Typography,
+  Grid,
+  Chip,
+  LinearProgress,
+  Card,
+  CardContent,
+  Divider,
+  Alert,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Button,
 } from '@mui/material';
 import {
-  Sync, CheckCircle, Warning, Description, Timer,
-  Refresh, CloudDone, Storage, CompareArrows, AccountBalance
+  Sync,
+  CheckCircle,
+  Warning,
+  Description,
+  Timer,
+  Refresh,
+  CloudDone,
+  Storage,
+  CompareArrows,
+  AccountBalance,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 import { useIdle } from '../context/IdleContext';
@@ -30,7 +52,7 @@ const SyncReconciliationPanel = ({ socket }) => {
     const fetchSyncData = async () => {
       try {
         const { data: result } = await api.get('/api/sync-report');
-        
+
         if (result.exists && result.data) {
           setSyncData(result.data);
           setSyncStatus(result.data.status || 'complete');
@@ -53,19 +75,27 @@ const SyncReconciliationPanel = ({ socket }) => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'syncing': return 'primary';
-      case 'complete': return 'success';
-      case 'error': return 'error';
-      default: return 'default';
+      case 'syncing':
+        return 'primary';
+      case 'complete':
+        return 'success';
+      case 'error':
+        return 'error';
+      default:
+        return 'default';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'syncing': return <Sync className="rotating" />;
-      case 'complete': return <CheckCircle />;
-      case 'error': return <Warning />;
-      default: return <Timer />;
+      case 'syncing':
+        return <Sync className="rotating" />;
+      case 'complete':
+        return <CheckCircle />;
+      case 'error':
+        return <Warning />;
+      default:
+        return <Timer />;
     }
   };
 
@@ -75,27 +105,25 @@ const SyncReconciliationPanel = ({ socket }) => {
     return (
       <Box sx={{ mb: 3 }}>
         <Alert severity="info" icon={<Sync className="rotating" />} sx={{ mb: 2 }}>
-          <Typography variant="h6">
-            🔄 Sync & Reconciliation in Progress...
-          </Typography>
+          <Typography variant="h6">🔄 Sync & Reconciliation in Progress...</Typography>
           <Typography variant="body2">
             Bot is taking {countdown}s to understand the current state before trading
           </Typography>
         </Alert>
-        
-        <LinearProgress 
-          variant="determinate" 
+
+        <LinearProgress
+          variant="determinate"
           value={countdown > 0 ? ((60 - countdown) / 60) * 100 : 0}
-          sx={{ 
-            height: 8, 
+          sx={{
+            height: 8,
             borderRadius: 1,
             mb: 2,
             '& .MuiLinearProgress-bar': {
-              background: 'linear-gradient(90deg, #00e676, #00c853)'
-            }
+              background: 'linear-gradient(90deg, #00e676, #00c853)',
+            },
           }}
         />
-        
+
         <Typography variant="body2" color="text.secondary" align="center">
           ⏰ Starting trading in {countdown} seconds...
         </Typography>
@@ -117,13 +145,13 @@ const SyncReconciliationPanel = ({ socket }) => {
       );
     }
 
-    const { 
-      total_orders = 0, 
-      bot_orders = 0, 
-      orphaned_orders = 0, 
+    const {
+      total_orders = 0,
+      bot_orders = 0,
+      orphaned_orders = 0,
       manual_orders = 0,
       positions = 0,
-      timestamp 
+      timestamp,
     } = syncData.summary || {};
 
     const hasIssues = orphaned_orders > 0 || manual_orders > 0;
@@ -131,7 +159,9 @@ const SyncReconciliationPanel = ({ socket }) => {
     return (
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12}>
-          <Card sx={{ background: hasIssues ? 'rgba(255, 152, 0, 0.1)' : 'rgba(0, 230, 118, 0.1)' }}>
+          <Card
+            sx={{ background: hasIssues ? 'rgba(255, 152, 0, 0.1)' : 'rgba(0, 230, 118, 0.1)' }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 {hasIssues ? (
@@ -143,50 +173,73 @@ const SyncReconciliationPanel = ({ socket }) => {
                   {hasIssues ? '⚠️ Issues Detected' : '✅ All Systems In Sync'}
                 </Typography>
               </Box>
-              
+
               <Grid container spacing={2}>
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" color="primary">{total_orders}</Typography>
-                    <Typography variant="caption" color="text.secondary">Total Orders</Typography>
+                    <Typography variant="h4" color="primary">
+                      {total_orders}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Total Orders
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: '#00e676' }}>{bot_orders}</Typography>
-                    <Typography variant="caption" color="text.secondary">In Sync</Typography>
+                    <Typography variant="h4" sx={{ color: '#00e676' }}>
+                      {bot_orders}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      In Sync
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: orphaned_orders > 0 ? '#ff9800' : '#666' }}>
+                    <Typography
+                      variant="h4"
+                      sx={{ color: orphaned_orders > 0 ? '#ff9800' : '#666' }}
+                    >
                       {orphaned_orders}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">Orphaned</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Orphaned
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
                     <Typography variant="h4" sx={{ color: manual_orders > 0 ? '#2196f3' : '#666' }}>
                       {manual_orders}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">Manual</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Manual
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={12} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: '#9c27b0' }}>{positions}</Typography>
-                    <Typography variant="caption" color="text.secondary">Positions</Typography>
+                    <Typography variant="h4" sx={{ color: '#9c27b0' }}>
+                      {positions}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Positions
+                    </Typography>
                   </Box>
                 </Grid>
               </Grid>
 
               {timestamp && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, textAlign: 'center' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mt: 2, textAlign: 'center' }}
+                >
                   Last sync: {new Date(timestamp).toLocaleString()}
                 </Typography>
               )}
@@ -208,7 +261,7 @@ const SyncReconciliationPanel = ({ socket }) => {
             {title} ({orders.length})
           </Typography>
         </Box>
-        
+
         <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
           <Table size="small" stickyHeader>
             <TableHead>
@@ -223,30 +276,30 @@ const SyncReconciliationPanel = ({ socket }) => {
               {orders.map((order, idx) => (
                 <TableRow key={idx} hover>
                   <TableCell>
-                    <Chip 
-                      label={order.side.toUpperCase()} 
+                    <Chip
+                      label={order.side.toUpperCase()}
                       size="small"
                       color={order.side === 'buy' ? 'success' : 'error'}
                       sx={{ fontWeight: 'bold', minWidth: 60 }}
                     />
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                    {parseFloat(order.price).toLocaleString('en-IN', { 
+                    {parseFloat(order.price).toLocaleString('en-IN', {
                       minimumFractionDigits: 1,
-                      maximumFractionDigits: 1 
+                      maximumFractionDigits: 1,
                     })}
                   </TableCell>
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
                     {order.id}
                   </TableCell>
                   <TableCell>
-                    <Chip 
-                      label={order.status} 
+                    <Chip
+                      label={order.status}
                       size="small"
-                      sx={{ 
+                      sx={{
                         bgcolor: color,
                         color: '#fff',
-                        fontWeight: 'bold'
+                        fontWeight: 'bold',
                       }}
                     />
                   </TableCell>
@@ -266,11 +319,9 @@ const SyncReconciliationPanel = ({ socket }) => {
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <AccountBalance sx={{ color: '#9c27b0', mr: 1 }} />
-          <Typography variant="h6">
-            Open Positions ({syncData.positions.length})
-          </Typography>
+          <Typography variant="h6">Open Positions ({syncData.positions.length})</Typography>
         </Box>
-        
+
         <TableContainer component={Paper}>
           <Table size="small">
             <TableHead>
@@ -284,21 +335,23 @@ const SyncReconciliationPanel = ({ socket }) => {
             <TableBody>
               {syncData.positions.map((pos, idx) => (
                 <TableRow key={idx} hover>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>
-                    {pos.size.toFixed(3)}
-                  </TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace' }}>{pos.size.toFixed(3)}</TableCell>
                   <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                     {parseFloat(pos.entry).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                     {parseFloat(pos.mark).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </TableCell>
-                  <TableCell align="right" sx={{ 
-                    fontFamily: 'monospace',
-                    color: pos.pnl >= 0 ? '#00e676' : '#ff6b6b',
-                    fontWeight: 'bold'
-                  }}>
-                    ${pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontFamily: 'monospace',
+                      color: pos.pnl >= 0 ? '#00e676' : '#ff6b6b',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    ${pos.pnl >= 0 ? '+' : ''}
+                    {pos.pnl.toFixed(2)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -319,8 +372,8 @@ const SyncReconciliationPanel = ({ socket }) => {
             Sync & Reconciliation
           </Typography>
         </Box>
-        
-        <Chip 
+
+        <Chip
           icon={getStatusIcon(syncStatus)}
           label={syncStatus.toUpperCase()}
           color={getStatusColor(syncStatus)}
@@ -362,18 +415,18 @@ const SyncReconciliationPanel = ({ socket }) => {
         <>
           {renderOrdersTable(
             syncData.bot_orders,
-            '🤖 Bot\'s Orders (In Sync)',
+            "🤖 Bot's Orders (In Sync)",
             '#00e676',
             <CheckCircle sx={{ color: '#00e676' }} />
           )}
-          
+
           {renderOrdersTable(
             syncData.orphaned_orders,
             '👻 Orphaned Orders',
             '#ff9800',
             <Warning sx={{ color: '#ff9800' }} />
           )}
-          
+
           {renderOrdersTable(
             syncData.manual_orders,
             '📝 Manual Orders',

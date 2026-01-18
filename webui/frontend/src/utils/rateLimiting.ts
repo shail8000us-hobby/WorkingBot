@@ -1,7 +1,7 @@
 /**
  * Rate Limiting & Debouncing Utilities
  * Prevents excessive API calls and button clicks
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 
@@ -15,8 +15,8 @@ export const debounce = <T extends (...args: any[]) => any>(
   delay: number = 300
 ): DebouncedFunction<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  
-  const debounced = function(this: any, ...args: Parameters<T>) {
+
+  const debounced = function (this: any, ...args: Parameters<T>) {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => func.apply(this, args), delay);
   };
@@ -35,7 +35,7 @@ export const throttle = <T extends (...args: any[]) => any>(
   let lastCall = 0;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  return function(this: any, ...args: Parameters<T>) {
+  return function (this: any, ...args: Parameters<T>) {
     const now = Date.now();
     const timeSinceLastCall = now - lastCall;
 
@@ -64,7 +64,7 @@ export class RateLimiter {
 
   canCall(): boolean {
     const now = Date.now();
-    this.calls = this.calls.filter(timestamp => now - timestamp < this.timeWindow);
+    this.calls = this.calls.filter((timestamp) => now - timestamp < this.timeWindow);
     return this.calls.length < this.maxCalls;
   }
 
@@ -84,7 +84,7 @@ export class RateLimiter {
 
   getCalls(): number {
     const now = Date.now();
-    this.calls = this.calls.filter(timestamp => now - timestamp < this.timeWindow);
+    this.calls = this.calls.filter((timestamp) => now - timestamp < this.timeWindow);
     return this.calls.length;
   }
 }

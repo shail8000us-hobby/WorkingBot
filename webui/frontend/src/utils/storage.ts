@@ -1,7 +1,7 @@
 /**
  * Persistent Storage Utility
  * Remembers user preferences and state across refreshes
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  * Safe: Pure localStorage wrapper, no trading logic
  */
@@ -47,11 +47,14 @@ class PersistentStorage {
         this.clearOldest();
         // Try again
         try {
-          localStorage.setItem(this.prefix + key, JSON.stringify({
-            value,
-            timestamp: Date.now(),
-            maxAge,
-          }));
+          localStorage.setItem(
+            this.prefix + key,
+            JSON.stringify({
+              value,
+              timestamp: Date.now(),
+              maxAge,
+            })
+          );
           return true;
         } catch (e) {
           console.error('Storage still full after cleanup:', e);
@@ -68,16 +71,16 @@ class PersistentStorage {
     try {
       const itemStr = localStorage.getItem(this.prefix + key);
       if (!itemStr) return defaultValue;
-      
+
       const item: StorageItem<T> = JSON.parse(itemStr);
       const age = Date.now() - item.timestamp;
-      
+
       // Check if expired
       if (age > item.maxAge) {
         this.remove(key);
         return defaultValue;
       }
-      
+
       return item.value;
     } catch (error) {
       console.error('Storage get error:', error);
@@ -104,7 +107,7 @@ class PersistentStorage {
   clear(): boolean {
     try {
       const keys = Object.keys(localStorage);
-      keys.forEach(key => {
+      keys.forEach((key) => {
         if (key.startsWith(this.prefix)) {
           localStorage.removeItem(key);
         }
@@ -123,8 +126,8 @@ class PersistentStorage {
     try {
       const keys = Object.keys(localStorage);
       return keys
-        .filter(key => key.startsWith(this.prefix))
-        .map(key => key.substring(this.prefix.length));
+        .filter((key) => key.startsWith(this.prefix))
+        .map((key) => key.substring(this.prefix.length));
     } catch (error) {
       console.error('Storage keys error:', error);
       return [];
@@ -146,7 +149,7 @@ class PersistentStorage {
     try {
       let size = 0;
       const keys = Object.keys(localStorage);
-      keys.forEach(key => {
+      keys.forEach((key) => {
         if (key.startsWith(this.prefix)) {
           const item = localStorage.getItem(key);
           size += item ? item.length : 0;
@@ -166,8 +169,8 @@ class PersistentStorage {
     try {
       const items: Array<{ key: string; timestamp: number }> = [];
       const keys = Object.keys(localStorage);
-      
-      keys.forEach(key => {
+
+      keys.forEach((key) => {
         if (key.startsWith(this.prefix)) {
           try {
             const item = JSON.parse(localStorage.getItem(key) || '{}');
@@ -181,13 +184,13 @@ class PersistentStorage {
 
       // Sort by timestamp (oldest first)
       items.sort((a, b) => a.timestamp - b.timestamp);
-      
+
       // Remove oldest 20%
       const toRemove = Math.ceil(items.length * 0.2);
       for (let i = 0; i < toRemove; i++) {
         localStorage.removeItem(items[i].key);
       }
-      
+
       console.log(`Cleared ${toRemove} oldest items from storage`);
     } catch (error) {
       console.error('Storage clearOldest error:', error);
@@ -199,7 +202,7 @@ class PersistentStorage {
    */
   export(): Record<string, any> {
     const data: Record<string, any> = {};
-    this.keys().forEach(key => {
+    this.keys().forEach((key) => {
       data[key] = this.get(key);
     });
     return data;
@@ -226,21 +229,21 @@ export const userPreferences = {
   set theme(value: string) {
     storage.set('theme', value);
   },
-  
+
   get expanded(): boolean {
     return storage.get<boolean>('errorPanel_expanded', true) ?? true;
   },
   set expanded(value: boolean) {
     storage.set('errorPanel_expanded', value);
   },
-  
+
   get selectedTab(): number {
     return storage.get<number>('selectedTab', 0) ?? 0;
   },
   set selectedTab(value: number) {
     storage.set('selectedTab', value);
   },
-  
+
   get autoRefresh(): boolean {
     return storage.get<boolean>('autoRefresh', true) ?? true;
   },

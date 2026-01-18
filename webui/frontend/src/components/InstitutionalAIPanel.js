@@ -16,7 +16,7 @@ import {
   Tabs,
   Tab,
   CircularProgress,
-  Divider
+  Divider,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -27,7 +27,7 @@ import {
   Lightbulb,
   Refresh,
   Chat,
-  Assessment
+  Assessment,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
@@ -50,7 +50,7 @@ export default function InstitutionalAIPanel() {
       console.log('🔄 Fetching AI analysis...');
       const response = await api.get('/api/institutional/comprehensive_analysis');
       console.log('📊 AI analysis response:', response.data);
-      
+
       if (response.data.success && response.data.analysis) {
         console.log('✅ Setting analysis data');
         setAnalysis(response.data.analysis);
@@ -67,14 +67,14 @@ export default function InstitutionalAIPanel() {
 
   const askAI = async () => {
     if (!question.trim()) return;
-    
+
     setAskingAI(true);
     console.log('🤖 Asking AI:', question);
-    
+
     try {
       const response = await api.post('/api/institutional/ask', { question });
       console.log('🤖 AI Response received:', response.data);
-      
+
       if (response.data.success) {
         // The API returns the full response data, not nested under 'response'
         console.log('✅ Setting AI response:', response.data);
@@ -84,14 +84,14 @@ export default function InstitutionalAIPanel() {
         console.warn('⚠️ AI request failed:', response.data);
         setAiResponse({
           answer: response.data.answer || '❌ Failed to get AI response',
-          success: false
+          success: false,
         });
       }
     } catch (error) {
       console.error('❌ Error asking AI:', error);
       setAiResponse({
         answer: `❌ Error: ${error.message}\n\nPlease check your connection and try again.`,
-        success: false
+        success: false,
       });
     }
     setAskingAI(false);
@@ -101,11 +101,11 @@ export default function InstitutionalAIPanel() {
     "How's my performance?",
     "What's my risk level?",
     "What's the market regime?",
-    "Should I trade now?",
-    "Show me bot status",
-    "What should I do?",
-    "Optimize my grid",
-    "Am I at risk of liquidation?"
+    'Should I trade now?',
+    'Show me bot status',
+    'What should I do?',
+    'Optimize my grid',
+    'Am I at risk of liquidation?',
   ];
 
   if (loading) {
@@ -135,18 +135,18 @@ export default function InstitutionalAIPanel() {
     <Box sx={{ width: '100%' }}>
       {/* Tabs - Spread evenly across full width with refresh button */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, gap: 1 }}>
-        <Tabs 
-          value={currentTab} 
-          onChange={(e, v) => setCurrentTab(v)} 
-          sx={{ 
+        <Tabs
+          value={currentTab}
+          onChange={(e, v) => setCurrentTab(v)}
+          sx={{
             flex: 1,
             '& .MuiTabs-flexContainer': {
-              justifyContent: 'space-between'
+              justifyContent: 'space-between',
             },
             '& .MuiTab-root': {
               flex: 1,
-              maxWidth: 'none'
-            }
+              maxWidth: 'none',
+            },
           }}
           variant="fullWidth"
         >
@@ -158,11 +158,7 @@ export default function InstitutionalAIPanel() {
           <Tab icon={<Chat />} label="Ask AI" />
         </Tabs>
         <Tooltip title="Refresh Analysis">
-          <IconButton 
-            onClick={fetchAnalysis} 
-            color="primary"
-            size="small"
-          >
+          <IconButton onClick={fetchAnalysis} color="primary" size="small">
             <Refresh />
           </IconButton>
         </Tooltip>
@@ -198,14 +194,19 @@ function OverviewTab({ analysis }) {
       {alerts && alerts.length > 0 && (
         <Grid item xs={12}>
           <Paper sx={{ p: 1, bgcolor: 'rgba(211, 47, 47, 0.1)', borderLeft: '4px solid #d32f2f' }}>
-            <Typography variant="subtitle1" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-              🔴 Critical Alerts ({alerts.filter(a => a.severity === 'CRITICAL').length})
+            <Typography
+              variant="subtitle1"
+              sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}
+            >
+              🔴 Critical Alerts ({alerts.filter((a) => a.severity === 'CRITICAL').length})
             </Typography>
-            {alerts.filter(a => a.severity === 'CRITICAL').map((alert, idx) => (
-              <Alert key={idx} severity="error" sx={{ mb: 1, py: 0.5 }}>
-                <strong>{alert.title}</strong>: {alert.message}
-              </Alert>
-            ))}
+            {alerts
+              .filter((a) => a.severity === 'CRITICAL')
+              .map((alert, idx) => (
+                <Alert key={idx} severity="error" sx={{ mb: 1, py: 0.5 }}>
+                  <strong>{alert.title}</strong>: {alert.message}
+                </Alert>
+              ))}
           </Paper>
         </Grid>
       )}
@@ -286,54 +287,107 @@ function OverviewTab({ analysis }) {
       {/* Bottom Section - Insights & Recommendations side by side */}
       <Grid item xs={12} md={6}>
         <Paper sx={{ p: 1, height: '100%', bgcolor: 'rgba(255, 255, 255, 0.02)' }}>
-          <Typography variant="subtitle1" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, color: '#FFA726' }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, color: '#FFA726' }}
+          >
             💡 Key Insights
           </Typography>
-          {insights && insights.slice(0, 5).map((insight, idx) => (
-            <Box key={idx} sx={{ mb: 1, pb: 1, borderBottom: idx < 4 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
-              <Chip
-                label={insight.category}
-                size="small"
-                color={insight.severity === 'positive' ? 'success' : insight.severity === 'warning' ? 'warning' : 'error'}
-                sx={{ mb: 0.75, height: 20, fontSize: '0.7rem' }}
-              />
-              <Typography variant="caption" sx={{ fontWeight: 'bold', mb: 0.5, display: 'block' }}>
-                {insight.icon} {insight.title}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                {insight.message}
-              </Typography>
-            </Box>
-          ))}
+          {insights &&
+            insights.slice(0, 5).map((insight, idx) => (
+              <Box
+                key={idx}
+                sx={{
+                  mb: 1,
+                  pb: 1,
+                  borderBottom: idx < 4 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                }}
+              >
+                <Chip
+                  label={insight.category}
+                  size="small"
+                  color={
+                    insight.severity === 'positive'
+                      ? 'success'
+                      : insight.severity === 'warning'
+                        ? 'warning'
+                        : 'error'
+                  }
+                  sx={{ mb: 0.75, height: 20, fontSize: '0.7rem' }}
+                />
+                <Typography
+                  variant="caption"
+                  sx={{ fontWeight: 'bold', mb: 0.5, display: 'block' }}
+                >
+                  {insight.icon} {insight.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                  {insight.message}
+                </Typography>
+              </Box>
+            ))}
         </Paper>
       </Grid>
 
       <Grid item xs={12} md={6}>
         <Paper sx={{ p: 1, height: '100%', bgcolor: 'rgba(255, 255, 255, 0.02)' }}>
-          <Typography variant="subtitle1" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, color: '#66BB6A' }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, color: '#66BB6A' }}
+          >
             🎯 Top Recommendations
           </Typography>
-          {recommendations && recommendations.slice(0, 3).map((rec, idx) => (
-            <Box key={idx} sx={{ mb: 1, pb: 1, borderBottom: idx < 2 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                  {rec.title}
+          {recommendations &&
+            recommendations.slice(0, 3).map((rec, idx) => (
+              <Box
+                key={idx}
+                sx={{
+                  mb: 1,
+                  pb: 1,
+                  borderBottom: idx < 2 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                }}
+              >
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    mb: 0.75,
+                  }}
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
+                    {rec.title}
+                  </Typography>
+                  <Chip
+                    label={rec.priority.toUpperCase()}
+                    size="small"
+                    color={
+                      rec.priority === 'critical'
+                        ? 'error'
+                        : rec.priority === 'high'
+                          ? 'warning'
+                          : 'info'
+                    }
+                    sx={{ height: 20, fontSize: '0.65rem' }}
+                  />
+                </Box>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: '0.75rem', mb: 0.5, display: 'block' }}
+                >
+                  <strong>Action:</strong> {rec.action}
                 </Typography>
-                <Chip
-                  label={rec.priority.toUpperCase()}
-                  size="small"
-                  color={rec.priority === 'critical' ? 'error' : rec.priority === 'high' ? 'warning' : 'info'}
-                  sx={{ height: 20, fontSize: '0.65rem' }}
-                />
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                  <strong>Impact:</strong> {rec.expected_impact}{' '}
+                  <Chip
+                    label={`${rec.confidence}%`}
+                    size="small"
+                    sx={{ ml: 0.5, height: 16, fontSize: '0.65rem' }}
+                  />
+                </Typography>
               </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', mb: 0.5, display: 'block' }}>
-                <strong>Action:</strong> {rec.action}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                <strong>Impact:</strong> {rec.expected_impact} <Chip label={`${rec.confidence}%`} size="small" sx={{ ml: 0.5, height: 16, fontSize: '0.65rem' }} />
-              </Typography>
-            </Box>
-          ))}
+            ))}
         </Paper>
       </Grid>
     </Grid>
@@ -350,15 +404,19 @@ function PerformanceTab({ analysis }) {
       {/* Section Header with Info */}
       <Grid item xs={12}>
         <Paper sx={{ p: 1, bgcolor: 'rgba(33, 150, 243, 0.05)', borderLeft: '4px solid #2196F3' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             📈 Risk-Adjusted Returns
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Metrics that measure returns relative to risk taken. Higher values indicate better risk-adjusted performance.
+            Metrics that measure returns relative to risk taken. Higher values indicate better
+            risk-adjusted performance.
           </Typography>
         </Paper>
       </Grid>
-      
+
       {/* 6 cards per row for better space utilization */}
       <Grid item xs={6} sm={4} md={3} lg={2}>
         <MetricCardWithTooltip
@@ -426,15 +484,19 @@ function PerformanceTab({ analysis }) {
       <Grid item xs={12}>
         <Divider sx={{ my: 1 }} />
         <Paper sx={{ p: 1, bgcolor: 'rgba(76, 175, 80, 0.05)', borderLeft: '4px solid #4CAF50' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             ⚖️ Win/Loss Statistics
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Core trading performance metrics. Win rate shows consistency, profit factor shows overall profitability.
+            Core trading performance metrics. Win rate shows consistency, profit factor shows
+            overall profitability.
           </Typography>
         </Paper>
       </Grid>
-      
+
       <Grid item xs={6} sm={4} md={3} lg={2}>
         <MetricCardWithTooltip
           title="Win Rate"
@@ -503,15 +565,19 @@ function PerformanceTab({ analysis }) {
       <Grid item xs={12}>
         <Divider sx={{ my: 1 }} />
         <Paper sx={{ p: 1, bgcolor: 'rgba(244, 67, 54, 0.05)', borderLeft: '4px solid #F44336' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             📉 Drawdown Analysis
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Measures peak-to-trough declines. Lower drawdowns mean smoother equity curve and better risk management.
+            Measures peak-to-trough declines. Lower drawdowns mean smoother equity curve and better
+            risk management.
           </Typography>
         </Paper>
       </Grid>
-      
+
       <Grid item xs={6} sm={4} md={3} lg={2}>
         <MetricCardWithTooltip
           title="Max Drawdown"
@@ -557,7 +623,11 @@ function RiskTab({ analysis }) {
       {/* Value at Risk Section */}
       <Grid item xs={12}>
         <Paper sx={{ p: 1, bgcolor: 'rgba(211, 47, 47, 0.05)' }}>
-          <Typography variant="subtitle1" color="error" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            color="error"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             📉 Value at Risk
           </Typography>
           <Typography variant="caption" color="text.secondary">
@@ -565,7 +635,7 @@ function RiskTab({ analysis }) {
           </Typography>
         </Paper>
       </Grid>
-      
+
       <Grid item xs={6} sm={4} md={3} lg={2}>
         <MetricCardWithTooltip
           title="VaR 95%"
@@ -612,7 +682,11 @@ function RiskTab({ analysis }) {
       {/* Portfolio Risk Section */}
       <Grid item xs={12}>
         <Paper sx={{ p: 1, bgcolor: 'rgba(255, 152, 0, 0.05)' }}>
-          <Typography variant="subtitle1" color="warning.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            color="warning.main"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             ⚖️ Portfolio Risk
           </Typography>
           <Typography variant="caption" color="text.secondary">
@@ -620,7 +694,7 @@ function RiskTab({ analysis }) {
           </Typography>
         </Paper>
       </Grid>
-      
+
       <Grid item xs={6} sm={4} md={3} lg={2}>
         <MetricCardWithTooltip
           title="Beta"
@@ -657,7 +731,11 @@ function RiskTab({ analysis }) {
       {/* Margin & Liquidation Section */}
       <Grid item xs={12}>
         <Paper sx={{ p: 1, bgcolor: 'rgba(244, 67, 54, 0.05)' }}>
-          <Typography variant="subtitle1" color="error" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            color="error"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             🚨 Margin & Liquidation
           </Typography>
           <Typography variant="caption" color="text.secondary">
@@ -665,7 +743,7 @@ function RiskTab({ analysis }) {
           </Typography>
         </Paper>
       </Grid>
-      
+
       <Grid item xs={12} md={6}>
         <Paper sx={{ p: 1, height: '100%' }}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
@@ -677,10 +755,20 @@ function RiskTab({ analysis }) {
           <LinearProgress
             variant="determinate"
             value={margin_leverage.margin_utilization}
-            color={margin_leverage.margin_utilization > 70 ? 'error' : margin_leverage.margin_utilization > 50 ? 'warning' : 'success'}
+            color={
+              margin_leverage.margin_utilization > 70
+                ? 'error'
+                : margin_leverage.margin_utilization > 50
+                  ? 'warning'
+                  : 'success'
+            }
             sx={{ height: 8, borderRadius: 4 }}
           />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem' }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem' }}
+          >
             Keep below 70% to avoid liquidation risk
           </Typography>
         </Paper>
@@ -696,10 +784,20 @@ function RiskTab({ analysis }) {
           <LinearProgress
             variant="determinate"
             value={Math.min(margin_leverage.liquidation_distance, 100)}
-            color={margin_leverage.liquidation_distance < 30 ? 'error' : margin_leverage.liquidation_distance < 50 ? 'warning' : 'success'}
+            color={
+              margin_leverage.liquidation_distance < 30
+                ? 'error'
+                : margin_leverage.liquidation_distance < 50
+                  ? 'warning'
+                  : 'success'
+            }
             sx={{ height: 8, borderRadius: 4 }}
           />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem' }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem' }}
+          >
             Distance to liquidation price - maintain above 50%
           </Typography>
         </Paper>
@@ -714,7 +812,8 @@ function MarketTab({ analysis }) {
   if (!analysis || !analysis.market) {
     return (
       <Alert severity="info">
-        Market analysis data is not available yet. Please ensure the bot has sufficient trading history.
+        Market analysis data is not available yet. Please ensure the bot has sufficient trading
+        history.
       </Alert>
     );
   }
@@ -725,17 +824,18 @@ function MarketTab({ analysis }) {
   if (!regime) {
     return (
       <Alert severity="info">
-        Market regime data is not available yet. The AI needs more trading data to analyze market conditions.
+        Market regime data is not available yet. The AI needs more trading data to analyze market
+        conditions.
       </Alert>
     );
   }
 
   const regimeColor = {
-    'MEAN_REVERTING': 'success',
-    'TRENDING': 'info',
-    'HIGH_VOLATILITY': 'error',
-    'LOW_LIQUIDITY': 'warning',
-    'MIXED': 'default'
+    MEAN_REVERTING: 'success',
+    TRENDING: 'info',
+    HIGH_VOLATILITY: 'error',
+    LOW_LIQUIDITY: 'warning',
+    MIXED: 'default',
   };
 
   return (
@@ -743,10 +843,16 @@ function MarketTab({ analysis }) {
       {/* Current Market Regime */}
       <Grid item xs={12} md={6}>
         <Paper sx={{ p: 1, height: '100%' }}>
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>📊 Current Market Regime</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>
+            📊 Current Market Regime
+          </Typography>
           <Chip
             label={regime?.regime || 'Unknown'}
-            color={regime?.regime === 'INSUFFICIENT_DATA' ? 'warning' : (regimeColor[regime?.regime] || 'default')}
+            color={
+              regime?.regime === 'INSUFFICIENT_DATA'
+                ? 'warning'
+                : regimeColor[regime?.regime] || 'default'
+            }
             sx={{ fontSize: '1rem', py: 2, mb: 1, height: 'auto' }}
           />
           <Typography variant="body2" sx={{ mb: 1 }}>
@@ -755,8 +861,8 @@ function MarketTab({ analysis }) {
           {regime?.regime === 'INSUFFICIENT_DATA' && (
             <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
               <Typography variant="caption">
-                To see market regime analysis, ensure the bot is running and connected to the exchange. 
-                Price data is needed for accurate regime detection.
+                To see market regime analysis, ensure the bot is running and connected to the
+                exchange. Price data is needed for accurate regime detection.
               </Typography>
             </Alert>
           )}
@@ -774,7 +880,9 @@ function MarketTab({ analysis }) {
       {/* Market Metrics */}
       <Grid item xs={12} md={6}>
         <Paper sx={{ p: 1, height: '100%' }}>
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>📈 Market Metrics</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>
+            📈 Market Metrics
+          </Typography>
           {regime?.regime === 'INSUFFICIENT_DATA' ? (
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
@@ -782,27 +890,55 @@ function MarketTab({ analysis }) {
               </Typography>
               {analysis?.current_price > 0 && (
                 <Typography variant="caption" color="text.secondary">
-                  Reference Price: ₹{analysis.current_price.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  Reference Price: ₹
+                  {analysis.current_price.toLocaleString('en-IN', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  })}
                 </Typography>
               )}
             </Box>
           ) : (
             <Grid container spacing={1.5}>
               <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Momentum</Typography>
-                <Typography variant="h6">{regime?.metrics?.momentum !== undefined ? regime.metrics.momentum.toFixed(2) : '—'}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Momentum
+                </Typography>
+                <Typography variant="h6">
+                  {regime?.metrics?.momentum !== undefined
+                    ? regime.metrics.momentum.toFixed(2)
+                    : '—'}
+                </Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Volatility</Typography>
-                <Typography variant="h6">{regime?.metrics?.volatility !== undefined ? regime.metrics.volatility.toFixed(2) : '—'}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Volatility
+                </Typography>
+                <Typography variant="h6">
+                  {regime?.metrics?.volatility !== undefined
+                    ? regime.metrics.volatility.toFixed(2)
+                    : '—'}
+                </Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Mean Reversion</Typography>
-                <Typography variant="h6">{regime?.metrics?.mean_reversion !== undefined ? regime.metrics.mean_reversion.toFixed(2) : '—'}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Mean Reversion
+                </Typography>
+                <Typography variant="h6">
+                  {regime?.metrics?.mean_reversion !== undefined
+                    ? regime.metrics.mean_reversion.toFixed(2)
+                    : '—'}
+                </Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Trend Strength</Typography>
-                <Typography variant="h6">{regime?.metrics?.trend_strength !== undefined ? regime.metrics.trend_strength.toFixed(2) : '—'}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Trend Strength
+                </Typography>
+                <Typography variant="h6">
+                  {regime?.metrics?.trend_strength !== undefined
+                    ? regime.metrics.trend_strength.toFixed(2)
+                    : '—'}
+                </Typography>
               </Grid>
             </Grid>
           )}
@@ -812,32 +948,56 @@ function MarketTab({ analysis }) {
       {/* Strategy Recommendations */}
       <Grid item xs={12}>
         <Paper sx={{ p: 1 }}>
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>🎯 Strategy Recommendations</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>
+            🎯 Strategy Recommendations
+          </Typography>
           <Grid container spacing={1}>
             <Grid item xs={12} md={6}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Strategy</Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mb: 0.5 }}
+              >
+                Strategy
+              </Typography>
               <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
                 {regime?.recommendations?.strategy || 'Standard Grid Trading'}
               </Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Grid Adjustment</Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mb: 0.5 }}
+              >
+                Grid Adjustment
+              </Typography>
               <Typography variant="body1">
                 {regime?.recommendations?.grid_adjustment || 'Keep current settings'}
               </Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Expected Win Rate</Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mb: 0.5 }}
+              >
+                Expected Win Rate
+              </Typography>
               <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'success.main' }}>
                 {regime?.recommendations?.expected_win_rate || '55-65%'}
               </Typography>
             </Grid>
             {regime?.recommendations?.position_sizing && (
               <Grid item xs={12} md={6}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Position Sizing</Typography>
-                <Typography variant="body1">
-                  {regime.recommendations.position_sizing}
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mb: 0.5 }}
+                >
+                  Position Sizing
                 </Typography>
+                <Typography variant="body1">{regime.recommendations.position_sizing}</Typography>
               </Grid>
             )}
           </Grid>
@@ -848,12 +1008,18 @@ function MarketTab({ analysis }) {
       {(forecast || analysis?.current_price > 0) && (
         <Grid item xs={12}>
           <Paper sx={{ p: 1 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>🔮 Price Forecast</Typography>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+              🔮 Price Forecast
+            </Typography>
             {forecast?.direction === 'UNKNOWN' || !forecast ? (
               <Box>
                 {analysis?.current_price > 0 && (
                   <Typography variant="body2" sx={{ mb: 1 }}>
-                    Current/Reference Price: ₹{analysis.current_price.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    Current/Reference Price: ₹
+                    {analysis.current_price.toLocaleString('en-IN', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    })}
                   </Typography>
                 )}
                 <Typography variant="body2" color="text.secondary">
@@ -864,23 +1030,39 @@ function MarketTab({ analysis }) {
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                 {forecast.current_price && (
                   <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Current Price</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      Current Price
+                    </Typography>
                     <Typography variant="h6" sx={{ mt: 0.5 }}>
-                      ₹{forecast.current_price.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      ₹
+                      {forecast.current_price.toLocaleString('en-IN', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      })}
                     </Typography>
                   </Box>
                 )}
                 <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Direction</Typography>
-                  <Chip 
-                    label={forecast.direction} 
-                    size="small" 
-                    color={forecast.direction === 'UP' ? 'success' : forecast.direction === 'DOWN' ? 'error' : 'default'} 
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Direction
+                  </Typography>
+                  <Chip
+                    label={forecast.direction}
+                    size="small"
+                    color={
+                      forecast.direction === 'UP'
+                        ? 'success'
+                        : forecast.direction === 'DOWN'
+                          ? 'error'
+                          : 'default'
+                    }
                     sx={{ mt: 0.5 }}
                   />
                 </Box>
                 <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Confidence</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Confidence
+                  </Typography>
                   <Typography variant="h6" sx={{ mt: 0.5 }}>
                     {(forecast.confidence * 100).toFixed(0)}%
                   </Typography>
@@ -900,45 +1082,64 @@ function RecommendationsTab({ analysis }) {
 
   return (
     <Grid container spacing={1} sx={{ px: 1 }}>
-      {recommendations && recommendations.map((rec, idx) => (
-        <Grid item xs={12} key={idx}>
-          <Paper sx={{ 
-            p: 1, 
-            borderLeft: `4px solid ${rec.priority === 'critical' ? '#d32f2f' : rec.priority === 'high' ? '#ed6c02' : '#0288d1'}`,
-            bgcolor: rec.priority === 'critical' ? 'rgba(211, 47, 47, 0.05)' : 'rgba(255, 255, 255, 0.02)'
-          }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="subtitle1">{rec.title}</Typography>
-              <Chip
-                label={rec.priority.toUpperCase()}
-                color={rec.priority === 'critical' ? 'error' : rec.priority === 'high' ? 'warning' : 'info'}
-                size="small"
-                sx={{ height: 22, fontSize: '0.7rem' }}
-              />
-            </Box>
-            <Typography variant="body2" sx={{ mb: 0.75 }}>
-              <strong>Action:</strong> {rec.action}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-              <strong>Reasoning:</strong> {rec.reasoning}
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-              <Chip 
-                label={`Impact: ${rec.expected_impact}`} 
-                variant="outlined" 
-                size="small"
-                sx={{ height: 24, fontSize: '0.7rem' }}
-              />
-              <Chip 
-                label={`Confidence: ${rec.confidence}%`} 
-                variant="outlined" 
-                size="small"
-                sx={{ height: 24, fontSize: '0.7rem' }}
-              />
-            </Box>
-          </Paper>
-        </Grid>
-      ))}
+      {recommendations &&
+        recommendations.map((rec, idx) => (
+          <Grid item xs={12} key={idx}>
+            <Paper
+              sx={{
+                p: 1,
+                borderLeft: `4px solid ${rec.priority === 'critical' ? '#d32f2f' : rec.priority === 'high' ? '#ed6c02' : '#0288d1'}`,
+                bgcolor:
+                  rec.priority === 'critical'
+                    ? 'rgba(211, 47, 47, 0.05)'
+                    : 'rgba(255, 255, 255, 0.02)',
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 1,
+                }}
+              >
+                <Typography variant="subtitle1">{rec.title}</Typography>
+                <Chip
+                  label={rec.priority.toUpperCase()}
+                  color={
+                    rec.priority === 'critical'
+                      ? 'error'
+                      : rec.priority === 'high'
+                        ? 'warning'
+                        : 'info'
+                  }
+                  size="small"
+                  sx={{ height: 22, fontSize: '0.7rem' }}
+                />
+              </Box>
+              <Typography variant="body2" sx={{ mb: 0.75 }}>
+                <strong>Action:</strong> {rec.action}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                <strong>Reasoning:</strong> {rec.reasoning}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                <Chip
+                  label={`Impact: ${rec.expected_impact}`}
+                  variant="outlined"
+                  size="small"
+                  sx={{ height: 24, fontSize: '0.7rem' }}
+                />
+                <Chip
+                  label={`Confidence: ${rec.confidence}%`}
+                  variant="outlined"
+                  size="small"
+                  sx={{ height: 24, fontSize: '0.7rem' }}
+                />
+              </Box>
+            </Paper>
+          </Grid>
+        ))}
     </Grid>
   );
 }
@@ -949,7 +1150,9 @@ function AskAITab({ question, setQuestion, askAI, aiResponse, askingAI, quickQue
     <Grid container spacing={1}>
       <Grid item xs={12}>
         <Paper sx={{ p: 1.5 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Ask the AI Advisor</Typography>
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Ask the AI Advisor
+          </Typography>
           <TextField
             fullWidth
             multiline
@@ -983,111 +1186,122 @@ function AskAITab({ question, setQuestion, askAI, aiResponse, askingAI, quickQue
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           {quickQuestions.map((q, idx) => (
-            <Chip
-              key={idx}
-              label={q}
-              onClick={() => setQuestion(q)}
-              variant="outlined"
-              clickable
-            />
+            <Chip key={idx} label={q} onClick={() => setQuestion(q)} variant="outlined" clickable />
           ))}
         </Box>
       </Grid>
 
       {/* Debug info */}
       <Grid item xs={12}>
-        <Paper sx={{ p: 1, bgcolor: 'rgba(255, 255, 0, 0.1)', border: '1px solid rgba(255, 255, 0, 0.3)' }}>
+        <Paper
+          sx={{
+            p: 1,
+            bgcolor: 'rgba(255, 255, 0, 0.1)',
+            border: '1px solid rgba(255, 255, 0, 0.3)',
+          }}
+        >
           <Typography variant="caption" color="text.secondary">
-            Debug: aiResponse = {aiResponse ? 'SET' : 'NULL'} | 
-            Has answer: {aiResponse?.answer ? 'YES' : 'NO'} | 
-            Answer length: {aiResponse?.answer?.length || 0}
+            Debug: aiResponse = {aiResponse ? 'SET' : 'NULL'} | Has answer:{' '}
+            {aiResponse?.answer ? 'YES' : 'NO'} | Answer length: {aiResponse?.answer?.length || 0}
           </Typography>
         </Paper>
       </Grid>
 
       {aiResponse && (
         <Grid item xs={12}>
-          <Paper sx={{ p: 1.5, bgcolor: 'rgba(25, 118, 210, 0.05)', border: '1px solid rgba(25, 118, 210, 0.2)' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Paper
+            sx={{
+              p: 1.5,
+              bgcolor: 'rgba(25, 118, 210, 0.05)',
+              border: '1px solid rgba(25, 118, 210, 0.2)',
+            }}
+          >
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+            >
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Psychology color="primary" />
                 AI Response
               </Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
                 {aiResponse.intent && (
-                  <Chip 
-                    label={aiResponse.intent.replace(/_/g, ' ').toUpperCase()} 
-                    size="small" 
-                    color="primary" 
+                  <Chip
+                    label={aiResponse.intent.replace(/_/g, ' ').toUpperCase()}
+                    size="small"
+                    color="primary"
                     variant="outlined"
                   />
                 )}
                 {aiResponse.confidence && (
-                  <Chip 
-                    label={`${(aiResponse.confidence * 100).toFixed(0)}% confidence`} 
-                    size="small" 
-                    color="success" 
+                  <Chip
+                    label={`${(aiResponse.confidence * 100).toFixed(0)}% confidence`}
+                    size="small"
+                    color="success"
                     variant="outlined"
                   />
                 )}
               </Box>
             </Box>
-            
+
             {/* Render answer with markdown-like formatting */}
-            <Box sx={{ 
-              '& h1, & h2, & h3': { mt: 2, mb: 1, fontWeight: 'bold' },
-              '& ul, & ol': { pl: 3 },
-              '& code': { 
-                bgcolor: 'rgba(0,0,0,0.1)', 
-                p: 0.5, 
-                borderRadius: 1,
-                fontFamily: 'monospace'
-              },
-              '& pre': {
-                bgcolor: 'rgba(0,0,0,0.2)',
-                p: 1,
-                borderRadius: 1,
-                overflow: 'auto',
-                fontFamily: 'monospace'
-              }
-            }}>
-              {aiResponse?.answer ? aiResponse.answer.split('\n').map((line, idx) => {
-                // Bold text with **
-                if (line.includes('**')) {
-                  const parts = line.split('**');
+            <Box
+              sx={{
+                '& h1, & h2, & h3': { mt: 2, mb: 1, fontWeight: 'bold' },
+                '& ul, & ol': { pl: 3 },
+                '& code': {
+                  bgcolor: 'rgba(0,0,0,0.1)',
+                  p: 0.5,
+                  borderRadius: 1,
+                  fontFamily: 'monospace',
+                },
+                '& pre': {
+                  bgcolor: 'rgba(0,0,0,0.2)',
+                  p: 1,
+                  borderRadius: 1,
+                  overflow: 'auto',
+                  fontFamily: 'monospace',
+                },
+              }}
+            >
+              {aiResponse?.answer ? (
+                aiResponse.answer.split('\n').map((line, idx) => {
+                  // Bold text with **
+                  if (line.includes('**')) {
+                    const parts = line.split('**');
+                    return (
+                      <Typography key={idx} variant="body1" sx={{ mb: 0.5 }}>
+                        {parts.map((part, i) =>
+                          i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+                        )}
+                      </Typography>
+                    );
+                  }
+                  // Bullet points
+                  if (line.trim().startsWith('-')) {
+                    return (
+                      <Typography key={idx} variant="body2" sx={{ ml: 2, mb: 0.5 }}>
+                        • {line.trim().substring(1).trim()}
+                      </Typography>
+                    );
+                  }
+                  // Code blocks
+                  if (line.trim().startsWith('```')) {
+                    return null; // Handle in next iteration
+                  }
+                  // Regular text
                   return (
-                    <Typography key={idx} variant="body1" sx={{ mb: 0.5 }}>
-                      {parts.map((part, i) => 
-                        i % 2 === 1 ? <strong key={i}>{part}</strong> : part
-                      )}
+                    <Typography key={idx} variant="body1" sx={{ mb: line.trim() ? 0.5 : 1 }}>
+                      {line || '\u00A0'}
                     </Typography>
                   );
-                }
-                // Bullet points
-                if (line.trim().startsWith('-')) {
-                  return (
-                    <Typography key={idx} variant="body2" sx={{ ml: 2, mb: 0.5 }}>
-                      • {line.trim().substring(1).trim()}
-                    </Typography>
-                  );
-                }
-                // Code blocks
-                if (line.trim().startsWith('```')) {
-                  return null; // Handle in next iteration
-                }
-                // Regular text
-                return (
-                  <Typography key={idx} variant="body1" sx={{ mb: line.trim() ? 0.5 : 1 }}>
-                    {line || '\u00A0'}
-                  </Typography>
-                );
-              }) : (
+                })
+              ) : (
                 <Typography variant="body1" color="text.secondary">
                   No response available
                 </Typography>
               )}
             </Box>
-            
+
             {/* Action buttons for actionable responses */}
             {aiResponse.actionable && (
               <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
@@ -1116,11 +1330,12 @@ function AskAITab({ question, setQuestion, askAI, aiResponse, askingAI, quickQue
                 </Box>
               </Box>
             )}
-            
+
             {/* Metadata */}
             <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
               <Typography variant="caption" color="text.secondary">
-                {aiResponse.timestamp && `Answered at ${new Date(aiResponse.timestamp).toLocaleTimeString()}`}
+                {aiResponse.timestamp &&
+                  `Answered at ${new Date(aiResponse.timestamp).toLocaleTimeString()}`}
               </Typography>
             </Box>
           </Paper>
@@ -1136,7 +1351,9 @@ function MetricCard({ title, value, grade, subtitle, icon, color }) {
     <Card sx={{ height: '100%' }}>
       <CardContent>
         {icon && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
+          >
             {React.cloneElement(icon, { color: color || 'primary' })}
             {grade && <Typography variant="h5">{grade}</Typography>}
           </Box>
@@ -1158,12 +1375,29 @@ function MetricCard({ title, value, grade, subtitle, icon, color }) {
 }
 
 // Enhanced Metric Card with Tooltip and Benchmark
-function MetricCardWithTooltip({ title, value, grade, subtitle, tooltip, benchmark, icon, color, compact }) {
+function MetricCardWithTooltip({
+  title,
+  value,
+  grade,
+  subtitle,
+  tooltip,
+  benchmark,
+  icon,
+  color,
+  compact,
+}) {
   return (
     <Card sx={{ height: '100%', position: 'relative' }}>
       <CardContent sx={{ p: compact ? 2.5 : 3, '&:last-child': { pb: compact ? 2.5 : 3 } }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: compact ? 1 : 1.5 }}>
-          <Tooltip 
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mb: compact ? 1 : 1.5,
+          }}
+        >
+          <Tooltip
             title={
               <Box>
                 <Typography variant="body2" sx={{ mb: 1, fontWeight: 'bold' }}>
@@ -1183,10 +1417,17 @@ function MetricCardWithTooltip({ title, value, grade, subtitle, tooltip, benchma
             placement="top"
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
-              <Typography variant={compact ? 'body2' : 'body2'} color="text.secondary" sx={{ m: 0, fontSize: compact ? '0.8rem' : '0.875rem' }}>
+              <Typography
+                variant={compact ? 'body2' : 'body2'}
+                color="text.secondary"
+                sx={{ m: 0, fontSize: compact ? '0.8rem' : '0.875rem' }}
+              >
                 {title}
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.5, fontSize: compact ? '0.65rem' : '0.7rem' }}>
+              <Typography
+                variant="caption"
+                sx={{ opacity: 0.5, fontSize: compact ? '0.65rem' : '0.7rem' }}
+              >
                 ⓘ
               </Typography>
             </Box>
@@ -1197,25 +1438,29 @@ function MetricCardWithTooltip({ title, value, grade, subtitle, tooltip, benchma
             </Typography>
           )}
         </Box>
-        
-        <Typography 
-          variant={compact ? 'h4' : 'h3'} 
-          sx={{ 
-            fontWeight: 'bold', 
+
+        <Typography
+          variant={compact ? 'h4' : 'h3'}
+          sx={{
+            fontWeight: 'bold',
             mb: compact ? 0.5 : 0.5,
             color: color || 'inherit',
-            wordBreak: 'break-word'
+            wordBreak: 'break-word',
           }}
         >
           {value}
         </Typography>
-        
+
         {subtitle && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: compact ? '0.7rem' : '0.75rem' }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', fontSize: compact ? '0.7rem' : '0.75rem' }}
+          >
             {subtitle}
           </Typography>
         )}
-        
+
         {benchmark && !compact && (
           <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             <Typography variant="caption" sx={{ fontSize: '0.65rem', opacity: 0.6 }}>

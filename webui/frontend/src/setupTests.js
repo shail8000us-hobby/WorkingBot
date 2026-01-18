@@ -11,7 +11,7 @@ import '@testing-library/jest-dom';
 // Mock window.matchMedia (used by responsive components)
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: jest.fn().mockImplementation(query => ({
+  value: jest.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
     onchange: null,
@@ -48,10 +48,10 @@ global.WebSocket = class WebSocket {
     this.url = url;
     this.readyState = WebSocket.CONNECTING;
   }
-  
+
   send() {}
   close() {}
-  
+
   static CONNECTING = 0;
   static OPEN = 1;
   static CLOSING = 2;
@@ -85,18 +85,15 @@ beforeAll(() => {
     if (
       typeof args[0] === 'string' &&
       (args[0].includes('Warning: ReactDOM.render') ||
-       args[0].includes('Not implemented: HTMLFormElement.prototype.submit'))
+        args[0].includes('Not implemented: HTMLFormElement.prototype.submit'))
     ) {
       return;
     }
     originalError.call(console, ...args);
   };
-  
+
   console.warn = (...args) => {
-    if (
-      typeof args[0] === 'string' &&
-      args[0].includes('componentWillReceiveProps')
-    ) {
+    if (typeof args[0] === 'string' && args[0].includes('componentWillReceiveProps')) {
       return;
     }
     originalWarn.call(console, ...args);

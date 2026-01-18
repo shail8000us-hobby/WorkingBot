@@ -1,6 +1,6 @@
 /**
  * Control Panel - Start/Stop Session with Expiry Selector
- * 
+ *
  * Features:
  * - Expiry/DTE selector with live expiry dates
  * - Underlying selector (BTC/ETH)
@@ -14,7 +14,7 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
   const [showStartModal, setShowStartModal] = useState(false);
   const [availableExpiries, setAvailableExpiries] = useState([]);
   const [loadingExpiries, setLoadingExpiries] = useState(false);
-  
+
   const [config, setConfig] = useState({
     underlying: 'BTC',
     expiry: '',
@@ -23,7 +23,7 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
     target_premium_max: 30,
     stop_loss: 5000,
     rebalance_threshold: 20,
-    skip_time_check: false
+    skip_time_check: false,
   });
 
   // Fetch available expiries for the underlying
@@ -32,16 +32,19 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
     try {
       const response = await fetch(`/api/zero-dte/expiries?underlying=${underlying}`);
       const data = await response.json();
-      
+
       if (data.success && data.expiries) {
         setAvailableExpiries(data.expiries);
         // Auto-select 0DTE (today's expiry) if available
         const today = new Date().toISOString().split('T')[0];
-        const todayExpiry = data.expiries.find(e => e.date === today || e.dte === 0);
+        const todayExpiry = data.expiries.find((e) => e.date === today || e.dte === 0);
         if (todayExpiry) {
-          setConfig(prev => ({ ...prev, expiry: todayExpiry.symbol || todayExpiry.date }));
+          setConfig((prev) => ({ ...prev, expiry: todayExpiry.symbol || todayExpiry.date }));
         } else if (data.expiries.length > 0) {
-          setConfig(prev => ({ ...prev, expiry: data.expiries[0].symbol || data.expiries[0].date }));
+          setConfig((prev) => ({
+            ...prev,
+            expiry: data.expiries[0].symbol || data.expiries[0].date,
+          }));
         }
       } else {
         generateFallbackExpiries();
@@ -58,22 +61,22 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
   const generateFallbackExpiries = () => {
     const today = new Date();
     const expiries = [];
-    
+
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
-      
+
       expiries.push({
         date: dateStr,
         dte: i,
-        symbol: dateStr
+        symbol: dateStr,
       });
     }
-    
+
     setAvailableExpiries(expiries);
     if (expiries.length > 0) {
-      setConfig(prev => ({ ...prev, expiry: expiries[0].symbol }));
+      setConfig((prev) => ({ ...prev, expiry: expiries[0].symbol }));
     }
   };
 
@@ -117,7 +120,7 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
           </span>
         )}
       </div>
-      
+
       {!isActive ? (
         <div className="control-inactive">
           <div className="start-prompt">
@@ -140,33 +143,37 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
             <span className="session-label">Session</span>
             <span className="session-id">{sessionId?.slice(-8) || 'N/A'}</span>
           </div>
-          
+
           {currentExpiry && (
             <div className="current-expiry-display">
               <span className="expiry-label">Trading</span>
               <span className="expiry-value">{currentExpiry}</span>
             </div>
           )}
-          
+
           <div className="auto-mode-card">
             <div className="auto-header">
               <span className="auto-icon">🤖</span>
               <span>Autonomous Mode</span>
             </div>
             <ul className="auto-actions">
-              <li><span className="check">✓</span> Rebalancing at 20% imbalance</li>
-              <li><span className="check">✓</span> Rolling when premium &lt; ₹5</li>
-              <li><span className="check">✓</span> Exit when BOTH legs &lt; ₹5</li>
-              <li><span className="check">✓</span> Force exit at 17:15 IST</li>
+              <li>
+                <span className="check">✓</span> Rebalancing at 20% imbalance
+              </li>
+              <li>
+                <span className="check">✓</span> Rolling when premium &lt; ₹5
+              </li>
+              <li>
+                <span className="check">✓</span> Exit when BOTH legs &lt; ₹5
+              </li>
+              <li>
+                <span className="check">✓</span> Force exit at 17:15 IST
+              </li>
             </ul>
           </div>
-          
+
           <div className="stop-controls">
-            <button
-              className="btn btn-stop"
-              onClick={() => onStop('manual')}
-              disabled={loading}
-            >
+            <button className="btn btn-stop" onClick={() => onStop('manual')} disabled={loading}>
               <span className="btn-icon">⏹</span>
               Stop Session
             </button>
@@ -185,13 +192,15 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
       {/* Start Modal */}
       {showStartModal && (
         <div className="modal-overlay" onClick={() => setShowStartModal(false)}>
-          <div className="start-modal" onClick={e => e.stopPropagation()}>
+          <div className="start-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>
                 <span className="modal-icon">⚡</span>
                 New 0DTE Session
               </h2>
-              <button className="modal-close" onClick={() => setShowStartModal(false)}>×</button>
+              <button className="modal-close" onClick={() => setShowStartModal(false)}>
+                ×
+              </button>
             </div>
 
             <form onSubmit={handleStartSubmit}>
@@ -199,12 +208,12 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
               <div className="form-section">
                 <label className="section-label">Asset</label>
                 <div className="asset-selector">
-                  {['BTC', 'ETH'].map(asset => (
+                  {['BTC', 'ETH'].map((asset) => (
                     <button
                       key={asset}
                       type="button"
                       className={`asset-btn ${config.underlying === asset ? 'selected' : ''}`}
-                      onClick={() => setConfig({...config, underlying: asset})}
+                      onClick={() => setConfig({ ...config, underlying: asset })}
                     >
                       <span className="asset-icon">{asset === 'BTC' ? '₿' : 'Ξ'}</span>
                       <span className="asset-name">{asset}</span>
@@ -227,9 +236,11 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                           key={exp.symbol || exp.date}
                           type="button"
                           className={`expiry-btn ${
-                            (config.expiry === exp.symbol || config.expiry === exp.date) ? 'selected' : ''
+                            config.expiry === exp.symbol || config.expiry === exp.date
+                              ? 'selected'
+                              : ''
                           } ${exp.dte === 0 ? 'today' : ''}`}
-                          onClick={() => setConfig({...config, expiry: exp.symbol || exp.date})}
+                          onClick={() => setConfig({ ...config, expiry: exp.symbol || exp.date })}
                         >
                           <span className="expiry-dte">
                             {exp.dte === 0 ? '0DTE' : `${exp.dte}DTE`}
@@ -238,7 +249,7 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                             {new Date(exp.date + 'T00:00:00').toLocaleDateString('en-IN', {
                               weekday: 'short',
                               day: 'numeric',
-                              month: 'short'
+                              month: 'short',
                             })}
                           </span>
                           {exp.dte === 0 && <span className="expiry-tag">TODAY</span>}
@@ -251,7 +262,7 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                     </div>
                   )}
                 </div>
-                
+
                 <div className="expiry-info">
                   <span>Settlement: 17:30 IST</span>
                   <span>Time remaining: {formatTimeRemaining()}</span>
@@ -262,20 +273,28 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
               <div className="form-section">
                 <label className="section-label">Position Size</label>
                 <div className="lots-selector">
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="lots-btn"
-                    onClick={() => setConfig({...config, initial_lots: Math.max(1, config.initial_lots - 1)})}
-                  >−</button>
+                    onClick={() =>
+                      setConfig({ ...config, initial_lots: Math.max(1, config.initial_lots - 1) })
+                    }
+                  >
+                    −
+                  </button>
                   <div className="lots-display">
                     <span className="lots-value">{config.initial_lots}</span>
                     <span className="lots-label">Lots per leg</span>
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="lots-btn"
-                    onClick={() => setConfig({...config, initial_lots: Math.min(20, config.initial_lots + 1)})}
-                  >+</button>
+                    onClick={() =>
+                      setConfig({ ...config, initial_lots: Math.min(20, config.initial_lots + 1) })
+                    }
+                  >
+                    +
+                  </button>
                 </div>
                 <div className="lots-hint">Total: {config.initial_lots * 2} lots (CE + PE)</div>
               </div>
@@ -293,7 +312,9 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                         min="5"
                         max="50"
                         value={config.target_premium_min}
-                        onChange={e => setConfig({...config, target_premium_min: parseFloat(e.target.value)})}
+                        onChange={(e) =>
+                          setConfig({ ...config, target_premium_min: parseFloat(e.target.value) })
+                        }
                       />
                     </div>
                   </div>
@@ -307,7 +328,9 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                         min="10"
                         max="100"
                         value={config.target_premium_max}
-                        onChange={e => setConfig({...config, target_premium_max: parseFloat(e.target.value)})}
+                        onChange={(e) =>
+                          setConfig({ ...config, target_premium_max: parseFloat(e.target.value) })
+                        }
                       />
                     </div>
                   </div>
@@ -325,7 +348,9 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                       <input
                         type="number"
                         value={config.stop_loss}
-                        onChange={e => setConfig({...config, stop_loss: parseFloat(e.target.value)})}
+                        onChange={(e) =>
+                          setConfig({ ...config, stop_loss: parseFloat(e.target.value) })
+                        }
                       />
                     </div>
                   </div>
@@ -337,7 +362,9 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                         min="10"
                         max="50"
                         value={config.rebalance_threshold}
-                        onChange={e => setConfig({...config, rebalance_threshold: parseFloat(e.target.value)})}
+                        onChange={(e) =>
+                          setConfig({ ...config, rebalance_threshold: parseFloat(e.target.value) })
+                        }
                       />
                       <span className="unit">%</span>
                     </div>
@@ -348,7 +375,9 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                       <input
                         type="checkbox"
                         checked={config.skip_time_check}
-                        onChange={e => setConfig({...config, skip_time_check: e.target.checked})}
+                        onChange={(e) =>
+                          setConfig({ ...config, skip_time_check: e.target.checked })
+                        }
                       />
                       <span className="toggle-slider"></span>
                     </label>
@@ -379,14 +408,26 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
 
               {/* Action Buttons */}
               <div className="modal-actions">
-                <button type="button" className="btn btn-cancel" onClick={() => setShowStartModal(false)}>
+                <button
+                  type="button"
+                  className="btn btn-cancel"
+                  onClick={() => setShowStartModal(false)}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-start" disabled={loading || !config.expiry}>
+                <button
+                  type="submit"
+                  className="btn btn-start"
+                  disabled={loading || !config.expiry}
+                >
                   {loading ? (
-                    <><span className="spinner"></span> Starting...</>
+                    <>
+                      <span className="spinner"></span> Starting...
+                    </>
                   ) : (
-                    <><span className="btn-icon">🚀</span> Start Trading</>
+                    <>
+                      <span className="btn-icon">🚀</span> Start Trading
+                    </>
                   )}
                 </button>
               </div>

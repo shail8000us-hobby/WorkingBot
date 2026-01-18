@@ -29,11 +29,7 @@ export const normalizeKey = (code, text) => {
 };
 
 export const pickDisplayMessage = (item) =>
-  item.title ||
-  item.message_summary ||
-  item.message ||
-  item.message_raw ||
-  'No additional context';
+  item.title || item.message_summary || item.message || item.message_raw || 'No additional context';
 
 export const aggregateErrors = (items) => {
   const grouped = {};

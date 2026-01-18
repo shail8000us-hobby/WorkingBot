@@ -2,7 +2,7 @@
  * Active Strategies List
  * ======================
  * Display and manage active/pending strategies.
- * 
+ *
  * Created: January 5, 2026
  */
 
@@ -21,7 +21,7 @@ import {
   IconButton,
   Button,
   Tooltip,
-  Stack
+  Stack,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -30,7 +30,7 @@ import {
   Close as CloseIcon,
   Delete as DeleteIcon,
   TrendingUp as ProfitIcon,
-  TrendingDown as LossIcon
+  TrendingDown as LossIcon,
 } from '@mui/icons-material';
 
 // Status chip colors
@@ -42,7 +42,7 @@ const STATUS_CONFIG = {
   partial: { color: 'warning', label: 'Partial' },
   closing: { color: 'warning', label: 'Closing' },
   closed: { color: 'default', label: 'Closed' },
-  failed: { color: 'error', label: 'Failed' }
+  failed: { color: 'error', label: 'Failed' },
 };
 
 // Strategy type icons
@@ -53,7 +53,7 @@ const TYPE_ICONS = {
   iron_butterfly: '🦋',
   call_spread: '📈',
   put_spread: '📉',
-  custom: '⚙️'
+  custom: '⚙️',
 };
 
 // Format currency
@@ -62,7 +62,7 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 2
+    minimumFractionDigits: 2,
   }).format(value);
 };
 
@@ -73,7 +73,7 @@ const formatDate = (isoString) => {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   });
 };
 
@@ -84,7 +84,7 @@ export default function ActiveStrategies({
   onDelete,
   onView,
   onExecute,
-  loading
+  loading,
 }) {
   if (!strategies || strategies.length === 0) {
     return (
@@ -111,9 +111,7 @@ export default function ActiveStrategies({
     <Box>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          {strategies.length} Strategies
-        </Typography>
+        <Typography variant="h6">{strategies.length} Strategies</Typography>
         <Button
           variant="outlined"
           size="small"
@@ -150,11 +148,7 @@ export default function ActiveStrategies({
               const canDelete = strategy.status === 'pending' || strategy.status === 'configured';
 
               return (
-                <TableRow
-                  key={strategy.id}
-                  hover
-                  sx={{ '&:hover': { bgcolor: 'action.hover' } }}
-                >
+                <TableRow key={strategy.id} hover sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
                   {/* Strategy Name */}
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -182,42 +176,38 @@ export default function ActiveStrategies({
 
                   {/* Expiry */}
                   <TableCell>
-                    <Typography variant="body2">
-                      {strategy.expiry}
-                    </Typography>
+                    <Typography variant="body2">{strategy.expiry}</Typography>
                   </TableCell>
 
                   {/* Legs */}
                   <TableCell align="center">
-                    <Typography variant="body2">
-                      {strategy.legs?.length || 0}
-                    </Typography>
+                    <Typography variant="body2">{strategy.legs?.length || 0}</Typography>
                   </TableCell>
 
                   {/* Status */}
                   <TableCell>
-                    <Chip
-                      label={statusConfig.label}
-                      color={statusConfig.color}
-                      size="small"
-                    />
+                    <Chip label={statusConfig.label} color={statusConfig.color} size="small" />
                   </TableCell>
 
                   {/* Cost */}
                   <TableCell align="right">
-                    <Typography variant="body2">
-                      {formatCurrency(strategy.total_cost)}
-                    </Typography>
+                    <Typography variant="body2">{formatCurrency(strategy.total_cost)}</Typography>
                   </TableCell>
 
                   {/* P&L */}
                   <TableCell align="right">
-                    <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={0.5}>
-                      {pnl !== 0 && (
-                        pnl > 0 
-                          ? <ProfitIcon fontSize="small" color="success" />
-                          : <LossIcon fontSize="small" color="error" />
-                      )}
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="flex-end"
+                      spacing={0.5}
+                    >
+                      {pnl !== 0 &&
+                        (pnl > 0 ? (
+                          <ProfitIcon fontSize="small" color="success" />
+                        ) : (
+                          <LossIcon fontSize="small" color="error" />
+                        ))}
                       <Typography
                         variant="body2"
                         fontWeight="medium"
@@ -232,10 +222,7 @@ export default function ActiveStrategies({
                   <TableCell align="center">
                     <Stack direction="row" spacing={0.5} justifyContent="center">
                       <Tooltip title="View Details">
-                        <IconButton
-                          size="small"
-                          onClick={() => onView(strategy)}
-                        >
+                        <IconButton size="small" onClick={() => onView(strategy)}>
                           <ViewIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

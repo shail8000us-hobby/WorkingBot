@@ -1,6 +1,6 @@
 /**
  * Simple Trading Simulator
- * 
+ *
  * Focused on only two critical scenarios:
  * 1. Trading Active - Show next BUY order and target prices
  * 2. Trading Halted - Show why and when it will resume
@@ -21,16 +21,9 @@ import {
   List,
   ListItem,
   ListItemText,
-  Divider
+  Divider,
 } from '@mui/material';
-import {
-  PlayArrow,
-  Stop,
-  TrendingUp,
-  AttachMoney,
-  Schedule,
-  Refresh
-} from '@mui/icons-material';
+import { PlayArrow, Stop, TrendingUp, AttachMoney, Schedule, Refresh } from '@mui/icons-material';
 
 const SimpleTradingSimulator = () => {
   const [currentScenario, setCurrentScenario] = useState(null);
@@ -44,7 +37,7 @@ const SimpleTradingSimulator = () => {
       setLoading(true);
       const response = await fetch('/api/brain/trading/scenarios');
       const data = await response.json();
-      
+
       if (data.success) {
         setCurrentScenario(data.current_scenario);
       }
@@ -60,7 +53,7 @@ const SimpleTradingSimulator = () => {
       setLoading(true);
       const response = await fetch(`/api/brain/trading/details/${scenarioId}?step=${step}`);
       const data = await response.json();
-      
+
       if (data.success) {
         setScenarioDetails(data);
         setCurrentStep(data.step);
@@ -91,18 +84,18 @@ const SimpleTradingSimulator = () => {
 
   useEffect(() => {
     fetchTradingScenarios();
-    
+
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => {
       fetchTradingScenarios();
       setLastRefresh(Date.now());
-      
+
       // If viewing scenario details, refresh them too
       if (scenarioDetails && currentScenario) {
         fetchScenarioDetails(currentScenario.id, currentStep - 1);
       }
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, [scenarioDetails, currentScenario, currentStep]);
 
@@ -119,7 +112,10 @@ const SimpleTradingSimulator = () => {
     <Box sx={{ mt: 2 }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#fff', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{ fontWeight: 'bold', color: '#fff', display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           📈 Trading Simulator
           <Chip label="SIMPLIFIED" size="small" sx={{ bgcolor: '#2196f3', color: '#fff' }} />
         </Typography>
@@ -134,10 +130,13 @@ const SimpleTradingSimulator = () => {
         </Button>
       </Box>
 
-      <Alert severity="info" sx={{ mb: 3, bgcolor: '#1a237e', color: '#fff', border: '1px solid #3f51b5' }}>
+      <Alert
+        severity="info"
+        sx={{ mb: 3, bgcolor: '#1a237e', color: '#fff', border: '1px solid #3f51b5' }}
+      >
         <Typography variant="body2">
-          <strong>🎯 Focus on What Matters:</strong> Only two scenarios matter in trading - 
-          Active (buying/selling) or Halted (waiting). Auto-refreshes every 30 seconds.
+          <strong>🎯 Focus on What Matters:</strong> Only two scenarios matter in trading - Active
+          (buying/selling) or Halted (waiting). Auto-refreshes every 30 seconds.
           <br />
           <Typography variant="caption" sx={{ opacity: 0.8, mt: 1, display: 'block' }}>
             Last updated: {new Date(lastRefresh).toLocaleTimeString()}
@@ -147,17 +146,23 @@ const SimpleTradingSimulator = () => {
 
       {/* Current Scenario Overview */}
       {currentScenario && !scenarioDetails && (
-        <Card elevation={3} sx={{ mb: 3, bgcolor: '#1e1e1e', border: `3px solid ${currentScenario.color}` }}>
+        <Card
+          elevation={3}
+          sx={{ mb: 3, bgcolor: '#1e1e1e', border: `3px solid ${currentScenario.color}` }}
+        >
           <CardContent>
             <Box sx={{ textAlign: 'center', py: 3 }}>
               <Typography variant="h1" sx={{ fontSize: '4rem', mb: 2 }}>
                 {currentScenario.icon}
               </Typography>
-              
-              <Typography variant="h3" sx={{ fontWeight: 'bold', color: currentScenario.color, mb: 2 }}>
+
+              <Typography
+                variant="h3"
+                sx={{ fontWeight: 'bold', color: currentScenario.color, mb: 2 }}
+              >
                 {currentScenario.title}
               </Typography>
-              
+
               <Typography variant="h6" sx={{ color: '#e0e0e0', mb: 4 }}>
                 {currentScenario.description}
               </Typography>
@@ -166,9 +171,16 @@ const SimpleTradingSimulator = () => {
               <Grid container spacing={2} sx={{ mb: 4 }}>
                 {Object.entries(currentScenario.details).map(([key, value]) => (
                   <Grid item xs={12} sm={4} key={key}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#2a2a2a', border: '1px solid #444' }}>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        textAlign: 'center',
+                        bgcolor: '#2a2a2a',
+                        border: '1px solid #444',
+                      }}
+                    >
                       <Typography variant="body2" sx={{ color: '#bbb', mb: 1 }}>
-                        {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        {key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#fff' }}>
                         {value}
@@ -183,7 +195,7 @@ const SimpleTradingSimulator = () => {
                 size="large"
                 startIcon={currentScenario.status === 'active' ? <PlayArrow /> : <Stop />}
                 onClick={() => handleExploreScenario(currentScenario.id)}
-                sx={{ 
+                sx={{
                   bgcolor: currentScenario.color,
                   color: '#fff',
                   px: 4,
@@ -191,11 +203,13 @@ const SimpleTradingSimulator = () => {
                   fontSize: '1.2rem',
                   '&:hover': {
                     bgcolor: currentScenario.color,
-                    opacity: 0.8
-                  }
+                    opacity: 0.8,
+                  },
                 }}
               >
-                {currentScenario.status === 'active' ? 'Explore Active Trading' : 'Why is Trading Halted?'}
+                {currentScenario.status === 'active'
+                  ? 'Explore Active Trading'
+                  : 'Why is Trading Halted?'}
               </Button>
             </Box>
           </CardContent>
@@ -206,11 +220,13 @@ const SimpleTradingSimulator = () => {
       {scenarioDetails && (
         <Card elevation={3} sx={{ mb: 3, bgcolor: '#1e1e1e', border: '2px solid #4caf50' }}>
           <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}
+            >
               <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
                 {scenarioDetails.title}
               </Typography>
-              <Chip 
+              <Chip
                 label={`Step ${scenarioDetails.step}`}
                 sx={{ bgcolor: '#4caf50', color: '#fff', fontSize: '1rem' }}
               />
@@ -226,7 +242,10 @@ const SimpleTradingSimulator = () => {
                 {scenarioDetails.data.target_orders ? (
                   // Special handling for target orders
                   <Box>
-                    <Typography variant="h6" sx={{ color: '#fff', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography
+                      variant="h6"
+                      sx={{ color: '#fff', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
                       <AttachMoney /> Active Target Orders
                     </Typography>
                     <List>
@@ -234,7 +253,13 @@ const SimpleTradingSimulator = () => {
                         <ListItem key={index} sx={{ bgcolor: '#2a2a2a', mb: 1, borderRadius: 1 }}>
                           <ListItemText
                             primary={
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Box
+                                sx={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                }}
+                              >
                                 <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>
                                   Entry: {order.entry_price}
                                 </Typography>
@@ -250,9 +275,13 @@ const SimpleTradingSimulator = () => {
                         </ListItem>
                       ))}
                     </List>
-                    {scenarioDetails.data.total_positions > scenarioDetails.data.target_orders.length && (
+                    {scenarioDetails.data.total_positions >
+                      scenarioDetails.data.target_orders.length && (
                       <Typography variant="body2" sx={{ color: '#bbb', mt: 1 }}>
-                        +{scenarioDetails.data.total_positions - scenarioDetails.data.target_orders.length} more positions...
+                        +
+                        {scenarioDetails.data.total_positions -
+                          scenarioDetails.data.target_orders.length}{' '}
+                        more positions...
                       </Typography>
                     )}
                   </Box>
@@ -261,9 +290,16 @@ const SimpleTradingSimulator = () => {
                   <Grid container spacing={2}>
                     {Object.entries(scenarioDetails.data).map(([key, value]) => (
                       <Grid item xs={12} sm={6} md={4} key={key}>
-                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#2a2a2a', border: '1px solid #444' }}>
+                        <Paper
+                          sx={{
+                            p: 2,
+                            textAlign: 'center',
+                            bgcolor: '#2a2a2a',
+                            border: '1px solid #444',
+                          }}
+                        >
                           <Typography variant="body2" sx={{ color: '#bbb', mb: 1 }}>
-                            {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            {key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                           </Typography>
                           <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#fff' }}>
                             {value}
@@ -285,35 +321,35 @@ const SimpleTradingSimulator = () => {
                   startIcon={<TrendingUp />}
                   onClick={handleNextStep}
                   disabled={loading}
-                  sx={{ 
+                  sx={{
                     bgcolor: '#2196f3',
                     color: '#fff',
                     px: 3,
                     py: 1.5,
                     '&:hover': {
-                      bgcolor: '#1976d2'
-                    }
+                      bgcolor: '#1976d2',
+                    },
                   }}
                 >
                   {scenarioDetails.next_button}
                 </Button>
               )}
-              
+
               <Button
                 variant="outlined"
                 size="large"
                 startIcon={<Schedule />}
                 onClick={handleReset}
                 disabled={loading}
-                sx={{ 
+                sx={{
                   color: '#fff',
                   borderColor: '#555',
                   px: 3,
                   py: 1.5,
                   '&:hover': {
                     borderColor: '#777',
-                    bgcolor: '#2a2a2a'
-                  }
+                    bgcolor: '#2a2a2a',
+                  },
                 }}
               >
                 Back to Overview
@@ -328,8 +364,8 @@ const SimpleTradingSimulator = () => {
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} sm={8}>
             <Typography variant="body2" sx={{ color: '#bbb' }}>
-              💡 <strong>Simple & Focused:</strong> Shows only what matters - 
-              whether the bot is actively trading or waiting, and what happens next.
+              💡 <strong>Simple & Focused:</strong> Shows only what matters - whether the bot is
+              actively trading or waiting, and what happens next.
             </Typography>
           </Grid>
           <Grid item xs={12} sm={4} sx={{ textAlign: { xs: 'center', sm: 'right' } }}>

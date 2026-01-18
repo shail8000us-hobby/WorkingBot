@@ -5,14 +5,14 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis
+  YAxis,
 } from 'recharts';
 
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload || !payload.length) return null;
   const datum = payload[0].payload;
   const { timestamp, pnl } = datum;
-  
+
   const formatTimestamp = (ts) => {
     if (!ts) return '';
     const date = new Date(ts);
@@ -22,16 +22,14 @@ const CustomTooltip = ({ active, payload }) => {
       second: '2-digit',
       day: '2-digit',
       month: 'short',
-      hour12: false
+      hour12: false,
     }).format(date);
   };
-  
+
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/95 px-4 py-3 text-xs shadow-lg backdrop-blur">
       <div className="font-semibold text-slate-300">{formatTimestamp(timestamp)}</div>
-      <div className="mt-2 text-emerald-300">
-        Unrealized PnL: ₹{Number(pnl).toFixed(2)}
-      </div>
+      <div className="mt-2 text-emerald-300">Unrealized PnL: ₹{Number(pnl).toFixed(2)}</div>
     </div>
   );
 };
@@ -41,49 +39,49 @@ const formatXAxisTime = (timestamp) => {
   if (!timestamp) return '';
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';
-  
+
   return new Intl.DateTimeFormat('en-IN', {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false
+    hour12: false,
   }).format(date);
 };
 
 const getDataDomain = (data) => {
   if (!data || data.length === 0) {
     const now = Date.now();
-    return [now - (24 * 60 * 60 * 1000), now];
+    return [now - 24 * 60 * 60 * 1000, now];
   }
-  
-  const timestamps = data.map(d => d.timestamp).filter(t => t);
+
+  const timestamps = data.map((d) => d.timestamp).filter((t) => t);
   if (timestamps.length === 0) {
     const now = Date.now();
-    return [now - (24 * 60 * 60 * 1000), now];
+    return [now - 24 * 60 * 60 * 1000, now];
   }
-  
+
   const minTime = Math.min(...timestamps);
   const maxTime = Math.max(...timestamps);
-  
-  const padding = (maxTime - minTime) * 0.05 || (60 * 60 * 1000);
-  
+
+  const padding = (maxTime - minTime) * 0.05 || 60 * 60 * 1000;
+
   return [minTime - padding, maxTime + padding];
 };
 
 const generateTicksFromData = (data) => {
   if (!data || data.length === 0) return [];
-  
+
   const domain = getDataDomain(data);
   const [startTime, endTime] = domain;
   const range = endTime - startTime;
-  
+
   const hourInMs = 60 * 60 * 1000;
   const numTicks = Math.min(Math.ceil(range / hourInMs), 24);
-  
+
   const ticks = [];
   for (let i = 0; i <= numTicks; i++) {
-    ticks.push(startTime + (i * range / numTicks));
+    ticks.push(startTime + (i * range) / numTicks);
   }
-  
+
   return ticks;
 };
 
@@ -94,8 +92,8 @@ function PnLChart({ data = [] }) {
         <div className="text-center text-slate-500 px-4">
           <div className="text-sm font-medium">No historical PnL data</div>
           <div className="text-xs mt-2 max-w-md">
-            Guardian bot collects PnL data every 10 seconds.
-            Chart displays the last 24 hours of data.
+            Guardian bot collects PnL data every 10 seconds. Chart displays the last 24 hours of
+            data.
           </div>
           <div className="text-xs mt-2 text-amber-500/80">
             ⚠️ Guardian may not be running. Check Guardian status above.

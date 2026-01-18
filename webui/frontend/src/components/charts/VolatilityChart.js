@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
   Line,
@@ -15,7 +9,7 @@ import {
   YAxis,
   Tooltip,
   Legend,
-  ReferenceLine
+  ReferenceLine,
 } from 'recharts';
 import { RefreshCcw, DollarSign } from 'lucide-react';
 import { useInstance, parseInstanceName } from '../../context/InstanceContext';
@@ -24,7 +18,7 @@ const TIMEFRAMES = [
   { value: 'hourly', label: 'Hourly', rvKey: '1h', description: 'Rolling 24-hour window' },
   { value: 'daily', label: 'Daily', rvKey: '1d', description: 'Last 32 hours' },
   { value: 'weekly', label: 'Weekly', rvKey: '7d', description: 'Last 8 days' },
-  { value: 'monthly', label: 'Monthly', rvKey: '30d', description: 'Last 5 weeks' }
+  { value: 'monthly', label: 'Monthly', rvKey: '30d', description: 'Last 5 weeks' },
 ];
 
 const REFRESH_INTERVAL_MS = 30000;
@@ -86,69 +80,71 @@ const formatTimestamp = (timestamp) => {
     second: '2-digit',
     day: '2-digit',
     month: 'short',
-    hour12: false
+    hour12: false,
   }).format(date);
 };
 
-const buildTickFormatter = (timeframe, chartData = []) => (value) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  
-  if (timeframe === 'hourly') {
-    // For hourly view, show HH:MM format
+const buildTickFormatter =
+  (timeframe, chartData = []) =>
+  (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+
+    if (timeframe === 'hourly') {
+      // For hourly view, show HH:MM format
+      return new Intl.DateTimeFormat('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(date);
+    }
+
+    if (timeframe === 'daily') {
+      // For daily view, show day of week
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      return days[date.getDay()];
+    }
+
+    if (timeframe === 'weekly') {
+      // For weekly view, show actual dates (4 weeks of data)
+      return new Intl.DateTimeFormat('en-IN', {
+        month: 'short',
+        day: 'numeric',
+      }).format(date);
+    }
+
+    if (timeframe === 'monthly') {
+      // For monthly view, show actual dates (3 months of data)
+      return new Intl.DateTimeFormat('en-IN', {
+        month: 'short',
+        day: 'numeric',
+      }).format(date);
+    }
+
+    // Default: show date with month
     return new Intl.DateTimeFormat('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(date);
-  }
-  
-  if (timeframe === 'daily') {
-    // For daily view, show day of week
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return days[date.getDay()];
-  }
-  
-  if (timeframe === 'weekly') {
-    // For weekly view, show actual dates (4 weeks of data)
-    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
       month: 'short',
-      day: 'numeric'
     }).format(date);
-  }
-  
-  if (timeframe === 'monthly') {
-    // For monthly view, show actual dates (3 months of data)
-    return new Intl.DateTimeFormat('en-IN', {
-      month: 'short',
-      day: 'numeric'
-    }).format(date);
-  }
-  
-  // Default: show date with month
-  return new Intl.DateTimeFormat('en-IN', {
-    day: '2-digit',
-    month: 'short'
-  }).format(date);
-};
+  };
 
 // Generate hourly tick marks for 24-hour rolling window
 const generateHourlyTicks = (data) => {
   // For rolling 24-hour window, generate exactly 24 ticks
   const now = Date.now();
   const hourMs = 60 * 60 * 1000;
-  const windowStart = now - (24 * hourMs);
-  
+  const windowStart = now - 24 * hourMs;
+
   // Round windowStart down to the nearest hour for cleaner labels
   const startHour = Math.floor(windowStart / hourMs) * hourMs;
-  
+
   // Generate 25 ticks (24 hours + current hour) for better coverage
   const ticks = [];
   for (let i = 0; i <= 24; i++) {
-    ticks.push(startHour + (i * hourMs));
+    ticks.push(startHour + i * hourMs);
   }
-  
+
   return ticks;
 };
 
@@ -157,17 +153,17 @@ const generateWeeklyTicks = (data) => {
   const ticks = [];
   const now = Date.now();
   const weekMs = 7 * 24 * 60 * 60 * 1000;
-  
+
   // Always show 4 weeks back from now
-  const startTime = now - (4 * weekMs);
-  
+  const startTime = now - 4 * weekMs;
+
   // Generate 5 ticks: start of 4 weeks ago, then each week boundary, then now
   ticks.push(startTime);
   ticks.push(startTime + weekMs);
-  ticks.push(startTime + (2 * weekMs));
-  ticks.push(startTime + (3 * weekMs));
+  ticks.push(startTime + 2 * weekMs);
+  ticks.push(startTime + 3 * weekMs);
   ticks.push(now);
-  
+
   return ticks;
 };
 
@@ -176,16 +172,16 @@ const generateMonthlyTicks = (data) => {
   const ticks = [];
   const now = Date.now();
   const monthMs = 30 * 24 * 60 * 60 * 1000;
-  
+
   // Always show 3 months back from now
-  const startTime = now - (3 * monthMs);
-  
+  const startTime = now - 3 * monthMs;
+
   // Generate 4 ticks: start of 3 months ago, then each month boundary, then now
   ticks.push(startTime);
   ticks.push(startTime + monthMs);
-  ticks.push(startTime + (2 * monthMs));
+  ticks.push(startTime + 2 * monthMs);
   ticks.push(now);
-  
+
   return ticks;
 };
 
@@ -201,22 +197,20 @@ const CustomTooltip = ({ active, payload, timeframe, monthlyAverages }) => {
       </div>
       <div className="mt-2 flex flex-col gap-1">
         <div className="flex flex-col">
-          <span className="font-semibold text-rose-300">
-            IV · {formatPercent(iv)}
-          </span>
+          <span className="font-semibold text-rose-300">IV · {formatPercent(iv)}</span>
           {timeframe === 'hourly' && monthlyAverages.avgIV && iv !== null && iv !== undefined && (
             <span className="text-[10px] text-rose-300/80">
-              vs 30d avg: {(iv - monthlyAverages.avgIV) >= 0 ? '+' : ''}{(iv - monthlyAverages.avgIV).toFixed(2)}%
+              vs 30d avg: {iv - monthlyAverages.avgIV >= 0 ? '+' : ''}
+              {(iv - monthlyAverages.avgIV).toFixed(2)}%
             </span>
           )}
         </div>
         <div className="flex flex-col">
-          <span className="font-semibold text-emerald-300">
-            RV · {formatPercent(rv)}
-          </span>
+          <span className="font-semibold text-emerald-300">RV · {formatPercent(rv)}</span>
           {timeframe === 'hourly' && monthlyAverages.avgRV && rv !== null && rv !== undefined && (
             <span className="text-[10px] text-emerald-300/80">
-              vs 30d avg: {(rv - monthlyAverages.avgRV) >= 0 ? '+' : ''}{(rv - monthlyAverages.avgRV).toFixed(2)}%
+              vs 30d avg: {rv - monthlyAverages.avgRV >= 0 ? '+' : ''}
+              {(rv - monthlyAverages.avgRV).toFixed(2)}%
             </span>
           )}
         </div>
@@ -239,15 +233,17 @@ function VolatilityChart({
   showFooter = true,
   showLegend = true,
   chartHeight = 450,
-  className
+  className,
 }) {
   // Instance awareness for multi-symbol support (v6.0)
   const { selectedInstance, instances } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
   const [currentSymbol, setCurrentSymbol] = useState(instanceInfo?.symbol || 'BTCUSD');
-  const availableSymbols = [...new Set(instances.map(i => parseInstanceName(i.name)?.symbol).filter(Boolean))];
+  const availableSymbols = [
+    ...new Set(instances.map((i) => parseInstanceName(i.name)?.symbol).filter(Boolean)),
+  ];
   if (availableSymbols.length === 0) availableSymbols.push('BTCUSD', 'ETHUSD');
-  
+
   const [timeframe, setTimeframe] = useState(initialTimeframe);
   const [chartData, setChartData] = useState({});
   const [loading, setLoading] = useState(true);
@@ -258,14 +254,14 @@ function VolatilityChart({
   const [btcLoading, setBtcLoading] = useState(false);
   const [monthlyAverages, setMonthlyAverages] = useState({
     avgIV: null,
-    avgRV: null
+    avgRV: null,
   });
 
   // Get symbol color
   const getSymbolColor = (symbol) => {
     const colors = {
-      'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
-      'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' },
+      BTCUSD: { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
+      ETHUSD: { bg: '#627eea20', border: '#627eea', text: '#627eea' },
     };
     return colors[symbol] || { bg: '#64748b20', border: '#64748b', text: '#64748b' };
   };
@@ -299,13 +295,13 @@ function VolatilityChart({
     if (timeframe !== 'hourly' || !data.length) {
       return data;
     }
-    
+
     const now = Date.now();
     const hourMs = 60 * 60 * 1000;
-    const windowStart = now - (24 * hourMs);
-    
+    const windowStart = now - 24 * hourMs;
+
     // Keep only data points within the last 24 hours
-    return data.filter(point => point.timestamp >= windowStart && point.timestamp <= now);
+    return data.filter((point) => point.timestamp >= windowStart && point.timestamp <= now);
   }, [chartData, currentSymbol, timeframe]);
 
   const fetchLatest = useCallback(async () => {
@@ -326,57 +322,63 @@ function VolatilityChart({
     }
   }, [currentSymbol]);
 
-  const fetchHistorical = useCallback(async (tf, { showLoader = true } = {}) => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/risk/volatility/historical?timeframe=${tf}&symbol=${currentSymbol}`, {
-        signal: controller.signal
-      });
-
-      if (response.status === 404) {
-        setChartData(prev => ({ ...prev, [currentSymbol]: [] }));
-        setLastUpdated(null);
-        return;
+  const fetchHistorical = useCallback(
+    async (tf, { showLoader = true } = {}) => {
+      if (abortRef.current) {
+        abortRef.current.abort();
       }
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (showLoader) {
+        setLoading(true);
       }
+      setError(null);
 
-      const payload = await response.json();
-      if (!payload?.success) {
-        throw new Error(payload?.error || 'Failed to load historical volatility');
-      }
+      try {
+        const response = await fetch(
+          `/api/risk/volatility/historical?timeframe=${tf}&symbol=${currentSymbol}`,
+          {
+            signal: controller.signal,
+          }
+        );
 
-      const { data } = payload;
-      const merged = mergeSeries(data?.iv, data?.rv);
+        if (response.status === 404) {
+          setChartData((prev) => ({ ...prev, [currentSymbol]: [] }));
+          setLastUpdated(null);
+          return;
+        }
 
-      if (!mountedRef.current) return;
-      setChartData(prev => ({ ...prev, [currentSymbol]: merged }));
-      setLastUpdated(Date.now());
-    } catch (err) {
-      if (controller.signal.aborted || !mountedRef.current) {
-        return;
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = await response.json();
+        if (!payload?.success) {
+          throw new Error(payload?.error || 'Failed to load historical volatility');
+        }
+
+        const { data } = payload;
+        const merged = mergeSeries(data?.iv, data?.rv);
+
+        if (!mountedRef.current) return;
+        setChartData((prev) => ({ ...prev, [currentSymbol]: merged }));
+        setLastUpdated(Date.now());
+      } catch (err) {
+        if (controller.signal.aborted || !mountedRef.current) {
+          return;
+        }
+        console.error('Failed to fetch volatility history:', err);
+        setError(err.message || 'Unable to load volatility history');
+        setChartData((prev) => ({ ...prev, [currentSymbol]: [] }));
+      } finally {
+        if (!controller.signal.aborted && mountedRef.current && showLoader) {
+          setLoading(false);
+        }
       }
-      console.error('Failed to fetch volatility history:', err);
-      setError(err.message || 'Unable to load volatility history');
-      setChartData(prev => ({ ...prev, [currentSymbol]: [] }));
-    } finally {
-      if (!controller.signal.aborted && mountedRef.current && showLoader) {
-        setLoading(false);
-      }
-    }
-  }, [currentSymbol]);
+    },
+    [currentSymbol]
+  );
 
   const refreshData = useCallback(
     async (tf, { showLoader = true } = {}) => {
@@ -387,7 +389,9 @@ function VolatilityChart({
 
   const fetchMonthlyAverages = useCallback(async () => {
     try {
-      const response = await fetch(`/api/risk/volatility/historical?timeframe=monthly&symbol=${currentSymbol}`);
+      const response = await fetch(
+        `/api/risk/volatility/historical?timeframe=monthly&symbol=${currentSymbol}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -396,31 +400,31 @@ function VolatilityChart({
         throw new Error(payload?.error || 'Failed to fetch monthly data');
       }
       if (!mountedRef.current) return;
-      
+
       const { data } = payload;
-      
+
       // Calculate average IV from monthly data
       let avgIV = null;
       if (data?.iv && data.iv.length > 0) {
         const ivValues = data.iv
-          .map(point => normalizeValue(point?.value ?? point?.iv ?? point?.iv_value))
-          .filter(v => v !== null);
+          .map((point) => normalizeValue(point?.value ?? point?.iv ?? point?.iv_value))
+          .filter((v) => v !== null);
         if (ivValues.length > 0) {
           avgIV = ivValues.reduce((sum, val) => sum + val, 0) / ivValues.length;
         }
       }
-      
+
       // Calculate average RV from monthly data
       let avgRV = null;
       if (data?.rv && data.rv.length > 0) {
         const rvValues = data.rv
-          .map(point => normalizeValue(point?.value ?? point?.rv ?? point?.rv_value))
-          .filter(v => v !== null);
+          .map((point) => normalizeValue(point?.value ?? point?.rv ?? point?.rv_value))
+          .filter((v) => v !== null);
         if (rvValues.length > 0) {
           avgRV = rvValues.reduce((sum, val) => sum + val, 0) / rvValues.length;
         }
       }
-      
+
       setMonthlyAverages({ avgIV, avgRV });
     } catch (err) {
       if (!mountedRef.current) return;
@@ -441,7 +445,7 @@ function VolatilityChart({
       }
       if (!mountedRef.current) return;
       setBtcPrice(payload.data);
-      
+
       // Show alert with BTC price details only if requested
       if (showDetails) {
         const data = payload.data;
@@ -449,12 +453,12 @@ function VolatilityChart({
         const changeSign = change24h >= 0 ? '+' : '';
         alert(
           `BTC Perpetual Price\n\n` +
-          `Price: $${data.price?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-          `24h Change: ${changeSign}${change24h.toFixed(2)}%\n` +
-          `High: $${data.high?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-          `Low: $${data.low?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-          `Volume: ${data.volume?.toLocaleString('en-US')}\n` +
-          `Updated: ${new Date(data.timestamp).toLocaleString('en-IN')}`
+            `Price: $${data.price?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+            `24h Change: ${changeSign}${change24h.toFixed(2)}%\n` +
+            `High: $${data.high?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+            `Low: $${data.low?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+            `Volume: ${data.volume?.toLocaleString('en-US')}\n` +
+            `Updated: ${new Date(data.timestamp).toLocaleString('en-IN')}`
         );
       }
     } catch (err) {
@@ -474,7 +478,7 @@ function VolatilityChart({
     mountedRef.current = true;
     refreshData(timeframe, { showLoader: true });
     fetchBTCPrice(false); // Fetch BTC price on mount without showing details
-    
+
     // Fetch monthly averages when in hourly mode
     if (timeframe === 'hourly') {
       fetchMonthlyAverages();
@@ -508,7 +512,7 @@ function VolatilityChart({
     if (!socket) return undefined;
 
     let refreshTimeout = null;
-    
+
     const handleVolatilityUpdate = (message) => {
       if (!message) return;
       if (message.success && message.data) {
@@ -536,15 +540,19 @@ function VolatilityChart({
   const renderSummary = showSummary && (
     <div className="grid gap-3 sm:grid-cols-3">
       <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3">
-        <p className="text-[11px] uppercase tracking-[0.24em] text-rose-200/80">Implied Volatility</p>
-        <p className={clsx(
-          'mt-2 text-xl font-semibold',
-          timeframe === 'hourly' && monthlyAverages.avgIV && latest?.iv?.value
-            ? latest.iv.value > monthlyAverages.avgIV
-              ? 'text-rose-400'
-              : 'text-rose-200'
-            : 'text-rose-100'
-        )}>
+        <p className="text-[11px] uppercase tracking-[0.24em] text-rose-200/80">
+          Implied Volatility
+        </p>
+        <p
+          className={clsx(
+            'mt-2 text-xl font-semibold',
+            timeframe === 'hourly' && monthlyAverages.avgIV && latest?.iv?.value
+              ? latest.iv.value > monthlyAverages.avgIV
+                ? 'text-rose-400'
+                : 'text-rose-200'
+              : 'text-rose-100'
+          )}
+        >
           {formatPercent(latest?.iv?.value)}
         </p>
         <p className="text-[11px] text-rose-200/60">ATM option IV snapshot</p>
@@ -553,24 +561,22 @@ function VolatilityChart({
         <p className="text-[11px] uppercase tracking-[0.24em] text-emerald-200/80">
           Realized Volatility
         </p>
-        <p className={clsx(
-          'mt-2 text-xl font-semibold',
-          timeframe === 'hourly' && monthlyAverages.avgRV && selectedRv
-            ? selectedRv > monthlyAverages.avgRV
-              ? 'text-emerald-400'
-              : 'text-emerald-200'
-            : 'text-emerald-100'
-        )}>
+        <p
+          className={clsx(
+            'mt-2 text-xl font-semibold',
+            timeframe === 'hourly' && monthlyAverages.avgRV && selectedRv
+              ? selectedRv > monthlyAverages.avgRV
+                ? 'text-emerald-400'
+                : 'text-emerald-200'
+              : 'text-emerald-100'
+          )}
+        >
           {formatPercent(selectedRv)}
         </p>
-        <p className="text-[11px] text-emerald-200/60">
-          {selectedTimeframe?.label ?? ''} lookback
-        </p>
+        <p className="text-[11px] text-emerald-200/60">{selectedTimeframe?.label ?? ''} lookback</p>
       </div>
       <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3">
-        <p className="text-[11px] uppercase tracking-[0.24em] text-sky-200/80">
-          IV - RV Spread
-        </p>
+        <p className="text-[11px] uppercase tracking-[0.24em] text-sky-200/80">IV - RV Spread</p>
         <p
           className={clsx(
             'mt-2 text-xl font-semibold',
@@ -623,8 +629,8 @@ function VolatilityChart({
         <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-slate-400">
           <p className="font-medium text-slate-200">Waiting for volatility collector</p>
           <p className="max-w-sm text-xs text-slate-500">
-            Historical IV/RV points populate automatically once the Delta Exchange collector has been
-            running for a few minutes.
+            Historical IV/RV points populate automatically once the Delta Exchange collector has
+            been running for a few minutes.
           </p>
         </div>
       );
@@ -633,36 +639,36 @@ function VolatilityChart({
     // Calculate domain for time-based views (rolling windows)
     const getXAxisDomain = () => {
       const now = Date.now();
-      
+
       if (timeframe === 'hourly') {
         // Rolling 24-hour window: current_time - 24h → current_time
         const hourMs = 60 * 60 * 1000;
-        return [now - (24 * hourMs), now];
+        return [now - 24 * hourMs, now];
       }
-      
+
       if (timeframe === 'weekly') {
         const weekMs = 7 * 24 * 60 * 60 * 1000;
-        return [now - (4 * weekMs), now];
+        return [now - 4 * weekMs, now];
       }
-      
+
       if (timeframe === 'monthly') {
         const monthMs = 30 * 24 * 60 * 60 * 1000;
-        return [now - (3 * monthMs), now];
+        return [now - 3 * monthMs, now];
       }
-      
+
       return ['dataMin', 'dataMax'];
     };
 
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={filteredChartData}
-          margin={{ top: 10, right: 20, bottom: 10, left: 0 }}
-        >
+        <LineChart data={filteredChartData} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
           <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" strokeDasharray="3 3" />
           <XAxis
             dataKey="timestamp"
-            {...((timeframe === 'hourly' || timeframe === 'weekly' || timeframe === 'monthly') && { type: 'number', domain: getXAxisDomain() })}
+            {...((timeframe === 'hourly' || timeframe === 'weekly' || timeframe === 'monthly') && {
+              type: 'number',
+              domain: getXAxisDomain(),
+            })}
             stroke="#475569"
             tick={{ fill: '#94a3b8', fontSize: 11 }}
             tickFormatter={buildTickFormatter(timeframe, filteredChartData)}
@@ -677,7 +683,9 @@ function VolatilityChart({
             tickFormatter={(value) => `${value.toFixed(0)}%`}
             width={52}
           />
-          <Tooltip content={<CustomTooltip timeframe={timeframe} monthlyAverages={monthlyAverages} />} />
+          <Tooltip
+            content={<CustomTooltip timeframe={timeframe} monthlyAverages={monthlyAverages} />}
+          />
           {showLegend && (
             <Legend
               verticalAlign="top"
@@ -686,7 +694,7 @@ function VolatilityChart({
               wrapperStyle={{
                 paddingBottom: 12,
                 fontSize: 12,
-                color: '#94a3b8'
+                color: '#94a3b8',
               }}
             />
           )}
@@ -720,7 +728,7 @@ function VolatilityChart({
                 value: `Avg IV (30d): ${monthlyAverages.avgIV.toFixed(2)}%`,
                 position: 'right',
                 fill: '#f87171',
-                fontSize: 11
+                fontSize: 11,
               }}
             />
           )}
@@ -734,7 +742,7 @@ function VolatilityChart({
                 value: `Avg RV (30d): ${monthlyAverages.avgRV.toFixed(2)}%`,
                 position: 'right',
                 fill: '#34d399',
-                fontSize: 11
+                fontSize: 11,
               }}
             />
           )}
@@ -753,17 +761,22 @@ function VolatilityChart({
             </p>
             <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
               Delta Exchange IV vs RV
-              <span className={clsx(
-                'text-xs px-2 py-0.5 rounded font-medium',
-                currentSymbol === 'BTCUSD' ? 'bg-blue-500/20 text-blue-300' :
-                currentSymbol === 'ETHUSD' ? 'bg-purple-500/20 text-purple-300' :
-                'bg-slate-500/20 text-slate-300'
-              )}>
+              <span
+                className={clsx(
+                  'text-xs px-2 py-0.5 rounded font-medium',
+                  currentSymbol === 'BTCUSD'
+                    ? 'bg-blue-500/20 text-blue-300'
+                    : currentSymbol === 'ETHUSD'
+                      ? 'bg-purple-500/20 text-purple-300'
+                      : 'bg-slate-500/20 text-slate-300'
+                )}
+              >
                 {currentSymbol}
               </span>
             </h3>
             <p className="text-xs text-slate-500">
-              Live implied vs realized volatility (1-hour) with {selectedTimeframe?.label?.toLowerCase()} lookback
+              Live implied vs realized volatility (1-hour) with{' '}
+              {selectedTimeframe?.label?.toLowerCase()} lookback
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -782,11 +795,15 @@ function VolatilityChart({
                         ? 'shadow-inner'
                         : 'text-slate-400 hover:text-slate-200'
                     )}
-                    style={symbol === currentSymbol ? {
-                      backgroundColor: colors.bg,
-                      color: colors.text,
-                      borderColor: colors.border
-                    } : {}}
+                    style={
+                      symbol === currentSymbol
+                        ? {
+                            backgroundColor: colors.bg,
+                            color: colors.text,
+                            borderColor: colors.border,
+                          }
+                        : {}
+                    }
                   >
                     {symbol.replace('USD', '')}
                   </button>
@@ -827,7 +844,11 @@ function VolatilityChart({
               title="Click for 24h stats"
             >
               <DollarSign className="h-3.5 w-3.5" />
-              {btcLoading ? 'Loading...' : btcPrice ? `$${btcPrice.price?.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : 'BTC Price'}
+              {btcLoading
+                ? 'Loading...'
+                : btcPrice
+                  ? `$${btcPrice.price?.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                  : 'BTC Price'}
             </button>
           </div>
         </div>

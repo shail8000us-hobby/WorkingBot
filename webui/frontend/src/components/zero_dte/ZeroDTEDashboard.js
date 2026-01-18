@@ -1,6 +1,6 @@
 /**
  * Zero DTE Dashboard - Main Container
- * 
+ *
  * Autonomous 0DTE strangle strategy dashboard.
  * After start, bot manages everything. Only manual action: stop/restart.
  */
@@ -25,7 +25,7 @@ const ZeroDTEDashboard = () => {
     try {
       const response = await fetch('/api/zero-dte/status');
       const data = await response.json();
-      
+
       if (data.success) {
         setStatus(data);
         setError(null);
@@ -43,7 +43,7 @@ const ZeroDTEDashboard = () => {
   // Poll status every 5 seconds when active
   useEffect(() => {
     fetchStatus();
-    
+
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
@@ -62,12 +62,12 @@ const ZeroDTEDashboard = () => {
           target_premium_min: config.target_premium_min,
           target_premium_max: config.target_premium_max,
           stop_loss: config.stop_loss,
-          rebalance_threshold: config.rebalance_threshold
-        })
+          rebalance_threshold: config.rebalance_threshold,
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         await fetchStatus();
       } else {
@@ -82,20 +82,22 @@ const ZeroDTEDashboard = () => {
 
   // Handle session stop
   const handleStop = async (reason = 'manual') => {
-    if (!window.confirm('Are you sure you want to stop the session? All positions will be closed.')) {
+    if (
+      !window.confirm('Are you sure you want to stop the session? All positions will be closed.')
+    ) {
       return;
     }
-    
+
     try {
       setLoading(true);
       const response = await fetch('/api/zero-dte/session/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
+        body: JSON.stringify({ reason }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         await fetchStatus();
         alert(`Session closed. Final P&L: ₹${data.final_pnl?.toFixed(2) || '0.00'}`);
@@ -126,9 +128,7 @@ const ZeroDTEDashboard = () => {
         </div>
         <div className="header-right">
           {lastUpdate && (
-            <span className="last-update">
-              Updated: {lastUpdate.toLocaleTimeString()}
-            </span>
+            <span className="last-update">Updated: {lastUpdate.toLocaleTimeString()}</span>
           )}
         </div>
       </div>
@@ -180,10 +180,7 @@ const ZeroDTEDashboard = () => {
 
           {/* P&L Display */}
           <div className="grid-item">
-            <PnLDisplay
-              status={status}
-              positions={status?.positions}
-            />
+            <PnLDisplay status={status} positions={status?.positions} />
           </div>
 
           {/* Positions Table */}
@@ -197,10 +194,7 @@ const ZeroDTEDashboard = () => {
 
           {/* Rebalance History */}
           <div className="grid-item full-width">
-            <RebalanceHistory
-              sessionId={status?.session_id}
-              isActive={isActive}
-            />
+            <RebalanceHistory sessionId={status?.session_id} isActive={isActive} />
           </div>
         </div>
       )}

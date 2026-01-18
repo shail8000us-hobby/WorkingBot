@@ -43,12 +43,18 @@ interface StrategyManagerProps {
   apiBaseUrl?: string;
 }
 
-const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://localhost:5000' }) => {
+const StrategyManager: React.FC<StrategyManagerProps> = ({
+  apiBaseUrl = 'http://localhost:5000',
+}) => {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' });
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'info' as 'success' | 'error' | 'info',
+  });
 
   // Form state
   const [formName, setFormName] = useState('');
@@ -86,7 +92,7 @@ const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://
         }),
       });
       const data = await response.json();
-      
+
       if (data.success) {
         showSnackbar('Strategy created successfully', 'success');
         loadStrategies();
@@ -102,13 +108,13 @@ const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://
 
   const deleteStrategy = async (name: string) => {
     if (!window.confirm(`Delete strategy "${name}"?`)) return;
-    
+
     try {
       const response = await fetch(`${apiBaseUrl}/api/config/strategies/${name}`, {
         method: 'DELETE',
       });
       const data = await response.json();
-      
+
       if (data.success) {
         showSnackbar('Strategy deleted', 'success');
         loadStrategies();
@@ -128,7 +134,7 @@ const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://
         method: 'POST',
       });
       const data = await response.json();
-      
+
       if (data.success) {
         showSnackbar(`Strategy ${activate ? 'activated' : 'deactivated'}`, 'success');
         loadStrategies();
@@ -207,18 +213,9 @@ const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://
                       {strategy.name}
                     </Typography>
                     {strategy.active ? (
-                      <Chip
-                        icon={<ActiveIcon />}
-                        label="Active"
-                        color="success"
-                        size="small"
-                      />
+                      <Chip icon={<ActiveIcon />} label="Active" color="success" size="small" />
                     ) : (
-                      <Chip
-                        icon={<InactiveIcon />}
-                        label="Inactive"
-                        size="small"
-                      />
+                      <Chip icon={<InactiveIcon />} label="Inactive" size="small" />
                     )}
                   </Box>
 
@@ -251,10 +248,7 @@ const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Edit">
-                      <IconButton
-                        size="small"
-                        onClick={() => openEditDialog(strategy)}
-                      >
+                      <IconButton size="small" onClick={() => openEditDialog(strategy)}>
                         <EditIcon />
                       </IconButton>
                     </Tooltip>
@@ -277,9 +271,7 @@ const StrategyManager: React.FC<StrategyManagerProps> = ({ apiBaseUrl = 'http://
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="md" fullWidth>
-        <DialogTitle>
-          {editingStrategy ? 'Edit Strategy' : 'Create New Strategy'}
-        </DialogTitle>
+        <DialogTitle>{editingStrategy ? 'Edit Strategy' : 'Create New Strategy'}</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField

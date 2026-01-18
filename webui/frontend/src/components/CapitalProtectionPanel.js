@@ -24,7 +24,7 @@ import {
   TextField,
   Snackbar,
   IconButton,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   Security as SecurityIcon,
@@ -36,7 +36,7 @@ import {
   Error as ErrorIcon,
   People as PeopleIcon,
   Shield as ShieldIcon,
-  Book as BookIcon
+  Book as BookIcon,
 } from '@mui/icons-material';
 import ConfigSection from './ConfigSection';
 import HelpIcon from './help/HelpIcon';
@@ -49,7 +49,7 @@ import EmergencyToggle from './EmergencyToggle';
 // Configure apiClient for capital protection APIs
 // Use origin-relative URL to work with localhost and Tailscale
 const capitalApiClient = new APIClient({
-  baseURL: window.location.origin
+  baseURL: window.location.origin,
 });
 
 function CapitalProtectionPanel() {
@@ -60,7 +60,7 @@ function CapitalProtectionPanel() {
     drawdownCap: null,
     exposureLimiter: null,
     pendingBudget: null,
-    configGuard: null
+    configGuard: null,
   });
   const [editing, setEditing] = useState({});
   const [saving, setSaving] = useState(false);
@@ -79,7 +79,7 @@ function CapitalProtectionPanel() {
         capitalApiClient.get('/api/capital/drawdown/status'),
         capitalApiClient.get('/api/capital/exposure/status'),
         capitalApiClient.get('/api/capital/budget/status'),
-        capitalApiClient.get('/api/capital/config-guard/status')
+        capitalApiClient.get('/api/capital/config-guard/status'),
       ]);
 
       setData({
@@ -87,7 +87,7 @@ function CapitalProtectionPanel() {
         drawdownCap: drawdown.success ? drawdown.data : null,
         exposureLimiter: exposure.success ? exposure.data : null,
         pendingBudget: budget.success ? budget.data : null,
-        configGuard: config.success ? config.data : null
+        configGuard: config.success ? config.data : null,
       });
 
       setLoading(false);
@@ -143,7 +143,7 @@ function CapitalProtectionPanel() {
         setSnackbar({
           open: true,
           message: '❌ Cannot connect to server. Please check if the backend is running.',
-          severity: 'error'
+          severity: 'error',
         });
         return;
       }
@@ -153,7 +153,7 @@ function CapitalProtectionPanel() {
         setSnackbar({
           open: true,
           message: '❌ No configuration changes to save',
-          severity: 'error'
+          severity: 'error',
         });
         return;
       }
@@ -161,10 +161,14 @@ function CapitalProtectionPanel() {
       // Convert string values to numbers where appropriate
       const processedUpdates = { ...configUpdates };
       if (processedUpdates.max_notional_per_minute) {
-        processedUpdates.max_notional_per_minute = parseFloat(processedUpdates.max_notional_per_minute);
+        processedUpdates.max_notional_per_minute = parseFloat(
+          processedUpdates.max_notional_per_minute
+        );
       }
       if (processedUpdates.max_tranches_per_minute) {
-        processedUpdates.max_tranches_per_minute = parseInt(processedUpdates.max_tranches_per_minute);
+        processedUpdates.max_tranches_per_minute = parseInt(
+          processedUpdates.max_tranches_per_minute
+        );
       }
 
       // Add confirmed flag if this is a confirmed retry
@@ -185,7 +189,7 @@ function CapitalProtectionPanel() {
         setSnackbar({
           open: true,
           message: '⚠️ Please review and confirm your changes',
-          severity: 'info'
+          severity: 'info',
         });
         return;
       }
@@ -194,7 +198,7 @@ function CapitalProtectionPanel() {
         setSnackbar({
           open: true,
           message: `${result.message || '✅ Configuration saved successfully'}`,
-          severity: 'success'
+          severity: 'success',
         });
         // Refresh data after successful save
         await fetchAllData();
@@ -203,7 +207,7 @@ function CapitalProtectionPanel() {
         setSnackbar({
           open: true,
           message: `❌ Failed to update: ${result?.error || 'Unknown error'}`,
-          severity: 'error'
+          severity: 'error',
         });
       }
     } catch (error) {
@@ -211,7 +215,7 @@ function CapitalProtectionPanel() {
       setSnackbar({
         open: true,
         message: `❌ Error saving configuration: ${error.message}`,
-        severity: 'error'
+        severity: 'error',
       });
     } finally {
       setSaving(false);
@@ -232,7 +236,7 @@ function CapitalProtectionPanel() {
     setSnackbar({
       open: true,
       message: 'Changes cancelled',
-      severity: 'info'
+      severity: 'info',
     });
   };
 
@@ -245,11 +249,7 @@ function CapitalProtectionPanel() {
             <Typography variant="h5">Capital Protection Overview</Typography>
           </Box>
           <Tooltip title="View Documentation">
-            <IconButton 
-              onClick={() => setDocsOpen(true)}
-              color="primary"
-              size="large"
-            >
+            <IconButton onClick={() => setDocsOpen(true)} color="primary" size="large">
               <BookIcon />
             </IconButton>
           </Tooltip>
@@ -263,7 +263,12 @@ function CapitalProtectionPanel() {
         <Grid container spacing={2}>
           {/* Equity Floor Status */}
           <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 2, bgcolor: data.equityFloor?.breached ? 'error.dark' : 'background.default' }}>
+            <Paper
+              sx={{
+                p: 2,
+                bgcolor: data.equityFloor?.breached ? 'error.dark' : 'background.default',
+              }}
+            >
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                 <Box display="flex" alignItems="center">
                   <SecurityIcon sx={{ mr: 1 }} />
@@ -313,7 +318,12 @@ function CapitalProtectionPanel() {
 
           {/* Drawdown Cap Status */}
           <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 2, bgcolor: data.drawdownCap?.protective_mode ? 'warning.dark' : 'background.default' }}>
+            <Paper
+              sx={{
+                p: 2,
+                bgcolor: data.drawdownCap?.protective_mode ? 'warning.dark' : 'background.default',
+              }}
+            >
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                 <Box display="flex" alignItems="center">
                   <TrendingDownIcon sx={{ mr: 1 }} />
@@ -340,11 +350,15 @@ function CapitalProtectionPanel() {
                   <Typography variant="body2">
                     Limit: {data.drawdownCap.max_drawdown_pct}%
                   </Typography>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={Math.min((data.drawdownCap.current_drawdown_pct / data.drawdownCap.max_drawdown_pct) * 100, 100)}
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(
+                      (data.drawdownCap.current_drawdown_pct / data.drawdownCap.max_drawdown_pct) *
+                        100,
+                      100
+                    )}
                     sx={{ mt: 1, mb: 1 }}
-                    color={data.drawdownCap.protective_mode ? "error" : "success"}
+                    color={data.drawdownCap.protective_mode ? 'error' : 'success'}
                   />
                   <Box mt={1}>
                     {data.drawdownCap.protective_mode ? (
@@ -384,19 +398,18 @@ function CapitalProtectionPanel() {
               {data.exposureLimiter ? (
                 <>
                   <Typography variant="h4" sx={{ my: 1 }}>
-                    {data.exposureLimiter.current_window?.tranches || 0}/{data.exposureLimiter.max_tranches_per_minute || 0}
+                    {data.exposureLimiter.current_window?.tranches || 0}/
+                    {data.exposureLimiter.max_tranches_per_minute || 0}
                   </Typography>
-                  <Typography variant="body2">
-                    Tranches this minute
-                  </Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <Typography variant="body2">Tranches this minute</Typography>
+                  <LinearProgress
+                    variant="determinate"
                     value={data.exposureLimiter.current_window?.utilization_pct || 0}
                     sx={{ mt: 1, mb: 1 }}
                   />
                   <Typography variant="caption" color="text.secondary">
-                    ₹{(data.exposureLimiter.current_window?.notional_inr || 0).toLocaleString()} / 
-                    ₹{(data.exposureLimiter.max_notional_per_minute || 0).toLocaleString()} notional
+                    ₹{(data.exposureLimiter.current_window?.notional_inr || 0).toLocaleString()} / ₹
+                    {(data.exposureLimiter.max_notional_per_minute || 0).toLocaleString()} notional
                   </Typography>
                 </>
               ) : (
@@ -434,11 +447,11 @@ function CapitalProtectionPanel() {
                   <Typography variant="body2">
                     Budget: ₹{data.pendingBudget.max_pending?.toLocaleString()}
                   </Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <LinearProgress
+                    variant="determinate"
                     value={data.pendingBudget.utilization_pct || 0}
                     sx={{ mt: 1, mb: 1 }}
-                    color={data.pendingBudget.utilization_pct > 90 ? "warning" : "success"}
+                    color={data.pendingBudget.utilization_pct > 90 ? 'warning' : 'success'}
                   />
                   <Typography variant="caption" color="text.secondary">
                     {data.pendingBudget.pending_orders_count || 0} pending orders
@@ -452,7 +465,14 @@ function CapitalProtectionPanel() {
 
           {/* Config Guard Status */}
           <Grid item xs={12}>
-            <Paper sx={{ p: 2, bgcolor: data.configGuard?.has_pending_change ? 'warning.dark' : 'background.default' }}>
+            <Paper
+              sx={{
+                p: 2,
+                bgcolor: data.configGuard?.has_pending_change
+                  ? 'warning.dark'
+                  : 'background.default',
+              }}
+            >
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
                 <Box display="flex" alignItems="center">
                   <PeopleIcon sx={{ mr: 1 }} />
@@ -489,7 +509,6 @@ function CapitalProtectionPanel() {
               )}
             </Paper>
           </Grid>
-
         </Grid>
       </CardContent>
     </Card>
@@ -531,8 +550,13 @@ function CapitalProtectionPanel() {
             {/* Equity Metrics */}
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Current Equity</Typography>
-                <Typography variant="h3" color={data.equityFloor.breached ? 'error.main' : 'success.main'}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Current Equity
+                </Typography>
+                <Typography
+                  variant="h3"
+                  color={data.equityFloor.breached ? 'error.main' : 'success.main'}
+                >
                   ₹{data.equityFloor.current_equity?.toLocaleString()}
                 </Typography>
               </Paper>
@@ -540,15 +564,26 @@ function CapitalProtectionPanel() {
 
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Equity Floor</Typography>
-                <Typography variant="h3">₹{data.equityFloor.floor_inr?.toLocaleString()}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Equity Floor
+                </Typography>
+                <Typography variant="h3">
+                  ₹{data.equityFloor.floor_inr?.toLocaleString()}
+                </Typography>
               </Paper>
             </Grid>
 
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Buffer Remaining</Typography>
-                <Typography variant="h3" color={(data.equityFloor.buffer_inr || 0) < 10000 ? 'warning.main' : 'text.primary'}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Buffer Remaining
+                </Typography>
+                <Typography
+                  variant="h3"
+                  color={
+                    (data.equityFloor.buffer_inr || 0) < 10000 ? 'warning.main' : 'text.primary'
+                  }
+                >
                   ₹{data.equityFloor.buffer_inr?.toLocaleString()}
                 </Typography>
               </Paper>
@@ -567,11 +602,12 @@ function CapitalProtectionPanel() {
                       onClick={() => {
                         const ef = data.equityFloor || {};
                         setEditing({
-                          ...editing, 
-                          equityFloorEdit: true, 
+                          ...editing,
+                          equityFloorEdit: true,
                           equity_floor: ef.floor_inr || 50000,
                           equity_floor_check_interval: ef.check_interval_sec || 60,
-                          equity_floor_require_ack: ef.require_ack !== undefined ? ef.require_ack : true
+                          equity_floor_require_ack:
+                            ef.require_ack !== undefined ? ef.require_ack : true,
                         });
                       }}
                     >
@@ -582,7 +618,7 @@ function CapitalProtectionPanel() {
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => setEditing({...editing, equityFloorEdit: false})}
+                        onClick={() => setEditing({ ...editing, equityFloorEdit: false })}
                         sx={{ mr: 1 }}
                       >
                         Cancel
@@ -593,11 +629,13 @@ function CapitalProtectionPanel() {
                         size="small"
                         disabled={saving}
                         data-action-id="capital.equity-floor.save"
-                        onClick={() => handleSaveConfig({
-                          equity_floor: editing.equity_floor,
-                          equity_floor_check_interval: editing.equity_floor_check_interval,
-                          equity_floor_require_ack: editing.equity_floor_require_ack
-                        })}
+                        onClick={() =>
+                          handleSaveConfig({
+                            equity_floor: editing.equity_floor,
+                            equity_floor_check_interval: editing.equity_floor_check_interval,
+                            equity_floor_require_ack: editing.equity_floor_require_ack,
+                          })
+                        }
                       >
                         {saving ? 'Saving...' : 'Save'}
                       </Button>
@@ -607,28 +645,44 @@ function CapitalProtectionPanel() {
                 </Box>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={4}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Equity Floor (INR)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Equity Floor (INR)
+                    </Typography>
                     {editing.equityFloorEdit ? (
                       <TextField
                         type="number"
-                        value={editing.equity_floor !== undefined ? editing.equity_floor : data.equityFloor.floor_inr}
-                        onChange={(e) => setEditing({...editing, equity_floor: e.target.value})}
+                        value={
+                          editing.equity_floor !== undefined
+                            ? editing.equity_floor
+                            : data.equityFloor.floor_inr
+                        }
+                        onChange={(e) => setEditing({ ...editing, equity_floor: e.target.value })}
                         fullWidth
                         size="small"
                         inputProps={{ min: 0 }}
                         helperText="Set to 0 to disable"
                       />
                     ) : (
-                      <Typography variant="h6">₹{data.equityFloor.floor_inr?.toLocaleString()}</Typography>
+                      <Typography variant="h6">
+                        ₹{data.equityFloor.floor_inr?.toLocaleString()}
+                      </Typography>
                     )}
                   </Grid>
                   <Grid item xs={12} md={4}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Check Interval (sec)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Check Interval (sec)
+                    </Typography>
                     {editing.equityFloorEdit ? (
                       <TextField
                         type="number"
-                        value={editing.equity_floor_check_interval !== undefined ? editing.equity_floor_check_interval : data.equityFloor.check_interval_sec}
-                        onChange={(e) => setEditing({...editing, equity_floor_check_interval: e.target.value})}
+                        value={
+                          editing.equity_floor_check_interval !== undefined
+                            ? editing.equity_floor_check_interval
+                            : data.equityFloor.check_interval_sec
+                        }
+                        onChange={(e) =>
+                          setEditing({ ...editing, equity_floor_check_interval: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 10, max: 300 }}
@@ -639,17 +693,24 @@ function CapitalProtectionPanel() {
                     )}
                   </Grid>
                   <Grid item xs={12} md={4}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Require Acknowledgment</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Require Acknowledgment
+                    </Typography>
                     {editing.equityFloorEdit ? (
                       <Box>
                         <Button
-                          variant={editing.equity_floor_require_ack ? "contained" : "outlined"}
-                          color={editing.equity_floor_require_ack ? "success" : "default"}
+                          variant={editing.equity_floor_require_ack ? 'contained' : 'outlined'}
+                          color={editing.equity_floor_require_ack ? 'success' : 'default'}
                           size="small"
-                          onClick={() => setEditing({...editing, equity_floor_require_ack: !editing.equity_floor_require_ack})}
+                          onClick={() =>
+                            setEditing({
+                              ...editing,
+                              equity_floor_require_ack: !editing.equity_floor_require_ack,
+                            })
+                          }
                           fullWidth
                         >
-                          {editing.equity_floor_require_ack ? "✅ Required" : "❌ Not Required"}
+                          {editing.equity_floor_require_ack ? '✅ Required' : '❌ Not Required'}
                         </Button>
                       </Box>
                     ) : (
@@ -664,10 +725,16 @@ function CapitalProtectionPanel() {
                   </Grid>
                   <Grid item xs={12}>
                     <Typography variant="caption" color="text.secondary">
-                      <strong>Status:</strong> {data.equityFloor.enabled ? (
+                      <strong>Status:</strong>{' '}
+                      {data.equityFloor.enabled ? (
                         <Chip label="✅ ENABLED" color="success" size="small" sx={{ ml: 1 }} />
                       ) : (
-                        <Chip label="❌ DISABLED (Floor = 0)" color="error" size="small" sx={{ ml: 1 }} />
+                        <Chip
+                          label="❌ DISABLED (Floor = 0)"
+                          color="error"
+                          size="small"
+                          sx={{ ml: 1 }}
+                        />
                       )}
                     </Typography>
                   </Grid>
@@ -680,15 +747,23 @@ function CapitalProtectionPanel() {
               <Alert severity="info">
                 <AlertTitle>How It Works</AlertTitle>
                 <Typography variant="body2">
-                  <strong>Guardian Bot continuously monitors your total account equity.</strong><br/>
-                  If equity falls below the floor:<br/>
-                  • Emergency protocol triggered immediately<br/>
-                  • All new orders BLOCKED via Safety Gatekeeper<br/>
-                  • Non-reduce orders cancelled<br/>
-                  • TP orders remain active<br/>
-                  • Manual acknowledgment required to resume<br/>
-                  <br/>
-                  <strong>Example:</strong> Start with 100k INR, set floor at 70k INR → Max loss = 30k INR (30%)
+                  <strong>Guardian Bot continuously monitors your total account equity.</strong>
+                  <br />
+                  If equity falls below the floor:
+                  <br />
+                  • Emergency protocol triggered immediately
+                  <br />
+                  • All new orders BLOCKED via Safety Gatekeeper
+                  <br />
+                  • Non-reduce orders cancelled
+                  <br />
+                  • TP orders remain active
+                  <br />
+                  • Manual acknowledgment required to resume
+                  <br />
+                  <br />
+                  <strong>Example:</strong> Start with 100k INR, set floor at 70k INR → Max loss =
+                  30k INR (30%)
                 </Typography>
               </Alert>
             </Grid>
@@ -710,7 +785,8 @@ function CapitalProtectionPanel() {
 
         <Alert severity="warning" sx={{ mb: 2 }}>
           <AlertTitle>SOFT STOP - Protective Mode</AlertTitle>
-          When drawdown limit is exceeded, bot enters protective mode: No new BUY orders, exits only.
+          When drawdown limit is exceeded, bot enters protective mode: No new BUY orders, exits
+          only.
         </Alert>
 
         {data.drawdownCap ? (
@@ -720,7 +796,8 @@ function CapitalProtectionPanel() {
               {data.drawdownCap.protective_mode ? (
                 <Alert severity="warning">
                   <AlertTitle>⚠️ PROTECTIVE MODE ACTIVE</AlertTitle>
-                  Drawdown limit exceeded. New BUY orders blocked. Allow positions to close naturally.
+                  Drawdown limit exceeded. New BUY orders blocked. Allow positions to close
+                  naturally.
                   <Typography variant="body2" sx={{ mt: 1 }}>
                     Auto-resumes when drawdown &lt; {data.drawdownCap.hysteresis_pct}%
                   </Typography>
@@ -736,22 +813,35 @@ function CapitalProtectionPanel() {
             {/* Drawdown Metrics */}
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">30-Day Peak</Typography>
-                <Typography variant="h3">₹{data.drawdownCap.peak_equity?.toLocaleString()}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  30-Day Peak
+                </Typography>
+                <Typography variant="h3">
+                  ₹{data.drawdownCap.peak_equity?.toLocaleString()}
+                </Typography>
               </Paper>
             </Grid>
 
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Current Equity</Typography>
-                <Typography variant="h3">₹{data.drawdownCap.current_equity?.toLocaleString()}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Current Equity
+                </Typography>
+                <Typography variant="h3">
+                  ₹{data.drawdownCap.current_equity?.toLocaleString()}
+                </Typography>
               </Paper>
             </Grid>
 
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Current Drawdown</Typography>
-                <Typography variant="h3" color={data.drawdownCap.protective_mode ? 'error.main' : 'text.primary'}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Current Drawdown
+                </Typography>
+                <Typography
+                  variant="h3"
+                  color={data.drawdownCap.protective_mode ? 'error.main' : 'text.primary'}
+                >
                   {data.drawdownCap.current_drawdown_pct?.toFixed(1)}%
                 </Typography>
               </Paper>
@@ -759,8 +849,12 @@ function CapitalProtectionPanel() {
 
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Drawdown (INR)</Typography>
-                <Typography variant="h3">₹{data.drawdownCap.current_drawdown_inr?.toLocaleString()}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Drawdown (INR)
+                </Typography>
+                <Typography variant="h3">
+                  ₹{data.drawdownCap.current_drawdown_inr?.toLocaleString()}
+                </Typography>
               </Paper>
             </Grid>
 
@@ -772,11 +866,22 @@ function CapitalProtectionPanel() {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <Box sx={{ width: '100%', mr: 1 }}>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={Math.min((data.drawdownCap.current_drawdown_pct / data.drawdownCap.max_drawdown_pct) * 100, 100)}
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(
+                        (data.drawdownCap.current_drawdown_pct /
+                          data.drawdownCap.max_drawdown_pct) *
+                          100,
+                        100
+                      )}
                       sx={{ height: 10, borderRadius: 5 }}
-                      color={data.drawdownCap.utilization_pct > 100 ? "error" : data.drawdownCap.utilization_pct > 75 ? "warning" : "success"}
+                      color={
+                        data.drawdownCap.utilization_pct > 100
+                          ? 'error'
+                          : data.drawdownCap.utilization_pct > 75
+                            ? 'warning'
+                            : 'success'
+                      }
                     />
                   </Box>
                   <Box sx={{ minWidth: 35 }}>
@@ -791,18 +896,26 @@ function CapitalProtectionPanel() {
             {/* Snapshot Info */}
             <Grid item xs={12}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="h6" gutterBottom>Snapshot System</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Snapshot System
+                </Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={4}>
-                    <Typography variant="body2" color="text.secondary">Total Snapshots</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Total Snapshots
+                    </Typography>
                     <Typography variant="h6">{data.drawdownCap.snapshot_count}</Typography>
                   </Grid>
                   <Grid item xs={12} md={4}>
-                    <Typography variant="body2" color="text.secondary">Window</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Window
+                    </Typography>
                     <Typography variant="h6">{data.drawdownCap.window_days} days</Typography>
                   </Grid>
                   <Grid item xs={12} md={4}>
-                    <Typography variant="body2" color="text.secondary">Frequency</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Frequency
+                    </Typography>
                     <Typography variant="h6">Hourly</Typography>
                   </Grid>
                 </Grid>
@@ -827,7 +940,7 @@ function CapitalProtectionPanel() {
                           drawdown_max_pct: dd.max_drawdown_pct || 20,
                           drawdown_hysteresis_pct: dd.hysteresis_pct || 15,
                           drawdown_window_days: dd.window_days || 30,
-                          drawdown_check_interval: dd.check_interval_sec || 300
+                          drawdown_check_interval: dd.check_interval_sec || 300,
                         });
                       }}
                     >
@@ -838,7 +951,7 @@ function CapitalProtectionPanel() {
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => setEditing({...editing, drawdownEdit: false})}
+                        onClick={() => setEditing({ ...editing, drawdownEdit: false })}
                         sx={{ mr: 1 }}
                       >
                         Cancel
@@ -849,12 +962,14 @@ function CapitalProtectionPanel() {
                         size="small"
                         disabled={saving}
                         data-action-id="capital.drawdown-cap.save"
-                        onClick={() => handleSaveConfig({
-                          drawdown_max_pct: editing.drawdown_max_pct,
-                          drawdown_hysteresis_pct: editing.drawdown_hysteresis_pct,
-                          drawdown_window_days: editing.drawdown_window_days,
-                          drawdown_check_interval: editing.drawdown_check_interval
-                        })}
+                        onClick={() =>
+                          handleSaveConfig({
+                            drawdown_max_pct: editing.drawdown_max_pct,
+                            drawdown_hysteresis_pct: editing.drawdown_hysteresis_pct,
+                            drawdown_window_days: editing.drawdown_window_days,
+                            drawdown_check_interval: editing.drawdown_check_interval,
+                          })
+                        }
                       >
                         {saving ? 'Saving...' : 'Save'}
                       </Button>
@@ -864,12 +979,16 @@ function CapitalProtectionPanel() {
                 </Box>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={3}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Max Drawdown (%)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Max Drawdown (%)
+                    </Typography>
                     {editing.drawdownEdit ? (
                       <TextField
                         type="number"
                         value={editing.drawdown_max_pct || data.drawdownCap.max_drawdown_pct}
-                        onChange={(e) => setEditing({...editing, drawdown_max_pct: e.target.value})}
+                        onChange={(e) =>
+                          setEditing({ ...editing, drawdown_max_pct: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 1, max: 100 }}
@@ -879,12 +998,16 @@ function CapitalProtectionPanel() {
                     )}
                   </Grid>
                   <Grid item xs={12} md={3}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Hysteresis (%)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Hysteresis (%)
+                    </Typography>
                     {editing.drawdownEdit ? (
                       <TextField
                         type="number"
                         value={editing.drawdown_hysteresis_pct || data.drawdownCap.hysteresis_pct}
-                        onChange={(e) => setEditing({...editing, drawdown_hysteresis_pct: e.target.value})}
+                        onChange={(e) =>
+                          setEditing({ ...editing, drawdown_hysteresis_pct: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 0, max: 100 }}
@@ -894,12 +1017,16 @@ function CapitalProtectionPanel() {
                     )}
                   </Grid>
                   <Grid item xs={12} md={3}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Window (days)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Window (days)
+                    </Typography>
                     {editing.drawdownEdit ? (
                       <TextField
                         type="number"
                         value={editing.drawdown_window_days || data.drawdownCap.window_days}
-                        onChange={(e) => setEditing({...editing, drawdown_window_days: e.target.value})}
+                        onChange={(e) =>
+                          setEditing({ ...editing, drawdown_window_days: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 7, max: 90 }}
@@ -910,24 +1037,33 @@ function CapitalProtectionPanel() {
                     )}
                   </Grid>
                   <Grid item xs={12} md={3}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Check Interval (sec)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Check Interval (sec)
+                    </Typography>
                     {editing.drawdownEdit ? (
                       <TextField
                         type="number"
-                        value={editing.drawdown_check_interval || data.drawdownCap.check_interval_sec}
-                        onChange={(e) => setEditing({...editing, drawdown_check_interval: e.target.value})}
+                        value={
+                          editing.drawdown_check_interval || data.drawdownCap.check_interval_sec
+                        }
+                        onChange={(e) =>
+                          setEditing({ ...editing, drawdown_check_interval: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 60, max: 3600 }}
                         helperText="60-3600 sec"
                       />
                     ) : (
-                      <Typography variant="h6">{data.drawdownCap.check_interval_sec || 300}s</Typography>
+                      <Typography variant="h6">
+                        {data.drawdownCap.check_interval_sec || 300}s
+                      </Typography>
                     )}
                   </Grid>
                   <Grid item xs={12}>
                     <Typography variant="caption" color="text.secondary">
-                      <strong>Status:</strong> {data.drawdownCap.enabled ? (
+                      <strong>Status:</strong>{' '}
+                      {data.drawdownCap.enabled ? (
                         <Chip label="✅ ENABLED" color="success" size="small" sx={{ ml: 1 }} />
                       ) : (
                         <Chip label="❌ NO" color="error" size="small" />
@@ -943,20 +1079,31 @@ function CapitalProtectionPanel() {
               <Alert severity="info">
                 <AlertTitle>How It Works</AlertTitle>
                 <Typography variant="body2">
-                  <strong>Tracks your 30-day peak equity and calculates current drawdown.</strong><br/>
-                  Drawdown = (Peak - Current) / Peak × 100<br/>
-                  <br/>
-                  <strong>Example:</strong> Peak was 120k INR, now at 100k INR = 16.7% drawdown<br/>
-                  If limit is 20% → Still OK<br/>
-                  If limit is 15% → Enters protective mode<br/>
-                  <br/>
-                  <strong>Protective Mode:</strong><br/>
-                  • No new BUY orders<br/>
-                  • TP (exit) orders still active<br/>
-                  • Let positions close naturally<br/>
-                  • Auto-resumes when drawdown recovers below hysteresis threshold<br/>
-                  <br/>
-                  <strong>Hysteresis prevents flapping:</strong> Enter protective at 20%, resume at 15%
+                  <strong>Tracks your 30-day peak equity and calculates current drawdown.</strong>
+                  <br />
+                  Drawdown = (Peak - Current) / Peak × 100
+                  <br />
+                  <br />
+                  <strong>Example:</strong> Peak was 120k INR, now at 100k INR = 16.7% drawdown
+                  <br />
+                  If limit is 20% → Still OK
+                  <br />
+                  If limit is 15% → Enters protective mode
+                  <br />
+                  <br />
+                  <strong>Protective Mode:</strong>
+                  <br />
+                  • No new BUY orders
+                  <br />
+                  • TP (exit) orders still active
+                  <br />
+                  • Let positions close naturally
+                  <br />
+                  • Auto-resumes when drawdown recovers below hysteresis threshold
+                  <br />
+                  <br />
+                  <strong>Hysteresis prevents flapping:</strong> Enter protective at 20%, resume at
+                  15%
                 </Typography>
               </Alert>
             </Grid>
@@ -996,40 +1143,86 @@ function CapitalProtectionPanel() {
             {/* Current Usage */}
             <Grid item xs={12} md={6}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="h6" gutterBottom>Tranches Per Minute</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Tranches Per Minute
+                </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 1 }}>
-                  <Typography variant="h3" color={(data.exposureLimiter.current_window?.tranches || 0) >= (data.exposureLimiter.max_tranches_per_minute || 0) ? 'error.main' : 'text.primary'}>
+                  <Typography
+                    variant="h3"
+                    color={
+                      (data.exposureLimiter.current_window?.tranches || 0) >=
+                      (data.exposureLimiter.max_tranches_per_minute || 0)
+                        ? 'error.main'
+                        : 'text.primary'
+                    }
+                  >
                     {data.exposureLimiter.current_window?.tranches || 0}
                   </Typography>
                   <Typography variant="h5" color="text.secondary" sx={{ ml: 1 }}>
                     / {data.exposureLimiter.max_tranches_per_minute || 0}
                   </Typography>
                 </Box>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={Math.min(((data.exposureLimiter.current_window?.tranches || 0) / (data.exposureLimiter.max_tranches_per_minute || 1)) * 100, 100)}
+                <LinearProgress
+                  variant="determinate"
+                  value={Math.min(
+                    ((data.exposureLimiter.current_window?.tranches || 0) /
+                      (data.exposureLimiter.max_tranches_per_minute || 1)) *
+                      100,
+                    100
+                  )}
                   sx={{ height: 10, borderRadius: 5 }}
-                  color={(data.exposureLimiter.current_window?.tranches || 0) >= (data.exposureLimiter.max_tranches_per_minute || 0) ? "error" : (data.exposureLimiter.current_window?.tranches || 0) > (data.exposureLimiter.max_tranches_per_minute || 0) * 0.8 ? "warning" : "success"}
+                  color={
+                    (data.exposureLimiter.current_window?.tranches || 0) >=
+                    (data.exposureLimiter.max_tranches_per_minute || 0)
+                      ? 'error'
+                      : (data.exposureLimiter.current_window?.tranches || 0) >
+                          (data.exposureLimiter.max_tranches_per_minute || 0) * 0.8
+                        ? 'warning'
+                        : 'success'
+                  }
                 />
               </Paper>
             </Grid>
 
             <Grid item xs={12} md={6}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="h6" gutterBottom>Notional Per Minute (INR)</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Notional Per Minute (INR)
+                </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 1 }}>
-                  <Typography variant="h3" color={(data.exposureLimiter.current_window?.notional_inr || 0) >= (data.exposureLimiter.max_notional_per_minute || 0) ? 'error.main' : 'text.primary'}>
+                  <Typography
+                    variant="h3"
+                    color={
+                      (data.exposureLimiter.current_window?.notional_inr || 0) >=
+                      (data.exposureLimiter.max_notional_per_minute || 0)
+                        ? 'error.main'
+                        : 'text.primary'
+                    }
+                  >
                     ₹{((data.exposureLimiter.current_window?.notional_inr || 0) / 1000).toFixed(0)}k
                   </Typography>
                   <Typography variant="h5" color="text.secondary" sx={{ ml: 1 }}>
                     / ₹{((data.exposureLimiter.max_notional_per_minute || 0) / 1000).toFixed(0)}k
                   </Typography>
                 </Box>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={Math.min(((data.exposureLimiter.current_window?.notional_inr || 0) / (data.exposureLimiter.max_notional_per_minute || 1)) * 100, 100)}
+                <LinearProgress
+                  variant="determinate"
+                  value={Math.min(
+                    ((data.exposureLimiter.current_window?.notional_inr || 0) /
+                      (data.exposureLimiter.max_notional_per_minute || 1)) *
+                      100,
+                    100
+                  )}
                   sx={{ height: 10, borderRadius: 5 }}
-                  color={(data.exposureLimiter.current_window?.notional_inr || 0) >= (data.exposureLimiter.max_notional_per_minute || 0) ? "error" : (data.exposureLimiter.current_window?.notional_inr || 0) > (data.exposureLimiter.max_notional_per_minute || 0) * 0.8 ? "warning" : "success"}
+                  color={
+                    (data.exposureLimiter.current_window?.notional_inr || 0) >=
+                    (data.exposureLimiter.max_notional_per_minute || 0)
+                      ? 'error'
+                      : (data.exposureLimiter.current_window?.notional_inr || 0) >
+                          (data.exposureLimiter.max_notional_per_minute || 0) * 0.8
+                        ? 'warning'
+                        : 'success'
+                  }
                 />
               </Paper>
             </Grid>
@@ -1050,7 +1243,7 @@ function CapitalProtectionPanel() {
                           ...editing,
                           exposureEdit: true,
                           max_tranches_per_minute: ex.max_tranches_per_minute || 2,
-                          max_notional_per_minute: ex.max_notional_per_minute || 300000
+                          max_notional_per_minute: ex.max_notional_per_minute || 300000,
                         });
                       }}
                     >
@@ -1061,7 +1254,7 @@ function CapitalProtectionPanel() {
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => setEditing({...editing, exposureEdit: false})}
+                        onClick={() => setEditing({ ...editing, exposureEdit: false })}
                         sx={{ mr: 1 }}
                       >
                         Cancel
@@ -1074,7 +1267,7 @@ function CapitalProtectionPanel() {
                         onClick={() => {
                           handleSaveConfig({
                             max_tranches_per_minute: editing.max_tranches_per_minute,
-                            max_notional_per_minute: editing.max_notional_per_minute
+                            max_notional_per_minute: editing.max_notional_per_minute,
                           });
                         }}
                       >
@@ -1085,35 +1278,53 @@ function CapitalProtectionPanel() {
                 </Box>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Max Tranches/Minute</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Max Tranches/Minute
+                    </Typography>
                     {editing.exposureEdit ? (
                       <TextField
                         type="number"
-                        value={editing.max_tranches_per_minute !== undefined ? editing.max_tranches_per_minute : (data.exposureLimiter.max_tranches_per_minute || 2)}
-                        onChange={(e) => setEditing({...editing, max_tranches_per_minute: e.target.value})}
+                        value={
+                          editing.max_tranches_per_minute !== undefined
+                            ? editing.max_tranches_per_minute
+                            : data.exposureLimiter.max_tranches_per_minute || 2
+                        }
+                        onChange={(e) =>
+                          setEditing({ ...editing, max_tranches_per_minute: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 1 }}
                       />
                     ) : (
-                      <Typography variant="h6">{data.exposureLimiter.max_tranches_per_minute || 0}</Typography>
+                      <Typography variant="h6">
+                        {data.exposureLimiter.max_tranches_per_minute || 0}
+                      </Typography>
                     )}
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Max Notional/Minute (INR)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Max Notional/Minute (INR)
+                    </Typography>
                     {editing.exposureEdit ? (
                       <TextField
                         type="number"
-                        value={editing.max_notional_per_minute !== undefined ? editing.max_notional_per_minute : (data.exposureLimiter.max_notional_per_minute || 300000)}
+                        value={
+                          editing.max_notional_per_minute !== undefined
+                            ? editing.max_notional_per_minute
+                            : data.exposureLimiter.max_notional_per_minute || 300000
+                        }
                         onChange={(e) => {
-                          setEditing({...editing, max_notional_per_minute: e.target.value});
+                          setEditing({ ...editing, max_notional_per_minute: e.target.value });
                         }}
                         fullWidth
                         size="small"
                         inputProps={{ min: 1000 }}
                       />
                     ) : (
-                      <Typography variant="h6">₹{((data.exposureLimiter.max_notional_per_minute || 0) / 1000).toFixed(0)}k</Typography>
+                      <Typography variant="h6">
+                        ₹{((data.exposureLimiter.max_notional_per_minute || 0) / 1000).toFixed(0)}k
+                      </Typography>
                     )}
                   </Grid>
                 </Grid>
@@ -1125,21 +1336,32 @@ function CapitalProtectionPanel() {
               <Alert severity="info">
                 <AlertTitle>How It Works</AlertTitle>
                 <Typography variant="body2">
-                  <strong>Prevents "flash cascade" fills during rapid market moves.</strong><br/>
-                  <br/>
-                  <strong>Two Limits:</strong><br/>
-                  1. <strong>Max Tranches/Minute:</strong> Limits number of new positions opened per minute<br/>
-                  2. <strong>Max Notional/Minute:</strong> Limits total INR value of new positions per minute<br/>
-                  <br/>
-                  <strong>Example:</strong><br/>
-                  Limit: 2 tranches/minute, 300k INR/minute<br/>
-                  Market drops fast, 5 buy orders could fill in 10 seconds<br/>
-                  Limiter: Only allows 2 fills, blocks the other 3<br/>
-                  <br/>
-                  <strong>This protects you from:</strong><br/>
-                  • Rapid exposure buildup during crashes<br/>
-                  • Exceeding risk limits too quickly<br/>
-                  • "Revenge trading" by the bot
+                  <strong>Prevents "flash cascade" fills during rapid market moves.</strong>
+                  <br />
+                  <br />
+                  <strong>Two Limits:</strong>
+                  <br />
+                  1. <strong>Max Tranches/Minute:</strong> Limits number of new positions opened per
+                  minute
+                  <br />
+                  2. <strong>Max Notional/Minute:</strong> Limits total INR value of new positions
+                  per minute
+                  <br />
+                  <br />
+                  <strong>Example:</strong>
+                  <br />
+                  Limit: 2 tranches/minute, 300k INR/minute
+                  <br />
+                  Market drops fast, 5 buy orders could fill in 10 seconds
+                  <br />
+                  Limiter: Only allows 2 fills, blocks the other 3<br />
+                  <br />
+                  <strong>This protects you from:</strong>
+                  <br />
+                  • Rapid exposure buildup during crashes
+                  <br />
+                  • Exceeding risk limits too quickly
+                  <br />• "Revenge trading" by the bot
                 </Typography>
               </Alert>
             </Grid>
@@ -1166,17 +1388,20 @@ function CapitalProtectionPanel() {
               {data.pendingBudget.budget_exceeded ? (
                 <Alert severity="error">
                   <AlertTitle>🛑 BUDGET EXCEEDED</AlertTitle>
-                  Too much capital at risk in pending orders. New orders blocked until some fill or are canceled.
+                  Too much capital at risk in pending orders. New orders blocked until some fill or
+                  are canceled.
                 </Alert>
               ) : data.pendingBudget.utilization_pct > 90 ? (
                 <Alert severity="warning">
                   <AlertTitle>⚠️ APPROACHING BUDGET LIMIT</AlertTitle>
-                  Pending order budget at {data.pendingBudget.utilization_pct.toFixed(0)}% - new orders may be blocked soon
+                  Pending order budget at {data.pendingBudget.utilization_pct.toFixed(0)}% - new
+                  orders may be blocked soon
                 </Alert>
               ) : (
                 <Alert severity="success">
                   <AlertTitle>✅ BUDGET OK</AlertTitle>
-                  Pending capital within limits ({data.pendingBudget.utilization_pct.toFixed(0)}% used)
+                  Pending capital within limits ({data.pendingBudget.utilization_pct.toFixed(0)}%
+                  used)
                 </Alert>
               )}
             </Grid>
@@ -1184,8 +1409,13 @@ function CapitalProtectionPanel() {
             {/* Budget Metrics */}
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Current Pending</Typography>
-                <Typography variant="h3" color={data.pendingBudget.budget_exceeded ? 'error.main' : 'text.primary'}>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Current Pending
+                </Typography>
+                <Typography
+                  variant="h3"
+                  color={data.pendingBudget.budget_exceeded ? 'error.main' : 'text.primary'}
+                >
                   ₹{(data.pendingBudget.current_pending / 1000).toFixed(0)}k
                 </Typography>
               </Paper>
@@ -1193,14 +1423,20 @@ function CapitalProtectionPanel() {
 
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Budget Limit</Typography>
-                <Typography variant="h3">₹{(data.pendingBudget.max_budget / 1000).toFixed(0)}k</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Budget Limit
+                </Typography>
+                <Typography variant="h3">
+                  ₹{(data.pendingBudget.max_budget / 1000).toFixed(0)}k
+                </Typography>
               </Paper>
             </Grid>
 
             <Grid item xs={12} md={4}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Open Orders</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Open Orders
+                </Typography>
                 <Typography variant="h3">{data.pendingBudget.open_orders}</Typography>
               </Paper>
             </Grid>
@@ -1213,11 +1449,17 @@ function CapitalProtectionPanel() {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <Box sx={{ width: '100%', mr: 1 }}>
-                    <LinearProgress 
-                      variant="determinate" 
+                    <LinearProgress
+                      variant="determinate"
                       value={Math.min(data.pendingBudget.utilization_pct, 100)}
                       sx={{ height: 10, borderRadius: 5 }}
-                      color={data.pendingBudget.budget_exceeded ? "error" : data.pendingBudget.utilization_pct > 90 ? "warning" : "success"}
+                      color={
+                        data.pendingBudget.budget_exceeded
+                          ? 'error'
+                          : data.pendingBudget.utilization_pct > 90
+                            ? 'warning'
+                            : 'success'
+                      }
                     />
                   </Box>
                   <Box sx={{ minWidth: 35 }}>
@@ -1245,7 +1487,7 @@ function CapitalProtectionPanel() {
                           ...editing,
                           budgetEdit: true,
                           max_pending_budget: pb.max_budget || 500000,
-                          pending_budget_buffer_pct: pb.buffer_pct || 10
+                          pending_budget_buffer_pct: pb.buffer_pct || 10,
                         });
                       }}
                     >
@@ -1256,7 +1498,7 @@ function CapitalProtectionPanel() {
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => setEditing({...editing, budgetEdit: false})}
+                        onClick={() => setEditing({ ...editing, budgetEdit: false })}
                         sx={{ mr: 1 }}
                       >
                         Cancel
@@ -1266,10 +1508,12 @@ function CapitalProtectionPanel() {
                         color="success"
                         size="small"
                         disabled={saving}
-                        onClick={() => handleSaveConfig({
-                          max_pending_budget: editing.max_pending_budget,
-                          pending_budget_buffer_pct: editing.pending_budget_buffer_pct
-                        })}
+                        onClick={() =>
+                          handleSaveConfig({
+                            max_pending_budget: editing.max_pending_budget,
+                            pending_budget_buffer_pct: editing.pending_budget_buffer_pct,
+                          })
+                        }
                       >
                         {saving ? 'Saving...' : 'Save'}
                       </Button>
@@ -1278,27 +1522,41 @@ function CapitalProtectionPanel() {
                 </Box>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Max Pending Budget (INR)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Max Pending Budget (INR)
+                    </Typography>
                     {editing.budgetEdit ? (
                       <TextField
                         type="number"
                         value={editing.max_pending_budget || data.pendingBudget.max_budget}
-                        onChange={(e) => setEditing({...editing, max_pending_budget: e.target.value})}
+                        onChange={(e) =>
+                          setEditing({ ...editing, max_pending_budget: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 10000 }}
                       />
                     ) : (
-                      <Typography variant="h6">₹{(data.pendingBudget.max_budget / 1000).toFixed(0)}k</Typography>
+                      <Typography variant="h6">
+                        ₹{(data.pendingBudget.max_budget / 1000).toFixed(0)}k
+                      </Typography>
                     )}
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Buffer Alert (%)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Buffer Alert (%)
+                    </Typography>
                     {editing.budgetEdit ? (
                       <TextField
                         type="number"
-                        value={editing.pending_budget_buffer_pct !== undefined ? editing.pending_budget_buffer_pct : data.pendingBudget.buffer_pct}
-                        onChange={(e) => setEditing({...editing, pending_budget_buffer_pct: e.target.value})}
+                        value={
+                          editing.pending_budget_buffer_pct !== undefined
+                            ? editing.pending_budget_buffer_pct
+                            : data.pendingBudget.buffer_pct
+                        }
+                        onChange={(e) =>
+                          setEditing({ ...editing, pending_budget_buffer_pct: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 0, max: 50 }}
@@ -1317,23 +1575,34 @@ function CapitalProtectionPanel() {
               <Alert severity="info">
                 <AlertTitle>How It Works</AlertTitle>
                 <Typography variant="body2">
-                  <strong>Limits total capital at risk in pending BUY orders.</strong><br/>
-                  <br/>
-                  <strong>Calculation:</strong><br/>
-                  Pending Capital = Σ (limit_price × qty) for all pending BUY orders<br/>
-                  <br/>
-                  <strong>Example:</strong><br/>
-                  Budget: 500k INR<br/>
-                  Open Orders: 3 BUYs at 111k each = 333k pending<br/>
-                  Utilization: 333k / 500k = 67% ✅ OK<br/>
-                  <br/>
-                  If you try to place 2 more orders (222k more):<br/>
-                  Total would be: 555k &gt; 500k limit ❌ BLOCKED<br/>
-                  <br/>
-                  <strong>This protects you from:</strong><br/>
-                  • Too much capital tied up in pending orders<br/>
-                  • Overnight exposure risk<br/>
-                  • Sudden margin calls if multiple orders fill at once
+                  <strong>Limits total capital at risk in pending BUY orders.</strong>
+                  <br />
+                  <br />
+                  <strong>Calculation:</strong>
+                  <br />
+                  Pending Capital = Σ (limit_price × qty) for all pending BUY orders
+                  <br />
+                  <br />
+                  <strong>Example:</strong>
+                  <br />
+                  Budget: 500k INR
+                  <br />
+                  Open Orders: 3 BUYs at 111k each = 333k pending
+                  <br />
+                  Utilization: 333k / 500k = 67% ✅ OK
+                  <br />
+                  <br />
+                  If you try to place 2 more orders (222k more):
+                  <br />
+                  Total would be: 555k &gt; 500k limit ❌ BLOCKED
+                  <br />
+                  <br />
+                  <strong>This protects you from:</strong>
+                  <br />
+                  • Too much capital tied up in pending orders
+                  <br />
+                  • Overnight exposure risk
+                  <br />• Sudden margin calls if multiple orders fill at once
                 </Typography>
               </Alert>
             </Grid>
@@ -1364,7 +1633,9 @@ function CapitalProtectionPanel() {
                     A risky configuration change was detected and requires your confirmation.
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 1 }}>
-                    Time remaining: {Math.max(0, data.configGuard.pending_change.timeout_remaining).toFixed(0)} seconds
+                    Time remaining:{' '}
+                    {Math.max(0, data.configGuard.pending_change.timeout_remaining).toFixed(0)}{' '}
+                    seconds
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 1 }}>
                     <strong>To confirm:</strong> touch .config_change_confirmed
@@ -1386,7 +1657,9 @@ function CapitalProtectionPanel() {
             {/* Stats */}
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Status</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Status
+                </Typography>
                 <Typography variant="h6">
                   {data.configGuard.enabled ? (
                     <Chip label="✅ ENABLED" color="success" />
@@ -1399,14 +1672,18 @@ function CapitalProtectionPanel() {
 
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Timeout</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Timeout
+                </Typography>
                 <Typography variant="h6">{data.configGuard.timeout_sec / 60} min</Typography>
               </Paper>
             </Grid>
 
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Auto-Revert</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Auto-Revert
+                </Typography>
                 <Typography variant="h6">
                   {data.configGuard.auto_revert ? (
                     <Chip label="YES" color="success" size="small" />
@@ -1419,7 +1696,9 @@ function CapitalProtectionPanel() {
 
             <Grid item xs={12} md={3}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">Pending Change</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Pending Change
+                </Typography>
                 <Typography variant="h6">
                   {data.configGuard.pending_change ? (
                     <Chip label="YES" color="warning" />
@@ -1434,15 +1713,25 @@ function CapitalProtectionPanel() {
             {data.configGuard.pending_change && (
               <Grid item xs={12}>
                 <Paper sx={{ p: 2, bgcolor: 'warning.light' }}>
-                  <Typography variant="h6" gutterBottom>Pending Change Details</Typography>
+                  <Typography variant="h6" gutterBottom>
+                    Pending Change Details
+                  </Typography>
                   <TableContainer>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell><strong>Key</strong></TableCell>
-                          <TableCell><strong>Old Value</strong></TableCell>
-                          <TableCell><strong>New Value</strong></TableCell>
-                          <TableCell><strong>Change</strong></TableCell>
+                          <TableCell>
+                            <strong>Key</strong>
+                          </TableCell>
+                          <TableCell>
+                            <strong>Old Value</strong>
+                          </TableCell>
+                          <TableCell>
+                            <strong>New Value</strong>
+                          </TableCell>
+                          <TableCell>
+                            <strong>Change</strong>
+                          </TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1452,8 +1741,8 @@ function CapitalProtectionPanel() {
                             <TableCell>{change.old_value}</TableCell>
                             <TableCell>{change.new_value}</TableCell>
                             <TableCell>
-                              <Chip 
-                                label={change.change_type} 
+                              <Chip
+                                label={change.change_type}
                                 size="small"
                                 color={change.change_type === 'RISK_INCREASE' ? 'error' : 'warning'}
                               />
@@ -1470,7 +1759,9 @@ function CapitalProtectionPanel() {
             {/* Guarded Keys */}
             <Grid item xs={12}>
               <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="h6" gutterBottom>Protected Configuration Keys</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Protected Configuration Keys
+                </Typography>
                 <Typography variant="body2" color="text.secondary" paragraph>
                   These keys require confirmation if increased or disabled:
                 </Typography>
@@ -1497,7 +1788,7 @@ function CapitalProtectionPanel() {
                         setEditing({
                           ...editing,
                           twoManEdit: true,
-                          two_man_rule_timeout: cg.timeout_sec || 600
+                          two_man_rule_timeout: cg.timeout_sec || 600,
                         });
                       }}
                     >
@@ -1508,7 +1799,7 @@ function CapitalProtectionPanel() {
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => setEditing({...editing, twoManEdit: false})}
+                        onClick={() => setEditing({ ...editing, twoManEdit: false })}
                         sx={{ mr: 1 }}
                       >
                         Cancel
@@ -1518,9 +1809,11 @@ function CapitalProtectionPanel() {
                         color="success"
                         size="small"
                         disabled={saving}
-                        onClick={() => handleSaveConfig({
-                          two_man_rule_timeout: editing.two_man_rule_timeout
-                        })}
+                        onClick={() =>
+                          handleSaveConfig({
+                            two_man_rule_timeout: editing.two_man_rule_timeout,
+                          })
+                        }
                       >
                         {saving ? 'Saving...' : 'Save'}
                       </Button>
@@ -1529,22 +1822,30 @@ function CapitalProtectionPanel() {
                 </Box>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Confirmation Timeout (seconds)</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Confirmation Timeout (seconds)
+                    </Typography>
                     {editing.twoManEdit ? (
                       <TextField
                         type="number"
                         value={editing.two_man_rule_timeout || data.configGuard.timeout_sec}
-                        onChange={(e) => setEditing({...editing, two_man_rule_timeout: e.target.value})}
+                        onChange={(e) =>
+                          setEditing({ ...editing, two_man_rule_timeout: e.target.value })
+                        }
                         fullWidth
                         size="small"
                         inputProps={{ min: 60 }}
                       />
                     ) : (
-                      <Typography variant="h6">{(data.configGuard.timeout_sec / 60).toFixed(0)} minutes</Typography>
+                      <Typography variant="h6">
+                        {(data.configGuard.timeout_sec / 60).toFixed(0)} minutes
+                      </Typography>
                     )}
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Auto-Revert</Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Auto-Revert
+                    </Typography>
                     <Typography variant="h6">
                       {data.configGuard.auto_revert ? (
                         <Chip label="YES" color="success" size="small" />
@@ -1562,25 +1863,43 @@ function CapitalProtectionPanel() {
               <Alert severity="info">
                 <AlertTitle>How It Works - "Future You Protecting Present You"</AlertTitle>
                 <Typography variant="body2">
-                  <strong>Prevents impulsive risk increases during emotional trading moments.</strong><br/>
-                  <br/>
-                  <strong>Protected Changes:</strong><br/>
-                  • Increasing loss limits<br/>
-                  • Increasing position size or lot size<br/>
-                  • Disabling safety features<br/>
-                  • Enabling EXECUTE_ORDERS<br/>
-                  <br/>
-                  <strong>When you make a risky change:</strong><br/>
-                  1. Bot detects the change on startup<br/>
-                  2. Requires confirmation within {data.configGuard.timeout_sec / 60} minutes<br/>
-                  3. Create file: <code>touch .config_change_confirmed</code><br/>
-                  4. If not confirmed → Auto-reverts (if enabled)<br/>
-                  <br/>
-                  <strong>Example:</strong><br/>
-                  You're frustrated after a loss and increase loss limit from 5k to 50k.<br/>
-                  Two-Man Rule: "Wait {data.configGuard.timeout_sec / 60} minutes and confirm this is really what you want."<br/>
-                  After cooling down, you realize it was a bad idea → Change auto-reverts<br/>
-                  <br/>
+                  <strong>
+                    Prevents impulsive risk increases during emotional trading moments.
+                  </strong>
+                  <br />
+                  <br />
+                  <strong>Protected Changes:</strong>
+                  <br />
+                  • Increasing loss limits
+                  <br />
+                  • Increasing position size or lot size
+                  <br />
+                  • Disabling safety features
+                  <br />
+                  • Enabling EXECUTE_ORDERS
+                  <br />
+                  <br />
+                  <strong>When you make a risky change:</strong>
+                  <br />
+                  1. Bot detects the change on startup
+                  <br />
+                  2. Requires confirmation within {data.configGuard.timeout_sec / 60} minutes
+                  <br />
+                  3. Create file: <code>touch .config_change_confirmed</code>
+                  <br />
+                  4. If not confirmed → Auto-reverts (if enabled)
+                  <br />
+                  <br />
+                  <strong>Example:</strong>
+                  <br />
+                  You're frustrated after a loss and increase loss limit from 5k to 50k.
+                  <br />
+                  Two-Man Rule: "Wait {data.configGuard.timeout_sec / 60} minutes and confirm this
+                  is really what you want."
+                  <br />
+                  After cooling down, you realize it was a bad idea → Change auto-reverts
+                  <br />
+                  <br />
                   <strong>This is your safety net against emotional trading decisions!</strong>
                 </Typography>
               </Alert>
@@ -1633,20 +1952,20 @@ function CapitalProtectionPanel() {
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
-        onClose={() => setSnackbar({...snackbar, open: false})}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         sx={{ maxWidth: '500px' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({...snackbar, open: false})} 
-          severity={snackbar.severity} 
-          sx={{ 
-            width: '100%', 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{
+            width: '100%',
             minWidth: '350px',
-            '& .MuiAlert-message': { 
+            '& .MuiAlert-message': {
               wordBreak: 'break-word',
-              whiteSpace: 'normal'
-            }
+              whiteSpace: 'normal',
+            },
           }}
         >
           {snackbar.message}
@@ -1686,7 +2005,7 @@ function CapitalProtectionPanel() {
       />
 
       {/* Configuration Change Confirmation Dialog */}
-      <ConfigChangeConfirmDialog 
+      <ConfigChangeConfirmDialog
         open={confirmDialogOpen}
         onClose={handleCancelConfirm}
         onConfirm={handleConfirmChanges}

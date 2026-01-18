@@ -1,6 +1,6 @@
 /**
  * Professional IV vs RV Volatility Chart Component
- * 
+ *
  * Features:
  * - Dual-line chart (IV in red, RV in green)
  * - Timeframe selector (Daily/Weekly/Monthly)
@@ -8,9 +8,14 @@
  * - Dark theme matching Delta Exchange
  * - Professional tooltips and legend
  * - Auto-refresh every 30 seconds
+ *
+ * PERFORMANCE OPTIMIZED: Phase 6 (Jan 18, 2026)
+ * - React.memo for component memoization
+ * - useMemo for expensive computations
+ * - useCallback for stable function references
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import {
   Box,
   Paper,
@@ -22,7 +27,7 @@ import {
   CircularProgress,
   Alert,
   Chip,
-  Grid
+  Grid,
 } from '@mui/material';
 import {
   LineChart,
@@ -32,11 +37,14 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from 'recharts';
 import { format } from 'date-fns';
+import { useRenderPerformance } from '../hooks/usePerformance';
 
-const VolatilityChart = ({ socketio }) => {
+const VolatilityChart = memo(({ socketio }) => {
+  // Track render performance in development
+  useRenderPerformance('VolatilityChart');
   const [timeframe, setTimeframe] = useState('daily');
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +78,6 @@ const VolatilityChart = ({ socketio }) => {
       // Merge IV and RV data by timestamp
       const mergedData = mergeDataByTimestamp(result.data.iv, result.data.rv);
       setChartData(mergedData);
-
     } catch (err) {
       console.error('Failed to fetch volatility data:', err);
       setError(err.message);
@@ -120,29 +127,28 @@ const VolatilityChart = ({ socketio }) => {
     const dataMap = new Map();
 
     // Add IV data
-    ivData.forEach(point => {
+    ivData.forEach((point) => {
       dataMap.set(point.timestamp, {
         timestamp: point.timestamp,
-        iv: point.value
+        iv: point.value,
       });
     });
 
     // Add RV data
-    rvData.forEach(point => {
+    rvData.forEach((point) => {
       const existing = dataMap.get(point.timestamp);
       if (existing) {
         existing.rv = point.value;
       } else {
         dataMap.set(point.timestamp, {
           timestamp: point.timestamp,
-          rv: point.value
+          rv: point.value,
         });
       }
     });
 
     // Convert to array and sort by timestamp
-    return Array.from(dataMap.values())
-      .sort((a, b) => a.timestamp - b.timestamp);
+    return Array.from(dataMap.values()).sort((a, b) => a.timestamp - b.timestamp);
   };
 
   /**
@@ -218,7 +224,7 @@ const VolatilityChart = ({ socketio }) => {
         sx={{
           p: 2,
           backgroundColor: 'rgba(18, 18, 18, 0.95)',
-          border: '1px solid rgba(255, 255, 255, 0.12)'
+          border: '1px solid rgba(255, 255, 255, 0.12)',
         }}
       >
         <Typography variant="body2" sx={{ color: '#aaa', mb: 1 }}>
@@ -273,7 +279,7 @@ const VolatilityChart = ({ socketio }) => {
         p: 3,
         backgroundColor: 'rgba(18, 18, 18, 0.8)',
         border: '1px solid rgba(255, 255, 255, 0.12)',
-        borderRadius: 2
+        borderRadius: 2,
       }}
     >
       {/* Header */}
@@ -299,14 +305,14 @@ const VolatilityChart = ({ socketio }) => {
               sx={{
                 color: '#fff',
                 '.MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.23)'
+                  borderColor: 'rgba(255, 255, 255, 0.23)',
                 },
                 '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.4)'
+                  borderColor: 'rgba(255, 255, 255, 0.4)',
                 },
                 '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: '#1976d2'
-                }
+                  borderColor: '#1976d2',
+                },
               }}
             >
               <MenuItem value="daily">Daily (1D)</MenuItem>
@@ -326,7 +332,7 @@ const VolatilityChart = ({ socketio }) => {
               backgroundColor: 'rgba(239, 83, 80, 0.2)',
               color: '#ef5350',
               fontWeight: 600,
-              border: '1px solid rgba(239, 83, 80, 0.5)'
+              border: '1px solid rgba(239, 83, 80, 0.5)',
             }}
           />
           {getCurrentRV() && (
@@ -336,7 +342,7 @@ const VolatilityChart = ({ socketio }) => {
                 backgroundColor: 'rgba(102, 187, 106, 0.2)',
                 color: '#66bb6a',
                 fontWeight: 600,
-                border: '1px solid rgba(102, 187, 106, 0.5)'
+                border: '1px solid rgba(102, 187, 106, 0.5)',
               }}
             />
           )}
@@ -365,10 +371,7 @@ const VolatilityChart = ({ socketio }) => {
       ) : (
         /* Chart */
         <ResponsiveContainer width="100%" height={400}>
-          <LineChart
-            data={chartData}
-            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-          >
+          <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
             <XAxis
               dataKey="timestamp"
@@ -383,14 +386,11 @@ const VolatilityChart = ({ socketio }) => {
                 value: 'Volatility (%)',
                 angle: -90,
                 position: 'insideLeft',
-                style: { fill: '#aaa' }
+                style: { fill: '#aaa' },
               }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend
-              wrapperStyle={{ paddingTop: '20px' }}
-              iconType="line"
-            />
+            <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="line" />
             <Line
               type="monotone"
               dataKey="iv"
@@ -421,6 +421,8 @@ const VolatilityChart = ({ socketio }) => {
       </Box>
     </Paper>
   );
-};
+});
+
+VolatilityChart.displayName = 'VolatilityChart';
 
 export default VolatilityChart;

@@ -19,7 +19,7 @@ export function throttle<T extends (...args: any[]) => any>(func: T, limit: numb
     if (!inThrottle) {
       func.apply(this, args);
       inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
+      setTimeout(() => (inThrottle = false), limit);
     }
   };
 }
@@ -39,12 +39,12 @@ export function useThrottledCallback<T extends (...args: any[]) => any>(
   callback: T,
   limit: number = 1000
 ): (...args: Parameters<T>) => void {
-  const throttledFn = useRef<ReturnType<typeof throttle<T>>>();
-  
+  const throttledFn = useRef<ReturnType<typeof throttle<T>> | null>(null);
+
   useEffect(() => {
     throttledFn.current = throttle(callback, limit);
   }, [callback, limit]);
-  
+
   return useCallback((...args: Parameters<T>) => {
     if (throttledFn.current) {
       throttledFn.current(...args);
@@ -59,9 +59,9 @@ export function useSmartPolling(
 ): void {
   useEffect(() => {
     if (!isVisible) return;
-    
+
     callback();
-    
+
     const timer = setInterval(callback, interval);
     return () => clearInterval(timer);
   }, [callback, interval, isVisible]);

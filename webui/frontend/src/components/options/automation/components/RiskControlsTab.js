@@ -13,14 +13,14 @@ import {
   Paper,
   Switch,
   InputAdornment,
-  Slider
+  Slider,
 } from '@mui/material';
 import WarningIcon from '@mui/icons-material/Warning';
 import SecurityIcon from '@mui/icons-material/Security';
 
 /**
  * RiskControlsTab Component
- * 
+ *
  * Phase 3 - Critical safety features before enabling real orders:
  * - Enable/disable real order execution
  * - Position size limits
@@ -35,8 +35,8 @@ const RiskControlsTab = ({ rules, onChange }) => {
       ...rules,
       risk: {
         ...rules.risk,
-        [field]: value
-      }
+        [field]: value,
+      },
     });
   };
 
@@ -47,23 +47,23 @@ const RiskControlsTab = ({ rules, onChange }) => {
         ...rules.risk,
         notifications: {
           ...rules.risk.notifications,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
   return (
     <Box sx={{ p: 2 }} onClick={(e) => e.stopPropagation()}>
       {/* Real Trading Mode Toggle */}
-      <Paper 
-        elevation={0} 
-        sx={{ 
-          p: 2, 
-          mb: 3, 
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2,
+          mb: 3,
           bgcolor: rules.risk.alertOnlyMode ? 'info.light' : 'error.light',
           border: 2,
-          borderColor: rules.risk.alertOnlyMode ? 'info.main' : 'error.main'
+          borderColor: rules.risk.alertOnlyMode ? 'info.main' : 'error.main',
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -78,7 +78,7 @@ const RiskControlsTab = ({ rules, onChange }) => {
                 {rules.risk.alertOnlyMode ? 'SAFE MODE (Alerts Only)' : 'LIVE TRADING ENABLED'}
               </Typography>
               <Typography variant="body2">
-                {rules.risk.alertOnlyMode 
+                {rules.risk.alertOnlyMode
                   ? 'Notifications only - No real orders will be placed'
                   : '⚠️ REAL ORDERS WILL BE PLACED - Use with caution'}
               </Typography>
@@ -88,14 +88,14 @@ const RiskControlsTab = ({ rules, onChange }) => {
             checked={!rules.risk.alertOnlyMode}
             onChange={(e) => handleRiskChange('alertOnlyMode', !e.target.checked)}
             color={rules.risk.alertOnlyMode ? 'info' : 'error'}
-            sx={{ 
+            sx={{
               '& .MuiSwitch-thumb': {
                 width: 32,
                 height: 32,
               },
               '& .MuiSwitch-track': {
                 height: 20,
-              }
+              },
             }}
           />
         </Box>
@@ -106,10 +106,12 @@ const RiskControlsTab = ({ rules, onChange }) => {
               WARNING: Live trading is enabled!
             </Typography>
             <Typography variant="caption">
-              • Real orders will be placed on Delta Exchange<br />
-              • Real money will be at risk<br />
-              • Ensure all risk limits are configured properly<br />
-              • Start with small position sizes to test
+              • Real orders will be placed on Delta Exchange
+              <br />
+              • Real money will be at risk
+              <br />
+              • Ensure all risk limits are configured properly
+              <br />• Start with small position sizes to test
             </Typography>
           </Alert>
         )}
@@ -117,11 +119,16 @@ const RiskControlsTab = ({ rules, onChange }) => {
 
       {/* Position Size Limits */}
       <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: 'background.default' }}>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="subtitle1"
+          fontWeight="bold"
+          gutterBottom
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           <SecurityIcon fontSize="small" />
           Position Size Limits
         </Typography>
-        
+
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid item xs={6}>
             <TextField
@@ -152,11 +159,16 @@ const RiskControlsTab = ({ rules, onChange }) => {
 
       {/* Loss Limits */}
       <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: 'background.default' }}>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="subtitle1"
+          fontWeight="bold"
+          gutterBottom
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           <WarningIcon fontSize="small" />
           Loss Limits
         </Typography>
-        
+
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid item xs={6}>
             <TextField
@@ -204,7 +216,7 @@ const RiskControlsTab = ({ rules, onChange }) => {
               { value: 10, label: '10%' },
               { value: 30, label: '30%' },
               { value: 50, label: '50%' },
-              { value: 100, label: '100%' }
+              { value: 100, label: '100%' },
             ]}
             valueLabelDisplay="auto"
             sx={{ mt: 2 }}
@@ -220,7 +232,7 @@ const RiskControlsTab = ({ rules, onChange }) => {
         <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
           Order Execution Limits
         </Typography>
-        
+
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid item xs={6}>
             <TextField
@@ -255,10 +267,12 @@ const RiskControlsTab = ({ rules, onChange }) => {
           control={
             <Checkbox
               checked={rules.risk.tradingHoursRestriction?.enabled || false}
-              onChange={(e) => handleRiskChange('tradingHoursRestriction', {
-                ...(rules.risk.tradingHoursRestriction || {}),
-                enabled: e.target.checked
-              })}
+              onChange={(e) =>
+                handleRiskChange('tradingHoursRestriction', {
+                  ...(rules.risk.tradingHoursRestriction || {}),
+                  enabled: e.target.checked,
+                })
+              }
             />
           }
           label={
@@ -282,10 +296,12 @@ const RiskControlsTab = ({ rules, onChange }) => {
                 type="time"
                 size="small"
                 value={rules.risk.tradingHoursRestriction?.startTime || '09:30'}
-                onChange={(e) => handleRiskChange('tradingHoursRestriction', {
-                  ...rules.risk.tradingHoursRestriction,
-                  startTime: e.target.value
-                })}
+                onChange={(e) =>
+                  handleRiskChange('tradingHoursRestriction', {
+                    ...rules.risk.tradingHoursRestriction,
+                    startTime: e.target.value,
+                  })
+                }
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
@@ -296,10 +312,12 @@ const RiskControlsTab = ({ rules, onChange }) => {
                 type="time"
                 size="small"
                 value={rules.risk.tradingHoursRestriction?.endTime || '15:15'}
-                onChange={(e) => handleRiskChange('tradingHoursRestriction', {
-                  ...rules.risk.tradingHoursRestriction,
-                  endTime: e.target.value
-                })}
+                onChange={(e) =>
+                  handleRiskChange('tradingHoursRestriction', {
+                    ...rules.risk.tradingHoursRestriction,
+                    endTime: e.target.value,
+                  })
+                }
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
@@ -312,7 +330,7 @@ const RiskControlsTab = ({ rules, onChange }) => {
         <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
           Notification Preferences
         </Typography>
-        
+
         <Box sx={{ mt: 2 }}>
           <FormControlLabel
             control={
@@ -324,7 +342,7 @@ const RiskControlsTab = ({ rules, onChange }) => {
             label="Sound Alerts (beep on entry/exit)"
           />
         </Box>
-        
+
         <Box>
           <FormControlLabel
             control={
@@ -364,11 +382,16 @@ const RiskControlsTab = ({ rules, onChange }) => {
 
       {/* Emergency Controls */}
       <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.default' }}>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="subtitle1"
+          fontWeight="bold"
+          gutterBottom
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           <WarningIcon fontSize="small" color="error" />
           Emergency Controls
         </Typography>
-        
+
         <Box sx={{ mt: 2 }}>
           <FormControlLabel
             control={
@@ -409,8 +432,9 @@ const RiskControlsTab = ({ rules, onChange }) => {
 
         <Alert severity="info" sx={{ mt: 2 }}>
           <Typography variant="caption">
-            <strong>Emergency Stop:</strong> Use the STOP button in the automation dialog to immediately halt all trading activity.
-            If "Close positions when stopped" is enabled, all open positions will be exited at market price.
+            <strong>Emergency Stop:</strong> Use the STOP button in the automation dialog to
+            immediately halt all trading activity. If "Close positions when stopped" is enabled, all
+            open positions will be exited at market price.
           </Typography>
         </Alert>
       </Paper>

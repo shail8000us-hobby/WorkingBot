@@ -21,7 +21,7 @@ import {
   ListItemText,
   Snackbar,
   CircularProgress,
-  Divider
+  Divider,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -38,7 +38,7 @@ import {
   AutoAwesome as AIIcon,
   InsertDriveFile as TemplateIcon,
   Backup as BackupIcon,
-  History as HistoryIcon
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 
@@ -127,7 +127,7 @@ def analyze_trading_data(data: pd.DataFrame) -> Dict:
         'max_profit': max_profit,
         'max_loss': max_loss
     }
-`
+`,
   },
   javascript: {
     'React Component': `import React, { useState, useEffect } from 'react';
@@ -205,7 +205,7 @@ class APIService {
 }
 
 export default new APIService();
-`
+`,
   },
   yaml: {
     'Bot Config': `# Bot Configuration Template
@@ -256,7 +256,7 @@ strategy:
     take_profit: 2.0  # percentage
     stop_loss: 1.0    # percentage
     trailing_stop: true
-`
+`,
   },
   json: {
     'Package Config': `{
@@ -278,11 +278,11 @@ strategy:
     "nodemon": "^2.0.0"
   }
 }
-`
-  }
+`,
+  },
 };
 
-const CodeEditor = ({ 
+const CodeEditor = ({
   filePath = '',
   initialValue = '',
   language = 'python',
@@ -291,7 +291,7 @@ const CodeEditor = ({
   height = '600px',
   onSave,
   showToolbar = true,
-  enableAI = true
+  enableAI = true,
 }) => {
   const [code, setCode] = useState(initialValue);
   const [originalCode, setOriginalCode] = useState(initialValue);
@@ -305,7 +305,7 @@ const CodeEditor = ({
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [anchorEl, setAnchorEl] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
-  
+
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
 
@@ -318,7 +318,7 @@ const CodeEditor = ({
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-    
+
     // Configure IntelliSense for Python
     if (language === 'python') {
       monaco.languages.registerCompletionItemProvider('python', {
@@ -329,41 +329,41 @@ const CodeEditor = ({
               kind: monaco.languages.CompletionItemKind.Snippet,
               insertText: 'async def ${1:function_name}(${2:params}):\n    ${3:pass}',
               insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Async function definition'
+              documentation: 'Async function definition',
             },
             {
               label: 'try-except',
               kind: monaco.languages.CompletionItemKind.Snippet,
               insertText: 'try:\n    ${1:pass}\nexcept ${2:Exception} as e:\n    ${3:pass}',
               insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Try-except block'
+              documentation: 'Try-except block',
             },
             {
               label: 'logger.info',
               kind: monaco.languages.CompletionItemKind.Function,
               insertText: 'logger.info("${1:message}")',
               insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Log info message'
-            }
+              documentation: 'Log info message',
+            },
           ];
           return { suggestions };
-        }
+        },
       });
     }
-    
+
     // Add keyboard shortcuts
     editor.addAction({
       id: 'save-file',
       label: 'Save File',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S],
-      run: () => handleSave()
+      run: () => handleSave(),
     });
-    
+
     editor.addAction({
       id: 'format-document',
       label: 'Format Document',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KEY_F],
-      run: () => handleFormat()
+      run: () => handleFormat(),
     });
   };
 
@@ -387,17 +387,17 @@ const CodeEditor = ({
     try {
       // Create backup first
       await createBackup();
-      
+
       // Save the file
       if (onSave) {
         await onSave(code);
       } else if (filePath) {
         await axios.post(`${API_BASE_URL}/api/file-manager/save`, {
           path: filePath,
-          content: code
+          content: code,
         });
       }
-      
+
       setOriginalCode(code);
       setHasChanges(false);
       setSnackbar({ open: true, message: 'File saved successfully!', severity: 'success' });
@@ -411,16 +411,16 @@ const CodeEditor = ({
 
   const createBackup = async () => {
     if (!filePath) return;
-    
+
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
       const backupPath = `${filePath}.backup_${timestamp}`;
-      
+
       await axios.post(`${API_BASE_URL}/api/config-backup/backup`, {
         source: filePath,
-        destination: backupPath
+        destination: backupPath,
       });
-      
+
       console.log('Backup created:', backupPath);
     } catch (error) {
       console.error('Backup creation failed:', error);
@@ -467,7 +467,11 @@ const CodeEditor = ({
     } else {
       // Switching to edit mode
       setIsReadOnly(false);
-      setSnackbar({ open: true, message: '⚠️ Edit mode enabled - changes will affect the live file', severity: 'warning' });
+      setSnackbar({
+        open: true,
+        message: '⚠️ Edit mode enabled - changes will affect the live file',
+        severity: 'warning',
+      });
     }
   };
 
@@ -488,17 +492,21 @@ const CodeEditor = ({
   const handleAIFix = async () => {
     setAILoading(true);
     setShowAIDialog(true);
-    
+
     try {
       // In a real implementation, this would call an AI service
       // For now, we'll provide syntax checking and basic suggestions
       const errors = await checkSyntax();
-      
+
       if (errors.length === 0) {
-        setAISuggestion('✅ No obvious errors found! Your code looks good.\n\nSuggestions:\n• Add more comments for clarity\n• Consider error handling\n• Add logging for debugging');
+        setAISuggestion(
+          '✅ No obvious errors found! Your code looks good.\n\nSuggestions:\n• Add more comments for clarity\n• Consider error handling\n• Add logging for debugging'
+        );
       } else {
         const errorList = errors.map((e, i) => `${i + 1}. Line ${e.line}: ${e.message}`).join('\n');
-        setAISuggestion(`⚠️ Found ${errors.length} potential issue(s):\n\n${errorList}\n\nClick "Apply Fix" to auto-correct these issues.`);
+        setAISuggestion(
+          `⚠️ Found ${errors.length} potential issue(s):\n\n${errorList}\n\nClick "Apply Fix" to auto-correct these issues.`
+        );
       }
     } catch (error) {
       setAISuggestion(`❌ Error analyzing code: ${error.message}`);
@@ -511,7 +519,7 @@ const CodeEditor = ({
     // Basic syntax checking (in production, use a proper linter/parser)
     const errors = [];
     const lines = code.split('\n');
-    
+
     lines.forEach((line, index) => {
       // Check for common Python errors
       if (language === 'python') {
@@ -519,30 +527,37 @@ const CodeEditor = ({
           errors.push({ line: index + 1, message: 'Missing colon after function definition' });
         }
         if (line.includes('=') && !line.includes('==') && line.includes('if ')) {
-          errors.push({ line: index + 1, message: 'Possible assignment in condition (use == for comparison)' });
+          errors.push({
+            line: index + 1,
+            message: 'Possible assignment in condition (use == for comparison)',
+          });
         }
       }
     });
-    
+
     return errors;
   };
 
   const handleApplyTemplate = (templateName) => {
     const templates = CODE_TEMPLATES[language] || {};
     const template = templates[templateName];
-    
+
     if (template) {
       if (hasChanges) {
-        setSnackbar({ 
-          open: true, 
-          message: 'Save or discard current changes before applying template', 
-          severity: 'warning' 
+        setSnackbar({
+          open: true,
+          message: 'Save or discard current changes before applying template',
+          severity: 'warning',
         });
       } else {
         setCode(template);
         setHasChanges(true);
         setShowTemplateDialog(false);
-        setSnackbar({ open: true, message: `Template "${templateName}" applied`, severity: 'success' });
+        setSnackbar({
+          open: true,
+          message: `Template "${templateName}" applied`,
+          severity: 'success',
+        });
       }
     }
   };
@@ -561,7 +576,7 @@ const CodeEditor = ({
       javascript: '📜',
       yaml: '⚙️',
       json: '📋',
-      markdown: '📝'
+      markdown: '📝',
     };
     return icons[language] || '📄';
   };
@@ -570,50 +585,57 @@ const CodeEditor = ({
     <Paper elevation={3} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Toolbar */}
       {showToolbar && (
-        <Box sx={{ 
-          p: 1.5, 
-          borderBottom: 1, 
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: 'background.paper'
-        }}>
+        <Box
+          sx={{
+            p: 1.5,
+            borderBottom: 1,
+            borderColor: 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: 'background.paper',
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography
+              variant="subtitle2"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+            >
               {getLanguageIcon()} {filePath ? filePath.split('/').pop() : 'Untitled'}
             </Typography>
             {hasChanges && <Chip label="Modified" size="small" color="warning" />}
-            {isReadOnly && <Chip label="Read-Only" size="small" color="default" icon={<LockIcon />} />}
+            {isReadOnly && (
+              <Chip label="Read-Only" size="small" color="default" icon={<LockIcon />} />
+            )}
           </Box>
-          
+
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Undo (Ctrl+Z)">
               <IconButton size="small" onClick={handleUndo} disabled={isReadOnly}>
                 <UndoIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Redo (Ctrl+Y)">
               <IconButton size="small" onClick={handleRedo} disabled={isReadOnly}>
                 <RedoIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Format Code (Ctrl+Shift+F)">
               <IconButton size="small" onClick={handleFormat}>
                 <FormatIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Copy to Clipboard">
               <IconButton size="small" onClick={handleCopy}>
                 <CopyIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            
+
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            
+
             {enableAI && (
               <Tooltip title="AI Fix This">
                 <IconButton size="small" onClick={handleAIFix} color="primary">
@@ -621,30 +643,30 @@ const CodeEditor = ({
                 </IconButton>
               </Tooltip>
             )}
-            
+
             <Tooltip title="Code Templates">
               <IconButton size="small" onClick={openTemplateMenu}>
                 <TemplateIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            
+
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            
-            <Tooltip title={isReadOnly ? "Enable Edit Mode" : "Enable Read-Only Mode"}>
-              <IconButton 
-                size="small" 
+
+            <Tooltip title={isReadOnly ? 'Enable Edit Mode' : 'Enable Read-Only Mode'}>
+              <IconButton
+                size="small"
                 onClick={handleToggleReadOnly}
-                color={isReadOnly ? "default" : "warning"}
+                color={isReadOnly ? 'default' : 'warning'}
               >
                 {isReadOnly ? <LockIcon fontSize="small" /> : <UnlockIcon fontSize="small" />}
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Save (Ctrl+S)">
               <span>
-                <IconButton 
-                  size="small" 
-                  onClick={handleSave} 
+                <IconButton
+                  size="small"
+                  onClick={handleSave}
                   disabled={isReadOnly || !hasChanges || isSaving}
                   color="primary"
                 >
@@ -655,7 +677,7 @@ const CodeEditor = ({
           </Box>
         </Box>
       )}
-      
+
       {/* Editor */}
       <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
         <Editor
@@ -688,20 +710,16 @@ const CodeEditor = ({
             acceptSuggestionOnEnter: 'on',
             quickSuggestions: true,
             parameterHints: { enabled: true },
-            snippetSuggestions: 'inline'
+            snippetSuggestions: 'inline',
           }}
         />
       </Box>
-      
+
       {/* Template Menu */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={closeTemplateMenu}
-      >
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={closeTemplateMenu}>
         {Object.keys(CODE_TEMPLATES[language] || {}).map((templateName) => (
-          <MenuItem 
-            key={templateName} 
+          <MenuItem
+            key={templateName}
             onClick={() => {
               handleApplyTemplate(templateName);
               closeTemplateMenu();
@@ -719,7 +737,7 @@ const CodeEditor = ({
           </MenuItem>
         )}
       </Menu>
-      
+
       {/* Confirm Dialog */}
       <Dialog open={showConfirmDialog} onClose={() => setShowConfirmDialog(false)}>
         <DialogTitle>Unsaved Changes</DialogTitle>
@@ -729,22 +747,15 @@ const CodeEditor = ({
           </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => handleConfirmReadOnly(false)}>
-            Discard Changes
-          </Button>
+          <Button onClick={() => handleConfirmReadOnly(false)}>Discard Changes</Button>
           <Button onClick={() => handleConfirmReadOnly(true)} variant="contained" color="primary">
             Save Changes
           </Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* AI Suggestions Dialog */}
-      <Dialog 
-        open={showAIDialog} 
-        onClose={() => setShowAIDialog(false)}
-        maxWidth="md"
-        fullWidth
-      >
+      <Dialog open={showAIDialog} onClose={() => setShowAIDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <AIIcon color="primary" />
           AI Code Analysis
@@ -762,9 +773,7 @@ const CodeEditor = ({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowAIDialog(false)}>
-            Close
-          </Button>
+          <Button onClick={() => setShowAIDialog(false)}>Close</Button>
           {aiSuggestion.includes('⚠️') && (
             <Button variant="contained" color="primary" disabled>
               Apply Fix (Coming Soon)
@@ -772,7 +781,7 @@ const CodeEditor = ({
           )}
         </DialogActions>
       </Dialog>
-      
+
       {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
@@ -780,8 +789,8 @@ const CodeEditor = ({
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           variant="filled"
         >

@@ -1,6 +1,6 @@
 /**
  * ConditionEvaluator - Check if automation conditions are met
- * 
+ *
  * Features:
  * - Evaluate entry conditions (IV, moneyness, premium, time, price)
  * - Evaluate exit conditions (profit/loss targets, trailing stops, etc.)
@@ -26,14 +26,14 @@ class ConditionEvaluator {
       const ivPercent = iv * 100;
       const threshold = rules.ivFilter.value;
       const operator = rules.ivFilter.operator;
-      
+
       const ivCheck = this._compareValues(ivPercent, operator, threshold);
       checks.push({
         name: 'IV Filter',
         passed: ivCheck,
         detail: `IV ${ivPercent.toFixed(1)}% ${operator} ${threshold}%`,
       });
-      
+
       if (!ivCheck) {
         return {
           shouldEnter: false,
@@ -47,13 +47,13 @@ class ConditionEvaluator {
     if (rules.moneyness) {
       const moneyness = this._calculateMoneyness(position.strike, spotPrice);
       const moneynessCheck = moneyness === rules.moneyness;
-      
+
       checks.push({
         name: 'Moneyness',
         passed: moneynessCheck,
         detail: `Expected ${rules.moneyness.toUpperCase()}, got ${moneyness.toUpperCase()}`,
       });
-      
+
       if (!moneynessCheck) {
         return {
           shouldEnter: false,
@@ -67,13 +67,13 @@ class ConditionEvaluator {
     if (rules.premiumRange?.enabled) {
       const premium = position.mark_price || position.mid_price || position.entry_price || 0;
       const inRange = premium >= rules.premiumRange.min && premium <= rules.premiumRange.max;
-      
+
       checks.push({
         name: 'Premium Range',
         passed: inRange,
         detail: `Premium $${premium} in range [$${rules.premiumRange.min}, $${rules.premiumRange.max}]`,
       });
-      
+
       if (!inRange) {
         return {
           shouldEnter: false,
@@ -89,19 +89,19 @@ class ConditionEvaluator {
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
       const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-      
+
       const inTimeWindow = this._isInTimeWindow(
         currentTimeStr,
         rules.timeFilter.startTime,
         rules.timeFilter.endTime
       );
-      
+
       checks.push({
         name: 'Time Window',
         passed: inTimeWindow,
         detail: `Current time ${currentTimeStr} in window [${rules.timeFilter.startTime}, ${rules.timeFilter.endTime}]`,
       });
-      
+
       if (!inTimeWindow) {
         return {
           shouldEnter: false,
@@ -113,14 +113,15 @@ class ConditionEvaluator {
 
     // 5. Check underlying price range
     if (rules.underlyingPrice?.enabled) {
-      const inRange = spotPrice >= rules.underlyingPrice.min && spotPrice <= rules.underlyingPrice.max;
-      
+      const inRange =
+        spotPrice >= rules.underlyingPrice.min && spotPrice <= rules.underlyingPrice.max;
+
       checks.push({
         name: 'Underlying Price',
         passed: inRange,
         detail: `Spot $${spotPrice} in range [$${rules.underlyingPrice.min}, $${rules.underlyingPrice.max}]`,
       });
-      
+
       if (!inRange) {
         return {
           shouldEnter: false,
@@ -155,7 +156,7 @@ class ConditionEvaluator {
     // BUY: profit when price rises (currentPrice > entryPrice)
     // SELL: profit when price falls (currentPrice < entryPrice)
     let pnl, pnlDollar;
-    
+
     if (entryAction === 'sell' || position.size < 0) {
       // SELL position: profit when price drops
       pnl = ((entryPrice - currentPrice) / entryPrice) * 100;
@@ -168,9 +169,10 @@ class ConditionEvaluator {
 
     // 1. Check Take Profit
     if (rules.takeProfit?.enabled) {
-      const tpCheck = pnl >= rules.takeProfit.percentage ||
-                     (rules.takeProfit.fixedValue > 0 && pnlDollar >= rules.takeProfit.fixedValue);
-      
+      const tpCheck =
+        pnl >= rules.takeProfit.percentage ||
+        (rules.takeProfit.fixedValue > 0 && pnlDollar >= rules.takeProfit.fixedValue);
+
       checks.push({
         name: 'Take Profit',
         passed: tpCheck,
@@ -189,9 +191,10 @@ class ConditionEvaluator {
 
     // 2. Check Stop Loss
     if (rules.stopLoss?.enabled) {
-      const slCheck = pnl <= -rules.stopLoss.percentage ||
-                     (rules.stopLoss.fixedValue > 0 && pnlDollar <= -rules.stopLoss.fixedValue);
-      
+      const slCheck =
+        pnl <= -rules.stopLoss.percentage ||
+        (rules.stopLoss.fixedValue > 0 && pnlDollar <= -rules.stopLoss.fixedValue);
+
       checks.push({
         name: 'Stop Loss',
         passed: !slCheck,
@@ -211,11 +214,11 @@ class ConditionEvaluator {
     // 3. Check Trailing Stop
     if (rules.trailingStop?.enabled) {
       const activationPnL = rules.trailingStop.activationProfit || 10;
-      
+
       // Only activate trailing stop after reaching activation profit
       if (pnl >= activationPnL) {
         let trailingStopPrice;
-        
+
         if (entryAction === 'sell' || position.size < 0) {
           // SELL position: trail from lowest price (best price for seller)
           const lowestPrice = peakPrice; // peakPrice tracks best price (lowest for sell)
@@ -226,7 +229,7 @@ class ConditionEvaluator {
             trailingStopPrice = lowestPrice + rules.trailingStop.distance;
           }
           const trailCheck = currentPrice >= trailingStopPrice;
-          
+
           checks.push({
             name: 'Trailing Stop',
             passed: !trailCheck,
@@ -250,7 +253,7 @@ class ConditionEvaluator {
             trailingStopPrice = peakPrice - rules.trailingStop.distance;
           }
           const trailCheck = currentPrice <= trailingStopPrice;
-          
+
           checks.push({
             name: 'Trailing Stop',
             passed: !trailCheck,
@@ -272,13 +275,13 @@ class ConditionEvaluator {
     // 4. Check Time-Based Exit
     if (rules.timeBased?.enabled) {
       const now = new Date(currentTime || Date.now());
-      
+
       // Check exit time
       if (rules.timeBased.exitTime) {
         const [hours, minutes] = rules.timeBased.exitTime.split(':').map(Number);
         const exitTime = new Date(now);
         exitTime.setHours(hours, minutes, 0, 0);
-        
+
         if (now >= exitTime) {
           return {
             shouldExit: true,
@@ -288,12 +291,12 @@ class ConditionEvaluator {
           };
         }
       }
-      
+
       // Check duration
       if (rules.timeBased.duration > 0) {
         const durationMs = rules.timeBased.duration * 60 * 1000;
         const elapsed = now - entryTime;
-        
+
         if (elapsed >= durationMs) {
           return {
             shouldExit: true,
@@ -303,12 +306,12 @@ class ConditionEvaluator {
           };
         }
       }
-      
+
       // Check before expiry
       if (rules.timeBased.closeBeforeExpiry && position.expiry_time) {
         const expiryTime = new Date(position.expiry_time * 1000);
         const closeTime = new Date(expiryTime.getTime() - 10 * 60 * 1000); // 10 min before
-        
+
         if (now >= closeTime) {
           return {
             shouldExit: true,
@@ -330,7 +333,7 @@ class ConditionEvaluator {
           checks,
         };
       }
-      
+
       if (rules.underlyingExit.belowPrice > 0 && spotPrice <= rules.underlyingExit.belowPrice) {
         return {
           shouldExit: true,
@@ -357,7 +360,7 @@ class ConditionEvaluator {
    */
   _calculateMoneyness(strike, spotPrice) {
     const percentDiff = ((strike - spotPrice) / spotPrice) * 100;
-    
+
     if (percentDiff < MONEYNESS_THRESHOLDS.ATM_MIN) {
       return MONEYNESS.ITM; // Strike well below spot
     } else if (percentDiff > MONEYNESS_THRESHOLDS.ATM_MAX) {
@@ -403,16 +406,16 @@ class ConditionEvaluator {
       const [hours, minutes] = timeStr.split(':').map(Number);
       return hours * 60 + minutes;
     };
-    
+
     const current = toMinutes(currentTime);
     const start = toMinutes(startTime);
     const end = toMinutes(endTime);
-    
+
     // Handle overnight windows (e.g., 23:00 to 01:00)
     if (end < start) {
       return current >= start || current <= end;
     }
-    
+
     return current >= start && current <= end;
   }
 }

@@ -1,13 +1,13 @@
 /**
  * Mobile Optimization Hook
- * 
+ *
  * Detects mobile devices and applies battery-saving optimizations:
  * - Longer idle timeout (30s instead of 60s)
  * - Reduced polling frequency on cellular
  * - Battery status monitoring
  * - Network type detection (WiFi vs Cellular)
  * - Automatic pause on low battery
- * 
+ *
  * Perfect for Tailscale mobile access!
  */
 
@@ -18,12 +18,16 @@ import { useState, useEffect, useCallback } from 'react';
  */
 export function isMobileDevice() {
   if (typeof window === 'undefined') return false;
-  
+
   const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-  
-  return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase()) ||
-    ('ontouchstart' in window) ||
-    (navigator.maxTouchPoints > 0);
+
+  return (
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(
+      userAgent.toLowerCase()
+    ) ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0
+  );
 }
 
 /**
@@ -39,22 +43,23 @@ export function useNetworkType() {
       return;
     }
 
-    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    
+    const connection =
+      navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+
     const updateConnectionInfo = () => {
       const type = connection.type || 'unknown';
       const effective = connection.effectiveType || '4g';
-      
+
       setNetworkType(type);
       setEffectiveType(effective);
-      
+
       console.log(`📶 Network: ${type}, Speed: ${effective}`);
     };
 
     updateConnectionInfo();
-    
+
     connection.addEventListener('change', updateConnectionInfo);
-    
+
     return () => {
       connection.removeEventListener('change', updateConnectionInfo);
     };
@@ -182,9 +187,8 @@ export function useMobileOptimization() {
     pollingInterval: getOptimalPollingInterval(),
     idleTimeout: getOptimalIdleTimeout(),
     shouldReduceAnimations: isMobile || isLowBattery,
-    shouldPauseCharts: isPowerSaveMode
+    shouldPauseCharts: isPowerSaveMode,
   };
 }
 
 export default useMobileOptimization;
-

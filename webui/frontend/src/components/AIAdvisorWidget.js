@@ -12,7 +12,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  Divider
+  Divider,
 } from '@mui/material';
 import {
   Psychology,
@@ -20,7 +20,7 @@ import {
   ExpandMore,
   ExpandLess,
   Refresh,
-  Link as LinkIcon
+  Link as LinkIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
@@ -33,10 +33,10 @@ export default function AIAdvisorWidget({ onNavigate }) {
 
   // Quick questions
   const quickQuestions = [
-    "Why is trading stopped?",
-    "What is volatility safety?",
-    "How do I manage risk?",
-    "Explain my current positions"
+    'Why is trading stopped?',
+    'What is volatility safety?',
+    'How do I manage risk?',
+    'Explain my current positions',
   ];
 
   const handleAsk = async () => {
@@ -55,7 +55,7 @@ export default function AIAdvisorWidget({ onNavigate }) {
         success: false,
         answer: `Error: ${err.message}`,
         suggestions: [],
-        related_links: []
+        related_links: [],
       });
     } finally {
       setLoading(false);
@@ -91,7 +91,7 @@ export default function AIAdvisorWidget({ onNavigate }) {
         borderRadius: 3,
         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255,255,255,0.1)'
+        border: '1px solid rgba(255,255,255,0.1)',
       }}
     >
       {/* Header */}
@@ -108,9 +108,9 @@ export default function AIAdvisorWidget({ onNavigate }) {
           '&:hover': {
             bgcolor: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)',
             transform: 'translateY(-2px)',
-            boxShadow: '0 4px 20px rgba(102, 126, 234, 0.4)'
+            boxShadow: '0 4px 20px rgba(102, 126, 234, 0.4)',
           },
-          transition: 'all 0.2s ease-in-out'
+          transition: 'all 0.2s ease-in-out',
         }}
         onClick={() => setExpanded(!expanded)}
       >
@@ -155,11 +155,7 @@ export default function AIAdvisorWidget({ onNavigate }) {
               onKeyPress={(e) => e.key === 'Enter' && handleAsk()}
               disabled={loading}
             />
-            <IconButton
-              color="primary"
-              onClick={handleAsk}
-              disabled={loading || !question.trim()}
-            >
+            <IconButton color="primary" onClick={handleAsk} disabled={loading || !question.trim()}>
               {loading ? <CircularProgress size={24} /> : <Send />}
             </IconButton>
           </Box>

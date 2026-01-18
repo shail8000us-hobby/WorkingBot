@@ -1,8 +1,8 @@
 /**
  * RiskValidator - Pre-trade risk checks
- * 
+ *
  * Phase 3: Validates orders against risk limits before execution
- * 
+ *
  * Features:
  * - Position size validation
  * - Daily loss limit checks
@@ -116,9 +116,7 @@ class RiskValidator {
 
     // Compile result
     const isValid = violations.length === 0;
-    const reason = isValid 
-      ? 'All risk checks passed' 
-      : violations.map(v => v.message).join('; ');
+    const reason = isValid ? 'All risk checks passed' : violations.map((v) => v.message).join('; ');
 
     return {
       isValid,
@@ -140,7 +138,7 @@ class RiskValidator {
 
     // Keep only last hour of orders for rate limiting
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    this.orderHistory = this.orderHistory.filter(o => o.timestamp > oneHourAgo);
+    this.orderHistory = this.orderHistory.filter((o) => o.timestamp > oneHourAgo);
 
     console.log('[RiskValidator] Order recorded. Daily stats:', this.dailyStats);
   }
@@ -218,21 +216,21 @@ class RiskValidator {
   _checkTradingHours(restriction) {
     const now = new Date();
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    
+
     const toMinutes = (timeStr) => {
       const [hours, minutes] = timeStr.split(':').map(Number);
       return hours * 60 + minutes;
     };
-    
+
     const current = toMinutes(currentTime);
     const start = toMinutes(restriction.startTime);
     const end = toMinutes(restriction.endTime);
-    
+
     // Handle overnight windows
     if (end < start) {
       return current >= start || current <= end;
     }
-    
+
     return current >= start && current <= end;
   }
 
@@ -241,8 +239,8 @@ class RiskValidator {
    */
   _checkRateLimit(maxOrdersPerMinute) {
     const oneMinuteAgo = Date.now() - 60 * 1000;
-    const recentOrders = this.orderHistory.filter(o => o.timestamp > oneMinuteAgo);
-    
+    const recentOrders = this.orderHistory.filter((o) => o.timestamp > oneMinuteAgo);
+
     return recentOrders.length < maxOrdersPerMinute;
   }
 
@@ -252,16 +250,16 @@ class RiskValidator {
    * @returns {number} Estimated margin in BTC
    */
   _estimateRequiredMargin(orderParams) {
-    // Simplified estimation: 
+    // Simplified estimation:
     // For options, margin = quantity * contract_value * mark_price * leverage_factor
     // Delta Exchange contract_value = 0.001 BTC
     // Assume average option price of 0.005 BTC
     // Leverage factor ~10x, so margin ~10% of notional
-    
+
     const contractValue = 0.001; // BTC per contract
     const estimatedPrice = orderParams.limitPrice || 0.005; // Default to 0.005 if market order
     const leverageFactor = 0.1; // 10x leverage = 10% margin
-    
+
     return orderParams.quantity * contractValue * estimatedPrice * leverageFactor;
   }
 
@@ -273,11 +271,11 @@ class RiskValidator {
   _calculateCurrentExposure(accountData) {
     // Simplified: exposure = (used_margin / total_balance) * 100
     // In real implementation, would calculate actual position values
-    
+
     if (!accountData.marginBalance || accountData.marginBalance === 0) {
       return 0;
     }
-    
+
     const usedMargin = accountData.marginBalance - accountData.availableBalance;
     return (usedMargin / accountData.marginBalance) * 100;
   }
@@ -287,12 +285,12 @@ class RiskValidator {
    */
   async getRiskMetrics() {
     const accountBalance = await deltaExchangeAPI.getAccountBalance();
-    
+
     return {
       dailyStats: this.getDailyStats(),
       activeAutomations: this.activeAutomations.size,
       accountBalance: accountBalance.availableBalance || 0,
-      recentOrdersCount: this.orderHistory.filter(o => o.timestamp > Date.now() - 60000).length,
+      recentOrdersCount: this.orderHistory.filter((o) => o.timestamp > Date.now() - 60000).length,
     };
   }
 }

@@ -3,7 +3,7 @@
  * ==========================
  * Isolated API client for options chain data.
  * Does NOT share state with options trading module.
- * 
+ *
  * Created: January 5, 2026
  */
 
@@ -21,23 +21,22 @@ class OptionsChainAPI {
   async getExpirations(underlying = 'BTC') {
     try {
       const response = await fetch(`${API_BASE}/expirations?underlying=${underlying}`);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       return data.expirations || [];
-      
     } catch (error) {
       console.error('[OptionsChainAPI] getExpirations error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Get full options chain data for underlying and expiry
-   * @param {string} underlying - BTC or ETH  
+   * @param {string} underlying - BTC or ETH
    * @param {string} expiry - Expiry date in DDMMYYYY format
    * @returns {Promise<Object>} Chain data with spot, ATM, and all strikes
    */
@@ -46,24 +45,21 @@ class OptionsChainAPI {
       if (!expiry) {
         throw new Error('Expiry date is required');
       }
-      
-      const response = await fetch(
-        `${API_BASE}/data?underlying=${underlying}&expiry=${expiry}`
-      );
-      
+
+      const response = await fetch(`${API_BASE}/data?underlying=${underlying}&expiry=${expiry}`);
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       return data;
-      
     } catch (error) {
       console.error('[OptionsChainAPI] getChainData error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Force refresh chain data (invalidate cache)
    * @param {string} underlying - BTC or ETH
@@ -75,21 +71,20 @@ class OptionsChainAPI {
       if (expiry) {
         url += `&expiry=${expiry}`;
       }
-      
+
       const response = await fetch(url, { method: 'POST' });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       return await response.json();
-      
     } catch (error) {
       console.error('[OptionsChainAPI] refresh error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Health check
    * @returns {Promise<boolean>}
@@ -103,7 +98,7 @@ class OptionsChainAPI {
       return false;
     }
   }
-  
+
   /**
    * Place an order from the options chain
    * @param {Object} order - Order details
@@ -120,35 +115,34 @@ class OptionsChainAPI {
         symbol,
         side,
         size: parseInt(size),
-        order_type
+        order_type,
       };
-      
+
       if (order_type === 'limit' && limit_price) {
         body.limit_price = parseFloat(limit_price);
       }
-      
+
       const response = await fetch(`${API_BASE}/order`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || `HTTP ${response.status}`);
       }
-      
+
       return data;
-      
     } catch (error) {
       console.error('[OptionsChainAPI] placeOrder error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Cancel an open order
    * @param {string} orderId - Order ID to cancel
@@ -157,23 +151,22 @@ class OptionsChainAPI {
   async cancelOrder(orderId) {
     try {
       const response = await fetch(`${API_BASE}/order/${orderId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || `HTTP ${response.status}`);
       }
-      
+
       return data;
-      
     } catch (error) {
       console.error('[OptionsChainAPI] cancelOrder error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Get all open orders
    * @returns {Promise<Object>} Open orders list
@@ -181,19 +174,18 @@ class OptionsChainAPI {
   async getOpenOrders() {
     try {
       const response = await fetch(`${API_BASE}/orders`);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       return await response.json();
-      
     } catch (error) {
       console.error('[OptionsChainAPI] getOpenOrders error:', error);
       throw error;
     }
   }
-  
+
   /**
    * Get ticker for specific option
    * @param {string} symbol - Option symbol
@@ -202,14 +194,13 @@ class OptionsChainAPI {
   async getTicker(symbol) {
     try {
       const response = await fetch(`${API_BASE}/ticker/${encodeURIComponent(symbol)}`);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       return data.ticker;
-      
     } catch (error) {
       console.error('[OptionsChainAPI] getTicker error:', error);
       throw error;

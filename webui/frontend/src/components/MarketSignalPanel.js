@@ -16,7 +16,7 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   Tabs,
-  Tab
+  Tab,
 } from '@mui/material';
 import {
   SignalCellularAlt,
@@ -29,7 +29,7 @@ import {
   Warning,
   CheckCircle,
   Error,
-  Info
+  Info,
 } from '@mui/icons-material';
 
 const MarketSignalPanel = () => {
@@ -47,15 +47,15 @@ const MarketSignalPanel = () => {
       // Fetch signal data with symbol parameter
       const [signalResponse, liquidationResponse] = await Promise.all([
         fetch(`/api/volatility/signal?symbol=${symbol}`),
-        fetch(`/api/liquidation/status?symbol=${symbol}`)
+        fetch(`/api/liquidation/status?symbol=${symbol}`),
       ]);
-      
+
       const signalResult = await signalResponse.json();
       const liquidationResult = await liquidationResponse.json();
-      
+
       if (signalResult.success) {
         const data = signalResult.data;
-        
+
         // Merge liquidation data
         if (liquidationResult.success && liquidationResult.distance && liquidationResult.margin) {
           data.position_risk = {
@@ -63,14 +63,14 @@ const MarketSignalPanel = () => {
             liquidation_distance: liquidationResult.distance.distance,
             margin_utilized: liquidationResult.margin.utilization,
             mtm: data.position_risk?.mtm || liquidationResult.mtm?.current_mtm_inr,
-            num_positions: data.position_risk?.num_positions
+            num_positions: data.position_risk?.num_positions,
           };
         }
-        
+
         // Store data per symbol
-        setSignalData(prev => ({
+        setSignalData((prev) => ({
           ...prev,
-          [symbol]: data
+          [symbol]: data,
         }));
         setLastUpdate(new Date());
       } else {
@@ -86,8 +86,8 @@ const MarketSignalPanel = () => {
   // Fetch data for all symbols on mount
   useEffect(() => {
     // Fetch all symbols' data
-    availableSymbols.forEach(sym => fetchSignalData(sym));
-    
+    availableSymbols.forEach((sym) => fetchSignalData(sym));
+
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => {
       fetchSignalData(selectedSymbol);
@@ -108,19 +108,19 @@ const MarketSignalPanel = () => {
   // Get symbol color
   const getSymbolColor = (symbol) => {
     const colors = {
-      'BTCUSD': { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
-      'ETHUSD': { bg: '#627eea20', border: '#627eea', text: '#627eea' },
+      BTCUSD: { bg: '#f7931a20', border: '#f7931a', text: '#f7931a' },
+      ETHUSD: { bg: '#627eea20', border: '#627eea', text: '#627eea' },
     };
     return colors[symbol] || { bg: '#64748b20', border: '#64748b', text: '#64748b' };
   };
 
   const getColorFromValue = (color) => {
     const colorMap = {
-      'green': '#4caf50',
-      'yellow': '#ff9800',
-      'orange': '#ff5722',
-      'red': '#f44336',
-      'gray': '#9e9e9e'
+      green: '#4caf50',
+      yellow: '#ff9800',
+      orange: '#ff5722',
+      red: '#f44336',
+      gray: '#9e9e9e',
     };
     return colorMap[color] || '#9e9e9e';
   };
@@ -150,18 +150,22 @@ const MarketSignalPanel = () => {
   if (loading && !signalData[selectedSymbol]) {
     return (
       <Paper sx={{ p: 3, mb: 2 }}>
-        <Typography variant="h6" gutterBottom>Loading Market Signal...</Typography>
+        <Typography variant="h6" gutterBottom>
+          Loading Market Signal...
+        </Typography>
         <LinearProgress />
       </Paper>
     );
   }
 
   const currentData = signalData[selectedSymbol];
-  
+
   if (!currentData) {
     return (
       <Paper sx={{ p: 3, mb: 2 }}>
-        <Typography variant="h6" color="error">Failed to load market signal for {selectedSymbol}</Typography>
+        <Typography variant="h6" color="error">
+          Failed to load market signal for {selectedSymbol}
+        </Typography>
         <Button onClick={() => fetchSignalData(selectedSymbol)} variant="outlined" sx={{ mt: 2 }}>
           <Refresh /> Retry
         </Button>
@@ -179,7 +183,7 @@ const MarketSignalPanel = () => {
           size="small"
           sx={{ mb: 2 }}
         >
-          {availableSymbols.map(sym => {
+          {availableSymbols.map((sym) => {
             const colors = getSymbolColor(sym);
             return (
               <ToggleButton key={sym} value={sym} sx={{ color: colors.text }}>
@@ -188,9 +192,12 @@ const MarketSignalPanel = () => {
             );
           })}
         </ToggleButtonGroup>
-        <Typography variant="h6" gutterBottom>Waiting for {selectedSymbol} market data…</Typography>
+        <Typography variant="h6" gutterBottom>
+          Waiting for {selectedSymbol} market data…
+        </Typography>
         <Typography variant="body2" color="text.secondary">
-          The bot is still syncing with the exchange. Market readiness metrics will appear automatically once feeds warm up.
+          The bot is still syncing with the exchange. Market readiness metrics will appear
+          automatically once feeds warm up.
         </Typography>
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
           <LinearProgress sx={{ width: '60%' }} />
@@ -215,10 +222,10 @@ const MarketSignalPanel = () => {
           <Typography variant="h6" component="div">
             Market Signal & Risk Dashboard
           </Typography>
-          <Chip 
-            label={selectedSymbol} 
-            size="small" 
-            sx={{ bgcolor: symbolColors.bg, color: symbolColors.text, fontWeight: 'bold', ml: 1 }} 
+          <Chip
+            label={selectedSymbol}
+            size="small"
+            sx={{ bgcolor: symbolColors.bg, color: symbolColors.text, fontWeight: 'bold', ml: 1 }}
           />
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -229,16 +236,16 @@ const MarketSignalPanel = () => {
             onChange={handleSymbolChange}
             size="small"
           >
-            {availableSymbols.map(sym => {
+            {availableSymbols.map((sym) => {
               const colors = getSymbolColor(sym);
               return (
-                <ToggleButton 
-                  key={sym} 
-                  value={sym} 
-                  sx={{ 
+                <ToggleButton
+                  key={sym}
+                  value={sym}
+                  sx={{
                     color: selectedSymbol === sym ? colors.text : 'inherit',
                     borderColor: selectedSymbol === sym ? colors.border : 'inherit',
-                    '&.Mui-selected': { bgcolor: colors.bg }
+                    '&.Mui-selected': { bgcolor: colors.bg },
                   }}
                 >
                   {sym}
@@ -246,11 +253,15 @@ const MarketSignalPanel = () => {
               );
             })}
           </ToggleButtonGroup>
-          
+
           <Typography variant="body2" color="text.secondary">
             Last Update: {formatLastUpdate() || 'Never'}
           </Typography>
-          <IconButton size="small" onClick={() => fetchSignalData(selectedSymbol)} disabled={loading}>
+          <IconButton
+            size="small"
+            onClick={() => fetchSignalData(selectedSymbol)}
+            disabled={loading}
+          >
             <Refresh />
           </IconButton>
         </Box>
@@ -264,7 +275,9 @@ const MarketSignalPanel = () => {
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <TrendingUp sx={{ fontSize: 20 }} />
-                <Typography variant="subtitle2" fontWeight="bold">VOLATILITY</Typography>
+                <Typography variant="subtitle2" fontWeight="bold">
+                  VOLATILITY
+                </Typography>
               </Box>
               <Chip
                 label={vol.value || '—'}
@@ -273,7 +286,7 @@ const MarketSignalPanel = () => {
                   bgcolor: getColorFromValue(vol.color),
                   color: 'white',
                   mb: 1,
-                  fontWeight: 'bold'
+                  fontWeight: 'bold',
                 }}
                 component={motion.div}
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -281,15 +294,34 @@ const MarketSignalPanel = () => {
               />
               {vol.iv && vol.rv && (
                 <>
-                  <Typography variant="body2" color="text.secondary" component={motion.p} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    component={motion.p}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
                     IV: {vol.iv.toFixed(1)}%
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" component={motion.p} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    component={motion.p}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
                     RV: {vol.rv.toFixed(1)}%
                   </Typography>
                   {vol.spread !== null && (
-                    <Typography variant="body2" color="text.secondary" component={motion.p} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                      Spread: {vol.spread > 0 ? '+' : ''}{vol.spread.toFixed(1)}%
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      component={motion.p}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      Spread: {vol.spread > 0 ? '+' : ''}
+                      {vol.spread.toFixed(1)}%
                     </Typography>
                   )}
                 </>
@@ -304,7 +336,9 @@ const MarketSignalPanel = () => {
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <Speed sx={{ fontSize: 20 }} />
-                <Typography variant="subtitle2" fontWeight="bold">MARKET REGIME</Typography>
+                <Typography variant="subtitle2" fontWeight="bold">
+                  MARKET REGIME
+                </Typography>
               </Box>
               <Chip
                 label={regime.value || '—'}
@@ -313,7 +347,7 @@ const MarketSignalPanel = () => {
                   bgcolor: getColorFromValue(regime.color),
                   color: 'white',
                   mb: 1,
-                  fontWeight: 'bold'
+                  fontWeight: 'bold',
                 }}
                 component={motion.div}
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -331,11 +365,15 @@ const MarketSignalPanel = () => {
 
         {/* Grid Suitability */}
         <Grid item xs={12} md={4}>
-          <Card sx={{ height: '100%', border: `2px solid ${getColorFromValue(suitability.color)}` }}>
+          <Card
+            sx={{ height: '100%', border: `2px solid ${getColorFromValue(suitability.color)}` }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <Shield sx={{ fontSize: 20 }} />
-                <Typography variant="subtitle2" fontWeight="bold">GRID SUITABILITY</Typography>
+                <Typography variant="subtitle2" fontWeight="bold">
+                  GRID SUITABILITY
+                </Typography>
               </Box>
               <Chip
                 label={suitability.rating}
@@ -344,7 +382,7 @@ const MarketSignalPanel = () => {
                   bgcolor: getColorFromValue(suitability.color),
                   color: 'white',
                   mb: 1,
-                  fontWeight: 'bold'
+                  fontWeight: 'bold',
                 }}
               />
               <Typography variant="body2" color="text.secondary">
@@ -359,8 +397,8 @@ const MarketSignalPanel = () => {
                     borderRadius: 4,
                     bgcolor: '#2a2d3e',
                     '& .MuiLinearProgress-bar': {
-                      bgcolor: getColorFromValue(suitability.color)
-                    }
+                      bgcolor: getColorFromValue(suitability.color),
+                    },
                   }}
                 />
               </Box>
@@ -370,7 +408,9 @@ const MarketSignalPanel = () => {
       </Grid>
 
       {/* Position Risk Summary */}
-      <Card sx={{ bgcolor: '#1a1d2e', border: `1px solid ${getColorFromValue(overallRisk.color)}` }}>
+      <Card
+        sx={{ bgcolor: '#1a1d2e', border: `1px solid ${getColorFromValue(overallRisk.color)}` }}
+      >
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <Shield sx={{ fontSize: 20, color: getColorFromValue(overallRisk.color) }} />
@@ -378,7 +418,7 @@ const MarketSignalPanel = () => {
               Position Risk Summary
             </Typography>
           </Box>
-          
+
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={3}>
               <Box>
@@ -387,13 +427,26 @@ const MarketSignalPanel = () => {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Chip
-                    label={positionRisk.liquidation_distance ? `${positionRisk.liquidation_distance.toFixed(1)}%` : 'N/A'}
+                    label={
+                      positionRisk.liquidation_distance
+                        ? `${positionRisk.liquidation_distance.toFixed(1)}%`
+                        : 'N/A'
+                    }
                     size="small"
-                    sx={{ bgcolor: positionRisk.liquidation_distance ? getColorFromValue('green') : '#9e9e9e', color: 'white' }}
+                    sx={{
+                      bgcolor: positionRisk.liquidation_distance
+                        ? getColorFromValue('green')
+                        : '#9e9e9e',
+                      color: 'white',
+                    }}
                   />
                   {positionRisk.liquidation_distance && (
                     <Typography variant="caption" color="text.secondary">
-                      {positionRisk.liquidation_distance > 50 ? 'Safe' : positionRisk.liquidation_distance > 30 ? 'Moderate' : 'Caution'}
+                      {positionRisk.liquidation_distance > 50
+                        ? 'Safe'
+                        : positionRisk.liquidation_distance > 30
+                          ? 'Moderate'
+                          : 'Caution'}
                     </Typography>
                   )}
                 </Box>
@@ -407,9 +460,18 @@ const MarketSignalPanel = () => {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Chip
-                    label={positionRisk.margin_utilized ? `${positionRisk.margin_utilized.toFixed(1)}%` : 'N/A'}
+                    label={
+                      positionRisk.margin_utilized
+                        ? `${positionRisk.margin_utilized.toFixed(1)}%`
+                        : 'N/A'
+                    }
                     size="small"
-                    sx={{ bgcolor: positionRisk.margin_utilized ? getColorFromValue('yellow') : '#9e9e9e', color: 'white' }}
+                    sx={{
+                      bgcolor: positionRisk.margin_utilized
+                        ? getColorFromValue('yellow')
+                        : '#9e9e9e',
+                      color: 'white',
+                    }}
                   />
                 </Box>
               </Box>
@@ -424,7 +486,15 @@ const MarketSignalPanel = () => {
                   <Chip
                     label={positionRisk.mtm ? `₹${positionRisk.mtm.toLocaleString()}` : 'N/A'}
                     size="small"
-                    sx={{ bgcolor: positionRisk.mtm > 5000 ? getColorFromValue('green') : positionRisk.mtm < -5000 ? getColorFromValue('red') : getColorFromValue('yellow'), color: 'white' }}
+                    sx={{
+                      bgcolor:
+                        positionRisk.mtm > 5000
+                          ? getColorFromValue('green')
+                          : positionRisk.mtm < -5000
+                            ? getColorFromValue('red')
+                            : getColorFromValue('yellow'),
+                      color: 'white',
+                    }}
                   />
                 </Box>
               </Box>
@@ -449,7 +519,11 @@ const MarketSignalPanel = () => {
           {/* Overall Risk Status */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {overallRisk?.value ? getIconFromRisk(overallRisk.value) : <Info sx={{ fontSize: 20 }} />}
+              {overallRisk?.value ? (
+                getIconFromRisk(overallRisk.value)
+              ) : (
+                <Info sx={{ fontSize: 20 }} />
+              )}
               <Typography variant="body2" fontWeight="bold">
                 Overall Risk Status:
               </Typography>
@@ -459,7 +533,7 @@ const MarketSignalPanel = () => {
               sx={{
                 bgcolor: getColorFromValue(overallRisk.color),
                 color: 'white',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
               }}
             />
           </Box>
@@ -488,7 +562,7 @@ const MarketSignalPanel = () => {
             This analysis combines volatility metrics with your current position risk to provide
             comprehensive trading recommendations.
           </Typography>
-          
+
           {/* Recommendations based on signals */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="caption" fontWeight="bold" color="primary">
@@ -496,8 +570,10 @@ const MarketSignalPanel = () => {
             </Typography>
             <Typography variant="body2" component="div" sx={{ mt: 1 }}>
               {vol.value === 'NEUTRAL' && '• IV ≈ RV: Options are fairly priced'}
-              {vol.value === 'IV_HIGH' && '• IV > RV: Options are expensive, consider reducing exposure'}
-              {vol.value === 'IV_LOW' && '• IV < RV: Options are cheap, potential buying opportunity'}
+              {vol.value === 'IV_HIGH' &&
+                '• IV > RV: Options are expensive, consider reducing exposure'}
+              {vol.value === 'IV_LOW' &&
+                '• IV < RV: Options are cheap, potential buying opportunity'}
               {vol.value === 'NO_DATA' && '• Insufficient volatility data'}
             </Typography>
           </Box>

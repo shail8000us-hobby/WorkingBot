@@ -5,7 +5,7 @@ import clsx from 'clsx';
 /**
  * AnimatedNumber Component
  * Smooth number transitions with formatting
- * 
+ *
  * Created: January 18, 2026 (Migrated to TypeScript)
  * Safe: Pure UI component, no functional changes
  */
@@ -27,19 +27,21 @@ const AnimatedNumber: React.FC<AnimatedNumberProps> = ({
   suffix = '',
   className,
   duration = 0.5,
-  highlightOnChange = false
+  highlightOnChange = false,
 }) => {
   const formattedValue = value?.toFixed(decimals) ?? '0.00';
-  
+
   return (
     <motion.span
       key={value}
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0 }}
-      className={clsx('tabular-nums', className)}
+      {...({ className: clsx('tabular-nums', className) } as any)}
     >
-      {prefix}{formattedValue}{suffix}
+      {prefix}
+      {formattedValue}
+      {suffix}
     </motion.span>
   );
 };
@@ -54,7 +56,7 @@ export const AnimatedPNL: React.FC<AnimatedPNLProps> = ({ value, className }) =>
   const isPositive = value >= 0;
   const sign = isPositive ? '+' : '-';
   const colorClass = isPositive ? 'text-success' : 'text-danger';
-  
+
   return (
     <AnimatedNumber
       value={Math.abs(value)}
@@ -73,7 +75,7 @@ export const AnimatedPercentage: React.FC<AnimatedPercentageProps> = ({ value, c
   const isPositive = value >= 0;
   const sign = isPositive ? '+' : '';
   const colorClass = isPositive ? 'text-success' : 'text-danger';
-  
+
   return (
     <AnimatedNumber
       value={value}
@@ -90,10 +92,10 @@ interface AnimatedPriceProps {
   className?: string;
 }
 
-export const AnimatedPrice: React.FC<AnimatedPriceProps> = ({ 
-  value, 
-  currency = '$', 
-  className 
+export const AnimatedPrice: React.FC<AnimatedPriceProps> = ({
+  value,
+  currency = '$',
+  className,
 }) => {
   return (
     <AnimatedNumber

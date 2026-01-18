@@ -155,7 +155,7 @@ class ThemeManager {
   constructor() {
     this.currentTheme = this.loadTheme();
     this.listeners = [];
-    
+
     // Listen for system theme changes
     this.setupSystemThemeListener();
   }
@@ -187,11 +187,11 @@ class ThemeManager {
   setupSystemThemeListener() {
     if (window.matchMedia) {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      
+
       mediaQuery.addEventListener('change', (e) => {
         const newTheme = e.matches ? 'dark' : 'light';
         console.log(`🎨 System theme changed to: ${newTheme}`);
-        
+
         // Only auto-switch if user hasn't manually set a preference
         const storedTheme = storage.get('theme');
         if (!storedTheme) {
@@ -267,7 +267,7 @@ class ThemeManager {
    */
   subscribe(listener) {
     this.listeners.push(listener);
-    
+
     // Return unsubscribe function
     return () => {
       const index = this.listeners.indexOf(listener);
@@ -281,7 +281,7 @@ class ThemeManager {
    * Notify listeners
    */
   notifyListeners(theme) {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       try {
         listener(theme);
       } catch (error) {
@@ -295,9 +295,10 @@ class ThemeManager {
    */
   resetToSystem() {
     storage.remove('theme');
-    const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches 
-      ? 'dark' 
-      : 'light';
+    const systemTheme =
+      window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
     this.setTheme(systemTheme, false);
     console.log('🎨 Reset to system theme');
   }
@@ -326,14 +327,14 @@ class ThemeManager {
    */
   applyToDocument() {
     const colors = this.getColors();
-    
+
     // Set CSS variables
     document.documentElement.style.setProperty('--primary-color', colors.primary);
     document.documentElement.style.setProperty('--secondary-color', colors.secondary);
     document.documentElement.style.setProperty('--background-color', colors.background);
     document.documentElement.style.setProperty('--paper-color', colors.paper);
     document.documentElement.style.setProperty('--text-color', colors.text);
-    
+
     // Set meta theme-color for mobile browsers
     let metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (!metaThemeColor) {
@@ -388,9 +389,8 @@ export const useTheme = () => {
     setTheme: setThemeMode,
     resetToSystem,
     themeObject: themeManager.getThemeObject(),
-    colors: themeManager.getColors()
+    colors: themeManager.getColors(),
   };
 };
 
 export default themeManager;
-

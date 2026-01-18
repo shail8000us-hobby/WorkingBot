@@ -1,9 +1,9 @@
 /**
  * Delta Exchange Trade Sync Component
- * 
+ *
  * Allows syncing trade history from Delta Exchange for accurate PnL/win rate.
  * Provides day-wise trade summary and ML model training integration.
- * 
+ *
  * Created: January 18, 2026
  */
 
@@ -87,16 +87,16 @@ const DeltaTradeSync = () => {
     setSyncing(true);
     setError(null);
     setSuccess(null);
-    
+
     try {
       const response = await fetch(`${API_BASE}/api/ml/delta/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days: syncDays })
+        body: JSON.stringify({ days: syncDays }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         setSuccess(`Synced ${data.new_trades} new trades. Total: ${data.total_trades}`);
         fetchStatus();
@@ -116,16 +116,18 @@ const DeltaTradeSync = () => {
     setTraining(true);
     setError(null);
     setSuccess(null);
-    
+
     try {
       const response = await fetch(`${API_BASE}/api/ml/delta/train-model`, {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
-        setSuccess(`Model trained! Imported ${data.new_trades_imported} trades. Accuracy: ${(data.model_accuracy * 100).toFixed(1)}%`);
+        setSuccess(
+          `Model trained! Imported ${data.new_trades_imported} trades. Accuracy: ${(data.model_accuracy * 100).toFixed(1)}%`
+        );
       } else {
         setError(data.error || 'Training failed');
       }
@@ -147,8 +149,7 @@ const DeltaTradeSync = () => {
 
   // Initial load
   useEffect(() => {
-    Promise.all([fetchStatus(), fetchDailySummary(selectedDate)])
-      .finally(() => setLoading(false));
+    Promise.all([fetchStatus(), fetchDailySummary(selectedDate)]).finally(() => setLoading(false));
   }, [fetchStatus, fetchDailySummary, selectedDate]);
 
   // Render sync status card
@@ -160,39 +161,33 @@ const DeltaTradeSync = () => {
             <CloudDownloadIcon />
             <Typography variant="h6">Delta Exchange Sync</Typography>
           </Box>
-          
+
           {status?.api_configured ? (
-            <Chip 
-              icon={<CheckCircleIcon />} 
-              label="API Connected" 
-              color="success" 
-              size="small"
-            />
+            <Chip icon={<CheckCircleIcon />} label="API Connected" color="success" size="small" />
           ) : (
-            <Chip 
-              icon={<WarningIcon />} 
-              label="API Not Configured" 
-              color="warning" 
-              size="small"
-            />
+            <Chip icon={<WarningIcon />} label="API Not Configured" color="warning" size="small" />
           )}
         </Box>
 
         <Grid container spacing={3}>
           <Grid item xs={3}>
-            <Typography variant="caption" color="text.secondary">Total Trades</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Total Trades
+            </Typography>
             <Typography variant="h5">{status?.total_trades || 0}</Typography>
           </Grid>
           <Grid item xs={3}>
-            <Typography variant="caption" color="text.secondary">Options Trades</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Options Trades
+            </Typography>
             <Typography variant="h5">{status?.options_trades || 0}</Typography>
           </Grid>
           <Grid item xs={3}>
-            <Typography variant="caption" color="text.secondary">Last Sync</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Last Sync
+            </Typography>
             <Typography variant="body1">
-              {status?.last_sync 
-                ? new Date(status.last_sync).toLocaleString() 
-                : 'Never'}
+              {status?.last_sync ? new Date(status.last_sync).toLocaleString() : 'Never'}
             </Typography>
           </Grid>
           <Grid item xs={3}>
@@ -223,7 +218,7 @@ const DeltaTradeSync = () => {
           <Typography variant="body2" color="text.secondary">
             Sync your trade history from Delta Exchange for accurate ML training
           </Typography>
-          
+
           <Button
             variant="outlined"
             color="secondary"
@@ -247,7 +242,7 @@ const DeltaTradeSync = () => {
             <CalendarTodayIcon />
             <Typography variant="h6">Daily Summary</Typography>
           </Box>
-          
+
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <IconButton size="small" onClick={() => navigateDate(-1)}>
               <NavigateBeforeIcon />
@@ -262,8 +257,8 @@ const DeltaTradeSync = () => {
               }}
               sx={{ width: 150 }}
             />
-            <IconButton 
-              size="small" 
+            <IconButton
+              size="small"
               onClick={() => navigateDate(1)}
               disabled={selectedDate >= new Date().toISOString().split('T')[0]}
             >
@@ -280,15 +275,19 @@ const DeltaTradeSync = () => {
             <Grid container spacing={3} sx={{ mb: 2 }}>
               <Grid item xs={3}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary">Trades</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Trades
+                  </Typography>
                   <Typography variant="h4">{dailySummary.trades}</Typography>
                 </Box>
               </Grid>
               <Grid item xs={3}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary">PnL</Typography>
-                  <Typography 
-                    variant="h4" 
+                  <Typography variant="caption" color="text.secondary">
+                    PnL
+                  </Typography>
+                  <Typography
+                    variant="h4"
                     color={dailySummary.pnl >= 0 ? 'success.main' : 'error.main'}
                   >
                     ${dailySummary.pnl?.toFixed(2)}
@@ -297,13 +296,17 @@ const DeltaTradeSync = () => {
               </Grid>
               <Grid item xs={3}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary">Win Rate</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Win Rate
+                  </Typography>
                   <Typography variant="h4">{dailySummary.win_rate}%</Typography>
                 </Box>
               </Grid>
               <Grid item xs={3}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary">W / L</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    W / L
+                  </Typography>
                   <Typography variant="h4">
                     <span style={{ color: '#4caf50' }}>{dailySummary.winners}</span>
                     {' / '}
@@ -316,7 +319,9 @@ const DeltaTradeSync = () => {
             {dailySummary.details && dailySummary.details.length > 0 && (
               <>
                 <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>Trades</Typography>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Trades
+                </Typography>
                 <TableContainer sx={{ maxHeight: 300 }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
@@ -333,21 +338,24 @@ const DeltaTradeSync = () => {
                       {dailySummary.details.map((trade, i) => (
                         <TableRow key={i}>
                           <TableCell>
-                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                            <Typography
+                              variant="body2"
+                              sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                            >
                               {trade.product_symbol}
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Chip 
-                              label={trade.option_type?.toUpperCase()} 
+                            <Chip
+                              label={trade.option_type?.toUpperCase()}
                               size="small"
                               color={trade.option_type === 'call' ? 'success' : 'error'}
                               variant="outlined"
                             />
                           </TableCell>
                           <TableCell>
-                            <Chip 
-                              label={trade.side?.toUpperCase()} 
+                            <Chip
+                              label={trade.side?.toUpperCase()}
                               size="small"
                               variant="outlined"
                             />
@@ -355,13 +363,21 @@ const DeltaTradeSync = () => {
                           <TableCell align="right">{trade.size}</TableCell>
                           <TableCell align="right">${trade.price?.toFixed(2)}</TableCell>
                           <TableCell align="right">
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                              {trade.realized_pnl >= 0 
-                                ? <TrendingUpIcon sx={{ fontSize: 16, color: '#4caf50' }} />
-                                : <TrendingDownIcon sx={{ fontSize: 16, color: '#f44336' }} />
-                              }
-                              <Typography 
-                                variant="body2" 
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'flex-end',
+                                gap: 0.5,
+                              }}
+                            >
+                              {trade.realized_pnl >= 0 ? (
+                                <TrendingUpIcon sx={{ fontSize: 16, color: '#4caf50' }} />
+                              ) : (
+                                <TrendingDownIcon sx={{ fontSize: 16, color: '#f44336' }} />
+                              )}
+                              <Typography
+                                variant="body2"
                                 color={trade.realized_pnl >= 0 ? 'success.main' : 'error.main'}
                               >
                                 ${trade.realized_pnl?.toFixed(2)}
@@ -378,7 +394,8 @@ const DeltaTradeSync = () => {
 
             {dailySummary.trades === 0 && (
               <Alert severity="info" sx={{ mt: 2 }}>
-                No trades found for {selectedDate}. Try syncing more days or selecting a different date.
+                No trades found for {selectedDate}. Try syncing more days or selecting a different
+                date.
               </Alert>
             )}
           </>

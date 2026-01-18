@@ -1,7 +1,7 @@
 /**
  * Optimistic Update Manager
  * Provides instant UI feedback before server confirms
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 

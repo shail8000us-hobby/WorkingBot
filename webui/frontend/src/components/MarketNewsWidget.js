@@ -11,7 +11,7 @@ import {
   ListItem,
   ListItemText,
   Button,
-  Badge
+  Badge,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -21,7 +21,7 @@ import {
   Link as LinkIcon,
   Warning,
   Error as ErrorIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
@@ -98,8 +98,8 @@ export default function MarketNewsWidget({ onNavigate }) {
     }
   };
 
-  const criticalCount = news.filter(n => n.priority === 'critical').length;
-  const highCount = news.filter(n => n.priority === 'high').length;
+  const criticalCount = news.filter((n) => n.priority === 'critical').length;
+  const highCount = news.filter((n) => n.priority === 'high').length;
 
   return (
     <Paper
@@ -117,7 +117,7 @@ export default function MarketNewsWidget({ onNavigate }) {
         borderRadius: 3,
         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255,255,255,0.1)'
+        border: '1px solid rgba(255,255,255,0.1)',
       }}
     >
       {/* Header */}
@@ -134,9 +134,9 @@ export default function MarketNewsWidget({ onNavigate }) {
           '&:hover': {
             bgcolor: 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)',
             transform: 'translateY(-2px)',
-            boxShadow: '0 4px 20px rgba(245, 87, 108, 0.4)'
+            boxShadow: '0 4px 20px rgba(245, 87, 108, 0.4)',
           },
-          transition: 'all 0.2s ease-in-out'
+          transition: 'all 0.2s ease-in-out',
         }}
         onClick={() => setExpanded(!expanded)}
       >
@@ -192,7 +192,7 @@ export default function MarketNewsWidget({ onNavigate }) {
                   mb: 1,
                   p: 1.5,
                   border: item.priority === 'critical' ? '2px solid' : 'none',
-                  borderColor: 'error.main'
+                  borderColor: 'error.main',
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
@@ -243,7 +243,13 @@ export default function MarketNewsWidget({ onNavigate }) {
           </List>
 
           {/* Footer */}
-          <Typography variant="caption" color="text.secondary" align="center" display="block" sx={{ mt: 2 }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            align="center"
+            display="block"
+            sx={{ mt: 2 }}
+          >
             Auto-refreshes every 30 seconds
           </Typography>
         </Box>

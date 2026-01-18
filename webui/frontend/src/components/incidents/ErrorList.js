@@ -10,10 +10,7 @@ import {
   AccordionDetails,
   Divider,
 } from '@mui/material';
-import {
-  ExpandMore as ExpandIcon,
-  FilterList as FilterIcon,
-} from '@mui/icons-material';
+import { ExpandMore as ExpandIcon, FilterList as FilterIcon } from '@mui/icons-material';
 import ErrorCard from './ErrorCard';
 
 /**
@@ -23,17 +20,8 @@ import ErrorCard from './ErrorCard';
  */
 const ErrorList = ({ errors, onErrorUpdate, onStatsUpdate }) => {
   const [statusFilter, setStatusFilter] = useState(['open', 'acknowledged']);
-  const [severityFilter, setSeverityFilter] = useState([
-    'critical',
-    'high',
-    'medium',
-    'low',
-  ]);
-  const [sourceFilter, setSourceFilter] = useState([
-    'trading',
-    'guardian',
-    'health',
-  ]);
+  const [severityFilter, setSeverityFilter] = useState(['critical', 'high', 'medium', 'low']);
+  const [sourceFilter, setSourceFilter] = useState(['trading', 'guardian', 'health']);
 
   const handleStatusFilter = (event, newFilters) => {
     if (newFilters.length > 0) {
@@ -247,9 +235,7 @@ const ErrorList = ({ errors, onErrorUpdate, onStatsUpdate }) => {
                       onStatsUpdate();
                     }}
                   />
-                  {index < groupedErrors[source].length - 1 && (
-                    <Divider sx={{ mx: 2 }} />
-                  )}
+                  {index < groupedErrors[source].length - 1 && <Divider sx={{ mx: 2 }} />}
                 </Box>
               ))}
             </AccordionDetails>

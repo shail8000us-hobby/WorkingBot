@@ -13,7 +13,7 @@ const sectionChunkMap = {
   config: 'configPanel',
   logs: 'logsPanel',
   guardian: 'guardianDashboard',
-  monitoring: 'monitoring'
+  monitoring: 'monitoring',
 };
 
 const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSelect }) {
@@ -29,7 +29,7 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
     <nav
       className="fixed left-0 right-0 z-38 hidden border-b border-slate-800/80 bg-slate-950/90 backdrop-blur lg:block"
       style={{
-        top: `calc(9.5rem + env(safe-area-inset-top))`
+        top: `calc(9.5rem + env(safe-area-inset-top))`,
       }}
     >
       <div className="mx-auto max-w-full px-4">
@@ -53,7 +53,11 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 22 }}
               >
-                {Icon && <Icon className={clsx('h-4 w-4 shrink-0', active ? 'text-sky-300' : 'text-slate-400')} />}
+                {Icon && (
+                  <Icon
+                    className={clsx('h-4 w-4 shrink-0', active ? 'text-sky-300' : 'text-slate-400')}
+                  />
+                )}
                 <span className="flex items-center gap-1.5">
                   <span>{label}</span>
                   {badge !== undefined && (

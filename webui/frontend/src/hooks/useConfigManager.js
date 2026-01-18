@@ -1,6 +1,6 @@
 /**
  * Config Manager Hook (v5.0 Multi-Symbol Support)
- * 
+ *
  * Manages configuration state and operations:
  * - Fetch initial config data (symbol-aware)
  * - Update configuration
@@ -29,7 +29,7 @@ export function useConfigManager({
   showNotification,
   globalWarnings,
   registerWarning,
-  clearWarning
+  clearWarning,
 }) {
   const [config, setConfig] = useState({});
   const [configMeta, setConfigMeta] = useState({});
@@ -39,14 +39,14 @@ export function useConfigManager({
     const timerId = 'fetch-initial-data';
     perfMonitor.startTimer(timerId);
     let timerEnded = false;
-    
+
     const endTimerOnce = () => {
       if (!timerEnded && perfMonitor.hasTimer(timerId)) {
         perfMonitor.endTimer(timerId);
         timerEnded = true;
       }
     };
-    
+
     try {
       setLoading(true);
 
@@ -54,32 +54,31 @@ export function useConfigManager({
 
       // Batch 1: Critical data (v5.0: symbol-aware) - with timeout
       const criticalDataPromise = Promise.all([
-        fetchWithSymbol('/api/config/flat').then(r => r.json()),
-        fetchWithSymbol('/api/bot/status').then(r => r.json()),
+        fetchWithSymbol('/api/config/flat').then((r) => r.json()),
+        fetchWithSymbol('/api/bot/status').then((r) => r.json()),
       ]);
-      
+
       // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Request timeout')), 5000)
       );
-      
-      const [configData, botData] = await Promise.race([
-        criticalDataPromise,
-        timeoutPromise
-      ]);
+
+      const [configData, botData] = await Promise.race([criticalDataPromise, timeoutPromise]);
 
       // Backend is responsive, clear backend down state
       setBackendDown(false);
 
       // Small delay between batches to prevent resource exhaustion
-      await new Promise(resolve => setTimeout(resolve, 50)); // Reduced from 100ms
+      await new Promise((resolve) => setTimeout(resolve, 50)); // Reduced from 100ms
 
       // Batch 2: Secondary data (v5.0: symbol-aware where applicable)
       const [tradingData, logsData, positionsResponse, flagsData] = await Promise.all([
         robustApiClient.get('/api/trading_status'),
         robustApiClient.get('/api/logs', { params: { limit: 120 } }),
-        fetchWithSymbol('/api/positions').then(r => r.json()).catch(() => null),
-        flagsPromise
+        fetchWithSymbol('/api/positions')
+          .then((r) => r.json())
+          .catch(() => null),
+        flagsPromise,
       ]);
 
       const { structured, meta } = transformFlatConfig(configData);
@@ -104,7 +103,7 @@ export function useConfigManager({
               id: `blocker-${blocker.id}`,
               type: 'bot',
               title: blocker.name || 'Trading blocked',
-              message: blocker.message || 'Trading has been halted pending operator review.'
+              message: blocker.message || 'Trading has been halted pending operator review.',
             });
           });
       }
@@ -121,13 +120,15 @@ export function useConfigManager({
     } catch (error) {
       endTimerOnce();
       console.error('Error fetching initial data:', error);
-      
+
       // Check if this is a network/connection error (backend is down)
-      if (error.message?.includes('Network Error') || 
-          error.message?.includes('ERR_CONNECTION_REFUSED') ||
-          error.message?.includes('timeout') ||
-          error.code === 'ECONNREFUSED' ||
-          error.response === undefined) {
+      if (
+        error.message?.includes('Network Error') ||
+        error.message?.includes('ERR_CONNECTION_REFUSED') ||
+        error.message?.includes('timeout') ||
+        error.code === 'ECONNREFUSED' ||
+        error.response === undefined
+      ) {
         setBackendDown(true);
         console.error('Backend server is not responding at localhost:5555');
       } else {
@@ -151,7 +152,7 @@ export function useConfigManager({
     showNotification,
     globalWarnings,
     registerWarning,
-    clearWarning
+    clearWarning,
   ]);
 
   const debouncedFetchInitialData = useMemo(
@@ -159,54 +160,60 @@ export function useConfigManager({
     [fetchInitialData]
   );
 
-  const handleConfigUpdate = useCallback(async (updates, confirmed = false) => {
-    try {
-      setBusy(true);
-      
-      // Add confirmed flag to request if this is a confirmed retry
-      const payload = confirmed ? { ...updates, confirmed: true } : updates;
-      const result = await apiClient.updateConfig(payload);
-      
-      // Check if backend requires confirmation
-      if (result.require_confirmation) {
-        setBusy(false);
-        // Return the confirmation requirement to the caller
-        return {
-          requiresConfirmation: true,
-          changesSummary: result.changes_summary,
-          updates: updates  // Pass back the original updates for retry
-        };
-      }
-      
-      showNotification(result.message || 'Configuration saved successfully', 'success');
-      
-      // After saving, check if bot is waiting for runtime confirmation
+  const handleConfigUpdate = useCallback(
+    async (updates, confirmed = false) => {
       try {
-        const logCheck = await robustApiClient.get('/api/utility/check-log');
-        if (logCheck.startup_hold && logCheck.confirm_file_hint) {
-          // Bot is waiting for runtime confirmation - create the file automatically
-          const confirmResult = await robustApiClient.post('/api/config/confirm-runtime', {
-            confirm_file: logCheck.confirm_file_hint
-          });
-          
-          if (confirmResult.success) {
-            showNotification('Configuration confirmed. Bot will proceed with changes.', 'success');
-          }
+        setBusy(true);
+
+        // Add confirmed flag to request if this is a confirmed retry
+        const payload = confirmed ? { ...updates, confirmed: true } : updates;
+        const result = await apiClient.updateConfig(payload);
+
+        // Check if backend requires confirmation
+        if (result.require_confirmation) {
+          setBusy(false);
+          // Return the confirmation requirement to the caller
+          return {
+            requiresConfirmation: true,
+            changesSummary: result.changes_summary,
+            updates: updates, // Pass back the original updates for retry
+          };
         }
-      } catch (confirmError) {
-        // Non-critical error - config was saved, but runtime confirmation may need manual action
-        console.warn('Runtime confirmation check failed:', confirmError);
+
+        showNotification(result.message || 'Configuration saved successfully', 'success');
+
+        // After saving, check if bot is waiting for runtime confirmation
+        try {
+          const logCheck = await robustApiClient.get('/api/utility/check-log');
+          if (logCheck.startup_hold && logCheck.confirm_file_hint) {
+            // Bot is waiting for runtime confirmation - create the file automatically
+            const confirmResult = await robustApiClient.post('/api/config/confirm-runtime', {
+              confirm_file: logCheck.confirm_file_hint,
+            });
+
+            if (confirmResult.success) {
+              showNotification(
+                'Configuration confirmed. Bot will proceed with changes.',
+                'success'
+              );
+            }
+          }
+        } catch (confirmError) {
+          // Non-critical error - config was saved, but runtime confirmation may need manual action
+          console.warn('Runtime confirmation check failed:', confirmError);
+        }
+
+        await fetchInitialData();
+        return { success: true };
+      } catch (error) {
+        showNotification(`Failed to save configuration: ${error.message}`, 'error');
+        return { success: false, error: error.message };
+      } finally {
+        setBusy(false);
       }
-      
-      await fetchInitialData();
-      return { success: true };
-    } catch (error) {
-      showNotification(`Failed to save configuration: ${error.message}`, 'error');
-      return { success: false, error: error.message };
-    } finally {
-      setBusy(false);
-    }
-  }, [fetchInitialData, showNotification, setBusy]);
+    },
+    [fetchInitialData, showNotification, setBusy]
+  );
 
   return {
     config,
@@ -215,6 +222,6 @@ export function useConfigManager({
     setConfigMeta,
     fetchInitialData,
     debouncedFetchInitialData,
-    handleConfigUpdate
+    handleConfigUpdate,
   };
 }

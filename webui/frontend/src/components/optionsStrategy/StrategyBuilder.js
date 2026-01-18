@@ -2,7 +2,7 @@
  * Options Strategy Builder
  * ========================
  * Main page for building and managing multi-leg options strategies.
- * 
+ *
  * Created: January 5, 2026
  * Updated: Phase 3 - Added Automation tab
  * Updated: January 12, 2026 - Added pre-execution validation
@@ -20,7 +20,7 @@ import {
   Tab,
   Chip,
   CircularProgress,
-  Badge
+  Badge,
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -28,7 +28,7 @@ import {
   Assessment as AssessmentIcon,
   AutoMode as AutoModeIcon,
   Verified as ValidationIcon,
-  Build as BuildIcon
+  Build as BuildIcon,
 } from '@mui/icons-material';
 
 import StrategyTypeSelector from './StrategyTypeSelector';
@@ -45,12 +45,7 @@ const API_BASE = '/api/options-strategy';
 
 function TabPanel({ children, value, index, ...other }) {
   return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`strategy-tabpanel-${index}`}
-      {...other}
-    >
+    <div role="tabpanel" hidden={value !== index} id={`strategy-tabpanel-${index}`} {...other}>
       {value === index && <Box sx={{ pt: 2 }}>{children}</Box>}
     </div>
   );
@@ -59,21 +54,21 @@ function TabPanel({ children, value, index, ...other }) {
 export default function StrategyBuilder({ onNavigateToTab }) {
   // Tab state
   const [activeTab, setActiveTab] = useState(0);
-  
+
   // Strategy creation state
   const [selectedType, setSelectedType] = useState(null);
   const [templates, setTemplates] = useState([]);
-  
+
   // Validation state (JAN 12, 2026)
   const [validationResult, setValidationResult] = useState(null);
   const [createdStrategy, setCreatedStrategy] = useState(null);
-  
+
   // Active strategies state
   const [activeStrategies, setActiveStrategies] = useState([]);
   const [selectedStrategy, setSelectedStrategy] = useState(null);
   const [summary, setSummary] = useState(null);
   const [automationRunning, setAutomationRunning] = useState(false);
-  
+
   // UI state
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
@@ -134,11 +129,11 @@ export default function StrategyBuilder({ onNavigateToTab }) {
       const res = await fetch(`${API_BASE}/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(formData),
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
         setCreatedStrategy(data.strategy);
         showNotification(`Strategy "${data.strategy.name}" created!`, 'success');
@@ -157,22 +152,28 @@ export default function StrategyBuilder({ onNavigateToTab }) {
   const handleExecuteStrategy = async (strategyId, options = {}) => {
     // Pre-execution validation check (JAN 12, 2026)
     if (validationResult && !validationResult.is_valid) {
-      showNotification('Cannot execute: Strategy validation failed. Please fix errors first.', 'error');
+      showNotification(
+        'Cannot execute: Strategy validation failed. Please fix errors first.',
+        'error'
+      );
       return;
     }
-    
+
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/execute/${strategyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options)
+        body: JSON.stringify(options),
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
-        showNotification(`Strategy executed successfully! ${data.legs_filled || 0} legs placed.`, 'success');
+        showNotification(
+          `Strategy executed successfully! ${data.legs_filled || 0} legs placed.`,
+          'success'
+        );
         fetchActiveStrategies();
         fetchSummary();
         if (createdStrategy?.id === strategyId) {
@@ -195,7 +196,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
       setLoading(false);
     }
   };
-  
+
   // Validation callback (JAN 12, 2026)
   const handleValidationComplete = useCallback((isValid, result) => {
     setValidationResult(result);
@@ -208,11 +209,11 @@ export default function StrategyBuilder({ onNavigateToTab }) {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/close/${strategyId}`, {
-        method: 'POST'
+        method: 'POST',
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
         showNotification('Strategy closed', 'success');
         fetchActiveStrategies();
@@ -230,11 +231,11 @@ export default function StrategyBuilder({ onNavigateToTab }) {
   const handleDeleteStrategy = async (strategyId) => {
     try {
       const res = await fetch(`${API_BASE}/${strategyId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
         showNotification('Strategy deleted', 'success');
         fetchActiveStrategies();
@@ -276,7 +277,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
               </Typography>
             </Box>
           </Box>
-          
+
           {summary && (
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Chip
@@ -313,19 +314,15 @@ export default function StrategyBuilder({ onNavigateToTab }) {
           textColor="primary"
         >
           <Tab label="Build Strategy" />
-          <Tab 
+          <Tab
             label="Build Your Own"
             icon={<BuildIcon sx={{ fontSize: 18 }} />}
             iconPosition="start"
           />
           <Tab label={`Active Strategies (${activeStrategies.length})`} />
-          <Tab 
+          <Tab
             label={
-              <Badge 
-                color="success" 
-                variant="dot" 
-                invisible={!automationRunning}
-              >
+              <Badge color="success" variant="dot" invisible={!automationRunning}>
                 Automation
               </Badge>
             }
@@ -361,17 +358,23 @@ export default function StrategyBuilder({ onNavigateToTab }) {
                     onNavigateToChain={(params) => {
                       // Navigate to Options Chain with strategy context
                       if (onNavigateToTab) {
-                        showNotification(`Opening live chain to select ${params.requiredLegs} legs...`, 'info');
+                        showNotification(
+                          `Opening live chain to select ${params.requiredLegs} legs...`,
+                          'info'
+                        );
                         // Store strategy context for return - use params directly as it has all the needed info
-                        sessionStorage.setItem('pending_strategy', JSON.stringify({
-                          strategyType: selectedType,
-                          strategyName: params.strategyName,
-                          underlying: params.underlying,
-                          suggestedStrikes: params.suggestedStrikes,
-                          requiredLegs: params.requiredLegs,
-                          legHints: params.legHints,
-                          legDefinitions: params.legDefinitions
-                        }));
+                        sessionStorage.setItem(
+                          'pending_strategy',
+                          JSON.stringify({
+                            strategyType: selectedType,
+                            strategyName: params.strategyName,
+                            underlying: params.underlying,
+                            suggestedStrikes: params.suggestedStrikes,
+                            requiredLegs: params.requiredLegs,
+                            legHints: params.legHints,
+                            legDefinitions: params.legDefinitions,
+                          })
+                        );
                         onNavigateToTab('options_chain', params);
                       } else {
                         showNotification('Navigation not available in standalone mode', 'warning');
@@ -391,7 +394,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
                   </Typography>
                   <StrategyForm
                     strategyType={selectedType}
-                    template={templates.find(t => t.type === selectedType)}
+                    template={templates.find((t) => t.type === selectedType)}
                     onSubmit={handleCreateStrategy}
                     loading={loading}
                   />
@@ -410,7 +413,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
                   onValidationComplete={handleValidationComplete}
                   autoValidate={true}
                 />
-                
+
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <StrategyDetails
                     strategy={createdStrategy}
@@ -420,7 +423,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
                     validationResult={validationResult}
                   />
                 </Paper>
-                
+
                 <Paper sx={{ p: 2 }}>
                   <Typography variant="h6" gutterBottom>
                     Payoff Diagram
@@ -442,7 +445,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
 
       {/* Build Your Own Strategy Tab */}
       <TabPanel value={activeTab} index={1}>
-        <CustomStrategyBuilder 
+        <CustomStrategyBuilder
           onStrategyCreated={(strategy) => {
             setCreatedStrategy(strategy);
             fetchActiveStrategies();
@@ -452,7 +455,10 @@ export default function StrategyBuilder({ onNavigateToTab }) {
           onExecutionComplete={(result) => {
             fetchActiveStrategies();
             fetchSummary();
-            showNotification(`Executed successfully! ${result.legs_filled || 0} legs placed.`, 'success');
+            showNotification(
+              `Executed successfully! ${result.legs_filled || 0} legs placed.`,
+              'success'
+            );
           }}
         />
       </TabPanel>
@@ -500,7 +506,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999
+            zIndex: 9999,
           }}
         >
           <CircularProgress size={60} />
@@ -514,11 +520,7 @@ export default function StrategyBuilder({ onNavigateToTab }) {
         onClose={handleCloseNotification}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert
-          onClose={handleCloseNotification}
-          severity={notification.severity}
-          variant="filled"
-        >
+        <Alert onClose={handleCloseNotification} severity={notification.severity} variant="filled">
           {notification.message}
         </Alert>
       </Snackbar>

@@ -42,7 +42,7 @@ const TradingModeSwitch = ({ botRunning }) => {
   const fetchCurrentMode = async () => {
     try {
       const { data } = await api.get('/api/trading-mode');
-      
+
       if (data.mode) {
         setCurrentMode(data.mode);
         setModeInfo(data.display);
@@ -62,7 +62,7 @@ const TradingModeSwitch = ({ botRunning }) => {
 
   const handleModeChange = (event, newMode) => {
     if (!newMode) return; // Prevent deselection
-    
+
     // If switching to live, show confirmation dialog
     if (newMode === 'live') {
       setPendingMode(newMode);
@@ -76,16 +76,18 @@ const TradingModeSwitch = ({ botRunning }) => {
   const switchMode = async (mode, confirmed = false) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const { data } = await api.post('/api/trading-mode', { mode, confirmed });
 
       if (data.success !== false) {
         setCurrentMode(mode);
         await fetchCurrentMode(); // Refresh mode info
-        
+
         // Show success message
-        alert(`✅ ${data.message}\n\n${data.restart_required ? 'Please restart the bot for changes to take effect.' : ''}`);
+        alert(
+          `✅ ${data.message}\n\n${data.restart_required ? 'Please restart the bot for changes to take effect.' : ''}`
+        );
       } else {
         if (data.require_confirmation) {
           // This shouldn't happen as we handle confirmation in UI
@@ -116,7 +118,9 @@ const TradingModeSwitch = ({ botRunning }) => {
     <Box sx={{ mb: 3 }}>
       <Card>
         <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}
+          >
             <Typography variant="h6" component="div">
               🎛️ Trading Mode
             </Typography>
@@ -138,7 +142,9 @@ const TradingModeSwitch = ({ botRunning }) => {
             </Alert>
           )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2 }}
+          >
             <ToggleButtonGroup
               value={currentMode}
               exclusive
@@ -159,7 +165,7 @@ const TradingModeSwitch = ({ botRunning }) => {
                   </Typography>
                 </Box>
               </ToggleButton>
-              
+
               <ToggleButton value="live" sx={{ flex: 1, py: 2 }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <WarningIcon sx={{ display: 'block', mx: 'auto', mb: 1, fontSize: 32 }} />
@@ -178,12 +184,7 @@ const TradingModeSwitch = ({ botRunning }) => {
       </Card>
 
       {/* Live Mode Confirmation Dialog */}
-      <Dialog
-        open={confirmDialogOpen}
-        onClose={handleCancelLiveMode}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={confirmDialogOpen} onClose={handleCancelLiveMode} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: 'error.main', color: 'white' }}>
           <WarningIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
           ⚠️ CONFIRM LIVE TRADING MODE
@@ -191,12 +192,11 @@ const TradingModeSwitch = ({ botRunning }) => {
         <DialogContent sx={{ mt: 2 }}>
           <Alert severity="error" sx={{ mb: 2 }}>
             <AlertTitle>REAL MONEY WARNING</AlertTitle>
-            You are about to switch to LIVE trading mode. This will use REAL MONEY from your account.
+            You are about to switch to LIVE trading mode. This will use REAL MONEY from your
+            account.
           </Alert>
 
-          <DialogContentText sx={{ mb: 2 }}>
-            Please confirm you have:
-          </DialogContentText>
+          <DialogContentText sx={{ mb: 2 }}>Please confirm you have:</DialogContentText>
 
           <List>
             <ListItem>

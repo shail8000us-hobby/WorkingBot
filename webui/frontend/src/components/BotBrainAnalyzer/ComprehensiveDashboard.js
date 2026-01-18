@@ -1,6 +1,6 @@
 /**
  * Comprehensive Bot Brain Dashboard
- * 
+ *
  * The ultimate real-time bot monitoring interface that shows:
  * - What the bot is thinking right now
  * - What it will do next with confidence scores
@@ -29,7 +29,7 @@ import {
   AccordionDetails,
   Badge,
   Tooltip,
-  IconButton
+  IconButton,
 } from '@mui/material';
 import {
   Psychology,
@@ -45,7 +45,7 @@ import {
   FilePresent,
   Refresh,
   ExpandMore,
-  NotificationImportant
+  NotificationImportant,
 } from '@mui/icons-material';
 
 const ComprehensiveDashboard = () => {
@@ -60,7 +60,7 @@ const ComprehensiveDashboard = () => {
       setError(null);
       const response = await fetch('/api/brain/predict');
       const result = await response.json();
-      
+
       if (result.success) {
         setData(result);
         setLastUpdate(new Date());
@@ -95,11 +95,16 @@ const ComprehensiveDashboard = () => {
 
   const getImpactColor = (level) => {
     switch (level) {
-      case 'critical': return '#f44336';
-      case 'high': return '#ff5722';
-      case 'medium': return '#ff9800';
-      case 'low': return '#4caf50';
-      default: return '#9e9e9e';
+      case 'critical':
+        return '#f44336';
+      case 'high':
+        return '#ff5722';
+      case 'medium':
+        return '#ff9800';
+      case 'low':
+        return '#4caf50';
+      default:
+        return '#9e9e9e';
     }
   };
 
@@ -128,36 +133,35 @@ const ComprehensiveDashboard = () => {
     );
   }
 
-  const {
-    predictions = {},
-    file_changes = [],
-    monitoring = {}
-  } = data;
+  const { predictions = {}, file_changes = [], monitoring = {} } = data;
 
   const {
     primary_prediction = {},
     market_analysis = {},
     confidence_metrics = {},
     risk_factors = [],
-    monitoring_alerts = []
+    monitoring_alerts = [],
   } = predictions;
 
-  const criticalChanges = file_changes.filter(c => c.impact_level === 'critical').length;
+  const criticalChanges = file_changes.filter((c) => c.impact_level === 'critical').length;
   const totalAlerts = monitoring_alerts.length + (monitoring.alerts || []).length;
 
   return (
     <Box sx={{ mt: 2 }}>
       {/* Header with live status and controls */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           🧠 Bot Brain Monitor
-          <Chip 
-            label="LIVE" 
-            size="small" 
-            sx={{ 
-              bgcolor: '#4caf50', 
-              color: '#fff', 
-              animation: autoRefresh ? 'pulse 2s infinite' : 'none'
+          <Chip
+            label="LIVE"
+            size="small"
+            sx={{
+              bgcolor: '#4caf50',
+              color: '#fff',
+              animation: autoRefresh ? 'pulse 2s infinite' : 'none',
             }}
           />
           {criticalChanges > 0 && (
@@ -166,7 +170,7 @@ const ComprehensiveDashboard = () => {
             </Badge>
           )}
         </Typography>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {lastUpdate && (
             <Typography variant="caption" color="text.secondary">
@@ -174,7 +178,7 @@ const ComprehensiveDashboard = () => {
             </Typography>
           )}
           <Tooltip title={autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}>
-            <IconButton 
+            <IconButton
               onClick={() => setAutoRefresh(!autoRefresh)}
               color={autoRefresh ? 'success' : 'default'}
             >
@@ -186,8 +190,8 @@ const ComprehensiveDashboard = () => {
 
       {/* Critical Alerts Banner */}
       {(criticalChanges > 0 || totalAlerts > 0) && (
-        <Alert 
-          severity="warning" 
+        <Alert
+          severity="warning"
           sx={{ mb: 3, fontWeight: 'bold' }}
           icon={<NotificationImportant />}
         >
@@ -211,29 +215,29 @@ const ComprehensiveDashboard = () => {
                     Real-time analysis of decision-making process
                   </Typography>
                 </Box>
-                <Chip 
+                <Chip
                   label={`${(primary_prediction?.confidence * 100 || 0).toFixed(0)}% Confidence`}
-                  sx={{ 
+                  sx={{
                     bgcolor: getConfidenceColor(primary_prediction?.confidence || 0),
                     color: '#fff',
                     fontWeight: 'bold',
                     fontSize: '1rem',
-                    height: 32
+                    height: 32,
                   }}
                 />
               </Box>
-              
+
               <Typography variant="h6" sx={{ mb: 2, color: '#fff', fontSize: '1.3rem' }}>
                 Next Action: {primary_prediction?.action || 'Analyzing...'}
               </Typography>
-              
+
               <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
                 {primary_prediction?.reasoning || 'No reasoning available'}
               </Typography>
-              
+
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 {primary_prediction?.estimated_time && (
-                  <Chip 
+                  <Chip
                     icon={<Schedule />}
                     label={`ETA: ${primary_prediction.estimated_time}`}
                     size="medium"
@@ -242,7 +246,7 @@ const ComprehensiveDashboard = () => {
                   />
                 )}
                 {primary_prediction?.price_trigger && (
-                  <Chip 
+                  <Chip
                     icon={<MonetizationOn />}
                     label={`Trigger: ₹${primary_prediction.price_trigger.toLocaleString()}`}
                     size="medium"
@@ -251,7 +255,7 @@ const ComprehensiveDashboard = () => {
                   />
                 )}
                 {market_analysis?.trading_safe !== undefined && (
-                  <Chip 
+                  <Chip
                     icon={market_analysis.trading_safe ? <CheckCircle /> : <Warning />}
                     label={market_analysis.trading_safe ? 'Trading Active' : 'Trading Halted'}
                     size="medium"
@@ -267,51 +271,60 @@ const ComprehensiveDashboard = () => {
         <Grid item xs={12} md={4}>
           <Card elevation={2}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="h6"
+                gutterBottom
+                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+              >
                 📊 Market Conditions
-                <Chip 
+                <Chip
                   label={market_analysis?.condition || 'Unknown'}
                   size="small"
                   color={market_analysis?.trading_safe ? 'success' : 'error'}
                 />
               </Typography>
-              
+
               {market_analysis?.iv_percentage !== undefined && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2">
                     Implied Volatility: {market_analysis.iv_percentage.toFixed(1)}%
                   </Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <LinearProgress
+                    variant="determinate"
                     value={Math.min(market_analysis.iv_percentage, 100)}
                     color={market_analysis.iv_percentage > 80 ? 'error' : 'success'}
                     sx={{ height: 6, borderRadius: 3 }}
                   />
                 </Box>
               )}
-              
+
               {market_analysis?.position_utilization !== undefined && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2">
                     Position Usage: {market_analysis.position_utilization.toFixed(1)}%
                   </Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <LinearProgress
+                    variant="determinate"
                     value={market_analysis.position_utilization}
                     color={market_analysis.position_utilization > 80 ? 'warning' : 'success'}
                     sx={{ height: 6, borderRadius: 3 }}
                   />
                 </Box>
               )}
-              
+
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Chip 
+                <Chip
                   label={market_analysis?.risk_level || 'Unknown'}
                   size="small"
-                  color={market_analysis?.risk_level === 'low' ? 'success' : 
-                         market_analysis?.risk_level === 'medium' ? 'warning' : 'error'}
+                  color={
+                    market_analysis?.risk_level === 'low'
+                      ? 'success'
+                      : market_analysis?.risk_level === 'medium'
+                        ? 'warning'
+                        : 'error'
+                  }
                 />
-                <Chip 
+                <Chip
                   label={market_analysis?.volatility_level || 'Unknown'}
                   size="small"
                   variant="outlined"
@@ -325,7 +338,11 @@ const ComprehensiveDashboard = () => {
         <Grid item xs={12} md={4}>
           <Card elevation={2}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="h6"
+                gutterBottom
+                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+              >
                 📁 File Changes
                 {file_changes.length > 0 && (
                   <Badge badgeContent={file_changes.length} color="warning">
@@ -333,7 +350,7 @@ const ComprehensiveDashboard = () => {
                   </Badge>
                 )}
               </Typography>
-              
+
               {file_changes.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   No recent file changes detected
@@ -345,7 +362,7 @@ const ComprehensiveDashboard = () => {
                       <ListItemIcon>
                         <FilePresent sx={{ color: getImpactColor(change.impact_level) }} />
                       </ListItemIcon>
-                      <ListItemText 
+                      <ListItemText
                         primary={change.file_path}
                         secondary={
                           <Box>
@@ -362,7 +379,7 @@ const ComprehensiveDashboard = () => {
                   ))}
                 </List>
               )}
-              
+
               {monitoring?.monitoring_state && (
                 <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                   <Typography variant="caption" color="text.secondary">
@@ -381,36 +398,42 @@ const ComprehensiveDashboard = () => {
               <Typography variant="h6" gutterBottom>
                 🏥 System Health
               </Typography>
-              
+
               <Box sx={{ mb: 2 }}>
                 <Typography variant="body2">
                   Prediction Quality: {confidence_metrics?.prediction_quality || 'Unknown'}
                 </Typography>
-                <LinearProgress 
-                  variant="determinate" 
+                <LinearProgress
+                  variant="determinate"
                   value={(confidence_metrics?.overall_confidence || 0) * 100}
-                  color={confidence_metrics?.prediction_quality === 'high' ? 'success' : 
-                         confidence_metrics?.prediction_quality === 'medium' ? 'warning' : 'error'}
+                  color={
+                    confidence_metrics?.prediction_quality === 'high'
+                      ? 'success'
+                      : confidence_metrics?.prediction_quality === 'medium'
+                        ? 'warning'
+                        : 'error'
+                  }
                   sx={{ height: 6, borderRadius: 3 }}
                 />
               </Box>
-              
+
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-                <Chip 
+                <Chip
                   label={`${confidence_metrics?.scenario_count || 0} scenarios`}
                   size="small"
                   variant="outlined"
                 />
-                <Chip 
+                <Chip
                   label={`${risk_factors?.length || 0} risks`}
                   size="small"
                   color={risk_factors?.length > 0 ? 'warning' : 'success'}
                 />
               </Box>
-              
+
               {monitoring_alerts?.length > 0 && (
                 <Alert severity="info" sx={{ mt: 1 }}>
-                  {monitoring_alerts.length} active monitoring alert{monitoring_alerts.length > 1 ? 's' : ''}
+                  {monitoring_alerts.length} active monitoring alert
+                  {monitoring_alerts.length > 1 ? 's' : ''}
                 </Alert>
               )}
             </CardContent>
@@ -425,17 +448,23 @@ const ComprehensiveDashboard = () => {
                 <Typography variant="h6" gutterBottom sx={{ color: '#f44336' }}>
                   ⚠️ Active Risk Factors
                 </Typography>
-                
+
                 <List dense>
                   {risk_factors.map((risk, index) => (
                     <ListItem key={index} sx={{ px: 0 }}>
                       <ListItemIcon>
-                        <Warning sx={{ 
-                          color: risk.severity === 'high' ? '#f44336' : 
-                                 risk.severity === 'medium' ? '#ff9800' : '#ffeb3b'
-                        }} />
+                        <Warning
+                          sx={{
+                            color:
+                              risk.severity === 'high'
+                                ? '#f44336'
+                                : risk.severity === 'medium'
+                                  ? '#ff9800'
+                                  : '#ffeb3b',
+                          }}
+                        />
                       </ListItemIcon>
-                      <ListItemText 
+                      <ListItemText
                         primary={risk.description}
                         secondary={`Impact: ${risk.impact} | Severity: ${risk.severity}`}
                       />
@@ -455,17 +484,23 @@ const ComprehensiveDashboard = () => {
                 <Typography variant="h6" gutterBottom>
                   🔔 Active Monitoring
                 </Typography>
-                
+
                 <List dense>
                   {monitoring_alerts.map((alert, index) => (
                     <ListItem key={index} sx={{ px: 0 }}>
                       <ListItemIcon>
-                        <Speed sx={{ 
-                          color: alert.urgency === 'high' ? '#f44336' : 
-                                 alert.urgency === 'medium' ? '#ff9800' : '#4caf50'
-                        }} />
+                        <Speed
+                          sx={{
+                            color:
+                              alert.urgency === 'high'
+                                ? '#f44336'
+                                : alert.urgency === 'medium'
+                                  ? '#ff9800'
+                                  : '#4caf50',
+                          }}
+                        />
                       </ListItemIcon>
-                      <ListItemText 
+                      <ListItemText
                         primary={alert.message}
                         secondary={`Priority: ${alert.urgency}`}
                       />
@@ -492,27 +527,37 @@ const ComprehensiveDashboard = () => {
                     <Grid item xs={12} md={6} lg={4} key={index}>
                       <Card variant="outlined" sx={{ height: '100%' }}>
                         <CardContent>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              mb: 1,
+                            }}
+                          >
                             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                               {scenario.condition?.replace('_', ' ').toUpperCase()}
                             </Typography>
-                            <Chip 
+                            <Chip
                               label={`${(scenario.confidence * 100).toFixed(0)}%`}
                               size="small"
-                              sx={{ bgcolor: getConfidenceColor(scenario.confidence), color: '#fff' }}
+                              sx={{
+                                bgcolor: getConfidenceColor(scenario.confidence),
+                                color: '#fff',
+                              }}
                             />
                           </Box>
-                          
+
                           <Typography variant="body2" sx={{ mb: 1 }}>
                             {scenario.next_action}
                           </Typography>
-                          
+
                           <Typography variant="caption" color="text.secondary">
                             {scenario.reasoning}
                           </Typography>
-                          
+
                           {scenario.price_trigger && (
-                            <Chip 
+                            <Chip
                               label={`₹${scenario.price_trigger.toLocaleString()}`}
                               size="small"
                               variant="outlined"
@@ -533,9 +578,15 @@ const ComprehensiveDashboard = () => {
       {/* CSS for animations */}
       <style jsx>{`
         @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.5; }
-          100% { opacity: 1; }
+          0% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.5;
+          }
+          100% {
+            opacity: 1;
+          }
         }
       `}</style>
     </Box>

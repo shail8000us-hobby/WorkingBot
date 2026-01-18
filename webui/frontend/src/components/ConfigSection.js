@@ -1,23 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Accordion, AccordionSummary, AccordionDetails, Grid, TextField,
-  Button, Typography, Switch, FormControlLabel, Select, MenuItem,
-  FormControl, Alert, Box, Dialog, DialogTitle, 
-  DialogContent, DialogContentText, DialogActions
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Grid,
+  TextField,
+  Button,
+  Typography,
+  Switch,
+  FormControlLabel,
+  Select,
+  MenuItem,
+  FormControl,
+  Alert,
+  Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
-import { ExpandMore, Save, Settings, CheckCircle, Error as ErrorIcon, Warning, Info } from '@mui/icons-material';
+import {
+  ExpandMore,
+  Save,
+  Settings,
+  CheckCircle,
+  Error as ErrorIcon,
+  Warning,
+  Info,
+} from '@mui/icons-material';
 import apiClient from '../utils/apiClient';
 import HelpIcon from './HelpIcon';
 
 /**
  * Reusable Configuration Section Component
  * Can be added to any panel to provide configuration controls for specific settings
- * 
+ *
  * @param {string[]} configKeys - Array of configuration keys to display (e.g., ['GUARDIAN_ENABLED', 'GUARDIAN_CHECK_INTERVAL'])
  * @param {string} title - Section title (e.g., "Guardian Configuration")
  * @param {boolean} defaultExpanded - Whether section is expanded by default
  */
-function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = false }) {
+function ConfigSection({ configKeys, title = 'Configuration', defaultExpanded = false }) {
   const [config, setConfig] = useState({});
   const [editedConfig, setEditedConfig] = useState({});
   const [loading, setLoading] = useState(true);
@@ -36,7 +59,7 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
       if (response.success) {
         // Filter to only the keys we care about
         const filtered = {};
-        configKeys.forEach(key => {
+        configKeys.forEach((key) => {
           if (response.config[key] !== undefined) {
             filtered[key] = response.config[key];
           }
@@ -59,8 +82,9 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
         setDialog({
           open: true,
           title: 'Configuration Saved Successfully!',
-          message: 'Your changes have been saved to grid_config.env.\n\n⚠️ IMPORTANT: You must RESTART ALL BOTS for the changes to take effect.',
-          severity: 'warning'
+          message:
+            'Your changes have been saved to grid_config.env.\n\n⚠️ IMPORTANT: You must RESTART ALL BOTS for the changes to take effect.',
+          severity: 'warning',
         });
         setConfig(editedConfig);
       } else {
@@ -68,7 +92,7 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
           open: true,
           title: 'Save Failed',
           message: `Error: ${response.error}`,
-          severity: 'error'
+          severity: 'error',
         });
       }
     } catch (error) {
@@ -76,7 +100,7 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
         open: true,
         title: 'Save Failed',
         message: `Failed to save configuration:\n${error.message}`,
-        severity: 'error'
+        severity: 'error',
       });
     } finally {
       setSaving(false);
@@ -89,7 +113,7 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
       open: true,
       title: 'Changes Discarded',
       message: 'All unsaved changes have been discarded.',
-      severity: 'info'
+      severity: 'info',
     });
   };
 
@@ -102,14 +126,28 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
   // Determine field type based on key name and value
   const renderField = (key) => {
     const value = editedConfig[key] || '';
-    
+
     // Smart label formatting that preserves acronyms
-    const acronyms = ['USD', 'INR', 'API', 'URL', 'ID', 'PID', 'TP', 'SL', 'PNL', 'MTM', 'IV', 'RV', 'ADL'];
+    const acronyms = [
+      'USD',
+      'INR',
+      'API',
+      'URL',
+      'ID',
+      'PID',
+      'TP',
+      'SL',
+      'PNL',
+      'MTM',
+      'IV',
+      'RV',
+      'ADL',
+    ];
     const label = key
       .replace(/_/g, ' ')
       .toLowerCase()
       .split(' ')
-      .map(word => {
+      .map((word) => {
         const upper = word.toUpperCase();
         // Keep acronyms in uppercase
         if (acronyms.includes(upper)) return upper;
@@ -120,29 +158,54 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
 
     // Boolean fields (true/false or YES/NO or 1/0)
     const booleanKeys = [
-      'ENABLED', 'ENABLE', 'AUTO', 'STRICT', 'SEED', 'FORGET', 'CANCEL', 'ADOPT',
-      'DYNAMIC', 'CHECK', 'LOG', 'TOPUP', 'CLOSE', 'ALERT', 'SUMMARY', 'REQUIRE',
-      'REVERT', 'QUEUE', 'MONITORING', 'WEBSOCKET', 'TELEGRAM', 'SOUND', 'EMAIL',
-      'PAYMENT', 'FACTOR', 'PROTECTION'
+      'ENABLED',
+      'ENABLE',
+      'AUTO',
+      'STRICT',
+      'SEED',
+      'FORGET',
+      'CANCEL',
+      'ADOPT',
+      'DYNAMIC',
+      'CHECK',
+      'LOG',
+      'TOPUP',
+      'CLOSE',
+      'ALERT',
+      'SUMMARY',
+      'REQUIRE',
+      'REVERT',
+      'QUEUE',
+      'MONITORING',
+      'WEBSOCKET',
+      'TELEGRAM',
+      'SOUND',
+      'EMAIL',
+      'PAYMENT',
+      'FACTOR',
+      'PROTECTION',
     ];
-    const isBoolean = booleanKeys.some(k => key.includes(k)) || 
-                      ['EXECUTE_ORDERS'].includes(key);  // I_UNDERSTAND_LIVE uses YES/NO dropdown
+    const isBoolean = booleanKeys.some((k) => key.includes(k)) || ['EXECUTE_ORDERS'].includes(key); // I_UNDERSTAND_LIVE uses YES/NO dropdown
 
     // Select/dropdown fields
     const selectOptions = {
-      'GRIDBOT_RUNG_SNAP_MODE': ['below', 'nearest'],
-      'GAP_FILL_ORDER_TYPE': ['auto', 'maker', 'taker'],
-      'GRIDBOT_CANCEL_SCOPE': ['tagged', 'all'],
-      'GRIDBOT_POST_ONLY_MODE': ['on', 'off', 'auto'],
-      'HEARTBEAT_ACTION': ['cancel_buy_orders', 'cancel_all_orders', 'notify_only'],
-      'GUARDIAN_CLOSE_ORDER_TYPE': ['market', 'limit'],
-      'GUARDIAN_LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-      'LIQUIDATION_LOG_LEVEL': ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-      'I_UNDERSTAND_LIVE': ['NO', 'YES'],
+      GRIDBOT_RUNG_SNAP_MODE: ['below', 'nearest'],
+      GAP_FILL_ORDER_TYPE: ['auto', 'maker', 'taker'],
+      GRIDBOT_CANCEL_SCOPE: ['tagged', 'all'],
+      GRIDBOT_POST_ONLY_MODE: ['on', 'off', 'auto'],
+      HEARTBEAT_ACTION: ['cancel_buy_orders', 'cancel_all_orders', 'notify_only'],
+      GUARDIAN_CLOSE_ORDER_TYPE: ['market', 'limit'],
+      GUARDIAN_LOG_LEVEL: ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+      LIQUIDATION_LOG_LEVEL: ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+      I_UNDERSTAND_LIVE: ['NO', 'YES'],
     };
 
     // Secret fields (hide value)
-    const isSecret = key.includes('TOKEN') || key.includes('SECRET') || key.includes('KEY') || key.includes('PASSWORD');
+    const isSecret =
+      key.includes('TOKEN') ||
+      key.includes('SECRET') ||
+      key.includes('KEY') ||
+      key.includes('PASSWORD');
 
     if (isBoolean && !selectOptions[key]) {
       return (
@@ -165,16 +228,17 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
       return (
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-            <Typography variant="caption" sx={{ fontWeight: 500, color: '#000000 !important' }}>{label}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 500, color: '#000000 !important' }}>
+              {label}
+            </Typography>
             <HelpIcon configKey={key} size="small" />
           </Box>
           <FormControl fullWidth>
-            <Select
-              value={value}
-              onChange={(e) => updateConfig(key, e.target.value)}
-            >
-              {selectOptions[key].map(option => (
-                <MenuItem key={option} value={option}>{option}</MenuItem>
+            <Select value={value} onChange={(e) => updateConfig(key, e.target.value)}>
+              {selectOptions[key].map((option) => (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
@@ -185,7 +249,9 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
     return (
       <Box>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
-          <Typography variant="caption" sx={{ fontWeight: 500, color: '#000000 !important' }}>{label}</Typography>
+          <Typography variant="caption" sx={{ fontWeight: 500, color: '#000000 !important' }}>
+            {label}
+          </Typography>
           <HelpIcon configKey={key} size="small" />
         </Box>
         <TextField
@@ -223,23 +289,20 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
               <strong>Unsaved Changes!</strong> Click "Save Changes" below to apply.
             </Alert>
           )}
-          
+
           <Grid container spacing={2}>
-            {configKeys.map((key) => (
-              config[key] !== undefined && (
-                <Grid item xs={12} sm={6} md={4} key={key}>
-                  {renderField(key)}
-                </Grid>
-              )
-            ))}
+            {configKeys.map(
+              (key) =>
+                config[key] !== undefined && (
+                  <Grid item xs={12} sm={6} md={4} key={key}>
+                    {renderField(key)}
+                  </Grid>
+                )
+            )}
           </Grid>
 
           <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-            <Button
-              variant="outlined"
-              onClick={handleReset}
-              disabled={!hasChanges || saving}
-            >
+            <Button variant="outlined" onClick={handleReset} disabled={!hasChanges || saving}>
               Discard Changes
             </Button>
             <Button
@@ -263,8 +326,9 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
         PaperProps={{
           sx: {
             bgcolor: 'background.paper',
-            backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05))',
-          }
+            backgroundImage:
+              'linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05))',
+          },
         }}
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -280,8 +344,8 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button 
-            onClick={() => setDialog({ ...dialog, open: false })} 
+          <Button
+            onClick={() => setDialog({ ...dialog, open: false })}
             variant="contained"
             color="primary"
             autoFocus
@@ -295,4 +359,3 @@ function ConfigSection({ configKeys, title = "Configuration", defaultExpanded = 
 }
 
 export default ConfigSection;
-

@@ -1,6 +1,6 @@
 /**
  * Robust Interactive Bot Simulator
- * 
+ *
  * Production-ready simulator that integrates with existing brain analyzer components.
  * Uses strategy analysis, decision flow, and action sequences for comprehensive simulation.
  */
@@ -21,7 +21,7 @@ import {
   ListItem,
   ListItemText,
   Tabs,
-  Tab
+  Tab,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -31,7 +31,7 @@ import {
   Refresh,
   TrendingUp,
   Security,
-  Speed
+  Speed,
 } from '@mui/icons-material';
 
 const RobustSimulator = () => {
@@ -46,7 +46,7 @@ const RobustSimulator = () => {
       setLoading(true);
       const response = await fetch('/api/brain/simulation-tree');
       const data = await response.json();
-      
+
       if (data.success) {
         setSimulationTree(data);
       }
@@ -63,22 +63,22 @@ const RobustSimulator = () => {
       const response = await fetch('/api/brain/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, steps })
+        body: JSON.stringify({ scenario, steps }),
       });
-      
+
       const data = await response.json();
       if (data.success) {
         setCurrentSimulation(data);
-        
+
         // Add to history
         const historyEntry = {
           scenario,
           steps: [...steps],
           result: data,
-          timestamp: new Date()
+          timestamp: new Date(),
         };
-        setSimulationHistory(prev => [...prev, historyEntry]);
-        
+        setSimulationHistory((prev) => [...prev, historyEntry]);
+
         // Auto-scroll to simulation results
         setTimeout(() => {
           const simulationElement = document.getElementById('simulation-results');
@@ -119,12 +119,18 @@ const RobustSimulator = () => {
 
   const getScenarioIcon = (scenarioId) => {
     switch (scenarioId) {
-      case 'current': return <Psychology />;
-      case 'volatility_safe': return <CheckCircle />;
-      case 'volatility_unsafe': return <Warning />;
-      case 'position_limit': return <Security />;
-      case 'grid_expansion': return <TrendingUp />;
-      default: return <Speed />;
+      case 'current':
+        return <Psychology />;
+      case 'volatility_safe':
+        return <CheckCircle />;
+      case 'volatility_unsafe':
+        return <Warning />;
+      case 'position_limit':
+        return <Security />;
+      case 'grid_expansion':
+        return <TrendingUp />;
+      default:
+        return <Speed />;
     }
   };
 
@@ -141,7 +147,10 @@ const RobustSimulator = () => {
     <Box sx={{ mt: 2 }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="h5"
+          sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           🚀 Robust Bot Simulator
           <Chip label="PRODUCTION" size="small" sx={{ bgcolor: '#2196f3', color: '#fff' }} />
         </Typography>
@@ -157,8 +166,8 @@ const RobustSimulator = () => {
 
       <Alert severity="info" sx={{ mb: 3 }}>
         <Typography variant="body2">
-          <strong>Production-Ready Simulator:</strong> Integrates with strategy analysis, decision flow, 
-          and action sequences. Uses actual bot logic without interfering with operations.
+          <strong>Production-Ready Simulator:</strong> Integrates with strategy analysis, decision
+          flow, and action sequences. Uses actual bot logic without interfering with operations.
         </Typography>
       </Alert>
 
@@ -173,13 +182,13 @@ const RobustSimulator = () => {
         <Grid container spacing={3}>
           {simulationTree.simulation_tree.scenarios.map((scenario, index) => (
             <Grid item xs={12} md={6} key={scenario.id}>
-              <Card 
-                elevation={2} 
-                sx={{ 
+              <Card
+                elevation={2}
+                sx={{
                   height: '100%',
                   cursor: 'pointer',
                   '&:hover': { elevation: 4, transform: 'translateY(-2px)' },
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
                 }}
                 onClick={() => simulateScenario(scenario.id)}
               >
@@ -194,11 +203,11 @@ const RobustSimulator = () => {
                         {scenario.description}
                       </Typography>
                     </Box>
-                    <Chip 
+                    <Chip
                       label={`${(scenario.confidence * 100).toFixed(0)}%`}
-                      sx={{ 
+                      sx={{
                         bgcolor: getConfidenceColor(scenario.confidence),
-                        color: '#fff'
+                        color: '#fff',
                       }}
                     />
                   </Box>
@@ -209,13 +218,16 @@ const RobustSimulator = () => {
                         Details:
                       </Typography>
                       {Object.entries(scenario.details).map(([key, value]) => (
-                        <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Box
+                          key={key}
+                          sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}
+                        >
                           <Typography variant="body2" color="text.secondary">
-                            {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
+                            {key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:
                           </Typography>
                           <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                            {typeof value === 'number' && key.includes('price') 
-                              ? `₹${value.toLocaleString()}` 
+                            {typeof value === 'number' && key.includes('price')
+                              ? `₹${value.toLocaleString()}`
                               : String(value)}
                           </Typography>
                         </Box>
@@ -249,18 +261,22 @@ const RobustSimulator = () => {
             <Typography variant="h6" sx={{ mb: 2 }}>
               📊 Current Bot State
             </Typography>
-            
+
             <Grid container spacing={2}>
               {Object.entries(simulationTree.simulation_tree.current_state).map(([key, value]) => (
                 <Grid item xs={12} sm={6} md={4} key={key}>
                   <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
-                      {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      {key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                      {typeof value === 'boolean' ? (value ? '✅' : '❌') : 
-                       typeof value === 'number' && key.includes('confidence') ? `${(value * 100).toFixed(0)}%` :
-                       String(value)}
+                      {typeof value === 'boolean'
+                        ? value
+                          ? '✅'
+                          : '❌'
+                        : typeof value === 'number' && key.includes('confidence')
+                          ? `${(value * 100).toFixed(0)}%`
+                          : String(value)}
                     </Typography>
                   </Paper>
                 </Grid>
@@ -277,11 +293,11 @@ const RobustSimulator = () => {
             <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold', color: '#2196f3' }}>
               🎯 Simulation Results
             </Typography>
-            
+
             <Alert severity="success" sx={{ mb: 3 }}>
               <Typography variant="body1">
-                <strong>Scenario:</strong> {currentSimulation.scenario} | 
-                <strong>Step:</strong> {currentSimulation.step || 1}
+                <strong>Scenario:</strong> {currentSimulation.scenario} |<strong>Step:</strong>{' '}
+                {currentSimulation.step || 1}
               </Typography>
             </Alert>
 
@@ -293,20 +309,22 @@ const RobustSimulator = () => {
                 <Typography variant="body1" sx={{ mb: 2 }}>
                   {currentSimulation.decision?.description}
                 </Typography>
-                
+
                 {currentSimulation.decision?.details && (
                   <Box sx={{ mt: 2 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>Details:</Typography>
+                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+                      Details:
+                    </Typography>
                     <Grid container spacing={1}>
                       {Object.entries(currentSimulation.decision.details).map(([key, value]) => (
                         <Grid item xs={12} sm={6} key={key}>
                           <Paper variant="outlined" sx={{ p: 1 }}>
                             <Typography variant="caption" color="text.secondary">
-                              {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                              {key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                             </Typography>
                             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                              {typeof value === 'number' && key.includes('price') 
-                                ? `₹${value.toLocaleString()}` 
+                              {typeof value === 'number' && key.includes('price')
+                                ? `₹${value.toLocaleString()}`
                                 : String(value)}
                             </Typography>
                           </Paper>
@@ -331,13 +349,13 @@ const RobustSimulator = () => {
                         fullWidth
                         size="large"
                         disabled={loading}
-                        sx={{ 
-                          p: 2, 
+                        sx={{
+                          p: 2,
                           textAlign: 'left',
                           bgcolor: index === 0 ? '#4caf50' : '#ff9800',
                           '&:hover': {
-                            bgcolor: index === 0 ? '#45a049' : '#f57c00'
-                          }
+                            bgcolor: index === 0 ? '#45a049' : '#f57c00',
+                          },
                         }}
                         onClick={() => handleChoice(option.choice)}
                       >
@@ -359,8 +377,8 @@ const RobustSimulator = () => {
             ) : (
               <Alert severity="success" sx={{ mt: 2 }}>
                 <Typography variant="body2">
-                  <strong>Simulation Complete!</strong> This decision path has reached its conclusion. 
-                  Try other scenarios or reset to start fresh.
+                  <strong>Simulation Complete!</strong> This decision path has reached its
+                  conclusion. Try other scenarios or reset to start fresh.
                 </Typography>
               </Alert>
             )}
@@ -375,7 +393,7 @@ const RobustSimulator = () => {
             <Typography variant="h6" sx={{ mb: 2 }}>
               📝 Simulation History
             </Typography>
-            
+
             {simulationHistory.length === 0 ? (
               <Alert severity="info">
                 No simulations run yet. Click on a scenario above to start!

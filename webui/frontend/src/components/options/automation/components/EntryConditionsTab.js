@@ -1,6 +1,6 @@
 /**
  * EntryConditionsTab - Form for entry conditions
- * 
+ *
  * Features:
  * - Action (Buy/Sell)
  * - Quantity
@@ -34,18 +34,20 @@ const EntryConditionsTab = ({ rules, onChange }) => {
     const newRules = { ...rules };
     const pathParts = path.split('.');
     let current = newRules.entry;
-    
+
     for (let i = 0; i < pathParts.length - 1; i++) {
       current = current[pathParts[i]];
     }
-    
+
     current[pathParts[pathParts.length - 1]] = value;
     onChange(newRules);
   };
 
   return (
     <Box sx={{ p: 3 }} onClick={(e) => e.stopPropagation()}>
-      <Typography variant="h6" gutterBottom>Entry Conditions</Typography>
+      <Typography variant="h6" gutterBottom>
+        Entry Conditions
+      </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 3 }}>
         Define when the automation should execute
       </Typography>
@@ -86,7 +88,11 @@ const EntryConditionsTab = ({ rules, onChange }) => {
                 onChange={(e) => handleChange('ivFilter.enabled', e.target.checked)}
               />
             }
-            label={<Typography variant="body2" fontWeight="bold">IV Filter</Typography>}
+            label={
+              <Typography variant="body2" fontWeight="bold">
+                IV Filter
+              </Typography>
+            }
           />
           {rules.entry.ivFilter.enabled && (
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
@@ -147,7 +153,11 @@ const EntryConditionsTab = ({ rules, onChange }) => {
                 onChange={(e) => handleChange('premiumRange.enabled', e.target.checked)}
               />
             }
-            label={<Typography variant="body2" fontWeight="bold">Premium Range</Typography>}
+            label={
+              <Typography variant="body2" fontWeight="bold">
+                Premium Range
+              </Typography>
+            }
           />
           {rules.entry.premiumRange.enabled && (
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
@@ -163,7 +173,9 @@ const EntryConditionsTab = ({ rules, onChange }) => {
               <TextField
                 type="number"
                 value={rules.entry.premiumRange.max}
-                onChange={(e) => handleChange('premiumRange.max', parseFloat(e.target.value) || 10000)}
+                onChange={(e) =>
+                  handleChange('premiumRange.max', parseFloat(e.target.value) || 10000)
+                }
                 size="small"
                 label="Max $"
                 inputProps={{ min: 0, step: 10 }}
@@ -182,7 +194,11 @@ const EntryConditionsTab = ({ rules, onChange }) => {
                 onChange={(e) => handleChange('timeFilter.enabled', e.target.checked)}
               />
             }
-            label={<Typography variant="body2" fontWeight="bold">Time Window</Typography>}
+            label={
+              <Typography variant="body2" fontWeight="bold">
+                Time Window
+              </Typography>
+            }
           />
           {rules.entry.timeFilter.enabled && (
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
@@ -217,14 +233,20 @@ const EntryConditionsTab = ({ rules, onChange }) => {
                 onChange={(e) => handleChange('underlyingPrice.enabled', e.target.checked)}
               />
             }
-            label={<Typography variant="body2" fontWeight="bold">Underlying Price Range</Typography>}
+            label={
+              <Typography variant="body2" fontWeight="bold">
+                Underlying Price Range
+              </Typography>
+            }
           />
           {rules.entry.underlyingPrice.enabled && (
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
               <TextField
                 type="number"
                 value={rules.entry.underlyingPrice.min}
-                onChange={(e) => handleChange('underlyingPrice.min', parseFloat(e.target.value) || 0)}
+                onChange={(e) =>
+                  handleChange('underlyingPrice.min', parseFloat(e.target.value) || 0)
+                }
                 size="small"
                 label="Min $"
                 inputProps={{ min: 0, step: 1000 }}
@@ -233,7 +255,9 @@ const EntryConditionsTab = ({ rules, onChange }) => {
               <TextField
                 type="number"
                 value={rules.entry.underlyingPrice.max}
-                onChange={(e) => handleChange('underlyingPrice.max', parseFloat(e.target.value) || 150000)}
+                onChange={(e) =>
+                  handleChange('underlyingPrice.max', parseFloat(e.target.value) || 150000)
+                }
                 size="small"
                 label="Max $"
                 inputProps={{ min: 0, step: 1000 }}

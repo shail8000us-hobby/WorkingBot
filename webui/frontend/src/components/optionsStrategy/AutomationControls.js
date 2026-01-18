@@ -1,11 +1,11 @@
 /**
  * AutomationControls Component
- * 
+ *
  * Controls for strategy automation services:
  * - Strategy Monitor (auto-exit)
  * - Auto-Entry (condition-based entry)
  * - Risk settings
- * 
+ *
  * Created: January 5, 2026
  * Phase 3: Automation & Monitoring
  */
@@ -34,7 +34,7 @@ import {
   ListItemSecondaryAction,
   IconButton,
   Tooltip,
-  CircularProgress
+  CircularProgress,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -47,7 +47,7 @@ import {
   Refresh,
   CheckCircle,
   Warning,
-  Error as ErrorIcon
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 
 const API_BASE = '/api/options-strategy';
@@ -58,7 +58,7 @@ const AutomationControls = ({ onStatusChange }) => {
   const [error, setError] = useState(null);
   const [automationStatus, setAutomationStatus] = useState({
     monitor: { running: false, check_interval: 10, strategies_tracked: 0 },
-    auto_entry: { running: false, check_interval: 30, pending_attempts: {} }
+    auto_entry: { running: false, check_interval: 30, pending_attempts: {} },
   });
   const [riskLimits, setRiskLimits] = useState(null);
   const [showRiskDialog, setShowRiskDialog] = useState(false);
@@ -104,11 +104,7 @@ const AutomationControls = ({ onStatusChange }) => {
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
-      await Promise.all([
-        fetchStatus(),
-        fetchRiskLimits(),
-        fetchNotifications()
-      ]);
+      await Promise.all([fetchStatus(), fetchRiskLimits(), fetchNotifications()]);
       setLoading(false);
     };
     loadAll();
@@ -122,13 +118,11 @@ const AutomationControls = ({ onStatusChange }) => {
   const toggleMonitor = async () => {
     setError(null);
     try {
-      const endpoint = automationStatus.monitor.running 
-        ? '/monitor/stop' 
-        : '/monitor/start';
-      
+      const endpoint = automationStatus.monitor.running ? '/monitor/stop' : '/monitor/start';
+
       const response = await fetch(`${API_BASE}${endpoint}`, { method: 'POST' });
       const data = await response.json();
-      
+
       if (data.success) {
         await fetchStatus();
       } else {
@@ -143,13 +137,13 @@ const AutomationControls = ({ onStatusChange }) => {
   const toggleAutoEntry = async () => {
     setError(null);
     try {
-      const endpoint = automationStatus.auto_entry.running 
-        ? '/auto-entry/stop' 
+      const endpoint = automationStatus.auto_entry.running
+        ? '/auto-entry/stop'
         : '/auto-entry/start';
-      
+
       const response = await fetch(`${API_BASE}${endpoint}`, { method: 'POST' });
       const data = await response.json();
-      
+
       if (data.success) {
         await fetchStatus();
       } else {
@@ -166,7 +160,7 @@ const AutomationControls = ({ onStatusChange }) => {
     try {
       const response = await fetch(`${API_BASE}/automation/start-all`, { method: 'POST' });
       const data = await response.json();
-      
+
       if (data.success) {
         await fetchStatus();
       } else {
@@ -183,7 +177,7 @@ const AutomationControls = ({ onStatusChange }) => {
     try {
       const response = await fetch(`${API_BASE}/automation/stop-all`, { method: 'POST' });
       const data = await response.json();
-      
+
       if (data.success) {
         await fetchStatus();
       } else {
@@ -200,10 +194,10 @@ const AutomationControls = ({ onStatusChange }) => {
       const response = await fetch(`${API_BASE}/risk/limits`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(updates),
       });
       const data = await response.json();
-      
+
       if (data.success) {
         setRiskLimits(data.limits);
         setShowRiskDialog(false);
@@ -219,7 +213,7 @@ const AutomationControls = ({ onStatusChange }) => {
       await fetch(`${API_BASE}/notifications/read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mark_all: true })
+        body: JSON.stringify({ mark_all: true }),
       });
       await fetchNotifications();
     } catch (err) {
@@ -252,9 +246,7 @@ const AutomationControls = ({ onStatusChange }) => {
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
-              <Typography variant="h6">
-                🤖 Automation Services
-              </Typography>
+              <Typography variant="h6">🤖 Automation Services</Typography>
               <IconButton size="small" onClick={fetchStatus}>
                 <Refresh />
               </IconButton>
@@ -299,11 +291,7 @@ const AutomationControls = ({ onStatusChange }) => {
               </Box>
               <FormControlLabel
                 control={
-                  <Switch
-                    checked={monitorRunning}
-                    onChange={toggleMonitor}
-                    color="success"
-                  />
+                  <Switch checked={monitorRunning} onChange={toggleMonitor} color="success" />
                 }
                 label={monitorRunning ? 'Running' : 'Stopped'}
               />
@@ -337,11 +325,7 @@ const AutomationControls = ({ onStatusChange }) => {
               </Box>
               <FormControlLabel
                 control={
-                  <Switch
-                    checked={autoEntryRunning}
-                    onChange={toggleAutoEntry}
-                    color="success"
-                  />
+                  <Switch checked={autoEntryRunning} onChange={toggleAutoEntry} color="success" />
                 }
                 label={autoEntryRunning ? 'Running' : 'Stopped'}
               />
@@ -368,15 +352,13 @@ const AutomationControls = ({ onStatusChange }) => {
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
-              <Typography variant="h6">
-                🛡️ Risk & Notifications
-              </Typography>
+              <Typography variant="h6">🛡️ Risk & Notifications</Typography>
             </Box>
 
             {/* Risk Limits Summary */}
-            <Box 
-              display="flex" 
-              alignItems="center" 
+            <Box
+              display="flex"
+              alignItems="center"
               justifyContent="space-between"
               mb={2}
               p={1.5}
@@ -394,11 +376,7 @@ const AutomationControls = ({ onStatusChange }) => {
                   )}
                 </Box>
               </Box>
-              <Button 
-                size="small" 
-                startIcon={<Settings />}
-                onClick={() => setShowRiskDialog(true)}
-              >
+              <Button size="small" startIcon={<Settings />} onClick={() => setShowRiskDialog(true)}>
                 Configure
               </Button>
             </Box>
@@ -412,11 +390,11 @@ const AutomationControls = ({ onStatusChange }) => {
                 <Typography variant="subtitle2">
                   Recent Notifications
                   {unreadCount > 0 && (
-                    <Chip 
-                      size="small" 
-                      label={unreadCount} 
-                      color="warning" 
-                      sx={{ ml: 1, height: 20 }} 
+                    <Chip
+                      size="small"
+                      label={unreadCount}
+                      color="warning"
+                      sx={{ ml: 1, height: 20 }}
                     />
                   )}
                 </Typography>
@@ -431,19 +409,27 @@ const AutomationControls = ({ onStatusChange }) => {
             <List dense sx={{ maxHeight: 200, overflow: 'auto' }}>
               {notifications.length === 0 ? (
                 <ListItem>
-                  <ListItemText 
-                    secondary="No recent notifications"
-                    sx={{ textAlign: 'center' }}
-                  />
+                  <ListItemText secondary="No recent notifications" sx={{ textAlign: 'center' }} />
                 </ListItem>
               ) : (
                 notifications.slice(0, 5).map((notif) => (
-                  <ListItem key={notif.id} sx={{ bgcolor: notif.read ? 'transparent' : 'action.selected' }}>
+                  <ListItem
+                    key={notif.id}
+                    sx={{ bgcolor: notif.read ? 'transparent' : 'action.selected' }}
+                  >
                     <ListItemIcon sx={{ minWidth: 36 }}>
-                      {notif.notification_type === 'success' && <CheckCircle color="success" fontSize="small" />}
-                      {notif.notification_type === 'warning' && <Warning color="warning" fontSize="small" />}
-                      {notif.notification_type === 'error' && <ErrorIcon color="error" fontSize="small" />}
-                      {notif.notification_type === 'info' && <Notifications color="info" fontSize="small" />}
+                      {notif.notification_type === 'success' && (
+                        <CheckCircle color="success" fontSize="small" />
+                      )}
+                      {notif.notification_type === 'warning' && (
+                        <Warning color="warning" fontSize="small" />
+                      )}
+                      {notif.notification_type === 'error' && (
+                        <ErrorIcon color="error" fontSize="small" />
+                      )}
+                      {notif.notification_type === 'info' && (
+                        <Notifications color="info" fontSize="small" />
+                      )}
                     </ListItemIcon>
                     <ListItemText
                       primary={notif.title}
@@ -481,9 +467,9 @@ const RiskLimitsDialog = ({ open, onClose, limits, onSave }) => {
   }, [limits]);
 
   const handleChange = (field) => (e) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: parseFloat(e.target.value) || 0
+      [field]: parseFloat(e.target.value) || 0,
     }));
   };
 

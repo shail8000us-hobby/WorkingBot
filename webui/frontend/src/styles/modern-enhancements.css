@@ -11,18 +11,18 @@
    ============================================================================ */
 
 .gradient-mesh-bg {
-  background: 
+  background:
     radial-gradient(at 40% 20%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
     radial-gradient(at 80% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
     radial-gradient(at 0% 50%, rgba(236, 72, 153, 0.1) 0px, transparent 50%),
     radial-gradient(at 80% 50%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
     radial-gradient(at 0% 100%, rgba(34, 197, 94, 0.1) 0px, transparent 50%),
-    radial-gradient(at 80% 100%, rgba(251, 146, 60, 0.1) 0px, transparent 50%),
-    rgb(15, 23, 42);
+    radial-gradient(at 80% 100%, rgba(251, 146, 60, 0.1) 0px, transparent 50%), rgb(15, 23, 42);
 }
 
 @keyframes gradientShift {
-  0%, 100% {
+  0%,
+  100% {
     background-position: 0% 50%;
   }
   50% {
@@ -49,7 +49,8 @@
 }
 
 @keyframes gradientMove {
-  0%, 100% {
+  0%,
+  100% {
     background-position: 0% 50%;
   }
   50% {
@@ -63,7 +64,7 @@
 
 .neon-text-primary {
   color: rgb(99, 102, 241);
-  text-shadow: 
+  text-shadow:
     0 0 10px rgba(99, 102, 241, 0.8),
     0 0 20px rgba(99, 102, 241, 0.6),
     0 0 30px rgba(99, 102, 241, 0.4),
@@ -72,7 +73,7 @@
 
 .neon-text-success {
   color: rgb(34, 197, 94);
-  text-shadow: 
+  text-shadow:
     0 0 10px rgba(34, 197, 94, 0.8),
     0 0 20px rgba(34, 197, 94, 0.6),
     0 0 30px rgba(34, 197, 94, 0.4);
@@ -80,14 +81,15 @@
 
 .neon-text-danger {
   color: rgb(239, 68, 68);
-  text-shadow: 
+  text-shadow:
     0 0 10px rgba(239, 68, 68, 0.8),
     0 0 20px rgba(239, 68, 68, 0.6),
     0 0 30px rgba(239, 68, 68, 0.4);
 }
 
 @keyframes neonPulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -97,7 +99,7 @@
 
 .neon-border {
   border: 1px solid rgba(99, 102, 241, 0.5);
-  box-shadow: 
+  box-shadow:
     0 0 10px rgba(99, 102, 241, 0.3),
     0 0 20px rgba(99, 102, 241, 0.2),
     inset 0 0 10px rgba(99, 102, 241, 0.1);
@@ -142,7 +144,7 @@
 
 .holographic-card:hover {
   transform: translateY(-4px) scale(1.01);
-  box-shadow: 
+  box-shadow:
     0 20px 40px rgba(0, 0, 0, 0.3),
     0 0 40px rgba(99, 102, 241, 0.2);
 }
@@ -165,7 +167,7 @@
   cursor: pointer;
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
+  box-shadow:
     0 4px 15px rgba(99, 102, 241, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
@@ -187,7 +189,7 @@
 
 .btn-modern:hover {
   transform: translateY(-2px);
-  box-shadow: 
+  box-shadow:
     0 8px 25px rgba(99, 102, 241, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
   border-color: rgba(99, 102, 241, 0.6);
@@ -225,7 +227,7 @@
   );
   background-size: 200% 100%;
   border-radius: 10px;
-  box-shadow: 
+  box-shadow:
     0 0 10px rgba(99, 102, 241, 0.5),
     0 0 20px rgba(168, 85, 247, 0.3);
   animation: progressFlow 2s linear infinite;
@@ -275,7 +277,8 @@
 }
 
 @keyframes floatParticle {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0) scale(1);
     opacity: 0;
   }
@@ -300,11 +303,7 @@
    ============================================================================ */
 
 .data-card-modern {
-  background: linear-gradient(
-    135deg,
-    rgba(51, 65, 85, 0.6) 0%,
-    rgba(71, 85, 105, 0.4) 100%
-  );
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.6) 0%, rgba(71, 85, 105, 0.4) 100%);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(148, 163, 184, 0.15);
   border-radius: 16px;
@@ -339,7 +338,7 @@
 .data-card-modern:hover {
   transform: translateY(-4px);
   border-color: rgba(148, 163, 184, 0.3);
-  box-shadow: 
+  box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(99, 102, 241, 0.1);
 }
@@ -360,11 +359,7 @@
   left: 0;
   width: 100%;
   height: 10px;
-  background: linear-gradient(
-    transparent,
-    rgba(99, 102, 241, 0.3),
-    transparent
-  );
+  background: linear-gradient(transparent, rgba(99, 102, 241, 0.3), transparent);
   animation: scanline 4s linear infinite;
   pointer-events: none;
 }
@@ -403,11 +398,12 @@
   position: relative;
   border: 2px solid;
   border-image: linear-gradient(
-    135deg,
-    rgba(99, 102, 241, 0.8),
-    rgba(168, 85, 247, 0.8),
-    rgba(236, 72, 153, 0.8)
-  ) 1;
+      135deg,
+      rgba(99, 102, 241, 0.8),
+      rgba(168, 85, 247, 0.8),
+      rgba(236, 72, 153, 0.8)
+    )
+    1;
   clip-path: polygon(
     0 8px,
     8px 0,
@@ -426,23 +422,20 @@
   font-size: 24px;
   text-transform: uppercase;
   letter-spacing: 3px;
-  background: linear-gradient(
-    135deg,
-    #00ffff 0%,
-    #ff00ff 50%,
-    #ffff00 100%
-  );
+  background: linear-gradient(135deg, #00ffff 0%, #ff00ff 50%, #ffff00 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-shadow: 
+  text-shadow:
     0 0 20px rgba(0, 255, 255, 0.5),
     0 0 40px rgba(255, 0, 255, 0.3);
   animation: glitch 3s infinite;
 }
 
 @keyframes glitch {
-  0%, 90%, 100% {
+  0%,
+  90%,
+  100% {
     transform: translateX(0);
   }
   92% {
@@ -472,7 +465,7 @@
   border-radius: 20px;
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
   border: 1px solid rgba(99, 102, 241, 0.4);
-  box-shadow: 
+  box-shadow:
     0 2px 8px rgba(99, 102, 241, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px);
@@ -480,7 +473,8 @@
 }
 
 @keyframes badgeFloat {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0);
   }
   50% {
@@ -496,11 +490,11 @@
   .holographic-card:hover {
     transform: translateY(-2px) scale(1);
   }
-  
+
   .card-3d:hover {
     transform: none;
   }
-  
+
   .data-card-modern:hover {
     transform: translateY(-2px);
   }

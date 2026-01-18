@@ -3,7 +3,7 @@
  * ============================
  * Isolated module for displaying options chain market data.
  * Now includes trading functionality.
- * 
+ *
  * Created: January 5, 2026
  * Updated: January 5, 2026 - Added OrderDialog export
  */

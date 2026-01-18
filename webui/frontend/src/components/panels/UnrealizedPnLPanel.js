@@ -10,30 +10,30 @@ function parsePnLHistory(payload) {
   return history.map((entry) => {
     const timestamp = entry.timestamp || entry.time || entry.datetime || entry.label || entry.date;
     let timestampMs;
-    
+
     if (timestamp) {
       const date = new Date(timestamp);
       if (!Number.isNaN(date.getTime())) {
         timestampMs = date.getTime();
       }
     }
-    
+
     // Use total_pnl (correct unrealized PnL in INR) instead of unrealized_pnl field
     const pnlRaw = Number(entry.total_pnl ?? entry.pnl ?? entry.upnl ?? entry.value ?? 0);
-    
+
     return {
       timestamp: timestampMs || Date.now(),
-      pnl: Number.isFinite(pnlRaw) ? Number(pnlRaw.toFixed(2)) : 0
+      pnl: Number.isFinite(pnlRaw) ? Number(pnlRaw.toFixed(2)) : 0,
     };
   });
 }
 
 /**
  * UnrealizedPnLPanel
- * 
+ *
  * Container component for the Unrealized PnL Trend chart.
  * Handles data fetching, parsing, and state management for hourly PnL history.
- * 
+ *
  * Features:
  * - Fetches hourly PnL data from /api/pnl-history/hourly
  * - Auto-refreshes when socket updates are received
@@ -49,7 +49,9 @@ function UnrealizedPnLPanel({ socket }) {
     try {
       setLoading(true);
       setError(null);
-      const pnlData = await robustApiClient.get('/api/pnl-history/hourly').catch(() => ({ history: [], meta: null }));
+      const pnlData = await robustApiClient
+        .get('/api/pnl-history/hourly')
+        .catch(() => ({ history: [], meta: null }));
       setPnlHistory(parsePnLHistory(pnlData));
       setMeta(pnlData.meta || null);
     } catch (err) {
@@ -105,7 +107,8 @@ function UnrealizedPnLPanel({ socket }) {
           <div className="flex items-center gap-2 text-xs text-amber-400">
             <span className="text-base">⚠️</span>
             <span>
-              Guardian not running. Showing historical data from {new Date(meta.last_update).toLocaleString('en-IN')}
+              Guardian not running. Showing historical data from{' '}
+              {new Date(meta.last_update).toLocaleString('en-IN')}
             </span>
           </div>
         </div>

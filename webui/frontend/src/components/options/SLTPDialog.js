@@ -1,13 +1,13 @@
 /**
  * SL/TP Configuration Dialog
- * 
+ *
  * Allows setting stop-loss and take-profit for individual options positions.
  * Features:
  * - Stop-Loss by percentage or absolute price
  * - Take-Profit by percentage or absolute price
  * - Trailing stop-loss option
  * - Auto-execute or alert-only modes
- * 
+ *
  * Created: January 14, 2026
  */
 
@@ -61,47 +61,47 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  
+
   // Stop-Loss settings
   const [stopLossType, setStopLossType] = useState('percentage'); // 'price' or 'percentage'
   const [stopLossPrice, setStopLossPrice] = useState('');
   const [stopLossPct, setStopLossPct] = useState('');
   const [stopLossEnabled, setStopLossEnabled] = useState(false);
-  
+
   // Take-Profit settings
   const [takeProfitType, setTakeProfitType] = useState('percentage');
   const [takeProfitPrice, setTakeProfitPrice] = useState('');
   const [takeProfitPct, setTakeProfitPct] = useState('');
   const [takeProfitEnabled, setTakeProfitEnabled] = useState(false);
-  
+
   // Trailing Stop settings
   const [trailingStopEnabled, setTrailingStopEnabled] = useState(false);
   const [trailingStopPct, setTrailingStopPct] = useState('');
-  
+
   // Execution settings
   const [autoExecute, setAutoExecute] = useState(true);
   const [alertOnly, setAlertOnly] = useState(false);
-  
+
   // Load existing settings when dialog opens
   useEffect(() => {
     if (open && position) {
       loadExistingSettings();
     }
   }, [open, position]);
-  
+
   const loadExistingSettings = async () => {
     if (!position?.product_symbol) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await fetch(`/api/options/sl-tp/get/${position.product_symbol}`);
       const data = await response.json();
-      
+
       if (data.success && data.settings) {
         const s = data.settings;
-        
+
         // Stop-Loss
         if (s.stop_loss_price) {
           setStopLossEnabled(true);
@@ -118,7 +118,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           setStopLossPrice('');
           setStopLossPct('');
         }
-        
+
         // Take-Profit
         if (s.take_profit_price) {
           setTakeProfitEnabled(true);
@@ -135,11 +135,11 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           setTakeProfitPrice('');
           setTakeProfitPct('');
         }
-        
+
         // Trailing Stop
         setTrailingStopEnabled(!!s.trailing_stop_enabled);
         setTrailingStopPct(s.trailing_stop_pct ? s.trailing_stop_pct.toString() : '');
-        
+
         // Execution
         setAutoExecute(s.auto_execute !== 0);
         setAlertOnly(!!s.alert_only);
@@ -154,7 +154,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
       setLoading(false);
     }
   };
-  
+
   const resetForm = () => {
     setStopLossEnabled(false);
     setStopLossType('percentage');
@@ -169,21 +169,21 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
     setAutoExecute(true);
     setAlertOnly(false);
   };
-  
+
   const handleSave = async () => {
     if (!position?.product_symbol) return;
-    
+
     setSaving(true);
     setError(null);
     setSuccess(false);
-    
+
     try {
       const payload = {
         symbol: position.product_symbol,
         auto_execute: autoExecute,
         alert_only: alertOnly,
       };
-      
+
       // Stop-Loss
       if (stopLossEnabled) {
         if (stopLossType === 'price' && stopLossPrice) {
@@ -193,7 +193,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           payload.stop_loss_pct = -Math.abs(parseFloat(stopLossPct));
         }
       }
-      
+
       // Take-Profit
       if (takeProfitEnabled) {
         if (takeProfitType === 'price' && takeProfitPrice) {
@@ -202,21 +202,21 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           payload.take_profit_pct = parseFloat(takeProfitPct);
         }
       }
-      
+
       // Trailing Stop
       if (trailingStopEnabled && trailingStopPct) {
         payload.trailing_stop_enabled = true;
         payload.trailing_stop_pct = parseFloat(trailingStopPct);
       }
-      
+
       const response = await fetch('/api/options/sl-tp/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         setSuccess(true);
         if (onSave) onSave(data.settings);
@@ -234,20 +234,20 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
       setSaving(false);
     }
   };
-  
+
   const handleRemove = async () => {
     if (!position?.product_symbol) return;
-    
+
     setSaving(true);
     setError(null);
-    
+
     try {
       const response = await fetch(`/api/options/sl-tp/remove/${position.product_symbol}`, {
         method: 'DELETE',
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         resetForm();
         if (onSave) onSave(null);
@@ -261,19 +261,19 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
       setSaving(false);
     }
   };
-  
+
   if (!position) return null;
-  
+
   const currentPrice = position.mid_price || position.mark_price || 0;
   const entryPrice = position.entry_price || 0;
   const pnlPct = position.pnl_percentage || 0;
   const isShort = position.size < 0;
-  
+
   // Calculate preview values
   const getStopLossPreview = () => {
     if (!stopLossEnabled) return null;
     if (stopLossType === 'price' && stopLossPrice) {
-      const pct = ((parseFloat(stopLossPrice) - entryPrice) / entryPrice * 100).toFixed(1);
+      const pct = (((parseFloat(stopLossPrice) - entryPrice) / entryPrice) * 100).toFixed(1);
       return { price: parseFloat(stopLossPrice), pct };
     }
     if (stopLossType === 'percentage' && stopLossPct) {
@@ -282,11 +282,11 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
     }
     return null;
   };
-  
+
   const getTakeProfitPreview = () => {
     if (!takeProfitEnabled) return null;
     if (takeProfitType === 'price' && takeProfitPrice) {
-      const pct = ((parseFloat(takeProfitPrice) - entryPrice) / entryPrice * 100).toFixed(1);
+      const pct = (((parseFloat(takeProfitPrice) - entryPrice) / entryPrice) * 100).toFixed(1);
       return { price: parseFloat(takeProfitPrice), pct: `+${pct}%` };
     }
     if (takeProfitType === 'percentage' && takeProfitPct) {
@@ -295,7 +295,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
     }
     return null;
   };
-  
+
   const slPreview = getStopLossPreview();
   const tpPreview = getTakeProfitPreview();
 
@@ -310,7 +310,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           <Close />
         </IconButton>
       </DialogTitle>
-      
+
       <DialogContent>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -323,10 +323,12 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Position
               </Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-                <Chip 
-                  label={position.product_symbol} 
-                  size="small" 
+              <Box
+                sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}
+              >
+                <Chip
+                  label={position.product_symbol}
+                  size="small"
                   color={position.product_symbol.startsWith('C') ? 'success' : 'error'}
                 />
                 <Typography variant="body2">
@@ -338,29 +340,33 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                 <Typography variant="body2">
                   Current: <strong>${currentPrice.toFixed(2)}</strong>
                 </Typography>
-                <Typography 
-                  variant="body2" 
+                <Typography
+                  variant="body2"
                   sx={{ color: pnlPct >= 0 ? 'success.main' : 'error.main' }}
                 >
-                  P&L: <strong>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%</strong>
+                  P&L:{' '}
+                  <strong>
+                    {pnlPct >= 0 ? '+' : ''}
+                    {pnlPct.toFixed(2)}%
+                  </strong>
                 </Typography>
               </Box>
             </Paper>
-            
+
             {error && (
               <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
                 {error}
               </Alert>
             )}
-            
+
             {success && (
               <Alert severity="success" sx={{ mb: 2 }}>
                 Settings saved successfully!
               </Alert>
             )}
-            
-            <Tabs 
-              value={tabValue} 
+
+            <Tabs
+              value={tabValue}
               onChange={(e, v) => setTabValue(v)}
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
@@ -368,12 +374,12 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
               <Tab icon={<TrendingUp />} label="Target" iconPosition="start" />
               <Tab label="Options" />
             </Tabs>
-            
+
             {/* Stop-Loss Tab */}
             <TabPanel value={tabValue} index={0}>
               <FormControlLabel
                 control={
-                  <Switch 
+                  <Switch
                     checked={stopLossEnabled}
                     onChange={(e) => setStopLossEnabled(e.target.checked)}
                     color="error"
@@ -381,7 +387,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                 }
                 label="Enable Stop-Loss"
               />
-              
+
               {stopLossEnabled && (
                 <Box sx={{ mt: 2 }}>
                   <ToggleButtonGroup
@@ -395,7 +401,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                     <ToggleButton value="percentage">By Percentage</ToggleButton>
                     <ToggleButton value="price">By Price</ToggleButton>
                   </ToggleButtonGroup>
-                  
+
                   {stopLossType === 'percentage' ? (
                     <TextField
                       fullWidth
@@ -423,19 +429,19 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                       helperText={`Current: $${currentPrice.toFixed(2)}, Entry: $${entryPrice.toFixed(2)}`}
                     />
                   )}
-                  
+
                   {slPreview && (
                     <Alert severity="warning" sx={{ mt: 2 }} icon={<TrendingDown />}>
                       Will close at <strong>${slPreview.price}</strong> ({slPreview.pct} from entry)
                     </Alert>
                   )}
-                  
+
                   <Divider sx={{ my: 2 }} />
-                  
+
                   {/* Trailing Stop */}
                   <FormControlLabel
                     control={
-                      <Switch 
+                      <Switch
                         checked={trailingStopEnabled}
                         onChange={(e) => setTrailingStopEnabled(e.target.checked)}
                         color="warning"
@@ -450,7 +456,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                       </Box>
                     }
                   />
-                  
+
                   {trailingStopEnabled && (
                     <TextField
                       fullWidth
@@ -469,12 +475,12 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                 </Box>
               )}
             </TabPanel>
-            
+
             {/* Take-Profit Tab */}
             <TabPanel value={tabValue} index={1}>
               <FormControlLabel
                 control={
-                  <Switch 
+                  <Switch
                     checked={takeProfitEnabled}
                     onChange={(e) => setTakeProfitEnabled(e.target.checked)}
                     color="success"
@@ -482,7 +488,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                 }
                 label="Enable Take-Profit Target"
               />
-              
+
               {takeProfitEnabled && (
                 <Box sx={{ mt: 2 }}>
                   <ToggleButtonGroup
@@ -496,7 +502,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                     <ToggleButton value="percentage">By Percentage</ToggleButton>
                     <ToggleButton value="price">By Price</ToggleButton>
                   </ToggleButtonGroup>
-                  
+
                   {takeProfitType === 'percentage' ? (
                     <TextField
                       fullWidth
@@ -524,7 +530,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                       helperText={`Current: $${currentPrice.toFixed(2)}, Entry: $${entryPrice.toFixed(2)}`}
                     />
                   )}
-                  
+
                   {tpPreview && (
                     <Alert severity="success" sx={{ mt: 2 }} icon={<TrendingUp />}>
                       Will close at <strong>${tpPreview.price}</strong> ({tpPreview.pct} from entry)
@@ -533,13 +539,13 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                 </Box>
               )}
             </TabPanel>
-            
+
             {/* Options Tab */}
             <TabPanel value={tabValue} index={2}>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <FormControlLabel
                   control={
-                    <Switch 
+                    <Switch
                       checked={autoExecute}
                       onChange={(e) => {
                         setAutoExecute(e.target.checked);
@@ -557,10 +563,10 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                     </Box>
                   }
                 />
-                
+
                 <FormControlLabel
                   control={
-                    <Switch 
+                    <Switch
                       checked={alertOnly}
                       onChange={(e) => {
                         setAlertOnly(e.target.checked);
@@ -578,25 +584,26 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                     </Box>
                   }
                 />
-                
+
                 <Alert severity="info" icon={<Info />}>
-                  {autoExecute 
-                    ? "Position will be automatically closed when SL/TP triggers"
-                    : alertOnly 
-                    ? "You'll receive alerts but need to close manually"
-                    : "Select an execution mode"
-                  }
+                  {autoExecute
+                    ? 'Position will be automatically closed when SL/TP triggers'
+                    : alertOnly
+                      ? "You'll receive alerts but need to close manually"
+                      : 'Select an execution mode'}
                 </Alert>
               </Box>
             </TabPanel>
-            
+
             {/* Summary */}
             {(stopLossEnabled || takeProfitEnabled) && (
               <Paper sx={{ p: 2, mt: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" gutterBottom>Summary</Typography>
+                <Typography variant="subtitle2" gutterBottom>
+                  Summary
+                </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   {slPreview && (
-                    <Chip 
+                    <Chip
                       icon={<TrendingDown />}
                       label={`SL: $${slPreview.price}`}
                       color="error"
@@ -605,7 +612,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                     />
                   )}
                   {tpPreview && (
-                    <Chip 
+                    <Chip
                       icon={<TrendingUp />}
                       label={`TP: $${tpPreview.price}`}
                       color="success"
@@ -614,14 +621,14 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                     />
                   )}
                   {trailingStopEnabled && (
-                    <Chip 
+                    <Chip
                       label={`Trail: ${trailingStopPct}%`}
                       color="warning"
                       variant="outlined"
                       size="small"
                     />
                   )}
-                  <Chip 
+                  <Chip
                     label={autoExecute ? 'Auto-Execute' : alertOnly ? 'Alert Only' : 'Manual'}
                     color={autoExecute ? 'primary' : 'default'}
                     variant="outlined"
@@ -633,21 +640,16 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           </>
         )}
       </DialogContent>
-      
+
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button 
-          onClick={handleRemove}
-          color="error"
-          startIcon={<Delete />}
-          disabled={saving}
-        >
+        <Button onClick={handleRemove} color="error" startIcon={<Delete />} disabled={saving}>
           Remove
         </Button>
         <Box sx={{ flexGrow: 1 }} />
         <Button onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Button 
+        <Button
           onClick={handleSave}
           variant="contained"
           color="primary"

@@ -1,12 +1,12 @@
 /**
  * ML Model Monitor Component - Phase 5 UI
- * 
+ *
  * Displays AI learning and monitoring with:
  * - Performance metrics
  * - Model drift detection
  * - Retraining recommendations
  * - Learning statistics
- * 
+ *
  * Created: January 18, 2026
  */
 
@@ -126,7 +126,7 @@ const MLModelMonitor = () => {
       fetchDrift(),
       fetchRetrainStatus(),
       fetchLearningStats(),
-      fetchAlerts()
+      fetchAlerts(),
     ]);
     setLoading(false);
   }, [fetchMetrics, fetchDrift, fetchRetrainStatus, fetchLearningStats, fetchAlerts]);
@@ -150,7 +150,9 @@ const MLModelMonitor = () => {
     return (
       <Card sx={{ mb: 2, bgcolor: 'rgba(30, 35, 50, 0.9)' }}>
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TrendingUpIcon />
               <Typography variant="h6">Performance Metrics (30 Days)</Typography>
@@ -164,7 +166,9 @@ const MLModelMonitor = () => {
             {/* Win Rate */}
             <Grid item xs={6} md={3}>
               <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" color="text.secondary">Win Rate</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Win Rate
+                </Typography>
                 <Box sx={{ position: 'relative', display: 'inline-flex', mt: 1 }}>
                   <CircularProgress
                     variant="determinate"
@@ -185,9 +189,7 @@ const MLModelMonitor = () => {
                       justifyContent: 'center',
                     }}
                   >
-                    <Typography variant="h6">
-                      {(metrics.win_rate * 100).toFixed(0)}%
-                    </Typography>
+                    <Typography variant="h6">{(metrics.win_rate * 100).toFixed(0)}%</Typography>
                   </Box>
                 </Box>
               </Box>
@@ -196,12 +198,14 @@ const MLModelMonitor = () => {
             {/* Profit Factor */}
             <Grid item xs={6} md={3}>
               <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" color="text.secondary">Profit Factor</Typography>
-                <Typography 
-                  variant="h4" 
-                  sx={{ 
+                <Typography variant="caption" color="text.secondary">
+                  Profit Factor
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{
                     mt: 1,
-                    color: getMetricColor(metrics.profit_factor, { good: 1.5, warning: 1.0 })
+                    color: getMetricColor(metrics.profit_factor, { good: 1.5, warning: 1.0 }),
                   }}
                 >
                   {metrics.profit_factor?.toFixed(2) || '0.00'}
@@ -212,12 +216,14 @@ const MLModelMonitor = () => {
             {/* Total PnL */}
             <Grid item xs={6} md={3}>
               <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" color="text.secondary">Total PnL</Typography>
-                <Typography 
-                  variant="h4" 
-                  sx={{ 
+                <Typography variant="caption" color="text.secondary">
+                  Total PnL
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{
                     mt: 1,
-                    color: metrics.total_pnl >= 0 ? '#4caf50' : '#f44336'
+                    color: metrics.total_pnl >= 0 ? '#4caf50' : '#f44336',
                   }}
                 >
                   ${metrics.total_pnl?.toFixed(2) || '0.00'}
@@ -228,12 +234,14 @@ const MLModelMonitor = () => {
             {/* Max Drawdown */}
             <Grid item xs={6} md={3}>
               <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" color="text.secondary">Max Drawdown</Typography>
-                <Typography 
-                  variant="h4" 
-                  sx={{ 
+                <Typography variant="caption" color="text.secondary">
+                  Max Drawdown
+                </Typography>
+                <Typography
+                  variant="h4"
+                  sx={{
                     mt: 1,
-                    color: getMetricColor(1 - metrics.max_drawdown, { good: 0.85, warning: 0.75 })
+                    color: getMetricColor(1 - metrics.max_drawdown, { good: 0.85, warning: 0.75 }),
                   }}
                 >
                   {(metrics.max_drawdown * 100).toFixed(1)}%
@@ -246,19 +254,25 @@ const MLModelMonitor = () => {
 
           <Grid container spacing={2}>
             <Grid item xs={4}>
-              <Typography variant="caption" color="text.secondary">Avg Win</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Avg Win
+              </Typography>
               <Typography variant="body1" color="success.main">
                 +${metrics.avg_win?.toFixed(2) || '0.00'}
               </Typography>
             </Grid>
             <Grid item xs={4}>
-              <Typography variant="caption" color="text.secondary">Avg Loss</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Avg Loss
+              </Typography>
               <Typography variant="body1" color="error.main">
                 -${metrics.avg_loss?.toFixed(2) || '0.00'}
               </Typography>
             </Grid>
             <Grid item xs={4}>
-              <Typography variant="caption" color="text.secondary">W/L Ratio</Typography>
+              <Typography variant="caption" color="text.secondary">
+                W/L Ratio
+              </Typography>
               <Typography variant="body1">
                 {metrics.winning_trades}/{metrics.losing_trades}
               </Typography>
@@ -269,36 +283,50 @@ const MLModelMonitor = () => {
           {(metrics.style_match_avg > 0 || metrics.prediction_accuracy > 0) && (
             <>
               <Divider sx={{ my: 2 }} />
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>AI Performance</Typography>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                AI Performance
+              </Typography>
               <Grid container spacing={2}>
                 <Grid item xs={4}>
-                  <Typography variant="caption" color="text.secondary">Style Match</Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <Typography variant="caption" color="text.secondary">
+                    Style Match
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
                     value={metrics.style_match_avg * 100}
                     sx={{ height: 8, borderRadius: 4, mt: 0.5 }}
                   />
-                  <Typography variant="body2">{(metrics.style_match_avg * 100).toFixed(0)}%</Typography>
+                  <Typography variant="body2">
+                    {(metrics.style_match_avg * 100).toFixed(0)}%
+                  </Typography>
                 </Grid>
                 <Grid item xs={4}>
-                  <Typography variant="caption" color="text.secondary">Confidence Avg</Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <Typography variant="caption" color="text.secondary">
+                    Confidence Avg
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
                     value={metrics.confidence_avg * 100}
                     color="secondary"
                     sx={{ height: 8, borderRadius: 4, mt: 0.5 }}
                   />
-                  <Typography variant="body2">{(metrics.confidence_avg * 100).toFixed(0)}%</Typography>
+                  <Typography variant="body2">
+                    {(metrics.confidence_avg * 100).toFixed(0)}%
+                  </Typography>
                 </Grid>
                 <Grid item xs={4}>
-                  <Typography variant="caption" color="text.secondary">Prediction Accuracy</Typography>
-                  <LinearProgress 
-                    variant="determinate" 
+                  <Typography variant="caption" color="text.secondary">
+                    Prediction Accuracy
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
                     value={metrics.prediction_accuracy * 100}
                     color="success"
                     sx={{ height: 8, borderRadius: 4, mt: 0.5 }}
                   />
-                  <Typography variant="body2">{(metrics.prediction_accuracy * 100).toFixed(0)}%</Typography>
+                  <Typography variant="body2">
+                    {(metrics.prediction_accuracy * 100).toFixed(0)}%
+                  </Typography>
                 </Grid>
               </Grid>
             </>
@@ -313,13 +341,17 @@ const MLModelMonitor = () => {
     const driftDetected = drift?.drift_detected;
 
     return (
-      <Card sx={{ 
-        mb: 2, 
-        bgcolor: driftDetected ? 'rgba(244, 67, 54, 0.1)' : 'rgba(76, 175, 80, 0.1)',
-        border: `1px solid ${driftDetected ? '#f44336' : '#4caf50'}40`
-      }}>
+      <Card
+        sx={{
+          mb: 2,
+          bgcolor: driftDetected ? 'rgba(244, 67, 54, 0.1)' : 'rgba(76, 175, 80, 0.1)',
+          border: `1px solid ${driftDetected ? '#f44336' : '#4caf50'}40`,
+        }}
+      >
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {driftDetected ? (
                 <WarningAmberIcon sx={{ color: '#f44336' }} />
@@ -328,7 +360,7 @@ const MLModelMonitor = () => {
               )}
               <Typography variant="h6">Model Drift Detection</Typography>
             </Box>
-            <Chip 
+            <Chip
               label={driftDetected ? 'DRIFT DETECTED' : 'ALIGNED'}
               color={driftDetected ? 'error' : 'success'}
               size="small"
@@ -341,8 +373,8 @@ const MLModelMonitor = () => {
                 <Typography variant="caption" color="text.secondary">
                   Call Preference Drift
                 </Typography>
-                <LinearProgress 
-                  variant="determinate" 
+                <LinearProgress
+                  variant="determinate"
                   value={Math.min(drift.call_preference_drift * 100, 100)}
                   color={drift.call_preference_drift > 0.2 ? 'error' : 'success'}
                   sx={{ height: 8, borderRadius: 4, mt: 0.5 }}
@@ -355,8 +387,8 @@ const MLModelMonitor = () => {
                 <Typography variant="caption" color="text.secondary">
                   Timing Match
                 </Typography>
-                <LinearProgress 
-                  variant="determinate" 
+                <LinearProgress
+                  variant="determinate"
                   value={drift.timing_match * 100}
                   color={drift.timing_match < 0.6 ? 'warning' : 'success'}
                   sx={{ height: 8, borderRadius: 4, mt: 0.5 }}
@@ -373,8 +405,8 @@ const MLModelMonitor = () => {
           )}
 
           {drift?.recommendation && (
-            <Alert 
-              severity={driftDetected ? 'warning' : 'info'} 
+            <Alert
+              severity={driftDetected ? 'warning' : 'info'}
               sx={{ mt: 2, bgcolor: 'transparent' }}
             >
               {drift.recommendation}
@@ -392,18 +424,22 @@ const MLModelMonitor = () => {
     const shouldRetrain = retrainStatus.should_retrain;
 
     return (
-      <Card sx={{ 
-        mb: 2, 
-        bgcolor: shouldRetrain ? 'rgba(255, 152, 0, 0.1)' : 'rgba(30, 35, 50, 0.9)',
-        border: shouldRetrain ? '2px solid #ff9800' : 'none'
-      }}>
+      <Card
+        sx={{
+          mb: 2,
+          bgcolor: shouldRetrain ? 'rgba(255, 152, 0, 0.1)' : 'rgba(30, 35, 50, 0.9)',
+          border: shouldRetrain ? '2px solid #ff9800' : 'none',
+        }}
+      >
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AutorenewIcon sx={{ color: shouldRetrain ? '#ff9800' : '#4caf50' }} />
               <Typography variant="h6">Model Retraining</Typography>
             </Box>
-            
+
             {shouldRetrain && (
               <Button variant="contained" color="warning" size="small">
                 Retrain Now
@@ -440,24 +476,42 @@ const MLModelMonitor = () => {
 
           <Grid container spacing={2}>
             <Grid item xs={6} md={3}>
-              <Typography variant="caption" color="text.secondary">Experience Buffer</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Experience Buffer
+              </Typography>
               <Typography variant="h5">{learningStats.buffer_size}</Typography>
-              <Typography variant="caption" color="text.secondary">experiences stored</Typography>
+              <Typography variant="caption" color="text.secondary">
+                experiences stored
+              </Typography>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Typography variant="caption" color="text.secondary">States Learned</Typography>
+              <Typography variant="caption" color="text.secondary">
+                States Learned
+              </Typography>
               <Typography variant="h5">{learningStats.states_learned}</Typography>
-              <Typography variant="caption" color="text.secondary">unique states</Typography>
+              <Typography variant="caption" color="text.secondary">
+                unique states
+              </Typography>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Typography variant="caption" color="text.secondary">Learning Rate</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Learning Rate
+              </Typography>
               <Typography variant="h5">{learningStats.learning_rate}</Typography>
-              <Typography variant="caption" color="text.secondary">α parameter</Typography>
+              <Typography variant="caption" color="text.secondary">
+                α parameter
+              </Typography>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Typography variant="caption" color="text.secondary">Exploration</Typography>
-              <Typography variant="h5">{(learningStats.exploration_rate * 100).toFixed(0)}%</Typography>
-              <Typography variant="caption" color="text.secondary">ε parameter</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Exploration
+              </Typography>
+              <Typography variant="h5">
+                {(learningStats.exploration_rate * 100).toFixed(0)}%
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                ε parameter
+              </Typography>
             </Grid>
           </Grid>
         </CardContent>
@@ -492,22 +546,21 @@ const MLModelMonitor = () => {
                 {alerts.slice(0, 5).map((alert, i) => (
                   <TableRow key={i}>
                     <TableCell>
-                      <Chip 
-                        label={alert.type?.replace('_', ' ')} 
-                        size="small" 
-                        variant="outlined"
-                      />
+                      <Chip label={alert.type?.replace('_', ' ')} size="small" variant="outlined" />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">{alert.message}</Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip 
+                      <Chip
                         label={alert.severity}
                         size="small"
                         color={
-                          alert.severity === 'critical' ? 'error' :
-                          alert.severity === 'warning' ? 'warning' : 'info'
+                          alert.severity === 'critical'
+                            ? 'error'
+                            : alert.severity === 'warning'
+                              ? 'warning'
+                              : 'info'
                         }
                       />
                     </TableCell>
@@ -542,7 +595,7 @@ const MLModelMonitor = () => {
           <SchoolIcon />
           Model Monitor
         </Typography>
-        
+
         <Button
           variant="outlined"
           startIcon={<RefreshIcon />}

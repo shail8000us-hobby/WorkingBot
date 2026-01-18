@@ -1,9 +1,9 @@
 /**
  * Futures Trade Dialog
- * 
+ *
  * Dialog for placing Buy/Sell orders on futures positions.
  * Supports both market and limit orders with size/price inputs.
- * 
+ *
  * Created: January 18, 2026
  * Purpose: UI for futures trading operations
  */
@@ -25,10 +25,7 @@ import {
   InputAdornment,
   Chip,
 } from '@mui/material';
-import {
-  TrendingUp as BuyIcon,
-  TrendingDown as SellIcon,
-} from '@mui/icons-material';
+import { TrendingUp as BuyIcon, TrendingDown as SellIcon } from '@mui/icons-material';
 import api from '../../utils/apiShim';
 
 const FuturesTradeDialog = ({ open, onClose, position, side }) => {
@@ -54,7 +51,7 @@ const FuturesTradeDialog = ({ open, onClose, position, side }) => {
   // Fetch current market price
   const fetchCurrentPrice = async () => {
     if (!position?.symbol) return;
-    
+
     try {
       const { data } = await api.get(`/api/futures/ticker/${position.symbol}`);
       if (data?.success) {
@@ -95,7 +92,7 @@ const FuturesTradeDialog = ({ open, onClose, position, side }) => {
 
     try {
       const endpoint = side === 'buy' ? '/api/futures/trade/buy' : '/api/futures/trade/sell';
-      
+
       const { data } = await api.post(endpoint, {
         symbol: position.symbol,
         product_id: position.product_id,
@@ -157,11 +154,7 @@ const FuturesTradeDialog = ({ open, onClose, position, side }) => {
         {/* Current Market Price */}
         {currentPrice && (
           <Box sx={{ mb: 2 }}>
-            <Chip
-              label={`Market Price: $${currentPrice.toFixed(2)}`}
-              color="info"
-              size="small"
-            />
+            <Chip label={`Market Price: $${currentPrice.toFixed(2)}`} color="info" size="small" />
           </Box>
         )}
 
@@ -182,20 +175,14 @@ const FuturesTradeDialog = ({ open, onClose, position, side }) => {
           required
           sx={{ mb: 2 }}
           InputProps={{
-            inputProps: { min: 1, step: 1 }
+            inputProps: { min: 1, step: 1 },
           }}
           helperText="Number of contracts to trade"
         />
 
         {/* Market Order Checkbox */}
         <FormControlLabel
-          control={
-            <Checkbox
-              checked={isMarket}
-              onChange={handleMarketToggle}
-              color="primary"
-            />
-          }
+          control={<Checkbox checked={isMarket} onChange={handleMarketToggle} color="primary" />}
           label="Market Order (Execute at current market price)"
           sx={{ mb: 2 }}
         />
@@ -211,9 +198,13 @@ const FuturesTradeDialog = ({ open, onClose, position, side }) => {
           disabled={isMarket}
           InputProps={{
             startAdornment: <InputAdornment position="start">$</InputAdornment>,
-            inputProps: { min: 0, step: 0.01 }
+            inputProps: { min: 0, step: 0.01 },
           }}
-          helperText={isMarket ? 'Price will be determined at execution' : 'Order will execute at this price or better'}
+          helperText={
+            isMarket
+              ? 'Price will be determined at execution'
+              : 'Order will execute at this price or better'
+          }
         />
 
         {/* Order Summary */}

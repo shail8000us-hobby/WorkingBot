@@ -1,9 +1,9 @@
 /**
  * Feature Flag System
- * 
+ *
  * Allows safe parallel operation of old and new WebUI systems.
  * Enables instant rollback if issues arise during validation period.
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  * Safe: Pure utility functions with hooks
  */
@@ -39,18 +39,18 @@ export interface FeatureFlagsHookResult {
 export const FEATURE_FLAGS: FeatureFlags = {
   // Week 3: Guardian Dashboard
   GUARDIAN_DASHBOARD: 'guardian_dashboard',
-  
+
   // Week 2: New state management
   NEW_STATE_MANAGEMENT: 'new_state_management',
   DATA_AGGREGATOR: 'data_aggregator',
   CIRCUIT_BREAKERS: 'circuit_breakers',
-  
+
   // Week 1: Backend resilience
   METRICS_LOGGING: 'metrics_logging',
   ENHANCED_HEALTH_CHECKS: 'enhanced_health_checks',
-  
+
   // Overall toggle
-  NEW_WEBUI_SYSTEM: 'new_webui_system'
+  NEW_WEBUI_SYSTEM: 'new_webui_system',
 };
 
 // Default flag values (fallback if backend unreachable)
@@ -61,7 +61,7 @@ const DEFAULT_FLAGS: FlagCache = {
   [FEATURE_FLAGS.CIRCUIT_BREAKERS]: true,
   [FEATURE_FLAGS.METRICS_LOGGING]: true,
   [FEATURE_FLAGS.ENHANCED_HEALTH_CHECKS]: true,
-  [FEATURE_FLAGS.NEW_WEBUI_SYSTEM]: true  // Enable new system by default
+  [FEATURE_FLAGS.NEW_WEBUI_SYSTEM]: true, // Enable new system by default
 };
 
 // In-memory cache
@@ -75,20 +75,22 @@ const CACHE_TTL: number = 60000; // 1 minute
 async function fetchFeatureFlags(): Promise<FlagCache> {
   try {
     const now = Date.now();
-    
+
     // Return cache if fresh
     if (now - lastFetch < CACHE_TTL) {
       return flagCache;
     }
 
     // Fetch from backend
-    const response = await apiClient.get('/api/config/feature-flags', { timeout: 5000 }) as { flags?: FlagCache };
-    
+    const response = (await apiClient.get('/api/config/feature-flags', { timeout: 5000 })) as {
+      flags?: FlagCache;
+    };
+
     if (response && response.flags) {
       flagCache = { ...DEFAULT_FLAGS, ...response.flags };
       lastFetch = now;
     }
-    
+
     return flagCache;
   } catch (error: any) {
     console.warn('Failed to fetch feature flags, using defaults:', error.message);
@@ -155,7 +157,7 @@ export function useFeatureFlag(featureName: string): FeatureFlagHookResult {
 export function useFeatureFlags(featureNames: string[]): FeatureFlagsHookResult {
   const [flags, setFlags] = useState<FlagCache>(() => {
     const initial: FlagCache = {};
-    featureNames.forEach(name => {
+    featureNames.forEach((name) => {
       initial[name] = isFeatureEnabled(name);
     });
     return initial;
@@ -170,7 +172,7 @@ export function useFeatureFlags(featureNames: string[]): FeatureFlagsHookResult 
         await fetchFeatureFlags();
         if (mounted) {
           const newFlags: FlagCache = {};
-          featureNames.forEach(name => {
+          featureNames.forEach((name) => {
             newFlags[name] = isFeatureEnabled(name);
           });
           setFlags(newFlags);
@@ -202,10 +204,10 @@ export function useFeatureFlags(featureNames: string[]): FeatureFlagsHookResult 
  */
 export async function toggleFeatureFlag(featureName: string, enabled: boolean): Promise<any> {
   try {
-    const response = await apiClient.post('/api/config/feature-flags', {
+    const response = (await apiClient.post('/api/config/feature-flags', {
       flag: featureName,
-      enabled
-    }) as { success?: boolean };
+      enabled,
+    })) as { success?: boolean };
 
     if (response && response.success) {
       // Update cache immediately
@@ -242,5 +244,5 @@ export default {
   useFeatureFlags,
   toggleFeatureFlag,
   getAllFeatureFlags,
-  resetFeatureFlagCache
+  resetFeatureFlagCache,
 };

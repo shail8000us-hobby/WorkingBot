@@ -9,11 +9,11 @@ class KeyboardShortcutsManager {
     this.enabled = true;
     this.helpVisible = false;
     this.listeners = new Map();
-    
+
     // Platform detection
     this.isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     this.modKey = this.isMac ? 'cmd' : 'ctrl';
-    
+
     // Initialize
     this.init();
   }
@@ -21,7 +21,7 @@ class KeyboardShortcutsManager {
   init() {
     // Listen for keyboard events
     document.addEventListener('keydown', (e) => this.handleKeyDown(e));
-    
+
     // Register default shortcuts
     this.registerDefaults();
   }
@@ -37,13 +37,13 @@ class KeyboardShortcutsManager {
       e.preventDefault();
       this.emit('refresh');
     });
-    
+
     // Tabs
     this.register('ctrl+1, cmd+1', 'Go to Configuration tab', () => this.emit('tab', 0));
     this.register('ctrl+2, cmd+2', 'Go to Monitoring tab', () => this.emit('tab', 1));
     this.register('ctrl+3, cmd+3', 'Go to Sync tab', () => this.emit('tab', 2));
     this.register('ctrl+4, cmd+4', 'Go to Reconciliation tab', () => this.emit('tab', 3));
-    
+
     // Actions
     this.register('ctrl+s, cmd+s', 'Save changes', (e) => {
       e.preventDefault();
@@ -51,7 +51,7 @@ class KeyboardShortcutsManager {
     });
     this.register('esc', 'Close dialog/Cancel', () => this.emit('escape'));
     this.register('ctrl+e, cmd+e', 'Toggle error panel', () => this.emit('toggle-errors'));
-    
+
     // Search
     this.register('ctrl+f, cmd+f', 'Search', (e) => {
       // Let browser handle this one but emit event too
@@ -63,20 +63,20 @@ class KeyboardShortcutsManager {
    * Register a shortcut
    */
   register(keys, description, callback, options = {}) {
-    const keyArray = keys.split(',').map(k => k.trim().toLowerCase());
-    
-    keyArray.forEach(key => {
+    const keyArray = keys.split(',').map((k) => k.trim().toLowerCase());
+
+    keyArray.forEach((key) => {
       if (this.shortcuts.has(key)) {
         console.warn(`⚠️ Shortcut conflict: ${key} already registered`);
       }
-      
+
       this.shortcuts.set(key, {
         keys: key,
         description,
         callback,
         enabled: options.enabled !== false,
         scope: options.scope || 'global',
-        preventDefault: options.preventDefault !== false
+        preventDefault: options.preventDefault !== false,
       });
     });
 
@@ -87,8 +87,8 @@ class KeyboardShortcutsManager {
    * Unregister a shortcut
    */
   unregister(keys) {
-    const keyArray = keys.split(',').map(k => k.trim().toLowerCase());
-    keyArray.forEach(key => {
+    const keyArray = keys.split(',').map((k) => k.trim().toLowerCase());
+    keyArray.forEach((key) => {
       this.shortcuts.delete(key);
     });
   }
@@ -109,11 +109,11 @@ class KeyboardShortcutsManager {
 
     if (shortcut && shortcut.enabled) {
       console.log(`⌨️  Shortcut triggered: ${key}`);
-      
+
       if (shortcut.preventDefault) {
         e.preventDefault();
       }
-      
+
       shortcut.callback(e);
     }
   }
@@ -131,15 +131,15 @@ class KeyboardShortcutsManager {
 
     // Add the key itself
     const key = e.key.toLowerCase();
-    
+
     // Special key mappings
     const keyMap = {
-      'escape': 'esc',
+      escape: 'esc',
       ' ': 'space',
-      'arrowup': 'up',
-      'arrowdown': 'down',
-      'arrowleft': 'left',
-      'arrowright': 'right'
+      arrowup: 'up',
+      arrowdown: 'down',
+      arrowleft: 'left',
+      arrowright: 'right',
     };
 
     parts.push(keyMap[key] || key);
@@ -154,7 +154,7 @@ class KeyboardShortcutsManager {
     const tagName = element.tagName.toLowerCase();
     const isContentEditable = element.contentEditable === 'true';
     const isInput = ['input', 'textarea', 'select'].includes(tagName);
-    
+
     return isInput || isContentEditable;
   }
 
@@ -188,12 +188,12 @@ class KeyboardShortcutsManager {
   getAllShortcuts() {
     const shortcuts = [];
     this.shortcuts.forEach((shortcut, key) => {
-      if (!shortcuts.find(s => s.description === shortcut.description)) {
+      if (!shortcuts.find((s) => s.description === shortcut.description)) {
         shortcuts.push({
           keys: key,
           description: shortcut.description,
           enabled: shortcut.enabled,
-          scope: shortcut.scope
+          scope: shortcut.scope,
         });
       }
     });
@@ -204,7 +204,7 @@ class KeyboardShortcutsManager {
    * Get shortcuts by scope
    */
   getShortcutsByScope(scope = 'global') {
-    return this.getAllShortcuts().filter(s => s.scope === scope);
+    return this.getAllShortcuts().filter((s) => s.scope === scope);
   }
 
   /**
@@ -212,14 +212,14 @@ class KeyboardShortcutsManager {
    */
   formatKeys(keys) {
     const parts = keys.split('+');
-    const formatted = parts.map(part => {
+    const formatted = parts.map((part) => {
       const keyMap = {
-        'ctrl': this.isMac ? '⌃' : 'Ctrl',
-        'cmd': '⌘',
-        'alt': this.isMac ? '⌥' : 'Alt',
-        'shift': this.isMac ? '⇧' : 'Shift',
-        'esc': 'Esc',
-        'space': 'Space'
+        ctrl: this.isMac ? '⌃' : 'Ctrl',
+        cmd: '⌘',
+        alt: this.isMac ? '⌥' : 'Alt',
+        shift: this.isMac ? '⇧' : 'Shift',
+        esc: 'Esc',
+        space: 'Space',
       };
       return keyMap[part] || part.toUpperCase();
     });
@@ -239,7 +239,7 @@ class KeyboardShortcutsManager {
   emit(event, data) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
-      callbacks.forEach(callback => callback(data));
+      callbacks.forEach((callback) => callback(data));
     }
   }
 
@@ -265,11 +265,11 @@ const React = require('react');
 export const useKeyboardShortcut = (keys, callback, options = {}) => {
   React.useEffect(() => {
     const { description = 'Custom shortcut', scope = 'component' } = options;
-    
+
     // Register shortcut
     keyboardShortcuts.register(keys, description, callback, {
       ...options,
-      scope
+      scope,
     });
 
     // Cleanup
@@ -313,7 +313,7 @@ export const useKeyboardShortcuts = () => {
     shortcuts,
     helpVisible,
     toggleHelp,
-    formatKeys
+    formatKeys,
   };
 };
 
@@ -322,20 +322,25 @@ export const useKeyboardShortcuts = () => {
  */
 export const getShortcutsHelpData = () => {
   const shortcuts = keyboardShortcuts.getAllShortcuts();
-  
+
   // Group by category
   const groups = {
-    'Navigation': [],
-    'Actions': [],
-    'Tabs': [],
-    'Other': []
+    Navigation: [],
+    Actions: [],
+    Tabs: [],
+    Other: [],
   };
 
-  shortcuts.forEach(shortcut => {
+  shortcuts.forEach((shortcut) => {
     const desc = shortcut.description.toLowerCase();
     if (desc.includes('tab') || desc.includes('go to')) {
       groups['Tabs'].push(shortcut);
-    } else if (desc.includes('save') || desc.includes('refresh') || desc.includes('close') || desc.includes('cancel')) {
+    } else if (
+      desc.includes('save') ||
+      desc.includes('refresh') ||
+      desc.includes('close') ||
+      desc.includes('cancel')
+    ) {
       groups['Actions'].push(shortcut);
     } else if (desc.includes('open') || desc.includes('show')) {
       groups['Navigation'].push(shortcut);
@@ -350,4 +355,3 @@ export const getShortcutsHelpData = () => {
 };
 
 export default keyboardShortcuts;
-

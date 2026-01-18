@@ -4,7 +4,10 @@ import { Minimize2 } from 'lucide-react';
 import useMarketPrices from '../hooks/useMarketPrices';
 
 const FloatingPriceWidget = () => {
-  const [position, setPosition] = useState({ x: window.innerWidth - 280, y: window.innerHeight - 200 });
+  const [position, setPosition] = useState({
+    x: window.innerWidth - 280,
+    y: window.innerHeight - 200,
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const widgetRef = useRef(null);
@@ -13,12 +16,12 @@ const FloatingPriceWidget = () => {
 
   // Use WebSocket-based market prices hook
   const { btcPrice, ethPrice, source, wsConnected } = useMarketPrices();
-  
+
   // Track price changes for delta display
   const [btcChange, setBtcChange] = useState(0);
   const [ethChange, setEthChange] = useState(0);
   const [lastUpdate, setLastUpdate] = useState(null);
-  
+
   // Update changes when prices update
   useEffect(() => {
     if (btcPrice !== null) {
@@ -30,7 +33,7 @@ const FloatingPriceWidget = () => {
       setLastUpdate(new Date());
     }
   }, [btcPrice]);
-  
+
   useEffect(() => {
     if (ethPrice !== null) {
       const prevEth = prevPricesRef.current.eth;
@@ -49,24 +52,27 @@ const FloatingPriceWidget = () => {
       const rect = widgetRef.current.getBoundingClientRect();
       setDragOffset({
         x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        y: e.clientY - rect.top,
       });
     }
   }, []);
 
-  const handleMouseMove = useCallback((e) => {
-    const newX = e.clientX - dragOffset.x;
-    const newY = e.clientY - dragOffset.y;
-    
-    // Keep within viewport bounds
-    const maxX = window.innerWidth - 250;
-    const maxY = window.innerHeight - 150;
-    
-    setPosition({
-      x: Math.max(0, Math.min(newX, maxX)),
-      y: Math.max(0, Math.min(newY, maxY))
-    });
-  }, [dragOffset]);
+  const handleMouseMove = useCallback(
+    (e) => {
+      const newX = e.clientX - dragOffset.x;
+      const newY = e.clientY - dragOffset.y;
+
+      // Keep within viewport bounds
+      const maxX = window.innerWidth - 250;
+      const maxY = window.innerHeight - 150;
+
+      setPosition({
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY)),
+      });
+    },
+    [dragOffset]
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -111,7 +117,7 @@ const FloatingPriceWidget = () => {
         cursor: isDragging ? 'grabbing' : 'default',
         backdropFilter: 'blur(10px)',
         overflow: 'hidden',
-        userSelect: 'none'
+        userSelect: 'none',
       }}
     >
       {/* Drag Handle */}
@@ -126,8 +132,8 @@ const FloatingPriceWidget = () => {
           borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
           cursor: 'grab',
           '&:active': {
-            cursor: 'grabbing'
-          }
+            cursor: 'grabbing',
+          },
         }}
       >
         <Typography
@@ -136,24 +142,24 @@ const FloatingPriceWidget = () => {
             fontWeight: 600,
             color: '#94a3b8',
             textTransform: 'uppercase',
-            letterSpacing: '0.5px'
+            letterSpacing: '0.5px',
           }}
         >
           Live Prices {lastUpdate && `• ${lastUpdate.toLocaleTimeString()}`}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Box 
-            sx={{ 
-              width: 6, 
-              height: 6, 
-              borderRadius: '50%', 
+          <Box
+            sx={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
               backgroundColor: wsConnected ? '#10b981' : '#64748b',
               animation: wsConnected ? 'pulse 2s ease-in-out infinite' : 'none',
               '@keyframes pulse': {
                 '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.5 }
-              }
-            }} 
+                '50%': { opacity: 0.5 },
+              },
+            }}
           />
           <Typography sx={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>
             {source}
@@ -166,13 +172,20 @@ const FloatingPriceWidget = () => {
       <Box sx={{ padding: '16px' }}>
         {/* BTC */}
         <Box sx={{ marginBottom: '16px' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '4px',
+            }}
+          >
             <Typography
               sx={{
                 fontSize: '13px',
                 fontWeight: 600,
                 color: '#e2e8f0',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
               }}
             >
               BTC SPOT
@@ -184,7 +197,7 @@ const FloatingPriceWidget = () => {
                 fontSize: '24px',
                 fontWeight: 700,
                 color: '#0ea5e9',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
               }}
             >
               ${formatPrice(btcPrice)}
@@ -195,10 +208,11 @@ const FloatingPriceWidget = () => {
                   fontSize: '12px',
                   fontWeight: 600,
                   color: getChangeColor(btcChange),
-                  fontFamily: 'monospace'
+                  fontFamily: 'monospace',
                 }}
               >
-                {btcChange > 0 ? '+' : ''}{btcChange.toFixed(2)}
+                {btcChange > 0 ? '+' : ''}
+                {btcChange.toFixed(2)}
               </Typography>
             )}
           </Box>
@@ -206,13 +220,20 @@ const FloatingPriceWidget = () => {
 
         {/* ETH */}
         <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '4px',
+            }}
+          >
             <Typography
               sx={{
                 fontSize: '13px',
                 fontWeight: 600,
                 color: '#e2e8f0',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
               }}
             >
               ETH SPOT
@@ -224,7 +245,7 @@ const FloatingPriceWidget = () => {
                 fontSize: '24px',
                 fontWeight: 700,
                 color: '#8b5cf6',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
               }}
             >
               ${formatPrice(ethPrice)}
@@ -235,10 +256,11 @@ const FloatingPriceWidget = () => {
                   fontSize: '12px',
                   fontWeight: 600,
                   color: getChangeColor(ethChange),
-                  fontFamily: 'monospace'
+                  fontFamily: 'monospace',
                 }}
               >
-                {ethChange > 0 ? '+' : ''}{ethChange.toFixed(2)}
+                {ethChange > 0 ? '+' : ''}
+                {ethChange.toFixed(2)}
               </Typography>
             )}
           </Box>

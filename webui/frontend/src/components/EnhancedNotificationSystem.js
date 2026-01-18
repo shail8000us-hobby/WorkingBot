@@ -5,14 +5,21 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Snackbar, Alert, AlertTitle, Button, Box, IconButton, Slide, Collapse
+  Snackbar,
+  Alert,
+  AlertTitle,
+  Button,
+  Box,
+  IconButton,
+  Slide,
+  Collapse,
 } from '@mui/material';
 import {
   Close as CloseIcon,
   CheckCircle as SuccessIcon,
   Error as ErrorIcon,
   Warning as WarningIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
 } from '@mui/icons-material';
 
 /**
@@ -41,7 +48,7 @@ class NotificationManager {
       onAction: options.onAction,
       persistent: options.persistent || false,
       timestamp: Date.now(),
-      read: false
+      read: false,
     };
 
     this.notifications.push(notification);
@@ -90,7 +97,7 @@ class NotificationManager {
    * Remove notification
    */
   remove(id) {
-    const index = this.notifications.findIndex(n => n.id === id);
+    const index = this.notifications.findIndex((n) => n.id === id);
     if (index > -1) {
       this.notifications.splice(index, 1);
       this.notifyListeners();
@@ -109,7 +116,7 @@ class NotificationManager {
    * Mark as read
    */
   markAsRead(id) {
-    const notification = this.notifications.find(n => n.id === id);
+    const notification = this.notifications.find((n) => n.id === id);
     if (notification) {
       notification.read = true;
       this.notifyListeners();
@@ -127,7 +134,7 @@ class NotificationManager {
    * Get unread count
    */
   getUnreadCount() {
-    return this.notifications.filter(n => !n.read).length;
+    return this.notifications.filter((n) => !n.read).length;
   }
 
   /**
@@ -147,7 +154,7 @@ class NotificationManager {
    * Notify listeners
    */
   notifyListeners() {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       try {
         listener(this.notifications);
       } catch (error) {
@@ -166,10 +173,14 @@ export const notificationManager = new NotificationManager();
 const EnhancedNotification = ({ notification, onClose, onAction }) => {
   const getIcon = () => {
     switch (notification.severity) {
-      case 'success': return <SuccessIcon />;
-      case 'error': return <ErrorIcon />;
-      case 'warning': return <WarningIcon />;
-      default: return <InfoIcon />;
+      case 'success':
+        return <SuccessIcon />;
+      case 'error':
+        return <ErrorIcon />;
+      case 'warning':
+        return <WarningIcon />;
+      default:
+        return <InfoIcon />;
     }
   };
 
@@ -193,11 +204,7 @@ const EnhancedNotification = ({ notification, onClose, onAction }) => {
               {notification.action}
             </Button>
           )}
-          <IconButton
-            size="small"
-            color="inherit"
-            onClick={() => onClose(notification.id)}
-          >
+          <IconButton size="small" color="inherit" onClick={() => onClose(notification.id)}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -206,13 +213,11 @@ const EnhancedNotification = ({ notification, onClose, onAction }) => {
         width: '100%',
         boxShadow: 3,
         '& .MuiAlert-message': {
-          width: '100%'
-        }
+          width: '100%',
+        },
       }}
     >
-      {notification.title && (
-        <AlertTitle>{notification.title}</AlertTitle>
-      )}
+      {notification.title && <AlertTitle>{notification.title}</AlertTitle>}
       {notification.message}
     </Alert>
   );
@@ -258,8 +263,8 @@ export const EnhancedNotificationSystem = () => {
       TransitionComponent={Slide}
       sx={{
         '& .MuiSnackbar-root': {
-          bottom: { xs: '80px', md: '24px' }
-        }
+          bottom: { xs: '80px', md: '24px' },
+        },
       }}
     >
       <Box>
@@ -305,7 +310,7 @@ export const NotificationStack = ({ maxVisible = 3 }) => {
         display: 'flex',
         flexDirection: 'column',
         gap: 1,
-        maxWidth: { xs: '90vw', sm: 400 }
+        maxWidth: { xs: '90vw', sm: 400 },
       }}
     >
       {notifications.map((notification, index) => (
@@ -382,7 +387,7 @@ export const useNotifications = () => {
     info,
     remove,
     clearAll,
-    markAsRead
+    markAsRead,
   };
 };
 
@@ -395,4 +400,3 @@ if (typeof window !== 'undefined') {
 }
 
 export default notificationManager;
-

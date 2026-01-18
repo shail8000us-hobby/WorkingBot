@@ -1,6 +1,6 @@
 /**
  * Futures Components Export
- * 
+ *
  * Created: January 17, 2026
  * Purpose: Clean export of futures-related components
  */

@@ -3,7 +3,7 @@
  * ==================
  * Smart strike recommendations based on strategy type and current market data.
  * Allows quick navigation to option chain with pre-filled parameters.
- * 
+ *
  * Created: January 5, 2026
  */
 
@@ -20,7 +20,7 @@ import {
   CircularProgress,
   Alert,
   IconButton,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   ShowChart as ChartIcon,
@@ -28,14 +28,14 @@ import {
   TrendingDown as BearIcon,
   SwapHoriz as NeutralIcon,
   Refresh as RefreshIcon,
-  Launch as LaunchIcon
+  Launch as LaunchIcon,
 } from '@mui/icons-material';
 
-export default function StrikeSuggestions({ 
-  strategyType, 
+export default function StrikeSuggestions({
+  strategyType,
   underlying = 'BTC',
   onNavigateToChain,
-  onApplySuggestion 
+  onApplySuggestion,
 }) {
   const [spotPrice, setSpotPrice] = useState(null);
   const [suggestions, setSuggestions] = useState(null);
@@ -49,20 +49,20 @@ export default function StrikeSuggestions({
   const fetchSuggestions = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       let currentSpot;
-      
+
       // Try to get current spot price with timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
-      
+
       try {
         const spotRes = await fetch(`/api/market/spot-price?symbol=${underlying}`, {
-          signal: controller.signal
+          signal: controller.signal,
         });
         clearTimeout(timeoutId);
-        
+
         if (spotRes.ok) {
           const spotData = await spotRes.json();
           currentSpot = spotData.price;
@@ -70,15 +70,15 @@ export default function StrikeSuggestions({
       } catch (fetchErr) {
         console.warn('Spot price fetch failed, using fallback:', fetchErr.message);
       }
-      
+
       // Fallback to reasonable default if API fails
       if (!currentSpot) {
         currentSpot = underlying === 'BTC' ? 95000 : 3500;
         console.log(`Using fallback spot price for ${underlying}: $${currentSpot}`);
       }
-      
+
       setSpotPrice(currentSpot);
-      
+
       // Generate suggestions based on strategy type
       const suggestions = generateSuggestions(strategyType, currentSpot);
       setSuggestions(suggestions);
@@ -99,8 +99,8 @@ export default function StrikeSuggestions({
 
     const atm = roundToNearestStrike(spot);
     const otm_call = roundToNearestStrike(spot * 1.05); // 5% OTM
-    const otm_put = roundToNearestStrike(spot * 0.95);  // 5% OTM
-    
+    const otm_put = roundToNearestStrike(spot * 0.95); // 5% OTM
+
     const configs = {
       long_straddle: {
         name: 'Long Straddle',
@@ -109,11 +109,11 @@ export default function StrikeSuggestions({
         legHints: ['Buy ATM Call', 'Buy ATM Put'],
         legDefinitions: [
           { type: 'call', side: 'buy', strikeKey: 'call_strike' },
-          { type: 'put', side: 'buy', strikeKey: 'put_strike' }
+          { type: 'put', side: 'buy', strikeKey: 'put_strike' },
         ],
         description: `Buy ATM Call + Put at ${atm}`,
         reasoning: 'ATM options for maximum sensitivity to price moves',
-        expiry_suggestion: '7-14 DTE for earnings plays, 30-45 DTE for normal trades'
+        expiry_suggestion: '7-14 DTE for earnings plays, 30-45 DTE for normal trades',
       },
       short_straddle: {
         name: 'Short Straddle',
@@ -122,12 +122,12 @@ export default function StrikeSuggestions({
         legHints: ['Sell ATM Call', 'Sell ATM Put'],
         legDefinitions: [
           { type: 'call', side: 'sell', strikeKey: 'call_strike' },
-          { type: 'put', side: 'sell', strikeKey: 'put_strike' }
+          { type: 'put', side: 'sell', strikeKey: 'put_strike' },
         ],
         description: `Sell ATM Call + Put at ${atm}`,
         reasoning: 'ATM has highest premium to collect',
         expiry_suggestion: '7-14 DTE to maximize theta decay',
-        warning: '⚠️ Unlimited risk - ensure proper position sizing'
+        warning: '⚠️ Unlimited risk - ensure proper position sizing',
       },
       long_strangle: {
         name: 'Long Strangle',
@@ -136,11 +136,11 @@ export default function StrikeSuggestions({
         legHints: ['Buy OTM Call', 'Buy OTM Put'],
         legDefinitions: [
           { type: 'call', side: 'buy', strikeKey: 'call_strike' },
-          { type: 'put', side: 'buy', strikeKey: 'put_strike' }
+          { type: 'put', side: 'buy', strikeKey: 'put_strike' },
         ],
         description: `Buy ${otm_call} Call + ${otm_put} Put`,
         reasoning: 'OTM strikes reduce cost while maintaining large move profit potential',
-        expiry_suggestion: '30-60 DTE for better risk/reward'
+        expiry_suggestion: '30-60 DTE for better risk/reward',
       },
       short_strangle: {
         name: 'Short Strangle',
@@ -149,20 +149,20 @@ export default function StrikeSuggestions({
         legHints: ['Sell OTM Call', 'Sell OTM Put'],
         legDefinitions: [
           { type: 'call', side: 'sell', strikeKey: 'call_strike' },
-          { type: 'put', side: 'sell', strikeKey: 'put_strike' }
+          { type: 'put', side: 'sell', strikeKey: 'put_strike' },
         ],
         description: `Sell ${otm_call} Call + ${otm_put} Put`,
         reasoning: 'OTM strikes give wider profit zone than short straddle',
         expiry_suggestion: '21-45 DTE for optimal premium collection',
-        warning: '⚠️ Unlimited risk - manage early if breached'
+        warning: '⚠️ Unlimited risk - manage early if breached',
       },
       iron_condor: {
         name: 'Iron Condor',
         strikes: {
-          put_long_strike: roundToNearestStrike(spot * 0.90),
+          put_long_strike: roundToNearestStrike(spot * 0.9),
           put_short_strike: otm_put,
           call_short_strike: otm_call,
-          call_long_strike: roundToNearestStrike(spot * 1.10)
+          call_long_strike: roundToNearestStrike(spot * 1.1),
         },
         requiredLegs: 4,
         legHints: ['Buy Lower Put', 'Sell Put', 'Sell Call', 'Buy Higher Call'],
@@ -170,18 +170,18 @@ export default function StrikeSuggestions({
           { type: 'put', side: 'buy', strikeKey: 'put_long_strike' },
           { type: 'put', side: 'sell', strikeKey: 'put_short_strike' },
           { type: 'call', side: 'sell', strikeKey: 'call_short_strike' },
-          { type: 'call', side: 'buy', strikeKey: 'call_long_strike' }
+          { type: 'call', side: 'buy', strikeKey: 'call_long_strike' },
         ],
         description: 'Sell wings at ±5%, buy wings at ±10%',
         reasoning: 'Balanced risk/reward with defined max loss',
-        expiry_suggestion: '30-45 DTE, exit at 50% profit'
+        expiry_suggestion: '30-45 DTE, exit at 50% profit',
       },
       iron_butterfly: {
         name: 'Iron Butterfly',
         strikes: {
           lower_put: roundToNearestStrike(spot * 0.95),
           center_strike: atm,
-          upper_call: roundToNearestStrike(spot * 1.05)
+          upper_call: roundToNearestStrike(spot * 1.05),
         },
         requiredLegs: 4,
         legHints: ['Buy Lower Put', 'Sell ATM Put', 'Sell ATM Call', 'Buy Higher Call'],
@@ -189,44 +189,44 @@ export default function StrikeSuggestions({
           { type: 'put', side: 'buy', strikeKey: 'lower_put' },
           { type: 'put', side: 'sell', strikeKey: 'center_strike' },
           { type: 'call', side: 'sell', strikeKey: 'center_strike' },
-          { type: 'call', side: 'buy', strikeKey: 'upper_call' }
+          { type: 'call', side: 'buy', strikeKey: 'upper_call' },
         ],
         description: `Centered at ${atm}, wings ±5%`,
         reasoning: 'Tighter profit zone but higher max profit than iron condor',
-        expiry_suggestion: '21-35 DTE'
+        expiry_suggestion: '21-35 DTE',
       },
       call_spread: {
         name: 'Bull Call Spread',
         strikes: {
           long_strike: atm,
-          short_strike: otm_call
+          short_strike: otm_call,
         },
         requiredLegs: 2,
         legHints: ['Buy ATM Call', 'Sell OTM Call'],
         legDefinitions: [
           { type: 'call', side: 'buy', strikeKey: 'long_strike' },
-          { type: 'call', side: 'sell', strikeKey: 'short_strike' }
+          { type: 'call', side: 'sell', strikeKey: 'short_strike' },
         ],
         description: `Buy ${atm} Call, Sell ${otm_call} Call`,
         reasoning: 'Bullish play with limited risk and cost',
-        expiry_suggestion: '30-60 DTE for directional bets'
+        expiry_suggestion: '30-60 DTE for directional bets',
       },
       put_spread: {
         name: 'Bear Put Spread',
         strikes: {
           long_strike: atm,
-          short_strike: otm_put
+          short_strike: otm_put,
         },
         requiredLegs: 2,
         legHints: ['Buy ATM Put', 'Sell OTM Put'],
         legDefinitions: [
           { type: 'put', side: 'buy', strikeKey: 'long_strike' },
-          { type: 'put', side: 'sell', strikeKey: 'short_strike' }
+          { type: 'put', side: 'sell', strikeKey: 'short_strike' },
         ],
         description: `Buy ${atm} Put, Sell ${otm_put} Put`,
         reasoning: 'Bearish play with limited risk and cost',
-        expiry_suggestion: '30-60 DTE for directional bets'
-      }
+        expiry_suggestion: '30-60 DTE for directional bets',
+      },
     };
 
     return configs[type] || configs.long_straddle;
@@ -237,7 +237,7 @@ export default function StrikeSuggestions({
       onApplySuggestion({
         strategyType,
         underlying,
-        strikes: suggestions.strikes
+        strikes: suggestions.strikes,
       });
     }
   };
@@ -246,7 +246,7 @@ export default function StrikeSuggestions({
     if (onNavigateToChain) {
       onNavigateToChain({
         underlying,
-        highlightStrikes: Object.values(suggestions?.strikes || {})
+        highlightStrikes: Object.values(suggestions?.strikes || {}),
       });
     }
   };
@@ -266,11 +266,14 @@ export default function StrikeSuggestions({
 
   if (error) {
     return (
-      <Alert severity="error" action={
-        <IconButton size="small" onClick={fetchSuggestions}>
-          <RefreshIcon />
-        </IconButton>
-      }>
+      <Alert
+        severity="error"
+        action={
+          <IconButton size="small" onClick={fetchSuggestions}>
+            <RefreshIcon />
+          </IconButton>
+        }
+      >
         {error}
       </Alert>
     );
@@ -285,9 +288,7 @@ export default function StrikeSuggestions({
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <ChartIcon color="primary" />
-            <Typography variant="h6">
-              Suggested Strikes
-            </Typography>
+            <Typography variant="h6">Suggested Strikes</Typography>
           </Box>
           <Tooltip title="Refresh suggestions">
             <IconButton size="small" onClick={fetchSuggestions}>
@@ -333,9 +334,7 @@ export default function StrikeSuggestions({
 
         {/* Description */}
         <Alert severity="info" icon={<NeutralIcon />} sx={{ mb: 2 }}>
-          <Typography variant="body2">
-            {suggestions.description}
-          </Typography>
+          <Typography variant="body2">{suggestions.description}</Typography>
         </Alert>
 
         {/* Reasoning */}
@@ -343,9 +342,7 @@ export default function StrikeSuggestions({
           <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
             Why these strikes?
           </Typography>
-          <Typography variant="body2">
-            {suggestions.reasoning}
-          </Typography>
+          <Typography variant="body2">{suggestions.reasoning}</Typography>
         </Box>
 
         {/* Expiry Suggestion */}
@@ -353,9 +350,7 @@ export default function StrikeSuggestions({
           <Typography variant="caption" color="text.secondary" display="block">
             📅 Recommended Expiry
           </Typography>
-          <Typography variant="body2">
-            {suggestions.expiry_suggestion}
-          </Typography>
+          <Typography variant="body2">{suggestions.expiry_suggestion}</Typography>
         </Box>
 
         {/* Warning for risky strategies */}
@@ -382,7 +377,7 @@ export default function StrikeSuggestions({
                     suggestedStrikes: suggestions.strikes,
                     requiredLegs: suggestions.requiredLegs || 2,
                     legHints: suggestions.legHints || [],
-                    legDefinitions: suggestions.legDefinitions || []
+                    legDefinitions: suggestions.legDefinitions || [],
                   });
                 }
               }}
@@ -391,11 +386,7 @@ export default function StrikeSuggestions({
             </Button>
           </Grid>
           <Grid item xs={12}>
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={handleApply}
-            >
+            <Button fullWidth variant="outlined" onClick={handleApply}>
               Use Suggested Strikes Directly
             </Button>
           </Grid>

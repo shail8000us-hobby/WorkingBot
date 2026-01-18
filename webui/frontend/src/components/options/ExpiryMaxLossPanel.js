@@ -1,18 +1,18 @@
 /**
  * Expiry Max Loss Panel Component
- * 
+ *
  * Shows and allows editing max loss limits per expiry.
  * Displays as a row of chips/inputs for each unique expiry.
- * 
+ *
  * Created: January 16, 2026
  */
 
 import React, { useState } from 'react';
-import { 
-  Box, 
-  TextField, 
-  IconButton, 
-  Tooltip, 
+import {
+  Box,
+  TextField,
+  IconButton,
+  Tooltip,
   Typography,
   Chip,
   CircularProgress,
@@ -21,32 +21,24 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Alert
+  Alert,
 } from '@mui/material';
-import { 
-  Warning, 
-  Check, 
-  Close, 
-  Edit,
-  Shield,
-  ShieldOutlined,
-  Delete
-} from '@mui/icons-material';
+import { Warning, Check, Close, Edit, Shield, ShieldOutlined, Delete } from '@mui/icons-material';
 import axios from 'axios';
 
 const api = axios.create({ baseURL: '' });
 
-export default function ExpiryMaxLossPanel({ 
+export default function ExpiryMaxLossPanel({
   uniqueExpiries = [],
-  expiryPnlMap = {},  // { expiry_code: total_pnl }
-  expiryMaxLossSettings = {},  // { expiry_code: { max_loss, enabled, triggered } }
-  onSettingsUpdate = () => {}
+  expiryPnlMap = {}, // { expiry_code: total_pnl }
+  expiryMaxLossSettings = {}, // { expiry_code: { max_loss, enabled, triggered } }
+  onSettingsUpdate = () => {},
 }) {
   const [editingExpiry, setEditingExpiry] = useState(null);
   const [inputValue, setInputValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  
+
   // Format expiry code to readable date
   const formatExpiry = (code) => {
     if (!code || code.length !== 6) return code;
@@ -55,29 +47,29 @@ export default function ExpiryMaxLossPanel({
     const year = '20' + code.substring(4, 6);
     return `${day}/${month}/${year}`;
   };
-  
+
   const handleSave = async () => {
     const value = parseFloat(inputValue);
     if (isNaN(value) || value <= 0) {
       setError('Enter a valid positive number');
       return;
     }
-    
+
     setSaving(true);
     setError(null);
-    
+
     try {
       const { data } = await api.post('/api/options/max-loss/expiry/set', {
         expiry_code: editingExpiry,
-        max_loss: value
+        max_loss: value,
       });
-      
+
       if (data.success) {
         onSettingsUpdate(editingExpiry, {
           expiry_code: editingExpiry,
           max_loss: value,
           enabled: true,
-          triggered: false
+          triggered: false,
         });
         setEditingExpiry(null);
         setInputValue('');
@@ -91,12 +83,12 @@ export default function ExpiryMaxLossPanel({
       setSaving(false);
     }
   };
-  
+
   const handleRemove = async (expiryCode) => {
     setSaving(true);
     try {
       const { data } = await api.delete(`/api/options/max-loss/expiry/remove/${expiryCode}`);
-      
+
       if (data.success) {
         onSettingsUpdate(expiryCode, null);
       }
@@ -106,17 +98,17 @@ export default function ExpiryMaxLossPanel({
       setSaving(false);
     }
   };
-  
+
   const startEditing = (expiryCode) => {
     const existing = expiryMaxLossSettings[expiryCode];
     setEditingExpiry(expiryCode);
     setInputValue(existing?.max_loss?.toString() || '');
     setError(null);
   };
-  
+
   // If no expiries or settings, don't show
   if (!uniqueExpiries.length) return null;
-  
+
   return (
     <>
       {/* Inline expiry max loss indicators */}
@@ -124,7 +116,7 @@ export default function ExpiryMaxLossPanel({
         <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
           🛡️ Expiry Max Loss:
         </Typography>
-        
+
         {uniqueExpiries.map((expiry) => {
           const settings = expiryMaxLossSettings[expiry];
           const hasLimit = settings && settings.max_loss > 0 && settings.enabled;
@@ -134,11 +126,11 @@ export default function ExpiryMaxLossPanel({
           const lossPercentage = hasLimit ? (lossAmount / settings.max_loss) * 100 : 0;
           const isNearLimit = lossPercentage >= 70;
           const isVeryNearLimit = lossPercentage >= 90;
-          
+
           if (triggered) {
             return (
-              <Tooltip 
-                key={expiry} 
+              <Tooltip
+                key={expiry}
                 title={`Max loss of $${settings.max_loss} was triggered for ${formatExpiry(expiry)}`}
               >
                 <Chip
@@ -148,16 +140,16 @@ export default function ExpiryMaxLossPanel({
                   color="error"
                   variant="filled"
                   onDelete={() => handleRemove(expiry)}
-                  sx={{ 
-                    height: 24, 
+                  sx={{
+                    height: 24,
                     fontSize: 11,
-                    textDecoration: 'line-through'
+                    textDecoration: 'line-through',
                   }}
                 />
               </Tooltip>
             );
           }
-          
+
           if (hasLimit) {
             const tooltipContent = (
               <Box>
@@ -177,24 +169,28 @@ export default function ExpiryMaxLossPanel({
                     </Typography>
                   </>
                 )}
-                <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.light' }}>
+                <Typography
+                  variant="caption"
+                  display="block"
+                  sx={{ mt: 0.5, color: 'warning.light' }}
+                >
                   ⚡ All positions of this expiry will be closed when limit reached
                 </Typography>
               </Box>
             );
-            
+
             return (
               <Tooltip key={expiry} title={tooltipContent} arrow>
                 <Chip
                   icon={<Shield sx={{ fontSize: 12 }} />}
                   label={`${formatExpiry(expiry)}: $${settings.max_loss.toFixed(0)}`}
                   size="small"
-                  color={isVeryNearLimit ? "error" : isNearLimit ? "warning" : "info"}
-                  variant={isNearLimit ? "filled" : "outlined"}
+                  color={isVeryNearLimit ? 'error' : isNearLimit ? 'warning' : 'info'}
+                  variant={isNearLimit ? 'filled' : 'outlined'}
                   onClick={() => startEditing(expiry)}
                   onDelete={() => handleRemove(expiry)}
-                  sx={{ 
-                    height: 24, 
+                  sx={{
+                    height: 24,
                     fontSize: 11,
                     cursor: 'pointer',
                     animation: isVeryNearLimit ? 'pulse 1s infinite' : 'none',
@@ -202,13 +198,13 @@ export default function ExpiryMaxLossPanel({
                       '0%': { opacity: 1 },
                       '50%': { opacity: 0.6 },
                       '100%': { opacity: 1 },
-                    }
+                    },
                   }}
                 />
               </Tooltip>
             );
           }
-          
+
           // No limit set - show subtle add button
           return (
             <Tooltip key={expiry} title={`Set max loss limit for ${formatExpiry(expiry)}`}>
@@ -218,41 +214,34 @@ export default function ExpiryMaxLossPanel({
                 size="small"
                 variant="outlined"
                 onClick={() => startEditing(expiry)}
-                sx={{ 
-                  height: 24, 
+                sx={{
+                  height: 24,
                   fontSize: 11,
                   cursor: 'pointer',
                   opacity: 0.5,
-                  '&:hover': { opacity: 1 }
+                  '&:hover': { opacity: 1 },
                 }}
               />
             </Tooltip>
           );
         })}
       </Box>
-      
+
       {/* Edit Dialog */}
-      <Dialog 
-        open={!!editingExpiry} 
-        onClose={() => setEditingExpiry(null)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>
-          Set Max Loss for Expiry {formatExpiry(editingExpiry)}
-        </DialogTitle>
+      <Dialog open={!!editingExpiry} onClose={() => setEditingExpiry(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Set Max Loss for Expiry {formatExpiry(editingExpiry)}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            When the combined loss of all positions for this expiry exceeds the limit,
-            all positions will be automatically squared off.
+            When the combined loss of all positions for this expiry exceeds the limit, all positions
+            will be automatically squared off.
           </Typography>
-          
+
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
-          
+
           <TextField
             fullWidth
             type="number"
@@ -261,10 +250,10 @@ export default function ExpiryMaxLossPanel({
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="e.g., 500"
             InputProps={{
-              startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>
+              startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>,
             }}
           />
-          
+
           {editingExpiry && expiryPnlMap[editingExpiry] < 0 && (
             <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
               Current expiry PnL: ${expiryPnlMap[editingExpiry].toFixed(2)}
@@ -275,9 +264,9 @@ export default function ExpiryMaxLossPanel({
           <Button onClick={() => setEditingExpiry(null)} disabled={saving}>
             Cancel
           </Button>
-          <Button 
-            variant="contained" 
-            onClick={handleSave} 
+          <Button
+            variant="contained"
+            onClick={handleSave}
             disabled={saving}
             startIcon={saving ? <CircularProgress size={16} /> : <Shield />}
           >

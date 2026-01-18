@@ -1,9 +1,9 @@
 /**
  * Futures Payoff Graph Component
- * 
+ *
  * Displays payoff visualization for futures positions using PayoffDiagram.
  * Converts futures position data into payoff chart format.
- * 
+ *
  * Created: January 18, 2026
  * Purpose: Visualize futures positions on payoff graph
  */
@@ -33,13 +33,13 @@ const FuturesPayoffGraph = ({ positions }) => {
     const payoffValues = [];
 
     for (let i = 0; i <= numPoints; i++) {
-      const price = minPrice + (i * step);
+      const price = minPrice + i * step;
       pricePoints.push(price);
 
       let totalPayoff = 0;
 
       // Calculate P&L for each position at this price
-      positions.forEach(pos => {
+      positions.forEach((pos) => {
         const size = pos.size;
         const entryPrice = pos.entry_price;
         const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange
@@ -59,8 +59,10 @@ const FuturesPayoffGraph = ({ positions }) => {
     // Find breakeven points (where payoff crosses zero)
     const breakevenPoints = [];
     for (let i = 1; i < payoffValues.length; i++) {
-      if ((payoffValues[i-1] <= 0 && payoffValues[i] >= 0) ||
-          (payoffValues[i-1] >= 0 && payoffValues[i] <= 0)) {
+      if (
+        (payoffValues[i - 1] <= 0 && payoffValues[i] >= 0) ||
+        (payoffValues[i - 1] >= 0 && payoffValues[i] <= 0)
+      ) {
         breakevenPoints.push(pricePoints[i]);
       }
     }
@@ -71,16 +73,14 @@ const FuturesPayoffGraph = ({ positions }) => {
       max_profit: maxProfit > 1000000 ? null : maxProfit,
       max_loss: maxLoss < -1000000 ? null : maxLoss,
       breakeven_points: breakevenPoints,
-      current_price: spotPrice
+      current_price: spotPrice,
     };
   }, [positions]);
 
   if (!positions || positions.length === 0) {
     return (
       <Paper sx={{ p: 2, textAlign: 'center' }}>
-        <Typography color="text.secondary">
-          No positions to display
-        </Typography>
+        <Typography color="text.secondary">No positions to display</Typography>
       </Paper>
     );
   }
@@ -88,9 +88,7 @@ const FuturesPayoffGraph = ({ positions }) => {
   if (!payoffData) {
     return (
       <Paper sx={{ p: 2, textAlign: 'center' }}>
-        <Typography color="text.secondary">
-          Unable to generate payoff diagram
-        </Typography>
+        <Typography color="text.secondary">Unable to generate payoff diagram</Typography>
       </Paper>
     );
   }

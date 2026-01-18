@@ -1,6 +1,6 @@
 /**
  * User-Friendly Interactive Bot Simulator
- * 
+ *
  * Enhanced simulator with better data representation, intuitive UI,
  * and step-by-step scenario exploration.
  */
@@ -30,7 +30,7 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -43,7 +43,7 @@ import {
   Insights,
   Timeline,
   Refresh,
-  Psychology
+  Psychology,
 } from '@mui/icons-material';
 
 const InteractiveSimulator = () => {
@@ -58,7 +58,7 @@ const InteractiveSimulator = () => {
       setLoading(true);
       const response = await fetch('/api/brain/interactive/scenarios');
       const data = await response.json();
-      
+
       if (data.success) {
         setScenarioData(data.data);
       }
@@ -75,14 +75,14 @@ const InteractiveSimulator = () => {
       const response = await fetch(`/api/brain/interactive/simulate/${scenarioId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: simulationStep })
+        body: JSON.stringify({ step: simulationStep }),
       });
-      
+
       const data = await response.json();
       if (data.success) {
         setCurrentSimulation(data.simulation);
-        setSimulationStep(prev => prev + 1);
-        
+        setSimulationStep((prev) => prev + 1);
+
         // Auto-scroll to results
         setTimeout(() => {
           const element = document.getElementById('simulation-results');
@@ -123,10 +123,14 @@ const InteractiveSimulator = () => {
 
   const getRiskColor = (riskLevel) => {
     switch (riskLevel) {
-      case 'low': return '#4caf50';
-      case 'medium': return '#ff9800';
-      case 'high': return '#f44336';
-      default: return '#2196f3';
+      case 'low':
+        return '#4caf50';
+      case 'medium':
+        return '#ff9800';
+      case 'high':
+        return '#f44336';
+      default:
+        return '#2196f3';
     }
   };
 
@@ -143,7 +147,10 @@ const InteractiveSimulator = () => {
     <Box sx={{ mt: 2 }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+        >
           🎮 Interactive Bot Simulator
           <Chip label="USER FRIENDLY" size="small" sx={{ bgcolor: '#4caf50', color: '#fff' }} />
         </Typography>
@@ -159,8 +166,9 @@ const InteractiveSimulator = () => {
 
       <Alert severity="info" sx={{ mb: 3 }}>
         <Typography variant="body2">
-          <strong>🚀 Explore Bot Decisions:</strong> Step through real bot scenarios to understand 
-          how the trading system makes decisions. Each scenario uses actual bot logic and current market data.
+          <strong>🚀 Explore Bot Decisions:</strong> Step through real bot scenarios to understand
+          how the trading system makes decisions. Each scenario uses actual bot logic and current
+          market data.
         </Typography>
       </Alert>
 
@@ -168,38 +176,55 @@ const InteractiveSimulator = () => {
       {scenarioData?.current_state && (
         <Card elevation={2} sx={{ mb: 3, bgcolor: '#1e1e1e', border: '1px solid #333' }}>
           <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
+            <Typography
+              variant="h6"
+              sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}
+            >
               🔍 Current Bot State
-              <Chip 
+              <Chip
                 label={`${(scenarioData.current_state.confidence * 100).toFixed(0)}% Confidence`}
-                sx={{ bgcolor: getConfidenceColor(scenarioData.current_state.confidence), color: '#fff' }}
+                sx={{
+                  bgcolor: getConfidenceColor(scenarioData.current_state.confidence),
+                  color: '#fff',
+                }}
               />
             </Typography>
-            
+
             <Typography variant="h5" sx={{ mb: 1, fontWeight: 'bold', color: '#64b5f6' }}>
               {scenarioData.current_state.title}
             </Typography>
-            
+
             <Typography variant="body1" sx={{ mb: 2, color: '#e0e0e0' }}>
               {scenarioData.current_state.description}
             </Typography>
 
-            {scenarioData.current_state.data && Object.keys(scenarioData.current_state.data).length > 0 && (
-              <Grid container spacing={2}>
-                {Object.entries(scenarioData.current_state.data).slice(0, 6).map(([key, value]) => (
-                  <Grid item xs={6} sm={4} md={2} key={key}>
-                    <Paper variant="outlined" sx={{ p: 1, textAlign: 'center', bgcolor: '#2a2a2a', border: '1px solid #444' }}>
-                      <Typography variant="caption" sx={{ color: '#bbb' }}>
-                        {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#fff' }}>
-                        {typeof value === 'boolean' ? (value ? '✅' : '❌') : String(value)}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                ))}
-              </Grid>
-            )}
+            {scenarioData.current_state.data &&
+              Object.keys(scenarioData.current_state.data).length > 0 && (
+                <Grid container spacing={2}>
+                  {Object.entries(scenarioData.current_state.data)
+                    .slice(0, 6)
+                    .map(([key, value]) => (
+                      <Grid item xs={6} sm={4} md={2} key={key}>
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            p: 1,
+                            textAlign: 'center',
+                            bgcolor: '#2a2a2a',
+                            border: '1px solid #444',
+                          }}
+                        >
+                          <Typography variant="caption" sx={{ color: '#bbb' }}>
+                            {key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#fff' }}>
+                            {typeof value === 'boolean' ? (value ? '✅' : '❌') : String(value)}
+                          </Typography>
+                        </Paper>
+                      </Grid>
+                    ))}
+                </Grid>
+              )}
           </CardContent>
         </Card>
       )}
@@ -210,21 +235,24 @@ const InteractiveSimulator = () => {
           <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold', color: '#fff' }}>
             📚 Explore Bot Decision Categories
           </Typography>
-          
+
           <Grid container spacing={2}>
             {Object.entries(scenarioData.categories).map(([categoryId, category]) => (
               <Grid item xs={12} md={6} lg={4} key={categoryId}>
-                <Card 
+                <Card
                   elevation={selectedCategory === categoryId ? 4 : 2}
-                  sx={{ 
+                  sx={{
                     height: '100%',
                     cursor: 'pointer',
                     bgcolor: '#1e1e1e',
-                    border: selectedCategory === categoryId ? '2px solid #64b5f6' : '1px solid #333',
+                    border:
+                      selectedCategory === categoryId ? '2px solid #64b5f6' : '1px solid #333',
                     '&:hover': { elevation: 4, transform: 'translateY(-2px)', bgcolor: '#2a2a2a' },
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
                   }}
-                  onClick={() => setSelectedCategory(selectedCategory === categoryId ? null : categoryId)}
+                  onClick={() =>
+                    setSelectedCategory(selectedCategory === categoryId ? null : categoryId)
+                  }
                 >
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
@@ -235,14 +263,14 @@ const InteractiveSimulator = () => {
                         <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#fff' }}>
                           {category.name}
                         </Typography>
-                        <Chip 
-                          label={`${category.count} scenarios`} 
-                          size="small" 
+                        <Chip
+                          label={`${category.count} scenarios`}
+                          size="small"
                           sx={{ bgcolor: '#333', color: '#fff' }}
                         />
                       </Box>
                     </Box>
-                    
+
                     <Typography variant="body2" sx={{ mb: 2, color: '#bbb' }}>
                       {category.description}
                     </Typography>
@@ -250,10 +278,13 @@ const InteractiveSimulator = () => {
                     {selectedCategory === categoryId && (
                       <Box sx={{ mt: 2 }}>
                         <Divider sx={{ mb: 2 }} />
-                        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold', color: '#fff' }}>
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ mb: 1, fontWeight: 'bold', color: '#fff' }}
+                        >
                           Available Scenarios:
                         </Typography>
-                        
+
                         {category.scenarios.slice(0, 3).map((scenario) => (
                           <Button
                             key={scenario.id}
@@ -267,7 +298,10 @@ const InteractiveSimulator = () => {
                             }}
                           >
                             <Box sx={{ textAlign: 'left', flex: 1 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#fff' }}>
+                              <Typography
+                                variant="body2"
+                                sx={{ fontWeight: 'bold', color: '#fff' }}
+                              >
                                 {scenario.title}
                               </Typography>
                               <Typography variant="caption" sx={{ color: '#bbb' }}>
@@ -276,7 +310,7 @@ const InteractiveSimulator = () => {
                             </Box>
                           </Button>
                         ))}
-                        
+
                         {category.scenarios.length > 3 && (
                           <Typography variant="caption" sx={{ color: '#bbb' }}>
                             +{category.scenarios.length - 3} more scenarios...
@@ -298,32 +332,44 @@ const InteractiveSimulator = () => {
           <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold', color: '#fff' }}>
             ⭐ High-Confidence Scenarios
           </Typography>
-          
+
           <Grid container spacing={2}>
             {scenarioData.featured_scenarios.slice(0, 6).map((scenario) => (
               <Grid item xs={12} sm={6} md={4} key={scenario.id}>
-                <Card elevation={2} sx={{ height: '100%', bgcolor: '#1e1e1e', border: '1px solid #333' }}>
+                <Card
+                  elevation={2}
+                  sx={{ height: '100%', bgcolor: '#1e1e1e', border: '1px solid #333' }}
+                >
                   <CardContent>
                     <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold', color: '#fff' }}>
                       {scenario.title}
                     </Typography>
-                    
+
                     <Typography variant="body2" sx={{ mb: 2, color: '#bbb' }}>
                       {scenario.description}
                     </Typography>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Chip 
-                        label={scenario.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        mb: 2,
+                      }}
+                    >
+                      <Chip
+                        label={scenario.category
+                          .replace('_', ' ')
+                          .replace(/\b\w/g, (l) => l.toUpperCase())}
                         size="small"
                         sx={{ bgcolor: '#333', color: '#fff' }}
                       />
-                      <Chip 
+                      <Chip
                         label={`${(scenario.confidence * 100).toFixed(0)}%`}
                         sx={{ bgcolor: getConfidenceColor(scenario.confidence), color: '#fff' }}
                       />
                     </Box>
-                    
+
                     <Button
                       variant="contained"
                       startIcon={<PlayArrow />}
@@ -342,39 +388,48 @@ const InteractiveSimulator = () => {
 
       {/* Current Simulation Results */}
       {currentSimulation && (
-        <Card elevation={3} id="simulation-results" sx={{ mb: 3, border: '3px solid #4caf50', bgcolor: '#1e1e1e' }}>
+        <Card
+          elevation={3}
+          id="simulation-results"
+          sx={{ mb: 3, border: '3px solid #4caf50', bgcolor: '#1e1e1e' }}
+        >
           <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}
+            >
               <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
                 🎯 Simulation Results
               </Typography>
-              <Chip 
+              <Chip
                 label={`Step ${currentSimulation.step}`}
                 sx={{ bgcolor: '#4caf50', color: '#fff', fontSize: '1rem' }}
               />
             </Box>
-            
+
             {/* Current State */}
             <Card variant="outlined" sx={{ mb: 3, bgcolor: '#2a2a2a', border: '1px solid #444' }}>
               <CardContent>
                 <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold', color: '#64b5f6' }}>
                   {currentSimulation.scenario_title}
                 </Typography>
-                
+
                 <Alert severity="info" sx={{ mb: 2 }}>
                   <Typography variant="body1">
                     <strong>Current State:</strong> {currentSimulation.current_state.title}
                   </Typography>
                 </Alert>
-                
+
                 <Typography variant="body1" sx={{ mb: 2, color: '#e0e0e0' }}>
                   {currentSimulation.current_state.description}
                 </Typography>
-                
+
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Chip 
+                  <Chip
                     label={`${(currentSimulation.current_state.confidence * 100).toFixed(0)}% Confidence`}
-                    sx={{ bgcolor: getConfidenceColor(currentSimulation.current_state.confidence), color: '#fff' }}
+                    sx={{
+                      bgcolor: getConfidenceColor(currentSimulation.current_state.confidence),
+                      color: '#fff',
+                    }}
                   />
                   <Typography variant="body2" sx={{ color: '#bbb' }}>
                     Based on real-time bot analysis
@@ -387,14 +442,32 @@ const InteractiveSimulator = () => {
             {currentSimulation.insights && currentSimulation.insights.length > 0 && (
               <Card variant="outlined" sx={{ mb: 3, bgcolor: '#2a2a2a', border: '1px solid #444' }}>
                 <CardContent>
-                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      mb: 2,
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: '#fff',
+                    }}
+                  >
                     <Insights /> Real-Time Data
                   </Typography>
-                  
+
                   <Grid container spacing={2}>
                     {currentSimulation.insights.map((insight, index) => (
                       <Grid item xs={6} sm={4} md={3} key={index}>
-                        <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', bgcolor: '#333', border: '1px solid #555' }}>
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            p: 2,
+                            textAlign: 'center',
+                            bgcolor: '#333',
+                            border: '1px solid #555',
+                          }}
+                        >
                           <Typography variant="body2" sx={{ color: '#bbb' }}>
                             {insight.title}
                           </Typography>
@@ -410,74 +483,115 @@ const InteractiveSimulator = () => {
             )}
 
             {/* Possible Actions */}
-            {currentSimulation.possible_actions && currentSimulation.possible_actions.length > 0 && (
-              <Card variant="outlined" sx={{ mb: 3, bgcolor: '#2a2a2a', border: '1px solid #444' }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
-                    🎮 Bot's Next Actions
-                    <Chip label="Choose One" size="small" sx={{ bgcolor: '#ff9800', color: '#fff' }} />
-                  </Typography>
-                  
-                  <Grid container spacing={2}>
-                    {currentSimulation.possible_actions.map((action, index) => (
-                      <Grid item xs={12} sm={6} key={action.id}>
-                        <Button
-                          variant="contained"
-                          fullWidth
-                          size="large"
-                          disabled={loading}
-                          sx={{ 
-                            p: 2, 
-                            textAlign: 'left',
-                            bgcolor: getRiskColor(action.risk_level),
-                            '&:hover': {
+            {currentSimulation.possible_actions &&
+              currentSimulation.possible_actions.length > 0 && (
+                <Card
+                  variant="outlined"
+                  sx={{ mb: 3, bgcolor: '#2a2a2a', border: '1px solid #444' }}
+                >
+                  <CardContent>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        mb: 2,
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: '#fff',
+                      }}
+                    >
+                      🎮 Bot's Next Actions
+                      <Chip
+                        label="Choose One"
+                        size="small"
+                        sx={{ bgcolor: '#ff9800', color: '#fff' }}
+                      />
+                    </Typography>
+
+                    <Grid container spacing={2}>
+                      {currentSimulation.possible_actions.map((action, index) => (
+                        <Grid item xs={12} sm={6} key={action.id}>
+                          <Button
+                            variant="contained"
+                            fullWidth
+                            size="large"
+                            disabled={loading}
+                            sx={{
+                              p: 2,
+                              textAlign: 'left',
                               bgcolor: getRiskColor(action.risk_level),
-                              opacity: 0.8
-                            }
-                          }}
-                          onClick={() => executeAction(action.id)}
-                        >
-                          <Box sx={{ width: '100%' }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                                {action.title}
+                              '&:hover': {
+                                bgcolor: getRiskColor(action.risk_level),
+                                opacity: 0.8,
+                              },
+                            }}
+                            onClick={() => executeAction(action.id)}
+                          >
+                            <Box sx={{ width: '100%' }}>
+                              <Box
+                                sx={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  mb: 1,
+                                }}
+                              >
+                                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                                  {action.title}
+                                </Typography>
+                                <Chip
+                                  label={action.risk_level.toUpperCase()}
+                                  size="small"
+                                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff' }}
+                                />
+                              </Box>
+
+                              <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                                {action.description}
                               </Typography>
-                              <Chip 
-                                label={action.risk_level.toUpperCase()} 
-                                size="small" 
-                                sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff' }}
-                              />
+
+                              <Box
+                                sx={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                                  ⏱️ {action.estimated_time}
+                                </Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                                  🎯 {(action.confidence * 100).toFixed(0)}% success
+                                </Typography>
+                              </Box>
                             </Box>
-                            
-                            <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
-                              {action.description}
-                            </Typography>
-                            
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                                ⏱️ {action.estimated_time}
-                              </Typography>
-                              <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                                🎯 {(action.confidence * 100).toFixed(0)}% success
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </Button>
-                      </Grid>
-                    ))}
-                  </Grid>
-                </CardContent>
-              </Card>
-            )}
+                          </Button>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </CardContent>
+                </Card>
+              )}
 
             {/* Next Steps Preview */}
             {currentSimulation.next_steps && currentSimulation.next_steps.length > 0 && (
               <Card variant="outlined" sx={{ bgcolor: '#2a2a2a', border: '1px solid #444' }}>
                 <CardContent>
-                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      mb: 2,
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: '#fff',
+                    }}
+                  >
                     <Timeline /> Expected Outcomes
                   </Typography>
-                  
+
                   <List>
                     {currentSimulation.next_steps.map((step, index) => (
                       <ListItem key={index}>
@@ -491,7 +605,7 @@ const InteractiveSimulator = () => {
                               <Typography variant="body2" sx={{ color: '#bbb' }}>
                                 {step.description}
                               </Typography>
-                              <Chip 
+                              <Chip
                                 label={`${(step.probability * 100).toFixed(0)}% probability`}
                                 size="small"
                                 sx={{ mt: 0.5, bgcolor: '#333', color: '#fff' }}
@@ -518,12 +632,8 @@ const InteractiveSimulator = () => {
               >
                 Continue Simulation
               </Button>
-              
-              <Button
-                variant="text"
-                onClick={resetSimulation}
-                disabled={loading}
-              >
+
+              <Button variant="text" onClick={resetSimulation} disabled={loading}>
                 Try Different Scenario
               </Button>
             </Box>
@@ -533,17 +643,24 @@ const InteractiveSimulator = () => {
 
       {/* Stats Footer */}
       {scenarioData?.stats && (
-        <Paper variant="outlined" sx={{ p: 2, mt: 3, bgcolor: '#1e1e1e', border: '1px solid #333' }}>
+        <Paper
+          variant="outlined"
+          sx={{ p: 2, mt: 3, bgcolor: '#1e1e1e', border: '1px solid #333' }}
+        >
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}>
-              <Typography variant="body2" sx={{ color: '#bbb' }}>Total Scenarios</Typography>
+              <Typography variant="body2" sx={{ color: '#bbb' }}>
+                Total Scenarios
+              </Typography>
               <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#fff' }}>
                 {scenarioData.stats.total_scenarios}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={3}>
-              <Typography variant="body2" sx={{ color: '#bbb' }}>Data Freshness</Typography>
-              <Chip 
+              <Typography variant="body2" sx={{ color: '#bbb' }}>
+                Data Freshness
+              </Typography>
+              <Chip
                 label={scenarioData.stats.data_freshness.toUpperCase()}
                 size="small"
                 sx={{ bgcolor: '#4caf50', color: '#fff' }}

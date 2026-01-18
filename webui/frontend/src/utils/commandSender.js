@@ -1,13 +1,13 @@
 /**
  * Command Sender Utility - Saga Pattern for Bot Commands
- * 
+ *
  * Provides robust command execution with:
  * - Optimistic UI updates
  * - Backend confirmation tracking
  * - Rollback on failure
  * - Toast notifications
  * - Timeout handling
- * 
+ *
  * Date: November 12, 2025
  * Part of: WebUI Robustness Plan Week 3
  */
@@ -21,7 +21,7 @@ export const COMMAND_TYPES = {
   STOP_BOT: 'stop',
   RESTART_BOT: 'restart',
   UPDATE_CONFIG: 'update_config',
-  CANCEL_ORDERS: 'cancel_orders'
+  CANCEL_ORDERS: 'cancel_orders',
 };
 
 // Command status
@@ -29,7 +29,7 @@ const COMMAND_STATUS = {
   PENDING: 'pending',
   CONFIRMED: 'confirmed',
   FAILED: 'failed',
-  TIMEOUT: 'timeout'
+  TIMEOUT: 'timeout',
 };
 
 // In-flight commands tracking
@@ -37,20 +37,14 @@ const inFlightCommands = new Map();
 
 /**
  * Send bot command with saga pattern
- * 
+ *
  * @param {string} command - Command type from COMMAND_TYPES
  * @param {object} params - Command parameters
  * @param {object} options - Options { timeout, onSuccess, onError, onTimeout }
  * @returns {Promise<object>} Command result
  */
 export async function sendBotCommand(command, params = {}, options = {}) {
-  const {
-    timeout = 30000,
-    onSuccess,
-    onError,
-    onTimeout,
-    optimisticUpdate
-  } = options;
+  const { timeout = 30000, onSuccess, onError, onTimeout, optimisticUpdate } = options;
 
   // Generate confirmation ID
   const confirmationId = uuidv4();
@@ -63,7 +57,7 @@ export async function sendBotCommand(command, params = {}, options = {}) {
     params,
     status: COMMAND_STATUS.PENDING,
     startTime,
-    timeout
+    timeout,
   };
 
   inFlightCommands.set(confirmationId, commandState);
@@ -79,11 +73,9 @@ export async function sendBotCommand(command, params = {}, options = {}) {
       apiClient.post('/api/bot/command', {
         command,
         params,
-        confirmation_id: confirmationId
+        confirmation_id: confirmationId,
       }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Command timeout')), timeout)
-      )
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Command timeout')), timeout)),
     ]);
 
     // Command confirmed
@@ -100,9 +92,8 @@ export async function sendBotCommand(command, params = {}, options = {}) {
       success: true,
       confirmationId,
       result: response,
-      duration: commandState.duration
+      duration: commandState.duration,
     };
-
   } catch (error) {
     const isTimeout = error.message === 'Command timeout';
 
@@ -122,14 +113,16 @@ export async function sendBotCommand(command, params = {}, options = {}) {
       confirmationId,
       error: error.message,
       isTimeout,
-      duration: commandState.duration
+      duration: commandState.duration,
     };
-
   } finally {
     // Clean up after 5 minutes
-    setTimeout(() => {
-      inFlightCommands.delete(confirmationId);
-    }, 5 * 60 * 1000);
+    setTimeout(
+      () => {
+        inFlightCommands.delete(confirmationId);
+      },
+      5 * 60 * 1000
+    );
   }
 }
 
@@ -149,7 +142,7 @@ export async function startBot(botName, options = {}) {
       onError: (error) => {
         console.error(`❌ Failed to start bot ${botName}:`, error);
         if (options.onError) options.onError(error);
-      }
+      },
     }
   );
 }
@@ -170,7 +163,7 @@ export async function stopBot(botName, options = {}) {
       onError: (error) => {
         console.error(`❌ Failed to stop bot ${botName}:`, error);
         if (options.onError) options.onError(error);
-      }
+      },
     }
   );
 }
@@ -192,7 +185,7 @@ export async function restartBot(botName, options = {}) {
       onError: (error) => {
         console.error(`❌ Failed to restart bot ${botName}:`, error);
         if (options.onError) options.onError(error);
-      }
+      },
     }
   );
 }
@@ -213,7 +206,7 @@ export async function updateBotConfig(botName, configUpdates, options = {}) {
       onError: (error) => {
         console.error(`❌ Failed to update config for ${botName}:`, error);
         if (options.onError) options.onError(error);
-      }
+      },
     }
   );
 }
@@ -234,7 +227,7 @@ export async function cancelAllOrders(botName, options = {}) {
       onError: (error) => {
         console.error(`❌ Failed to cancel orders for ${botName}:`, error);
         if (options.onError) options.onError(error);
-      }
+      },
     }
   );
 }
@@ -258,16 +251,17 @@ export function getAllInFlightCommands() {
  */
 export function getCommandStats() {
   const commands = Array.from(inFlightCommands.values());
-  
+
   return {
     total: commands.length,
-    pending: commands.filter(c => c.status === COMMAND_STATUS.PENDING).length,
-    confirmed: commands.filter(c => c.status === COMMAND_STATUS.CONFIRMED).length,
-    failed: commands.filter(c => c.status === COMMAND_STATUS.FAILED).length,
-    timeout: commands.filter(c => c.status === COMMAND_STATUS.TIMEOUT).length,
-    avgDuration: commands.length > 0
-      ? commands.reduce((sum, c) => sum + (c.duration || 0), 0) / commands.length
-      : 0
+    pending: commands.filter((c) => c.status === COMMAND_STATUS.PENDING).length,
+    confirmed: commands.filter((c) => c.status === COMMAND_STATUS.CONFIRMED).length,
+    failed: commands.filter((c) => c.status === COMMAND_STATUS.FAILED).length,
+    timeout: commands.filter((c) => c.status === COMMAND_STATUS.TIMEOUT).length,
+    avgDuration:
+      commands.length > 0
+        ? commands.reduce((sum, c) => sum + (c.duration || 0), 0) / commands.length
+        : 0,
   };
 }
 
@@ -281,5 +275,5 @@ export default {
   getCommandStatus,
   getAllInFlightCommands,
   getCommandStats,
-  COMMAND_TYPES
+  COMMAND_TYPES,
 };

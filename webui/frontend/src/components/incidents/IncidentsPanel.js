@@ -1,14 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Drawer,
-  Badge,
-  IconButton,
-  Paper,
-  Typography,
-  Box,
-  Chip,
-  Alert,
-} from '@mui/material';
+import { Drawer, Badge, IconButton, Paper, Typography, Box, Chip, Alert } from '@mui/material';
 import {
   Error as ErrorIcon,
   Warning as WarningIcon,
@@ -51,9 +42,7 @@ const IncidentsPanel = () => {
     });
 
     socket.on('error_updated', (error) => {
-      setErrors((prev) =>
-        prev.map((e) => (e.id === error.id ? error : e))
-      );
+      setErrors((prev) => prev.map((e) => (e.id === error.id ? error : e)));
       fetchStatistics(); // Re-fetch stats for simplicity
     });
 
@@ -89,11 +78,9 @@ const IncidentsPanel = () => {
     setStatistics((prev) => {
       const newStats = { ...prev };
       const delta = action === 'add' ? 1 : -1;
-      
-      newStats.by_severity[error.severity] =
-        (newStats.by_severity[error.severity] || 0) + delta;
-      newStats.by_status[error.status] =
-        (newStats.by_status[error.status] || 0) + delta;
+
+      newStats.by_severity[error.severity] = (newStats.by_severity[error.severity] || 0) + delta;
+      newStats.by_status[error.status] = (newStats.by_status[error.status] || 0) + delta;
       newStats.total = newStats.total + delta;
 
       return newStats;
@@ -151,23 +138,14 @@ const IncidentsPanel = () => {
               color: hasCritical ? 'error.contrastText' : 'text.primary',
             }}
           >
-            <Badge
-              badgeContent={openCount}
-              color={hasCritical ? 'error' : 'warning'}
-              max={99}
-            >
+            <Badge badgeContent={openCount} color={hasCritical ? 'error' : 'warning'} max={99}>
               {getSeverityIcon()}
             </Badge>
             <Typography variant="body2" fontWeight={500}>
               {openCount} {openCount === 1 ? 'Incident' : 'Incidents'}
             </Typography>
             {hasCritical && (
-              <Chip
-                label="CRITICAL"
-                size="small"
-                color="error"
-                sx={{ fontWeight: 700 }}
-              />
+              <Chip label="CRITICAL" size="small" color="error" sx={{ fontWeight: 700 }} />
             )}
           </Box>
         </Paper>
@@ -217,8 +195,8 @@ const IncidentsPanel = () => {
             <Alert severity="error" sx={{ m: 2, mb: 1 }}>
               <Typography variant="body2" fontWeight={500}>
                 {statistics.by_severity.critical} critical{' '}
-                {statistics.by_severity.critical === 1 ? 'issue' : 'issues'}{' '}
-                requiring immediate attention
+                {statistics.by_severity.critical === 1 ? 'issue' : 'issues'} requiring immediate
+                attention
               </Typography>
             </Alert>
           )}

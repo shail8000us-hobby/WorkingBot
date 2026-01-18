@@ -1,16 +1,16 @@
 /**
  * Idle Detection Hook
- * 
+ *
  * Detects user inactivity and pauses API calls/polling to save CPU.
  * Resumes on mouse movement, keyboard input, or scroll.
- * 
+ *
  * Features:
  * - Configurable idle timeout (default: 60 seconds)
  * - Multiple activity detection (mouse, keyboard, scroll, touch)
  * - Automatic pause/resume of polling
  * - Visual indicator when paused
  * - Tab visibility detection
- * 
+ *
  * Usage:
  * const { isIdle, isActive } = useIdleDetection({ timeout: 60000 });
  */
@@ -31,14 +31,14 @@ export function useIdleDetection(options = {}) {
     timeout = 60000, // 60 seconds default
     enabled = true,
     onIdle,
-    onActive
+    onActive,
   } = options;
 
   const [isIdle, setIsIdle] = useState(false);
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
   const [timeSinceActivity, setTimeSinceActivity] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
-  
+
   const idleTimerRef = useRef(null);
   const onIdleRef = useRef(onIdle);
   const onActiveRef = useRef(onActive);
@@ -54,13 +54,13 @@ export function useIdleDetection(options = {}) {
     const now = Date.now();
     setLastActivityTime(now);
     setTimeSinceActivity(0);
-    
+
     // If was idle, trigger onActive callback
     if (isIdle && onActiveRef.current) {
       console.log('👤 User is back - resuming activity');
       onActiveRef.current();
     }
-    
+
     setIsIdle(false);
 
     // Clear existing timer
@@ -83,7 +83,7 @@ export function useIdleDetection(options = {}) {
     const handleVisibilityChange = () => {
       const visible = !document.hidden;
       setIsTabVisible(visible);
-      
+
       if (visible) {
         console.log('👁️ Tab is visible - resuming');
         handleActivity();
@@ -104,14 +104,7 @@ export function useIdleDetection(options = {}) {
   useEffect(() => {
     if (!enabled) return;
 
-    const events = [
-      'mousedown',
-      'mousemove',
-      'keydown',
-      'scroll',
-      'touchstart',
-      'click'
-    ];
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
 
     // Throttle activity handler to avoid excessive calls
     let throttleTimeout = null;
@@ -124,7 +117,7 @@ export function useIdleDetection(options = {}) {
       }
     };
 
-    events.forEach(event => {
+    events.forEach((event) => {
       document.addEventListener(event, throttledActivity, { passive: true });
     });
 
@@ -132,7 +125,7 @@ export function useIdleDetection(options = {}) {
     handleActivity();
 
     return () => {
-      events.forEach(event => {
+      events.forEach((event) => {
         document.removeEventListener(event, throttledActivity);
       });
       if (idleTimerRef.current) {
@@ -159,7 +152,7 @@ export function useIdleDetection(options = {}) {
     isActive: !isIdle && isTabVisible,
     lastActivityTime,
     timeSinceActivity,
-    isTabVisible
+    isTabVisible,
   };
 }
 
@@ -199,4 +192,3 @@ export function useSmartPolling(callback, interval = 30000, options = {}) {
 }
 
 export default useIdleDetection;
-

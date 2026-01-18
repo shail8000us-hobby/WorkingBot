@@ -18,7 +18,7 @@ import {
   Info,
   LineChart,
   FileWarning,
-  Layers
+  Layers,
 } from 'lucide-react';
 import api from '../utils/apiShim';
 import { useSocket } from '../hooks/useSocket';
@@ -32,7 +32,7 @@ const tabs = [
   { id: 'circuit', label: 'Circuit Breakers', icon: PowerOff },
   { id: 'volatility', label: 'Volatility Monitor', icon: Activity },
   { id: 'confirmation', label: 'Confirmation Guard', icon: Lock },
-  { id: 'audit', label: 'Audit & Hysteresis', icon: ClipboardList }
+  { id: 'audit', label: 'Audit & Hysteresis', icon: ClipboardList },
 ];
 
 const formatCurrency = (value, currency = 'INR') => {
@@ -40,7 +40,7 @@ const formatCurrency = (value, currency = 'INR') => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0
+    maximumFractionDigits: 0,
   }).format(Number(value) || 0);
 };
 
@@ -61,21 +61,38 @@ const formatTimestamp = (isoString) => {
     minute: '2-digit',
     second: '2-digit',
     hour12: true,
-    timeZone: 'Asia/Kolkata'
+    timeZone: 'Asia/Kolkata',
   }).format(date);
 };
 
 const freshnessDescriptor = (isoString) => {
-  if (!isoString) return { label: 'No data', tone: 'bg-rose-500/10 text-rose-200', icon: <AlertTriangle className="h-3.5 w-3.5" /> };
+  if (!isoString)
+    return {
+      label: 'No data',
+      tone: 'bg-rose-500/10 text-rose-200',
+      icon: <AlertTriangle className="h-3.5 w-3.5" />,
+    };
   const diff = Date.now() - new Date(isoString).getTime();
   const minutes = diff / 60000;
   if (minutes < 5) {
-    return { label: 'Fresh', tone: 'bg-emerald-500/15 text-emerald-200', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
+    return {
+      label: 'Fresh',
+      tone: 'bg-emerald-500/15 text-emerald-200',
+      icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+    };
   }
   if (minutes < 15) {
-    return { label: 'Recent', tone: 'bg-amber-500/15 text-amber-200', icon: <Timer className="h-3.5 w-3.5" /> };
+    return {
+      label: 'Recent',
+      tone: 'bg-amber-500/15 text-amber-200',
+      icon: <Timer className="h-3.5 w-3.5" />,
+    };
   }
-  return { label: 'Stale', tone: 'bg-rose-500/15 text-rose-200', icon: <AlertTriangle className="h-3.5 w-3.5" /> };
+  return {
+    label: 'Stale',
+    tone: 'bg-rose-500/15 text-rose-200',
+    icon: <AlertTriangle className="h-3.5 w-3.5" />,
+  };
 };
 
 const progressTone = (ratio) => {
@@ -104,7 +121,12 @@ const RobustnessPanel = () => {
   const [editingLoss, setEditingLoss] = useState(false);
   const [savingLoss, setSavingLoss] = useState(false);
 
-  const [volForm, setVolForm] = useState({ max_iv: '', max_rv: '', max_spread: '', check_interval: '' });
+  const [volForm, setVolForm] = useState({
+    max_iv: '',
+    max_rv: '',
+    max_spread: '',
+    check_interval: '',
+  });
   const [editingVol, setEditingVol] = useState(false);
   const [savingVol, setSavingVol] = useState(false);
 
@@ -123,7 +145,7 @@ const RobustnessPanel = () => {
         auditRes,
         hysteresisRes,
         volatilityRes,
-        confirmationRes
+        confirmationRes,
       ] = await Promise.all([
         api.get('/api/robustness/gatekeeper/status').catch(() => ({ data: { success: false } })),
         api.get('/api/robustness/loss-limits').catch(() => ({ data: { success: false } })),
@@ -131,7 +153,9 @@ const RobustnessPanel = () => {
         api.get('/api/robustness/audit/report?days=7').catch(() => ({ data: { success: false } })),
         api.get('/api/robustness/guardian/hysteresis').catch(() => ({ data: { success: false } })),
         api.get('/api/robustness/volatility/status').catch(() => ({ data: { success: false } })),
-        api.get('/api/robustness/confirmation-guard/status').catch(() => ({ data: { success: false } }))
+        api
+          .get('/api/robustness/confirmation-guard/status')
+          .catch(() => ({ data: { success: false } })),
       ]);
 
       if (gatekeeperRes.data.success) setGatekeeper(gatekeeperRes.data.stats);
@@ -146,7 +170,7 @@ const RobustnessPanel = () => {
       if (limitsRes.data.success) {
         setLossForm({
           trader: String(limitsRes.data.config?.trader_limit_inr ?? ''),
-          guardian: String(limitsRes.data.config?.guardian_limit_inr ?? '')
+          guardian: String(limitsRes.data.config?.guardian_limit_inr ?? ''),
         });
       }
 
@@ -156,7 +180,7 @@ const RobustnessPanel = () => {
           max_iv: status?.thresholds?.max_iv ?? '',
           max_rv: status?.thresholds?.max_rv ?? '',
           max_spread: status?.thresholds?.max_spread ?? '',
-          check_interval: status?.config?.check_interval ?? ''
+          check_interval: status?.config?.check_interval ?? '',
         });
       }
     } catch (error) {
@@ -170,17 +194,19 @@ const RobustnessPanel = () => {
   useEffect(() => {
     if (!isActive) {
       console.log('⏸️ Robustness: Paused (user idle)');
-      console.log('✅ SAFETY: Trading bot, safety mechanisms, and all server processes continue running!');
+      console.log(
+        '✅ SAFETY: Trading bot, safety mechanisms, and all server processes continue running!'
+      );
       return; // Don't poll when idle - ONLY affects browser visual updates
     }
 
     fetchAllData();
-    
+
     // Auto-refresh every 30 seconds
     const refreshInterval = setInterval(() => {
       fetchAllData();
     }, 30000);
-    
+
     return () => clearInterval(refreshInterval);
   }, [fetchAllData, isActive]);
 
@@ -205,7 +231,7 @@ const RobustnessPanel = () => {
   useEffect(() => {
     if (!isActive) return; // Pause countdown when idle
     if (!volatility?.last_update || !volatility?.config?.check_interval) return;
-    
+
     const updateInterval = volatility.config.check_interval;
     const lastUpdate = new Date(volatility.last_update);
     const nextUpdate = new Date(lastUpdate.getTime() + updateInterval * 1000);
@@ -272,7 +298,7 @@ const RobustnessPanel = () => {
       const payload = {
         MAX_ACCOUNT_LOSS_INR: lossForm.trader,
         GUARDIAN_MAX_ACCOUNT_LOSS_INR: lossForm.guardian,
-        confirmed: true  // Add confirmation flag to bypass backend confirmation requirement
+        confirmed: true, // Add confirmation flag to bypass backend confirmation requirement
       };
       const response = await api.post('/api/config/update', payload);
       if (response.data?.success) {
@@ -327,8 +353,9 @@ const RobustnessPanel = () => {
             Advanced safety features that make GridBot production-ready
           </h1>
           <p className="max-w-2xl text-sm text-slate-400">
-            Safety Gatekeeper, Guardian loss limits, volatility-based circuit breakers, and confirmation guards work together
-            to prevent runaway losses, double fills, or chaotic behavior during exchange incidents.
+            Safety Gatekeeper, Guardian loss limits, volatility-based circuit breakers, and
+            confirmation guards work together to prevent runaway losses, double fills, or chaotic
+            behavior during exchange incidents.
           </p>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <Clock className="h-4 w-4 text-sky-300" />
@@ -349,12 +376,17 @@ const RobustnessPanel = () => {
             </p>
           </div>
           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-            <p className="text-xs uppercase tracking-widest text-emerald-200/70">Guardian Loss Ceiling</p>
+            <p className="text-xs uppercase tracking-widest text-emerald-200/70">
+              Guardian Loss Ceiling
+            </p>
             <p className="mt-2 text-lg font-semibold text-emerald-100">
               {formatCurrency(lossLimits?.guardian_limit_inr)}
             </p>
             <p className="text-xs text-emerald-200/70">
-              Buffer vs trader: {formatCurrency((lossLimits?.trader_limit_inr || 0) - (lossLimits?.guardian_limit_inr || 0))}
+              Buffer vs trader:{' '}
+              {formatCurrency(
+                (lossLimits?.trader_limit_inr || 0) - (lossLimits?.guardian_limit_inr || 0)
+              )}
             </p>
           </div>
         </div>
@@ -396,19 +428,26 @@ const RobustnessPanel = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-100">Safety Gatekeeper</h2>
               <p className="text-sm text-emerald-200/80">
-                Every order passes through a kill-switch before reaching the exchange. During emergencies, blocks all new placements automatically.
+                Every order passes through a kill-switch before reaching the exchange. During
+                emergencies, blocks all new placements automatically.
               </p>
             </div>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <MetricCard label="Total Checks" value={formatNumber(gatekeeper?.checks || 0)} tone="text-slate-100" />
+            <MetricCard
+              label="Total Checks"
+              value={formatNumber(gatekeeper?.checks || 0)}
+              tone="text-slate-100"
+            />
             <MetricCard
               label="Blocked Orders"
               value={formatNumber(gatekeeper?.blocks || 0)}
               tone={gatekeeper?.blocks ? 'text-rose-200' : 'text-slate-100'}
             />
             <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/60 p-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300/60">Block Rate</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300/60">
+                Block Rate
+              </p>
               <p className="mt-2 text-lg font-semibold text-emerald-100">
                 {((gatekeeper?.block_rate || 0) * 100).toFixed(2)}%
               </p>
@@ -439,9 +478,16 @@ const RobustnessPanel = () => {
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               {Object.entries(auditReport.by_origin || {}).map(([origin, stats]) => (
-                <div key={origin} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300">
-                  <p className="text-xs uppercase tracking-widest text-slate-500">{origin.toUpperCase()}</p>
-                  <p className="mt-2 text-lg font-semibold text-slate-100">{formatNumber(stats.total)}</p>
+                <div
+                  key={origin}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300"
+                >
+                  <p className="text-xs uppercase tracking-widest text-slate-500">
+                    {origin.toUpperCase()}
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-slate-100">
+                    {formatNumber(stats.total)}
+                  </p>
                   <div className="mt-2 flex gap-3 text-xs text-slate-400">
                     <span>BUY {formatNumber(stats.buy || 0)}</span>
                     <span>TP {formatNumber(stats.tp || 0)}</span>
@@ -484,7 +530,8 @@ const RobustnessPanel = () => {
             Last decision: {formatTimestamp(gatekeeper?.last_check)}
           </p>
           <p className="mt-3 text-xs text-sky-200/90">
-            Gatekeeper feeds (Guardian, Volatility, Confirmation Guard) must stay green for trading to continue.
+            Gatekeeper feeds (Guardian, Volatility, Confirmation Guard) must stay green for trading
+            to continue.
           </p>
         </div>
       </div>
@@ -502,7 +549,8 @@ const RobustnessPanel = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-100">Loss Ceiling Enforcement</h2>
               <p className="text-sm text-emerald-200/80">
-                Guardian closes every position once cumulative losses hit the INR cap. Trader limit is the last resort.
+                Guardian closes every position once cumulative losses hit the INR cap. Trader limit
+                is the last resort.
               </p>
             </div>
           </div>
@@ -515,7 +563,9 @@ const RobustnessPanel = () => {
               </p>
             </div>
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-              <p className="text-xs uppercase tracking-widest text-emerald-200/80">Guardian Limit</p>
+              <p className="text-xs uppercase tracking-widest text-emerald-200/80">
+                Guardian Limit
+              </p>
               <p className="mt-2 text-2xl font-semibold text-emerald-100">
                 {formatCurrency(lossLimits?.guardian_limit_inr)}
               </p>
@@ -570,7 +620,7 @@ const RobustnessPanel = () => {
                     setEditingLoss(false);
                     setLossForm({
                       trader: String(lossLimits?.trader_limit_inr ?? ''),
-                      guardian: String(lossLimits?.guardian_limit_inr ?? '')
+                      guardian: String(lossLimits?.guardian_limit_inr ?? ''),
                     });
                   }}
                   disabled={savingLoss}
@@ -615,7 +665,9 @@ const RobustnessPanel = () => {
                 <input
                   type="number"
                   value={lossForm.trader}
-                  onChange={(event) => setLossForm((prev) => ({ ...prev, trader: event.target.value }))}
+                  onChange={(event) =>
+                    setLossForm((prev) => ({ ...prev, trader: event.target.value }))
+                  }
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
                 />
               </div>
@@ -626,7 +678,9 @@ const RobustnessPanel = () => {
                 <input
                   type="number"
                   value={lossForm.guardian}
-                  onChange={(event) => setLossForm((prev) => ({ ...prev, guardian: event.target.value }))}
+                  onChange={(event) =>
+                    setLossForm((prev) => ({ ...prev, guardian: event.target.value }))
+                  }
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
                 />
               </div>
@@ -645,20 +699,28 @@ const RobustnessPanel = () => {
               <div>
                 <h3 className="text-lg font-semibold text-slate-100">Guardian Hysteresis</h3>
                 <p className="text-sm text-amber-200/80">
-                  Prevents alert spam by adding a reset buffer once 80/90/100% drawdown alerts trigger.
+                  Prevents alert spam by adding a reset buffer once 80/90/100% drawdown alerts
+                  trigger.
                 </p>
               </div>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               {Object.entries(hysteresis).map(([level, config]) => (
-                <div key={level} className="rounded-2xl border border-amber-500/30 bg-slate-950/60 p-3 text-sm text-slate-200">
-                  <p className="text-xs uppercase tracking-widest text-amber-300/70">{level}% Threshold</p>
+                <div
+                  key={level}
+                  className="rounded-2xl border border-amber-500/30 bg-slate-950/60 p-3 text-sm text-slate-200"
+                >
+                  <p className="text-xs uppercase tracking-widest text-amber-300/70">
+                    {level}% Threshold
+                  </p>
                   <p className="mt-3 text-xs text-slate-400">Trigger</p>
                   <p className="text-sm font-semibold text-rose-200">{config.trigger}%</p>
                   <p className="mt-2 text-xs text-slate-400">Reset</p>
                   <p className="text-sm font-semibold text-emerald-200">{config.reset}%</p>
                   <p className="mt-2 text-xs text-slate-400">Buffer</p>
-                  <p className="text-sm font-semibold text-slate-100">{config.trigger - config.reset}%</p>
+                  <p className="text-sm font-semibold text-slate-100">
+                    {config.trigger - config.reset}%
+                  </p>
                 </div>
               ))}
             </div>
@@ -697,7 +759,8 @@ const RobustnessPanel = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-100">Circuit Breakers</h2>
               <p className="text-sm text-amber-200/80">
-                Throttles noisy API endpoints during exchange outages. Automatically reopens once responses normalize.
+                Throttles noisy API endpoints during exchange outages. Automatically reopens once
+                responses normalize.
               </p>
             </div>
           </div>
@@ -716,7 +779,8 @@ const RobustnessPanel = () => {
 
       {Object.keys(circuitBreakers || {}).length === 0 ? (
         <div className="rounded-3xl border border-slate-800/60 bg-slate-950/60 p-6 text-sm text-slate-400">
-          No circuit breaker activity yet. They will appear here once the bot begins making live API calls.
+          No circuit breaker activity yet. They will appear here once the bot begins making live API
+          calls.
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -743,9 +807,21 @@ const RobustnessPanel = () => {
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-300">
                 <MetricBlock label="Total Calls" value={formatNumber(stats.total_calls)} />
-                <MetricBlock label="Failures" value={formatNumber(stats.total_failures)} tone="text-rose-200" />
-                <MetricBlock label="Successes" value={formatNumber(stats.total_successes)} tone="text-emerald-200" />
-                <MetricBlock label="Blocks" value={formatNumber(stats.total_blocks)} tone="text-amber-200" />
+                <MetricBlock
+                  label="Failures"
+                  value={formatNumber(stats.total_failures)}
+                  tone="text-rose-200"
+                />
+                <MetricBlock
+                  label="Successes"
+                  value={formatNumber(stats.total_successes)}
+                  tone="text-emerald-200"
+                />
+                <MetricBlock
+                  label="Blocks"
+                  value={formatNumber(stats.total_blocks)}
+                  tone="text-amber-200"
+                />
               </div>
 
               <div className="mt-4">
@@ -779,9 +855,12 @@ const RobustnessPanel = () => {
               <Activity className="h-6 w-6" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-100">Volatility Monitor (IV vs RV 1h)</h2>
+              <h2 className="text-lg font-semibold text-slate-100">
+                Volatility Monitor (IV vs RV 1h)
+              </h2>
               <p className="text-sm text-sky-200/80">
-                Automatically pauses trading when implied or realized volatility (1-hour) exceeds safe thresholds for grid strategies.
+                Automatically pauses trading when implied or realized volatility (1-hour) exceeds
+                safe thresholds for grid strategies.
               </p>
             </div>
           </div>
@@ -819,7 +898,9 @@ const RobustnessPanel = () => {
                   : 'N/A'
               }
               limit={`±${volatility.thresholds?.max_spread ?? '–'}%`}
-              healthy={Math.abs(volatility.spread || 0) <= (volatility.thresholds?.max_spread || Infinity)}
+              healthy={
+                Math.abs(volatility.spread || 0) <= (volatility.thresholds?.max_spread || Infinity)
+              }
             />
             <div className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 text-sm text-slate-300">
               <p className="text-xs uppercase tracking-widest text-slate-500">Status</p>
@@ -884,7 +965,7 @@ const RobustnessPanel = () => {
                         max_iv: volatility?.thresholds?.max_iv ?? '',
                         max_rv: volatility?.thresholds?.max_rv ?? '',
                         max_spread: volatility?.thresholds?.max_spread ?? '',
-                        check_interval: volatility?.config?.check_interval ?? ''
+                        check_interval: volatility?.config?.check_interval ?? '',
                       });
                     }}
                     className="rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-500"
@@ -909,30 +990,44 @@ const RobustnessPanel = () => {
               <div className="mt-4 grid gap-3 sm:grid-cols-4">
                 <MetricBlock label="Max IV" value={`${volatility.thresholds?.max_iv ?? '—'}%`} />
                 <MetricBlock label="Max RV" value={`${volatility.thresholds?.max_rv ?? '—'}%`} />
-                <MetricBlock label="Max Spread" value={`±${volatility.thresholds?.max_spread ?? '—'}%`} />
-                <MetricBlock label="Check Interval" value={`${volatility.config?.check_interval ?? '—'}s`} />
+                <MetricBlock
+                  label="Max Spread"
+                  value={`±${volatility.thresholds?.max_spread ?? '—'}%`}
+                />
+                <MetricBlock
+                  label="Check Interval"
+                  value={`${volatility.config?.check_interval ?? '—'}s`}
+                />
               </div>
             ) : (
               <div className="mt-4 grid gap-4 sm:grid-cols-4">
                 <ConfigInput
                   label="Max IV (%)"
                   value={volForm.max_iv}
-                  onChange={(event) => setVolForm((prev) => ({ ...prev, max_iv: event.target.value }))}
+                  onChange={(event) =>
+                    setVolForm((prev) => ({ ...prev, max_iv: event.target.value }))
+                  }
                 />
                 <ConfigInput
                   label="Max RV (%)"
                   value={volForm.max_rv}
-                  onChange={(event) => setVolForm((prev) => ({ ...prev, max_rv: event.target.value }))}
+                  onChange={(event) =>
+                    setVolForm((prev) => ({ ...prev, max_rv: event.target.value }))
+                  }
                 />
                 <ConfigInput
                   label="Max Spread (%)"
                   value={volForm.max_spread}
-                  onChange={(event) => setVolForm((prev) => ({ ...prev, max_spread: event.target.value }))}
+                  onChange={(event) =>
+                    setVolForm((prev) => ({ ...prev, max_spread: event.target.value }))
+                  }
                 />
                 <ConfigInput
                   label="Check Interval (s)"
                   value={volForm.check_interval}
-                  onChange={(event) => setVolForm((prev) => ({ ...prev, check_interval: event.target.value }))}
+                  onChange={(event) =>
+                    setVolForm((prev) => ({ ...prev, check_interval: event.target.value }))
+                  }
                 />
               </div>
             )}
@@ -957,13 +1052,17 @@ const RobustnessPanel = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-100">Confirmation Guard</h2>
               <p className="text-sm text-slate-300/80">
-                Waits for exchange confirmations before allowing new orders. Prevents double fills during degraded network conditions.
+                Waits for exchange confirmations before allowing new orders. Prevents double fills
+                during degraded network conditions.
               </p>
             </div>
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <MetricBlock label="Registered Orders" value={formatNumber(confirmationGuard?.total_orders_registered)} />
+            <MetricBlock
+              label="Registered Orders"
+              value={formatNumber(confirmationGuard?.total_orders_registered)}
+            />
             <MetricBlock
               label="Pending Confirmations"
               value={formatNumber(confirmationGuard?.pending_orders_count)}
@@ -982,8 +1081,14 @@ const RobustnessPanel = () => {
           </div>
 
           <div className="mt-4 space-y-2 text-xs text-slate-400">
-            <DetailRow label="Poll Interval" value={`${confirmationGuard?.poll_interval || '—'}s`} />
-            <DetailRow label="Chaos Threshold" value={`${confirmationGuard?.chaos_threshold || '—'}s`} />
+            <DetailRow
+              label="Poll Interval"
+              value={`${confirmationGuard?.poll_interval || '—'}s`}
+            />
+            <DetailRow
+              label="Chaos Threshold"
+              value={`${confirmationGuard?.chaos_threshold || '—'}s`}
+            />
             <DetailRow label="Enabled" value={confirmationGuard?.enabled ? 'Yes' : 'No'} />
           </div>
         </div>
@@ -991,7 +1096,8 @@ const RobustnessPanel = () => {
         <div className="rounded-3xl border border-rose-500/25 bg-rose-500/5 p-5">
           <p className="text-xs uppercase tracking-widest text-rose-200/70">Emergency Action</p>
           <p className="mt-2 text-sm text-rose-100">
-            Use reset only when the guard has deadlocked due to exchange outages. It clears pending confirmations and allows new orders.
+            Use reset only when the guard has deadlocked due to exchange outages. It clears pending
+            confirmations and allows new orders.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <button
@@ -1018,19 +1124,17 @@ const RobustnessPanel = () => {
                   key={`${order.order_id}-${index}`}
                   className={clsx(
                     'rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300',
-                    order.wait_time_seconds > confirmationGuard.chaos_threshold && 'border-rose-500/50 bg-rose-500/10 text-rose-100'
+                    order.wait_time_seconds > confirmationGuard.chaos_threshold &&
+                      'border-rose-500/50 bg-rose-500/10 text-rose-100'
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <p className="font-semibold text-slate-100">
-                      {order.order_id}
-                    </p>
-                    <span className="text-xs text-slate-400">
-                      {order.exchange}
-                    </span>
+                    <p className="font-semibold text-slate-100">{order.order_id}</p>
+                    <span className="text-xs text-slate-400">{order.exchange}</span>
                   </div>
                   <p className="mt-2 text-xs text-slate-400">
-                    Wait time: {order.wait_time_seconds}s • Side: {order.side} • Qty: {order.quantity}
+                    Wait time: {order.wait_time_seconds}s • Side: {order.side} • Qty:{' '}
+                    {order.quantity}
                   </p>
                   {order.wait_time_seconds > confirmationGuard.chaos_threshold && (
                     <p className="mt-2 text-xs text-rose-200/80">
@@ -1041,7 +1145,9 @@ const RobustnessPanel = () => {
               ))}
             </div>
           ) : (
-            <p className="mt-3 text-sm text-slate-400">No pending confirmations. Guard is allowing new orders.</p>
+            <p className="mt-3 text-sm text-slate-400">
+              No pending confirmations. Guard is allowing new orders.
+            </p>
           )}
         </div>
 
@@ -1073,7 +1179,9 @@ const RobustnessPanel = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-widest text-slate-500">Order Audit</p>
-              <h3 className="text-lg font-semibold text-slate-100">Tagged order provenance (7 days)</h3>
+              <h3 className="text-lg font-semibold text-slate-100">
+                Tagged order provenance (7 days)
+              </h3>
               <p className="mt-1 text-xs text-slate-500">
                 Ensures every order has a clear origin (grid, recovery, manual) for post-mortems.
               </p>
@@ -1090,7 +1198,9 @@ const RobustnessPanel = () => {
                   className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300"
                 >
                   <div>
-                    <p className="text-xs uppercase tracking-widest text-slate-500">{origin.toUpperCase()}</p>
+                    <p className="text-xs uppercase tracking-widest text-slate-500">
+                      {origin.toUpperCase()}
+                    </p>
                     <p className="mt-1 text-lg font-semibold text-slate-100">
                       {formatNumber(stats.total)}
                     </p>
@@ -1116,16 +1226,23 @@ const RobustnessPanel = () => {
               <FileWarning className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-widest text-amber-200/70">Guardian Hysteresis</p>
+              <p className="text-xs uppercase tracking-widest text-amber-200/70">
+                Guardian Hysteresis
+              </p>
               <h3 className="text-lg font-semibold text-slate-100">Alert dampening map</h3>
             </div>
           </div>
           {hysteresis ? (
             <div className="mt-4 space-y-3 text-sm text-slate-200">
               {Object.entries(hysteresis).map(([level, config]) => (
-                <div key={level} className="rounded-2xl border border-amber-500/30 bg-slate-950/60 p-3">
+                <div
+                  key={level}
+                  className="rounded-2xl border border-amber-500/30 bg-slate-950/60 p-3"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs uppercase tracking-widest text-amber-300/70">{level}% alert</span>
+                    <span className="text-xs uppercase tracking-widest text-amber-300/70">
+                      {level}% alert
+                    </span>
                     <span className="text-xs text-slate-400">
                       Buffer {config.trigger - config.reset}%
                     </span>
@@ -1237,7 +1354,9 @@ const InsightPoint = ({ title, description }) => (
 
 const ConfigInput = ({ label, value, onChange }) => (
   <div className="space-y-2">
-    <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">{label}</label>
+    <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+      {label}
+    </label>
     <input
       type="number"
       value={value}
@@ -1264,7 +1383,9 @@ const VolMetric = ({ label, value, limit, healthy }) => (
     )}
   >
     <p className="text-xs uppercase tracking-widest text-slate-500">{label}</p>
-    <p className={clsx('mt-2 text-xl font-semibold', healthy ? 'text-slate-100' : 'text-rose-200')}>{value}</p>
+    <p className={clsx('mt-2 text-xl font-semibold', healthy ? 'text-slate-100' : 'text-rose-200')}>
+      {value}
+    </p>
     <p className="text-xs text-slate-500">Limit: {limit}</p>
   </div>
 );

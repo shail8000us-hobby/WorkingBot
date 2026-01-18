@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
 import {
-  IconButton, Popover, Box, Typography, Divider, useTheme, useMediaQuery,
-  Dialog, DialogTitle, DialogContent, DialogActions, Button
+  IconButton,
+  Popover,
+  Box,
+  Typography,
+  Divider,
+  useTheme,
+  useMediaQuery,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
 } from '@mui/material';
 import { HelpOutline, Warning, CheckCircle, Info } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
@@ -9,10 +19,10 @@ import helpContent from '../helpContent.json';
 
 /**
  * HelpIcon Component
- * 
+ *
  * Displays a ? icon next to any control. When clicked, shows a helpful popover/dialog
  * with detailed explanation of what the setting does, its impact, warnings, etc.
- * 
+ *
  * @param {string} configKey - The configuration key (e.g., 'GUARDIAN_ENABLED')
  * @param {string} size - Icon size: 'small', 'medium', 'large'
  */
@@ -53,8 +63,8 @@ function HelpIcon({ configKey, size = 'small' }) {
             opacity: 0.7,
             '&:hover': {
               opacity: 1,
-              backgroundColor: 'rgba(0, 230, 118, 0.1)'
-            }
+              backgroundColor: 'rgba(0, 230, 118, 0.1)',
+            },
           }}
         >
           <HelpOutline fontSize={size} />
@@ -68,8 +78,9 @@ function HelpIcon({ configKey, size = 'small' }) {
           PaperProps={{
             sx: {
               bgcolor: 'background.paper',
-              backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05))',
-            }
+              backgroundImage:
+                'linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05))',
+            },
           }}
         >
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1 }}>
@@ -104,7 +115,17 @@ function HelpIcon({ configKey, size = 'small' }) {
 
               {helpData.warnings && (
                 <Box sx={{ bgcolor: 'rgba(255, 152, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{
+                      fontWeight: 'bold',
+                      mb: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: 'warning.main',
+                    }}
+                  >
                     <Warning /> Warnings:
                   </Typography>
                   <Typography variant="body2" color="warning.light">
@@ -126,7 +147,17 @@ function HelpIcon({ configKey, size = 'small' }) {
 
               {helpData.recommended && (
                 <Box sx={{ bgcolor: 'rgba(0, 230, 118, 0.1)', p: 2, borderRadius: 1 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center', gap: 1, color: 'success.main' }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{
+                      fontWeight: 'bold',
+                      mb: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      color: 'success.main',
+                    }}
+                  >
                     <CheckCircle /> Recommended:
                   </Typography>
                   <Typography variant="body2" color="success.light">
@@ -159,8 +190,8 @@ function HelpIcon({ configKey, size = 'small' }) {
           opacity: 0.7,
           '&:hover': {
             opacity: 1,
-            backgroundColor: 'rgba(0, 230, 118, 0.1)'
-          }
+            backgroundColor: 'rgba(0, 230, 118, 0.1)',
+          },
         }}
       >
         <HelpOutline fontSize={size} />
@@ -182,22 +213,26 @@ function HelpIcon({ configKey, size = 'small' }) {
           sx: {
             maxWidth: 450,
             bgcolor: 'background.paper',
-            backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09))',
+            backgroundImage:
+              'linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09))',
             border: '1px solid',
             borderColor: 'primary.main',
             borderRadius: 2,
             boxShadow: '0 8px 32px rgba(0, 230, 118, 0.15)',
-          }
+          },
         }}
         elevation={8}
       >
         <Box sx={{ p: 2.5 }}>
           {/* Title */}
-          <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="h6"
+            sx={{ fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             <Info color="primary" fontSize="small" />
             {helpData.title}
           </Typography>
-          
+
           <Typography variant="body2" color="text.secondary" paragraph>
             {helpData.description}
           </Typography>
@@ -215,7 +250,10 @@ function HelpIcon({ configKey, size = 'small' }) {
           {/* Impact */}
           {helpData.impact && (
             <>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5, fontSize: '0.85rem' }}>
+              <Typography
+                variant="subtitle2"
+                sx={{ fontWeight: 'bold', mb: 0.5, fontSize: '0.85rem' }}
+              >
                 ⚡ Impact:
               </Typography>
               <Typography variant="body2" sx={{ mb: 1.5, fontSize: '0.8rem' }}>
@@ -226,8 +264,27 @@ function HelpIcon({ configKey, size = 'small' }) {
 
           {/* Warnings */}
           {helpData.warnings && (
-            <Box sx={{ bgcolor: 'rgba(255, 152, 0, 0.1)', p: 1.5, borderRadius: 1, mb: 1.5, border: '1px solid rgba(255, 152, 0, 0.3)' }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5, color: 'warning.main', fontSize: '0.85rem' }}>
+            <Box
+              sx={{
+                bgcolor: 'rgba(255, 152, 0, 0.1)',
+                p: 1.5,
+                borderRadius: 1,
+                mb: 1.5,
+                border: '1px solid rgba(255, 152, 0, 0.3)',
+              }}
+            >
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 'bold',
+                  mb: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  color: 'warning.main',
+                  fontSize: '0.85rem',
+                }}
+              >
                 <Warning fontSize="small" /> Warnings:
               </Typography>
               <Typography variant="body2" color="warning.light" sx={{ fontSize: '0.75rem' }}>
@@ -239,7 +296,10 @@ function HelpIcon({ configKey, size = 'small' }) {
           {/* Dependencies */}
           {helpData.dependencies && (
             <>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5, fontSize: '0.85rem' }}>
+              <Typography
+                variant="subtitle2"
+                sx={{ fontWeight: 'bold', mb: 0.5, fontSize: '0.85rem' }}
+              >
                 🔗 Dependencies:
               </Typography>
               <Typography variant="body2" sx={{ mb: 1.5, fontSize: '0.8rem' }}>
@@ -250,8 +310,26 @@ function HelpIcon({ configKey, size = 'small' }) {
 
           {/* Recommended */}
           {helpData.recommended && (
-            <Box sx={{ bgcolor: 'rgba(0, 230, 118, 0.1)', p: 1.5, borderRadius: 1, border: '1px solid rgba(0, 230, 118, 0.3)' }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5, color: 'success.main', fontSize: '0.85rem' }}>
+            <Box
+              sx={{
+                bgcolor: 'rgba(0, 230, 118, 0.1)',
+                p: 1.5,
+                borderRadius: 1,
+                border: '1px solid rgba(0, 230, 118, 0.3)',
+              }}
+            >
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 'bold',
+                  mb: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  color: 'success.main',
+                  fontSize: '0.85rem',
+                }}
+              >
                 <CheckCircle fontSize="small" /> Recommended:
               </Typography>
               <Typography variant="body2" color="success.light" sx={{ fontSize: '0.75rem' }}>
@@ -266,4 +344,3 @@ function HelpIcon({ configKey, size = 'small' }) {
 }
 
 export default HelpIcon;
-

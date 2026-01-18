@@ -15,35 +15,29 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  TextField
+  TextField,
 } from '@mui/material';
 import {
   Warning as WarningIcon,
   CheckCircle as CheckCircleIcon,
   Info as InfoIcon,
-  PowerSettingsNew as PowerIcon
+  PowerSettingsNew as PowerIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
 /**
  * EmergencyToggle Component
- * 
+ *
  * Provides a prominent emergency override switch for critical safety features.
  * Allows users to temporarily disable features in emergency situations.
- * 
+ *
  * @param {string} featureName - Internal feature name (e.g., 'monitoring', 'liquidity_monitor')
  * @param {string} displayName - User-friendly display name (e.g., 'Safety Monitoring')
  * @param {string} description - Brief description of what this feature does
  * @param {string} warningMessage - Warning shown when disabling
  * @param {function} onStateChange - Optional callback when state changes
  */
-function EmergencyToggle({ 
-  featureName, 
-  displayName, 
-  description,
-  warningMessage,
-  onStateChange 
-}) {
+function EmergencyToggle({ featureName, displayName, description, warningMessage, onStateChange }) {
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [lastChanged, setLastChanged] = useState(null);
@@ -71,7 +65,7 @@ function EmergencyToggle({
 
   const handleToggleClick = (event) => {
     const newState = event.target.checked;
-    
+
     // If disabling, show confirmation dialog
     if (!newState) {
       setPendingState(newState);
@@ -100,13 +94,13 @@ function EmergencyToggle({
     try {
       const response = await api.post(`/api/emergency/overrides/${featureName}`, {
         enabled: newState,
-        reason: changeReason
+        reason: changeReason,
       });
 
       if (response.data.success) {
         setEnabled(newState);
         setLastChanged(new Date().toISOString());
-        
+
         // Call optional callback
         if (onStateChange) {
           onStateChange(newState);
@@ -140,16 +134,24 @@ function EmergencyToggle({
         sx={{
           p: 2,
           mb: 2,
-          background: enabled 
+          background: enabled
             ? 'linear-gradient(135deg, rgba(46, 213, 115, 0.1) 0%, rgba(0, 184, 148, 0.05) 100%)'
             : 'linear-gradient(135deg, rgba(255, 71, 87, 0.15) 0%, rgba(255, 107, 107, 0.08) 100%)',
-          border: enabled 
+          border: enabled
             ? '2px solid rgba(46, 213, 115, 0.3)'
             : '2px solid rgba(255, 71, 87, 0.5)',
-          transition: 'all 0.3s ease'
+          transition: 'all 0.3s ease',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
           {/* Left side: Feature info and toggle */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
             {/* Status indicator */}
@@ -159,17 +161,20 @@ function EmergencyToggle({
               ) : (
                 <WarningIcon sx={{ fontSize: 40, color: 'error.main' }} />
               )}
-              <Chip 
-                label={enabled ? "ACTIVE" : "DISABLED"}
+              <Chip
+                label={enabled ? 'ACTIVE' : 'DISABLED'}
                 size="small"
-                color={enabled ? "success" : "error"}
+                color={enabled ? 'success' : 'error'}
                 sx={{ mt: 0.5, fontWeight: 'bold' }}
               />
             </Box>
 
             {/* Feature details */}
             <Box sx={{ flex: 1 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+              >
                 {displayName}
                 <Tooltip title={description}>
                   <InfoIcon sx={{ fontSize: 20, color: 'text.secondary', cursor: 'help' }} />
@@ -194,7 +199,7 @@ function EmergencyToggle({
                   checked={enabled}
                   onChange={handleToggleClick}
                   disabled={loading}
-                  color={enabled ? "success" : "error"}
+                  color={enabled ? 'success' : 'error'}
                   sx={{
                     '& .MuiSwitch-switchBase': {
                       '&.Mui-checked': {
@@ -212,17 +217,19 @@ function EmergencyToggle({
               }
               label={
                 <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                  {enabled ? "ENABLED" : "DISABLED"}
+                  {enabled ? 'ENABLED' : 'DISABLED'}
                 </Typography>
               }
               labelPlacement="start"
             />
-            <Tooltip title={enabled ? "Emergency Override - Click to disable" : "Click to re-enable"}>
-              <IconButton 
-                size="small" 
-                sx={{ 
+            <Tooltip
+              title={enabled ? 'Emergency Override - Click to disable' : 'Click to re-enable'}
+            >
+              <IconButton
+                size="small"
+                sx={{
                   color: enabled ? 'success.main' : 'error.main',
-                  '&:hover': { backgroundColor: enabled ? 'success.light' : 'error.light' }
+                  '&:hover': { backgroundColor: enabled ? 'success.light' : 'error.light' },
                 }}
               >
                 <PowerIcon />
@@ -236,28 +243,25 @@ function EmergencyToggle({
           <Alert severity="error" sx={{ mt: 2 }}>
             <AlertTitle>⚠️ Safety Feature Disabled</AlertTitle>
             <Typography variant="body2">
-              {warningMessage || `${displayName} is currently disabled. This increases risk. Re-enable as soon as possible.`}
+              {warningMessage ||
+                `${displayName} is currently disabled. This increases risk. Re-enable as soon as possible.`}
             </Typography>
           </Alert>
         )}
       </Paper>
 
       {/* Confirmation Dialog */}
-      <Dialog 
-        open={confirmDialogOpen} 
-        onClose={handleCancelDisable}
-        maxWidth="sm"
-        fullWidth
-      >
+      <Dialog open={confirmDialogOpen} onClose={handleCancelDisable} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ backgroundColor: 'error.dark', color: 'white' }}>
           ⚠️ Disable {displayName}?
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Alert severity="error" sx={{ mb: 2 }}>
             <AlertTitle>WARNING: Increased Risk</AlertTitle>
-            {warningMessage || `Disabling ${displayName} will reduce protection and increase trading risk.`}
+            {warningMessage ||
+              `Disabling ${displayName} will reduce protection and increase trading risk.`}
           </Alert>
-          
+
           <Typography variant="body2" sx={{ mb: 2 }}>
             Only disable this feature if you understand the risks and have a specific reason.
           </Typography>
@@ -277,9 +281,9 @@ function EmergencyToggle({
           <Button onClick={handleCancelDisable} color="inherit" variant="outlined">
             Cancel
           </Button>
-          <Button 
-            onClick={handleConfirmDisable} 
-            color="error" 
+          <Button
+            onClick={handleConfirmDisable}
+            color="error"
             variant="contained"
             startIcon={<WarningIcon />}
           >

@@ -1,6 +1,6 @@
 /**
  * Zero DTE Components Index
- * 
+ *
  * Export all components for easy importing.
  */
 export { default as ZeroDTEDashboard } from './ZeroDTEDashboard';

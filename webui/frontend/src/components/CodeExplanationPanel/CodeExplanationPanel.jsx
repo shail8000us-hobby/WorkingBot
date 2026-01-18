@@ -22,7 +22,7 @@ import {
   ListItemIcon,
   Tooltip,
   CircularProgress,
-  Stack
+  Stack,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -36,7 +36,7 @@ import {
   Functions as FunctionIcon,
   Class as ClassIcon,
   BugReport as BugIcon,
-  Analytics as AnalyticsIcon
+  Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 
 const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) => {
@@ -84,7 +84,7 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
 
     if (explanation.functions?.length > 0) {
       md += `## Functions\n\n`;
-      explanation.functions.forEach(func => {
+      explanation.functions.forEach((func) => {
         md += `### ${func.async ? 'async ' : ''}${func.name}(${func.args?.join(', ') || ''})\n`;
         if (func.docstring) md += `${func.docstring}\n`;
         md += `- **Lines**: ${func.line_start}-${func.line_end}\n`;
@@ -94,7 +94,7 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
 
     if (explanation.classes?.length > 0) {
       md += `## Classes\n\n`;
-      explanation.classes.forEach(cls => {
+      explanation.classes.forEach((cls) => {
         md += `### ${cls.name}\n`;
         if (cls.docstring) md += `${cls.docstring}\n`;
         md += `- **Methods**: ${cls.methods_count}\n`;
@@ -104,7 +104,7 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
 
     if (explanation.issues?.length > 0) {
       md += `## Issues Detected\n\n`;
-      explanation.issues.forEach(issue => {
+      explanation.issues.forEach((issue) => {
         md += `- **${issue.type}** (Line ${issue.line}): ${issue.description}\n`;
       });
     }
@@ -133,8 +133,8 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
       PaperProps={{
         sx: {
           minHeight: '60vh',
-          maxHeight: '90vh'
-        }
+          maxHeight: '90vh',
+        },
       }}
     >
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -173,7 +173,11 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
           <Box>
             {/* Statistics Overview */}
             <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'background.default' }}>
-              <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="subtitle2"
+                gutterBottom
+                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+              >
                 <AnalyticsIcon fontSize="small" /> Quick Statistics
               </Typography>
               <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -214,7 +218,12 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
                       color={getComplexityColor(explanation.statistics?.complexity_score || 0)}
                       sx={{ fontSize: '1rem', fontWeight: 'bold' }}
                     />
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                      sx={{ mt: 0.5 }}
+                    >
                       Complexity: {explanation.statistics?.complexity_score || 0}
                     </Typography>
                   </Box>
@@ -238,7 +247,7 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
                   sx={{
                     whiteSpace: 'pre-wrap',
                     lineHeight: 1.8,
-                    fontFamily: 'system-ui, -apple-system, sans-serif'
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
                   }}
                 >
                   {explanation.explanation}
@@ -260,18 +269,33 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
                 <AccordionDetails>
                   <List dense>
                     {explanation.functions.map((func, index) => (
-                      <ListItem key={index} sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                      <ListItem
+                        key={index}
+                        sx={{ flexDirection: 'column', alignItems: 'flex-start' }}
+                      >
                         <Box sx={{ width: '100%' }}>
-                          <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', color: 'primary.main' }}>
-                            {func.async ? 'async ' : ''}{func.name}({func.args?.join(', ') || ''})
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontFamily: 'monospace', color: 'primary.main' }}
+                          >
+                            {func.async ? 'async ' : ''}
+                            {func.name}({func.args?.join(', ') || ''})
                           </Typography>
                           {func.docstring && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, ml: 2 }}>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ mt: 0.5, ml: 2 }}
+                            >
                               {func.docstring}
                             </Typography>
                           )}
                           <Stack direction="row" spacing={1} sx={{ mt: 1, ml: 2 }}>
-                            <Chip label={`Lines ${func.line_start}-${func.line_end}`} size="small" variant="outlined" />
+                            <Chip
+                              label={`Lines ${func.line_start}-${func.line_end}`}
+                              size="small"
+                              variant="outlined"
+                            />
                             <Chip
                               label={`Complexity: ${func.complexity}`}
                               size="small"
@@ -280,7 +304,9 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
                             {func.async && <Chip label="Async" size="small" color="info" />}
                           </Stack>
                         </Box>
-                        {index < explanation.functions.length - 1 && <Divider sx={{ width: '100%', mt: 1 }} />}
+                        {index < explanation.functions.length - 1 && (
+                          <Divider sx={{ width: '100%', mt: 1 }} />
+                        )}
                       </ListItem>
                     ))}
                   </List>
@@ -302,28 +328,52 @@ const CodeExplanationPanel = ({ open, onClose, explanation, loading, error }) =>
                 <AccordionDetails>
                   <List dense>
                     {explanation.classes.map((cls, index) => (
-                      <ListItem key={index} sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                      <ListItem
+                        key={index}
+                        sx={{ flexDirection: 'column', alignItems: 'flex-start' }}
+                      >
                         <Box sx={{ width: '100%' }}>
-                          <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', color: 'info.main' }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontFamily: 'monospace', color: 'info.main' }}
+                          >
                             class {cls.name}
                             {cls.bases && cls.bases.length > 0 && ` (${cls.bases.join(', ')})`}
                           </Typography>
                           {cls.docstring && (
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, ml: 2 }}>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ mt: 0.5, ml: 2 }}
+                            >
                               {cls.docstring}
                             </Typography>
                           )}
                           <Stack direction="row" spacing={1} sx={{ mt: 1, ml: 2 }}>
-                            <Chip label={`${cls.methods_count} methods`} size="small" variant="outlined" />
-                            <Chip label={`Lines ${cls.line_start}-${cls.line_end}`} size="small" variant="outlined" />
+                            <Chip
+                              label={`${cls.methods_count} methods`}
+                              size="small"
+                              variant="outlined"
+                            />
+                            <Chip
+                              label={`Lines ${cls.line_start}-${cls.line_end}`}
+                              size="small"
+                              variant="outlined"
+                            />
                           </Stack>
                           {cls.methods && cls.methods.length > 0 && (
-                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, ml: 2, display: 'block' }}>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ mt: 1, ml: 2, display: 'block' }}
+                            >
                               Methods: {cls.methods.join(', ')}
                             </Typography>
                           )}
                         </Box>
-                        {index < explanation.classes.length - 1 && <Divider sx={{ width: '100%', mt: 1 }} />}
+                        {index < explanation.classes.length - 1 && (
+                          <Divider sx={{ width: '100%', mt: 1 }} />
+                        )}
                       </ListItem>
                     ))}
                   </List>

@@ -1,6 +1,6 @@
 /**
  * Safety Warning Banner
- * 
+ *
  * Shows when in idle mode to reassure user that bots are still running
  */
 
@@ -14,16 +14,26 @@ function SafetyWarningBanner() {
 
   return (
     <Collapse in={isIdle}>
-      <Box sx={{ position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 9998, width: '90%', maxWidth: 600 }}>
-        <Alert 
-          severity="success" 
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 80,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9998,
+          width: '90%',
+          maxWidth: 600,
+        }}
+      >
+        <Alert
+          severity="success"
           icon={<CheckCircle />}
           sx={{
             bgcolor: 'rgba(0, 200, 83, 0.1)',
             color: '#00c853',
             border: '2px solid rgba(0, 200, 83, 0.3)',
             fontWeight: 'bold',
-            boxShadow: 3
+            boxShadow: 3,
           }}
         >
           <div style={{ fontSize: '0.875rem' }}>
@@ -48,4 +58,3 @@ function SafetyWarningBanner() {
 }
 
 export default SafetyWarningBanner;
-

@@ -35,7 +35,7 @@ import {
   AccordionSummary,
   AccordionDetails,
   Snackbar,
-  Link
+  Link,
 } from '@mui/material';
 import {
   Build as BuildIcon,
@@ -56,7 +56,7 @@ import {
   Cancel as CancelIcon,
   RestartAlt as RestartIcon,
   Tune as TuneIcon,
-  Search as ScanIcon
+  Search as ScanIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
@@ -74,52 +74,50 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
 
   // Filter for startup-related errors
-  const startupErrors = errors.filter(error => 
-    error.code.startsWith('UNKNOWN_TRADING') || 
-    error.code.includes('CONFIG') ||
-    error.code.includes('ORDER') ||
-    error.message_raw.includes('Safety gatekeeper blocked') ||
-    error.message_raw.includes('CONFIGURATION CHANGES DETECTED')
+  const startupErrors = errors.filter(
+    (error) =>
+      error.code.startsWith('UNKNOWN_TRADING') ||
+      error.code.includes('CONFIG') ||
+      error.code.includes('ORDER') ||
+      error.message_raw.includes('Safety gatekeeper blocked') ||
+      error.message_raw.includes('CONFIGURATION CHANGES DETECTED')
   );
 
   const errorCategories = {
-    'Safety Gatekeeper Blocks': startupErrors.filter(e => 
+    'Safety Gatekeeper Blocks': startupErrors.filter((e) =>
       e.message_raw.includes('Safety gatekeeper blocked')
     ),
-    'Configuration Issues': startupErrors.filter(e => 
-      e.message_raw.includes('CONFIGURATION CHANGES DETECTED') ||
-      e.code.includes('CONFIG')
+    'Configuration Issues': startupErrors.filter(
+      (e) => e.message_raw.includes('CONFIGURATION CHANGES DETECTED') || e.code.includes('CONFIG')
     ),
-    'General Trading Issues': startupErrors.filter(e => 
-      e.code === 'UNKNOWN_TRADING_GENERAL'
-    )
+    'General Trading Issues': startupErrors.filter((e) => e.code === 'UNKNOWN_TRADING_GENERAL'),
   };
 
   const resolutionSteps = [
     {
       label: 'Identify Issues',
       description: 'Review detected startup problems',
-      icon: <PsychologyIcon />
+      icon: <PsychologyIcon />,
     },
     {
       label: 'Auto-Fix Common Issues',
       description: 'Automatically resolve known problems',
-      icon: <AutoFixIcon />
+      icon: <AutoFixIcon />,
     },
     {
       label: 'Manual Configuration',
       description: 'Adjust settings if needed',
-      icon: <SettingsIcon />
+      icon: <SettingsIcon />,
     },
     {
       label: 'Verify Resolution',
       description: 'Confirm all issues are resolved',
-      icon: <CheckCircleIcon />
-    }
+      icon: <CheckCircleIcon />,
+    },
   ];
 
   const commonFixes = {
-    'UNKNOWN_TRADING_ORDER': {
+    UNKNOWN_TRADING_ORDER: {
       title: 'Safety Gatekeeper Blocks',
       description: 'Orders are being blocked by safety systems',
       autoFix: true,
@@ -127,7 +125,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
         'Check current safety gatekeeper status',
         'Review margin utilization limits',
         'Verify order confirmation guard status',
-        'Adjust safety parameters if needed'
+        'Adjust safety parameters if needed',
       ],
       actions: [
         {
@@ -135,25 +133,25 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
           title: 'Check Gatekeeper Status',
           description: 'View current safety gatekeeper configuration',
           risk: 'low',
-          endpoint: '/api/robustness/gatekeeper/status'
+          endpoint: '/api/robustness/gatekeeper/status',
         },
         {
           id: 'check_margin_limits',
           title: 'Check Margin Limits',
           description: 'Review current margin utilization',
           risk: 'low',
-          endpoint: '/api/robustness/loss-limits'
+          endpoint: '/api/robustness/loss-limits',
         },
         {
           id: 'reset_safety_limits',
           title: 'Reset Safety Limits',
           description: 'Reset safety limits to default values',
           risk: 'medium',
-          endpoint: '/api/robustness/reset-safety-limits'
-        }
-      ]
+          endpoint: '/api/robustness/reset-safety-limits',
+        },
+      ],
     },
-    'UNKNOWN_TRADING_CONFIG': {
+    UNKNOWN_TRADING_CONFIG: {
       title: 'Configuration Changes',
       description: 'Bot detected configuration changes during startup',
       autoFix: true,
@@ -161,7 +159,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
         'Verify configuration file integrity',
         'Check for conflicting settings',
         'Apply configuration changes',
-        'Restart bot with new settings'
+        'Restart bot with new settings',
       ],
       actions: [
         {
@@ -169,25 +167,25 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
           title: 'Verify Configuration',
           description: 'Check configuration file for issues',
           risk: 'low',
-          endpoint: '/api/config/verify'
+          endpoint: '/api/config/verify',
         },
         {
           id: 'apply_config_changes',
           title: 'Apply Configuration Changes',
           description: 'Apply pending configuration changes',
           risk: 'low',
-          endpoint: '/api/config/apply'
+          endpoint: '/api/config/apply',
         },
         {
           id: 'restart_bot',
           title: 'Restart Bot',
           description: 'Restart bot with updated configuration',
           risk: 'medium',
-          endpoint: '/api/bot/restart'
-        }
-      ]
+          endpoint: '/api/bot/restart',
+        },
+      ],
     },
-    'UNKNOWN_TRADING_GENERAL': {
+    UNKNOWN_TRADING_GENERAL: {
       title: 'General Trading Issues',
       description: 'Unclassified trading-related warnings',
       autoFix: false,
@@ -195,7 +193,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
         'Review log messages for details',
         'Check system status',
         'Verify trading permissions',
-        'Clear false positive errors'
+        'Clear false positive errors',
       ],
       actions: [
         {
@@ -203,24 +201,24 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
           title: 'Review Recent Logs',
           description: 'Check recent bot logs for details',
           risk: 'low',
-          endpoint: '/api/logs/recent'
+          endpoint: '/api/logs/recent',
         },
         {
           id: 'check_system_status',
           title: 'Check System Status',
           description: 'Verify overall system health',
           risk: 'low',
-          endpoint: '/api/system/status'
+          endpoint: '/api/system/status',
         },
         {
           id: 'mark_as_resolved',
           title: 'Mark as Resolved',
           description: 'Mark these as false positive errors',
           risk: 'low',
-          endpoint: '/api/errors/resolve'
-        }
-      ]
-    }
+          endpoint: '/api/errors/resolve',
+        },
+      ],
+    },
   };
 
   const showNotification = (message, severity = 'info') => {
@@ -239,7 +237,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
           await executeAction(action, errorCode);
         }
       }
-      
+
       showNotification(`Auto-fix completed for ${fix.title}`, 'success');
       onErrorUpdate();
       onStatsUpdate();
@@ -253,44 +251,44 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
   const executeAction = async (action, errorCode) => {
     try {
       let response;
-      
+
       switch (action.id) {
         case 'check_gatekeeper_status':
           response = await api.get(action.endpoint);
           console.log('Gatekeeper Status:', response.data);
           break;
-          
+
         case 'check_margin_limits':
           response = await api.get(action.endpoint);
           console.log('Margin Limits:', response.data);
           break;
-          
+
         case 'verify_config':
           response = await api.get(action.endpoint);
           console.log('Config Verification:', response.data);
           break;
-          
+
         case 'apply_config_changes':
           response = await api.post(action.endpoint);
           console.log('Config Applied:', response.data);
           break;
-          
+
         case 'mark_as_resolved':
           // Mark all errors of this type as resolved
-          const errorsToResolve = errors.filter(e => e.code === errorCode);
+          const errorsToResolve = errors.filter((e) => e.code === errorCode);
           for (const error of errorsToResolve) {
             await api.post(action.endpoint, {
               error_id: error.id,
               user: 'auto-fix-system',
-              notes: `Auto-resolved: ${action.description}`
+              notes: `Auto-resolved: ${action.description}`,
             });
           }
           break;
-          
+
         default:
           console.log(`Action ${action.id} not implemented yet`);
       }
-      
+
       return response?.data || { success: true };
     } catch (error) {
       console.error(`Failed to execute ${action.id}:`, error);
@@ -301,14 +299,14 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
   const handleBulkResolve = async () => {
     setLoading(true);
     try {
-      const resolvePromises = selectedErrors.map(error => 
+      const resolvePromises = selectedErrors.map((error) =>
         api.post('/api/errors/resolve', {
           error_id: error.id,
           user: 'webui-user',
-          notes: 'Bulk resolved via Error Resolution Panel'
+          notes: 'Bulk resolved via Error Resolution Panel',
         })
       );
-      
+
       await Promise.all(resolvePromises);
       showNotification(`Resolved ${selectedErrors.length} errors`, 'success');
       setSelectedErrors([]);
@@ -323,19 +321,27 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
 
   const getErrorSeverityIcon = (severity) => {
     switch (severity) {
-      case 'critical': return <ErrorIcon color="error" />;
-      case 'high': return <WarningIcon color="warning" />;
-      case 'medium': return <InfoIcon color="info" />;
-      default: return <InfoIcon color="action" />;
+      case 'critical':
+        return <ErrorIcon color="error" />;
+      case 'high':
+        return <WarningIcon color="warning" />;
+      case 'medium':
+        return <InfoIcon color="info" />;
+      default:
+        return <InfoIcon color="action" />;
     }
   };
 
   const getErrorSeverityColor = (severity) => {
     switch (severity) {
-      case 'critical': return 'error';
-      case 'high': return 'warning';
-      case 'medium': return 'info';
-      default: return 'default';
+      case 'critical':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      default:
+        return 'default';
     }
   };
 
@@ -358,12 +364,15 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
             </Typography>
           </Box>
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
-            onClick={() => { onErrorUpdate(); onStatsUpdate(); }}
+            onClick={() => {
+              onErrorUpdate();
+              onStatsUpdate();
+            }}
           >
             Refresh
           </Button>
@@ -384,15 +393,14 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
       {/* Summary Alert */}
       <Alert severity={startupErrors.length > 0 ? 'warning' : 'success'} sx={{ mb: 3 }}>
         <AlertTitle>
-          {startupErrors.length > 0 
+          {startupErrors.length > 0
             ? `${startupErrors.length} Startup Issue${startupErrors.length > 1 ? 's' : ''} Detected`
-            : 'All Systems Running Smoothly'
-          }
+            : 'All Systems Running Smoothly'}
         </AlertTitle>
         {startupErrors.length > 0 ? (
           <Typography variant="body2">
-            We've detected some issues that commonly occur during bot startup. 
-            Use the steps below to resolve them quickly.
+            We've detected some issues that commonly occur during bot startup. Use the steps below
+            to resolve them quickly.
           </Typography>
         ) : (
           <Typography variant="body2">
@@ -434,10 +442,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
                         {index === resolutionSteps.length - 1 ? 'Finish' : 'Continue'}
                       </Button>
                       {index > 0 && (
-                        <Button
-                          onClick={() => setActiveStep(index - 1)}
-                          sx={{ mt: 1, mr: 1 }}
-                        >
+                        <Button onClick={() => setActiveStep(index - 1)} sx={{ mt: 1, mr: 1 }}>
                           Back
                         </Button>
                       )}
@@ -455,169 +460,206 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
             <Typography variant="h6" gutterBottom>
               Error Categories
             </Typography>
-            
-            {Object.entries(errorCategories).map(([category, categoryErrors]) => (
-              categoryErrors.length > 0 && (
-                <Accordion key={category} sx={{ mb: 2 }}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
-                      {getErrorSeverityIcon('medium')}
-                      <Typography variant="subtitle1" fontWeight={500}>
-                        {category}
-                      </Typography>
-                      <Chip 
-                        label={`${categoryErrors.length} issue${categoryErrors.length > 1 ? 's' : ''}`}
-                        size="small"
-                        color="info"
-                      />
-                    </Box>
-                  </AccordionSummary>
-                  
-                  <AccordionDetails>
-                    <Grid container spacing={2}>
-                      {categoryErrors.map((error) => {
-                        const fix = commonFixes[error.code];
-                        return (
-                          <Grid item xs={12} key={error.id}>
-                            <Card variant="outlined">
-                              <CardContent>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                                  <Box sx={{ flexGrow: 1 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                      <Typography variant="subtitle2" fontWeight={600}>
-                                        {error.code}
-                                      </Typography>
-                                      <Chip
-                                        label={error.severity}
-                                        size="small"
-                                        color={getErrorSeverityColor(error.severity)}
-                                        sx={{ textTransform: 'uppercase' }}
-                                      />
-                                      <Chip
-                                        label={`${error.occurrence_count} occurrence${error.occurrence_count > 1 ? 's' : ''}`}
-                                        size="small"
-                                        variant="outlined"
-                                      />
-                                    </Box>
-                                    
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                      {error.message_raw}
-                                    </Typography>
-                                    
-                                    <Typography variant="caption" color="text.secondary">
-                                      First seen: {formatTimestamp(error.first_seen)} | 
-                                      Last seen: {formatTimestamp(error.last_seen)}
-                                    </Typography>
-                                  </Box>
-                                  
-                                  <Box sx={{ display: 'flex', gap: 1, ml: 2 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Switch
-                                          checked={selectedErrors.some(e => e.id === error.id)}
-                                          onChange={(e) => {
-                                            if (e.target.checked) {
-                                              setSelectedErrors([...selectedErrors, error]);
-                                            } else {
-                                              setSelectedErrors(selectedErrors.filter(e => e.id !== error.id));
-                                            }
-                                          }}
+
+            {Object.entries(errorCategories).map(
+              ([category, categoryErrors]) =>
+                categoryErrors.length > 0 && (
+                  <Accordion key={category} sx={{ mb: 2 }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                        {getErrorSeverityIcon('medium')}
+                        <Typography variant="subtitle1" fontWeight={500}>
+                          {category}
+                        </Typography>
+                        <Chip
+                          label={`${categoryErrors.length} issue${categoryErrors.length > 1 ? 's' : ''}`}
+                          size="small"
+                          color="info"
+                        />
+                      </Box>
+                    </AccordionSummary>
+
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        {categoryErrors.map((error) => {
+                          const fix = commonFixes[error.code];
+                          return (
+                            <Grid item xs={12} key={error.id}>
+                              <Card variant="outlined">
+                                <CardContent>
+                                  <Box
+                                    sx={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'flex-start',
+                                      mb: 2,
+                                    }}
+                                  >
+                                    <Box sx={{ flexGrow: 1 }}>
+                                      <Box
+                                        sx={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 1,
+                                          mb: 1,
+                                        }}
+                                      >
+                                        <Typography variant="subtitle2" fontWeight={600}>
+                                          {error.code}
+                                        </Typography>
+                                        <Chip
+                                          label={error.severity}
+                                          size="small"
+                                          color={getErrorSeverityColor(error.severity)}
+                                          sx={{ textTransform: 'uppercase' }}
                                         />
-                                      }
-                                      label="Select"
-                                      sx={{ m: 0 }}
-                                    />
-                                  </Box>
-                                </Box>
+                                        <Chip
+                                          label={`${error.occurrence_count} occurrence${error.occurrence_count > 1 ? 's' : ''}`}
+                                          size="small"
+                                          variant="outlined"
+                                        />
+                                      </Box>
 
-                                {fix && (
-                                  <>
-                                    <Divider sx={{ my: 2 }} />
-                                    
-                                    <Typography variant="subtitle2" gutterBottom>
-                                      {fix.title}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                                      {fix.description}
-                                    </Typography>
-
-                                    <Box sx={{ mb: 2 }}>
-                                      <Typography variant="subtitle2" gutterBottom>
-                                        Fix Steps:
+                                      <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        sx={{ mb: 1 }}
+                                      >
+                                        {error.message_raw}
                                       </Typography>
-                                      <List dense>
-                                        {fix.fixSteps.map((step, idx) => (
-                                          <ListItem key={idx} sx={{ py: 0.5 }}>
-                                            <ListItemIcon sx={{ minWidth: 32 }}>
-                                              <Typography variant="body2" color="primary">
-                                                {idx + 1}.
-                                              </Typography>
-                                            </ListItemIcon>
-                                            <ListItemText primary={step} />
-                                          </ListItem>
-                                        ))}
-                                      </List>
+
+                                      <Typography variant="caption" color="text.secondary">
+                                        First seen: {formatTimestamp(error.first_seen)} | Last seen:{' '}
+                                        {formatTimestamp(error.last_seen)}
+                                      </Typography>
                                     </Box>
 
-                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                      {fix.autoFix && (
+                                    <Box sx={{ display: 'flex', gap: 1, ml: 2 }}>
+                                      <FormControlLabel
+                                        control={
+                                          <Switch
+                                            checked={selectedErrors.some((e) => e.id === error.id)}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedErrors([...selectedErrors, error]);
+                                              } else {
+                                                setSelectedErrors(
+                                                  selectedErrors.filter((e) => e.id !== error.id)
+                                                );
+                                              }
+                                            }}
+                                          />
+                                        }
+                                        label="Select"
+                                        sx={{ m: 0 }}
+                                      />
+                                    </Box>
+                                  </Box>
+
+                                  {fix && (
+                                    <>
+                                      <Divider sx={{ my: 2 }} />
+
+                                      <Typography variant="subtitle2" gutterBottom>
+                                        {fix.title}
+                                      </Typography>
+                                      <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        sx={{ mb: 2 }}
+                                      >
+                                        {fix.description}
+                                      </Typography>
+
+                                      <Box sx={{ mb: 2 }}>
+                                        <Typography variant="subtitle2" gutterBottom>
+                                          Fix Steps:
+                                        </Typography>
+                                        <List dense>
+                                          {fix.fixSteps.map((step, idx) => (
+                                            <ListItem key={idx} sx={{ py: 0.5 }}>
+                                              <ListItemIcon sx={{ minWidth: 32 }}>
+                                                <Typography variant="body2" color="primary">
+                                                  {idx + 1}.
+                                                </Typography>
+                                              </ListItemIcon>
+                                              <ListItemText primary={step} />
+                                            </ListItem>
+                                          ))}
+                                        </List>
+                                      </Box>
+
+                                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        {fix.autoFix && (
+                                          <Button
+                                            size="small"
+                                            variant="contained"
+                                            startIcon={<AutoFixIcon />}
+                                            onClick={() => handleAutoFix(error.code)}
+                                            disabled={loading}
+                                            color="primary"
+                                          >
+                                            Auto-Fix
+                                          </Button>
+                                        )}
+
                                         <Button
                                           size="small"
-                                          variant="contained"
-                                          startIcon={<AutoFixIcon />}
-                                          onClick={() => handleAutoFix(error.code)}
-                                          disabled={loading}
-                                          color="primary"
+                                          variant="outlined"
+                                          startIcon={<CheckCircleIcon />}
+                                          onClick={() => {
+                                            api
+                                              .post('/api/errors/resolve', {
+                                                error_id: error.id,
+                                                user: 'webui-user',
+                                                notes: 'Resolved via Error Resolution Panel',
+                                              })
+                                              .then(() => {
+                                                showNotification(
+                                                  'Error resolved successfully',
+                                                  'success'
+                                                );
+                                                onErrorUpdate();
+                                                onStatsUpdate();
+                                              })
+                                              .catch((err) => {
+                                                showNotification(
+                                                  `Failed to resolve: ${err.message}`,
+                                                  'error'
+                                                );
+                                              });
+                                          }}
                                         >
-                                          Auto-Fix
+                                          Mark Resolved
                                         </Button>
-                                      )}
-                                      
-                                      <Button
-                                        size="small"
-                                        variant="outlined"
-                                        startIcon={<CheckCircleIcon />}
-                                        onClick={() => {
-                                          api.post('/api/errors/resolve', {
-                                            error_id: error.id,
-                                            user: 'webui-user',
-                                            notes: 'Resolved via Error Resolution Panel'
-                                          }).then(() => {
-                                            showNotification('Error resolved successfully', 'success');
-                                            onErrorUpdate();
-                                            onStatsUpdate();
-                                          }).catch(err => {
-                                            showNotification(`Failed to resolve: ${err.message}`, 'error');
-                                          });
-                                        }}
-                                      >
-                                        Mark Resolved
-                                      </Button>
-                                      
-                                      <Button
-                                        size="small"
-                                        variant="outlined"
-                                        startIcon={<HelpIcon />}
-                                        onClick={() => {
-                                          // Open help dialog or navigate to documentation
-                                          showNotification('Help documentation coming soon', 'info');
-                                        }}
-                                      >
-                                        Get Help
-                                      </Button>
-                                    </Box>
-                                  </>
-                                )}
-                              </CardContent>
-                            </Card>
-                          </Grid>
-                        );
-                      })}
-                    </Grid>
-                  </AccordionDetails>
-                </Accordion>
-              )
-            ))}
+
+                                        <Button
+                                          size="small"
+                                          variant="outlined"
+                                          startIcon={<HelpIcon />}
+                                          onClick={() => {
+                                            // Open help dialog or navigate to documentation
+                                            showNotification(
+                                              'Help documentation coming soon',
+                                              'info'
+                                            );
+                                          }}
+                                        >
+                                          Get Help
+                                        </Button>
+                                      </Box>
+                                    </>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          );
+                        })}
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+                )
+            )}
           </Box>
 
           {/* Quick Actions */}
@@ -647,7 +689,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
                   </CardContent>
                 </Card>
               </Grid>
-              
+
               <Grid item xs={12} sm={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
@@ -672,7 +714,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
                   </CardContent>
                 </Card>
               </Grid>
-              
+
               <Grid item xs={12} sm={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
@@ -701,7 +743,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
                   </CardContent>
                 </Card>
               </Grid>
-              
+
               <Grid item xs={12} sm={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
@@ -717,12 +759,19 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
                       fullWidth
                       startIcon={<RestartIcon />}
                       onClick={() => {
-                        if (window.confirm('Are you sure you want to restart the bot? This will stop all current trading.')) {
-                          api.post('/api/bot/restart').then(() => {
-                            showNotification('Bot restart initiated', 'success');
-                          }).catch(err => {
-                            showNotification(`Restart failed: ${err.message}`, 'error');
-                          });
+                        if (
+                          window.confirm(
+                            'Are you sure you want to restart the bot? This will stop all current trading.'
+                          )
+                        ) {
+                          api
+                            .post('/api/bot/restart')
+                            .then(() => {
+                              showNotification('Bot restart initiated', 'success');
+                            })
+                            .catch((err) => {
+                              showNotification(`Restart failed: ${err.message}`, 'error');
+                            });
                         }
                       }}
                     >
@@ -737,27 +786,30 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
       )}
 
       {/* Auto-Fix Dialog */}
-      <Dialog open={showAutoFixDialog} onClose={() => setShowAutoFixDialog(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={showAutoFixDialog}
+        onClose={() => setShowAutoFixDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AutoFixIcon color="primary" />
-            <Typography variant="h6">
-              Auto-Fix Startup Issues
-            </Typography>
+            <Typography variant="h6">Auto-Fix Startup Issues</Typography>
           </Box>
         </DialogTitle>
-        
+
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            This will automatically attempt to resolve common startup issues. 
-            Safe operations will be performed automatically, while risky operations require confirmation.
+            This will automatically attempt to resolve common startup issues. Safe operations will
+            be performed automatically, while risky operations require confirmation.
           </Typography>
-          
+
           <List>
             {Object.entries(commonFixes).map(([code, fix]) => {
-              const errorCount = startupErrors.filter(e => e.code === code).length;
+              const errorCount = startupErrors.filter((e) => e.code === code).length;
               if (errorCount === 0) return null;
-              
+
               return (
                 <ListItem key={code} sx={{ px: 0 }}>
                   <ListItemIcon>
@@ -772,18 +824,16 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
             })}
           </List>
         </DialogContent>
-        
+
         <DialogActions>
-          <Button onClick={() => setShowAutoFixDialog(false)}>
-            Cancel
-          </Button>
+          <Button onClick={() => setShowAutoFixDialog(false)}>Cancel</Button>
           <Button
             variant="contained"
             startIcon={<AutoFixIcon />}
             onClick={async () => {
               setShowAutoFixDialog(false);
               setLoading(true);
-              
+
               try {
                 for (const [code, fix] of Object.entries(commonFixes)) {
                   if (fix.autoFix) {
@@ -1104,7 +1154,15 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
                       </Typography>
                     </Box>
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, flexWrap: 'wrap' }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        flexShrink: 0,
+                        flexWrap: 'wrap',
+                      }}
+                    >
                       <Chip
                         label={error.severity}
                         color={error.severity === 'critical' ? 'error' : 'warning'}
@@ -1118,7 +1176,13 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
                         variant="outlined"
                         size="small"
                         color="success"
-                        startIcon={resolvingErrors[resolvingKey] ? <CircularProgress size={16} /> : <CheckIcon />}
+                        startIcon={
+                          resolvingErrors[resolvingKey] ? (
+                            <CircularProgress size={16} />
+                          ) : (
+                            <CheckIcon />
+                          )
+                        }
                         onClick={() => markAsResolved(error)}
                         disabled={resolvingErrors[resolvingKey]}
                         sx={{ minWidth: 130 }}
@@ -1139,12 +1203,22 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
 
                   {error.likely_causes && error.likely_causes.length > 0 && (
                     <Box sx={{ mb: 1.5 }}>
-                      <Typography variant="subtitle2" fontWeight={600} color="warning.main" gutterBottom>
+                      <Typography
+                        variant="subtitle2"
+                        fontWeight={600}
+                        color="warning.main"
+                        gutterBottom
+                      >
                         🔍 Likely Causes:
                       </Typography>
                       <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
                         {error.likely_causes.map((cause, idx) => (
-                          <Typography key={idx} component="li" variant="body2" color="text.secondary">
+                          <Typography
+                            key={idx}
+                            component="li"
+                            variant="body2"
+                            color="text.secondary"
+                          >
                             {cause}
                           </Typography>
                         ))}
@@ -1154,7 +1228,12 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
 
                   {error.available_fixes && error.available_fixes.length > 0 && (
                     <Box>
-                      <Typography variant="subtitle2" fontWeight={600} color="success.main" gutterBottom>
+                      <Typography
+                        variant="subtitle2"
+                        fontWeight={600}
+                        color="success.main"
+                        gutterBottom
+                      >
                         ✅ Recommended Fixes:
                       </Typography>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -1175,7 +1254,11 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
                               {fix.description}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              <Chip label={`⏱️ ${fix.estimated_duration_sec}s`} size="small" variant="outlined" />
+                              <Chip
+                                label={`⏱️ ${fix.estimated_duration_sec}s`}
+                                size="small"
+                                variant="outlined"
+                              />
                               {fix.requires_confirmation && (
                                 <Chip
                                   label="⚠️ Requires Confirmation"
@@ -1185,7 +1268,12 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
                                 />
                               )}
                               {fix.is_destructive && (
-                                <Chip label="🔥 Destructive" size="small" color="error" variant="outlined" />
+                                <Chip
+                                  label="🔥 Destructive"
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                />
                               )}
                             </Box>
                           </Paper>
@@ -1196,9 +1284,12 @@ const SimpleErrorResolutionPanel = ({ errors = [], statistics, onErrorUpdate, on
 
                   <Box sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
                     <Typography variant="caption" color="text.secondary">
-                      Bot: <strong>{error.bot_id}</strong> • Source: <strong>{error.source}</strong> • First seen:{' '}
-                      <strong>{error.first_seen ? new Date(error.first_seen).toLocaleString() : 'n/a'}</strong> • Count:{' '}
-                      <strong>{occurrenceTotal}</strong>
+                      Bot: <strong>{error.bot_id}</strong> • Source: <strong>{error.source}</strong>{' '}
+                      • First seen:{' '}
+                      <strong>
+                        {error.first_seen ? new Date(error.first_seen).toLocaleString() : 'n/a'}
+                      </strong>{' '}
+                      • Count: <strong>{occurrenceTotal}</strong>
                     </Typography>
                   </Box>
                 </Paper>

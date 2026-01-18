@@ -1,6 +1,6 @@
 /**
  * Mobile Battery Indicator
- * 
+ *
  * Shows battery level and power save mode on mobile devices
  * Appears in top-right corner for mobile users
  */
@@ -15,7 +15,7 @@ import {
   BatteryCharging80 as ChargingIcon,
   Power as PowerSaveIcon,
   SignalCellular4Bar as WifiIcon,
-  SignalCellularAlt as CellularIcon
+  SignalCellularAlt as CellularIcon,
 } from '@mui/icons-material';
 import { useMobile } from '../context/MobileOptimizationContext';
 
@@ -29,7 +29,7 @@ function MobileBatteryIndicator() {
     networkType,
     isCellular,
     pollingInterval,
-    idleTimeout
+    idleTimeout,
   } = useMobile();
 
   // Only show on mobile
@@ -67,17 +67,20 @@ function MobileBatteryIndicator() {
         display: 'flex',
         gap: 1,
         flexDirection: 'column',
-        alignItems: 'flex-end'
+        alignItems: 'flex-end',
       }}
     >
       {/* Battery Status */}
       <Tooltip
         title={
           <div style={{ fontSize: '0.8rem', padding: '4px' }}>
-            <div><strong>🔋 Battery Status</strong></div>
+            <div>
+              <strong>🔋 Battery Status</strong>
+            </div>
             <div style={{ marginTop: 4 }}>
-              Level: {batteryLevel}%<br/>
-              {isCharging ? '⚡ Charging' : '🔌 On Battery'}<br/>
+              Level: {batteryLevel}%<br />
+              {isCharging ? '⚡ Charging' : '🔌 On Battery'}
+              <br />
               {isLowBattery && <span style={{ color: '#ff5252' }}>⚠️ Low Battery!</span>}
             </div>
           </div>
@@ -93,7 +96,7 @@ function MobileBatteryIndicator() {
           sx={{
             minWidth: 70,
             fontWeight: 'bold',
-            fontSize: '0.7rem'
+            fontSize: '0.7rem',
           }}
         />
       </Tooltip>
@@ -102,9 +105,12 @@ function MobileBatteryIndicator() {
       <Tooltip
         title={
           <div style={{ fontSize: '0.8rem', padding: '4px' }}>
-            <div><strong>📶 Network Status</strong></div>
+            <div>
+              <strong>📶 Network Status</strong>
+            </div>
             <div style={{ marginTop: 4 }}>
-              Type: {networkType}<br/>
+              Type: {networkType}
+              <br />
               {isCellular && <span style={{ color: '#ffa726' }}>📱 Using Cellular Data</span>}
               {!isCellular && <span style={{ color: '#66bb6a' }}>📶 WiFi Connected</span>}
             </div>
@@ -120,7 +126,7 @@ function MobileBatteryIndicator() {
           size="small"
           sx={{
             fontSize: '0.7rem',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
           }}
         />
       </Tooltip>
@@ -130,11 +136,14 @@ function MobileBatteryIndicator() {
         <Tooltip
           title={
             <div style={{ fontSize: '0.8rem', padding: '4px' }}>
-              <div><strong>🔋 Power Save Mode</strong></div>
+              <div>
+                <strong>🔋 Power Save Mode</strong>
+              </div>
               <div style={{ marginTop: 4 }}>
-                Polling: {pollingInterval / 1000}s<br/>
-                Idle timeout: {idleTimeout / 1000}s<br/>
-                Charts: Paused<br/>
+                Polling: {pollingInterval / 1000}s<br />
+                Idle timeout: {idleTimeout / 1000}s<br />
+                Charts: Paused
+                <br />
                 Animations: Reduced
               </div>
               <div style={{ marginTop: 8, fontSize: '0.7rem', opacity: 0.8 }}>
@@ -154,7 +163,7 @@ function MobileBatteryIndicator() {
               bgcolor: 'rgba(255, 152, 0, 0.9)',
               color: 'white',
               fontWeight: 'bold',
-              fontSize: '0.7rem'
+              fontSize: '0.7rem',
             }}
           />
         </Tooltip>
@@ -164,4 +173,3 @@ function MobileBatteryIndicator() {
 }
 
 export default MobileBatteryIndicator;
-

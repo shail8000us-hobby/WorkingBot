@@ -1,6 +1,6 @@
 /**
  * AutomationStatus - Real-time status display for automation evaluation
- * 
+ *
  * Shows why automation is/isn't triggering with detailed condition checks
  */
 
@@ -35,7 +35,7 @@ const AutomationStatus = ({ automationId, position }) => {
 
   const updateStatus = useCallback(() => {
     if (!automationId) return;
-    
+
     try {
       const status = automationMonitor.getAutomationStatus(automationId);
       setStatusData(status);
@@ -71,14 +71,14 @@ const AutomationStatus = ({ automationId, position }) => {
   const isActive = status !== 'inactive' && status !== 'completed';
 
   return (
-    <Paper 
-      elevation={0} 
-      sx={{ 
-        p: 2, 
-        mb: 2, 
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
+        mb: 2,
         bgcolor: 'background.default',
         border: '1px solid',
-        borderColor: 'divider'
+        borderColor: 'divider',
       }}
     >
       {/* Header */}
@@ -87,9 +87,9 @@ const AutomationStatus = ({ automationId, position }) => {
           <Typography variant="subtitle2" fontWeight="bold">
             Automation Status
           </Typography>
-          <Chip 
-            label={status.toUpperCase()} 
-            size="small" 
+          <Chip
+            label={status.toUpperCase()}
+            size="small"
             color={isActive ? 'primary' : 'default'}
             sx={{ fontSize: '10px' }}
           />
@@ -125,7 +125,8 @@ const AutomationStatus = ({ automationId, position }) => {
               <strong>Monitoring active.</strong> Checking conditions every 5 seconds.
             </Typography>
             <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-              💡 Check browser console for detailed evaluation results or use window.debugAutomation()
+              💡 Check browser console for detailed evaluation results or use
+              window.debugAutomation()
             </Typography>
           </Alert>
         )}
@@ -160,7 +161,8 @@ const AutomationStatus = ({ automationId, position }) => {
         {status === 'completed' && (
           <Alert severity="info" sx={{ mt: 1 }}>
             <Typography variant="body2">
-              <strong>Automation completed.</strong> Position was closed or automation reached its end state.
+              <strong>Automation completed.</strong> Position was closed or automation reached its
+              end state.
             </Typography>
           </Alert>
         )}
@@ -179,8 +181,12 @@ const AutomationStatus = ({ automationId, position }) => {
             <Typography variant="caption" fontWeight="bold" display="block" gutterBottom>
               🔍 Debug Commands (Browser Console):
             </Typography>
-            <Typography variant="caption" component="pre" sx={{ fontFamily: 'monospace', fontSize: '11px' }}>
-{`// Check all automations
+            <Typography
+              variant="caption"
+              component="pre"
+              sx={{ fontFamily: 'monospace', fontSize: '11px' }}
+            >
+              {`// Check all automations
 window.debugAutomation()
 
 // View last evaluation

@@ -3,6 +3,7 @@ import api from './apiShim';
 /**
  * Performance Monitoring Utility
  * Tracks and logs performance metrics
+ * Enhanced: January 18, 2026 (Phase 6)
  */
 class PerformanceMonitor {
   constructor(options = {}) {
@@ -10,6 +11,148 @@ class PerformanceMonitor {
     this.slowThreshold = options.slowThreshold || 3000; // ms (increased to reduce noise)
     this.logToBackend = options.logToBackend !== false;
     this.enableMemoryTracking = options.enableMemoryTracking !== false;
+    this.renderMetrics = {}; // Track component renders
+    this.apiMetrics = {}; // Track API call performance
+  }
+
+  /**
+   * Track component render performance
+   * @param {string} componentName - Component name
+   * @returns {Function} Cleanup function
+   */
+  measureRender(componentName) {
+    const start = performance.now();
+    const renderCount = (this.renderMetrics[componentName]?.count || 0) + 1;
+
+    this.renderMetrics[componentName] = {
+      count: renderCount,
+      lastRender: start,
+    };
+
+    return () => {
+      const duration = performance.now() - start;
+
+      // Track slow renders (> 16ms = 60fps threshold)
+      if (duration > 16) {
+        console.warn(
+          `🐌 Slow render: ${componentName} took ${duration.toFixed(2)}ms (render #${renderCount})`
+        );
+      }
+
+      // Update metrics
+      if (!this.renderMetrics[componentName].durations) {
+        this.renderMetrics[componentName].durations = [];
+      }
+      this.renderMetrics[componentName].durations.push(duration);
+
+      // Keep only last 10 renders
+      if (this.renderMetrics[componentName].durations.length > 10) {
+        this.renderMetrics[componentName].durations.shift();
+      }
+    };
+  }
+
+  /**
+   * Track API call performance
+   * @param {string} endpoint - API endpoint
+   * @returns {Function} Cleanup function
+   */
+  measureAPI(endpoint) {
+    const start = performance.now();
+
+    return (success = true) => {
+      const duration = performance.now() - start;
+
+      if (!this.apiMetrics[endpoint]) {
+        this.apiMetrics[endpoint] = {
+          count: 0,
+          successCount: 0,
+          failCount: 0,
+          totalDuration: 0,
+          avgDuration: 0,
+        };
+      }
+
+      const metrics = this.apiMetrics[endpoint];
+      metrics.count++;
+      metrics.totalDuration += duration;
+      metrics.avgDuration = metrics.totalDuration / metrics.count;
+
+      if (success) {
+        metrics.successCount++;
+      } else {
+        metrics.failCount++;
+      }
+
+      // Log slow API calls (> 1s)
+      if (duration > 1000) {
+        console.warn(`🐌 Slow API: ${endpoint} took ${duration.toFixed(2)}ms`);
+      }
+    };
+  }
+
+  /**
+   * Get render performance summary
+   * @returns {Object} Render metrics summary
+   */
+  getRenderSummary() {
+    return Object.entries(this.renderMetrics)
+      .map(([component, data]) => {
+        const durations = data.durations || [];
+        const avg =
+          durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+
+        return {
+          component,
+          renderCount: data.count,
+          avgDuration: avg.toFixed(2),
+          lastDuration: durations[durations.length - 1]?.toFixed(2) || 0,
+        };
+      })
+      .sort((a, b) => b.renderCount - a.renderCount);
+  }
+
+  /**
+   * Get API performance summary
+   * @returns {Object} API metrics summary
+   */
+  getAPISummary() {
+    return Object.entries(this.apiMetrics)
+      .map(([endpoint, data]) => ({
+        endpoint,
+        calls: data.count,
+        successRate: ((data.successCount / data.count) * 100).toFixed(1),
+        avgDuration: data.avgDuration.toFixed(2),
+      }))
+      .sort((a, b) => b.calls - a.calls);
+  }
+
+  /**
+   * Log performance summary
+   */
+  logPerformanceSummary() {
+    console.group('📊 Performance Summary');
+
+    // Render metrics
+    const renderSummary = this.getRenderSummary();
+    if (renderSummary.length > 0) {
+      console.group('🎨 Component Renders (Top 10)');
+      console.table(renderSummary.slice(0, 10));
+      console.groupEnd();
+    }
+
+    // API metrics
+    const apiSummary = this.getAPISummary();
+    if (apiSummary.length > 0) {
+      console.group('🌐 API Calls');
+      console.table(apiSummary);
+      console.groupEnd();
+    }
+
+    // Memory
+    this.logMemoryUsage();
+
+    console.groupEnd();
   }
 
   /**
@@ -23,7 +166,7 @@ class PerformanceMonitor {
       metadata,
       marks: [],
     };
-    
+
     // Use Performance API if available
     if (performance.mark) {
       performance.mark(`${label}-start`);
@@ -42,7 +185,7 @@ class PerformanceMonitor {
         name: markName,
         time: elapsed,
       });
-      
+
       if (performance.mark) {
         performance.mark(`${label}-${markName}`);
       }
@@ -71,7 +214,7 @@ class PerformanceMonitor {
 
     const duration = performance.now() - this.metrics[label].start;
     const metric = this.metrics[label];
-    
+
     // Use Performance API
     if (performance.mark && performance.measure) {
       performance.mark(`${label}-end`);
@@ -85,7 +228,7 @@ class PerformanceMonitor {
     // Log to console
     const emoji = duration > this.slowThreshold ? '🐌' : '⚡';
     console.log(`${emoji} ${label}: ${duration.toFixed(2)}ms`);
-    
+
     if (metric.marks.length > 0) {
       console.log(`   Marks:`, metric.marks);
     }
@@ -97,7 +240,7 @@ class PerformanceMonitor {
 
     // Cleanup
     delete this.metrics[label];
-    
+
     return duration;
   }
 
@@ -109,7 +252,7 @@ class PerformanceMonitor {
    */
   logSlowOperation(label, duration, metric) {
     console.warn(`🐌 Slow operation detected: ${label} (${duration.toFixed(2)}ms)`);
-    
+
     if (this.logToBackend) {
       api
         .post('/api/performance-log', {
@@ -121,7 +264,7 @@ class PerformanceMonitor {
           url: window.location.href,
           timestamp: new Date().toISOString(),
         })
-        .catch(e => console.error('Failed to log performance:', e));
+        .catch((e) => console.error('Failed to log performance:', e));
     }
   }
 
@@ -149,16 +292,19 @@ class PerformanceMonitor {
    */
   getMemoryUsage() {
     if (!this.enableMemoryTracking) return null;
-    
+
     if (performance.memory) {
       return {
         usedJSHeapSize: performance.memory.usedJSHeapSize,
         totalJSHeapSize: performance.memory.totalJSHeapSize,
         jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
-        usedPercent: (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit * 100).toFixed(2),
+        usedPercent: (
+          (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) *
+          100
+        ).toFixed(2),
       };
     }
-    
+
     return null;
   }
 
@@ -217,11 +363,11 @@ class PerformanceMonitor {
    */
   getEntries(type = null) {
     if (!performance.getEntriesByType) return [];
-    
+
     if (type) {
       return performance.getEntriesByType(type);
     }
-    
+
     return performance.getEntries();
   }
 
@@ -252,9 +398,9 @@ class PerformanceMonitor {
     };
 
     if (measures.length > 0) {
-      const durations = measures.map(m => m.duration);
+      const durations = measures.map((m) => m.duration);
       summary.averageDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-      
+
       const sorted = [...measures].sort((a, b) => b.duration - a.duration);
       summary.slowestOperation = {
         name: sorted[0].name,
@@ -277,7 +423,8 @@ class PerformanceMonitor {
 
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        if (entry.duration > 16) { // More than 1 frame (60fps)
+        if (entry.duration > 16) {
+          // More than 1 frame (60fps)
           console.warn('🎨 Slow render detected:', entry.name, `${entry.duration.toFixed(2)}ms`);
         }
       }

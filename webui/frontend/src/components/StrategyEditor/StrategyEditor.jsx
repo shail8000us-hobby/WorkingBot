@@ -32,7 +32,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon
+  ListItemIcon,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -47,7 +47,7 @@ import {
   Shield as ShieldIcon,
   Speed as SpeedIcon,
   CheckCircle as CheckIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 
@@ -77,8 +77,8 @@ const STRATEGY_TEMPLATES = {
       rsi_buy_threshold: 30,
       rsi_sell_threshold: 70,
       volatility_filter: true,
-      max_drawdown_percent: 10.0
-    }
+      max_drawdown_percent: 10.0,
+    },
   },
   balanced: {
     name: 'Balanced Grid',
@@ -102,8 +102,8 @@ const STRATEGY_TEMPLATES = {
       rsi_buy_threshold: 35,
       rsi_sell_threshold: 65,
       volatility_filter: true,
-      max_drawdown_percent: 15.0
-    }
+      max_drawdown_percent: 15.0,
+    },
   },
   aggressive: {
     name: 'Aggressive Grid',
@@ -127,9 +127,9 @@ const STRATEGY_TEMPLATES = {
       rsi_buy_threshold: 40,
       rsi_sell_threshold: 60,
       volatility_filter: false,
-      max_drawdown_percent: 20.0
-    }
-  }
+      max_drawdown_percent: 20.0,
+    },
+  },
 };
 
 const StrategyEditor = () => {
@@ -182,7 +182,7 @@ const StrategyEditor = () => {
           rsi_buy_threshold: config.indicators?.rsi?.buy_threshold || 30,
           rsi_sell_threshold: config.indicators?.rsi?.sell_threshold || 70,
           volatility_filter: config.safety?.volatility_filter || false,
-          max_drawdown_percent: config.safety?.max_drawdown_percent || 15.0
+          max_drawdown_percent: config.safety?.max_drawdown_percent || 15.0,
         });
         setCurrentStrategy('current');
       }
@@ -195,17 +195,17 @@ const StrategyEditor = () => {
     const template = STRATEGY_TEMPLATES[templateKey];
     setStrategyConfig(template.config);
     setCurrentStrategy(templateKey);
-    setSnackbar({ 
-      open: true, 
-      message: `Applied ${template.name} template`, 
-      severity: 'success' 
+    setSnackbar({
+      open: true,
+      message: `Applied ${template.name} template`,
+      severity: 'success',
     });
   };
 
   const handleConfigChange = (field, value) => {
-    setStrategyConfig(prev => ({
+    setStrategyConfig((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
   };
 
@@ -219,7 +219,7 @@ const StrategyEditor = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/strategies/save`, {
         name: strategyName,
-        config: strategyConfig
+        config: strategyConfig,
       });
 
       if (response.data.status === 'success') {
@@ -229,10 +229,10 @@ const StrategyEditor = () => {
         loadCustomStrategies();
       }
     } catch (error) {
-      setSnackbar({ 
-        open: true, 
-        message: `Failed to save: ${error.response?.data?.message || error.message}`, 
-        severity: 'error' 
+      setSnackbar({
+        open: true,
+        message: `Failed to save: ${error.response?.data?.message || error.message}`,
+        severity: 'error',
       });
     } finally {
       setLoading(false);
@@ -245,7 +245,7 @@ const StrategyEditor = () => {
       const response = await axios.post(`${API_BASE_URL}/api/config/update`, {
         grid: {
           levels: strategyConfig.grid_levels,
-          spacing_percent: strategyConfig.grid_spacing_percent
+          spacing_percent: strategyConfig.grid_spacing_percent,
         },
         trading: {
           base_order_size: strategyConfig.base_order_size,
@@ -254,31 +254,35 @@ const StrategyEditor = () => {
           take_profit_percent: strategyConfig.take_profit_percent,
           trailing_stop: strategyConfig.trailing_stop,
           use_martingale: strategyConfig.use_martingale,
-          martingale_multiplier: strategyConfig.martingale_multiplier
+          martingale_multiplier: strategyConfig.martingale_multiplier,
         },
         safety: {
           stop_loss_percent: strategyConfig.stop_loss_percent,
           volatility_filter: strategyConfig.volatility_filter,
-          max_drawdown_percent: strategyConfig.max_drawdown_percent
+          max_drawdown_percent: strategyConfig.max_drawdown_percent,
         },
         indicators: {
           rsi: {
             enabled: strategyConfig.rsi_enabled,
             period: strategyConfig.rsi_period,
             buy_threshold: strategyConfig.rsi_buy_threshold,
-            sell_threshold: strategyConfig.rsi_sell_threshold
-          }
-        }
+            sell_threshold: strategyConfig.rsi_sell_threshold,
+          },
+        },
       });
 
       if (response.data.status === 'success') {
-        setSnackbar({ open: true, message: 'Strategy applied successfully! Bot will use new settings.', severity: 'success' });
+        setSnackbar({
+          open: true,
+          message: 'Strategy applied successfully! Bot will use new settings.',
+          severity: 'success',
+        });
       }
     } catch (error) {
-      setSnackbar({ 
-        open: true, 
-        message: `Failed to apply: ${error.response?.data?.message || error.message}`, 
-        severity: 'error' 
+      setSnackbar({
+        open: true,
+        message: `Failed to apply: ${error.response?.data?.message || error.message}`,
+        severity: 'error',
       });
     } finally {
       setLoading(false);
@@ -290,7 +294,7 @@ const StrategyEditor = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/strategies/backtest`, {
         config: strategyConfig,
-        days: 30
+        days: 30,
       });
 
       if (response.data.status === 'success') {
@@ -298,10 +302,10 @@ const StrategyEditor = () => {
         setSnackbar({ open: true, message: 'Backtest completed!', severity: 'success' });
       }
     } catch (error) {
-      setSnackbar({ 
-        open: true, 
-        message: `Backtest failed: ${error.response?.data?.message || 'Feature not available'}`, 
-        severity: 'warning' 
+      setSnackbar({
+        open: true,
+        message: `Backtest failed: ${error.response?.data?.message || 'Feature not available'}`,
+        severity: 'warning',
       });
     } finally {
       setLoading(false);
@@ -315,10 +319,14 @@ const StrategyEditor = () => {
 
   const getRiskLevelColor = (level) => {
     switch (level) {
-      case 'Low': return 'success';
-      case 'Medium': return 'warning';
-      case 'High': return 'error';
-      default: return 'default';
+      case 'Low':
+        return 'success';
+      case 'Medium':
+        return 'warning';
+      case 'High':
+        return 'error';
+      default:
+        return 'default';
     }
   };
 
@@ -326,13 +334,13 @@ const StrategyEditor = () => {
     <Grid container spacing={3}>
       {Object.entries(STRATEGY_TEMPLATES).map(([key, template]) => (
         <Grid item xs={12} md={4} key={key}>
-          <Card 
-            sx={{ 
+          <Card
+            sx={{
               height: '100%',
               border: currentStrategy === key ? 2 : 0,
               borderColor: 'primary.main',
               cursor: 'pointer',
-              '&:hover': { boxShadow: 6 }
+              '&:hover': { boxShadow: 6 },
             }}
             onClick={() => handleTemplateSelect(key)}
           >
@@ -343,40 +351,39 @@ const StrategyEditor = () => {
                   {template.name}
                 </Typography>
               </Box>
-              
+
               <Typography variant="body2" color="text.secondary" paragraph>
                 {template.description}
               </Typography>
 
               <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                <Chip 
-                  label={`Risk: ${template.riskLevel}`} 
-                  color={getRiskLevelColor(template.riskLevel)} 
-                  size="small" 
+                <Chip
+                  label={`Risk: ${template.riskLevel}`}
+                  color={getRiskLevelColor(template.riskLevel)}
+                  size="small"
                 />
-                <Chip 
-                  label={template.expectedReturn} 
-                  variant="outlined" 
-                  size="small" 
-                />
+                <Chip label={template.expectedReturn} variant="outlined" size="small" />
               </Box>
 
               <Divider sx={{ my: 2 }} />
 
               <Typography variant="caption" display="block" gutterBottom>
-                <strong>Grid:</strong> {template.config.grid_levels} levels, {template.config.grid_spacing_percent}% spacing
+                <strong>Grid:</strong> {template.config.grid_levels} levels,{' '}
+                {template.config.grid_spacing_percent}% spacing
               </Typography>
               <Typography variant="caption" display="block" gutterBottom>
-                <strong>Orders:</strong> ${template.config.base_order_size} base, ${template.config.safety_order_size} safety
+                <strong>Orders:</strong> ${template.config.base_order_size} base, $
+                {template.config.safety_order_size} safety
               </Typography>
               <Typography variant="caption" display="block">
-                <strong>TP/SL:</strong> {template.config.take_profit_percent}% / {template.config.stop_loss_percent}%
+                <strong>TP/SL:</strong> {template.config.take_profit_percent}% /{' '}
+                {template.config.stop_loss_percent}%
               </Typography>
             </CardContent>
 
             <CardActions>
-              <Button 
-                size="small" 
+              <Button
+                size="small"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleTemplateSelect(key);
@@ -385,8 +392,8 @@ const StrategyEditor = () => {
               >
                 {currentStrategy === key ? 'Selected' : 'Use This'}
               </Button>
-              <Button 
-                size="small" 
+              <Button
+                size="small"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleCompare(key);
@@ -544,7 +551,9 @@ const StrategyEditor = () => {
               label="Martingale Multiplier"
               type="number"
               value={strategyConfig.martingale_multiplier || 1.5}
-              onChange={(e) => handleConfigChange('martingale_multiplier', parseFloat(e.target.value))}
+              onChange={(e) =>
+                handleConfigChange('martingale_multiplier', parseFloat(e.target.value))
+              }
               inputProps={{ step: 0.1 }}
               helperText="Order size multiplier for each DCA level"
             />
@@ -690,15 +699,8 @@ const StrategyEditor = () => {
     const current = strategyConfig;
 
     return (
-      <Dialog 
-        open={compareMode} 
-        onClose={() => setCompareMode(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          Strategy Comparison: {template.name} vs Current
-        </DialogTitle>
+      <Dialog open={compareMode} onClose={() => setCompareMode(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Strategy Comparison: {template.name} vs Current</DialogTitle>
         <DialogContent>
           <Grid container spacing={2}>
             <Grid item xs={6}>
@@ -720,7 +722,7 @@ const StrategyEditor = () => {
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
-                  <Typography 
+                  <Typography
                     variant="body2"
                     color={current[key] !== value ? 'warning.main' : 'text.primary'}
                   >
@@ -733,7 +735,7 @@ const StrategyEditor = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCompareMode(false)}>Close</Button>
-          <Button 
+          <Button
             onClick={() => {
               handleTemplateSelect(compareStrategy);
               setCompareMode(false);
@@ -754,7 +756,8 @@ const StrategyEditor = () => {
         📊 Strategy Manager
       </Typography>
       <Typography variant="body2" color="text.secondary" paragraph>
-        Choose a pre-built strategy template or customize your own trading strategy with advanced parameters
+        Choose a pre-built strategy template or customize your own trading strategy with advanced
+        parameters
       </Typography>
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
@@ -765,17 +768,9 @@ const StrategyEditor = () => {
         <Tab label="My Strategies" />
       </Tabs>
 
-      {activeTab === 0 && (
-        <Box>
-          {renderTemplateCards()}
-        </Box>
-      )}
+      {activeTab === 0 && <Box>{renderTemplateCards()}</Box>}
 
-      {activeTab === 1 && (
-        <Paper sx={{ p: 3 }}>
-          {renderStrategyForm()}
-        </Paper>
-      )}
+      {activeTab === 1 && <Paper sx={{ p: 3 }}>{renderStrategyForm()}</Paper>}
 
       {activeTab === 2 && (
         <Paper sx={{ p: 3 }}>
@@ -784,7 +779,8 @@ const StrategyEditor = () => {
           </Typography>
           {customStrategies.length === 0 ? (
             <Alert severity="info">
-              No saved strategies yet. Create and save your custom strategies from the Custom Configuration tab.
+              No saved strategies yet. Create and save your custom strategies from the Custom
+              Configuration tab.
             </Alert>
           ) : (
             <List>
@@ -839,8 +835,8 @@ const StrategyEditor = () => {
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           variant="filled"
         >

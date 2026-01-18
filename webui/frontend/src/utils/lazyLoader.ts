@@ -1,7 +1,7 @@
 /**
  * Lazy Loading Utility
  * Optimized component loading with preloading
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 
@@ -31,7 +31,7 @@ export const lazyWithRetry = <T extends ComponentType<any>>(
             console.log(`🔄 Lazy load failed for ${componentName}, refreshing...`);
             return window.location.reload();
           }
-          
+
           console.error(`❌ Lazy load failed for ${componentName}:`, error);
           reject(error);
         });
@@ -66,7 +66,7 @@ class LazyLoadManager {
 
     this.loading.add(name);
     const component = this.components.get(name);
-    
+
     if (component) {
       try {
         await (component as any).preload?.();
@@ -93,5 +93,5 @@ export const lazyLoadManager = new LazyLoadManager();
 export default {
   lazyWithRetry,
   preloadComponent,
-  lazyLoadManager
+  lazyLoadManager,
 };

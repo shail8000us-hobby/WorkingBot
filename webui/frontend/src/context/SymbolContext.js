@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 /**
  * SymbolContext - Global state for selected trading symbol (v5.0)
  * Phase 3: Smart Symbol Switching
- * 
+ *
  * Manages:
  * - Current selected symbol
  * - Available symbols list
@@ -42,7 +42,7 @@ export const useSymbolSafe = () => {
       symbolDataCache: {},
       cacheSymbolData: () => {},
       getCachedData: () => null,
-      invalidateCache: () => {}
+      invalidateCache: () => {},
     };
   }
   return context;
@@ -54,7 +54,7 @@ export const SymbolProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [symbolDataCache, setSymbolDataCache] = useState({});
   const [dirtyState, setDirtyState] = useState(false);
-  
+
   // Refs for cache management
   const cacheTimestamps = useRef({});
   const CACHE_TTL = 30000; // 30 seconds
@@ -64,20 +64,20 @@ export const SymbolProvider = ({ children }) => {
     try {
       const response = await fetch('/api/symbols');
       const data = await response.json();
-      
+
       if (data.symbols) {
         setSymbols(data.symbols);
-        
+
         // Auto-select first enabled symbol if none selected
-        setSelectedSymbol(prev => {
+        setSelectedSymbol((prev) => {
           if (prev) return prev; // Already have selection, keep it
-          
+
           if (data.symbols.length > 0) {
             const saved = localStorage.getItem('selectedSymbol');
-            const symbol = saved 
-              ? data.symbols.find(s => s.name === saved)
-              : data.symbols.find(s => s.enabled) || data.symbols[0];
-            
+            const symbol = saved
+              ? data.symbols.find((s) => s.name === saved)
+              : data.symbols.find((s) => s.enabled) || data.symbols[0];
+
             if (symbol) {
               localStorage.setItem('selectedSymbol', symbol.name);
               return symbol.name;
@@ -100,62 +100,68 @@ export const SymbolProvider = ({ children }) => {
   }, [loadSymbols]);
 
   // Change selected symbol (Phase 3: Smart Switching)
-  const changeSymbol = useCallback((symbolName, options = {}) => {
-    const { force = false } = options;
-    
-    // Check for unsaved changes
-    if (dirtyState && !force) {
-      const confirmed = window.confirm(
-        `You have unsaved changes. Switch to ${symbolName} anyway?\n\n` +
-        'Unsaved changes will be lost.'
-      );
-      if (!confirmed) return false;
-    }
-    
-    // Update selected symbol
-    setSelectedSymbol(symbolName);
-    localStorage.setItem('selectedSymbol', symbolName);
-    
-    // Clear dirty state after switch
-    setDirtyState(false);
-    
-    console.log(`✅ Switched to symbol: ${symbolName}`);
-    return true;
-  }, [dirtyState]);
-  
+  const changeSymbol = useCallback(
+    (symbolName, options = {}) => {
+      const { force = false } = options;
+
+      // Check for unsaved changes
+      if (dirtyState && !force) {
+        const confirmed = window.confirm(
+          `You have unsaved changes. Switch to ${symbolName} anyway?\n\n` +
+            'Unsaved changes will be lost.'
+        );
+        if (!confirmed) return false;
+      }
+
+      // Update selected symbol
+      setSelectedSymbol(symbolName);
+      localStorage.setItem('selectedSymbol', symbolName);
+
+      // Clear dirty state after switch
+      setDirtyState(false);
+
+      console.log(`✅ Switched to symbol: ${symbolName}`);
+      return true;
+    },
+    [dirtyState]
+  );
+
   // Mark form as dirty (has unsaved changes)
   const markDirty = useCallback(() => {
     setDirtyState(true);
   }, []);
-  
+
   // Clear dirty state
   const clearDirty = useCallback(() => {
     setDirtyState(false);
   }, []);
-  
+
   // Cache symbol data
   const cacheSymbolData = useCallback((symbolName, data) => {
-    setSymbolDataCache(prev => ({
+    setSymbolDataCache((prev) => ({
       ...prev,
-      [symbolName]: data
+      [symbolName]: data,
     }));
     cacheTimestamps.current[symbolName] = Date.now();
   }, []);
-  
+
   // Get cached symbol data (if fresh)
-  const getCachedData = useCallback((symbolName) => {
-    const timestamp = cacheTimestamps.current[symbolName];
-    const now = Date.now();
-    
-    if (timestamp && (now - timestamp < CACHE_TTL)) {
-      return symbolDataCache[symbolName];
-    }
-    return null;
-  }, [symbolDataCache, CACHE_TTL]);
-  
+  const getCachedData = useCallback(
+    (symbolName) => {
+      const timestamp = cacheTimestamps.current[symbolName];
+      const now = Date.now();
+
+      if (timestamp && now - timestamp < CACHE_TTL) {
+        return symbolDataCache[symbolName];
+      }
+      return null;
+    },
+    [symbolDataCache, CACHE_TTL]
+  );
+
   // Invalidate cache for symbol
   const invalidateCache = useCallback((symbolName) => {
-    setSymbolDataCache(prev => {
+    setSymbolDataCache((prev) => {
       const newCache = { ...prev };
       delete newCache[symbolName];
       return newCache;
@@ -165,22 +171,28 @@ export const SymbolProvider = ({ children }) => {
 
   // Get current symbol details
   const getCurrentSymbol = useCallback(() => {
-    return symbols.find(s => s.name === selectedSymbol) || null;
+    return symbols.find((s) => s.name === selectedSymbol) || null;
   }, [symbols, selectedSymbol]);
 
   // Helper: Add symbol parameter to API URL
-  const withSymbol = useCallback((url) => {
-    if (!selectedSymbol) return url;
-    
-    const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}symbol=${selectedSymbol}`;
-  }, [selectedSymbol]);
+  const withSymbol = useCallback(
+    (url) => {
+      if (!selectedSymbol) return url;
+
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}symbol=${selectedSymbol}`;
+    },
+    [selectedSymbol]
+  );
 
   // Helper: Fetch with automatic symbol parameter
-  const fetchWithSymbol = useCallback(async (url, options = {}) => {
-    const urlWithSymbol = withSymbol(url);
-    return fetch(urlWithSymbol, options);
-  }, [withSymbol]);
+  const fetchWithSymbol = useCallback(
+    async (url, options = {}) => {
+      const urlWithSymbol = withSymbol(url);
+      return fetch(urlWithSymbol, options);
+    },
+    [withSymbol]
+  );
 
   const value = {
     // State
@@ -189,27 +201,23 @@ export const SymbolProvider = ({ children }) => {
     loading,
     symbolDataCache,
     dirtyState,
-    
+
     // Actions
     changeSymbol,
     loadSymbols,
     getCurrentSymbol,
     markDirty,
     clearDirty,
-    
+
     // Cache management (Phase 3)
     cacheSymbolData,
     getCachedData,
     invalidateCache,
-    
+
     // Helpers
     withSymbol,
-    fetchWithSymbol
+    fetchWithSymbol,
   };
 
-  return (
-    <SymbolContext.Provider value={value}>
-      {children}
-    </SymbolContext.Provider>
-  );
+  return <SymbolContext.Provider value={value}>{children}</SymbolContext.Provider>;
 };

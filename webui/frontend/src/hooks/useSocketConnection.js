@@ -1,6 +1,6 @@
 /**
  * Socket Connection Hook
- * 
+ *
  * Manages WebSocket connection to backend and handles all real-time events
  */
 
@@ -21,7 +21,7 @@ export function useSocketConnection({
   setLastUpdated,
   showNotification,
   pushLatencySample,
-  debouncedFetchInitialData
+  debouncedFetchInitialData,
 }) {
   const connectionManagerRef = useRef(null);
   const showNotificationRef = useRef(showNotification);
@@ -37,14 +37,14 @@ export function useSocketConnection({
 
   useEffect(() => {
     console.log('🔵 Initializing connection manager');
-    
+
     const manager = new RobustConnectionManager({
       reconnectDelay: 5000,
       maxReconnectDelay: 30000,
       maxRetries: 3,
       heartbeatInterval: 60000,
       syncInterval: 30000,
-      pingTimeout: 15000
+      pingTimeout: 15000,
     });
 
     connectionManagerRef.current = manager;

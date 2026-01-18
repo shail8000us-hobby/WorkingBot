@@ -14,7 +14,7 @@ const defaultState = {
   telegramStatus: null,
   setSystemStatus: () => {},
   registerWarning: () => {},
-  clearWarning: () => {}
+  clearWarning: () => {},
 };
 
 const SystemStatusContext = createContext(defaultState);
@@ -25,7 +25,7 @@ export const SystemStatusProvider = ({ children }) => {
     guardianHealthy: true,
     warnings: [],
     lastSync: null,
-    telegramStatus: null
+    telegramStatus: null,
   });
 
   /**
@@ -36,7 +36,7 @@ export const SystemStatusProvider = ({ children }) => {
   const mergeStatus = useCallback((updates) => {
     setSystemStatus((prev) => ({
       ...prev,
-      ...updates
+      ...updates,
     }));
   }, []);
 
@@ -52,7 +52,7 @@ export const SystemStatusProvider = ({ children }) => {
       const existing = prev.warnings.filter((w) => w.id !== warning.id);
       return {
         ...prev,
-        warnings: [...existing, warning]
+        warnings: [...existing, warning],
       };
     });
   }, []);
@@ -64,7 +64,7 @@ export const SystemStatusProvider = ({ children }) => {
   const clearWarning = useCallback((id) => {
     setSystemStatus((prev) => ({
       ...prev,
-      warnings: prev.warnings.filter((warning) => warning.id !== id)
+      warnings: prev.warnings.filter((warning) => warning.id !== id),
     }));
   }, []);
 
@@ -73,16 +73,12 @@ export const SystemStatusProvider = ({ children }) => {
       ...systemStatus,
       setSystemStatus: mergeStatus,
       registerWarning,
-      clearWarning
+      clearWarning,
     }),
     [systemStatus, mergeStatus, registerWarning, clearWarning]
   );
 
-  return (
-    <SystemStatusContext.Provider value={value}>
-      {children}
-    </SystemStatusContext.Provider>
-  );
+  return <SystemStatusContext.Provider value={value}>{children}</SystemStatusContext.Provider>;
 };
 
 export const useSystemStatus = () => useContext(SystemStatusContext);

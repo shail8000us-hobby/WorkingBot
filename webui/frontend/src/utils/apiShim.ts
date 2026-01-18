@@ -1,7 +1,7 @@
 /**
  * API Shim
  * Wrapper for API requests
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 
@@ -67,7 +67,7 @@ const apiShim = {
   },
   patch<T = any>(url: string, data?: any, config?: RequestConfig): Promise<{ data: T }> {
     return call<T>(url, 'PATCH', data, config);
-  }
+  },
 };
 
 export default apiShim;

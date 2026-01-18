@@ -10,12 +10,12 @@ import api from '../utils/apiShim';
 class EnhancedErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { 
-      hasError: false, 
-      error: null, 
+    this.state = {
+      hasError: false,
+      error: null,
       errorInfo: null,
       errorCount: 0,
-      lastErrorTime: null
+      lastErrorTime: null,
     };
   }
 
@@ -26,15 +26,15 @@ class EnhancedErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     const now = Date.now();
     console.error('🔴 ErrorBoundary caught:', error, errorInfo);
-    
+
     // Log to backend
     this.logErrorToBackend(error, errorInfo);
 
-    this.setState(prev => ({
+    this.setState((prev) => ({
       error,
       errorInfo,
       errorCount: prev.errorCount + 1,
-      lastErrorTime: now
+      lastErrorTime: now,
     }));
 
     // Auto-recover if too many errors
@@ -54,20 +54,20 @@ class EnhancedErrorBoundary extends React.Component {
           stack: errorInfo.componentStack,
           userAgent: navigator.userAgent,
           url: window.location.href,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         })
-        .catch(e => console.error('Failed to log error:', e));
+        .catch((e) => console.error('Failed to log error:', e));
     } catch (e) {
       // Silently fail if logging doesn't work
     }
   }
 
   handleReset = () => {
-    this.setState({ 
-      hasError: false, 
-      error: null, 
+    this.setState({
+      hasError: false,
+      error: null,
       errorInfo: null,
-      errorCount: 0 
+      errorCount: 0,
     });
   };
 
@@ -80,14 +80,14 @@ class EnhancedErrorBoundary extends React.Component {
       const { componentName = 'Component' } = this.props;
 
       return (
-        <Paper 
-          elevation={3} 
-          sx={{ 
-            p: 3, 
-            m: 2, 
-            bgcolor: 'error.dark', 
+        <Paper
+          elevation={3}
+          sx={{
+            p: 3,
+            m: 2,
+            bgcolor: 'error.dark',
             color: 'error.contrastText',
-            borderLeft: '4px solid #f44336'
+            borderLeft: '4px solid #f44336',
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
@@ -96,9 +96,7 @@ class EnhancedErrorBoundary extends React.Component {
               <Typography variant="h6" fontWeight="bold">
                 {componentName} Error
               </Typography>
-              <Typography variant="body2">
-                Something went wrong in this component
-              </Typography>
+              <Typography variant="body2">Something went wrong in this component</Typography>
             </Box>
           </Box>
 
@@ -115,16 +113,16 @@ class EnhancedErrorBoundary extends React.Component {
           )}
 
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <Button 
-              variant="contained" 
+            <Button
+              variant="contained"
               onClick={this.handleReset}
               startIcon={<RefreshIcon />}
               sx={{ bgcolor: 'white', color: 'error.dark', '&:hover': { bgcolor: '#f5f5f5' } }}
             >
               Try Again
             </Button>
-            <Button 
-              variant="outlined" 
+            <Button
+              variant="outlined"
               onClick={this.handleReload}
               sx={{ borderColor: 'white', color: 'white', '&:hover': { borderColor: '#f5f5f5' } }}
             >
@@ -133,8 +131,13 @@ class EnhancedErrorBoundary extends React.Component {
           </Box>
 
           {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
-            <Box sx={{ mt: 3, p: 2, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1, overflow: 'auto' }}>
-              <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+            <Box
+              sx={{ mt: 3, p: 2, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1, overflow: 'auto' }}
+            >
+              <Typography
+                variant="caption"
+                sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}
+              >
                 {this.state.errorInfo.componentStack}
               </Typography>
             </Box>

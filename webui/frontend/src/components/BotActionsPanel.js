@@ -15,7 +15,7 @@ const BotActionsPanel = () => {
       setError(null);
       const response = await fetch(withInstance('/api/bot-actions/next'));
       const data = await response.json();
-      
+
       if (data.success && data.actions) {
         setNextActions(data.actions);
         setMarketState(data.market_state);
@@ -39,10 +39,14 @@ const BotActionsPanel = () => {
 
   const getImportanceIcon = (importance) => {
     switch (importance) {
-      case 'critical': return '🔴';
-      case 'high': return '�';
-      case 'normal': return '�';
-      default: return '⚪';
+      case 'critical':
+        return '🔴';
+      case 'high':
+        return '�';
+      case 'normal':
+        return '�';
+      default:
+        return '⚪';
     }
   };
 
@@ -50,7 +54,7 @@ const BotActionsPanel = () => {
     const colors = {
       1: 'priority-1',
       2: 'priority-2',
-      3: 'priority-3'
+      3: 'priority-3',
     };
     return colors[priority] || 'priority-default';
   };
@@ -82,11 +86,7 @@ const BotActionsPanel = () => {
       <div className="panel-header">
         <h2>🔮 Next Bot Actions</h2>
         <div className="header-controls">
-          <button
-            className="refresh-button"
-            onClick={fetchNextActions}
-            title="Refresh predictions"
-          >
+          <button className="refresh-button" onClick={fetchNextActions} title="Refresh predictions">
             🔄 Refresh
           </button>
         </div>
@@ -130,28 +130,28 @@ const BotActionsPanel = () => {
                   {getImportanceIcon(action.importance || 'normal')}
                 </span>
               </div>
-              
+
               <div className="action-title">{action.action}</div>
-              
+
               <div className="action-details">
                 {action.reason && (
                   <div className="detail-row">
                     <strong>Reason:</strong> {action.reason}
                   </div>
                 )}
-                
+
                 {action.condition && (
                   <div className="detail-row">
                     <strong>Condition:</strong> {action.condition}
                   </div>
                 )}
-                
+
                 {action.next_step && (
                   <div className="detail-row">
                     <strong>Next Step:</strong> {action.next_step}
                   </div>
                 )}
-                
+
                 {action.eta && (
                   <div className="detail-row eta">
                     <strong>ETA:</strong> {action.eta}

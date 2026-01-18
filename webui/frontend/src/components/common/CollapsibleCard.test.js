@@ -7,10 +7,14 @@ import CollapsibleCard from './CollapsibleCard';
 jest.mock('framer-motion', () => ({
   motion: {
     section: ({ children, className, initial, animate, transition, ...props }) => (
-      <section className={className} {...props}>{children}</section>
+      <section className={className} {...props}>
+        {children}
+      </section>
     ),
     div: ({ children, className, initial, animate, exit, transition, ...props }) => (
-      <div className={className} {...props}>{children}</div>
+      <div className={className} {...props}>
+        {children}
+      </div>
     ),
   },
   AnimatePresence: ({ children }) => <>{children}</>,
@@ -24,7 +28,11 @@ describe('CollapsibleCard', () => {
     });
 
     it('renders with subtitle', () => {
-      render(<CollapsibleCard title="Title" subtitle="Test Subtitle">Content</CollapsibleCard>);
+      render(
+        <CollapsibleCard title="Title" subtitle="Test Subtitle">
+          Content
+        </CollapsibleCard>
+      );
       expect(screen.getByText('Test Subtitle')).toBeInTheDocument();
     });
 
@@ -40,7 +48,9 @@ describe('CollapsibleCard', () => {
 
     it('applies custom id when provided', () => {
       const { container } = render(
-        <CollapsibleCard title="Title" id="custom-id">Content</CollapsibleCard>
+        <CollapsibleCard title="Title" id="custom-id">
+          Content
+        </CollapsibleCard>
       );
       expect(container.querySelector('#custom-id')).toBeInTheDocument();
     });
@@ -48,31 +58,45 @@ describe('CollapsibleCard', () => {
 
   describe('Collapsible Behavior', () => {
     it('is open by default when defaultOpen is true', () => {
-      render(<CollapsibleCard title="Title" defaultOpen={true}>Content</CollapsibleCard>);
+      render(
+        <CollapsibleCard title="Title" defaultOpen={true}>
+          Content
+        </CollapsibleCard>
+      );
       expect(screen.getByText('Content')).toBeInTheDocument();
     });
 
     it('is closed when defaultOpen is false', () => {
-      render(<CollapsibleCard title="Title" defaultOpen={false}>Content</CollapsibleCard>);
+      render(
+        <CollapsibleCard title="Title" defaultOpen={false}>
+          Content
+        </CollapsibleCard>
+      );
       expect(screen.queryByText('Content')).not.toBeInTheDocument();
     });
 
     it('toggles open/closed when button is clicked', () => {
-      render(<CollapsibleCard title="Title" defaultOpen={true}>Content</CollapsibleCard>);
-      
+      render(
+        <CollapsibleCard title="Title" defaultOpen={true}>
+          Content
+        </CollapsibleCard>
+      );
+
       const button = screen.getByRole('button');
       expect(screen.getByText('Content')).toBeInTheDocument();
-      
+
       fireEvent.click(button);
       // After toggle, content should disappear (mocked AnimatePresence won't animate)
-      
+
       fireEvent.click(button);
       // Content should reappear
     });
 
     it('shows ChevronUp icon when open', () => {
       const { container } = render(
-        <CollapsibleCard title="Title" defaultOpen={true}>Content</CollapsibleCard>
+        <CollapsibleCard title="Title" defaultOpen={true}>
+          Content
+        </CollapsibleCard>
       );
       // ChevronUp is rendered as SVG by lucide-react
       const button = screen.getByRole('button');
@@ -81,14 +105,20 @@ describe('CollapsibleCard', () => {
 
     it('shows ChevronDown icon when closed', () => {
       const { container } = render(
-        <CollapsibleCard title="Title" defaultOpen={false}>Content</CollapsibleCard>
+        <CollapsibleCard title="Title" defaultOpen={false}>
+          Content
+        </CollapsibleCard>
       );
       const button = screen.getByRole('button');
       expect(button.querySelector('svg')).toBeInTheDocument();
     });
 
     it('has proper aria-expanded attribute', () => {
-      render(<CollapsibleCard title="Title" defaultOpen={true}>Content</CollapsibleCard>);
+      render(
+        <CollapsibleCard title="Title" defaultOpen={true}>
+          Content
+        </CollapsibleCard>
+      );
       const button = screen.getByRole('button');
       expect(button).toHaveAttribute('aria-expanded', 'true');
     });
@@ -97,10 +127,12 @@ describe('CollapsibleCard', () => {
   describe('Accent Colors', () => {
     const accentColors = ['sky', 'emerald', 'amber', 'rose', 'violet'];
 
-    accentColors.forEach(accent => {
+    accentColors.forEach((accent) => {
       it(`applies ${accent} accent class`, () => {
         const { container } = render(
-          <CollapsibleCard title="Title" accent={accent}>Content</CollapsibleCard>
+          <CollapsibleCard title="Title" accent={accent}>
+            Content
+          </CollapsibleCard>
         );
         const section = container.querySelector('section');
         expect(section).toHaveClass(`border-${accent}-500/30`);
@@ -109,9 +141,7 @@ describe('CollapsibleCard', () => {
     });
 
     it('has default sky accent when accent is not provided', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const section = container.querySelector('section');
       // CollapsibleCard has sky as default accent
       expect(section).toHaveClass('border-sky-500/30');
@@ -121,7 +151,11 @@ describe('CollapsibleCard', () => {
   describe('Actions', () => {
     it('renders action buttons when provided', () => {
       const actions = <button>Action Button</button>;
-      render(<CollapsibleCard title="Title" actions={actions}>Content</CollapsibleCard>);
+      render(
+        <CollapsibleCard title="Title" actions={actions}>
+          Content
+        </CollapsibleCard>
+      );
       expect(screen.getByText('Action Button')).toBeInTheDocument();
     });
 
@@ -133,7 +167,9 @@ describe('CollapsibleCard', () => {
     it('positions actions correctly in header', () => {
       const actions = <button>Action</button>;
       const { container } = render(
-        <CollapsibleCard title="Title" actions={actions}>Content</CollapsibleCard>
+        <CollapsibleCard title="Title" actions={actions}>
+          Content
+        </CollapsibleCard>
       );
       const header = container.querySelector('header');
       expect(header?.querySelector('button')).toBeInTheDocument();
@@ -142,25 +178,19 @@ describe('CollapsibleCard', () => {
 
   describe('Modern Styling', () => {
     it('has holographic-card class', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const section = container.querySelector('.holographic-card');
       expect(section).toBeInTheDocument();
     });
 
     it('has relative positioning', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const section = container.querySelector('.relative');
       expect(section).toBeInTheDocument();
     });
 
     it('has overflow-visible class', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const section = container.querySelector('.overflow-visible');
       expect(section).toBeInTheDocument();
     });
@@ -168,9 +198,7 @@ describe('CollapsibleCard', () => {
 
   describe('Header Structure', () => {
     it('has proper flexbox layout', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const header = container.querySelector('header');
       expect(header).toHaveClass('flex', 'flex-col', 'gap-3');
     });
@@ -182,7 +210,11 @@ describe('CollapsibleCard', () => {
     });
 
     it('subtitle has proper styling', () => {
-      render(<CollapsibleCard title="Title" subtitle="Test Subtitle">Content</CollapsibleCard>);
+      render(
+        <CollapsibleCard title="Title" subtitle="Test Subtitle">
+          Content
+        </CollapsibleCard>
+      );
       const subtitle = screen.getByText('Test Subtitle');
       expect(subtitle).toHaveClass('text-sm', 'text-slate-400');
     });
@@ -218,7 +250,9 @@ describe('CollapsibleCard', () => {
   describe('Content Area', () => {
     it('has proper padding when open', () => {
       const { container } = render(
-        <CollapsibleCard title="Title" defaultOpen={true}>Content</CollapsibleCard>
+        <CollapsibleCard title="Title" defaultOpen={true}>
+          Content
+        </CollapsibleCard>
       );
       const contentDiv = container.querySelector('.px-5.pb-6.pt-0');
       expect(contentDiv).toBeInTheDocument();
@@ -237,16 +271,12 @@ describe('CollapsibleCard', () => {
 
   describe('Accessibility', () => {
     it('uses semantic section element', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       expect(container.querySelector('section')).toBeInTheDocument();
     });
 
     it('uses semantic header element', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       expect(container.querySelector('header')).toBeInTheDocument();
     });
 
@@ -265,25 +295,19 @@ describe('CollapsibleCard', () => {
 
   describe('Responsive Design', () => {
     it('applies responsive flex direction', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const header = container.querySelector('header');
       expect(header).toHaveClass('sm:flex-row');
     });
 
     it('applies responsive gap spacing', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const header = container.querySelector('header');
       expect(header).toHaveClass('sm:gap-4');
     });
 
     it('applies responsive item alignment', () => {
-      const { container } = render(
-        <CollapsibleCard title="Title">Content</CollapsibleCard>
-      );
+      const { container } = render(<CollapsibleCard title="Title">Content</CollapsibleCard>);
       const header = container.querySelector('header');
       expect(header).toHaveClass('sm:items-center');
     });

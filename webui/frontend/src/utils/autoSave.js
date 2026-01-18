@@ -24,7 +24,7 @@ class AutoSaveManager {
       onSaving = null,
       onSaved = null,
       onError = null,
-      transform = null
+      transform = null,
     } = options;
 
     // Store callbacks
@@ -41,7 +41,7 @@ class AutoSaveManager {
       saveNow: (data) => this.save(key, data, { transform, onError }),
       load: () => this.load(key, { transform }),
       clear: () => this.clear(key),
-      exists: () => this.exists(key)
+      exists: () => this.exists(key),
     };
   }
 
@@ -67,7 +67,7 @@ class AutoSaveManager {
       storage.set(storageKey, {
         data: dataToSave,
         savedAt: Date.now(),
-        version: 1
+        version: 1,
       });
 
       console.log(`💾 Auto-saved: ${key}`);
@@ -115,7 +115,7 @@ class AutoSaveManager {
       return {
         data,
         savedAt: saved.savedAt,
-        age: Date.now() - saved.savedAt
+        age: Date.now() - saved.savedAt,
       };
     } catch (error) {
       console.error(`❌ Load failed for ${key}:`, error);
@@ -147,7 +147,7 @@ class AutoSaveManager {
     const keys = storage.keys();
     const drafts = [];
 
-    keys.forEach(key => {
+    keys.forEach((key) => {
       if (key.startsWith(this.storagePrefix)) {
         const saved = storage.get(key);
         if (saved) {
@@ -155,7 +155,7 @@ class AutoSaveManager {
             key: key.replace(this.storagePrefix, ''),
             savedAt: saved.savedAt,
             age: Date.now() - saved.savedAt,
-            size: JSON.stringify(saved.data).length
+            size: JSON.stringify(saved.data).length,
           });
         }
       }
@@ -173,7 +173,7 @@ class AutoSaveManager {
     // Remove drafts beyond max limit
     if (drafts.length > this.maxDrafts) {
       const toRemove = drafts.slice(this.maxDrafts);
-      toRemove.forEach(draft => {
+      toRemove.forEach((draft) => {
         this.clear(draft.key);
       });
       console.log(`🗑️ Cleaned up ${toRemove.length} old drafts`);
@@ -181,8 +181,8 @@ class AutoSaveManager {
 
     // Remove drafts older than 7 days
     const maxAge = 7 * 24 * 60 * 60 * 1000;
-    const oldDrafts = drafts.filter(draft => draft.age > maxAge);
-    oldDrafts.forEach(draft => {
+    const oldDrafts = drafts.filter((draft) => draft.age > maxAge);
+    oldDrafts.forEach((draft) => {
       this.clear(draft.key);
     });
     if (oldDrafts.length > 0) {
@@ -222,7 +222,7 @@ class AutoSaveManager {
     const drafts = {};
     const keys = storage.keys();
 
-    keys.forEach(key => {
+    keys.forEach((key) => {
       if (key.startsWith(this.storagePrefix)) {
         drafts[key] = storage.get(key);
       }
@@ -245,7 +245,7 @@ class AutoSaveManager {
 // Singleton instance
 export const autoSaveManager = new AutoSaveManager({
   autoSaveDelay: 2000,
-  maxDrafts: 10
+  maxDrafts: 10,
 });
 
 /**
@@ -271,7 +271,7 @@ export const useAutoSave = (key, initialData = null, options = {}) => {
         setSaving(false);
         setLastSaved(Date.now());
         if (options.onSaved) options.onSaved(data);
-      }
+      },
     });
   }, [key, options]);
 
@@ -321,7 +321,7 @@ export const useAutoSave = (key, initialData = null, options = {}) => {
     draftAvailable,
     loadDraft,
     clearDraft,
-    saveNow
+    saveNow,
   };
 };
 
@@ -332,7 +332,7 @@ export const getAutoSaveStatus = (saving, lastSaved) => {
   if (saving) {
     return { text: 'Saving...', color: 'info' };
   }
-  
+
   if (lastSaved) {
     const elapsed = Date.now() - lastSaved;
     if (elapsed < 5000) {
@@ -343,9 +343,8 @@ export const getAutoSaveStatus = (saving, lastSaved) => {
       return { text: `Saved ${Math.floor(elapsed / 60000)}m ago`, color: 'default' };
     }
   }
-  
+
   return { text: 'Not saved', color: 'default' };
 };
 
 export default autoSaveManager;
-

@@ -4,12 +4,24 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Chip, Tooltip, IconButton, Collapse, Alert, LinearProgress,
-  Typography, Divider
+  Box,
+  Chip,
+  Tooltip,
+  IconButton,
+  Collapse,
+  Alert,
+  LinearProgress,
+  Typography,
+  Divider,
 } from '@mui/material';
 import {
-  SignalWifi4Bar, SignalWifiOff, SignalWifi1Bar, SignalWifi2Bar,
-  Refresh, ExpandMore, ExpandLess
+  SignalWifi4Bar,
+  SignalWifiOff,
+  SignalWifi1Bar,
+  SignalWifi2Bar,
+  Refresh,
+  ExpandMore,
+  ExpandLess,
 } from '@mui/icons-material';
 
 const ConnectionStatusIndicator = ({ connectionManager }) => {
@@ -17,7 +29,7 @@ const ConnectionStatusIndicator = ({ connectionManager }) => {
     state: 'disconnected',
     connected: false,
     reconnectAttempt: 0,
-    lastHeartbeat: null
+    lastHeartbeat: null,
   });
   const [latency, setLatency] = useState(null);
   const [expanded, setExpanded] = useState(false);
@@ -45,7 +57,7 @@ const ConnectionStatusIndicator = ({ connectionManager }) => {
     };
 
     const handleSyncError = (data) => {
-      setSyncStatus(prev => ({ ...prev, error: data.error }));
+      setSyncStatus((prev) => ({ ...prev, error: data.error }));
     };
 
     // Register listeners
@@ -92,8 +104,8 @@ const ConnectionStatusIndicator = ({ connectionManager }) => {
       return latency !== null ? `${latency}ms` : 'Connected';
     }
     if (connectionState.state === 'connecting') {
-      return connectionState.reconnectAttempt > 0 
-        ? `Reconnecting (${connectionState.reconnectAttempt})` 
+      return connectionState.reconnectAttempt > 0
+        ? `Reconnecting (${connectionState.reconnectAttempt})`
         : 'Connecting...';
     }
     if (connectionState.state === 'error') return 'Error';
@@ -118,7 +130,7 @@ const ConnectionStatusIndicator = ({ connectionManager }) => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Tooltip 
+        <Tooltip
           title={
             <Box>
               <Typography variant="caption" display="block">
@@ -147,22 +159,15 @@ const ConnectionStatusIndicator = ({ connectionManager }) => {
             label={getStatusLabel()}
             color={getStatusColor()}
             size="small"
-            sx={{ 
+            sx={{
               fontWeight: 'bold',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
             onClick={() => setExpanded(!expanded)}
           />
         </Tooltip>
 
-        {isStale && (
-          <Chip
-            label="Stale"
-            color="warning"
-            size="small"
-            sx={{ fontWeight: 'bold' }}
-          />
-        )}
+        {isStale && <Chip label="Stale" color="warning" size="small" sx={{ fontWeight: 'bold' }} />}
 
         {connectionState.state !== 'connected' && (
           <Tooltip title="Reconnect">
@@ -230,9 +235,7 @@ const ConnectionStatusIndicator = ({ connectionManager }) => {
 
           {connectionState.state !== 'connected' && (
             <Box sx={{ mt: 2 }}>
-              <Alert severity="warning">
-                Not connected to server. Attempting to reconnect...
-              </Alert>
+              <Alert severity="warning">Not connected to server. Attempting to reconnect...</Alert>
             </Box>
           )}
         </Box>

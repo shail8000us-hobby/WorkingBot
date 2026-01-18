@@ -1,7 +1,12 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import LoadingSkeleton, { CardSkeleton, MetricSkeleton, TableRowSkeleton, ChartSkeleton } from './LoadingSkeleton';
+import LoadingSkeleton, {
+  CardSkeleton,
+  MetricSkeleton,
+  TableRowSkeleton,
+  ChartSkeleton,
+} from './LoadingSkeleton';
 
 describe('LoadingSkeleton', () => {
   describe('Basic LoadingSkeleton', () => {
@@ -37,9 +42,7 @@ describe('LoadingSkeleton', () => {
     });
 
     it('applies custom width and height', () => {
-      const { container } = render(
-        <LoadingSkeleton width="200px" height="50px" />
-      );
+      const { container } = render(<LoadingSkeleton width="200px" height="50px" />);
       const skeleton = container.querySelector('.loading-shimmer');
       expect(skeleton).toHaveStyle({ width: '200px', height: '50px' });
     });
@@ -66,9 +69,9 @@ describe('LoadingSkeleton', () => {
   describe('CardSkeleton', () => {
     it('renders card structure', () => {
       const { container } = render(<CardSkeleton />);
-      
+
       expect(container.querySelector('.glass-card')).toBeInTheDocument();
-      
+
       const skeletons = container.querySelectorAll('.loading-shimmer');
       expect(skeletons.length).toBeGreaterThan(0);
     });
@@ -76,7 +79,7 @@ describe('LoadingSkeleton', () => {
     it('contains title, subtitle, text, and button elements', () => {
       const { container } = render(<CardSkeleton />);
       const skeletons = container.querySelectorAll('.loading-shimmer');
-      
+
       // Should have title, subtitle, 3 text lines, 2 buttons = 7 total
       expect(skeletons.length).toBeGreaterThanOrEqual(5);
     });
@@ -85,9 +88,9 @@ describe('LoadingSkeleton', () => {
   describe('MetricSkeleton', () => {
     it('renders metric structure', () => {
       const { container } = render(<MetricSkeleton />);
-      
+
       expect(container.querySelector('.glass-card')).toBeInTheDocument();
-      
+
       const skeletons = container.querySelectorAll('.loading-shimmer');
       expect(skeletons.length).toBe(3); // badge, metric, text
     });
@@ -110,9 +113,9 @@ describe('LoadingSkeleton', () => {
   describe('ChartSkeleton', () => {
     it('renders chart structure', () => {
       const { container } = render(<ChartSkeleton />);
-      
+
       expect(container.querySelector('.glass-card')).toBeInTheDocument();
-      
+
       // Should have title, 2 badges, and chart = 4 skeletons
       const skeletons = container.querySelectorAll('.loading-shimmer');
       expect(skeletons.length).toBeGreaterThanOrEqual(3);
@@ -128,9 +131,19 @@ describe('LoadingSkeleton', () => {
   });
 
   describe('Variants', () => {
-    const variants = ['text', 'title', 'subtitle', 'card', 'button', 'avatar', 'badge', 'metric', 'chart'];
-    
-    variants.forEach(variant => {
+    const variants = [
+      'text',
+      'title',
+      'subtitle',
+      'card',
+      'button',
+      'avatar',
+      'badge',
+      'metric',
+      'chart',
+    ];
+
+    variants.forEach((variant) => {
       it(`renders ${variant} variant correctly`, () => {
         const { container } = render(<LoadingSkeleton variant={variant} />);
         const skeleton = container.querySelector('.loading-shimmer');

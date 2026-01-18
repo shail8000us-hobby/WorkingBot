@@ -1,6 +1,6 @@
 /**
  * AutomationDialog - Main modal with tabs for automation setup
- * 
+ *
  * Phase 1: Shows only Entry Conditions tab
  * Phase 2+: Will add Execution, Exit, Risk tabs
  */
@@ -96,7 +96,9 @@ const AutomationDialog = ({
       }}
     >
       {/* Header */}
-      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+      <DialogTitle
+        sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <FlashOnIcon sx={{ color: '#fbbf24' }} />
           <Typography variant="h6">Options Automation</Typography>
@@ -121,9 +123,9 @@ const AutomationDialog = ({
       {/* Position Info */}
       <Box sx={{ px: 3, pb: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          Position: <strong>{position.product_symbol}</strong> • 
-          Strike: <strong>${position.strike?.toLocaleString() || 'N/A'}</strong> • 
-          Type: <strong>{position.type?.toUpperCase() || 'N/A'}</strong>
+          Position: <strong>{position.product_symbol}</strong> • Strike:{' '}
+          <strong>${position.strike?.toLocaleString() || 'N/A'}</strong> • Type:{' '}
+          <strong>{position.type?.toUpperCase() || 'N/A'}</strong>
         </Typography>
       </Box>
 
@@ -146,37 +148,23 @@ const AutomationDialog = ({
           </Box>
         )}
 
-        {currentTab === 0 && (
-          <EntryConditionsTab
-            rules={rules}
-            onChange={onRulesChange}
-          />
-        )}
-        {currentTab === 1 && (
-          <ExecutionTab
-            rules={rules}
-            onChange={onRulesChange}
-          />
-        )}
-        {currentTab === 2 && (
-          <ExitConditionsTab
-            rules={rules}
-            onChange={onRulesChange}
-          />
-        )}
-        {currentTab === 3 && (
-          <RiskControlsTab
-            rules={rules}
-            onChange={onRulesChange}
-          />
-        )}
+        {currentTab === 0 && <EntryConditionsTab rules={rules} onChange={onRulesChange} />}
+        {currentTab === 1 && <ExecutionTab rules={rules} onChange={onRulesChange} />}
+        {currentTab === 2 && <ExitConditionsTab rules={rules} onChange={onRulesChange} />}
+        {currentTab === 3 && <RiskControlsTab rules={rules} onChange={onRulesChange} />}
       </DialogContent>
 
       {/* Mode Notice */}
       <Box sx={{ px: 3, pb: 2 }}>
-        <Alert severity={rules.risk?.alertOnlyMode ? 'info' : 'error'} icon={rules.risk?.alertOnlyMode ? 'ℹ️' : '⚠️'}>
-          <strong>{rules.risk?.alertOnlyMode ? 'Safe Mode: Alert-Only' : '⚠️ LIVE TRADING MODE'}</strong><br />
-          {rules.risk?.alertOnlyMode 
+        <Alert
+          severity={rules.risk?.alertOnlyMode ? 'info' : 'error'}
+          icon={rules.risk?.alertOnlyMode ? 'ℹ️' : '⚠️'}
+        >
+          <strong>
+            {rules.risk?.alertOnlyMode ? 'Safe Mode: Alert-Only' : '⚠️ LIVE TRADING MODE'}
+          </strong>
+          <br />
+          {rules.risk?.alertOnlyMode
             ? 'This automation will monitor conditions and simulate orders without placing real trades.'
             : 'REAL ORDERS WILL BE PLACED. Ensure all risk controls are properly configured.'}
         </Alert>
@@ -187,14 +175,9 @@ const AutomationDialog = ({
         <Button onClick={handleExplicitClose} color="inherit">
           Cancel
         </Button>
-        
+
         {isActive ? (
-          <Button
-            variant="contained"
-            color="error"
-            startIcon={<StopIcon />}
-            onClick={handleStop}
-          >
+          <Button variant="contained" color="error" startIcon={<StopIcon />} onClick={handleStop}>
             Stop Automation
           </Button>
         ) : (

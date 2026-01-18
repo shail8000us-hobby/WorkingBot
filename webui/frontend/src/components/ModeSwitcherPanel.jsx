@@ -28,7 +28,7 @@ import {
   LinearProgress,
   Grid,
   IconButton,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -37,7 +37,7 @@ import {
   RefreshCw,
   Settings,
   History,
-  AlertTriangle
+  AlertTriangle,
 } from 'lucide-react';
 
 const ModeSwitcherPanel = () => {
@@ -48,12 +48,12 @@ const ModeSwitcherPanel = () => {
   const [history, setHistory] = useState([]);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
-  
+
   // Configuration
   const [referencePrice, setReferencePrice] = useState(95500);
   const [hysteresis, setHysteresis] = useState(200);
   const [switchDelay, setSwitchDelay] = useState(30);
-  
+
   // Manual override
   const [overrideMode, setOverrideMode] = useState('LONG');
   const [overrideDuration, setOverrideDuration] = useState(2);
@@ -64,11 +64,11 @@ const ModeSwitcherPanel = () => {
     try {
       const response = await fetch('/api/mode-switcher/status');
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         setStatus(data.mode_switcher);
         setEnabled(data.mode_switcher.enabled);
-        
+
         if (data.mode_switcher.reference_price) {
           setReferencePrice(data.mode_switcher.reference_price);
         }
@@ -91,7 +91,7 @@ const ModeSwitcherPanel = () => {
     try {
       const response = await fetch(`/api/mode-switcher/history?hours=${hours}`);
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         setHistory(data.switches);
       }
@@ -106,7 +106,7 @@ const ModeSwitcherPanel = () => {
       const endpoint = enabled ? '/api/mode-switcher/disable' : '/api/mode-switcher/enable';
       const response = await fetch(endpoint, { method: 'POST' });
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         setEnabled(!enabled);
         fetchStatus();
@@ -125,12 +125,12 @@ const ModeSwitcherPanel = () => {
         body: JSON.stringify({
           reference_price: referencePrice,
           hysteresis: hysteresis,
-          switch_delay: switchDelay
-        })
+          switch_delay: switchDelay,
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         setConfigDialogOpen(false);
         fetchStatus();
@@ -149,12 +149,12 @@ const ModeSwitcherPanel = () => {
         body: JSON.stringify({
           mode: overrideMode,
           duration_hours: overrideMode === 'AUTO' ? null : overrideDuration,
-          reason: overrideReason || 'Manual override from WebUI'
-        })
+          reason: overrideReason || 'Manual override from WebUI',
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.status === 'success') {
         setOverrideDialogOpen(false);
         setOverrideReason('');
@@ -169,12 +169,12 @@ const ModeSwitcherPanel = () => {
   useEffect(() => {
     fetchStatus();
     fetchHistory();
-    
+
     // Auto-refresh every 10 seconds
     const interval = setInterval(() => {
       fetchStatus();
     }, 10000);
-    
+
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -193,9 +193,7 @@ const ModeSwitcherPanel = () => {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5">
-          🔄 Auto Mode Switcher
-        </Typography>
+        <Typography variant="h5">🔄 Auto Mode Switcher</Typography>
         <Box>
           <Tooltip title="Configure">
             <IconButton onClick={() => setConfigDialogOpen(true)}>
@@ -217,26 +215,36 @@ const ModeSwitcherPanel = () => {
             <Grid item xs={12} md={6}>
               <FormControlLabel
                 control={
-                  <Switch
-                    checked={enabled}
-                    onChange={handleToggleEnabled}
-                    color="primary"
-                  />
+                  <Switch checked={enabled} onChange={handleToggleEnabled} color="primary" />
                 }
-                label={enabled ? "Auto-switching ENABLED" : "Auto-switching DISABLED"}
+                label={enabled ? 'Auto-switching ENABLED' : 'Auto-switching DISABLED'}
               />
-              
+
               <Box sx={{ mt: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   Current Mode:
                 </Typography>
                 <Chip
                   label={currentMode}
-                  color={currentMode === 'LONG' ? 'success' : currentMode === 'SHORT' ? 'error' : 'default'}
-                  icon={currentMode === 'LONG' ? <TrendingUp size={16} /> : currentMode === 'SHORT' ? <TrendingDown size={16} /> : <Minus size={16} />}
+                  color={
+                    currentMode === 'LONG'
+                      ? 'success'
+                      : currentMode === 'SHORT'
+                        ? 'error'
+                        : 'default'
+                  }
+                  icon={
+                    currentMode === 'LONG' ? (
+                      <TrendingUp size={16} />
+                    ) : currentMode === 'SHORT' ? (
+                      <TrendingDown size={16} />
+                    ) : (
+                      <Minus size={16} />
+                    )
+                  }
                   sx={{ mt: 1 }}
                 />
-                
+
                 {pendingSwitch && (
                   <Chip
                     label={`Pending: ${pendingSwitch}`}
@@ -279,11 +287,11 @@ const ModeSwitcherPanel = () => {
                     size="small"
                   />
                 </Box>
-                
+
                 <Typography variant="caption" color="text.secondary">
                   Reference: ${referencePrice.toLocaleString()} ± ${hysteresis.toLocaleString()}
                 </Typography>
-                
+
                 <LinearProgress
                   variant="determinate"
                   value={50}
@@ -338,9 +346,7 @@ const ModeSwitcherPanel = () => {
                 <TableBody>
                   {history.slice(0, 10).map((event, index) => (
                     <TableRow key={index}>
-                      <TableCell>
-                        {new Date(event.timestamp).toLocaleTimeString()}
-                      </TableCell>
+                      <TableCell>{new Date(event.timestamp).toLocaleTimeString()}</TableCell>
                       <TableCell>${event.price.toLocaleString()}</TableCell>
                       <TableCell>
                         <Chip

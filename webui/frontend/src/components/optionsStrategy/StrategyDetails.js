@@ -2,7 +2,7 @@
  * Strategy Details
  * ================
  * Display detailed view of a strategy with legs and actions.
- * 
+ *
  * Created: January 5, 2026
  */
 
@@ -30,14 +30,14 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Stack
+  Stack,
 } from '@mui/material';
 import {
   PlayArrow as ExecuteIcon,
   Close as CloseIcon,
   Delete as DeleteIcon,
   CallMade as BuyIcon,
-  CallReceived as SellIcon
+  CallReceived as SellIcon,
 } from '@mui/icons-material';
 
 // Status colors
@@ -48,7 +48,7 @@ const STATUS_COLORS = {
   filled: 'success',
   failed: 'error',
   active: 'success',
-  closed: 'default'
+  closed: 'default',
 };
 
 // Format currency
@@ -58,7 +58,7 @@ const formatCurrency = (value, digits = 2) => {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: digits,
-    maximumFractionDigits: digits
+    maximumFractionDigits: digits,
   }).format(value);
 };
 
@@ -69,11 +69,7 @@ function LegRow({ leg, index }) {
   return (
     <TableRow>
       <TableCell>
-        <Chip
-          label={`Leg ${index + 1}`}
-          size="small"
-          variant="outlined"
-        />
+        <Chip label={`Leg ${index + 1}`} size="small" variant="outlined" />
       </TableCell>
       <TableCell>
         <Stack direction="row" alignItems="center" spacing={0.5}>
@@ -95,23 +91,15 @@ function LegRow({ leg, index }) {
           variant="outlined"
         />
       </TableCell>
-      <TableCell align="right">
-        {formatCurrency(leg.strike, 0)}
-      </TableCell>
-      <TableCell align="center">
-        {leg.quantity}
-      </TableCell>
+      <TableCell align="right">{formatCurrency(leg.strike, 0)}</TableCell>
+      <TableCell align="center">{leg.quantity}</TableCell>
       <TableCell>
         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
           {leg.symbol}
         </Typography>
       </TableCell>
       <TableCell>
-        <Chip
-          label={leg.status}
-          size="small"
-          color={statusColor}
-        />
+        <Chip label={leg.status} size="small" color={statusColor} />
       </TableCell>
       <TableCell align="right">
         {leg.avg_fill_price > 0 ? formatCurrency(leg.avg_fill_price) : '-'}
@@ -128,7 +116,7 @@ export default function StrategyDetails({
   onCloseStrategy,
   onDelete,
   isDialog = false,
-  loading
+  loading,
 }) {
   const [showExecuteDialog, setShowExecuteDialog] = useState(false);
   const [executionMode, setExecutionMode] = useState('sequential');
@@ -155,22 +143,14 @@ export default function StrategyDetails({
           {strategy.name}
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap">
-          <Chip
-            label={strategy.strategy_type.replace('_', ' ')}
-            color="primary"
-            size="small"
-          />
+          <Chip label={strategy.strategy_type.replace('_', ' ')} color="primary" size="small" />
           <Chip
             label={strategy.underlying}
             color={strategy.underlying === 'BTC' ? 'warning' : 'secondary'}
             size="small"
             variant="outlined"
           />
-          <Chip
-            label={`Exp: ${strategy.expiry}`}
-            size="small"
-            variant="outlined"
-          />
+          <Chip label={`Exp: ${strategy.expiry}`} size="small" variant="outlined" />
           <Chip
             label={strategy.status}
             color={STATUS_COLORS[strategy.status] || 'default'}
@@ -186,9 +166,7 @@ export default function StrategyDetails({
             <Typography variant="caption" color="text.secondary">
               Total Cost
             </Typography>
-            <Typography variant="h6">
-              {formatCurrency(strategy.total_cost)}
-            </Typography>
+            <Typography variant="h6">{formatCurrency(strategy.total_cost)}</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={3}>
@@ -199,8 +177,11 @@ export default function StrategyDetails({
             <Typography
               variant="h6"
               color={
-                strategy.current_pnl > 0 ? 'success.main' :
-                strategy.current_pnl < 0 ? 'error.main' : 'text.primary'
+                strategy.current_pnl > 0
+                  ? 'success.main'
+                  : strategy.current_pnl < 0
+                    ? 'error.main'
+                    : 'text.primary'
               }
             >
               {formatCurrency(strategy.current_pnl)}
@@ -288,9 +269,7 @@ export default function StrategyDetails({
                   <Typography variant="caption" color="text.secondary">
                     DTE Exit
                   </Typography>
-                  <Typography variant="body2">
-                    {strategy.exit_conditions.dte_exit} days
-                  </Typography>
+                  <Typography variant="body2">{strategy.exit_conditions.dte_exit} days</Typography>
                 </Grid>
               )}
             </Grid>
@@ -344,7 +323,7 @@ export default function StrategyDetails({
           <Alert severity="warning" sx={{ mb: 2 }}>
             This will place real orders on the exchange!
           </Alert>
-          
+
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={6}>
               <FormControl fullWidth size="small">
@@ -375,8 +354,11 @@ export default function StrategyDetails({
           </Grid>
 
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            <strong>Sequential:</strong> Executes legs one at a time. If any leg fails, previous legs are rolled back.<br/>
-            <strong>Parallel:</strong> Executes all legs simultaneously. Faster but may result in partial fills.
+            <strong>Sequential:</strong> Executes legs one at a time. If any leg fails, previous
+            legs are rolled back.
+            <br />
+            <strong>Parallel:</strong> Executes all legs simultaneously. Faster but may result in
+            partial fills.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -398,12 +380,8 @@ export default function StrategyDetails({
   if (isDialog) {
     return (
       <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-        <DialogTitle>
-          Strategy Details
-        </DialogTitle>
-        <DialogContent>
-          {content}
-        </DialogContent>
+        <DialogTitle>Strategy Details</DialogTitle>
+        <DialogContent>{content}</DialogContent>
         <DialogActions>
           {canExecute && onExecute && (
             <Button
@@ -424,11 +402,7 @@ export default function StrategyDetails({
             </Button>
           )}
           {canDelete && onDelete && (
-            <Button
-              color="error"
-              startIcon={<DeleteIcon />}
-              onClick={() => onDelete(strategy.id)}
-            >
+            <Button color="error" startIcon={<DeleteIcon />} onClick={() => onDelete(strategy.id)}>
               Delete
             </Button>
           )}

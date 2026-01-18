@@ -16,17 +16,13 @@ import {
   Chip,
   Grid,
   Divider,
-  Paper
+  Paper,
 } from '@mui/material';
-import {
-  ORDER_TYPES,
-  EXECUTION_TIMING,
-  POSITION_SIZING
-} from '../types/constants';
+import { ORDER_TYPES, EXECUTION_TIMING, POSITION_SIZING } from '../types/constants';
 
 /**
  * ExecutionTab Component
- * 
+ *
  * Configures how orders should be executed:
  * - Order type (Market/Limit)
  * - Execution timing (Immediate/Delayed/Scheduled)
@@ -40,8 +36,8 @@ const ExecutionTab = ({ rules, onChange }) => {
       ...rules,
       execution: {
         ...rules.execution,
-        [field]: value
-      }
+        [field]: value,
+      },
     });
   };
 
@@ -52,9 +48,9 @@ const ExecutionTab = ({ rules, onChange }) => {
         ...rules.execution,
         staging: {
           ...rules.execution.staging,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
@@ -118,7 +114,9 @@ const ExecutionTab = ({ rules, onChange }) => {
                   type="number"
                   size="small"
                   value={rules.execution.limitPriceOffset || 0}
-                  onChange={(e) => handleExecutionChange('limitPriceOffset', parseFloat(e.target.value))}
+                  onChange={(e) =>
+                    handleExecutionChange('limitPriceOffset', parseFloat(e.target.value))
+                  }
                   inputProps={{ step: 0.1 }}
                   helperText="Above market for sells, below for buys"
                 />
@@ -262,7 +260,9 @@ const ExecutionTab = ({ rules, onChange }) => {
               type="number"
               size="small"
               value={rules.execution.capitalPercentage || 5}
-              onChange={(e) => handleExecutionChange('capitalPercentage', parseFloat(e.target.value))}
+              onChange={(e) =>
+                handleExecutionChange('capitalPercentage', parseFloat(e.target.value))
+              }
               inputProps={{ min: 0.1, max: 100, step: 0.5 }}
               helperText="Percentage of available capital to risk"
             />
@@ -387,11 +387,7 @@ const ExecutionTab = ({ rules, onChange }) => {
               variant="outlined"
             />
           )}
-          <Chip
-            label="DRY RUN"
-            size="small"
-            color="warning"
-          />
+          <Chip label="DRY RUN" size="small" color="warning" />
         </Box>
       </Box>
     </Box>

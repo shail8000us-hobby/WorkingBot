@@ -7,7 +7,9 @@ import AnimatedNumber, { AnimatedPNL, AnimatedPercentage, AnimatedPrice } from '
 jest.mock('framer-motion', () => ({
   motion: {
     span: ({ children, className, animate, ...props }) => (
-      <span className={className} {...props}>{children}</span>
+      <span className={className} {...props}>
+        {children}
+      </span>
     ),
   },
 }));

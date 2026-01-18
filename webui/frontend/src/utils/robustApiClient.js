@@ -8,11 +8,13 @@ import { ensureAuthToken, buildAuthHeaders } from './authToken.ts';
 
 class RobustApiClient {
   constructor(options = {}) {
-    this.maxRetries = options.maxRetries || 1;  // Reduced from 3 to 1
-    this.retryDelay = options.retryDelay || 2000;  // Increased from 1000 to 2000
-    this.timeout = options.timeout || 30000;  // Increased from 10000 to 30000 (30 seconds)
+    this.maxRetries = options.maxRetries || 1; // Reduced from 3 to 1
+    this.retryDelay = options.retryDelay || 2000; // Increased from 1000 to 2000
+    this.timeout = options.timeout || 30000; // Increased from 10000 to 30000 (30 seconds)
     this.retryableStatusCodes = [408, 429, 500, 502, 503, 504];
-    this.baseURL = (options.baseURL !== undefined ? options.baseURL : process.env.REACT_APP_API_BASE_URL || '').trim();
+    this.baseURL = (
+      options.baseURL !== undefined ? options.baseURL : process.env.REACT_APP_API_BASE_URL || ''
+    ).trim();
   }
 
   async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
@@ -75,8 +77,10 @@ class RobustApiClient {
 
       if (retries > 0 && this.shouldRetry(normalizedError)) {
         const delay = this.calculateDelay(this.maxRetries - retries);
-        console.log(`⚠️  API call failed, retrying ${url} in ${delay}ms (${retries} attempts left)`);
-        
+        console.log(
+          `⚠️  API call failed, retrying ${url} in ${delay}ms (${retries} attempts left)`
+        );
+
         await this.sleep(delay);
         return this.fetchWithRetry(url, options, retries - 1);
       }
@@ -87,7 +91,9 @@ class RobustApiClient {
   }
 
   appendParams(url, params = {}) {
-    const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null);
+    const entries = Object.entries(params).filter(
+      ([, value]) => value !== undefined && value !== null
+    );
     if (!entries.length) {
       return url;
     }
@@ -161,7 +167,7 @@ class RobustApiClient {
   }
 
   sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Convenience methods
@@ -199,7 +205,7 @@ class RobustApiClient {
 
   // Batch requests with retry
   async batchFetch(urls, options = {}) {
-    const promises = urls.map(url => this.fetchWithRetry(url, options));
+    const promises = urls.map((url) => this.fetchWithRetry(url, options));
     return Promise.allSettled(promises);
   }
 }

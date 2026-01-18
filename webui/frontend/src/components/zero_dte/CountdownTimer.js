@@ -1,6 +1,6 @@
 /**
  * Countdown Timer - Time to Settlement
- * 
+ *
  * Shows countdown to 5:30 PM IST settlement.
  * Changes color based on urgency.
  */
@@ -17,7 +17,7 @@ const CountdownTimer = ({ isActive, timeToExpiryMinutes, settlementTime }) => {
       const [hours, mins] = (settlementTime || '17:30').split(':').map(Number);
       const settlement = new Date(now);
       settlement.setHours(hours, mins, 0, 0);
-      
+
       const diff = settlement - now;
       if (diff > 0) {
         const h = Math.floor(diff / 3600000);
@@ -35,9 +35,9 @@ const CountdownTimer = ({ isActive, timeToExpiryMinutes, settlementTime }) => {
         const h = Math.floor(totalSeconds / 3600);
         const m = Math.floor((totalSeconds % 3600) / 60);
         const s = totalSeconds % 60;
-        
+
         setCountdown({ hours: h, minutes: m, seconds: s });
-        
+
         // Set urgency level
         if (timeToExpiryMinutes <= 15) {
           setUrgency('critical');
@@ -57,11 +57,11 @@ const CountdownTimer = ({ isActive, timeToExpiryMinutes, settlementTime }) => {
   // Local countdown tick for seconds
   useEffect(() => {
     if (!isActive) return;
-    
+
     const tick = setInterval(() => {
-      setCountdown(prev => {
+      setCountdown((prev) => {
         let { hours, minutes, seconds } = prev;
-        
+
         if (seconds > 0) {
           seconds--;
         } else if (minutes > 0) {
@@ -72,11 +72,11 @@ const CountdownTimer = ({ isActive, timeToExpiryMinutes, settlementTime }) => {
           minutes = 59;
           seconds = 59;
         }
-        
+
         return { hours, minutes, seconds };
       });
     }, 1000);
-    
+
     return () => clearInterval(tick);
   }, [isActive]);
 
@@ -85,7 +85,7 @@ const CountdownTimer = ({ isActive, timeToExpiryMinutes, settlementTime }) => {
   return (
     <div className={`countdown-timer card countdown-${urgency}`}>
       <h3>Time to Settlement</h3>
-      
+
       <div className="countdown-display">
         <div className="time-segment">
           <span className="time-value">{padZero(countdown.hours)}</span>
@@ -109,15 +109,11 @@ const CountdownTimer = ({ isActive, timeToExpiryMinutes, settlementTime }) => {
       </div>
 
       {urgency === 'warning' && (
-        <div className="urgency-warning">
-          ⚠️ Less than 1 hour remaining
-        </div>
+        <div className="urgency-warning">⚠️ Less than 1 hour remaining</div>
       )}
-      
+
       {urgency === 'critical' && (
-        <div className="urgency-critical">
-          🚨 Less than 15 minutes - Forced exit imminent!
-        </div>
+        <div className="urgency-critical">🚨 Less than 15 minutes - Forced exit imminent!</div>
       )}
     </div>
   );

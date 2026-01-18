@@ -24,7 +24,7 @@ class NetworkError extends Error {
   }
 }
 
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const shouldRetry = (error, attempt) => {
   // Don't retry if max attempts reached
@@ -44,10 +44,10 @@ const shouldRetry = (error, attempt) => {
 
 const parseResponse = async (response) => {
   const contentType = response.headers.get('content-type');
-  
+
   if (contentType && contentType.includes('application/json')) {
     const data = await response.json();
-    
+
     // Check if it's our standardized response format
     if (typeof data === 'object' && 'success' in data) {
       if (!data.success) {
@@ -62,21 +62,18 @@ const parseResponse = async (response) => {
       // Return just the data portion for success
       return data.data;
     }
-    
+
     // Legacy format - return as is
     return data;
   }
-  
+
   // Non-JSON response
   const text = await response.text();
-  
+
   if (!response.ok) {
-    throw new APIError(
-      text || response.statusText || 'Request failed',
-      response.status
-    );
+    throw new APIError(text || response.statusText || 'Request failed', response.status);
   }
-  
+
   return text;
 };
 
@@ -92,8 +89,8 @@ const makeRequest = async (url, options = {}, attempt = 1) => {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        ...options.headers
-      }
+        ...options.headers,
+      },
     });
 
     clearTimeout(timeoutId);
@@ -102,14 +99,10 @@ const makeRequest = async (url, options = {}, attempt = 1) => {
     if (!response.ok) {
       const data = await parseResponse(response);
       // parseResponse will throw APIError for error responses
-      throw new APIError(
-        `HTTP ${response.status}: ${response.statusText}`,
-        response.status
-      );
+      throw new APIError(`HTTP ${response.status}: ${response.statusText}`, response.status);
     }
 
     return await parseResponse(response);
-
   } catch (error) {
     clearTimeout(timeoutId);
 
@@ -122,11 +115,15 @@ const makeRequest = async (url, options = {}, attempt = 1) => {
 
     // Retry logic
     if (shouldRetry(error, attempt)) {
-      const delay = error.code === 429 
-        ? parseInt(error.details?.retryAfter || RETRY_DELAY)
-        : RETRY_DELAY * attempt;
-      
-      console.warn(`Request failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`, error);
+      const delay =
+        error.code === 429
+          ? parseInt(error.details?.retryAfter || RETRY_DELAY)
+          : RETRY_DELAY * attempt;
+
+      console.warn(
+        `Request failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms...`,
+        error
+      );
       await wait(delay);
       return makeRequest(url, options, attempt + 1);
     }
@@ -143,7 +140,7 @@ const enhancedApiClient = {
     const url = `${API_BASE_URL}${endpoint}`;
     return makeRequest(url, {
       method: 'GET',
-      ...options
+      ...options,
     });
   },
 
@@ -155,7 +152,7 @@ const enhancedApiClient = {
     return makeRequest(url, {
       method: 'POST',
       body: data ? JSON.stringify(data) : null,
-      ...options
+      ...options,
     });
   },
 
@@ -167,7 +164,7 @@ const enhancedApiClient = {
     return makeRequest(url, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : null,
-      ...options
+      ...options,
     });
   },
 
@@ -179,7 +176,7 @@ const enhancedApiClient = {
     return makeRequest(url, {
       method: 'PATCH',
       body: data ? JSON.stringify(data) : null,
-      ...options
+      ...options,
     });
   },
 
@@ -190,7 +187,7 @@ const enhancedApiClient = {
     const url = `${API_BASE_URL}${endpoint}`;
     return makeRequest(url, {
       method: 'DELETE',
-      ...options
+      ...options,
     });
   },
 
@@ -215,7 +212,7 @@ const enhancedApiClient = {
       return error.message;
     }
     return 'An unexpected error occurred';
-  }
+  },
 };
 
 export default enhancedApiClient;

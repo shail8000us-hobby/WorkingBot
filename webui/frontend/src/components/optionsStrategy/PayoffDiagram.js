@@ -2,19 +2,12 @@
  * Payoff Diagram
  * ==============
  * Visualize strategy payoff at expiration.
- * 
+ *
  * Created: January 5, 2026
  */
 
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  CircularProgress,
-  Alert,
-  Chip,
-  Stack
-} from '@mui/material';
+import { Box, Typography, CircularProgress, Alert, Chip, Stack } from '@mui/material';
 import {
   LineChart,
   Line,
@@ -25,7 +18,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   Area,
-  ComposedChart
+  ComposedChart,
 } from 'recharts';
 
 const API_BASE = '/api/options-strategy';
@@ -37,7 +30,7 @@ const formatCurrency = (value) => {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0
+    maximumFractionDigits: 0,
   }).format(value);
 };
 
@@ -53,7 +46,7 @@ const CustomTooltip = ({ active, payload, label }) => {
           borderColor: 'divider',
           borderRadius: 1,
           p: 1,
-          boxShadow: 2
+          boxShadow: 2,
         }}
       >
         <Typography variant="caption" display="block">
@@ -89,84 +82,84 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
       }
       return;
     }
-    
+
     if (strategyId) {
       fetchPayoffData();
     }
   }, [strategyId, directData]);
-  
+
   // Calculate payoff locally from legs data
   const calculatePayoffFromLegs = (legData) => {
     const { legs, spot_price } = legData;
     if (!legs || legs.length === 0 || !spot_price) return null;
-    
+
     // Generate price range (±25% from spot)
     const minPrice = spot_price * 0.75;
     const maxPrice = spot_price * 1.25;
     const numPoints = 100;
     const step = (maxPrice - minPrice) / numPoints;
-    
+
     const pricePoints = [];
     const payoffValues = [];
-    
+
     for (let i = 0; i <= numPoints; i++) {
-      const price = minPrice + (i * step);
+      const price = minPrice + i * step;
       pricePoints.push(price);
-      
+
       let totalPayoff = 0;
-      
-      legs.forEach(leg => {
+
+      legs.forEach((leg) => {
         const { option_type, side, strike, premium = 0, quantity = 1 } = leg;
         const sign = side === 'buy' ? 1 : -1;
-        
+
         let intrinsicValue = 0;
         if (option_type === 'call') {
           intrinsicValue = Math.max(0, price - strike);
         } else {
           intrinsicValue = Math.max(0, strike - price);
         }
-        
+
         // Payoff = (Intrinsic Value - Premium) * sign * quantity
-        const legPayoff = ((intrinsicValue * sign) - (premium * sign)) * quantity;
+        const legPayoff = (intrinsicValue * sign - premium * sign) * quantity;
         totalPayoff += legPayoff;
       });
-      
+
       payoffValues.push(totalPayoff);
     }
-    
+
     // Find max profit/loss and breakeven points
     const maxProfit = Math.max(...payoffValues);
     const maxLoss = Math.min(...payoffValues);
-    
+
     // Find breakeven points (where payoff crosses zero)
     const breakevenPoints = [];
     for (let i = 1; i < payoffValues.length; i++) {
-      if ((payoffValues[i-1] <= 0 && payoffValues[i] >= 0) ||
-          (payoffValues[i-1] >= 0 && payoffValues[i] <= 0)) {
+      if (
+        (payoffValues[i - 1] <= 0 && payoffValues[i] >= 0) ||
+        (payoffValues[i - 1] >= 0 && payoffValues[i] <= 0)
+      ) {
         breakevenPoints.push(pricePoints[i]);
       }
     }
-    
+
     return {
       price_points: pricePoints,
       payoff_values: payoffValues,
       max_profit: maxProfit > 1000000 ? null : maxProfit,
       max_loss: maxLoss < -1000000 ? null : maxLoss,
       breakeven_points: breakevenPoints,
-      current_price: spot_price
+      current_price: spot_price,
     };
   };
 
   const fetchPayoffData = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const res = await fetch(
-        `${API_BASE}/payoff/${strategyId}?price_range_pct=25&num_points=100`
-      );
+      const res = await fetch(`${API_BASE}/payoff/${strategyId}?price_range_pct=25&num_points=100`);
       const result = await res.json();
-      
+
       if (result.error) {
         setError(result.error);
       } else {
@@ -198,9 +191,7 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
   if (!data || !data.price_points) {
     return (
       <Box sx={{ p: 2, textAlign: 'center' }}>
-        <Typography color="text.secondary">
-          No payoff data available
-        </Typography>
+        <Typography color="text.secondary">No payoff data available</Typography>
       </Box>
     );
   }
@@ -208,7 +199,7 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
   // Transform data for chart
   const chartData = data.price_points.map((price, i) => ({
     price,
-    payoff: data.payoff_values[i]
+    payoff: data.payoff_values[i],
   }));
 
   // Find zero crossing (breakeven) points
@@ -231,12 +222,7 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
           variant="outlined"
         />
         {breakevenPoints.map((bp, i) => (
-          <Chip
-            key={i}
-            label={`BE: ${formatCurrency(bp)}`}
-            size="small"
-            variant="outlined"
-          />
+          <Chip key={i} label={`BE: ${formatCurrency(bp)}`} size="small" variant="outlined" />
         ))}
       </Stack>
 
@@ -253,26 +239,22 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
               <stop offset="100%" stopColor="#f44336" stopOpacity={0} />
             </linearGradient>
           </defs>
-          
+
           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-          
+
           <XAxis
             dataKey="price"
             tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
             tick={{ fontSize: 11 }}
           />
-          
-          <YAxis
-            tickFormatter={(v) => `$${v}`}
-            tick={{ fontSize: 11 }}
-            domain={['auto', 'auto']}
-          />
-          
+
+          <YAxis tickFormatter={(v) => `$${v}`} tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
+
           <Tooltip content={<CustomTooltip />} />
-          
+
           {/* Zero line */}
           <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
-          
+
           {/* Breakeven lines */}
           {breakevenPoints.map((bp, i) => (
             <ReferenceLine
@@ -284,11 +266,11 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
                 value: 'BE',
                 position: 'top',
                 fontSize: 10,
-                fill: '#ff9800'
+                fill: '#ff9800',
               }}
             />
           ))}
-          
+
           {/* Area fill for profit/loss zones */}
           <Area
             type="monotone"
@@ -299,7 +281,7 @@ export default function PayoffDiagram({ strategyId, data: directData, height = 3
             isAnimationActive={false}
             baseValue={0}
           />
-          
+
           {/* Payoff line */}
           <Line
             type="monotone"

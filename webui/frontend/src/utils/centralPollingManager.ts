@@ -27,11 +27,7 @@ export class CentralPollingManager {
     callback: (data: any) => void,
     options: SubscribeOptions
   ): () => void {
-    const {
-      interval = 10000,
-      fetchFn,
-      immediate = false
-    } = options;
+    const { interval = 10000, fetchFn, immediate = false } = options;
 
     if (!this.subscriptions.has(endpoint)) {
       this.subscriptions.set(endpoint, {
@@ -40,7 +36,7 @@ export class CentralPollingManager {
         data: null,
         lastFetch: 0,
         fetchFn,
-        isFetching: false
+        isFetching: false,
       });
     }
 
@@ -61,7 +57,7 @@ export class CentralPollingManager {
       const sub = this.subscriptions.get(endpoint);
       if (sub) {
         sub.subscribers.delete(callback);
-        
+
         if (sub.subscribers.size === 0) {
           this.stopPolling(endpoint);
           this.subscriptions.delete(endpoint);
@@ -80,8 +76,8 @@ export class CentralPollingManager {
     try {
       const data = await sub.fetchFn();
       sub.data = data;
-      
-      sub.subscribers.forEach(callback => {
+
+      sub.subscribers.forEach((callback) => {
         try {
           callback(data);
         } catch (err) {
@@ -90,8 +86,8 @@ export class CentralPollingManager {
       });
     } catch (error: any) {
       console.error(`Failed to fetch ${endpoint}:`, error);
-      
-      sub.subscribers.forEach(callback => {
+
+      sub.subscribers.forEach((callback) => {
         try {
           callback({ error: error.message });
         } catch (err) {
@@ -123,7 +119,7 @@ export class CentralPollingManager {
   }
 
   clearAll(): void {
-    this.intervals.forEach(id => clearInterval(id));
+    this.intervals.forEach((id) => clearInterval(id));
     this.intervals.clear();
     this.subscriptions.clear();
   }

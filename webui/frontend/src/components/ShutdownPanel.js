@@ -1,12 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Paper, Typography, Grid, Chip, LinearProgress, 
-  Card, CardContent, Divider, Alert, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow
+  Box,
+  Paper,
+  Typography,
+  Grid,
+  Chip,
+  LinearProgress,
+  Card,
+  CardContent,
+  Divider,
+  Alert,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
-  PowerSettingsNew, CheckCircle, Warning, Delete,
-  Timer, TrendingUp, Cancel, Description
+  PowerSettingsNew,
+  CheckCircle,
+  Warning,
+  Delete,
+  Timer,
+  TrendingUp,
+  Cancel,
+  Description,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
@@ -21,7 +40,7 @@ const ShutdownPanel = ({ socket }) => {
     const fetchShutdownData = async () => {
       try {
         const { data: result } = await api.get('/api/shutdown-report');
-        
+
         if (result.exists && result.data) {
           setShutdownData(result.data);
           setShutdownStatus(result.data.status || 'complete');
@@ -44,19 +63,27 @@ const ShutdownPanel = ({ socket }) => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'shutting_down': return 'warning';
-      case 'shutdown_complete': return 'success';
-      case 'error': return 'error';
-      default: return 'default';
+      case 'shutting_down':
+        return 'warning';
+      case 'shutdown_complete':
+        return 'success';
+      case 'error':
+        return 'error';
+      default:
+        return 'default';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'shutting_down': return <PowerSettingsNew className="rotating" />;
-      case 'shutdown_complete': return <CheckCircle />;
-      case 'error': return <Warning />;
-      default: return <Timer />;
+      case 'shutting_down':
+        return <PowerSettingsNew className="rotating" />;
+      case 'shutdown_complete':
+        return <CheckCircle />;
+      case 'error':
+        return <Warning />;
+      default:
+        return <Timer />;
     }
   };
 
@@ -66,27 +93,25 @@ const ShutdownPanel = ({ socket }) => {
     return (
       <Box sx={{ mb: 3 }}>
         <Alert severity="warning" icon={<PowerSettingsNew className="rotating" />} sx={{ mb: 2 }}>
-          <Typography variant="h6">
-            🛑 Graceful Shutdown in Progress...
-          </Typography>
+          <Typography variant="h6">🛑 Graceful Shutdown in Progress...</Typography>
           <Typography variant="body2">
             Bot is cleaning up for {countdown}s before stopping
           </Typography>
         </Alert>
-        
-        <LinearProgress 
-          variant="determinate" 
+
+        <LinearProgress
+          variant="determinate"
           value={countdown > 0 ? ((60 - countdown) / 60) * 100 : 0}
-          sx={{ 
-            height: 8, 
+          sx={{
+            height: 8,
             borderRadius: 1,
             mb: 2,
             '& .MuiLinearProgress-bar': {
-              background: 'linear-gradient(90deg, #ff9800, #f57c00)'
-            }
+              background: 'linear-gradient(90deg, #ff9800, #f57c00)',
+            },
           }}
         />
-        
+
         <Typography variant="body2" color="text.secondary" align="center">
           ⏰ Shutting down in {countdown} seconds...
         </Typography>
@@ -98,9 +123,7 @@ const ShutdownPanel = ({ socket }) => {
     if (!shutdownData) {
       return (
         <Alert severity="info" icon={<Timer />}>
-          <Typography variant="body1">
-            No shutdown data available yet.
-          </Typography>
+          <Typography variant="body1">No shutdown data available yet.</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             This report is generated when the bot is stopped gracefully.
           </Typography>
@@ -108,12 +131,12 @@ const ShutdownPanel = ({ socket }) => {
       );
     }
 
-    const { 
-      cancelled_orders = 0, 
-      failed_cancels = 0, 
+    const {
+      cancelled_orders = 0,
+      failed_cancels = 0,
       active_tp_orders = 0,
       open_positions = 0,
-      manual_orders = 0
+      manual_orders = 0,
     } = shutdownData;
 
     const hasIssues = failed_cancels > 0;
@@ -121,7 +144,9 @@ const ShutdownPanel = ({ socket }) => {
     return (
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12}>
-          <Card sx={{ background: hasIssues ? 'rgba(255, 152, 0, 0.1)' : 'rgba(0, 230, 118, 0.1)' }}>
+          <Card
+            sx={{ background: hasIssues ? 'rgba(255, 152, 0, 0.1)' : 'rgba(0, 230, 118, 0.1)' }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 {hasIssues ? (
@@ -133,48 +158,73 @@ const ShutdownPanel = ({ socket }) => {
                   {hasIssues ? '⚠️ Shutdown with Warnings' : '✅ Clean Shutdown'}
                 </Typography>
               </Box>
-              
+
               <Grid container spacing={2}>
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: '#ff6b6b' }}>{cancelled_orders}</Typography>
-                    <Typography variant="caption" color="text.secondary">Cancelled BUY</Typography>
+                    <Typography variant="h4" sx={{ color: '#ff6b6b' }}>
+                      {cancelled_orders}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Cancelled BUY
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: '#00e676' }}>{active_tp_orders}</Typography>
-                    <Typography variant="caption" color="text.secondary">Active TP</Typography>
+                    <Typography variant="h4" sx={{ color: '#00e676' }}>
+                      {active_tp_orders}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Active TP
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: '#9c27b0' }}>{open_positions}</Typography>
-                    <Typography variant="caption" color="text.secondary">Positions</Typography>
+                    <Typography variant="h4" sx={{ color: '#9c27b0' }}>
+                      {open_positions}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Positions
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={6} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: '#2196f3' }}>{manual_orders}</Typography>
-                    <Typography variant="caption" color="text.secondary">Manual</Typography>
+                    <Typography variant="h4" sx={{ color: '#2196f3' }}>
+                      {manual_orders}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Manual
+                    </Typography>
                   </Box>
                 </Grid>
-                
+
                 <Grid item xs={12} sm={4} md={2.4}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h4" sx={{ color: failed_cancels > 0 ? '#ff9800' : '#666' }}>
+                    <Typography
+                      variant="h4"
+                      sx={{ color: failed_cancels > 0 ? '#ff9800' : '#666' }}
+                    >
                       {failed_cancels}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">Failed</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Failed
+                    </Typography>
                   </Box>
                 </Grid>
               </Grid>
 
               {lastShutdownTime && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, textAlign: 'center' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mt: 2, textAlign: 'center' }}
+                >
                   Last shutdown: {lastShutdownTime.toLocaleString()}
                 </Typography>
               )}
@@ -196,7 +246,7 @@ const ShutdownPanel = ({ socket }) => {
             {title} ({orders.length})
           </Typography>
         </Box>
-        
+
         <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
           <Table size="small" stickyHeader>
             <TableHead>
@@ -209,9 +259,9 @@ const ShutdownPanel = ({ socket }) => {
               {orders.map((order, idx) => (
                 <TableRow key={idx} hover>
                   <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                    {parseFloat(order.price).toLocaleString('en-IN', { 
+                    {parseFloat(order.price).toLocaleString('en-IN', {
                       minimumFractionDigits: 1,
-                      maximumFractionDigits: 1 
+                      maximumFractionDigits: 1,
                     })}
                   </TableCell>
                   <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
@@ -227,17 +277,16 @@ const ShutdownPanel = ({ socket }) => {
   };
 
   const renderPositionsTable = () => {
-    if (!shutdownData || !shutdownData.positions || shutdownData.positions.length === 0) return null;
+    if (!shutdownData || !shutdownData.positions || shutdownData.positions.length === 0)
+      return null;
 
     return (
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <TrendingUp sx={{ color: '#9c27b0', mr: 1 }} />
-          <Typography variant="h6">
-            Open Positions ({shutdownData.positions.length})
-          </Typography>
+          <Typography variant="h6">Open Positions ({shutdownData.positions.length})</Typography>
         </Box>
-        
+
         <TableContainer component={Paper}>
           <Table size="small">
             <TableHead>
@@ -251,21 +300,23 @@ const ShutdownPanel = ({ socket }) => {
             <TableBody>
               {shutdownData.positions.map((pos, idx) => (
                 <TableRow key={idx} hover>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>
-                    {pos.size.toFixed(3)}
-                  </TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace' }}>{pos.size.toFixed(3)}</TableCell>
                   <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                     {parseFloat(pos.entry).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                     {parseFloat(pos.mark).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </TableCell>
-                  <TableCell align="right" sx={{ 
-                    fontFamily: 'monospace',
-                    color: pos.pnl >= 0 ? '#00e676' : '#ff6b6b',
-                    fontWeight: 'bold'
-                  }}>
-                    ${pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}
+                  <TableCell
+                    align="right"
+                    sx={{
+                      fontFamily: 'monospace',
+                      color: pos.pnl >= 0 ? '#00e676' : '#ff6b6b',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    ${pos.pnl >= 0 ? '+' : ''}
+                    {pos.pnl.toFixed(2)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -286,8 +337,8 @@ const ShutdownPanel = ({ socket }) => {
             Graceful Shutdown
           </Typography>
         </Box>
-        
-        <Chip 
+
+        <Chip
           icon={getStatusIcon(shutdownStatus)}
           label={shutdownStatus.toUpperCase().replace('_', ' ')}
           color={getStatusColor(shutdownStatus)}
@@ -333,7 +384,7 @@ const ShutdownPanel = ({ socket }) => {
             <Cancel sx={{ color: '#ff6b6b' }} />,
             '#ff6b6b'
           )}
-          
+
           {renderOrdersTable(
             shutdownData.tp_sell_orders,
             '🎯 Active TP Orders (Kept)',

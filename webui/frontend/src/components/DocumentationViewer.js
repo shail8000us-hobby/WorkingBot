@@ -15,7 +15,7 @@ import {
   Paper,
   Divider,
   Chip,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -23,7 +23,7 @@ import {
   Download as DownloadIcon,
   OpenInNew as OpenInNewIcon,
   Book as BookIcon,
-  Security as SecurityIcon
+  Security as SecurityIcon,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,10 +38,10 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
   const fetchDocumentation = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const { data } = await api.get(`/api/docs/${docType}`);
-      
+
       if (data.success) {
         setContent(data.content);
         setLastUpdated(data.last_updated);
@@ -101,23 +101,25 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
       PaperProps={{
         sx: {
           height: '90vh',
-          maxHeight: '90vh'
-        }
+          maxHeight: '90vh',
+        },
       }}
     >
-      <DialogTitle sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        pb: 1
-      }}>
+      <DialogTitle
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          pb: 1,
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {getDocIcon()}
           <Typography variant="h6" component="div">
             {getDocTitle()}
           </Typography>
           {lastUpdated && (
-            <Chip 
+            <Chip
               label={`Updated: ${new Date(lastUpdated * 1000).toLocaleDateString()}`}
               size="small"
               variant="outlined"
@@ -140,53 +142,58 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
           </IconButton>
         </Box>
       </DialogTitle>
-      
+
       <Divider />
-      
+
       <DialogContent sx={{ p: 0, overflow: 'hidden' }}>
         {loading && (
-          <Box sx={{ 
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center', 
-            height: '200px' 
-          }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: '200px',
+            }}
+          >
             <CircularProgress />
           </Box>
         )}
-        
+
         {error && (
           <Box sx={{ p: 2 }}>
-            <Alert severity="error" action={
-              <Button color="inherit" size="small" onClick={fetchDocumentation}>
-                Retry
-              </Button>
-            }>
+            <Alert
+              severity="error"
+              action={
+                <Button color="inherit" size="small" onClick={fetchDocumentation}>
+                  Retry
+                </Button>
+              }
+            >
               {error}
             </Alert>
           </Box>
         )}
-        
+
         {content && !loading && !error && (
-          <Paper 
-            sx={{ 
-              height: '100%', 
+          <Paper
+            sx={{
+              height: '100%',
               overflow: 'auto',
               p: 3,
               '& h1, & h2, & h3, & h4, & h5, & h6': {
                 color: 'primary.main',
                 mt: 3,
-                mb: 2
+                mb: 2,
               },
               '& h1': {
                 borderBottom: '2px solid',
                 borderColor: 'primary.main',
-                pb: 1
+                pb: 1,
               },
               '& h2': {
                 borderBottom: '1px solid',
                 borderColor: 'divider',
-                pb: 0.5
+                pb: 0.5,
               },
               '& code': {
                 backgroundColor: 'grey.800',
@@ -194,7 +201,7 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
                 px: 0.5,
                 py: 0.25,
                 borderRadius: 0.5,
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
               },
               '& pre': {
                 backgroundColor: 'grey.900',
@@ -203,7 +210,7 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
                 borderRadius: 1,
                 overflow: 'auto',
                 border: '1px solid',
-                borderColor: 'divider'
+                borderColor: 'divider',
               },
               '& blockquote': {
                 borderLeft: '4px solid',
@@ -212,34 +219,34 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
                 ml: 0,
                 fontStyle: 'italic',
                 backgroundColor: 'grey.800',
-                py: 1
+                py: 1,
               },
               '& table': {
                 borderCollapse: 'collapse',
                 width: '100%',
-                mb: 2
+                mb: 2,
               },
               '& th, & td': {
                 border: '1px solid',
                 borderColor: 'divider',
                 px: 2,
                 py: 1,
-                textAlign: 'left'
+                textAlign: 'left',
               },
               '& th': {
                 backgroundColor: 'grey.800',
                 color: 'grey.100',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
               },
               '& ul, & ol': {
-                pl: 2
+                pl: 2,
               },
               '& li': {
-                mb: 0.5
-              }
+                mb: 0.5,
+              },
             }}
           >
-            <ReactMarkdown 
+            <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
                 // Custom components for better styling
@@ -277,7 +284,7 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
                       <code>{children}</code>
                     </pre>
                   );
-                }
+                },
               }}
             >
               {content}
@@ -285,16 +292,10 @@ const DocumentationViewer = ({ open, onClose, docType = 'capital-protection' }) 
           </Paper>
         )}
       </DialogContent>
-      
+
       <DialogActions>
-        <Button onClick={onClose}>
-          Close
-        </Button>
-        <Button 
-          onClick={handleDownload} 
-          disabled={!content}
-          startIcon={<DownloadIcon />}
-        >
+        <Button onClick={onClose}>Close</Button>
+        <Button onClick={handleDownload} disabled={!content} startIcon={<DownloadIcon />}>
           Download
         </Button>
       </DialogActions>

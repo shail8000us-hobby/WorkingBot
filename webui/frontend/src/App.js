@@ -1,11 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-  Suspense
-} from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { Alert, Snackbar, CircularProgress } from '@mui/material';
 import {
   LayoutDashboard,
@@ -24,7 +17,7 @@ import {
   Code,
   Activity,
   BarChart3,
-  Brain
+  Brain,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -77,27 +70,41 @@ const ConfigPanel = React.lazy(() => import('./components/ConfigPanel'));
 const LogsPanel = React.lazy(() => import('./components/LogsPanel'));
 const MonitoringPanel = React.lazy(() => import('./components/MonitoringPanel'));
 const MonitoringDashboard = React.lazy(() => import('./components/MonitoringDashboard'));
-const ProductionMonitoringDashboard = React.lazy(() => import('./components/ProductionMonitoringDashboard'));
+const ProductionMonitoringDashboard = React.lazy(
+  () => import('./components/ProductionMonitoringDashboard')
+);
 const GuardianPanel = React.lazy(() => import('./components/GuardianPanel'));
 const PM2Panel = React.lazy(() => import('./components/PM2Panel'));
-const BotManagementDashboard = React.lazy(() => import('./components/BotManagement/BotManagementDashboard'));
+const BotManagementDashboard = React.lazy(
+  () => import('./components/BotManagement/BotManagementDashboard')
+);
 const RobustnessPanel = React.lazy(() => import('./components/RobustnessPanel'));
 const CapitalProtectionPanel = React.lazy(() => import('./components/CapitalProtectionPanel'));
 const InstitutionalAIPanel = React.lazy(() => import('./components/InstitutionalAIPanel'));
-const LiquidationProtectionPanel = React.lazy(() => import('./components/LiquidationProtectionPanel'));
+const LiquidationProtectionPanel = React.lazy(
+  () => import('./components/LiquidationProtectionPanel')
+);
 const TradingStatusPanel = React.lazy(() => import('./components/TradingStatusPanel'));
 const AIAdvisorWidget = React.lazy(() => import('./components/AIAdvisorWidget'));
 const MarketNewsWidget = React.lazy(() => import('./components/MarketNewsWidget'));
 const CommandKnowledgeBase = React.lazy(() => import('./components/CommandKnowledgeBase'));
 const SyncReconciliationPanel = React.lazy(() => import('./components/SyncReconciliationPanel'));
 const EmergencyControlsPanel = React.lazy(() => import('./components/EmergencyControlsPanel'));
-const ErrorIntelligencePanel = React.lazy(() => import('./components/ErrorIntelligencePanel_simple'));
+const ErrorIntelligencePanel = React.lazy(
+  () => import('./components/ErrorIntelligencePanel_simple')
+);
 const ErrorIntelligenceLive = React.lazy(() => import('./components/ErrorIntelligenceLive'));
 const ReconciliationPanelV2 = React.lazy(() => import('./components/ReconciliationPanelV2'));
 const PositionsPanel = React.lazy(() => import('./components/PositionsPanel'));
-const OptionsPanel = React.lazy(() => import('./components/options').then(m => ({ default: m.OptionsPanel })));
-const OptionsChainPanel = React.lazy(() => import('./components/optionsChain').then(m => ({ default: m.OptionsChainPanel })));
-const StrategyBuilder = React.lazy(() => import('./components/optionsStrategy').then(m => ({ default: m.StrategyBuilder })));
+const OptionsPanel = React.lazy(() =>
+  import('./components/options').then((m) => ({ default: m.OptionsPanel }))
+);
+const OptionsChainPanel = React.lazy(() =>
+  import('./components/optionsChain').then((m) => ({ default: m.OptionsChainPanel }))
+);
+const StrategyBuilder = React.lazy(() =>
+  import('./components/optionsStrategy').then((m) => ({ default: m.StrategyBuilder }))
+);
 const MLInsightsPanel = React.lazy(() => import('./components/options/MLInsightsPanel'));
 const MLStyleProfile = React.lazy(() => import('./components/options/MLStyleProfile'));
 const MLOpportunityScanner = React.lazy(() => import('./components/options/MLOpportunityScanner'));
@@ -106,7 +113,9 @@ const MLModelMonitor = React.lazy(() => import('./components/options/MLModelMoni
 const DeltaTradeSync = React.lazy(() => import('./components/options/DeltaTradeSync'));
 const MarketSignalPanel = React.lazy(() => import('./components/MarketSignalPanel'));
 const ShutdownPanel = React.lazy(() => import('./components/ShutdownPanel'));
-const OpportunisticRecoveryPanel = React.lazy(() => import('./components/OpportunisticRecoveryPanel'));
+const OpportunisticRecoveryPanel = React.lazy(
+  () => import('./components/OpportunisticRecoveryPanel')
+);
 const BotActionsPanel = React.lazy(() => import('./components/BotActionsPanel'));
 const BackendDownError = React.lazy(() => import('./components/BackendDownError'));
 const TodoListPanel = React.lazy(() => import('./components/TodoListPanel'));
@@ -118,7 +127,9 @@ const ConfigVisualEditor = React.lazy(() => import('./components/ConfigVisualEdi
 const ModeSwitcherPanel = React.lazy(() => import('./components/ModeSwitcherPanel'));
 const SystemHealthPanel = React.lazy(() => import('./components/SystemHealthPanel'));
 const MultiInstanceManager = React.lazy(() => import('./components/MultiInstanceManager'));
-const MonitoringRecoveryPanel = React.lazy(() => import('./components/panels/MonitoringRecoveryPanel'));
+const MonitoringRecoveryPanel = React.lazy(
+  () => import('./components/panels/MonitoringRecoveryPanel')
+);
 const RSIPanel = React.lazy(() => import('./components/RSIPanel'));
 const SymbolPortfolio = React.lazy(() => import('./components/SymbolPortfolio'));
 const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDashboard'));
@@ -141,7 +152,9 @@ const MobileNav = ({ sections = [], activeSection, onSelect }) => (
           type="button"
           onClick={() => onSelect?.(id)}
           className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
-            active ? 'bg-sky-500 text-slate-900 shadow-card' : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
+            active
+              ? 'bg-sky-500 text-slate-900 shadow-card'
+              : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
           }`}
         >
           {label}
@@ -157,7 +170,7 @@ function App() {
     setSystemStatus,
     registerWarning,
     clearWarning,
-    warnings: globalWarnings
+    warnings: globalWarnings,
   } = useSystemStatus();
 
   // UI State
@@ -170,9 +183,11 @@ function App() {
   const [latencyStats, setLatencyStats] = useState({ avg: null, history: [] });
   const [featureFlags, setFeatureFlags] = useState({
     reconciliation_v2: false,
-    reconciliation_v2_dry_run: true
+    reconciliation_v2_dry_run: true,
   });
-  const [activeSection, setActiveSection] = useState(userPreferences.selectedSection || 'dashboard');
+  const [activeSection, setActiveSection] = useState(
+    userPreferences.selectedSection || 'dashboard'
+  );
   const [navParams, setNavParams] = useState(null); // Navigation params for section switches
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isMobile, setIsMobile] = useState(() => {
@@ -194,7 +209,7 @@ function App() {
     botIsRunning,
     openPositions,
     pendingOrders,
-    totalPnl
+    totalPnl,
   } = useTradingData();
 
   const {
@@ -204,7 +219,7 @@ function App() {
     setConfigMeta,
     fetchInitialData,
     debouncedFetchInitialData,
-    handleConfigUpdate
+    handleConfigUpdate,
   } = useConfigManager({
     setBackendDown,
     setBotStatus,
@@ -219,7 +234,7 @@ function App() {
     showNotification: (message, severity) => setNotification({ open: true, message, severity }),
     globalWarnings,
     registerWarning,
-    clearWarning
+    clearWarning,
   });
 
   const connectionLatency = latencyStats.avg;
@@ -227,14 +242,14 @@ function App() {
   useEffect(() => {
     setSystemStatus({
       botRunning: botIsRunning,
-      lastSync: lastUpdated
+      lastSync: lastUpdated,
     });
     if (!botIsRunning) {
       registerWarning({
         id: 'bot-stopped',
         type: 'bot',
         title: 'Bot is stopped',
-        message: 'Start the bot to resume live metrics, PnL, and market monitoring.'
+        message: 'Start the bot to resume live metrics, PnL, and market monitoring.',
       });
     } else {
       clearWarning('bot-stopped');
@@ -250,7 +265,7 @@ function App() {
   useEffect(() => {
     console.log('🚀 Starting data aggregator...');
     dataAggregator.start();
-    
+
     // Cleanup: Stop data aggregator on unmount
     return () => {
       console.log('🛑 Stopping data aggregator...');
@@ -287,17 +302,22 @@ function App() {
       return;
     }
     const sample = {
-      time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      latency: Math.round(latencyMs)
+      time: new Date().toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+      latency: Math.round(latencyMs),
     };
     latencyBufferRef.current = [...latencyBufferRef.current.slice(-59), sample];
     const avg = Math.round(
       latencyBufferRef.current.reduce((acc, item) => acc + Number(item.latency || 0), 0) /
-      Math.max(latencyBufferRef.current.length, 1)
+        Math.max(latencyBufferRef.current.length, 1)
     );
     setLatencyStats({
       history: latencyBufferRef.current,
-      avg
+      avg,
     });
   }, []);
 
@@ -338,7 +358,7 @@ function App() {
   const { handleStartBot, handleStopBot, handleRestartBot } = useBotControl({
     setBusy,
     showNotification: (message, severity) => setNotification({ open: true, message, severity }),
-    onSuccess: debouncedFetchInitialData
+    onSuccess: debouncedFetchInitialData,
   });
 
   // Socket connection hook
@@ -355,7 +375,7 @@ function App() {
     setLastUpdated,
     showNotification: (message, severity) => setNotification({ open: true, message, severity }),
     pushLatencySample,
-    debouncedFetchInitialData
+    debouncedFetchInitialData,
   });
 
   useEffect(() => {
@@ -407,149 +427,157 @@ function App() {
   // Week 3: Check guardian dashboard feature flag
   const { enabled: guardianEnabled } = useFeatureFlag('guardian_dashboard');
 
-  const sections = useMemo(() => [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      badge: pendingOrders ?? undefined,
-      description: 'Trading overview & telemetry'
-    },
-    {
-      id: 'portfolio',
-      label: '📊 Portfolio',
-      icon: TrendingUp,
-      description: 'Multi-symbol overview - all symbols at a glance'
-    },
-    {
-      id: 'config',
-      label: 'Configuration',
-      icon: SlidersHorizontal,
-      description: 'Bot parameters and reconciliation tools'
-    },
-    {
-      id: 'risk',
-      label: 'Risk & Safety',
-      icon: ShieldCheck,
-      description: 'Risk analytics and protection systems'
-    },
-    {
-      id: 'rsi',
-      label: 'RSI',
-      icon: BarChart3,
-      description: 'RSI safety monitor - mode-specific thresholds with hysteresis'
-    },
-    {
-      id: 'positions',
-      label: 'Positions',
-      icon: Layers3,
-      badge: openPositions ?? undefined,
-      description: 'Active grids & execution state'
-    },
-    {
-      id: 'options',
-      label: '📈 Options',
-      icon: TrendingUp,
-      description: 'Options trading - manage calls/puts positions'
-    },
-    {
-      id: 'options_chain',
-      label: '🔗 Options Chain',
-      icon: BarChart3,
-      description: 'Options chain - market data, IV, Greeks, strike selection'
-    },
-    {
-      id: 'strategy_builder',
-      label: '🏗️ Strategy Builder',
-      icon: Layers3,
-      description: 'Multi-leg options strategies - straddles, iron condors, spreads'
-    },
-    // Week 3: Guardian Dashboard (feature flag controlled)
-    ...(guardianEnabled ? [{
-      id: 'guardian',
-      label: '🛡️ Guardian',
-      icon: ShieldCheck,
-      description: 'WebUI robustness monitor - circuit breakers, metrics, health'
-    }] : []),
-    {
-      id: 'ml_trading',
-      label: 'ML',
-      icon: Brain,
-      description: 'Machine Learning trading insights, style analysis, and autonomous decision engine'
-    },
-    {
-      id: 'botmanagement',
-      label: 'Bot Management',
-      icon: Terminal,
-      description: 'tmux control, process management, and emergency controls'
-    },
-    {
-      id: 'actions',
-      label: 'Bot Actions',
-      icon: Zap,
-      description: 'Real-time bot decisions and future intentions'
-    },
-    {
-      id: 'brain_flow',
-      label: 'Brain Flow Graph',
-      icon: TrendingUp,
-      description: 'Visual decision flowchart - see bot complete decision tree'
-    },
-    {
-      id: 'intelligence',
-      label: 'Intelligence',
-      icon: BookOpen,
-      description: 'AI insights, documentation, market intel'
-    },
-    {
-      id: 'file_editor',
-      label: 'File Editor',
-      icon: Code,
-      description: 'Edit code with AI assistance - syntax highlighting, templates, auto-backup'
-    },
-    {
-      id: 'strategy_editor',
-      label: 'Strategy Editor',
-      icon: SlidersHorizontal,
-      description: 'Visual strategy builder - templates, forms, comparison, backtest'
-    },
-    {
-      id: 'config_visual_editor',
-      label: 'Config Editor',
-      icon: SlidersHorizontal,
-      description: 'Edit configuration with forms or YAML - validation, diff, backups'
-    },
-    {
-      id: 'mode_switcher',
-      label: 'Mode Switcher',
-      icon: RefreshCw,
-      description: 'Auto LONG/SHORT switching - configure thresholds, manual override'
-    },
-    {
-      id: 'system_health',
-      label: 'System Health',
-      icon: Activity,
-      description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts'
-    },
-    {
-      id: 'instance_manager',
-      label: 'Instance Manager',
-      icon: Layers3,
-      description: 'Run multiple bots simultaneously - demo + live, different strategies'
-    },
-    {
-      id: 'todos',
-      label: 'Todo List',
-      icon: BookOpen,
-      description: 'Track improvements and ideas for the trading bot'
-    },
-    {
-      id: 'zero_dte',
-      label: '⏱️ 0DTE Trading',
-      icon: Zap,
-      description: '0DTE options - autonomous strangle with premium balancing'
-    }
-  ], [openPositions, pendingOrders]);
+  const sections = useMemo(
+    () => [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: LayoutDashboard,
+        badge: pendingOrders ?? undefined,
+        description: 'Trading overview & telemetry',
+      },
+      {
+        id: 'portfolio',
+        label: '📊 Portfolio',
+        icon: TrendingUp,
+        description: 'Multi-symbol overview - all symbols at a glance',
+      },
+      {
+        id: 'config',
+        label: 'Configuration',
+        icon: SlidersHorizontal,
+        description: 'Bot parameters and reconciliation tools',
+      },
+      {
+        id: 'risk',
+        label: 'Risk & Safety',
+        icon: ShieldCheck,
+        description: 'Risk analytics and protection systems',
+      },
+      {
+        id: 'rsi',
+        label: 'RSI',
+        icon: BarChart3,
+        description: 'RSI safety monitor - mode-specific thresholds with hysteresis',
+      },
+      {
+        id: 'positions',
+        label: 'Positions',
+        icon: Layers3,
+        badge: openPositions ?? undefined,
+        description: 'Active grids & execution state',
+      },
+      {
+        id: 'options',
+        label: '📈 Options',
+        icon: TrendingUp,
+        description: 'Options trading - manage calls/puts positions',
+      },
+      {
+        id: 'options_chain',
+        label: '🔗 Options Chain',
+        icon: BarChart3,
+        description: 'Options chain - market data, IV, Greeks, strike selection',
+      },
+      {
+        id: 'strategy_builder',
+        label: '🏗️ Strategy Builder',
+        icon: Layers3,
+        description: 'Multi-leg options strategies - straddles, iron condors, spreads',
+      },
+      // Week 3: Guardian Dashboard (feature flag controlled)
+      ...(guardianEnabled
+        ? [
+            {
+              id: 'guardian',
+              label: '🛡️ Guardian',
+              icon: ShieldCheck,
+              description: 'WebUI robustness monitor - circuit breakers, metrics, health',
+            },
+          ]
+        : []),
+      {
+        id: 'ml_trading',
+        label: 'ML',
+        icon: Brain,
+        description:
+          'Machine Learning trading insights, style analysis, and autonomous decision engine',
+      },
+      {
+        id: 'botmanagement',
+        label: 'Bot Management',
+        icon: Terminal,
+        description: 'tmux control, process management, and emergency controls',
+      },
+      {
+        id: 'actions',
+        label: 'Bot Actions',
+        icon: Zap,
+        description: 'Real-time bot decisions and future intentions',
+      },
+      {
+        id: 'brain_flow',
+        label: 'Brain Flow Graph',
+        icon: TrendingUp,
+        description: 'Visual decision flowchart - see bot complete decision tree',
+      },
+      {
+        id: 'intelligence',
+        label: 'Intelligence',
+        icon: BookOpen,
+        description: 'AI insights, documentation, market intel',
+      },
+      {
+        id: 'file_editor',
+        label: 'File Editor',
+        icon: Code,
+        description: 'Edit code with AI assistance - syntax highlighting, templates, auto-backup',
+      },
+      {
+        id: 'strategy_editor',
+        label: 'Strategy Editor',
+        icon: SlidersHorizontal,
+        description: 'Visual strategy builder - templates, forms, comparison, backtest',
+      },
+      {
+        id: 'config_visual_editor',
+        label: 'Config Editor',
+        icon: SlidersHorizontal,
+        description: 'Edit configuration with forms or YAML - validation, diff, backups',
+      },
+      {
+        id: 'mode_switcher',
+        label: 'Mode Switcher',
+        icon: RefreshCw,
+        description: 'Auto LONG/SHORT switching - configure thresholds, manual override',
+      },
+      {
+        id: 'system_health',
+        label: 'System Health',
+        icon: Activity,
+        description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts',
+      },
+      {
+        id: 'instance_manager',
+        label: 'Instance Manager',
+        icon: Layers3,
+        description: 'Run multiple bots simultaneously - demo + live, different strategies',
+      },
+      {
+        id: 'todos',
+        label: 'Todo List',
+        icon: BookOpen,
+        description: 'Track improvements and ideas for the trading bot',
+      },
+      {
+        id: 'zero_dte',
+        label: '⏱️ 0DTE Trading',
+        icon: Zap,
+        description: '0DTE options - autonomous strangle with premium balancing',
+      },
+    ],
+    [openPositions, pendingOrders]
+  );
 
   useEffect(() => {
     const handleKeyboardNav = (event) => {
@@ -579,37 +607,38 @@ function App() {
     </div>
   );
 
-  const handleDeepLink = useCallback((tab) => {
-    const map = {
-      configuration: 'config',
-      monitoring: 'monitoring',
-      sync: 'monitoring',
-      reconciliation: 'monitoring',
-      guardian: 'risk',
-      liquidation_monitor: 'risk',
-      capital_protection: 'risk',
-      risk_management: 'risk',
-      emergency_controls: 'emergency',
-      ai_advisor: 'intelligence',
-      logs: 'monitoring',
-      bot_management: 'monitoring',
-      documentation: 'intelligence',
-      positions: 'positions'
-    };
-    const sectionId = map[tab];
-    if (sectionId) {
-      setActiveSection(sectionId);
-      showNotification(`Navigated to ${sectionId.replace('_', ' ')}`, 'info');
-    }
-  }, [showNotification]);
+  const handleDeepLink = useCallback(
+    (tab) => {
+      const map = {
+        configuration: 'config',
+        monitoring: 'monitoring',
+        sync: 'monitoring',
+        reconciliation: 'monitoring',
+        guardian: 'risk',
+        liquidation_monitor: 'risk',
+        capital_protection: 'risk',
+        risk_management: 'risk',
+        emergency_controls: 'emergency',
+        ai_advisor: 'intelligence',
+        logs: 'monitoring',
+        bot_management: 'monitoring',
+        documentation: 'intelligence',
+        positions: 'positions',
+      };
+      const sectionId = map[tab];
+      if (sectionId) {
+        setActiveSection(sectionId);
+        showNotification(`Navigated to ${sectionId.replace('_', ' ')}`, 'info');
+      }
+    },
+    [showNotification]
+  );
   // Navigation handler that clears params when navigating via sidebar
   const handleSectionSelect = useCallback((sectionId) => {
     setActiveSection(sectionId);
     // Clear nav params when navigating via normal sidebar click
     setNavParams(null);
   }, []);
-
-
 
   const renderActions = () => (
     <div className="grid gap-6">
@@ -834,8 +863,8 @@ function App() {
         defaultOpen={!isMobile}
       >
         <EnhancedErrorBoundary componentName="HealthCheckDashboard">
-          <HealthCheckDashboard 
-            socket={socket} 
+          <HealthCheckDashboard
+            socket={socket}
             latencyStats={latencyStats}
             connectionQuality={connectionQuality}
             botIsRunning={botIsRunning}
@@ -866,7 +895,7 @@ function App() {
         {botIsRunning ? (
           <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
             <EnhancedErrorBoundary componentName="MonitoringPanel">
-              <MonitoringPanel 
+              <MonitoringPanel
                 botStatus={botStatus}
                 config={config}
                 onNavigate={(section) => console.log('Navigate to:', section)}
@@ -967,9 +996,7 @@ function App() {
       >
         <Suspense fallback={<LoadingFallback message="Loading options chain..." />}>
           <EnhancedErrorBoundary componentName="OptionsChainPanel">
-            <OptionsChainPanel 
-              buildYourOwnMode={navParams?.buildYourOwnMode || false}
-            />
+            <OptionsChainPanel buildYourOwnMode={navParams?.buildYourOwnMode || false} />
           </EnhancedErrorBoundary>
         </Suspense>
       </CollapsibleCard>
@@ -981,7 +1008,7 @@ function App() {
     <div className="grid gap-6">
       <Suspense fallback={<LoadingFallback message="Loading strategy builder..." />}>
         <EnhancedErrorBoundary componentName="StrategyBuilder">
-          <StrategyBuilder 
+          <StrategyBuilder
             onNavigateToTab={(tabId, params) => {
               setActiveSection(tabId);
               // Store params for the target tab (e.g., buildYourOwnMode for Options Chain)
@@ -1209,7 +1236,7 @@ function App() {
         {botIsRunning ? (
           <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
             <EnhancedErrorBoundary componentName="MonitoringPanel">
-              <MonitoringPanel 
+              <MonitoringPanel
                 botStatus={botStatus}
                 config={config}
                 onNavigate={(section) => console.log('Navigate to:', section)}
@@ -1463,13 +1490,13 @@ function App() {
     dashboard: renderDashboard(),
     portfolio: <SymbolPortfolio />,
     positions: renderPositions(),
-    options: renderOptions(),  // Jan 2026: Options Trading Panel
-    options_chain: renderOptionsChain(),  // Jan 2026: Options Chain Market Data
-    strategy_builder: renderStrategyBuilder(),  // Jan 2026: Options Strategy Builder
+    options: renderOptions(), // Jan 2026: Options Trading Panel
+    options_chain: renderOptionsChain(), // Jan 2026: Options Chain Market Data
+    strategy_builder: renderStrategyBuilder(), // Jan 2026: Options Strategy Builder
     risk: renderRisk(),
     rsi: renderRSI(),
     config: renderConfig(),
-    ml_trading: renderMLTrading(),  // Jan 2026: ML Trading Panel
+    ml_trading: renderMLTrading(), // Jan 2026: ML Trading Panel
     botmanagement: renderBotManagement(),
     emergency: renderEmergency(),
     intelligence: renderIntelligence(),
@@ -1492,7 +1519,7 @@ function App() {
       </div>
     ) : null,
     // 0DTE Autonomous Trading
-    zero_dte: renderZeroDTE()
+    zero_dte: renderZeroDTE(),
   };
 
   const activeContent = sectionContent[activeSection] || renderDashboard();
@@ -1504,112 +1531,115 @@ function App() {
 
   return (
     <InstanceProvider>
-    <SymbolProvider>
-      <MobileOptimizationProvider>
-        <div className="relative min-h-screen bg-surface text-slate-100">
-          {/* V6.0: Instance Context Bar - REMOVED: Confusing, instance selection should be in BotManagement only */}
-          {/* <InstanceContextBar 
+      <SymbolProvider>
+        <MobileOptimizationProvider>
+          <div className="relative min-h-screen bg-surface text-slate-100">
+            {/* V6.0: Instance Context Bar - REMOVED: Confusing, instance selection should be in BotManagement only */}
+            {/* <InstanceContextBar 
             status={{ running: botIsRunning }}
             pnl={{ total: totalPnl }}
           /> */}
-          <TopBar
-            mode={mode}
-            onToggleTheme={toggleMode}
-            onRefresh={handleHardRefresh}
-            onEnsureFresh={ensureFresh}
-            isMobile={isMobile}
-            isOnline={connectionState === 'connected'}
-            botIsRunning={botIsRunning}
-            metrics={{
-              running: botIsRunning,
-              latency: connectionLatency,
-              latencyQuality: connectionQuality,
-              unrealizedPnl: totalPnl,
-              lastUpdated
-            }}
-            processStatus={{
-              guardianPid: botStatus?.guardian_health?.pid || null,
-              tradingBotPid: botStatus?.pid || null,
-              healthBotPid: botStatus?.heartbeat?.pid || null
-            }}
-            warnings={globalWarnings}
-          />
-      
-          {/* Phase 2: Symbol Context Bar - Always visible below TopBar */}
-          <SymbolContextBar 
-            gridInfo={config?.grid}
-            status={{ running: botIsRunning }}
-            pnl={totalPnl ? { total: totalPnl } : null}
-          />
+            <TopBar
+              mode={mode}
+              onToggleTheme={toggleMode}
+              onRefresh={handleHardRefresh}
+              onEnsureFresh={ensureFresh}
+              isMobile={isMobile}
+              isOnline={connectionState === 'connected'}
+              botIsRunning={botIsRunning}
+              metrics={{
+                running: botIsRunning,
+                latency: connectionLatency,
+                latencyQuality: connectionQuality,
+                unrealizedPnl: totalPnl,
+                lastUpdated,
+              }}
+              processStatus={{
+                guardianPid: botStatus?.guardian_health?.pid || null,
+                tradingBotPid: botStatus?.pid || null,
+                healthBotPid: botStatus?.heartbeat?.pid || null,
+              }}
+              warnings={globalWarnings}
+            />
 
-      <Sidebar
-        sections={sections}
-        activeSection={activeSection}
-        onSelect={handleSectionSelect}
-      />
+            {/* Phase 2: Symbol Context Bar - Always visible below TopBar */}
+            <SymbolContextBar
+              gridInfo={config?.grid}
+              status={{ running: botIsRunning }}
+              pnl={totalPnl ? { total: totalPnl } : null}
+            />
 
-      <main className="pt-60 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]" style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}>
-        <MobileNav
-          sections={sections}
-          activeSection={activeSection}
-          onSelect={handleSectionSelect}
-        />
-        <div className="w-full">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeSection}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            <Sidebar
+              sections={sections}
+              activeSection={activeSection}
+              onSelect={handleSectionSelect}
+            />
+
+            <main
+              className="pt-60 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]"
+              style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
             >
-              {activeContent}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </main>
+              <MobileNav
+                sections={sections}
+                activeSection={activeSection}
+                onSelect={handleSectionSelect}
+              />
+              <div className="w-full">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeSection}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  >
+                    {activeContent}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </main>
 
-      <Snackbar
-        open={notification.open}
-        autoHideDuration={5000}
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={handleCloseNotification}
-          severity={notification.severity}
-          sx={{ width: '100%' }}
-        >
-          {notification.message}
-        </Alert>
-      </Snackbar>
+            <Snackbar
+              open={notification.open}
+              autoHideDuration={5000}
+              onClose={handleCloseNotification}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+              <Alert
+                onClose={handleCloseNotification}
+                severity={notification.severity}
+                sx={{ width: '100%' }}
+              >
+                {notification.message}
+              </Alert>
+            </Snackbar>
 
-      <div className="pointer-events-none fixed inset-x-0 top-16 z-10 flex justify-center lg:pl-64">
-        <span className="rounded-b-3xl border border-slate-800/40 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
-          Connection: {connectionState} · Quality: {connectionQuality}
-        </span>
-      </div>
+            <div className="pointer-events-none fixed inset-x-0 top-16 z-10 flex justify-center lg:pl-64">
+              <span className="rounded-b-3xl border border-slate-800/40 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                Connection: {connectionState} · Quality: {connectionQuality}
+              </span>
+            </div>
 
-      {/* Idle Mode Indicator */}
-      <IdleIndicator />
-      
-      {/* Offline Mode Indicator */}
-      <OfflineIndicator />
-      
-      {/* Safety Warning - Shows bots are still running */}
-      <SafetyWarningBanner />
-      
-      {/* Mobile indicators removed for cleaner mobile UI */}
-      {/* <MobileBatteryIndicator /> */}
-      {/* <TailscaleMobileOptimizer /> */}
-      
-      {/* Floating Price Widget - Real-time BTC/ETH prices */}
-      <Suspense fallback={null}>
-        <FloatingPriceWidget />
-      </Suspense>
-        </div>
-      </MobileOptimizationProvider>
-    </SymbolProvider>
+            {/* Idle Mode Indicator */}
+            <IdleIndicator />
+
+            {/* Offline Mode Indicator */}
+            <OfflineIndicator />
+
+            {/* Safety Warning - Shows bots are still running */}
+            <SafetyWarningBanner />
+
+            {/* Mobile indicators removed for cleaner mobile UI */}
+            {/* <MobileBatteryIndicator /> */}
+            {/* <TailscaleMobileOptimizer /> */}
+
+            {/* Floating Price Widget - Real-time BTC/ETH prices */}
+            <Suspense fallback={null}>
+              <FloatingPriceWidget />
+            </Suspense>
+          </div>
+        </MobileOptimizationProvider>
+      </SymbolProvider>
     </InstanceProvider>
   );
 }

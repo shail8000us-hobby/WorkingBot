@@ -1,6 +1,6 @@
 /**
  * AutomationMonitor - Background polling service
- * 
+ *
  * Features:
  * - Polls market data every X seconds
  * - Checks all active automation rules
@@ -73,12 +73,12 @@ class AutomationMonitor {
       lastChecked: null,
       triggeredCount: 0,
     });
-    
+
     // Save to storage
     automationStorage.updateStatus(automationId, AUTOMATION_STATUS.WAITING);
-    
+
     console.log(`Registered automation: ${automationId}`);
-    
+
     // Start monitoring if not already running
     if (!this.isRunning) {
       this.start();
@@ -93,7 +93,7 @@ class AutomationMonitor {
     this.activeAutomations.delete(automationId);
     automationStorage.updateStatus(automationId, AUTOMATION_STATUS.INACTIVE);
     console.log(`Unregistered automation: ${automationId}`);
-    
+
     // Stop monitoring if no active automations
     if (this.activeAutomations.size === 0) {
       this.stop();
@@ -106,7 +106,7 @@ class AutomationMonitor {
    */
   setPollingInterval(intervalMs) {
     this.pollingInterval = intervalMs;
-    
+
     // Restart polling if currently running
     if (this.isRunning) {
       this.stop();
@@ -119,7 +119,7 @@ class AutomationMonitor {
    */
   _loadActiveAutomations() {
     const stored = automationStorage.getActive();
-    stored.forEach(automation => {
+    stored.forEach((automation) => {
       if (automation.id) {
         this.activeAutomations.set(automation.id, automation);
       }
@@ -133,7 +133,7 @@ class AutomationMonitor {
   _startPolling() {
     // Initial check
     this._checkAllAutomations();
-    
+
     // Set up interval
     this.intervalId = setInterval(() => {
       this._checkAllAutomations();
@@ -149,7 +149,7 @@ class AutomationMonitor {
       console.log('[AutomationMonitor] Skipping check - previous check still running');
       return;
     }
-    
+
     if (!this.marketDataProvider) {
       console.warn('No market data provider set for AutomationMonitor');
       return;
@@ -157,11 +157,13 @@ class AutomationMonitor {
 
     // Debug: Show active automations count
     if (this.activeAutomations.size > 0) {
-      console.log(`[AutomationMonitor] Checking ${this.activeAutomations.size} active automation(s)`);
+      console.log(
+        `[AutomationMonitor] Checking ${this.activeAutomations.size} active automation(s)`
+      );
     }
 
     this.isChecking = true;
-    
+
     try {
       // Get current market data
       const marketData = this.marketDataProvider();
@@ -200,52 +202,58 @@ class AutomationMonitor {
    * @param {Date} currentTime - Current time
    */
   async _checkAutomation(automationId, automation, positions, spotPrices, currentTime) {
-    console.log(`[AutomationMonitor] Checking automation ${automationId} for ${automation.position?.symbol}`);
-    
+    console.log(
+      `[AutomationMonitor] Checking automation ${automationId} for ${automation.position?.symbol}`
+    );
+
     // Find the position this automation is for
-    const position = positions.find(p => p.product_symbol === automation.position?.symbol);
+    const position = positions.find((p) => p.product_symbol === automation.position?.symbol);
     if (!position) {
       // Position not found - likely closed or expired
-      
+
       // Track consecutive misses
       if (!automation.missingPositionCount) {
         automation.missingPositionCount = 0;
       }
       automation.missingPositionCount++;
-      
+
       // If position missing for 3+ consecutive checks (15+ seconds), auto-stop automation
       if (automation.missingPositionCount >= 3) {
-        console.warn(`[AutomationMonitor] Position ${automation.position?.symbol} not found for ${automation.missingPositionCount} checks. Auto-stopping automation.`);
-        
+        console.warn(
+          `[AutomationMonitor] Position ${automation.position?.symbol} not found for ${automation.missingPositionCount} checks. Auto-stopping automation.`
+        );
+
         automation.status = AUTOMATION_STATUS.COMPLETED;
         automation.completionReason = 'Position closed or expired';
         this.activeAutomations.set(automationId, automation);
         automationStorage.updateStatus(automationId, AUTOMATION_STATUS.COMPLETED);
-        
+
         notificationService.notify({
           type: NOTIFICATION_TYPES.INFO,
           title: 'Automation Auto-Stopped',
           message: `${automation.position?.symbol} position not found. Automation stopped.`,
-          automation
+          automation,
         });
-        
+
         // Unregister from active monitoring
         this.unregister(automationId);
       } else {
-        console.warn(`[AutomationMonitor] Position not found for ${automation.position?.symbol} (${automation.missingPositionCount}/3 checks)`);
+        console.warn(
+          `[AutomationMonitor] Position not found for ${automation.position?.symbol} (${automation.missingPositionCount}/3 checks)`
+        );
       }
       return;
     }
-    
+
     // Reset missing count if position found
     automation.missingPositionCount = 0;
-    
+
     console.log(`[AutomationMonitor] Found position:`, {
       symbol: position.product_symbol,
       strike: position.strike,
       type: position.type,
       mark_price: position.mark_price,
-      iv: position.greeks?.iv
+      iv: position.greeks?.iv,
     });
 
     // Get spot price for this asset
@@ -261,13 +269,13 @@ class AutomationMonitor {
 
     // Evaluate entry conditions
     const result = conditionEvaluator.evaluateEntry(currentData, automation.rules.entry);
-    
+
     console.log(`[AutomationMonitor] Evaluation result for ${automation.position?.symbol}:`, {
       shouldEnter: result.shouldEnter,
       reason: result.reason,
-      checksPassedCount: `${result.checks.filter(c => c.passed).length}/${result.checks.length}`,
+      checksPassedCount: `${result.checks.filter((c) => c.passed).length}/${result.checks.length}`,
       allChecks: result.checks,
-      entryRules: automation.rules.entry
+      entryRules: automation.rules.entry,
     });
 
     // Update last checked time
@@ -277,21 +285,20 @@ class AutomationMonitor {
       // Conditions met! Trigger notification
       automation.triggeredCount = (automation.triggeredCount || 0) + 1;
       automation.status = AUTOMATION_STATUS.TRIGGERED;
-      
+
       this.activeAutomations.set(automationId, automation);
       automationStorage.updateStatus(automationId, AUTOMATION_STATUS.TRIGGERED);
 
       // Send notification
-      const message = `🔥 Automation triggered for ${position.product_symbol}!\n` +
-                     `Action: ${automation.rules.entry.action.toUpperCase()} ${automation.rules.entry.quantity} lots\n` +
-                     `Reason: ${result.reason}\n` +
-                     `✅ ${result.checks.filter(c => c.passed).length}/${result.checks.length} conditions met`;
-      
-      notificationService.notify(
-        NOTIFICATION_TYPES.ENTRY_TRIGGERED,
-        message,
-        { browserNotification: true }
-      );
+      const message =
+        `🔥 Automation triggered for ${position.product_symbol}!\n` +
+        `Action: ${automation.rules.entry.action.toUpperCase()} ${automation.rules.entry.quantity} lots\n` +
+        `Reason: ${result.reason}\n` +
+        `✅ ${result.checks.filter((c) => c.passed).length}/${result.checks.length} conditions met`;
+
+      notificationService.notify(NOTIFICATION_TYPES.ENTRY_TRIGGERED, message, {
+        browserNotification: true,
+      });
 
       console.log(`🔥 Automation triggered: ${automationId}`, result);
 
@@ -303,15 +310,14 @@ class AutomationMonitor {
         automation.status = AUTOMATION_STATUS.ERROR;
         this.activeAutomations.set(automationId, automation);
         automationStorage.updateStatus(automationId, AUTOMATION_STATUS.ERROR);
-        
+
         notificationService.notify({
           type: NOTIFICATION_TYPES.ERROR,
           title: 'Order Execution Failed',
           message: error.message,
-          automation
+          automation,
         });
       }
-      
     } else {
       // Conditions not yet met
       if (automation.status !== AUTOMATION_STATUS.WAITING) {
@@ -342,13 +348,15 @@ class AutomationMonitor {
    */
   getAutomationStatus(automationId) {
     const automation = this.activeAutomations.get(automationId);
-    return automation ? {
-      id: automationId,
-      symbol: automation.position?.symbol,
-      status: automation.status,
-      lastChecked: automation.lastChecked,
-      triggeredCount: automation.triggeredCount || 0,
-    } : null;
+    return automation
+      ? {
+          id: automationId,
+          symbol: automation.position?.symbol,
+          status: automation.status,
+          lastChecked: automation.lastChecked,
+          triggeredCount: automation.triggeredCount || 0,
+        }
+      : null;
   }
 
   /**
@@ -359,35 +367,34 @@ class AutomationMonitor {
    */
   async _executeEntryOrder(automation, position, spotPrice) {
     console.log(`[AutomationMonitor] Executing entry order for ${position.product_symbol}`);
-    
+
     const marketData = {
       spotPrice,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     try {
       // Call OrderExecutor to place the order
       const orderResult = await orderExecutor.executeEntry(automation, position, marketData);
-      
+
       console.log('[AutomationMonitor] Order executed successfully:', orderResult);
-      
+
       // Update automation status to ACTIVE (position opened, now monitoring exit)
       automation.status = AUTOMATION_STATUS.ACTIVE;
       automation.entryOrder = orderResult;
       automation.entryTime = Date.now();
       automation.entryPrice = orderResult.executionPrice;
-      
+
       this.activeAutomations.set(automation.id, automation);
       automationStorage.save(automation.id, automation);
-      
+
       // Send success notification
       notificationService.notify({
         type: NOTIFICATION_TYPES.ORDER_FILLED,
         title: 'Entry Order Filled',
         message: `${orderResult.action.toUpperCase()} ${orderResult.quantity} ${orderResult.symbol} @ ${orderResult.executionPrice?.toFixed(4)}`,
-        automation
+        automation,
       });
-      
     } catch (error) {
       console.error('[AutomationMonitor] Entry order failed:', error);
       throw error;

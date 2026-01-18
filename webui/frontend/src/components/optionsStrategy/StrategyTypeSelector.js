@@ -2,24 +2,17 @@
  * Strategy Type Selector
  * ======================
  * Visual cards for selecting strategy type.
- * 
+ *
  * Created: January 5, 2026
  */
 
 import React from 'react';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Chip,
-  Grid
-} from '@mui/material';
+import { Box, Card, CardContent, Typography, Chip, Grid } from '@mui/material';
 import {
   TrendingUp as BullishIcon,
   TrendingDown as BearishIcon,
   SwapHoriz as NeutralIcon,
-  CallSplit as LegsIcon
+  CallSplit as LegsIcon,
 } from '@mui/icons-material';
 
 // Strategy icons and colors
@@ -29,68 +22,68 @@ const STRATEGY_CONFIG = {
   long_straddle: {
     icon: '🎯',
     color: '#9c27b0',
-    bgColor: 'rgba(156, 39, 176, 0.15)'  // Purple with low alpha for dark mode
+    bgColor: 'rgba(156, 39, 176, 0.15)', // Purple with low alpha for dark mode
   },
   short_straddle: {
     icon: '🎯',
     color: '#7b1fa2',
-    bgColor: 'rgba(123, 31, 162, 0.15)'
+    bgColor: 'rgba(123, 31, 162, 0.15)',
   },
   straddle: {
     icon: '🎯',
     color: '#9c27b0',
-    bgColor: 'rgba(156, 39, 176, 0.15)'
+    bgColor: 'rgba(156, 39, 176, 0.15)',
   },
   // Strangle variants
   long_strangle: {
     icon: '🔀',
     color: '#673ab7',
-    bgColor: 'rgba(103, 58, 183, 0.15)'
+    bgColor: 'rgba(103, 58, 183, 0.15)',
   },
   short_strangle: {
     icon: '🔀',
     color: '#512da8',
-    bgColor: 'rgba(81, 45, 168, 0.15)'
+    bgColor: 'rgba(81, 45, 168, 0.15)',
   },
   strangle: {
     icon: '🔀',
     color: '#673ab7',
-    bgColor: 'rgba(103, 58, 183, 0.15)'
+    bgColor: 'rgba(103, 58, 183, 0.15)',
   },
   // Iron Condor
   iron_condor: {
     icon: '🦅',
     color: '#3f51b5',
-    bgColor: 'rgba(63, 81, 181, 0.15)'
+    bgColor: 'rgba(63, 81, 181, 0.15)',
   },
   // Iron Butterfly
   iron_butterfly: {
     icon: '🦋',
     color: '#2196f3',
-    bgColor: 'rgba(33, 150, 243, 0.15)'
+    bgColor: 'rgba(33, 150, 243, 0.15)',
   },
   // Spreads
   call_spread: {
     icon: '📈',
     color: '#4caf50',
-    bgColor: 'rgba(76, 175, 80, 0.15)'
+    bgColor: 'rgba(76, 175, 80, 0.15)',
   },
   put_spread: {
     icon: '📉',
     color: '#f44336',
-    bgColor: 'rgba(244, 67, 54, 0.15)'
+    bgColor: 'rgba(244, 67, 54, 0.15)',
   },
   // Credit spreads
   bull_put_spread: {
     icon: '📈',
     color: '#388e3c',
-    bgColor: 'rgba(56, 142, 60, 0.15)'
+    bgColor: 'rgba(56, 142, 60, 0.15)',
   },
   bear_call_spread: {
     icon: '📉',
     color: '#d32f2f',
-    bgColor: 'rgba(211, 47, 47, 0.15)'
-  }
+    bgColor: 'rgba(211, 47, 47, 0.15)',
+  },
 };
 
 const DirectionIcon = ({ direction }) => {
@@ -119,7 +112,7 @@ export default function StrategyTypeSelector({ templates, selectedType, onSelect
         const config = STRATEGY_CONFIG[template.type] || {
           icon: '📊',
           color: '#757575',
-          bgColor: '#f5f5f5'
+          bgColor: '#f5f5f5',
         };
         const isSelected = selectedType === template.type;
 
@@ -137,11 +130,11 @@ export default function StrategyTypeSelector({ templates, selectedType, onSelect
                   borderColor: config.color,
                   borderWidth: 2,
                   transform: 'translateY(-4px)',
-                  boxShadow: `0 8px 24px -4px ${config.color}60`
+                  boxShadow: `0 8px 24px -4px ${config.color}60`,
                 },
                 ...(isSelected && {
-                  bgcolor: config.bgColor
-                })
+                  bgcolor: config.bgColor,
+                }),
               }}
             >
               <CardContent sx={{ pb: '16px !important' }}>

@@ -18,7 +18,7 @@ interface ThemeModeContextValue {
 const ThemeModeContext = createContext<ThemeModeContextValue>({
   mode: 'dark',
   toggleMode: () => {},
-  setMode: () => {}
+  setMode: () => {},
 });
 
 const THEME_STORAGE_KEY = 'gridbot-ui-theme-mode';
@@ -64,7 +64,7 @@ export const ThemeModeProvider = ({ children }: ThemeModeProviderProps) => {
     () => ({
       mode,
       toggleMode: () => setMode((prev) => (prev === 'dark' ? 'light' : 'dark')),
-      setMode
+      setMode,
     }),
     [mode]
   );

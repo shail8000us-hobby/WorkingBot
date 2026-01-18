@@ -1,12 +1,12 @@
 /**
  * ML Trading Insights Panel
- * 
+ *
  * Shows machine learning insights from trade history:
  * - Trade statistics
  * - Pattern analysis
  * - Automation rule suggestions
  * - Model training status
- * 
+ *
  * Created: January 14, 2026
  */
 
@@ -77,7 +77,7 @@ export default function MLInsightsPanel() {
   });
   const [tradesDialogOpen, setTradesDialogOpen] = useState(false);
   const [recentTrades, setRecentTrades] = useState([]);
-  
+
   const fetchDashboard = useCallback(async () => {
     console.log('MLInsightsPanel: Fetching dashboard...');
     try {
@@ -97,7 +97,7 @@ export default function MLInsightsPanel() {
       setLoading(false);
     }
   }, []);
-  
+
   const handleTrain = async () => {
     try {
       setTraining(true);
@@ -113,7 +113,7 @@ export default function MLInsightsPanel() {
       setTraining(false);
     }
   };
-  
+
   const fetchTrades = async () => {
     try {
       const data = await fetchAPI('/api/ml/trades?days=30');
@@ -124,22 +124,22 @@ export default function MLInsightsPanel() {
       console.error('Failed to fetch trades:', err);
     }
   };
-  
+
   useEffect(() => {
     console.log('MLInsightsPanel: useEffect running');
     fetchDashboard();
   }, [fetchDashboard]);
-  
+
   // Always show the panel, even during loading
   const stats = dashboard?.statistics || {};
   const patterns = dashboard?.patterns || {};
   const rules = dashboard?.automation_rules || [];
   const readiness = dashboard?.readiness || {};
   const model = dashboard?.model || {};
-  
+
   const winRate = stats.win_rate || 0;
   const totalPnl = stats.total_pnl || 0;
-  
+
   return (
     <Card sx={{ mb: 2, bgcolor: 'background.paper' }}>
       <CardContent>
@@ -149,20 +149,20 @@ export default function MLInsightsPanel() {
             <MLIcon color="primary" />
             <Typography variant="h6">ML Trading Insights</Typography>
             {model.is_trained && (
-              <Tooltip title={`Accuracy: ${((model.metadata?.metrics?.accuracy || 0) * 100).toFixed(1)}%`}>
-                <Chip 
-                  label="Model Trained" 
-                  color="success" 
-                  size="small" 
-                  icon={<CheckCircle />}
-                />
+              <Tooltip
+                title={`Accuracy: ${((model.metadata?.metrics?.accuracy || 0) * 100).toFixed(1)}%`}
+              >
+                <Chip label="Model Trained" color="success" size="small" icon={<CheckCircle />} />
               </Tooltip>
             )}
           </Box>
           <Box display="flex" gap={1}>
             <Tooltip title="View recent trades">
-              <IconButton 
-                onClick={() => { fetchTrades(); setTradesDialogOpen(true); }}
+              <IconButton
+                onClick={() => {
+                  fetchTrades();
+                  setTradesDialogOpen(true);
+                }}
                 size="small"
               >
                 <Timeline />
@@ -175,17 +175,21 @@ export default function MLInsightsPanel() {
             </Tooltip>
           </Box>
         </Box>
-        
+
         {error && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
             {error}
           </Alert>
         )}
-        
+
         {/* Model Performance Metrics (when trained) */}
         {model.is_trained && model.metadata && (
           <Paper sx={{ p: 2, mb: 2, bgcolor: 'success.dark', opacity: 0.95 }}>
-            <Typography variant="subtitle2" gutterBottom sx={{ color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="subtitle2"
+              gutterBottom
+              sx={{ color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}
+            >
               <CheckCircle sx={{ fontSize: 18 }} />
               Model Performance Metrics
             </Typography>
@@ -232,22 +236,25 @@ export default function MLInsightsPanel() {
               </Grid>
             </Grid>
             {model.metadata.trained_at && (
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', mt: 1, textAlign: 'right' }}>
-                Trained: {new Date(model.metadata.trained_at).toLocaleString()} • 
+              <Typography
+                variant="caption"
+                sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', mt: 1, textAlign: 'right' }}
+              >
+                Trained: {new Date(model.metadata.trained_at).toLocaleString()} •
                 {model.metadata.num_trades} trades used
               </Typography>
             )}
           </Paper>
         )}
-        
+
         {/* Feature Importance Section (when trained) */}
         {model.is_trained && model.metadata?.feature_importance && (
           <Box mb={2}>
-            <Box 
-              display="flex" 
-              alignItems="center" 
+            <Box
+              display="flex"
+              alignItems="center"
               justifyContent="space-between"
-              onClick={() => setExpanded(e => ({ ...e, features: !e.features }))}
+              onClick={() => setExpanded((e) => ({ ...e, features: !e.features }))}
               sx={{ cursor: 'pointer' }}
             >
               <Typography variant="subtitle1" fontWeight="bold">
@@ -272,21 +279,27 @@ export default function MLInsightsPanel() {
                           {(importance * 100).toFixed(1)}%
                         </Typography>
                       </Box>
-                      <LinearProgress 
-                        variant="determinate" 
+                      <LinearProgress
+                        variant="determinate"
                         value={importance * 100}
-                        sx={{ 
-                          height: 6, 
+                        sx={{
+                          height: 6,
                           borderRadius: 1,
                           bgcolor: 'action.selected',
                           '& .MuiLinearProgress-bar': {
-                            bgcolor: importance > 0.5 ? 'success.main' : importance > 0.2 ? 'warning.main' : 'info.main'
-                          }
+                            bgcolor:
+                              importance > 0.5
+                                ? 'success.main'
+                                : importance > 0.2
+                                  ? 'warning.main'
+                                  : 'info.main',
+                          },
                         }}
                       />
                     </Box>
                   ))}
-                {Object.values(model.metadata.feature_importance).filter(v => v > 0).length === 0 && (
+                {Object.values(model.metadata.feature_importance).filter((v) => v > 0).length ===
+                  0 && (
                   <Typography variant="body2" color="text.secondary">
                     Feature importance will be calculated after more diverse training data.
                   </Typography>
@@ -295,7 +308,7 @@ export default function MLInsightsPanel() {
             </Collapse>
           </Box>
         )}
-        
+
         {/* Readiness Progress */}
         {!model.is_trained && (
           <Paper sx={{ p: 2, mb: 2, bgcolor: 'action.hover' }}>
@@ -312,8 +325,8 @@ export default function MLInsightsPanel() {
                   {Math.min(100, ((stats.total_trades || 0) / 30) * 100).toFixed(0)}%
                 </Typography>
               </Box>
-              <LinearProgress 
-                variant="determinate" 
+              <LinearProgress
+                variant="determinate"
                 value={Math.min(100, ((stats.total_trades || 0) / 30) * 100)}
                 sx={{ height: 8, borderRadius: 1 }}
               />
@@ -327,8 +340,8 @@ export default function MLInsightsPanel() {
                   {Math.min(100, ((stats.closed_trades || 0) / 20) * 100).toFixed(0)}%
                 </Typography>
               </Box>
-              <LinearProgress 
-                variant="determinate" 
+              <LinearProgress
+                variant="determinate"
                 value={Math.min(100, ((stats.closed_trades || 0) / 20) * 100)}
                 color="secondary"
                 sx={{ height: 8, borderRadius: 1 }}
@@ -354,14 +367,14 @@ export default function MLInsightsPanel() {
             )}
           </Paper>
         )}
-        
+
         {/* Statistics Section */}
         <Box mb={2}>
-          <Box 
-            display="flex" 
-            alignItems="center" 
+          <Box
+            display="flex"
+            alignItems="center"
             justifyContent="space-between"
-            onClick={() => setExpanded(e => ({ ...e, stats: !e.stats }))}
+            onClick={() => setExpanded((e) => ({ ...e, stats: !e.stats }))}
             sx={{ cursor: 'pointer' }}
           >
             <Typography variant="subtitle1" fontWeight="bold">
@@ -384,9 +397,9 @@ export default function MLInsightsPanel() {
               </Grid>
               <Grid item xs={6} sm={3}>
                 <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: 'action.hover' }}>
-                  <Typography 
-                    variant="h4" 
-                    fontWeight="bold" 
+                  <Typography
+                    variant="h4"
+                    fontWeight="bold"
                     color={winRate >= 50 ? 'success.main' : 'error.main'}
                   >
                     {winRate.toFixed(1)}%
@@ -398,8 +411,8 @@ export default function MLInsightsPanel() {
               </Grid>
               <Grid item xs={6} sm={3}>
                 <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: 'action.hover' }}>
-                  <Typography 
-                    variant="h4" 
+                  <Typography
+                    variant="h4"
                     fontWeight="bold"
                     color={totalPnl >= 0 ? 'success.main' : 'error.main'}
                   >
@@ -423,17 +436,17 @@ export default function MLInsightsPanel() {
             </Grid>
           </Collapse>
         </Box>
-        
+
         <Divider sx={{ my: 2 }} />
-        
+
         {/* Pattern Analysis */}
         {patterns && Object.keys(patterns).length > 0 && (
           <Box mb={2}>
-            <Box 
-              display="flex" 
-              alignItems="center" 
+            <Box
+              display="flex"
+              alignItems="center"
               justifyContent="space-between"
-              onClick={() => setExpanded(e => ({ ...e, patterns: !e.patterns }))}
+              onClick={() => setExpanded((e) => ({ ...e, patterns: !e.patterns }))}
               sx={{ cursor: 'pointer' }}
             >
               <Typography variant="subtitle1" fontWeight="bold">
@@ -448,16 +461,24 @@ export default function MLInsightsPanel() {
                 {patterns.call_win_rate !== undefined && (
                   <Grid item xs={12} sm={6}>
                     <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
-                      <Typography variant="subtitle2" gutterBottom>Option Type Performance</Typography>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Option Type Performance
+                      </Typography>
                       <Box display="flex" justifyContent="space-around">
                         <Box textAlign="center">
-                          <Typography variant="h5" color={patterns.call_win_rate > 0.5 ? 'success.main' : 'error.main'}>
+                          <Typography
+                            variant="h5"
+                            color={patterns.call_win_rate > 0.5 ? 'success.main' : 'error.main'}
+                          >
                             {(patterns.call_win_rate * 100).toFixed(0)}%
                           </Typography>
                           <Typography variant="caption">Calls</Typography>
                         </Box>
                         <Box textAlign="center">
-                          <Typography variant="h5" color={patterns.put_win_rate > 0.5 ? 'success.main' : 'error.main'}>
+                          <Typography
+                            variant="h5"
+                            color={patterns.put_win_rate > 0.5 ? 'success.main' : 'error.main'}
+                          >
                             {(patterns.put_win_rate * 100).toFixed(0)}%
                           </Typography>
                           <Typography variant="caption">Puts</Typography>
@@ -466,18 +487,22 @@ export default function MLInsightsPanel() {
                     </Paper>
                   </Grid>
                 )}
-                
+
                 {/* Market Trend Performance */}
                 {patterns.trend_performance && (
                   <Grid item xs={12} sm={6}>
                     <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
-                      <Typography variant="subtitle2" gutterBottom>Market Trend Performance</Typography>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Market Trend Performance
+                      </Typography>
                       <Box display="flex" justifyContent="space-around">
                         {Object.entries(patterns.trend_performance).map(([trend, wr]) => (
                           <Box key={trend} textAlign="center">
-                            <Typography 
-                              variant="h5" 
-                              color={wr > 0.5 ? 'success.main' : wr < 0.4 ? 'error.main' : 'warning.main'}
+                            <Typography
+                              variant="h5"
+                              color={
+                                wr > 0.5 ? 'success.main' : wr < 0.4 ? 'error.main' : 'warning.main'
+                              }
                             >
                               {(wr * 100).toFixed(0)}%
                             </Typography>
@@ -494,15 +519,15 @@ export default function MLInsightsPanel() {
             </Collapse>
           </Box>
         )}
-        
+
         {/* Automation Rules */}
         {rules && rules.length > 0 && (
           <Box>
-            <Box 
-              display="flex" 
-              alignItems="center" 
+            <Box
+              display="flex"
+              alignItems="center"
               justifyContent="space-between"
-              onClick={() => setExpanded(e => ({ ...e, rules: !e.rules }))}
+              onClick={() => setExpanded((e) => ({ ...e, rules: !e.rules }))}
               sx={{ cursor: 'pointer' }}
             >
               <Typography variant="subtitle1" fontWeight="bold">
@@ -514,12 +539,13 @@ export default function MLInsightsPanel() {
             <Collapse in={expanded.rules}>
               <Box sx={{ mt: 1 }}>
                 {rules.map((rule, idx) => (
-                  <Paper 
+                  <Paper
                     key={rule.rule_id || idx}
-                    sx={{ 
-                      p: 2, 
-                      mb: 1, 
-                      bgcolor: rule.action === 'AVOID_ENTRY' ? 'error.dark' + '10' : 'success.dark' + '10',
+                    sx={{
+                      p: 2,
+                      mb: 1,
+                      bgcolor:
+                        rule.action === 'AVOID_ENTRY' ? 'error.dark' + '10' : 'success.dark' + '10',
                       borderLeft: `4px solid ${rule.action === 'AVOID_ENTRY' ? '#ef4444' : '#10b981'}`,
                     }}
                   >
@@ -532,7 +558,7 @@ export default function MLInsightsPanel() {
                           {rule.description}
                         </Typography>
                       </Box>
-                      <Chip 
+                      <Chip
                         label={rule.improvement}
                         size="small"
                         color={rule.action === 'AVOID_ENTRY' ? 'error' : 'success'}
@@ -540,17 +566,13 @@ export default function MLInsightsPanel() {
                       />
                     </Box>
                     <Box display="flex" gap={1} mt={1}>
-                      <Chip 
-                        label={rule.confidence} 
-                        size="small" 
+                      <Chip
+                        label={rule.confidence}
+                        size="small"
                         variant="outlined"
                         color={rule.confidence === 'high' ? 'success' : 'warning'}
                       />
-                      <Chip 
-                        label={rule.action.replace('_', ' ')} 
-                        size="small" 
-                        variant="outlined"
-                      />
+                      <Chip label={rule.action.replace('_', ' ')} size="small" variant="outlined" />
                     </Box>
                   </Paper>
                 ))}
@@ -558,27 +580,25 @@ export default function MLInsightsPanel() {
             </Collapse>
           </Box>
         )}
-        
+
         {/* No Data State */}
         {!patterns && (!rules || rules.length === 0) && (
           <Alert severity="info" icon={<Lightbulb />}>
             <Typography variant="body2">
-              Keep trading to unlock ML insights! The system learns from your trading patterns
-              and will suggest optimizations after analyzing enough trades.
+              Keep trading to unlock ML insights! The system learns from your trading patterns and
+              will suggest optimizations after analyzing enough trades.
             </Typography>
           </Alert>
         )}
-        
+
         {/* Recent Trades Dialog */}
-        <Dialog 
-          open={tradesDialogOpen} 
+        <Dialog
+          open={tradesDialogOpen}
           onClose={() => setTradesDialogOpen(false)}
           maxWidth="md"
           fullWidth
         >
-          <DialogTitle>
-            Recent Trades (Last 30 Days)
-          </DialogTitle>
+          <DialogTitle>Recent Trades (Last 30 Days)</DialogTitle>
           <DialogContent>
             {recentTrades.length === 0 ? (
               <Alert severity="info">No trades recorded yet</Alert>
@@ -599,11 +619,9 @@ export default function MLInsightsPanel() {
                   <TableBody>
                     {recentTrades.slice(0, 50).map((trade, idx) => (
                       <TableRow key={trade.trade_id || idx}>
+                        <TableCell>{new Date(trade.timestamp).toLocaleDateString()}</TableCell>
                         <TableCell>
-                          {new Date(trade.timestamp).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Chip 
+                          <Chip
                             label={`${trade.option_type === 'Call' ? 'C' : 'P'} ${trade.strike}`}
                             size="small"
                             color={trade.option_type === 'Call' ? 'success' : 'error'}
@@ -611,25 +629,31 @@ export default function MLInsightsPanel() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Chip 
+                          <Chip
                             label={trade.action}
                             size="small"
                             color={trade.action === 'BUY' ? 'success' : 'error'}
                           />
                         </TableCell>
                         <TableCell align="right">{trade.quantity}</TableCell>
-                        <TableCell align="right">${parseFloat(trade.price || 0).toFixed(2)}</TableCell>
+                        <TableCell align="right">
+                          ${parseFloat(trade.price || 0).toFixed(2)}
+                        </TableCell>
                         <TableCell align="right">
                           {trade.outcome_pnl ? (
-                            <Typography 
-                              color={parseFloat(trade.outcome_pnl) >= 0 ? 'success.main' : 'error.main'}
+                            <Typography
+                              color={
+                                parseFloat(trade.outcome_pnl) >= 0 ? 'success.main' : 'error.main'
+                              }
                             >
                               ${parseFloat(trade.outcome_pnl).toFixed(2)}
                             </Typography>
-                          ) : '-'}
+                          ) : (
+                            '-'
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Chip 
+                          <Chip
                             label={trade.outcome_status || 'open'}
                             size="small"
                             variant="outlined"

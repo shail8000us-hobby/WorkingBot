@@ -1,7 +1,7 @@
 /**
  * Input Validation Utilities
  * Provides client-side validation for form inputs
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  * Safe: Pure utility functions, no side effects
  */
@@ -88,7 +88,7 @@ export const validators = {
   isValidSymbol: (value: string): boolean => {
     // Basic symbol validation (e.g., BTCUSDT)
     return /^[A-Z0-9]{4,12}$/.test(value);
-  }
+  },
 };
 
 /**
@@ -98,20 +98,23 @@ export const createValidator = (rules: ValidationRule[]) => {
   return (value: any, allValues: Record<string, any> = {}): ValidationResult => {
     for (const rule of rules) {
       const { validator, message, params = [] } = rule;
-      
+
       let isValid = false;
-      
+
       if (typeof validator === 'function') {
         isValid = validator(value, allValues);
-      } else if (typeof validator === 'string' && validators[validator as keyof typeof validators]) {
+      } else if (
+        typeof validator === 'string' &&
+        validators[validator as keyof typeof validators]
+      ) {
         isValid = (validators[validator as keyof typeof validators] as any)(value, ...params);
       }
-      
+
       if (!isValid) {
         return { valid: false, error: message };
       }
     }
-    
+
     return { valid: true, error: null };
   };
 };
@@ -122,58 +125,58 @@ export const createValidator = (rules: ValidationRule[]) => {
 export const validationRules = {
   required: {
     validator: validators.isNotEmpty,
-    message: 'This field is required'
+    message: 'This field is required',
   },
 
   positiveNumber: {
     validator: validators.isPositive,
-    message: 'Must be a positive number'
+    message: 'Must be a positive number',
   },
 
   nonNegativeNumber: {
     validator: validators.isNonNegative,
-    message: 'Must be a non-negative number'
+    message: 'Must be a non-negative number',
   },
 
   percentage: {
     validator: validators.isValidPercentage,
-    message: 'Must be between 0 and 100'
+    message: 'Must be between 0 and 100',
   },
 
   leverage: (max: number = 125): ValidationRule => ({
     validator: (value: any) => validators.isValidLeverage(value, max),
-    message: `Leverage must be between 1 and ${max}`
+    message: `Leverage must be between 1 and ${max}`,
   }),
 
   minValue: (min: number): ValidationRule => ({
     validator: (value: any) => validators.isNumber(value) && parseFloat(value) >= min,
-    message: `Must be at least ${min}`
+    message: `Must be at least ${min}`,
   }),
 
   maxValue: (max: number): ValidationRule => ({
     validator: (value: any) => validators.isNumber(value) && parseFloat(value) <= max,
-    message: `Must be at most ${max}`
+    message: `Must be at most ${max}`,
   }),
 
   range: (min: number, max: number): ValidationRule => ({
     validator: (value: any) => validators.inRange(value, min, max),
-    message: `Must be between ${min} and ${max}`
+    message: `Must be between ${min} and ${max}`,
   }),
 
   email: {
     validator: validators.isEmail,
-    message: 'Invalid email address'
+    message: 'Invalid email address',
   },
 
   url: {
     validator: validators.isUrl,
-    message: 'Invalid URL'
+    message: 'Invalid URL',
   },
 
   symbol: {
     validator: validators.isValidSymbol,
-    message: 'Invalid trading symbol (e.g., BTCUSDT)'
-  }
+    message: 'Invalid trading symbol (e.g., BTCUSDT)',
+  },
 };
 
 /**
@@ -189,7 +192,7 @@ export const validateForm = (
   for (const [field, rules] of Object.entries(schema)) {
     const validator = createValidator(rules);
     const result = validator(data[field], data);
-    
+
     if (!result.valid) {
       errors[field] = result.error!;
       isValid = false;
@@ -228,7 +231,7 @@ export const sanitizers = {
     const num = parseFloat(value);
     if (isNaN(num)) return value;
     return parseFloat(num.toFixed(decimals));
-  }
+  },
 };
 
 export default {
@@ -236,5 +239,5 @@ export default {
   createValidator,
   validationRules,
   validateForm,
-  sanitizers
+  sanitizers,
 };

@@ -1,4 +1,17 @@
-import { RefreshCw, Activity, Bot, Gauge, SignalHigh, SignalLow, Sun, Moon, Shield, TrendingUp, Wifi, WifiOff } from 'lucide-react';
+import {
+  RefreshCw,
+  Activity,
+  Bot,
+  Gauge,
+  SignalHigh,
+  SignalLow,
+  Sun,
+  Moon,
+  Shield,
+  TrendingUp,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { useState, useEffect } from 'react';
@@ -14,16 +27,13 @@ const qualityIconMap = {
   disconnected: SignalLow,
   failed: SignalLow,
   offline: SignalLow,
-  unknown: Gauge
+  unknown: Gauge,
 };
 
-const StatusSection = ({ title, icon: Icon, children, color = "border-slate-700/50" }) => (
+const StatusSection = ({ title, icon: Icon, children, color = 'border-slate-700/50' }) => (
   <motion.div
     layout
-    className={clsx(
-      'flex items-center gap-2 rounded-lg border bg-slate-800/40 px-3 py-2',
-      color
-    )}
+    className={clsx('flex items-center gap-2 rounded-lg border bg-slate-800/40 px-3 py-2', color)}
     initial={{ opacity: 0, y: -8 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ type: 'spring', stiffness: 320, damping: 24 }}
@@ -31,9 +41,7 @@ const StatusSection = ({ title, icon: Icon, children, color = "border-slate-700/
     <Icon className="h-4 w-4 text-slate-400" strokeWidth={2} />
     <div className="flex items-center gap-3">
       <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">{title}</span>
-      <div className="flex items-center gap-2">
-        {children}
-      </div>
+      <div className="flex items-center gap-2">{children}</div>
     </div>
   </motion.div>
 );
@@ -41,7 +49,7 @@ const StatusSection = ({ title, icon: Icon, children, color = "border-slate-700/
 const Badge = ({ label, value, color }) => (
   <div className="flex items-center gap-1.5">
     <span className="text-xs text-slate-500">{label}:</span>
-    <span className={clsx("text-xs font-semibold", color)}>{value}</span>
+    <span className={clsx('text-xs font-semibold', color)}>{value}</span>
   </div>
 );
 
@@ -53,24 +61,26 @@ function TopBar({
   metrics = {},
   isMobile = false,
   warnings = [],
-  processStatus = {}
+  processStatus = {},
 }) {
   const {
     running = false,
     latency = null,
     latencyQuality = 'unknown',
     unrealizedPnl = 0,
-    lastUpdated = null
+    lastUpdated = null,
   } = metrics;
-  
-  const {
-    guardianPid = null,
-    tradingBotPid = null,
-    healthBotPid = null
-  } = processStatus;
+
+  const { guardianPid = null, tradingBotPid = null, healthBotPid = null } = processStatus;
 
   // Use WebSocket-based market prices hook
-  const { btcPrice, ethPrice, loading: priceLoading, source: priceSource, wsConnected } = useMarketPrices();
+  const {
+    btcPrice,
+    ethPrice,
+    loading: priceLoading,
+    source: priceSource,
+    wsConnected,
+  } = useMarketPrices();
 
   const connectionIcon = qualityIconMap[latencyQuality] || qualityIconMap.unknown;
   const latencyDisplay = latency !== null ? `${latency} ms` : '–';
@@ -83,7 +93,7 @@ function TopBar({
       return new Intl.DateTimeFormat('en-US', {
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit'
+        second: '2-digit',
       }).format(new Date(timestamp));
     } catch (err) {
       return 'Recently';
@@ -95,7 +105,7 @@ function TopBar({
       className="fixed inset-x-0 top-0 z-40 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur supports-[backdrop-filter]:bg-slate-900/70"
       style={{
         paddingTop: `calc(env(safe-area-inset-top) + ${isMobile ? '0.5rem' : '0.75rem'})`,
-        paddingBottom: isMobile ? '0.5rem' : '0.75rem'
+        paddingBottom: isMobile ? '0.5rem' : '0.75rem',
       }}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -107,7 +117,9 @@ function TopBar({
           <motion.div
             className={clsx(
               'grid h-8 w-8 place-items-center rounded border',
-              running ? 'border-emerald-400/50 bg-emerald-500/10' : 'border-rose-400/40 bg-rose-500/10'
+              running
+                ? 'border-emerald-400/50 bg-emerald-500/10'
+                : 'border-rose-400/40 bg-rose-500/10'
             )}
             animate={{ scale: [1, 1.05, 1] }}
             transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
@@ -118,32 +130,41 @@ function TopBar({
             <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
               SSR BOT
             </p>
-            <p className="text-xs font-semibold text-slate-100">
-              {running ? 'Online' : 'Standby'}
-            </p>
+            <p className="text-xs font-semibold text-slate-100">{running ? 'Online' : 'Standby'}</p>
           </div>
         </motion.div>
 
         {/* Center: System Status & Symbol Selector */}
         <div className="flex items-center gap-3">
           {/* Live Prices */}
-          <StatusSection 
-            title="Market" 
-            icon={Activity}
-            color="border-blue-500/30"
-          >
-            <Badge 
-              label="BTC" 
-              value={priceLoading ? '...' : btcPrice ? `$${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '–'}
+          <StatusSection title="Market" icon={Activity} color="border-blue-500/30">
+            <Badge
+              label="BTC"
+              value={
+                priceLoading
+                  ? '...'
+                  : btcPrice
+                    ? `$${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                    : '–'
+              }
               color="text-orange-300"
             />
-            <Badge 
-              label="ETH" 
-              value={priceLoading ? '...' : ethPrice ? `$${ethPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '–'}
+            <Badge
+              label="ETH"
+              value={
+                priceLoading
+                  ? '...'
+                  : ethPrice
+                    ? `$${ethPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+                    : '–'
+              }
               color="text-indigo-300"
             />
             {/* WebSocket Connection Indicator */}
-            <div className="flex items-center gap-1" title={wsConnected ? 'WebSocket Connected' : 'Using REST API'}>
+            <div
+              className="flex items-center gap-1"
+              title={wsConnected ? 'WebSocket Connected' : 'Using REST API'}
+            >
               {wsConnected ? (
                 <Wifi className="h-3 w-3 text-emerald-400" />
               ) : (
@@ -152,24 +173,26 @@ function TopBar({
               <span className="text-[9px] text-slate-500 uppercase">{priceSource}</span>
             </div>
           </StatusSection>
-          
+
           {/* Symbol Selector (v5.0 Multi-Symbol) */}
-          <SymbolSelector onSymbolChange={(symbol) => {
-            console.log('Symbol changed to:', symbol);
-            // Trigger soft data refresh for new symbol (NOT hard page reload)
-            if (onEnsureFresh) onEnsureFresh();
-          }} />
-          
+          <SymbolSelector
+            onSymbolChange={(symbol) => {
+              console.log('Symbol changed to:', symbol);
+              // Trigger soft data refresh for new symbol (NOT hard page reload)
+              if (onEnsureFresh) onEnsureFresh();
+            }}
+          />
+
           {/* Process Status */}
-          <StatusSection 
-            title="System" 
+          <StatusSection
+            title="System"
             icon={Activity}
-            color={running ? "border-emerald-500/30" : "border-slate-700/50"}
+            color={running ? 'border-emerald-500/30' : 'border-slate-700/50'}
           >
-            <Badge 
-              label="Status" 
-              value={running ? "Running" : "Stopped"} 
-              color={running ? "text-emerald-300" : "text-rose-300"}
+            <Badge
+              label="Status"
+              value={running ? 'Running' : 'Stopped'}
+              color={running ? 'text-emerald-300' : 'text-rose-300'}
             />
             {guardianPid && <Badge label="Guardian" value={guardianPid} color="text-slate-300" />}
             {tradingBotPid && <Badge label="Bot" value={tradingBotPid} color="text-slate-300" />}
@@ -177,13 +200,9 @@ function TopBar({
           </StatusSection>
 
           {/* Trading Metrics */}
-          <StatusSection 
-            title="Trading" 
-            icon={TrendingUp}
-            color="border-amber-500/30"
-          >
-            <Badge 
-              label="PnL" 
+          <StatusSection title="Trading" icon={TrendingUp} color="border-amber-500/30">
+            <Badge
+              label="PnL"
               value={`${unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl?.toFixed?.(2) ?? '0.00'}`}
               color={unrealizedPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}
             />

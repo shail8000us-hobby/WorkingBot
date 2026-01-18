@@ -1,11 +1,11 @@
 /**
  * Idle Detection Context
- * 
+ *
  * Provides global idle state to all components.
  * Allows any component to check if user is idle and pause accordingly.
- * 
+ *
  * ⚠️ CRITICAL: This ONLY affects WebUI frontend (browser) polling.
- * 
+ *
  * NEVER AFFECTED (Always running on server):
  * - Trading Bot
  * - Guardian Bot
@@ -14,12 +14,12 @@
  * - Position monitoring
  * - WebSocket real-time updates
  * - Emergency kill
- * 
+ *
  * PAUSED WHEN IDLE (Browser only):
  * - API polling for visual updates
  * - Chart refresh timers
  * - Countdown animations
- * 
+ *
  * Purpose: Save CPU on Mac Mini M4 when WebUI is not actively being viewed.
  */
 
@@ -31,7 +31,7 @@ const IdleContext = createContext({
   isActive: true,
   lastActivityTime: Date.now(),
   timeSinceActivity: 0,
-  isTabVisible: true
+  isTabVisible: true,
 });
 
 /**
@@ -43,19 +43,17 @@ export function IdleProvider({ children, timeout = 60000 }) {
     enabled: true,
     onIdle: () => {
       console.log('🌙 WebUI entering idle mode - pausing FRONTEND polling to save CPU');
-      console.log('✅ IMPORTANT: Trading bot, Guardian, and all safety mechanisms continue running on server!');
+      console.log(
+        '✅ IMPORTANT: Trading bot, Guardian, and all safety mechanisms continue running on server!'
+      );
     },
     onActive: () => {
       console.log('☀️ WebUI resuming - restarting FRONTEND polling');
       console.log('✅ Trading bot never stopped - server always running!');
-    }
+    },
   });
 
-  return (
-    <IdleContext.Provider value={idleState}>
-      {children}
-    </IdleContext.Provider>
-  );
+  return <IdleContext.Provider value={idleState}>{children}</IdleContext.Provider>;
 }
 
 /**
@@ -66,4 +64,3 @@ export function useIdle() {
 }
 
 export default IdleContext;
-

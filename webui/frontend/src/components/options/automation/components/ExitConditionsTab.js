@@ -15,16 +15,13 @@ import {
   Grid,
   Divider,
   Paper,
-  InputAdornment
+  InputAdornment,
 } from '@mui/material';
-import {
-  EXIT_TYPES,
-  TRAILING_STOP_TYPES
-} from '../types/constants';
+import { EXIT_TYPES, TRAILING_STOP_TYPES } from '../types/constants';
 
 /**
  * ExitConditionsTab Component
- * 
+ *
  * Configures when to exit positions:
  * - Take profit targets (fixed/percentage)
  * - Stop loss limits
@@ -38,8 +35,8 @@ const ExitConditionsTab = ({ rules, onChange }) => {
       ...rules,
       exit: {
         ...rules.exit,
-        [field]: value
-      }
+        [field]: value,
+      },
     });
   };
 
@@ -50,9 +47,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
         ...rules.exit,
         takeProfit: {
           ...rules.exit.takeProfit,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
@@ -63,9 +60,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
         ...rules.exit,
         stopLoss: {
           ...rules.exit.stopLoss,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
@@ -76,9 +73,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
         ...rules.exit,
         trailingStop: {
           ...rules.exit.trailingStop,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
@@ -89,9 +86,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
         ...rules.exit,
         timeBased: {
           ...rules.exit.timeBased,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
@@ -102,9 +99,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
         ...rules.exit,
         underlyingExit: {
           ...rules.exit.underlyingExit,
-          [field]: value
-        }
-      }
+          [field]: value,
+        },
+      },
     });
   };
 
@@ -276,9 +273,7 @@ const ExitConditionsTab = ({ rules, onChange }) => {
                 <MenuItem value={TRAILING_STOP_TYPES.PERCENTAGE}>
                   Percentage-based (% from peak)
                 </MenuItem>
-                <MenuItem value={TRAILING_STOP_TYPES.FIXED}>
-                  Fixed amount (₹ from peak)
-                </MenuItem>
+                <MenuItem value={TRAILING_STOP_TYPES.FIXED}>Fixed amount (₹ from peak)</MenuItem>
               </Select>
             </FormControl>
 
@@ -286,18 +281,25 @@ const ExitConditionsTab = ({ rules, onChange }) => {
               <Grid item xs={6}>
                 <TextField
                   fullWidth
-                  label={rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE 
-                    ? "Trail Distance (%)" 
-                    : "Trail Distance (₹)"}
+                  label={
+                    rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE
+                      ? 'Trail Distance (%)'
+                      : 'Trail Distance (₹)'
+                  }
                   type="number"
                   size="small"
                   value={rules.exit.trailingStop.distance || 20}
                   onChange={(e) => handleTrailingStopChange('distance', parseFloat(e.target.value))}
-                  inputProps={{ step: rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE ? 1 : 0.0001 }}
+                  inputProps={{
+                    step:
+                      rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE ? 1 : 0.0001,
+                  }}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
-                        {rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE ? '%' : '₹'}
+                        {rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE
+                          ? '%'
+                          : '₹'}
                       </InputAdornment>
                     ),
                   }}
@@ -311,7 +313,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
                   type="number"
                   size="small"
                   value={rules.exit.trailingStop.activationProfit || 10}
-                  onChange={(e) => handleTrailingStopChange('activationProfit', parseFloat(e.target.value))}
+                  onChange={(e) =>
+                    handleTrailingStopChange('activationProfit', parseFloat(e.target.value))
+                  }
                   inputProps={{ step: 5, min: 0 }}
                   InputProps={{
                     endAdornment: <InputAdornment position="end">%</InputAdornment>,
@@ -322,8 +326,8 @@ const ExitConditionsTab = ({ rules, onChange }) => {
             </Grid>
 
             <Typography variant="caption" color="primary" sx={{ display: 'block', mt: 1 }}>
-              Trailing stop will activate after {rules.exit.trailingStop.activationProfit || 10}% profit,
-              then follow price at {rules.exit.trailingStop.distance || 20}
+              Trailing stop will activate after {rules.exit.trailingStop.activationProfit || 10}%
+              profit, then follow price at {rules.exit.trailingStop.distance || 20}
               {rules.exit.trailingStop.type === TRAILING_STOP_TYPES.PERCENTAGE ? '%' : '₹'} distance
             </Typography>
           </Box>
@@ -429,7 +433,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
                   type="number"
                   size="small"
                   value={rules.exit.underlyingExit.abovePrice || 0}
-                  onChange={(e) => handleUnderlyingExitChange('abovePrice', parseFloat(e.target.value))}
+                  onChange={(e) =>
+                    handleUnderlyingExitChange('abovePrice', parseFloat(e.target.value))
+                  }
                   InputProps={{
                     startAdornment: <InputAdornment position="start">$</InputAdornment>,
                   }}
@@ -443,7 +449,9 @@ const ExitConditionsTab = ({ rules, onChange }) => {
                   type="number"
                   size="small"
                   value={rules.exit.underlyingExit.belowPrice || 0}
-                  onChange={(e) => handleUnderlyingExitChange('belowPrice', parseFloat(e.target.value))}
+                  onChange={(e) =>
+                    handleUnderlyingExitChange('belowPrice', parseFloat(e.target.value))
+                  }
                   InputProps={{
                     startAdornment: <InputAdornment position="start">$</InputAdornment>,
                   }}
@@ -495,28 +503,22 @@ const ExitConditionsTab = ({ rules, onChange }) => {
             />
           )}
           {rules.exit.underlyingExit.enabled && (
-            <Chip
-              label="Underlying Exit"
-              size="small"
-              color="warning"
-              variant="outlined"
-            />
+            <Chip label="Underlying Exit" size="small" color="warning" variant="outlined" />
           )}
-          {!rules.exit.takeProfit.enabled && !rules.exit.stopLoss.enabled && 
-           !rules.exit.trailingStop.enabled && !rules.exit.timeBased.enabled && 
-           !rules.exit.underlyingExit.enabled && (
-            <Chip
-              label="No exit conditions"
-              size="small"
-              variant="outlined"
-            />
-          )}
+          {!rules.exit.takeProfit.enabled &&
+            !rules.exit.stopLoss.enabled &&
+            !rules.exit.trailingStop.enabled &&
+            !rules.exit.timeBased.enabled &&
+            !rules.exit.underlyingExit.enabled && (
+              <Chip label="No exit conditions" size="small" variant="outlined" />
+            )}
         </Box>
 
-        {(!rules.exit.takeProfit.enabled && !rules.exit.stopLoss.enabled) && (
+        {!rules.exit.takeProfit.enabled && !rules.exit.stopLoss.enabled && (
           <Alert severity="warning" sx={{ mt: 2 }}>
             <Typography variant="caption">
-              Warning: No profit target or stop loss configured. Position will remain open until manual exit or time-based close.
+              Warning: No profit target or stop loss configured. Position will remain open until
+              manual exit or time-based close.
             </Typography>
           </Alert>
         )}

@@ -1,7 +1,7 @@
 /**
  * Offline Storage Utility
  * Handles offline data persistence
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  */
 
@@ -16,7 +16,7 @@ export const STORES = {
   pendingActions: 'pendingActions',
 } as const;
 
-type StoreName = typeof STORES[keyof typeof STORES];
+type StoreName = (typeof STORES)[keyof typeof STORES];
 
 export class OfflineStorage {
   private db: IDBDatabase | null = null;

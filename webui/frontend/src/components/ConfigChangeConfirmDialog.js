@@ -1,6 +1,6 @@
 /**
  * Configuration Change Confirmation Dialog
- * 
+ *
  * Shows impact of configuration changes and requires user acknowledgment
  * before applying critical changes like grid mode switch, geometry changes, etc.
  */
@@ -20,7 +20,7 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
-  Chip
+  Chip,
 } from '@mui/material';
 import {
   Warning as WarningIcon,
@@ -29,21 +29,21 @@ import {
   TrendingDown as TrendingDownIcon,
   SwapHoriz as SwapIcon,
   Grid3x3 as GridIcon,
-  Speed as SpeedIcon
+  Speed as SpeedIcon,
 } from '@mui/icons-material';
 
 export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, changesSummary }) {
   if (!changesSummary) return null;
 
-  const { 
-    critical_changes = [], 
-    impact_summary = {}, 
+  const {
+    critical_changes = [],
+    impact_summary = {},
     warnings = [],
     validation_errors = [],
     has_errors = false,
     error_message = '',
     changes = [],
-    total_changes = 0
+    total_changes = 0,
   } = changesSummary;
 
   const renderAllChanges = () => {
@@ -53,27 +53,39 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <InfoIcon color="primary" sx={{ mr: 1 }} />
-          <Typography variant="h6">
-            Configuration Changes ({total_changes})
-          </Typography>
+          <Typography variant="h6">Configuration Changes ({total_changes})</Typography>
         </Box>
 
-        <List dense sx={{ bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+        <List
+          dense
+          sx={{
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
           {changes.map((change, idx) => (
             <React.Fragment key={idx}>
               <ListItem>
                 <ListItemIcon>
                   <SwapIcon color="action" />
                 </ListItemIcon>
-                <ListItemText 
+                <ListItemText
                   primary={change.parameter}
                   secondary={
                     <Box component="span">
-                      <Box component="span" sx={{ textDecoration: 'line-through', color: 'error.main', mr: 1 }}>
+                      <Box
+                        component="span"
+                        sx={{ textDecoration: 'line-through', color: 'error.main', mr: 1 }}
+                      >
                         {change.old_value || '(empty)'}
                       </Box>
                       →
-                      <Box component="span" sx={{ color: 'success.main', ml: 1, fontWeight: 'bold' }}>
+                      <Box
+                        component="span"
+                        sx={{ color: 'success.main', ml: 1, fontWeight: 'bold' }}
+                      >
                         {change.new_value || '(empty)'}
                       </Box>
                     </Box>
@@ -101,7 +113,7 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
             Grid Mode Change: {impact.from} → {impact.to}
           </Typography>
         </Box>
-        
+
         <Alert severity="warning" sx={{ mb: 2 }}>
           {impact.impact?.order_direction}
         </Alert>
@@ -111,30 +123,21 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
             <ListItemIcon>
               <InfoIcon color="info" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Position Type"
-              secondary={impact.impact?.position_type}
-            />
+            <ListItemText primary="Position Type" secondary={impact.impact?.position_type} />
           </ListItem>
-          
+
           <ListItem>
             <ListItemIcon>
               <WarningIcon color="warning" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Risk Consideration"
-              secondary={impact.impact?.risk}
-            />
+            <ListItemText primary="Risk Consideration" secondary={impact.impact?.risk} />
           </ListItem>
-          
+
           <ListItem>
             <ListItemIcon>
               <SpeedIcon color="action" />
             </ListItemIcon>
-            <ListItemText 
-              primary="Action Required"
-              secondary={impact.impact?.action_required}
-            />
+            <ListItemText primary="Action Required" secondary={impact.impact?.action_required} />
           </ListItem>
         </List>
       </Box>
@@ -146,9 +149,7 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <GridIcon color="primary" sx={{ mr: 1 }} />
-          <Typography variant="h6">
-            Grid Geometry Changes
-          </Typography>
+          <Typography variant="h6">Grid Geometry Changes</Typography>
         </Box>
 
         <List dense>
@@ -157,10 +158,7 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
               <ListItemIcon>
                 <SwapIcon color="action" />
               </ListItemIcon>
-              <ListItemText 
-                primary={change.field}
-                secondary={`${change.from} → ${change.to}`}
-              />
+              <ListItemText primary={change.field} secondary={`${change.from} → ${change.to}`} />
             </ListItem>
           ))}
         </List>
@@ -176,7 +174,7 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
 
   const renderTradingModeChange = (impact) => {
     const isLiveMode = impact.to === 'live';
-    
+
     return (
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -187,8 +185,8 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
         </Box>
 
         <Alert severity={isLiveMode ? 'error' : 'info'}>
-          {isLiveMode 
-            ? '⚠️ Switching to LIVE mode - real money will be traded!' 
+          {isLiveMode
+            ? '⚠️ Switching to LIVE mode - real money will be traded!'
             : 'Switching to DEMO mode - no real money will be traded'}
         </Alert>
       </Box>
@@ -200,18 +198,13 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <InfoIcon color="info" sx={{ mr: 1 }} />
-          <Typography variant="h6">
-            Position Limits Changed
-          </Typography>
+          <Typography variant="h6">Position Limits Changed</Typography>
         </Box>
 
         <List dense>
           {impact.changes?.map((change, idx) => (
             <ListItem key={idx}>
-              <ListItemText 
-                primary={change.field}
-                secondary={`${change.from} → ${change.to}`}
-              />
+              <ListItemText primary={change.field} secondary={`${change.from} → ${change.to}`} />
             </ListItem>
           ))}
         </List>
@@ -220,12 +213,7 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
   };
 
   return (
-    <Dialog 
-      open={open} 
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-    >
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <WarningIcon color="warning" sx={{ mr: 1 }} />
@@ -246,7 +234,7 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
                   <ListItemIcon>
                     <WarningIcon color="error" />
                   </ListItemIcon>
-                  <ListItemText 
+                  <ListItemText
                     primary={param}
                     secondary="This critical parameter cannot be empty"
                   />
@@ -262,24 +250,28 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
         {/* Show changes summary if no errors */}
         {!has_errors && (
           <Alert severity="info" sx={{ mb: 3 }}>
-            You are about to make changes to the bot configuration. 
-            Please review the impact carefully before proceeding.
+            You are about to make changes to the bot configuration. Please review the impact
+            carefully before proceeding.
           </Alert>
         )}
 
         {/* Show all changes */}
         {renderAllChanges()}
 
-        {critical_changes.includes('grid_mode') && impact_summary.grid_mode_change && 
+        {critical_changes.includes('grid_mode') &&
+          impact_summary.grid_mode_change &&
           renderGridModeChange(impact_summary.grid_mode_change)}
 
-        {critical_changes.includes('grid_geometry') && impact_summary.grid_geometry_change && 
+        {critical_changes.includes('grid_geometry') &&
+          impact_summary.grid_geometry_change &&
           renderGeometryChange(impact_summary.grid_geometry_change)}
 
-        {critical_changes.includes('trading_mode') && impact_summary.trading_mode_change && 
+        {critical_changes.includes('trading_mode') &&
+          impact_summary.trading_mode_change &&
           renderTradingModeChange(impact_summary.trading_mode_change)}
 
-        {critical_changes.includes('position_limits') && impact_summary.position_limit_change && 
+        {critical_changes.includes('position_limits') &&
+          impact_summary.position_limit_change &&
           renderPositionLimitChange(impact_summary.position_limit_change)}
 
         {warnings.length > 0 && (
@@ -299,8 +291,8 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
         {!has_errors && (
           <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              <strong>Important:</strong> These changes will take effect immediately and may 
-              affect bot behavior. Make sure you understand the impact before confirming.
+              <strong>Important:</strong> These changes will take effect immediately and may affect
+              bot behavior. Make sure you understand the impact before confirming.
             </Typography>
           </Box>
         )}
@@ -310,10 +302,10 @@ export default function ConfigChangeConfirmDialog({ open, onClose, onConfirm, ch
         <Button onClick={onClose} color="inherit">
           {has_errors ? 'Close' : 'Cancel'}
         </Button>
-        <Button 
-          onClick={onConfirm} 
-          variant="contained" 
-          color={has_errors ? "error" : "primary"}
+        <Button
+          onClick={onConfirm}
+          variant="contained"
+          color={has_errors ? 'error' : 'primary'}
           startIcon={<WarningIcon />}
           disabled={has_errors}
         >

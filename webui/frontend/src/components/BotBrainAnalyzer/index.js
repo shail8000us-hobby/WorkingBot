@@ -1,10 +1,10 @@
 /**
  * Bot Brain Analyzer - Main Component
- * 
+ *
  * Single Responsibility: Orchestrate brain analysis sub-components.
- * 
+ *
  * Auto-refreshes every 5 seconds - NO manual intervention needed.
- * 
+ *
  * Sub-components:
  * - DecisionFlowGraph: Visual flowchart
  * - SequenceTimeline: Action sequences
@@ -33,22 +33,22 @@ const BotBrainAnalyzer = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Call brain analyzer API (same port as main WebUI)
       const [flowResponse, changesResponse] = await Promise.all([
         fetch('/api/brain/flowchart'),
-        fetch('/api/brain/changes')
+        fetch('/api/brain/changes'),
       ]);
-      
+
       const flowData = await flowResponse.json();
       const changesData = await changesResponse.json();
-      
+
       if (flowData.success) {
         setFlowData(flowData);
       } else {
         setError(flowData.error || 'Failed to load brain data');
       }
-      
+
       if (changesData.success) {
         setChanges(changesData.changes);
       }
@@ -73,7 +73,15 @@ const BotBrainAnalyzer = () => {
 
   if (loading && !flowData) {
     return (
-      <Paper sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+      <Paper
+        sx={{
+          p: 3,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '400px',
+        }}
+      >
         <CircularProgress />
         <Typography variant="h6" sx={{ ml: 2 }}>
           Reading Bot Brain...
@@ -96,13 +104,13 @@ const BotBrainAnalyzer = () => {
         <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
           🧠 Bot Brain Analyzer
         </Typography>
-        
+
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="body2" color="text.secondary">
             Real-time analysis of bot's decision-making logic • Auto-refreshes every 5 seconds
           </Typography>
           {changes && (changes.files_changed?.length > 0 || changes.new_files?.length > 0) && (
-            <Chip 
+            <Chip
               label={`⚠️ ${changes.files_changed.length + changes.new_files.length} File(s) Changed`}
               color="warning"
               size="small"
@@ -136,4 +144,3 @@ const BotBrainAnalyzer = () => {
 };
 
 export default BotBrainAnalyzer;
-

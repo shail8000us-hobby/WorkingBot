@@ -1,14 +1,24 @@
 /**
  * Sequence Timeline Component
- * 
+ *
  * Single Responsibility: Display DYNAMIC action sequences from bot state.
- * 
+ *
  * Shows the 3 scenarios (safe, unsafe, recovery) with REAL-TIME sequences.
  * Auto-refreshes every 5 seconds - fetches live data!
  */
 
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Chip, CircularProgress, Alert, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
+import {
+  Box,
+  Typography,
+  Paper,
+  Chip,
+  CircularProgress,
+  Alert,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+} from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 const SequenceTimeline = ({ flowData }) => {
@@ -20,10 +30,10 @@ const SequenceTimeline = ({ flowData }) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await fetch('/api/brain/sequences');
       const data = await response.json();
-      
+
       if (data.success) {
         setSequences(data);
       } else {
@@ -56,11 +66,7 @@ const SequenceTimeline = ({ flowData }) => {
   }
 
   if (error) {
-    return (
-      <Alert severity="error">
-        {error}
-      </Alert>
-    );
+    return <Alert severity="error">{error}</Alert>;
   }
 
   const scenarioData = sequences?.sequences || {};
@@ -73,7 +79,11 @@ const SequenceTimeline = ({ flowData }) => {
       <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
         <Chip label="🔄 Auto-refresh: 5s" color="success" size="small" />
         {sequences?.bot_state && (
-          <Chip label={`Current Price: ₹${sequences.bot_state.current_price || 'N/A'}`} color="info" size="small" />
+          <Chip
+            label={`Current Price: ₹${sequences.bot_state.current_price || 'N/A'}`}
+            color="info"
+            size="small"
+          />
         )}
       </Box>
 
@@ -89,26 +99,31 @@ const SequenceTimeline = ({ flowData }) => {
             <Box>
               {safeScenario.sequence.map((action, idx) => {
                 const actionType = action.action_type || `Step ${idx + 1}`;
-                const description = action.description || (typeof action === 'string' ? action : JSON.stringify(action));
+                const description =
+                  action.description ||
+                  (typeof action === 'string' ? action : JSON.stringify(action));
                 const price = action.price;
-                
+
                 return (
-                  <Paper key={idx} sx={{ p: 2, mb: 1, bgcolor: '#1a1a1a', borderLeft: '4px solid #4caf50' }}>
+                  <Paper
+                    key={idx}
+                    sx={{ p: 2, mb: 1, bgcolor: '#1a1a1a', borderLeft: '4px solid #4caf50' }}
+                  >
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
                       {actionType}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {description}
                     </Typography>
-                    {price && (
-                      <Chip label={`₹${price}`} size="small" sx={{ mt: 1 }} />
-                    )}
+                    {price && <Chip label={`₹${price}`} size="small" sx={{ mt: 1 }} />}
                   </Paper>
                 );
               })}
             </Box>
           ) : (
-            <Typography color="text.secondary">No sequence data available. Bot may be idle.</Typography>
+            <Typography color="text.secondary">
+              No sequence data available. Bot may be idle.
+            </Typography>
           )}
         </AccordionDetails>
       </Accordion>
@@ -125,10 +140,15 @@ const SequenceTimeline = ({ flowData }) => {
             <Box>
               {unsafeScenario.sequence.map((action, idx) => {
                 const actionType = action.action_type || `Step ${idx + 1}`;
-                const description = action.description || (typeof action === 'string' ? action : JSON.stringify(action));
-                
+                const description =
+                  action.description ||
+                  (typeof action === 'string' ? action : JSON.stringify(action));
+
                 return (
-                  <Paper key={idx} sx={{ p: 2, mb: 1, bgcolor: '#1a1a1a', borderLeft: '4px solid #f44336' }}>
+                  <Paper
+                    key={idx}
+                    sx={{ p: 2, mb: 1, bgcolor: '#1a1a1a', borderLeft: '4px solid #f44336' }}
+                  >
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#f44336' }}>
                       {actionType}
                     </Typography>
@@ -157,20 +177,23 @@ const SequenceTimeline = ({ flowData }) => {
             <Box>
               {recoveryScenario.sequence.map((action, idx) => {
                 const actionType = action.action_type || `Step ${idx + 1}`;
-                const description = action.description || (typeof action === 'string' ? action : JSON.stringify(action));
+                const description =
+                  action.description ||
+                  (typeof action === 'string' ? action : JSON.stringify(action));
                 const price = action.price;
-                
+
                 return (
-                  <Paper key={idx} sx={{ p: 2, mb: 1, bgcolor: '#1a1a1a', borderLeft: '4px solid #ff9800' }}>
+                  <Paper
+                    key={idx}
+                    sx={{ p: 2, mb: 1, bgcolor: '#1a1a1a', borderLeft: '4px solid #ff9800' }}
+                  >
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ff9800' }}>
                       {actionType}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {description}
                     </Typography>
-                    {price && (
-                      <Chip label={`₹${price}`} size="small" sx={{ mt: 1 }} />
-                    )}
+                    {price && <Chip label={`₹${price}`} size="small" sx={{ mt: 1 }} />}
                   </Paper>
                 );
               })}
@@ -185,4 +208,3 @@ const SequenceTimeline = ({ flowData }) => {
 };
 
 export default SequenceTimeline;
-

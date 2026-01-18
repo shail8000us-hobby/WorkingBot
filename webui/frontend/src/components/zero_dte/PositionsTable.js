@@ -1,6 +1,6 @@
 /**
  * Positions Table - Current CE/PE positions
- * 
+ *
  * Displays:
  * - Strike prices
  * - Lot sizes
@@ -60,41 +60,47 @@ const PositionsTable = ({ positions, underlying, spotPrice }) => {
         <tbody>
           {/* CE Row */}
           <tr className="row-ce">
-            <td><span className="leg-badge leg-ce">CE</span></td>
+            <td>
+              <span className="leg-badge leg-ce">CE</span>
+            </td>
             <td className="symbol-cell">{ce.symbol || '-'}</td>
             <td>{ce.strike?.toLocaleString() || '-'}</td>
             <td className="lots-cell">{ce.lots || 0}</td>
             <td>{ce.entry_premium?.toFixed(2) || '-'}</td>
-            <td className={ce.current_premium < ce.entry_premium ? 'premium-profit' : 'premium-loss'}>
+            <td
+              className={ce.current_premium < ce.entry_premium ? 'premium-profit' : 'premium-loss'}
+            >
               {ce.current_premium?.toFixed(2) || '-'}
             </td>
-            <td className={cePnL >= 0 ? 'pnl-positive' : 'pnl-negative'}>
-              ₹{cePnL.toFixed(2)}
-            </td>
+            <td className={cePnL >= 0 ? 'pnl-positive' : 'pnl-negative'}>₹{cePnL.toFixed(2)}</td>
             <td>{ce.greeks?.delta?.toFixed(3) || '-'}</td>
             <td>{ce.greeks?.gamma?.toFixed(4) || '-'}</td>
           </tr>
 
           {/* PE Row */}
           <tr className="row-pe">
-            <td><span className="leg-badge leg-pe">PE</span></td>
+            <td>
+              <span className="leg-badge leg-pe">PE</span>
+            </td>
             <td className="symbol-cell">{pe.symbol || '-'}</td>
             <td>{pe.strike?.toLocaleString() || '-'}</td>
             <td className="lots-cell">{pe.lots || 0}</td>
             <td>{pe.entry_premium?.toFixed(2) || '-'}</td>
-            <td className={pe.current_premium < pe.entry_premium ? 'premium-profit' : 'premium-loss'}>
+            <td
+              className={pe.current_premium < pe.entry_premium ? 'premium-profit' : 'premium-loss'}
+            >
               {pe.current_premium?.toFixed(2) || '-'}
             </td>
-            <td className={pePnL >= 0 ? 'pnl-positive' : 'pnl-negative'}>
-              ₹{pePnL.toFixed(2)}
-            </td>
+            <td className={pePnL >= 0 ? 'pnl-positive' : 'pnl-negative'}>₹{pePnL.toFixed(2)}</td>
             <td>{pe.greeks?.delta?.toFixed(3) || '-'}</td>
             <td>{pe.greeks?.gamma?.toFixed(4) || '-'}</td>
           </tr>
 
           {/* Total Row */}
           <tr className="row-total">
-            <td colSpan="6"><strong>Total</strong></td>
+            <td colSpan="6">
+              <strong>Total</strong>
+            </td>
             <td className={totalPnL >= 0 ? 'pnl-positive' : 'pnl-negative'}>
               <strong>₹{totalPnL.toFixed(2)}</strong>
             </td>
@@ -120,9 +126,7 @@ const PositionsTable = ({ positions, underlying, spotPrice }) => {
           </span>
         </div>
         {ce.current_premium < 5 && pe.current_premium < 5 && (
-          <div className="exit-imminent">
-            🎯 Both premiums &lt; ₹5 - Exit imminent!
-          </div>
+          <div className="exit-imminent">🎯 Both premiums &lt; ₹5 - Exit imminent!</div>
         )}
       </div>
     </div>

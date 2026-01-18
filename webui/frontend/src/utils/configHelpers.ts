@@ -1,9 +1,9 @@
 /**
  * Configuration Helper Utilities
- * 
+ *
  * Utility functions for transforming and managing configuration data
  * between flat and structured formats.
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  * Safe: Pure transformation utilities, no side effects
  */
@@ -76,7 +76,7 @@ export function transformFlatConfig(payload: ConfigPayload | null | undefined): 
       redacted: info.redacted || false,
       has_value: info.has_value || false,
       legacy_sources: info.legacy_sources || [],
-      source_key: info.source_key || key
+      source_key: info.source_key || key,
     };
   });
 
@@ -86,7 +86,9 @@ export function transformFlatConfig(payload: ConfigPayload | null | undefined): 
 /**
  * Build metadata object from structured configuration
  */
-export function buildMetaFromStructured(structured: StructuredConfig | null | undefined): Record<string, ConfigMeta> {
+export function buildMetaFromStructured(
+  structured: StructuredConfig | null | undefined
+): Record<string, ConfigMeta> {
   const meta: Record<string, ConfigMeta> = {};
   Object.entries(structured || {}).forEach(([key, details]) => {
     meta[key] = {
@@ -94,7 +96,7 @@ export function buildMetaFromStructured(structured: StructuredConfig | null | un
       redacted: details.redacted || false,
       has_value: details.has_value || false,
       legacy_sources: details.legacy_sources || [],
-      source_key: details.source_key || key
+      source_key: details.source_key || key,
     };
   });
   return meta;

@@ -15,7 +15,7 @@ export const CardSkeleton = ({ count = 1, height = 200 }) => (
         animation="wave"
         sx={{
           bgcolor: 'rgba(255,255,255,0.05)',
-          borderRadius: 2
+          borderRadius: 2,
         }}
       />
     ))}
@@ -58,7 +58,7 @@ export const TableSkeleton = ({ rows = 5, columns = 4 }) => (
             sx={{
               flex: 1,
               bgcolor: 'rgba(255,255,255,0.05)',
-              borderRadius: 1
+              borderRadius: 1,
             }}
           />
         ))}
@@ -74,7 +74,7 @@ export const ChartSkeleton = ({ height = 300 }) => (
     animation="wave"
     sx={{
       bgcolor: 'rgba(255,255,255,0.05)',
-      borderRadius: 2
+      borderRadius: 2,
     }}
   />
 );
@@ -84,7 +84,12 @@ export const DashboardSkeleton = () => (
     {/* Header skeleton */}
     <Box display="flex" justifyContent="space-between" alignItems="center">
       <Skeleton variant="text" width={200} height={40} sx={{ bgcolor: 'rgba(255,255,255,0.05)' }} />
-      <Skeleton variant="rectangular" width={120} height={36} sx={{ bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 1 }} />
+      <Skeleton
+        variant="rectangular"
+        width={120}
+        height={36}
+        sx={{ bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 1 }}
+      />
     </Box>
 
     {/* Stats cards */}
@@ -97,7 +102,7 @@ export const DashboardSkeleton = () => (
           sx={{
             flex: 1,
             bgcolor: 'rgba(255,255,255,0.05)',
-            borderRadius: 2
+            borderRadius: 2,
           }}
         />
       ))}
@@ -132,5 +137,5 @@ export default {
   TableSkeleton,
   ChartSkeleton,
   DashboardSkeleton,
-  ListSkeleton
+  ListSkeleton,
 };

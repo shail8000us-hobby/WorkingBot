@@ -1,8 +1,8 @@
 /**
  * Brain Modules List Component
- * 
+ *
  * Single Responsibility: Display discovered brain modules.
- * 
+ *
  * Shows which files were scanned, line counts, metadata.
  * Auto-refreshes with parent component.
  */
@@ -47,7 +47,14 @@ const BrainModulesList = ({ flowData }) => {
         Discovered Brain Modules ({modules.length})
       </Typography>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 2, mt: 2 }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+          gap: 2,
+          mt: 2,
+        }}
+      >
         {modules.map((module, idx) => (
           <Card key={idx} variant="outlined">
             <CardContent>
@@ -70,4 +77,3 @@ const BrainModulesList = ({ flowData }) => {
 };
 
 export default BrainModulesList;
-

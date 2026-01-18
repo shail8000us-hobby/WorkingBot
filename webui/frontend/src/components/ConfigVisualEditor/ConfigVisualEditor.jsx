@@ -33,7 +33,7 @@ import {
   ListItemIcon,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -48,7 +48,7 @@ import {
   ExpandMore as ExpandIcon,
   Undo as UndoIcon,
   Download as DownloadIcon,
-  Upload as UploadIcon
+  Upload as UploadIcon,
 } from '@mui/icons-material';
 import CodeEditor from '../CodeEditor/CodeEditor';
 import axios from 'axios';
@@ -60,37 +60,102 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5555';
 const CONFIG_SCHEMA = {
   trading: {
     symbol: { type: 'string', required: true, label: 'Trading Symbol', example: 'BTC/USDT' },
-    base_order_size: { type: 'number', required: true, label: 'Base Order Size ($)', min: 10, max: 10000 },
-    safety_order_size: { type: 'number', required: true, label: 'Safety Order Size ($)', min: 10, max: 10000 },
-    max_active_deals: { type: 'number', required: true, label: 'Max Active Deals', min: 1, max: 20 },
-    take_profit_percent: { type: 'number', required: true, label: 'Take Profit (%)', min: 0.1, max: 100, step: 0.1 },
+    base_order_size: {
+      type: 'number',
+      required: true,
+      label: 'Base Order Size ($)',
+      min: 10,
+      max: 10000,
+    },
+    safety_order_size: {
+      type: 'number',
+      required: true,
+      label: 'Safety Order Size ($)',
+      min: 10,
+      max: 10000,
+    },
+    max_active_deals: {
+      type: 'number',
+      required: true,
+      label: 'Max Active Deals',
+      min: 1,
+      max: 20,
+    },
+    take_profit_percent: {
+      type: 'number',
+      required: true,
+      label: 'Take Profit (%)',
+      min: 0.1,
+      max: 100,
+      step: 0.1,
+    },
     trailing_stop: { type: 'boolean', required: false, label: 'Enable Trailing Stop' },
     use_martingale: { type: 'boolean', required: false, label: 'Enable Martingale' },
-    martingale_multiplier: { type: 'number', required: false, label: 'Martingale Multiplier', min: 1.0, max: 5.0, step: 0.1 }
+    martingale_multiplier: {
+      type: 'number',
+      required: false,
+      label: 'Martingale Multiplier',
+      min: 1.0,
+      max: 5.0,
+      step: 0.1,
+    },
   },
   grid: {
     levels: { type: 'number', required: true, label: 'Grid Levels', min: 2, max: 50 },
-    spacing_percent: { type: 'number', required: true, label: 'Grid Spacing (%)', min: 0.1, max: 10, step: 0.1 }
+    spacing_percent: {
+      type: 'number',
+      required: true,
+      label: 'Grid Spacing (%)',
+      min: 0.1,
+      max: 10,
+      step: 0.1,
+    },
   },
   safety: {
-    stop_loss_percent: { type: 'number', required: true, label: 'Stop Loss (%)', min: 0.1, max: 100, step: 0.1 },
-    max_drawdown_percent: { type: 'number', required: true, label: 'Max Drawdown (%)', min: 1, max: 50, step: 0.1 },
+    stop_loss_percent: {
+      type: 'number',
+      required: true,
+      label: 'Stop Loss (%)',
+      min: 0.1,
+      max: 100,
+      step: 0.1,
+    },
+    max_drawdown_percent: {
+      type: 'number',
+      required: true,
+      label: 'Max Drawdown (%)',
+      min: 1,
+      max: 50,
+      step: 0.1,
+    },
     volatility_filter: { type: 'boolean', required: false, label: 'Enable Volatility Filter' },
-    emergency_stop: { type: 'boolean', required: false, label: 'Enable Emergency Stop' }
+    emergency_stop: { type: 'boolean', required: false, label: 'Enable Emergency Stop' },
   },
   indicators: {
     rsi: {
       enabled: { type: 'boolean', required: false, label: 'Enable RSI' },
       period: { type: 'number', required: false, label: 'RSI Period', min: 2, max: 100 },
-      buy_threshold: { type: 'number', required: false, label: 'RSI Buy Threshold', min: 0, max: 100 },
-      sell_threshold: { type: 'number', required: false, label: 'RSI Sell Threshold', min: 0, max: 100 }
-    }
+      buy_threshold: {
+        type: 'number',
+        required: false,
+        label: 'RSI Buy Threshold',
+        min: 0,
+        max: 100,
+      },
+      sell_threshold: {
+        type: 'number',
+        required: false,
+        label: 'RSI Sell Threshold',
+        min: 0,
+        max: 100,
+      },
+    },
   },
   notifications: {
     email: { type: 'boolean', required: false, label: 'Email Notifications' },
     telegram: { type: 'boolean', required: false, label: 'Telegram Notifications' },
-    webhook_url: { type: 'string', required: false, label: 'Webhook URL' }
-  }
+    webhook_url: { type: 'string', required: false, label: 'Webhook URL' },
+  },
 };
 
 // Default configuration template
@@ -103,31 +168,31 @@ const DEFAULT_CONFIG = {
     take_profit_percent: 2.5,
     trailing_stop: false,
     use_martingale: true,
-    martingale_multiplier: 1.5
+    martingale_multiplier: 1.5,
   },
   grid: {
     levels: 10,
-    spacing_percent: 1.0
+    spacing_percent: 1.0,
   },
   safety: {
     stop_loss_percent: 5.0,
     max_drawdown_percent: 15.0,
     volatility_filter: true,
-    emergency_stop: false
+    emergency_stop: false,
   },
   indicators: {
     rsi: {
       enabled: true,
       period: 14,
       buy_threshold: 30,
-      sell_threshold: 70
-    }
+      sell_threshold: 70,
+    },
   },
   notifications: {
     email: false,
     telegram: false,
-    webhook_url: ''
-  }
+    webhook_url: '',
+  },
 };
 
 const ConfigVisualEditor = () => {
@@ -148,7 +213,7 @@ const ConfigVisualEditor = () => {
     grid: true,
     safety: true,
     indicators: false,
-    notifications: false
+    notifications: false,
   });
 
   useEffect(() => {
@@ -231,10 +296,16 @@ const ConfigVisualEditor = () => {
                 errors.push({ field: fullPath, message: `${rules.label} must be a number` });
               } else {
                 if (rules.min !== undefined && value < rules.min) {
-                  errors.push({ field: fullPath, message: `${rules.label} must be at least ${rules.min}` });
+                  errors.push({
+                    field: fullPath,
+                    message: `${rules.label} must be at least ${rules.min}`,
+                  });
                 }
                 if (rules.max !== undefined && value > rules.max) {
-                  errors.push({ field: fullPath, message: `${rules.label} must be at most ${rules.max}` });
+                  errors.push({
+                    field: fullPath,
+                    message: `${rules.label} must be at most ${rules.max}`,
+                  });
                 }
               }
             }
@@ -291,7 +362,11 @@ const ConfigVisualEditor = () => {
 
   const handleSave = async () => {
     if (!validateConfig(config)) {
-      setSnackbar({ open: true, message: 'Please fix validation errors before saving', severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: 'Please fix validation errors before saving',
+        severity: 'error',
+      });
       return;
     }
 
@@ -304,7 +379,11 @@ const ConfigVisualEditor = () => {
       const response = await axios.post(`${API_BASE_URL}/api/config/update`, config);
       if (response.data.status === 'success') {
         setOriginalConfig(JSON.parse(JSON.stringify(config)));
-        setSnackbar({ open: true, message: 'Configuration saved successfully!', severity: 'success' });
+        setSnackbar({
+          open: true,
+          message: 'Configuration saved successfully!',
+          severity: 'success',
+        });
         loadBackups();
       }
     } catch (error) {
@@ -318,7 +397,7 @@ const ConfigVisualEditor = () => {
     try {
       await axios.post(`${API_BASE_URL}/api/config-backup/create`, {
         config: originalConfig,
-        note: 'Auto-backup before save'
+        note: 'Auto-backup before save',
       });
     } catch (error) {
       console.error('Backup creation failed:', error);
@@ -334,7 +413,7 @@ const ConfigVisualEditor = () => {
     setLoading(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/api/config-backup/restore`, {
-        backup_id: backupId
+        backup_id: backupId,
       });
       if (response.data.status === 'success') {
         await loadConfig();
@@ -342,7 +421,11 @@ const ConfigVisualEditor = () => {
         setSnackbar({ open: true, message: 'Backup restored successfully!', severity: 'success' });
       }
     } catch (error) {
-      setSnackbar({ open: true, message: `Failed to restore: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: `Failed to restore: ${error.message}`,
+        severity: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -380,9 +463,9 @@ const ConfigVisualEditor = () => {
   };
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
-      [section]: !prev[section]
+      [section]: !prev[section],
     }));
   };
 
@@ -418,10 +501,10 @@ const ConfigVisualEditor = () => {
             inputProps={{
               min: rules.min,
               max: rules.max,
-              step: rules.step || 1
+              step: rules.step || 1,
             }}
-            error={validationErrors.some(e => e.field === path)}
-            helperText={validationErrors.find(e => e.field === path)?.message || rules.example}
+            error={validationErrors.some((e) => e.field === path)}
+            helperText={validationErrors.find((e) => e.field === path)?.message || rules.example}
             required={rules.required}
           />
         </Grid>
@@ -435,8 +518,8 @@ const ConfigVisualEditor = () => {
           label={rules.label}
           value={value || ''}
           onChange={(e) => handleFieldChange(path, e.target.value)}
-          error={validationErrors.some(e => e.field === path)}
-          helperText={validationErrors.find(e => e.field === path)?.message || rules.example}
+          error={validationErrors.some((e) => e.field === path)}
+          helperText={validationErrors.find((e) => e.field === path)?.message || rules.example}
           required={rules.required}
         />
       </Grid>
@@ -445,8 +528,8 @@ const ConfigVisualEditor = () => {
 
   const renderFormSection = (section, schema) => {
     return (
-      <Accordion 
-        expanded={expandedSections[section]} 
+      <Accordion
+        expanded={expandedSections[section]}
         onChange={() => toggleSection(section)}
         key={section}
       >
@@ -454,14 +537,8 @@ const ConfigVisualEditor = () => {
           <Typography variant="h6" sx={{ textTransform: 'capitalize' }}>
             {section.replace(/_/g, ' ')}
           </Typography>
-          {validationErrors.some(e => e.field.startsWith(section)) && (
-            <Chip 
-              label="Errors" 
-              color="error" 
-              size="small" 
-              sx={{ ml: 2 }}
-              icon={<ErrorIcon />}
-            />
+          {validationErrors.some((e) => e.field.startsWith(section)) && (
+            <Chip label="Errors" color="error" size="small" sx={{ ml: 2 }} icon={<ErrorIcon />} />
           )}
         </AccordionSummary>
         <AccordionDetails>
@@ -492,9 +569,7 @@ const ConfigVisualEditor = () => {
 
   const renderFormView = () => (
     <Box>
-      {Object.entries(CONFIG_SCHEMA).map(([section, schema]) =>
-        renderFormSection(section, schema)
-      )}
+      {Object.entries(CONFIG_SCHEMA).map(([section, schema]) => renderFormSection(section, schema))}
     </Box>
   );
 
@@ -516,20 +591,24 @@ const ConfigVisualEditor = () => {
 
   const renderDiffView = () => {
     const changes = [];
-    
+
     const findDifferences = (original, current, path = '') => {
-      Object.keys({ ...original, ...current }).forEach(key => {
+      Object.keys({ ...original, ...current }).forEach((key) => {
         const fullPath = path ? `${path}.${key}` : key;
         const origValue = original?.[key];
         const currValue = current?.[key];
 
-        if (typeof origValue === 'object' && typeof currValue === 'object' && !Array.isArray(origValue)) {
+        if (
+          typeof origValue === 'object' &&
+          typeof currValue === 'object' &&
+          !Array.isArray(origValue)
+        ) {
           findDifferences(origValue || {}, currValue || {}, fullPath);
         } else if (origValue !== currValue) {
           changes.push({
             path: fullPath,
             old: origValue,
-            new: currValue
+            new: currValue,
           });
         }
       });
@@ -538,7 +617,12 @@ const ConfigVisualEditor = () => {
     findDifferences(originalConfig, config);
 
     return (
-      <Dialog open={showDiffDialog} onClose={() => setShowDiffDialog(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={showDiffDialog}
+        onClose={() => setShowDiffDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Configuration Changes</DialogTitle>
         <DialogContent>
           {changes.length === 0 ? (
@@ -548,7 +632,11 @@ const ConfigVisualEditor = () => {
               {changes.map((change, index) => (
                 <ListItem key={index}>
                   <ListItemIcon>
-                    {change.old === undefined ? <ValidIcon color="success" /> : <WarningIcon color="warning" />}
+                    {change.old === undefined ? (
+                      <ValidIcon color="success" />
+                    ) : (
+                      <WarningIcon color="warning" />
+                    )}
                   </ListItemIcon>
                   <ListItemText
                     primary={change.path}
@@ -584,7 +672,8 @@ const ConfigVisualEditor = () => {
             ⚙️ Configuration Editor
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Edit bot configuration with forms or code - changes are validated and backed up automatically
+            Edit bot configuration with forms or code - changes are validated and backed up
+            automatically
           </Typography>
         </Box>
 
@@ -601,7 +690,16 @@ const ConfigVisualEditor = () => {
       {loading && <LinearProgress sx={{ mb: 2 }} />}
 
       <Paper sx={{ mb: 2 }}>
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2 }}>
+        <Box
+          sx={{
+            borderBottom: 1,
+            borderColor: 'divider',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            px: 2,
+          }}
+        >
           <Tabs value={viewMode} onChange={(e, v) => setViewMode(v)}>
             <Tab icon={<FormIcon />} label="Form View" value="form" />
             <Tab icon={<CodeIcon />} label="Code View" value="code" />
@@ -659,9 +757,7 @@ const ConfigVisualEditor = () => {
           </Box>
         </Box>
 
-        <Box sx={{ p: 3 }}>
-          {viewMode === 'form' ? renderFormView() : renderCodeView()}
-        </Box>
+        <Box sx={{ p: 3 }}>{viewMode === 'form' ? renderFormView() : renderCodeView()}</Box>
       </Paper>
 
       {/* Validation Errors */}
@@ -673,10 +769,7 @@ const ConfigVisualEditor = () => {
           <List dense>
             {validationErrors.map((error, index) => (
               <ListItem key={index}>
-                <ListItemText
-                  primary={error.field}
-                  secondary={error.message}
-                />
+                <ListItemText primary={error.field} secondary={error.message} />
               </ListItem>
             ))}
           </List>
@@ -684,7 +777,12 @@ const ConfigVisualEditor = () => {
       )}
 
       {/* Backups Dialog */}
-      <Dialog open={showBackupDialog} onClose={() => setShowBackupDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={showBackupDialog}
+        onClose={() => setShowBackupDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Configuration Backups</DialogTitle>
         <DialogContent>
           {backups.length === 0 ? (
@@ -723,8 +821,8 @@ const ConfigVisualEditor = () => {
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           variant="filled"
         >

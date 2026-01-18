@@ -1,7 +1,7 @@
 /**
  * Chunk Prefetch Utility
  * Intelligently prefetch lazy-loaded chunks based on user behavior
- * 
+ *
  * Created: January 18, 2026 (Phase 5: Performance Optimization)
  * Safe: Client-side prefetching utility
  */
@@ -17,27 +17,27 @@ interface PrefetchOptions {
  */
 export const prefetchChunk = (chunkName: string, options: PrefetchOptions = {}): void => {
   const { priority = 'low', delay = 0 } = options;
-  
+
   if (typeof window === 'undefined' || !('requestIdleCallback' in window)) {
     return;
   }
-  
+
   const prefetch = () => {
     // Check if already prefetched
     if (document.querySelector(`link[href*="${chunkName}"]`)) {
       return;
     }
-    
+
     // Create prefetch link
     const link = document.createElement('link');
     link.rel = priority === 'high' ? 'preload' : 'prefetch';
     link.as = 'script';
     link.href = `/static/js/${chunkName}`;
-    
+
     // Add to document
     document.head.appendChild(link);
   };
-  
+
   if (delay > 0) {
     setTimeout(prefetch, delay);
   } else {
@@ -64,9 +64,9 @@ export const prefetchForRoute = (routeName: string): void => {
     dashboard: ['monitoring', 'positions', 'charts'],
     options: ['optionsChain', 'strategyBuilder'],
     config: ['configPanel', 'logsPanel'],
-    guardian: ['guardianDashboard', 'guardianPanel']
+    guardian: ['guardianDashboard', 'guardianPanel'],
   };
-  
+
   const chunks = routePrefetchMap[routeName];
   if (chunks) {
     prefetchChunks(chunks);
@@ -78,9 +78,9 @@ export const prefetchForRoute = (routeName: string): void => {
  */
 export const setupInteractionPrefetch = (): void => {
   // Prefetch when user hovers over navigation items
-  document.querySelectorAll('[data-prefetch]').forEach(element => {
+  document.querySelectorAll('[data-prefetch]').forEach((element) => {
     let timeoutId: number;
-    
+
     element.addEventListener('mouseenter', () => {
       const chunkName = element.getAttribute('data-prefetch');
       if (chunkName) {
@@ -90,7 +90,7 @@ export const setupInteractionPrefetch = (): void => {
         }, 50);
       }
     });
-    
+
     element.addEventListener('mouseleave', () => {
       clearTimeout(timeoutId);
     });
@@ -114,9 +114,9 @@ function executePrefetch() {
   const criticalChunks = [
     'positions', // User likely checks positions
     'monitoring', // Health monitoring frequently accessed
-    'options' // Options trading interface
+    'options', // Options trading interface
   ];
-  
+
   prefetchChunks(criticalChunks);
 }
 
@@ -128,7 +128,7 @@ if (typeof window !== 'undefined') {
   } else {
     setupInteractionPrefetch();
   }
-  
+
   // Prefetch critical chunks after page load
   prefetchCriticalChunks();
 }
@@ -138,5 +138,5 @@ export default {
   prefetchChunks,
   prefetchForRoute,
   setupInteractionPrefetch,
-  prefetchCriticalChunks
+  prefetchCriticalChunks,
 };

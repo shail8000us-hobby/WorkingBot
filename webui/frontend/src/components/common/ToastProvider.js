@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { Snackbar, Alert, AlertTitle, Button, LinearProgress, Box, IconButton } from '@mui/material';
+import {
+  Snackbar,
+  Alert,
+  AlertTitle,
+  Button,
+  LinearProgress,
+  Box,
+  IconButton,
+} from '@mui/material';
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react';
 
 /**
@@ -20,7 +28,7 @@ const severityIcons = {
   success: CheckCircle,
   error: AlertCircle,
   warning: AlertTriangle,
-  info: Info
+  info: Info,
 };
 
 const Toast = ({ toast, onClose }) => {
@@ -31,7 +39,7 @@ const Toast = ({ toast, onClose }) => {
     if (toast.autoHideDuration) {
       const interval = setInterval(() => {
         setProgress((prev) => {
-          const newProgress = prev - (100 / (toast.autoHideDuration / 100));
+          const newProgress = prev - 100 / (toast.autoHideDuration / 100);
           if (newProgress <= 0) {
             clearInterval(interval);
             onClose();
@@ -55,25 +63,19 @@ const Toast = ({ toast, onClose }) => {
         maxWidth: 500,
         boxShadow: 3,
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
       }}
       action={
-        <IconButton
-          size="small"
-          onClick={onClose}
-          sx={{ color: 'inherit' }}
-        >
+        <IconButton size="small" onClick={onClose} sx={{ color: 'inherit' }}>
           <X size={18} />
         </IconButton>
       }
     >
       {toast.title && (
-        <AlertTitle sx={{ fontWeight: 600, mb: toast.message ? 0.5 : 0 }}>
-          {toast.title}
-        </AlertTitle>
+        <AlertTitle sx={{ fontWeight: 600, mb: toast.message ? 0.5 : 0 }}>{toast.title}</AlertTitle>
       )}
       {toast.message}
-      
+
       {toast.action && (
         <Box mt={1}>
           <Button
@@ -86,7 +88,7 @@ const Toast = ({ toast, onClose }) => {
             sx={{
               textTransform: 'none',
               borderColor: 'currentColor',
-              color: 'inherit'
+              color: 'inherit',
             }}
           >
             {toast.action.label}
@@ -107,8 +109,8 @@ const Toast = ({ toast, onClose }) => {
             bgcolor: 'transparent',
             '& .MuiLinearProgress-bar': {
               bgcolor: 'currentColor',
-              opacity: 0.3
-            }
+              opacity: 0.3,
+            },
           }}
         />
       )}
@@ -126,8 +128,8 @@ export const ToastProvider = ({ children }) => {
       message,
       severity: options.severity || 'info',
       title: options.title || null,
-      autoHideDuration: options.autoHide !== false ? (options.duration || 5000) : null,
-      action: options.action || null
+      autoHideDuration: options.autoHide !== false ? options.duration || 5000 : null,
+      action: options.action || null,
     };
 
     setToasts((prev) => [...prev, toast]);
@@ -147,21 +149,33 @@ export const ToastProvider = ({ children }) => {
   }, []);
 
   // Convenience methods
-  const success = useCallback((message, options = {}) => {
-    return showToast(message, { ...options, severity: 'success' });
-  }, [showToast]);
+  const success = useCallback(
+    (message, options = {}) => {
+      return showToast(message, { ...options, severity: 'success' });
+    },
+    [showToast]
+  );
 
-  const error = useCallback((message, options = {}) => {
-    return showToast(message, { ...options, severity: 'error' });
-  }, [showToast]);
+  const error = useCallback(
+    (message, options = {}) => {
+      return showToast(message, { ...options, severity: 'error' });
+    },
+    [showToast]
+  );
 
-  const warning = useCallback((message, options = {}) => {
-    return showToast(message, { ...options, severity: 'warning' });
-  }, [showToast]);
+  const warning = useCallback(
+    (message, options = {}) => {
+      return showToast(message, { ...options, severity: 'warning' });
+    },
+    [showToast]
+  );
 
-  const info = useCallback((message, options = {}) => {
-    return showToast(message, { ...options, severity: 'info' });
-  }, [showToast]);
+  const info = useCallback(
+    (message, options = {}) => {
+      return showToast(message, { ...options, severity: 'info' });
+    },
+    [showToast]
+  );
 
   const value = {
     showToast,
@@ -169,7 +183,7 @@ export const ToastProvider = ({ children }) => {
     error,
     warning,
     info,
-    removeToast
+    removeToast,
   };
 
   return (
@@ -184,7 +198,7 @@ export const ToastProvider = ({ children }) => {
           display: 'flex',
           flexDirection: 'column',
           gap: 1,
-          pointerEvents: 'none'
+          pointerEvents: 'none',
         }}
       >
         {toasts.map((toast) => (

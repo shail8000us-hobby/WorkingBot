@@ -10,7 +10,7 @@ import {
   Typography,
   Alert,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
 } from '@mui/material';
 import { Warning, Error as ErrorIcon, Info } from '@mui/icons-material';
 
@@ -30,7 +30,7 @@ const ConfirmationDialog = ({
   requireConfirmation = false,
   confirmationText = '',
   loading = false,
-  children
+  children,
 }) => {
   const [confirmed, setConfirmed] = useState(false);
 
@@ -79,8 +79,8 @@ const ConfirmationDialog = ({
       PaperProps={{
         sx: {
           borderTop: '4px solid',
-          borderColor: `${getColor()}.main`
-        }
+          borderColor: `${getColor()}.main`,
+        },
       }}
     >
       <DialogTitle>
@@ -89,11 +89,9 @@ const ConfirmationDialog = ({
           <Typography variant="h6">{title}</Typography>
         </Box>
       </DialogTitle>
-      
+
       <DialogContent>
-        <DialogContentText sx={{ mb: 2 }}>
-          {message}
-        </DialogContentText>
+        <DialogContentText sx={{ mb: 2 }}>{message}</DialogContentText>
 
         {children}
 
@@ -110,18 +108,14 @@ const ConfirmationDialog = ({
                   color={getColor()}
                 />
               }
-              label={confirmationText || "I understand the consequences of this action"}
+              label={confirmationText || 'I understand the consequences of this action'}
             />
           </Box>
         )}
       </DialogContent>
 
       <DialogActions sx={{ p: 2, pt: 0 }}>
-        <Button 
-          onClick={handleClose} 
-          color="inherit"
-          disabled={loading}
-        >
+        <Button onClick={handleClose} color="inherit" disabled={loading}>
           {cancelText}
         </Button>
         <Button

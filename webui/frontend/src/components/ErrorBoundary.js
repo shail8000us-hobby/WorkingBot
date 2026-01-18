@@ -9,11 +9,11 @@ import { Error as ErrorIcon, Refresh } from '@mui/icons-material';
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { 
-      hasError: false, 
+    this.state = {
+      hasError: false,
       error: null,
       errorInfo: null,
-      errorCount: 0
+      errorCount: 0,
     };
   }
 
@@ -23,11 +23,11 @@ class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
-    this.setState(prevState => ({
+
+    this.setState((prevState) => ({
       error,
       errorInfo,
-      errorCount: prevState.errorCount + 1
+      errorCount: prevState.errorCount + 1,
     }));
 
     // Log to backend for monitoring (Week 2 enhancement)
@@ -54,8 +54,8 @@ class ErrorBoundary extends Component {
           stack: error.stack,
           componentStack: errorInfo?.componentStack,
           timestamp: new Date().toISOString(),
-          userAgent: navigator.userAgent
-        })
+          userAgent: navigator.userAgent,
+        }),
       }).catch(() => {
         // Silently fail if logging fails
       });
@@ -65,12 +65,12 @@ class ErrorBoundary extends Component {
   }
 
   handleReset = () => {
-    this.setState({ 
-      hasError: false, 
-      error: null, 
-      errorInfo: null 
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null,
     });
-    
+
     if (this.props.onReset) {
       this.props.onReset();
     }
@@ -88,14 +88,14 @@ class ErrorBoundary extends Component {
       }
 
       return (
-        <Paper 
-          sx={{ 
-            p: 3, 
-            m: 2, 
+        <Paper
+          sx={{
+            p: 3,
+            m: 2,
             border: '2px solid',
             borderColor: 'error.main',
             backgroundColor: 'error.dark',
-            opacity: 0.95
+            opacity: 0.95,
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -107,8 +107,8 @@ class ErrorBoundary extends Component {
 
           {this.state.errorCount > 1 && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              This error has occurred {this.state.errorCount} times. 
-              You may need to reload the page.
+              This error has occurred {this.state.errorCount} times. You may need to reload the
+              page.
             </Alert>
           )}
 
@@ -118,21 +118,25 @@ class ErrorBoundary extends Component {
 
           {process.env.NODE_ENV === 'development' && this.state.error && (
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', mb: 1 }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ fontFamily: 'monospace', mb: 1 }}
+              >
                 <strong>Error:</strong> {this.state.error.toString()}
               </Typography>
               {this.state.errorInfo && (
-                <Typography 
-                  variant="caption" 
-                  color="text.secondary" 
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
                   component="pre"
-                  sx={{ 
-                    fontFamily: 'monospace', 
+                  sx={{
+                    fontFamily: 'monospace',
                     overflow: 'auto',
                     maxHeight: 200,
                     backgroundColor: 'rgba(0,0,0,0.3)',
                     p: 1,
-                    borderRadius: 1
+                    borderRadius: 1,
                   }}
                 >
                   {this.state.errorInfo.componentStack}
@@ -142,19 +146,15 @@ class ErrorBoundary extends Component {
           )}
 
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <Button 
-              variant="contained" 
+            <Button
+              variant="contained"
               color="primary"
               startIcon={<Refresh />}
               onClick={this.handleReset}
             >
               Try Again
             </Button>
-            <Button 
-              variant="outlined" 
-              color="inherit"
-              onClick={this.handleReload}
-            >
+            <Button variant="outlined" color="inherit" onClick={this.handleReload}>
               Reload Page
             </Button>
           </Box>

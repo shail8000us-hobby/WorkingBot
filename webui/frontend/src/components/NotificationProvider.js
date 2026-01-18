@@ -27,7 +27,7 @@ export const NotificationProvider = ({ children }) => {
       duration = severity === 'error' ? 6000 : 4000,
       title = '',
       action = null,
-      persist = false
+      persist = false,
     } = options;
 
     const notification = {
@@ -37,38 +37,50 @@ export const NotificationProvider = ({ children }) => {
       duration: persist ? null : duration,
       title,
       action,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
-    setNotifications(prev => [...prev, notification]);
-    setHistory(prev => [notification, ...prev.slice(0, 49)]); // Keep last 50
+    setNotifications((prev) => [...prev, notification]);
+    setHistory((prev) => [notification, ...prev.slice(0, 49)]); // Keep last 50
 
     return notification.id;
   }, []);
 
   const hideNotification = useCallback((id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
   const clearAll = useCallback(() => {
     setNotifications([]);
   }, []);
 
-  const success = useCallback((message, options = {}) => {
-    return showNotification(message, { ...options, severity: 'success' });
-  }, [showNotification]);
+  const success = useCallback(
+    (message, options = {}) => {
+      return showNotification(message, { ...options, severity: 'success' });
+    },
+    [showNotification]
+  );
 
-  const error = useCallback((message, options = {}) => {
-    return showNotification(message, { ...options, severity: 'error' });
-  }, [showNotification]);
+  const error = useCallback(
+    (message, options = {}) => {
+      return showNotification(message, { ...options, severity: 'error' });
+    },
+    [showNotification]
+  );
 
-  const warning = useCallback((message, options = {}) => {
-    return showNotification(message, { ...options, severity: 'warning' });
-  }, [showNotification]);
+  const warning = useCallback(
+    (message, options = {}) => {
+      return showNotification(message, { ...options, severity: 'warning' });
+    },
+    [showNotification]
+  );
 
-  const info = useCallback((message, options = {}) => {
-    return showNotification(message, { ...options, severity: 'info' });
-  }, [showNotification]);
+  const info = useCallback(
+    (message, options = {}) => {
+      return showNotification(message, { ...options, severity: 'info' });
+    },
+    [showNotification]
+  );
 
   const value = {
     showNotification,
@@ -79,16 +91,13 @@ export const NotificationProvider = ({ children }) => {
     warning,
     info,
     notifications,
-    history
+    history,
   };
 
   return (
     <NotificationContext.Provider value={value}>
       {children}
-      <NotificationQueue 
-        notifications={notifications} 
-        onClose={hideNotification} 
-      />
+      <NotificationQueue notifications={notifications} onClose={hideNotification} />
     </NotificationContext.Provider>
   );
 };
@@ -103,9 +112,9 @@ const NotificationQueue = ({ notifications, onClose }) => {
           autoHideDuration={notification.duration}
           onClose={() => onClose(notification.id)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          sx={{ 
-            bottom: { xs: 8 + (index * 80), sm: 24 + (index * 80) },
-            zIndex: 2000 + index
+          sx={{
+            bottom: { xs: 8 + index * 80, sm: 24 + index * 80 },
+            zIndex: 2000 + index,
           }}
         >
           <Alert
@@ -125,20 +134,16 @@ const NotificationQueue = ({ notifications, onClose }) => {
                 </IconButton>
               )
             }
-            sx={{ 
+            sx={{
               minWidth: { xs: 280, sm: 400 },
               maxWidth: { xs: '90vw', sm: 500 },
-              boxShadow: 3
+              boxShadow: 3,
             }}
           >
             {notification.title && (
-              <AlertTitle sx={{ fontWeight: 'bold' }}>
-                {notification.title}
-              </AlertTitle>
+              <AlertTitle sx={{ fontWeight: 'bold' }}>{notification.title}</AlertTitle>
             )}
-            <Typography variant="body2">
-              {notification.message}
-            </Typography>
+            <Typography variant="body2">{notification.message}</Typography>
           </Alert>
         </Snackbar>
       ))}

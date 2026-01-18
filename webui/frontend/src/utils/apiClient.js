@@ -5,7 +5,7 @@ import { apiCircuit } from './circuitBreaker'; // Week 2: Circuit breaker integr
 /**
  * API Client - Robust HTTP request handling with retry logic and circuit breaker
  * Provides automatic retries, error handling, request queueing, and fail-fast protection
- * 
+ *
  * Enhanced: November 12, 2025 - Added circuit breaker protection
  */
 
@@ -15,11 +15,11 @@ class APIClient {
   constructor(config = {}) {
     this.config = {
       baseURL: config.baseURL !== undefined ? config.baseURL : DEFAULT_BASE_URL,
-      timeout: 30000,  // Increased from 10s to 30s to prevent premature aborts
+      timeout: 30000, // Increased from 10s to 30s to prevent premature aborts
       maxRetries: 3,
       retryDelay: 1000,
       retryStatusCodes: [408, 429, 500, 502, 503, 504],
-      ...config
+      ...config,
     };
 
     this.baseURL = (this.config.baseURL || '').replace(/\/$/, '');
@@ -93,14 +93,17 @@ class APIClient {
       try {
         let headers = {
           'Content-Type': 'application/json',
-          ...optionHeaders
+          ...optionHeaders,
         };
 
         if (!skipAuth) {
           try {
             await ensureAuthToken();
           } catch (authError) {
-            console.warn('⚠️  Proceeding without auth token due to discovery error:', authError.message);
+            console.warn(
+              '⚠️  Proceeding without auth token due to discovery error:',
+              authError.message
+            );
           }
           headers = buildAuthHeaders(headers);
         }
@@ -112,7 +115,7 @@ class APIClient {
         const requestOptions = {
           ...fetchOverrides,
           method: normalizedMethod,
-          headers
+          headers,
         };
 
         if (!isGetLike && data !== null && data !== undefined) {
@@ -125,7 +128,9 @@ class APIClient {
           requestOptions.signal = abortController.signal;
         }
 
-        console.log(`📤 API ${normalizedMethod} ${finalUrl} (attempt ${attempt + 1}/${maxRetries + 1})`);
+        console.log(
+          `📤 API ${normalizedMethod} ${finalUrl} (attempt ${attempt + 1}/${maxRetries + 1})`
+        );
         const responseData = await apiRequest(finalUrl, requestOptions);
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -179,7 +184,7 @@ class APIClient {
         code: error.status ? `HTTP_${error.status}` : 'NETWORK_ERROR',
         status: error.status,
         data: error.details,
-        original: error
+        original: error,
       };
     }
     if (error && error.name === 'AbortError') {
@@ -187,14 +192,14 @@ class APIClient {
         success: false,
         message: 'Request timed out',
         code: 'TIMEOUT',
-        original: error
+        original: error,
       };
     }
     return {
       success: false,
       message: (error && error.message) || 'Network error',
       code: 'NETWORK_ERROR',
-      original: error
+      original: error,
     };
   }
 
@@ -202,7 +207,7 @@ class APIClient {
    * Sleep helper
    */
   sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Convenience methods for different HTTP verbs
@@ -397,7 +402,7 @@ class APIClient {
    */
   async batchRequest(requests) {
     const results = await Promise.allSettled(
-      requests.map(req => this.request(req.method, req.url, req.data, req.options))
+      requests.map((req) => this.request(req.method, req.url, req.data, req.options))
     );
 
     return results.map((result, index) => {

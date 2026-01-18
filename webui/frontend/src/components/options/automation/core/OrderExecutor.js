@@ -1,14 +1,19 @@
 import notificationService from '../monitoring/NotificationService';
 import deltaExchangeAPI from '../api/DeltaExchangeAPI';
 import riskValidator from './RiskValidator';
-import { NOTIFICATION_TYPES, ACTION_TYPES, ORDER_TYPES, EXECUTION_TIMING } from '../types/constants';
+import {
+  NOTIFICATION_TYPES,
+  ACTION_TYPES,
+  ORDER_TYPES,
+  EXECUTION_TIMING,
+} from '../types/constants';
 
 /**
  * OrderExecutor - Order execution service (dry run and real orders)
- * 
+ *
  * Phase 2: Dry run only - logs orders to console
  * Phase 3: Real order execution via Delta Exchange API
- * 
+ *
  * Features:
  * - Order validation
  * - Dry run simulation
@@ -61,9 +66,9 @@ class OrderExecutor {
           console.warn('[OrderExecutor] Failed to get account balance:', balanceError);
           // Continue with empty account data - risk validator will handle appropriately
         }
-        
+
         const validation = await riskValidator.validateOrder(orderParams, risk, accountData);
-        
+
         if (!validation.isValid) {
           throw new Error(`Risk validation failed: ${validation.reason}`);
         }
@@ -82,7 +87,7 @@ class OrderExecutor {
         type: NOTIFICATION_TYPES.ERROR,
         title: 'Order Failed',
         message: error.message,
-        automation
+        automation,
       });
       throw error;
     }
@@ -104,7 +109,7 @@ class OrderExecutor {
         quantity: Math.abs(position.size),
         orderType: ORDER_TYPES.MARKET, // Always market for exits
         reason: exitReason,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
       const result = await this._executeSingleOrder(orderParams);
@@ -117,7 +122,7 @@ class OrderExecutor {
         type: pnl >= 0 ? NOTIFICATION_TYPES.SUCCESS : NOTIFICATION_TYPES.WARNING,
         title: `Position Closed: ${exitReason}`,
         message: `${position.symbol} closed at ${result.executionPrice.toFixed(4)} | PnL: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%`,
-        automation
+        automation,
       });
 
       return result;
@@ -138,7 +143,7 @@ class OrderExecutor {
     let quantity = execution.quantity || 1;
     if (execution.positionSizing === 'PERCENTAGE') {
       // Would calculate based on account balance in Phase 3
-      quantity = Math.max(1, Math.floor(execution.capitalPercentage / 100 * 10)); // Placeholder
+      quantity = Math.max(1, Math.floor((execution.capitalPercentage / 100) * 10)); // Placeholder
     } else if (execution.positionSizing === 'DYNAMIC') {
       // Adjust based on IV in Phase 3
       quantity = execution.minQuantity || 1;
@@ -151,7 +156,7 @@ class OrderExecutor {
     if (orderType === ORDER_TYPES.LIMIT) {
       const offset = execution.limitPriceOffset || 0;
       const direction = entry.action === ACTION_TYPES.BUY ? -1 : 1;
-      limitPrice = spotPrice * (1 + (direction * offset / 100));
+      limitPrice = spotPrice * (1 + (direction * offset) / 100);
     }
 
     return {
@@ -162,7 +167,7 @@ class OrderExecutor {
       orderType,
       limitPrice,
       timeout: execution.orderTimeout || 60,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
   }
 
@@ -189,14 +194,14 @@ class OrderExecutor {
     await this._simulateDelay(100, 500);
 
     // Simulate execution
-    const executionPrice = orderParams.limitPrice || (Math.random() * 0.01 + 0.005); // Mock price
+    const executionPrice = orderParams.limitPrice || Math.random() * 0.01 + 0.005; // Mock price
     const order = {
       ...orderParams,
       status: 'FILLED',
       executionPrice,
       executionTime: Date.now(),
       fees: executionPrice * orderParams.quantity * 0.0005, // 0.05% fee
-      isDryRun: true
+      isDryRun: true,
     };
 
     this.orders.set(order.orderId, order);
@@ -210,7 +215,7 @@ class OrderExecutor {
       action: order.action,
       quantity: order.quantity,
       price: executionPrice.toFixed(4),
-      fees: order.fees.toFixed(4)
+      fees: order.fees.toFixed(4),
     });
 
     return order;
@@ -271,7 +276,7 @@ class OrderExecutor {
       return order;
     } catch (error) {
       console.error('[OrderExecutor] LIVE - Order failed:', error);
-      
+
       notificationService.notify({
         type: NOTIFICATION_TYPES.ERROR,
         title: 'Order Failed',
@@ -289,15 +294,17 @@ class OrderExecutor {
     const results = [];
     const quantityPerStage = Math.ceil(orderParams.quantity / staging.stages);
 
-    console.log(`[OrderExecutor] ${isDryRun ? 'DRY RUN' : 'LIVE'} - Executing ${staging.stages} staged orders`);
+    console.log(
+      `[OrderExecutor] ${isDryRun ? 'DRY RUN' : 'LIVE'} - Executing ${staging.stages} staged orders`
+    );
 
     for (let i = 0; i < staging.stages; i++) {
       const stageParams = {
         ...orderParams,
         orderId: this._generateOrderId(),
-        quantity: Math.min(quantityPerStage, orderParams.quantity - (i * quantityPerStage)),
+        quantity: Math.min(quantityPerStage, orderParams.quantity - i * quantityPerStage),
         stage: i + 1,
-        totalStages: staging.stages
+        totalStages: staging.stages,
       };
 
       const result = await this._executeSingleOrder(stageParams, isDryRun);
@@ -314,8 +321,9 @@ class OrderExecutor {
       type: 'STAGED_ORDER',
       stages: results,
       totalQuantity: results.reduce((sum, r) => sum + r.quantity, 0),
-      avgPrice: results.reduce((sum, r) => sum + r.executionPrice * r.quantity, 0) / 
-                results.reduce((sum, r) => sum + r.quantity, 0)
+      avgPrice:
+        results.reduce((sum, r) => sum + r.executionPrice * r.quantity, 0) /
+        results.reduce((sum, r) => sum + r.quantity, 0),
     };
   }
 
@@ -332,26 +340,25 @@ class OrderExecutor {
         size: 0,
         avgEntryPrice: 0,
         realizedPnL: 0,
-        trades: []
+        trades: [],
       };
     }
 
     const oldSize = position.size;
-    const newSize = order.action === ACTION_TYPES.BUY ? 
-      oldSize + order.quantity : 
-      oldSize - order.quantity;
+    const newSize =
+      order.action === ACTION_TYPES.BUY ? oldSize + order.quantity : oldSize - order.quantity;
 
     // Update average entry price
     if (Math.sign(newSize) === Math.sign(oldSize) || oldSize === 0) {
       // Adding to position
-      position.avgEntryPrice = 
+      position.avgEntryPrice =
         (position.avgEntryPrice * Math.abs(oldSize) + order.executionPrice * order.quantity) /
         (Math.abs(oldSize) + order.quantity);
     } else {
       // Reducing position - realize PnL
       const closedQuantity = Math.min(order.quantity, Math.abs(oldSize));
-      const pnl = (order.executionPrice - position.avgEntryPrice) * closedQuantity *
-        (oldSize > 0 ? 1 : -1);
+      const pnl =
+        (order.executionPrice - position.avgEntryPrice) * closedQuantity * (oldSize > 0 ? 1 : -1);
       position.realizedPnL += pnl;
     }
 
@@ -361,7 +368,7 @@ class OrderExecutor {
       action: order.action,
       quantity: order.quantity,
       price: order.executionPrice,
-      timestamp: order.executionTime
+      timestamp: order.executionTime,
     });
 
     this.positions.set(key, position);
@@ -373,7 +380,7 @@ class OrderExecutor {
   _calculatePnL(position, exitPrice) {
     const entryPrice = position.mark_price; // Use current mark as mock entry
     const priceChange = ((exitPrice - entryPrice) / entryPrice) * 100;
-    
+
     // BUY position (size > 0): profit when price rises
     // SELL position (size < 0): profit when price falls (inverse)
     return position.size > 0 ? priceChange : -priceChange;
@@ -409,7 +416,7 @@ class OrderExecutor {
    */
   _simulateDelay(minMs = 100, maxMs = 500) {
     const delay = Math.random() * (maxMs - minMs) + minMs;
-    return new Promise(resolve => setTimeout(resolve, delay));
+    return new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   /**
@@ -430,8 +437,7 @@ class OrderExecutor {
    * Get all orders for a symbol
    */
   getOrdersBySymbol(symbol) {
-    return Array.from(this.orders.values())
-      .filter(order => order.symbol === symbol);
+    return Array.from(this.orders.values()).filter((order) => order.symbol === symbol);
   }
 
   /**
@@ -465,9 +471,9 @@ class OrderExecutor {
     const orders = Array.from(this.orders.values());
     return {
       totalOrders: orders.length,
-      filledOrders: orders.filter(o => o.status === 'FILLED').length,
+      filledOrders: orders.filter((o) => o.status === 'FILLED').length,
       totalFees: orders.reduce((sum, o) => sum + (o.fees || 0), 0),
-      totalVolume: orders.reduce((sum, o) => sum + (o.executionPrice * o.quantity), 0)
+      totalVolume: orders.reduce((sum, o) => sum + o.executionPrice * o.quantity, 0),
     };
   }
 }

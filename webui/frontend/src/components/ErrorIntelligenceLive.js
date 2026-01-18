@@ -42,7 +42,7 @@ const formatTimeAgo = (timestamp) => {
     const now = new Date();
     const date = new Date(timestamp);
     const seconds = Math.floor((now - date) / 1000);
-    
+
     if (seconds < 60) return 'just now';
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
@@ -92,12 +92,12 @@ const getSeverityDisplay = (severity) => {
  */
 const getCategoryColor = (category) => {
   const colors = {
-    'Auth': { bgcolor: '#d32f2f', color: '#fff' },
-    'WebSocket': { bgcolor: '#1976d2', color: '#fff' },
-    'API': { bgcolor: '#9c27b0', color: '#fff' },
-    'Execution': { bgcolor: '#ed6c02', color: '#fff' },
-    'Network': { bgcolor: '#0288d1', color: '#fff' },
-    'Other': { bgcolor: '#9e9e9e', color: '#fff' },
+    Auth: { bgcolor: '#d32f2f', color: '#fff' },
+    WebSocket: { bgcolor: '#1976d2', color: '#fff' },
+    API: { bgcolor: '#9c27b0', color: '#fff' },
+    Execution: { bgcolor: '#ed6c02', color: '#fff' },
+    Network: { bgcolor: '#0288d1', color: '#fff' },
+    Other: { bgcolor: '#9e9e9e', color: '#fff' },
   };
   return colors[category] || { bgcolor: '#9e9e9e', color: '#fff' };
 };
@@ -119,7 +119,7 @@ const ErrorIntelligenceLive = () => {
     category_counts: {},
   });
   const [newErrorIds, setNewErrorIds] = useState(new Set());
-  
+
   const scrollRef = useRef(null);
   const previousErrorCountRef = useRef(0);
 
@@ -130,7 +130,7 @@ const ErrorIntelligenceLive = () => {
     if (!silent) {
       setLoading(true);
     }
-    
+
     try {
       const response = await apiClient.get('/api/errors/live', {
         params: {
@@ -142,7 +142,7 @@ const ErrorIntelligenceLive = () => {
 
       if (response.success) {
         const newErrors = response.errors || [];
-        
+
         // Track new errors (for highlighting)
         if (previousErrorCountRef.current > 0 && newErrors.length > previousErrorCountRef.current) {
           const newIds = new Set();
@@ -151,13 +151,13 @@ const ErrorIntelligenceLive = () => {
             newIds.add(newErrors[i].timestamp + newErrors[i].message);
           }
           setNewErrorIds(newIds);
-          
+
           // Remove highlight after 60 seconds
           setTimeout(() => {
             setNewErrorIds(new Set());
           }, 60000);
         }
-        
+
         previousErrorCountRef.current = newErrors.length;
         setErrors(newErrors);
         setStats({
@@ -189,14 +189,14 @@ const ErrorIntelligenceLive = () => {
     }
 
     fetchErrors();
-    
+
     let interval;
     if (autoRefresh) {
       interval = setInterval(() => {
         fetchErrors(true); // Silent refresh
       }, 30000); // Every 30 seconds (was 5s - causing shaky UI)
     }
-    
+
     return () => {
       if (interval) clearInterval(interval);
     };
@@ -271,14 +271,16 @@ const ErrorIntelligenceLive = () => {
             sx={{
               '& .MuiBadge-badge': {
                 bgcolor: hasCritical ? '#d32f2f' : hasWarning ? '#ed6c02' : '#2e7d32',
-                color: '#fff'
-              }
+                color: '#fff',
+              },
             }}
             max={99}
           >
-            <LiveIcon sx={{ fontSize: 32, color: autoRefresh ? '#2e7d32' : 'rgba(0, 0, 0, 0.38)' }} />
+            <LiveIcon
+              sx={{ fontSize: 32, color: autoRefresh ? '#2e7d32' : 'rgba(0, 0, 0, 0.38)' }}
+            />
           </Badge>
-          
+
           <Box>
             <Typography variant="h6" fontWeight={600}>
               Live Error Monitor
@@ -307,7 +309,7 @@ const ErrorIntelligenceLive = () => {
               sx={{ fontWeight: 600, bgcolor: '#ed6c02', color: '#fff' }}
             />
           )}
-          
+
           {/* Controls */}
           <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Severity</InputLabel>
@@ -402,7 +404,7 @@ const ErrorIntelligenceLive = () => {
                   {errors.map((error, index) => {
                     const severityDisplay = getSeverityDisplay(error.severity);
                     const isNew = isNewError(error);
-                    
+
                     return (
                       <TableRow
                         key={`${error.timestamp}-${index}`}
@@ -489,7 +491,7 @@ const ErrorIntelligenceLive = () => {
               <Typography variant="caption" color="text.secondary">
                 Showing {errors.length} of {stats.total_count} errors
               </Typography>
-              
+
               <Box sx={{ display: 'flex', gap: 2 }}>
                 {Object.entries(stats.category_counts).map(([category, count]) => (
                   <Chip

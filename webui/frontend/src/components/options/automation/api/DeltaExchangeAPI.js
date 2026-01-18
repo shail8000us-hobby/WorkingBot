@@ -1,8 +1,8 @@
 /**
  * DeltaExchangeAPI - Real order execution service
- * 
+ *
  * Phase 3: Integrates with Delta Exchange API to place real orders
- * 
+ *
  * Features:
  * - Place market/limit orders
  * - Cancel orders
@@ -20,7 +20,7 @@ class DeltaExchangeAPI {
     this.apiKey = null;
     this.apiSecret = null;
     this.isInitialized = false;
-    
+
     // Auto-initialize from environment or localStorage
     this._autoInitialize();
   }
@@ -33,12 +33,12 @@ class DeltaExchangeAPI {
     // Try environment variables first
     const envApiKey = process.env.REACT_APP_DELTA_API_KEY;
     const envApiSecret = process.env.REACT_APP_DELTA_API_SECRET;
-    
+
     if (envApiKey && envApiSecret) {
       this.initialize(envApiKey, envApiSecret);
       return;
     }
-    
+
     // Try localStorage (saved from settings)
     try {
       const savedKey = localStorage.getItem('delta_api_key');
@@ -50,7 +50,7 @@ class DeltaExchangeAPI {
     } catch (e) {
       // localStorage not available
     }
-    
+
     // Backend-proxy mode: no client-side keys needed
     // Backend will use its own credentials
     this.isInitialized = true;
@@ -109,7 +109,7 @@ class DeltaExchangeAPI {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${this.apiKey}`,
           },
           timeout: 10000, // 10 second timeout
         }
@@ -131,7 +131,7 @@ class DeltaExchangeAPI {
       }
     } catch (error) {
       console.error('[DeltaExchangeAPI] Order placement error:', error);
-      
+
       return {
         success: false,
         error: error.response?.data?.error || error.message,
@@ -153,18 +153,15 @@ class DeltaExchangeAPI {
     try {
       console.log('[DeltaExchangeAPI] Cancelling order:', orderId);
 
-      const response = await axios.delete(
-        `${this.baseURL}/api/orders/${orderId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-          },
-          params: {
-            product_id: symbol,
-          },
-          timeout: 10000,
-        }
-      );
+      const response = await axios.delete(`${this.baseURL}/api/orders/${orderId}`, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        params: {
+          product_id: symbol,
+        },
+        timeout: 10000,
+      });
 
       if (response.data && response.data.success) {
         console.log('[DeltaExchangeAPI] Order cancelled successfully');
@@ -178,7 +175,7 @@ class DeltaExchangeAPI {
       }
     } catch (error) {
       console.error('[DeltaExchangeAPI] Order cancellation error:', error);
-      
+
       return {
         success: false,
         error: error.response?.data?.error || error.message,
@@ -196,15 +193,12 @@ class DeltaExchangeAPI {
     this.checkInitialized();
 
     try {
-      const response = await axios.get(
-        `${this.baseURL}/api/orders/${orderId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-          },
-          timeout: 5000,
-        }
-      );
+      const response = await axios.get(`${this.baseURL}/api/orders/${orderId}`, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        timeout: 5000,
+      });
 
       if (response.data && response.data.success) {
         const order = response.data.result;
@@ -237,22 +231,19 @@ class DeltaExchangeAPI {
     this.checkInitialized();
 
     try {
-      const response = await axios.get(
-        `${this.baseURL}/api/wallet/balances`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-          },
-          timeout: 5000,
-        }
-      );
+      const response = await axios.get(`${this.baseURL}/api/wallet/balances`, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        timeout: 5000,
+      });
 
       if (response.data && response.data.success) {
         const balances = response.data.result;
-        
+
         // Find BTC balance (Delta Exchange uses BTC as margin)
-        const btcBalance = balances.find(b => b.asset_symbol === 'BTC');
-        
+        const btcBalance = balances.find((b) => b.asset_symbol === 'BTC');
+
         return {
           success: true,
           availableBalance: btcBalance?.available_balance || 0,
@@ -281,15 +272,12 @@ class DeltaExchangeAPI {
     this.checkInitialized();
 
     try {
-      const response = await axios.get(
-        `${this.baseURL}/api/positions`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-          },
-          timeout: 5000,
-        }
-      );
+      const response = await axios.get(`${this.baseURL}/api/positions`, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        timeout: 5000,
+      });
 
       if (response.data && response.data.success) {
         return {
@@ -320,7 +308,7 @@ class DeltaExchangeAPI {
   async closePosition(symbol, size, side) {
     // Reverse the side to close
     const closeSide = side === 'buy' ? 'sell' : 'buy';
-    
+
     return await this.placeOrder({
       symbol,
       side: closeSide,
@@ -336,7 +324,7 @@ class DeltaExchangeAPI {
    */
   async closeAllPositions(positions) {
     const results = [];
-    
+
     for (const position of positions) {
       try {
         const result = await this.closePosition(
@@ -345,9 +333,9 @@ class DeltaExchangeAPI {
           position.size > 0 ? 'buy' : 'sell'
         );
         results.push({ position: position.product_symbol, ...result });
-        
+
         // Small delay between closes to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 200));
       } catch (error) {
         results.push({
           position: position.product_symbol,
@@ -356,7 +344,7 @@ class DeltaExchangeAPI {
         });
       }
     }
-    
+
     return results;
   }
 
@@ -367,17 +355,14 @@ class DeltaExchangeAPI {
    */
   async getProductSpecs(symbol) {
     try {
-      const response = await axios.get(
-        `${this.baseURL}/api/products`,
-        {
-          timeout: 5000,
-        }
-      );
+      const response = await axios.get(`${this.baseURL}/api/products`, {
+        timeout: 5000,
+      });
 
       if (response.data && response.data.success) {
         const products = response.data.result;
-        const product = products.find(p => p.symbol === symbol);
-        
+        const product = products.find((p) => p.symbol === symbol);
+
         if (product) {
           return {
             success: true,
@@ -390,7 +375,7 @@ class DeltaExchangeAPI {
           };
         }
       }
-      
+
       throw new Error(`Product ${symbol} not found`);
     } catch (error) {
       console.error('[DeltaExchangeAPI] Get product specs error:', error);
@@ -407,11 +392,8 @@ class DeltaExchangeAPI {
    */
   async healthCheck() {
     try {
-      const response = await axios.get(
-        `${this.baseURL}/api/products`,
-        { timeout: 5000 }
-      );
-      
+      const response = await axios.get(`${this.baseURL}/api/products`, { timeout: 5000 });
+
       return response.status === 200;
     } catch (error) {
       console.error('[DeltaExchangeAPI] Health check failed:', error);

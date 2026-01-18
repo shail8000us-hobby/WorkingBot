@@ -14,7 +14,7 @@ import {
   TrendingDown,
   FileWarning,
   Info,
-  Layers
+  Layers,
 } from 'lucide-react';
 import api from '../utils/apiShim';
 import HelpIcon from './help/HelpIcon';
@@ -27,7 +27,7 @@ const formatCurrency = (value, currency = 'INR') => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 2,
   }).format(amount);
 };
 
@@ -49,20 +49,41 @@ const formatUptime = (seconds) => {
 };
 
 const riskDescriptor = (loss, limit) => {
-  if (!limit || limit <= 0) return { level: 'unknown', label: 'Unknown', variant: 'bg-slate-700 text-slate-200', progress: 0 };
+  if (!limit || limit <= 0)
+    return {
+      level: 'unknown',
+      label: 'Unknown',
+      variant: 'bg-slate-700 text-slate-200',
+      progress: 0,
+    };
   const ratio = Math.min(Math.max(Math.abs(loss) / limit, 0), 1);
   if (ratio >= 1) {
-    return { level: 'critical', label: 'Critical', variant: 'bg-rose-500/20 text-rose-200 border border-rose-500/40', progress: ratio * 100 };
+    return {
+      level: 'critical',
+      label: 'Critical',
+      variant: 'bg-rose-500/20 text-rose-200 border border-rose-500/40',
+      progress: ratio * 100,
+    };
   }
   if (ratio >= 0.85) {
-    return { level: 'warning', label: 'Warning', variant: 'bg-amber-500/20 text-amber-200 border border-amber-500/40', progress: ratio * 100 };
+    return {
+      level: 'warning',
+      label: 'Warning',
+      variant: 'bg-amber-500/20 text-amber-200 border border-amber-500/40',
+      progress: ratio * 100,
+    };
   }
-  return { level: 'safe', label: 'Safe', variant: 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/40', progress: ratio * 100 };
+  return {
+    level: 'safe',
+    label: 'Safe',
+    variant: 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/40',
+    progress: ratio * 100,
+  };
 };
 
 /**
  * GuardianPanel - Multi-Symbol Safety Monitor (v5.0)
- * 
+ *
  * Features:
  * - Shows per-symbol loss tracking
  * - Global portfolio risk summary
@@ -71,7 +92,12 @@ const riskDescriptor = (loss, limit) => {
 const GuardianPanel = () => {
   const { selectedInstance, withInstance } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
-  const [guardianStatus, setGuardianStatus] = useState({ running: false, health: null, symbols: {}, global: {} });
+  const [guardianStatus, setGuardianStatus] = useState({
+    running: false,
+    health: null,
+    symbols: {},
+    global: {},
+  });
   const [resolvedState, setResolvedState] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -83,7 +109,10 @@ const GuardianPanel = () => {
       setGuardianStatus(response.data);
     } catch (error) {
       console.error('Error fetching Guardian status:', error);
-      setNotification({ type: 'error', message: 'Unable to retrieve Guardian status. Check connection.' });
+      setNotification({
+        type: 'error',
+        message: 'Unable to retrieve Guardian status. Check connection.',
+      });
     }
   }, [withInstance]);
 
@@ -124,48 +153,66 @@ const GuardianPanel = () => {
   };
 
   const handleStartGuardian = () =>
-    runGuardianAction('/api/guardian/start', 'Guardian safety process started.', 'Failed to start Guardian.');
+    runGuardianAction(
+      '/api/guardian/start',
+      'Guardian safety process started.',
+      'Failed to start Guardian.'
+    );
 
   const handleStopGuardian = () =>
-    runGuardianAction('/api/guardian/stop', 'Guardian safety process stopped.', 'Failed to stop Guardian.');
+    runGuardianAction(
+      '/api/guardian/stop',
+      'Guardian safety process stopped.',
+      'Failed to stop Guardian.'
+    );
 
   const { running, health, symbols = {}, global = {} } = guardianStatus;
-  
+
   // Use resolved state for guardian_active (single source of truth)
   const guardianActive = resolvedState?.guardian_active ?? false;
   const guardianState = resolvedState?.guardian?.state ?? (running ? 'ACTIVE' : 'STOPPED');
-  const guardianReason = resolvedState?.guardian?.reason ?? (running ? 'Guardian monitoring active' : 'Guardian service not running');
+  const guardianReason =
+    resolvedState?.guardian?.reason ??
+    (running ? 'Guardian monitoring active' : 'Guardian service not running');
   const lastDecisionTime = resolvedState?.guardian?.last_decision_time ?? null;
 
   const monitoring = health?.monitoring;
   const config = health?.config || {};
-  
+
   // Use global data from new multi-symbol API
   const totalLoss = Number(global?.total_loss_inr) || Number(monitoring?.total_loss_inr || 0);
-  const maxLoss = Number(global?.total_capital_inr * 0.1) || Number(config.max_account_loss_inr) || Number(health?.max_loss_inr) || 5000;
+  const maxLoss =
+    Number(global?.total_capital_inr * 0.1) ||
+    Number(config.max_account_loss_inr) ||
+    Number(health?.max_loss_inr) ||
+    5000;
   const risk = useMemo(() => riskDescriptor(totalLoss, maxLoss), [totalLoss, maxLoss]);
 
   const infoBlocks = [
     {
       title: 'Multi-Symbol Monitoring',
-      description: 'Tracks losses per symbol independently. BTCUSD and ETHUSD have separate loss limits.',
-      icon: <Layers className="h-4 w-4 text-sky-300" />
+      description:
+        'Tracks losses per symbol independently. BTCUSD and ETHUSD have separate loss limits.',
+      icon: <Layers className="h-4 w-4 text-sky-300" />,
     },
     {
       title: 'Portfolio Protection',
-      description: 'Auto-stops all trading if total portfolio loss exceeds 10% of allocated capital.',
-      icon: <AlertTriangle className="h-4 w-4 text-amber-300" />
+      description:
+        'Auto-stops all trading if total portfolio loss exceeds 10% of allocated capital.',
+      icon: <AlertTriangle className="h-4 w-4 text-amber-300" />,
     },
     {
       title: 'Independent Process',
-      description: 'Runs as a dedicated background service managed by LaunchAgent, resilient to terminal crashes.',
-      icon: <Cpu className="h-4 w-4 text-emerald-300" />
+      description:
+        'Runs as a dedicated background service managed by LaunchAgent, resilient to terminal crashes.',
+      icon: <Cpu className="h-4 w-4 text-emerald-300" />,
     },
     {
       title: 'Telegram Alerts',
-      description: 'Broadcasts alerts at 80%, 90%, and 100% of risk thresholds with timestamps and recommended actions.',
-      icon: <FileWarning className="h-4 w-4 text-rose-300" />
-    }
+      description:
+        'Broadcasts alerts at 80%, 90%, and 100% of risk thresholds with timestamps and recommended actions.',
+      icon: <FileWarning className="h-4 w-4 text-rose-300" />,
+    },
   ];
 
   return (
@@ -174,7 +221,8 @@ const GuardianPanel = () => {
         <div
           className={clsx(
             'flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg',
-            notification.type === 'success' && 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100',
+            notification.type === 'success' &&
+              'border-emerald-500/40 bg-emerald-500/10 text-emerald-100',
             notification.type === 'error' && 'border-rose-500/40 bg-rose-500/10 text-rose-100',
             notification.type === 'info' && 'border-sky-500/40 bg-sky-500/10 text-sky-100'
           )}
@@ -211,15 +259,18 @@ const GuardianPanel = () => {
                   <span
                     className={clsx(
                       'h-2 w-2 rounded-full',
-                      guardianActive ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_2px_rgba(16,185,129,0.45)]' : 'bg-slate-500'
+                      guardianActive
+                        ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_2px_rgba(16,185,129,0.45)]'
+                        : 'bg-slate-500'
                     )}
                   />
                   {guardianState}
                 </span>
               </div>
               <p className="mt-2 max-w-xl text-sm text-slate-200/85">
-                A dedicated kill-switch guardian watching every position and stopping catastrophic drawdowns before
-                they spiral. Keep it online for institutional-grade capital protection.
+                A dedicated kill-switch guardian watching every position and stopping catastrophic
+                drawdowns before they spiral. Keep it online for institutional-grade capital
+                protection.
               </p>
             </div>
           </div>
@@ -249,7 +300,11 @@ const GuardianPanel = () => {
                 Last Check
               </span>
               <p className="mt-2 text-lg font-semibold text-slate-100">
-                {lastDecisionTime ? new Date(lastDecisionTime).toLocaleTimeString() : (guardianActive && health?.seconds_since_check !== undefined ? `${health.seconds_since_check}s ago` : '—')}
+                {lastDecisionTime
+                  ? new Date(lastDecisionTime).toLocaleTimeString()
+                  : guardianActive && health?.seconds_since_check !== undefined
+                    ? `${health.seconds_since_check}s ago`
+                    : '—'}
               </p>
             </div>
           </div>
@@ -266,8 +321,8 @@ const GuardianPanel = () => {
               Engage or pause Guardian’s automated risk shield.
             </h3>
             <p className="text-sm text-slate-400">
-              Guardian should be online before you power the trading bot — it is your last line of defense if exchange
-              volatility spikes or infrastructure misbehaves.
+              Guardian should be online before you power the trading bot — it is your last line of
+              defense if exchange volatility spikes or infrastructure misbehaves.
             </p>
           </div>
 
@@ -350,7 +405,11 @@ const GuardianPanel = () => {
                   <Clock className="h-4 w-4 text-sky-300" />
                   Next Check ETA
                 </span>
-                <span>{config.check_interval_seconds ? `${config.check_interval_seconds}s` : '10s default'}</span>
+                <span>
+                  {config.check_interval_seconds
+                    ? `${config.check_interval_seconds}s`
+                    : '10s default'}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-slate-400">
@@ -406,8 +465,10 @@ const GuardianPanel = () => {
                   <div
                     className={clsx(
                       'h-full rounded-full transition-all',
-                      risk.level === 'critical' && 'bg-gradient-to-r from-rose-500 via-rose-400 to-amber-400',
-                      risk.level === 'warning' && 'bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-300',
+                      risk.level === 'critical' &&
+                        'bg-gradient-to-r from-rose-500 via-rose-400 to-amber-400',
+                      risk.level === 'warning' &&
+                        'bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-300',
                       risk.level === 'safe' && 'bg-gradient-to-r from-emerald-400 to-sky-400',
                       risk.level === 'unknown' && 'bg-slate-500'
                     )}
@@ -415,10 +476,17 @@ const GuardianPanel = () => {
                   />
                 </div>
                 <span className="text-xs uppercase tracking-wider text-slate-400">
-                  {risk.level === 'unknown' ? 'No loss limit detected; update Guardian config.' : `${Math.min(risk.progress, 100).toFixed(1)}% of loss ceiling`}
+                  {risk.level === 'unknown'
+                    ? 'No loss limit detected; update Guardian config.'
+                    : `${Math.min(risk.progress, 100).toFixed(1)}% of loss ceiling`}
                 </span>
               </div>
-              <div className={clsx('inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase', risk.variant)}>
+              <div
+                className={clsx(
+                  'inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase',
+                  risk.variant
+                )}
+              >
                 {risk.level === 'critical' && <AlertTriangle className="h-3.5 w-3.5" />}
                 {risk.level === 'warning' && <AlertTriangle className="h-3.5 w-3.5" />}
                 {risk.level === 'safe' && <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -433,7 +501,10 @@ const GuardianPanel = () => {
             </h3>
             <div className="mt-5 grid gap-4">
               {infoBlocks.map((block) => (
-                <div key={block.title} className="flex gap-3 rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-sm text-slate-300">
+                <div
+                  key={block.title}
+                  className="flex gap-3 rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-sm text-slate-300"
+                >
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800/60">
                     {block.icon}
                   </div>
@@ -463,12 +534,13 @@ const GuardianPanel = () => {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Object.entries(symbols).map(([sym, data]) => {
               const symbolLoss = Math.abs(Number(data?.loss_inr || 0));
-              const symbolLimit = Number(data?.loss_limit_inr) || maxLoss / Object.keys(symbols).length;
+              const symbolLimit =
+                Number(data?.loss_limit_inr) || maxLoss / Object.keys(symbols).length;
               const symbolRisk = riskDescriptor(symbolLoss, symbolLimit);
               const pnl = Number(data?.pnl_inr || 0);
               const positionCount = Number(data?.position_count || 0);
               const currentSymbol = instanceInfo?.symbol || 'BTCUSD';
-              
+
               return (
                 <div
                   key={sym}
@@ -481,34 +553,40 @@ const GuardianPanel = () => {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <SymbolBadge symbol={sym} selected={sym === currentSymbol} />
-                    <span className={clsx(
-                      'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase',
-                      symbolRisk.variant
-                    )}>
+                    <span
+                      className={clsx(
+                        'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase',
+                        symbolRisk.variant
+                      )}
+                    >
                       {symbolRisk.label}
                     </span>
                   </div>
-                  
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-400">Positions</span>
                       <span className="font-semibold text-slate-200">{positionCount}</span>
                     </div>
-                    
+
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-400">P&L</span>
-                      <span className={clsx(
-                        'font-semibold',
-                        pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'
-                      )}>
+                      <span
+                        className={clsx(
+                          'font-semibold',
+                          pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                        )}
+                      >
                         {formatCurrency(pnl)}
                       </span>
                     </div>
-                    
+
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs text-slate-400">
                         <span>Loss vs Limit</span>
-                        <span className="font-mono">{formatCurrency(symbolLoss)} / {formatCurrency(symbolLimit)}</span>
+                        <span className="font-mono">
+                          {formatCurrency(symbolLoss)} / {formatCurrency(symbolLimit)}
+                        </span>
                       </div>
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
                         <div
@@ -528,27 +606,33 @@ const GuardianPanel = () => {
               );
             })}
           </div>
-          
+
           {/* Global Portfolio Summary */}
           <div className="mt-4 pt-4 border-t border-slate-800/60">
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-center">
-                <p className="text-xs uppercase tracking-wider text-slate-400">Total Portfolio Value</p>
+                <p className="text-xs uppercase tracking-wider text-slate-400">
+                  Total Portfolio Value
+                </p>
                 <p className="mt-1 text-lg font-semibold text-slate-100">
                   {formatCurrency(global?.total_capital_inr || 0)}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-center">
                 <p className="text-xs uppercase tracking-wider text-slate-400">Aggregate P&L</p>
-                <p className={clsx(
-                  'mt-1 text-lg font-semibold',
-                  (global?.total_pnl_inr || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'
-                )}>
+                <p
+                  className={clsx(
+                    'mt-1 text-lg font-semibold',
+                    (global?.total_pnl_inr || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                  )}
+                >
                   {formatCurrency(global?.total_pnl_inr || monitoring?.total_pnl_inr || 0)}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-800/40 bg-slate-900/60 p-3 text-center">
-                <p className="text-xs uppercase tracking-wider text-slate-400">Total Loss (All Symbols)</p>
+                <p className="text-xs uppercase tracking-wider text-slate-400">
+                  Total Loss (All Symbols)
+                </p>
                 <p className="mt-1 text-lg font-semibold text-rose-300">
                   {formatCurrency(totalLoss)}
                 </p>
@@ -576,7 +660,9 @@ const GuardianPanel = () => {
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
               <p className="font-semibold">Best practice</p>
               <p className="mt-2 text-xs text-emerald-200/90">
-                Start Guardian immediately after system boot. Confirm its PID appears above before enabling live trading. This mirrors institutional guardrails applied by professional desks.
+                Start Guardian immediately after system boot. Confirm its PID appears above before
+                enabling live trading. This mirrors institutional guardrails applied by professional
+                desks.
               </p>
             </div>
           </div>

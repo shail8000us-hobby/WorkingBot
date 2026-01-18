@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, Typography, Grid, Box, Chip, LinearProgress, Button, Tooltip } from '@mui/material';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  Typography,
+  Grid,
+  Box,
+  Chip,
+  LinearProgress,
+  Button,
+  Tooltip,
+} from '@mui/material';
 import { CheckCircle, Refresh, Delete } from '@mui/icons-material';
 import axios from 'axios';
 import { useInstance, parseInstanceName } from '../../context/InstanceContext';
@@ -51,7 +62,9 @@ const MonitoringRecoveryPanel = () => {
         <CardHeader title="🔍 Monitoring & Recovery System" />
         <CardContent>
           <LinearProgress />
-          <Typography variant="body2" sx={{ mt: 2 }}>Loading system status...</Typography>
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            Loading system status...
+          </Typography>
         </CardContent>
       </Card>
     );
@@ -73,7 +86,7 @@ const MonitoringRecoveryPanel = () => {
 
   return (
     <Card>
-      <CardHeader 
+      <CardHeader
         title="🔍 Monitoring & Recovery System"
         action={
           <Box>
@@ -90,7 +103,6 @@ const MonitoringRecoveryPanel = () => {
       />
       <CardContent>
         <Grid container spacing={3}>
-          
           {/* Monitoring System Section */}
           <Grid item xs={12}>
             <Typography variant="h6" gutterBottom>
@@ -116,28 +128,32 @@ const MonitoringRecoveryPanel = () => {
                 <CardContent>
                   <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                     <Box display="flex" alignItems="center" gap={1}>
-                      <CheckCircle color={data.recovery.active ? "warning" : "success"} />
+                      <CheckCircle color={data.recovery.active ? 'warning' : 'success'} />
                       <Typography variant="subtitle1" fontWeight="bold">
                         Recovery Status
                       </Typography>
                     </Box>
-                    <Chip 
-                      label={data.recovery.active ? "ACTIVE" : "IDLE"} 
-                      color={data.recovery.active ? "warning" : "success"} 
+                    <Chip
+                      label={data.recovery.active ? 'ACTIVE' : 'IDLE'}
+                      color={data.recovery.active ? 'warning' : 'success'}
                     />
                   </Box>
-                  
+
                   <Grid container spacing={2}>
                     <Grid item xs={12} md={6}>
-                      <Typography variant="body2" color="textSecondary">Last Recovery</Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Last Recovery
+                      </Typography>
                       <Typography variant="body1">
-                        {data.recovery.last_recovery 
+                        {data.recovery.last_recovery
                           ? new Date(data.recovery.last_recovery * 1000).toLocaleString()
                           : 'Never'}
                       </Typography>
                     </Grid>
                     <Grid item xs={12} md={6}>
-                      <Typography variant="body2" color="textSecondary">Recovered Grids</Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Recovered Grids
+                      </Typography>
                       <Typography variant="body1">
                         {data.recovery.recovered_grids?.length || 0} grids
                       </Typography>
@@ -150,7 +166,9 @@ const MonitoringRecoveryPanel = () => {
                         Recovered Grid Levels:
                       </Typography>
                       <Typography variant="caption" color="textSecondary">
-                        {data.recovery.recovered_grids.map(g => `$${g.toLocaleString()}`).join(', ')}
+                        {data.recovery.recovered_grids
+                          .map((g) => `$${g.toLocaleString()}`)
+                          .join(', ')}
                       </Typography>
                     </Box>
                   )}
@@ -159,25 +177,34 @@ const MonitoringRecoveryPanel = () => {
                     <Typography variant="body2" color="textSecondary">
                       <strong>ℹ️ Standalone Recovery System</strong>
                     </Typography>
-                    <Typography variant="caption" color="textSecondary" display="block" sx={{ mt: 1 }}>
+                    <Typography
+                      variant="caption"
+                      color="textSecondary"
+                      display="block"
+                      sx={{ mt: 1 }}
+                    >
                       Recovery runs independently before bot startup. To run recovery:
                     </Typography>
-                    <Typography variant="caption" component="pre" sx={{ mt: 1, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
+                    <Typography
+                      variant="caption"
+                      component="pre"
+                      sx={{ mt: 1, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}
+                    >
                       python3 -m bot.strategy.recovery.recovery_runner
                     </Typography>
                   </Box>
 
                   <Box display="flex" gap={1} mt={2}>
-                    <Button 
-                      size="small" 
+                    <Button
+                      size="small"
                       variant="outlined"
                       startIcon={<Delete />}
                       onClick={handleClearState}
                     >
                       Clear State
                     </Button>
-                    <Button 
-                      size="small" 
+                    <Button
+                      size="small"
                       variant="outlined"
                       onClick={fetchData}
                       startIcon={<Refresh />}
@@ -193,13 +220,13 @@ const MonitoringRecoveryPanel = () => {
               <Card variant="outlined">
                 <CardContent>
                   <Typography color="textSecondary">
-                    Recovery system not available. Run standalone recovery script before starting bot.
+                    Recovery system not available. Run standalone recovery script before starting
+                    bot.
                   </Typography>
                 </CardContent>
               </Card>
             </Grid>
           )}
-
         </Grid>
       </CardContent>
     </Card>

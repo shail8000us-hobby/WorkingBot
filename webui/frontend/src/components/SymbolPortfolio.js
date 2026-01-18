@@ -33,14 +33,14 @@ import { getSymbolColor } from '../utils/symbolColors.ts';
 
 /**
  * SymbolPortfolio - Multi-Symbol Overview Dashboard (Phase 5)
- * 
+ *
  * Shows all configured symbols at once with:
  * - Status (enabled/disabled)
  * - Current PnL
  * - Position count
  * - Grid configuration
  * - Quick actions (view, enable/disable)
- * 
+ *
  * Modern UI Features:
  * - Skeleton loading states
  * - Smooth animations with framer-motion
@@ -54,23 +54,25 @@ const SymbolPortfolio = () => {
   const changeInstance = instanceContext?.changeInstance || (() => {});
   const loadInstances = instanceContext?.loadInstances || (() => {});
   const instancesLoading = instanceContext?.loading || false;
-  
+
   // Backward compat: derive symbols from instances
-  const symbols = instances.map(i => {
-    const parsed = parseInstance(i.name);
-    return { name: parsed?.symbol, enabled: i.enabled };
-  }).filter((v, i, a) => a.findIndex(t => t.name === v.name) === i);
+  const symbols = instances
+    .map((i) => {
+      const parsed = parseInstance(i.name);
+      return { name: parsed?.symbol, enabled: i.enabled };
+    })
+    .filter((v, i, a) => a.findIndex((t) => t.name === v.name) === i);
   const selectedSymbol = parseInstance(selectedInstance)?.symbol;
   const changeSymbol = (sym) => changeInstance(`${sym}_LONG`);
   const loadSymbols = loadInstances;
   const symbolsLoading = instancesLoading;
-  
+
   const [portfolioData, setPortfolioData] = useState({});
   const [loading, setLoading] = useState(true);
   const [totalPnL, setTotalPnL] = useState(0);
   const [totalCapital, setTotalCapital] = useState(0);
   const [lastRefresh, setLastRefresh] = useState(null);
-  
+
   // Add Symbol Dialog state
   const [addSymbolDialogOpen, setAddSymbolDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -95,14 +97,14 @@ const SymbolPortfolio = () => {
           // Fetch positions
           const posResponse = await fetch(`/api/positions?symbol=${symbol.name}`);
           const posData = await posResponse.json();
-          
+
           // Fetch config
           const configResponse = await fetch(`/api/config/flat?symbol=${symbol.name}`);
           const configData = await configResponse.json();
 
           const positions = posData?.positions || [];
           const unrealizedPnL = positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
-          
+
           data[symbol.name] = {
             symbol: symbol.name,
             enabled: symbol.enabled,
@@ -129,7 +131,7 @@ const SymbolPortfolio = () => {
       });
 
       await Promise.all(promises);
-      
+
       setPortfolioData(data);
       setTotalPnL(pnlSum);
       setTotalCapital(capitalSum);
@@ -170,16 +172,19 @@ const SymbolPortfolio = () => {
   };
 
   // Handle new symbol creation
-  const handleAddSymbolSuccess = useCallback((symbolName) => {
-    setSnackbar({
-      open: true,
-      message: `Symbol ${symbolName} added successfully! Enable it to start trading.`,
-      severity: 'success'
-    });
-    // Reload symbols to show new one
-    loadSymbols();
-    fetchPortfolioData();
-  }, [loadSymbols, fetchPortfolioData]);
+  const handleAddSymbolSuccess = useCallback(
+    (symbolName) => {
+      setSnackbar({
+        open: true,
+        message: `Symbol ${symbolName} added successfully! Enable it to start trading.`,
+        severity: 'success',
+      });
+      // Reload symbols to show new one
+      loadSymbols();
+      fetchPortfolioData();
+    },
+    [loadSymbols, fetchPortfolioData]
+  );
 
   // Loading skeleton component
   const SkeletonCard = () => (
@@ -231,11 +236,7 @@ const SymbolPortfolio = () => {
         <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
           Add instances in config/symbols.yaml to see your portfolio here
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<Refresh />}
-          onClick={() => loadInstances()}
-        >
+        <Button variant="outlined" startIcon={<Refresh />} onClick={() => loadInstances()}>
           Refresh
         </Button>
       </Box>
@@ -264,9 +265,21 @@ const SymbolPortfolio = () => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          mb: 4,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="h4"
+            sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}
+          >
             <ShowChart sx={{ fontSize: 32 }} />
             Multi-Symbol Portfolio
           </Typography>
@@ -282,14 +295,22 @@ const SymbolPortfolio = () => {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          {loading && <Typography variant="caption" color="primary.main">Refreshing...</Typography>}
+          {loading && (
+            <Typography variant="caption" color="primary.main">
+              Refreshing...
+            </Typography>
+          )}
           <Tooltip title="Refresh all symbol data">
             <IconButton
               onClick={() => {
                 loadSymbols();
                 fetchPortfolioData();
               }}
-              sx={{ bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' } }}
+              sx={{
+                bgcolor: 'primary.main',
+                color: 'white',
+                '&:hover': { bgcolor: 'primary.dark' },
+              }}
             >
               <Refresh />
             </IconButton>
@@ -340,7 +361,7 @@ const SymbolPortfolio = () => {
                 Active Symbols
               </Typography>
               <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                {symbols.filter(s => s.enabled).length} / {symbols.length}
+                {symbols.filter((s) => s.enabled).length} / {symbols.length}
               </Typography>
             </CardContent>
           </Card>
@@ -377,7 +398,14 @@ const SymbolPortfolio = () => {
                 >
                   <CardContent>
                     {/* Header */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        mb: 2,
+                      }}
+                    >
                       <SymbolBadge symbol={symbol.name} size="lg" variant="solid" />
                       <Chip
                         icon={symbol.enabled ? <PlayArrow /> : <Pause />}
@@ -413,7 +441,11 @@ const SymbolPortfolio = () => {
                               gap: 0.5,
                             }}
                           >
-                            {data.pnl >= 0 ? <TrendingUp fontSize="small" /> : <TrendingDown fontSize="small" />}
+                            {data.pnl >= 0 ? (
+                              <TrendingUp fontSize="small" />
+                            ) : (
+                              <TrendingDown fontSize="small" />
+                            )}
                             {formatCurrency(data.pnl || 0)}
                           </Typography>
                         </Box>
@@ -434,7 +466,8 @@ const SymbolPortfolio = () => {
                             Grid Range
                           </Typography>
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            ${data.gridLower?.toLocaleString()} - ${data.gridUpper?.toLocaleString()}
+                            ${data.gridLower?.toLocaleString()} - $
+                            {data.gridUpper?.toLocaleString()}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
                             {data.gridLevels} levels
@@ -532,7 +565,7 @@ const SymbolPortfolio = () => {
         open={addSymbolDialogOpen}
         onClose={() => setAddSymbolDialogOpen(false)}
         onSuccess={handleAddSymbolSuccess}
-        existingSymbols={symbols.map(s => s.name)}
+        existingSymbols={symbols.map((s) => s.name)}
       />
 
       {/* Success/Error Snackbar */}
@@ -542,8 +575,8 @@ const SymbolPortfolio = () => {
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           sx={{ width: '100%' }}
         >

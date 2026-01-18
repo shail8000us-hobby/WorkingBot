@@ -49,7 +49,7 @@ export class MessageQueue {
     this.maxRetries = options.maxRetries || 3;
     this.retryDelay = options.retryDelay || 1000;
     this.persistence = options.persistence !== false;
-    
+
     if (this.persistence) this.loadQueue();
   }
 
@@ -61,7 +61,7 @@ export class MessageQueue {
       retries: 0,
       maxRetries: options.maxRetries || this.maxRetries,
       priority: options.priority || 0,
-      metadata: options.metadata || {}
+      metadata: options.metadata || {},
     };
 
     if (this.queue.length >= this.maxQueueSize) {
@@ -102,7 +102,7 @@ export class MessageQueue {
         itemsToRemove.push(item.id);
       } catch (error) {
         item.retries++;
-        
+
         if (item.retries >= item.maxRetries) {
           console.error(`❌ Message failed after ${item.retries} retries:`, item.message);
           failed++;
@@ -113,7 +113,7 @@ export class MessageQueue {
       }
     }
 
-    this.queue = this.queue.filter(item => !itemsToRemove.includes(item.id));
+    this.queue = this.queue.filter((item) => !itemsToRemove.includes(item.id));
 
     if (this.persistence) this.saveQueue();
 

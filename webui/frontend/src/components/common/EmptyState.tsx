@@ -5,7 +5,7 @@ import clsx from 'clsx';
 /**
  * EmptyState Component
  * Placeholder for empty data states
- * 
+ *
  * Created: January 18, 2026 (Migrated to TypeScript)
  * Safe: Pure UI component, no functional changes
  */
@@ -25,10 +25,15 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   description = 'There is nothing to display at the moment.',
   action,
   actionLabel = 'Get Started',
-  className
+  className,
 }) => {
   return (
-    <div className={clsx('flex flex-col items-center justify-center py-12 px-4 text-center', className)}>
+    <div
+      className={clsx(
+        'flex flex-col items-center justify-center py-12 px-4 text-center',
+        className
+      )}
+    >
       {/* Animated background */}
       <div className="relative mb-6">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-full blur-2xl" />
@@ -36,15 +41,11 @@ const EmptyState: React.FC<EmptyStateProps> = ({
           <Icon className="w-12 h-12 text-slate-400" />
         </div>
       </div>
-      
+
       {/* Content */}
-      <h3 className="text-xl font-semibold text-slate-100 mb-2">
-        {title}
-      </h3>
-      <p className="text-sm text-slate-400 max-w-md mb-6">
-        {description}
-      </p>
-      
+      <h3 className="text-xl font-semibold text-slate-100 mb-2">{title}</h3>
+      <p className="text-sm text-slate-400 max-w-md mb-6">{description}</p>
+
       {/* Optional action button */}
       {action && (
         <button

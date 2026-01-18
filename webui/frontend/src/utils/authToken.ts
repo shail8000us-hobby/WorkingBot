@@ -1,6 +1,6 @@
 /**
  * Auth Token Management
- * 
+ *
  * Migrated to TypeScript: January 18, 2026
  * Safe: Pure utility functions for token management
  */
@@ -55,7 +55,9 @@ export const getAuthToken = (): string => {
   }
 
   if (typeof window !== 'undefined') {
-    const globalToken = normalize((window as any).__WEBUI_AUTH_TOKEN__ || (window as any).WEBUI_AUTH_TOKEN);
+    const globalToken = normalize(
+      (window as any).__WEBUI_AUTH_TOKEN__ || (window as any).WEBUI_AUTH_TOKEN
+    );
     if (globalToken) {
       cachedToken = globalToken;
       return cachedToken;
@@ -76,7 +78,10 @@ export const getAuthToken = (): string => {
   return cachedToken;
 };
 
-export const setAuthToken = (token: string, { persist = true }: SetAuthTokenOptions = {}): string => {
+export const setAuthToken = (
+  token: string,
+  { persist = true }: SetAuthTokenOptions = {}
+): string => {
   const normalized = normalize(token);
   cachedToken = normalized;
 

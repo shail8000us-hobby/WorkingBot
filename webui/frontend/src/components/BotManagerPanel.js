@@ -21,16 +21,9 @@ import {
   DialogActions,
   Snackbar,
   Alert,
-  CircularProgress
+  CircularProgress,
 } from '@mui/material';
-import {
-  Refresh,
-  Stop,
-  Memory,
-  Computer,
-  Speed,
-  Timer
-} from '@mui/icons-material';
+import { Refresh, Stop, Memory, Computer, Speed, Timer } from '@mui/icons-material';
 import axios from 'axios';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 
@@ -50,7 +43,7 @@ const BotManagerPanel = () => {
     try {
       setLoading(true);
       const response = await axios.get('/api/bots/status');
-      
+
       if (response.data.success) {
         setBots(response.data.bots || []);
         setTotalBots(response.data.totalBots || 0);
@@ -70,7 +63,7 @@ const BotManagerPanel = () => {
     try {
       setLoading(true);
       const response = await axios.post('/api/bots/stop', { pid });
-      
+
       if (response.data.success) {
         showSnackbar(response.data.message || 'Bot stopped successfully', 'success');
         // Refresh the list after stopping
@@ -112,7 +105,7 @@ const BotManagerPanel = () => {
       dry_run: 'warning',
       guardian: 'info',
       monitor: 'secondary',
-      webui: 'primary'
+      webui: 'primary',
     };
     return colors[type] || 'default';
   };
@@ -124,7 +117,7 @@ const BotManagerPanel = () => {
       dry_run: 'Dry Run',
       guardian: 'Guardian',
       monitor: 'Monitor',
-      webui: 'WebUI'
+      webui: 'WebUI',
     };
     return labels[type] || type;
   };
@@ -157,27 +150,25 @@ const BotManagerPanel = () => {
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Computer color="primary" />
-            <Typography variant="h6">
-              Bot Manager
-            </Typography>
-            <Chip 
-              label={`${totalBots} Active`} 
-              size="small" 
+            <Typography variant="h6">Bot Manager</Typography>
+            <Chip
+              label={`${totalBots} Active`}
+              size="small"
               color={totalBots > 0 ? 'success' : 'default'}
             />
           </Box>
-          
+
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Tooltip title={autoRefresh ? 'Auto-refresh enabled (5s)' : 'Auto-refresh disabled'}>
-              <IconButton 
-                size="small" 
+              <IconButton
+                size="small"
                 color={autoRefresh ? 'primary' : 'default'}
                 onClick={() => setAutoRefresh(!autoRefresh)}
               >
                 <Refresh sx={{ animation: autoRefresh ? 'spin 2s linear infinite' : 'none' }} />
               </IconButton>
             </Tooltip>
-            
+
             <Button
               variant="outlined"
               size="small"
@@ -200,9 +191,7 @@ const BotManagerPanel = () => {
         {/* No Bots Message */}
         {!loading && bots.length === 0 && (
           <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography color="text.secondary">
-              No bot processes detected
-            </Typography>
+            <Typography color="text.secondary">No bot processes detected</Typography>
           </Box>
         )}
 
@@ -212,29 +201,45 @@ const BotManagerPanel = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell><strong>Type</strong></TableCell>
-                  <TableCell><strong>PID</strong></TableCell>
-                  <TableCell><strong>Status</strong></TableCell>
-                  <TableCell><strong>Started</strong></TableCell>
-                  <TableCell><strong>Uptime</strong></TableCell>
-                  <TableCell align="right"><strong>CPU %</strong></TableCell>
-                  <TableCell align="right"><strong>Memory</strong></TableCell>
-                  <TableCell align="center"><strong>Actions</strong></TableCell>
+                  <TableCell>
+                    <strong>Type</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>PID</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Status</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Started</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Uptime</strong>
+                  </TableCell>
+                  <TableCell align="right">
+                    <strong>CPU %</strong>
+                  </TableCell>
+                  <TableCell align="right">
+                    <strong>Memory</strong>
+                  </TableCell>
+                  <TableCell align="center">
+                    <strong>Actions</strong>
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {bots.map((bot) => (
-                  <TableRow 
+                  <TableRow
                     key={bot.pid}
-                    sx={{ 
+                    sx={{
                       '&:hover': { backgroundColor: 'action.hover' },
-                      opacity: bot.type === 'webui' ? 0.6 : 1
+                      opacity: bot.type === 'webui' ? 0.6 : 1,
                     }}
                   >
                     <TableCell>
-                      <Chip 
-                        label={getBotTypeLabel(bot.type)} 
-                        size="small" 
+                      <Chip
+                        label={getBotTypeLabel(bot.type)}
+                        size="small"
                         color={getBotTypeColor(bot.type)}
                       />
                     </TableCell>
@@ -244,9 +249,9 @@ const BotManagerPanel = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip 
-                        label={bot.status} 
-                        size="small" 
+                      <Chip
+                        label={bot.status}
+                        size="small"
                         color={bot.status === 'running' ? 'success' : 'default'}
                         variant="outlined"
                       />
@@ -259,13 +264,18 @@ const BotManagerPanel = () => {
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <Timer fontSize="small" color="action" />
-                        <Typography variant="body2">
-                          {formatUptime(bot.uptime)}
-                        </Typography>
+                        <Typography variant="body2">{formatUptime(bot.uptime)}</Typography>
                       </Box>
                     </TableCell>
                     <TableCell align="right">
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: 0.5,
+                        }}
+                      >
                         <Speed fontSize="small" color="action" />
                         <Typography variant="body2">
                           {bot.cpuPercent?.toFixed(1) || '0.0'}%
@@ -273,11 +283,16 @@ const BotManagerPanel = () => {
                       </Box>
                     </TableCell>
                     <TableCell align="right">
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: 0.5,
+                        }}
+                      >
                         <Memory fontSize="small" color="action" />
-                        <Typography variant="body2">
-                          {formatMemory(bot.memoryMb)}
-                        </Typography>
+                        <Typography variant="body2">{formatMemory(bot.memoryMb)}</Typography>
                       </Box>
                     </TableCell>
                     <TableCell align="center">
@@ -291,8 +306,8 @@ const BotManagerPanel = () => {
                         </Tooltip>
                       ) : (
                         <Tooltip title="Stop this bot">
-                          <IconButton 
-                            size="small" 
+                          <IconButton
+                            size="small"
                             color="error"
                             onClick={() => handleStopClick(bot)}
                             disabled={loading}
@@ -315,34 +330,40 @@ const BotManagerPanel = () => {
             <Card key={bot.pid} variant="outlined" sx={{ mb: 2 }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Chip 
-                    label={getBotTypeLabel(bot.type)} 
-                    size="small" 
+                  <Chip
+                    label={getBotTypeLabel(bot.type)}
+                    size="small"
                     color={getBotTypeColor(bot.type)}
                   />
-                  <Chip 
-                    label={bot.status} 
-                    size="small" 
+                  <Chip
+                    label={bot.status}
+                    size="small"
                     color={bot.status === 'running' ? 'success' : 'default'}
                     variant="outlined"
                   />
                 </Box>
-                
+
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   PID: {bot.pid} • Started: {new Date(bot.startedAt).toLocaleString()}
                 </Typography>
-                
+
                 <Box sx={{ display: 'flex', gap: 2, my: 1 }}>
                   <Box>
-                    <Typography variant="caption" color="text.secondary">Uptime</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Uptime
+                    </Typography>
                     <Typography variant="body2">{formatUptime(bot.uptime)}</Typography>
                   </Box>
                   <Box>
-                    <Typography variant="caption" color="text.secondary">CPU</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      CPU
+                    </Typography>
                     <Typography variant="body2">{bot.cpuPercent?.toFixed(1) || '0.0'}%</Typography>
                   </Box>
                   <Box>
-                    <Typography variant="caption" color="text.secondary">Memory</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Memory
+                    </Typography>
                     <Typography variant="body2">{formatMemory(bot.memoryMb)}</Typography>
                   </Box>
                 </Box>
@@ -369,7 +390,7 @@ const BotManagerPanel = () => {
         {bots.length > 0 && (
           <Box sx={{ mt: 2, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
             <Typography variant="caption" color="text.secondary">
-              <strong>Tip:</strong> Bots are automatically detected from running Python processes. 
+              <strong>Tip:</strong> Bots are automatically detected from running Python processes.
               The WebUI backend cannot be stopped from this interface for safety.
             </Typography>
           </Box>
@@ -377,17 +398,15 @@ const BotManagerPanel = () => {
       </CardContent>
 
       {/* Confirmation Dialog */}
-      <Dialog 
-        open={confirmDialog.open} 
+      <Dialog
+        open={confirmDialog.open}
         onClose={() => setConfirmDialog({ open: false, bot: null })}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>Confirm Stop Bot</DialogTitle>
         <DialogContent>
-          <Typography>
-            Are you sure you want to stop the following bot?
-          </Typography>
+          <Typography>Are you sure you want to stop the following bot?</Typography>
           {confirmDialog.bot && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
               <Typography variant="body2">
@@ -405,19 +424,16 @@ const BotManagerPanel = () => {
             </Box>
           )}
           <Alert severity="warning" sx={{ mt: 2 }}>
-            This will send a SIGTERM signal to the process. If it doesn't respond within 5 seconds, 
+            This will send a SIGTERM signal to the process. If it doesn't respond within 5 seconds,
             a SIGKILL will be sent.
           </Alert>
         </DialogContent>
         <DialogActions>
-          <Button 
-            onClick={() => setConfirmDialog({ open: false, bot: null })}
-            disabled={loading}
-          >
+          <Button onClick={() => setConfirmDialog({ open: false, bot: null })} disabled={loading}>
             Cancel
           </Button>
-          <Button 
-            onClick={() => stopBot(confirmDialog.bot.pid)} 
+          <Button
+            onClick={() => stopBot(confirmDialog.bot.pid)}
             color="error"
             variant="contained"
             disabled={loading}
@@ -435,8 +451,8 @@ const BotManagerPanel = () => {
         onClose={() => setSnackbar({ ...snackbar, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
           sx={{ width: '100%' }}
         >

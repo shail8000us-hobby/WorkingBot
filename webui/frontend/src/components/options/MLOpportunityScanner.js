@@ -1,11 +1,11 @@
 /**
  * ML Opportunity Scanner Component - Phase 3 UI
- * 
+ *
  * Displays AI-detected trading opportunities based on:
  * - Style matching score
  * - Market regime analysis
  * - Signal strength
- * 
+ *
  * Created: January 18, 2026
  */
 
@@ -49,19 +49,19 @@ const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5555';
 
 // Regime display helpers
 const REGIME_ICONS = {
-  'trending_up': <TrendingUpIcon sx={{ color: '#4caf50' }} />,
-  'trending_down': <TrendingDownIcon sx={{ color: '#f44336' }} />,
-  'sideways': <TrendingFlatIcon sx={{ color: '#ff9800' }} />,
-  'high_volatility': <SpeedIcon sx={{ color: '#9c27b0' }} />,
-  'low_volatility': <ShowChartIcon sx={{ color: '#2196f3' }} />,
+  trending_up: <TrendingUpIcon sx={{ color: '#4caf50' }} />,
+  trending_down: <TrendingDownIcon sx={{ color: '#f44336' }} />,
+  sideways: <TrendingFlatIcon sx={{ color: '#ff9800' }} />,
+  high_volatility: <SpeedIcon sx={{ color: '#9c27b0' }} />,
+  low_volatility: <ShowChartIcon sx={{ color: '#2196f3' }} />,
 };
 
 const REGIME_COLORS = {
-  'trending_up': '#4caf50',
-  'trending_down': '#f44336',
-  'sideways': '#ff9800',
-  'high_volatility': '#9c27b0',
-  'low_volatility': '#2196f3',
+  trending_up: '#4caf50',
+  trending_down: '#f44336',
+  sideways: '#ff9800',
+  high_volatility: '#9c27b0',
+  low_volatility: '#2196f3',
 };
 
 const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
@@ -117,16 +117,16 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
   const runScan = useCallback(async () => {
     setScanning(true);
     setError(null);
-    
+
     try {
       const response = await fetch(`${API_BASE}/api/ml/scanner/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol })
+        body: JSON.stringify({ symbol }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         setOpportunities(data.opportunities || []);
         setSignals(data.signals || []);
@@ -145,8 +145,9 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
   // Initial load
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchRegime(), fetchOpportunities(), fetchSignals()])
-      .finally(() => setLoading(false));
+    Promise.all([fetchRegime(), fetchOpportunities(), fetchSignals()]).finally(() =>
+      setLoading(false)
+    );
   }, [fetchRegime, fetchOpportunities, fetchSignals]);
 
   // Score color helper
@@ -162,22 +163,24 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
     if (!regime) return null;
 
     return (
-      <Card 
-        sx={{ 
-          mb: 2, 
+      <Card
+        sx={{
+          mb: 2,
           borderLeft: `4px solid ${REGIME_COLORS[regime.regime_type] || '#757575'}`,
-          bgcolor: 'rgba(30, 35, 50, 0.9)'
+          bgcolor: 'rgba(30, 35, 50, 0.9)',
         }}
       >
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {REGIME_ICONS[regime.regime_type] || <ShowChartIcon />}
               <Typography variant="h6">
                 Market Regime: {regime.regime_type?.replace('_', ' ').toUpperCase()}
               </Typography>
             </Box>
-            <Chip 
+            <Chip
               label={`${(regime.confidence * 100).toFixed(0)}% Confidence`}
               color={regime.confidence > 0.7 ? 'success' : 'warning'}
               size="small"
@@ -186,39 +189,49 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
 
           <Grid container spacing={2}>
             <Grid item xs={4}>
-              <Typography variant="caption" color="text.secondary">Trend Strength</Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={regime.trend_strength * 100} 
+              <Typography variant="caption" color="text.secondary">
+                Trend Strength
+              </Typography>
+              <LinearProgress
+                variant="determinate"
+                value={regime.trend_strength * 100}
                 sx={{ height: 8, borderRadius: 4, mb: 0.5 }}
               />
               <Typography variant="body2">{(regime.trend_strength * 100).toFixed(0)}%</Typography>
             </Grid>
             <Grid item xs={4}>
-              <Typography variant="caption" color="text.secondary">Volatility</Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={regime.volatility_level * 100} 
+              <Typography variant="caption" color="text.secondary">
+                Volatility
+              </Typography>
+              <LinearProgress
+                variant="determinate"
+                value={regime.volatility_level * 100}
                 color={regime.volatility_level > 0.7 ? 'error' : 'primary'}
                 sx={{ height: 8, borderRadius: 4, mb: 0.5 }}
               />
               <Typography variant="body2">{(regime.volatility_level * 100).toFixed(0)}%</Typography>
             </Grid>
             <Grid item xs={4}>
-              <Typography variant="caption" color="text.secondary">Trading Conditions</Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={regime.trading_condition_score * 100} 
+              <Typography variant="caption" color="text.secondary">
+                Trading Conditions
+              </Typography>
+              <LinearProgress
+                variant="determinate"
+                value={regime.trading_condition_score * 100}
                 color={regime.trading_condition_score > 0.6 ? 'success' : 'warning'}
                 sx={{ height: 8, borderRadius: 4, mb: 0.5 }}
               />
-              <Typography variant="body2">{(regime.trading_condition_score * 100).toFixed(0)}%</Typography>
+              <Typography variant="body2">
+                {(regime.trading_condition_score * 100).toFixed(0)}%
+              </Typography>
             </Grid>
           </Grid>
 
           {regime.recommended_strategies && regime.recommended_strategies.length > 0 && (
             <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" color="text.secondary">Recommended Strategies:</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Recommended Strategies:
+              </Typography>
               <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
                 {regime.recommended_strategies.map((strategy, i) => (
                   <Chip key={i} label={strategy} size="small" variant="outlined" />
@@ -234,19 +247,19 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
   // Render opportunity card
   const renderOpportunityCard = (opp, index) => {
     const isExpanded = expandedOpp === index;
-    
+
     return (
-      <Card 
+      <Card
         key={index}
-        sx={{ 
+        sx={{
           mb: 1.5,
           bgcolor: 'rgba(30, 35, 50, 0.9)',
           border: `1px solid ${getScoreColor(opp.style_match_score * 100)}40`,
           transition: 'all 0.2s',
           '&:hover': {
             borderColor: getScoreColor(opp.style_match_score * 100),
-            transform: 'translateX(4px)'
-          }
+            transform: 'translateX(4px)',
+          },
         }}
       >
         <CardContent sx={{ pb: isExpanded ? 2 : 1 }}>
@@ -257,29 +270,22 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
               <Typography variant="subtitle1" fontWeight="bold">
                 {opp.action} {opp.option_type?.toUpperCase()}
               </Typography>
-              <Chip 
-                label={`$${opp.strike?.toLocaleString()}`}
-                size="small"
-                variant="outlined"
-              />
+              <Chip label={`$${opp.strike?.toLocaleString()}`} size="small" variant="outlined" />
             </Box>
-            
+
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Tooltip title="Style Match Score">
-                <Chip 
+                <Chip
                   label={`${(opp.style_match_score * 100).toFixed(0)}%`}
                   size="small"
-                  sx={{ 
+                  sx={{
                     bgcolor: getScoreColor(opp.style_match_score * 100),
                     color: 'white',
-                    fontWeight: 'bold'
+                    fontWeight: 'bold',
                   }}
                 />
               </Tooltip>
-              <IconButton 
-                size="small" 
-                onClick={() => setExpandedOpp(isExpanded ? null : index)}
-              >
+              <IconButton size="small" onClick={() => setExpandedOpp(isExpanded ? null : index)}>
                 {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
               </IconButton>
             </Box>
@@ -288,19 +294,29 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
           {/* Quick Stats */}
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Price</Typography>
-              <Typography variant="body2" fontWeight="bold">${opp.current_price?.toFixed(2)}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Price
+              </Typography>
+              <Typography variant="body2" fontWeight="bold">
+                ${opp.current_price?.toFixed(2)}
+              </Typography>
             </Grid>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">IV</Typography>
+              <Typography variant="caption" color="text.secondary">
+                IV
+              </Typography>
               <Typography variant="body2">{(opp.iv * 100).toFixed(1)}%</Typography>
             </Grid>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Expiry</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Expiry
+              </Typography>
               <Typography variant="body2">{opp.expiry || 'N/A'}</Typography>
             </Grid>
             <Grid item xs={3}>
-              <Typography variant="caption" color="text.secondary">Confidence</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Confidence
+              </Typography>
               <Typography variant="body2">{(opp.confidence * 100).toFixed(0)}%</Typography>
             </Grid>
           </Grid>
@@ -308,10 +324,12 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
           {/* Expanded Details */}
           <Collapse in={isExpanded}>
             <Divider sx={{ my: 2 }} />
-            
+
             <Grid container spacing={2}>
               <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary">Greeks</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Greeks
+                </Typography>
                 <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
                   <Typography variant="body2">Δ {opp.delta?.toFixed(3) || 'N/A'}</Typography>
                   <Typography variant="body2">θ {opp.theta?.toFixed(3) || 'N/A'}</Typography>
@@ -319,7 +337,9 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
                 </Box>
               </Grid>
               <Grid item xs={6}>
-                <Typography variant="caption" color="text.secondary">Risk/Reward</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Risk/Reward
+                </Typography>
                 <Box sx={{ mt: 0.5 }}>
                   <Typography variant="body2">
                     Max Loss: ${opp.max_loss?.toFixed(2) || 'N/A'}
@@ -333,7 +353,9 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
 
             {opp.reasoning && (
               <Box sx={{ mt: 2 }}>
-                <Typography variant="caption" color="text.secondary">AI Reasoning</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  AI Reasoning
+                </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5, fontStyle: 'italic' }}>
                   "{opp.reasoning}"
                 </Typography>
@@ -355,7 +377,7 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
           <SignalCellularAltIcon />
           Trading Signals
         </Typography>
-        
+
         <TableContainer component={Paper} sx={{ bgcolor: 'rgba(30, 35, 50, 0.9)' }}>
           <Table size="small">
             <TableHead>
@@ -372,8 +394,8 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
               {signals.slice(0, 10).map((signal, i) => (
                 <TableRow key={i}>
                   <TableCell>
-                    <Chip 
-                      label={signal.signal_type?.toUpperCase()} 
+                    <Chip
+                      label={signal.signal_type?.toUpperCase()}
                       size="small"
                       color={signal.signal_type === 'call' ? 'success' : 'error'}
                     />
@@ -381,16 +403,14 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
                   <TableCell>${signal.strike?.toLocaleString()}</TableCell>
                   <TableCell>{signal.action}</TableCell>
                   <TableCell>
-                    <LinearProgress 
-                      variant="determinate" 
+                    <LinearProgress
+                      variant="determinate"
                       value={signal.strength * 100}
                       sx={{ width: 60, height: 6, borderRadius: 3 }}
                     />
                   </TableCell>
                   <TableCell>{(signal.confidence * 100).toFixed(0)}%</TableCell>
-                  <TableCell>
-                    {new Date(signal.generated_at).toLocaleTimeString()}
-                  </TableCell>
+                  <TableCell>{new Date(signal.generated_at).toLocaleTimeString()}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -416,7 +436,7 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
           <SignalCellularAltIcon />
           Opportunity Scanner
         </Typography>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {lastScan && (
             <Typography variant="caption" color="text.secondary">
@@ -449,7 +469,7 @@ const MLOpportunityScanner = ({ symbol = 'BTCUSDT' }) => {
           <LightbulbIcon />
           Opportunities ({opportunities.length})
         </Typography>
-        
+
         {opportunities.length === 0 ? (
           <Alert severity="info" icon={<WarningIcon />}>
             No opportunities found. Run a scan to discover style-matching trades.

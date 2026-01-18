@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, Circle, Trash2, Plus, Edit2, X, ListTodo, Calendar, Clock } from 'lucide-react';
+import {
+  CheckCircle2,
+  Circle,
+  Trash2,
+  Plus,
+  Edit2,
+  X,
+  ListTodo,
+  Calendar,
+  Clock,
+} from 'lucide-react';
 import robustApiClient from '../utils/robustApiClient';
 
 const TodoListPanel = () => {
@@ -47,9 +57,9 @@ const TodoListPanel = () => {
     try {
       setIsAddingTodo(true);
       setError(null);
-      
+
       const response = await robustApiClient.post('/api/todos', {
-        text: newTodoText.trim()
+        text: newTodoText.trim(),
       });
 
       if (response && response.success && response.todo) {
@@ -74,9 +84,9 @@ const TodoListPanel = () => {
   const toggleTodo = async (todoId, currentCompleted) => {
     try {
       setError(null);
-      
+
       const response = await robustApiClient.put(`/api/todos/${todoId}`, {
-        completed: !currentCompleted
+        completed: !currentCompleted,
       });
 
       if (response && response.success && response.todos) {
@@ -97,7 +107,7 @@ const TodoListPanel = () => {
   const deleteTodo = async (todoId) => {
     try {
       setError(null);
-      
+
       const response = await robustApiClient.delete(`/api/todos/${todoId}`);
 
       if (response && response.success && response.todos) {
@@ -116,9 +126,9 @@ const TodoListPanel = () => {
   };
 
   const deleteCompleted = async () => {
-    const completedIds = todos.filter(t => t.completed).map(t => t.id);
+    const completedIds = todos.filter((t) => t.completed).map((t) => t.id);
     if (completedIds.length === 0) return;
-    
+
     if (!window.confirm(`Delete ${completedIds.length} completed todo(s)?`)) return;
 
     try {
@@ -152,9 +162,9 @@ const TodoListPanel = () => {
 
     try {
       setError(null);
-      
+
       const response = await robustApiClient.put(`/api/todos/${todoId}`, {
-        text: editText.trim()
+        text: editText.trim(),
       });
 
       if (response && response.success && response.todos) {
@@ -208,13 +218,13 @@ const TodoListPanel = () => {
     return date.toLocaleDateString();
   };
 
-  const filteredTodos = todos.filter(todo => {
+  const filteredTodos = todos.filter((todo) => {
     if (filter === 'active') return !todo.completed;
     if (filter === 'completed') return todo.completed;
     return true;
   });
 
-  const completedCount = todos.filter(t => t.completed).length;
+  const completedCount = todos.filter((t) => t.completed).length;
   const totalCount = todos.length;
 
   if (loading) {
@@ -328,10 +338,16 @@ const TodoListPanel = () => {
           <div className="rounded-lg border border-dashed border-slate-700/70 bg-slate-900/40 p-8 text-center">
             <ListTodo className="mx-auto mb-3 h-10 w-10 text-slate-600" />
             <p className="text-sm font-semibold text-slate-300">
-              {filter === 'all' ? 'No todos yet' : filter === 'active' ? 'No active todos' : 'No completed todos'}
+              {filter === 'all'
+                ? 'No todos yet'
+                : filter === 'active'
+                  ? 'No active todos'
+                  : 'No completed todos'}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              {filter === 'all' ? 'Add your first improvement idea above' : 'Try a different filter'}
+              {filter === 'all'
+                ? 'Add your first improvement idea above'
+                : 'Try a different filter'}
             </p>
           </div>
         ) : (
@@ -339,8 +355,8 @@ const TodoListPanel = () => {
             <div
               key={todo.id}
               className={`group rounded-lg border bg-slate-900/60 p-3 transition ${
-                todo.completed 
-                  ? 'border-slate-700/30 bg-slate-900/40' 
+                todo.completed
+                  ? 'border-slate-700/30 bg-slate-900/40'
                   : 'border-slate-700/50 hover:border-slate-600 hover:bg-slate-900/80'
               }`}
             >
@@ -372,9 +388,7 @@ const TodoListPanel = () => {
                     <>
                       <p
                         className={`text-sm whitespace-pre-wrap break-words ${
-                          todo.completed
-                            ? 'text-slate-500 line-through'
-                            : 'text-slate-200'
+                          todo.completed ? 'text-slate-500 line-through' : 'text-slate-200'
                         }`}
                       >
                         {todo.text}
@@ -460,7 +474,8 @@ const TodoListPanel = () => {
               )}
             </div>
             <div className="text-xs text-slate-500">
-              <span className="hidden sm:inline">Enter to save • Shift+Enter for new line • </span>ESC to cancel
+              <span className="hidden sm:inline">Enter to save • Shift+Enter for new line • </span>
+              ESC to cancel
             </div>
           </div>
         </div>
@@ -470,5 +485,3 @@ const TodoListPanel = () => {
 };
 
 export default TodoListPanel;
-
-

@@ -2,7 +2,7 @@
  * Order Dialog Component
  * ======================
  * Modal dialog for placing buy/sell orders from the options chain.
- * 
+ *
  * Created: January 5, 2026
  */
 
@@ -36,13 +36,13 @@ const formatIV = (iv) => {
   return `${(Number(iv) * 100).toFixed(1)}%`;
 };
 
-const OrderDialog = ({ 
-  open, 
-  onClose, 
-  option,        // { symbol, strike, type (call/put), side, bid, ask, iv, delta }
+const OrderDialog = ({
+  open,
+  onClose,
+  option, // { symbol, strike, type (call/put), side, bid, ask, iv, delta }
   spotPrice,
   onSuccess,
-  onError 
+  onError,
 }) => {
   const [side, setSide] = useState(option?.side || 'buy');
   const [orderType, setOrderType] = useState('market');
@@ -51,14 +51,14 @@ const OrderDialog = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [ticker, setTicker] = useState(null);
-  
-  // Set initial side when option changes  
+
+  // Set initial side when option changes
   useEffect(() => {
     if (option?.side) {
       setSide(option.side);
     }
   }, [option?.side]);
-  
+
   // Fetch latest ticker when dialog opens
   useEffect(() => {
     const fetchTicker = async () => {
@@ -69,12 +69,12 @@ const OrderDialog = ({
         console.error('Failed to fetch ticker:', err);
       }
     };
-    
+
     if (open && option?.symbol) {
       fetchTicker();
     }
   }, [open, option?.symbol]);
-  
+
   // Set initial limit price when ticker loads
   useEffect(() => {
     if (ticker) {
@@ -83,25 +83,25 @@ const OrderDialog = ({
       setLimitPrice(mid.toFixed(2));
     }
   }, [ticker]);
-  
+
   const handleSubmit = async () => {
     setError(null);
     setLoading(true);
-    
+
     try {
       const orderParams = {
         symbol: option.symbol,
         side: side,
         size: parseInt(size),
-        order_type: orderType
+        order_type: orderType,
       };
-      
+
       if (orderType === 'limit') {
         orderParams.limit_price = parseFloat(limitPrice);
       }
-      
+
       const result = await optionsChainAPI.placeOrder(orderParams);
-      
+
       if (result.success) {
         onSuccess?.(result);
         onClose();
@@ -118,7 +118,7 @@ const OrderDialog = ({
       setLoading(false);
     }
   };
-  
+
   const handleClose = () => {
     if (!loading) {
       setError(null);
@@ -129,65 +129,66 @@ const OrderDialog = ({
       onClose();
     }
   };
-  
+
   if (!option) return null;
-  
+
   const isCall = option.type === 'call';
   const currentBid = ticker?.bid || option.bid;
   const currentAsk = ticker?.ask || option.ask;
   const midPrice = currentBid && currentAsk ? (currentBid + currentAsk) / 2 : 0;
-  const spread = currentBid && currentAsk ? ((currentAsk - currentBid) / midPrice * 100) : 0;
-  
+  const spread = currentBid && currentAsk ? ((currentAsk - currentBid) / midPrice) * 100 : 0;
+
   // Estimated cost/proceeds
-  const estPrice = orderType === 'market' 
-    ? (side === 'buy' ? currentAsk : currentBid)
-    : parseFloat(limitPrice) || 0;
+  const estPrice =
+    orderType === 'market'
+      ? side === 'buy'
+        ? currentAsk
+        : currentBid
+      : parseFloat(limitPrice) || 0;
   const estTotal = estPrice * parseInt(size || 0);
-  
+
   return (
-    <Dialog 
-      open={open} 
-      onClose={handleClose} 
-      maxWidth="sm" 
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: { bgcolor: 'background.paper', backgroundImage: 'none' }
+        sx: { bgcolor: 'background.paper', backgroundImage: 'none' },
       }}
     >
       <DialogTitle sx={{ pb: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Chip 
-            label={isCall ? 'CALL' : 'PUT'} 
-            color={isCall ? 'success' : 'error'} 
-            size="small" 
-          />
-          <Typography variant="h6">
-            {option.symbol}
-          </Typography>
+          <Chip label={isCall ? 'CALL' : 'PUT'} color={isCall ? 'success' : 'error'} size="small" />
+          <Typography variant="h6">{option.symbol}</Typography>
         </Box>
         <Typography variant="body2" color="text.secondary">
           Strike: ${option.strike?.toLocaleString()} | Spot: {formatPrice(spotPrice)}
         </Typography>
       </DialogTitle>
-      
+
       <DialogContent dividers>
         {/* Market Data */}
         <Box sx={{ mb: 3, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Box>
-              <Typography variant="caption" color="text.secondary">Bid</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Bid
+              </Typography>
               <Typography variant="body1" color="success.main" fontWeight="bold">
                 {formatPrice(currentBid)}
               </Typography>
             </Box>
             <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="caption" color="text.secondary">Spread</Typography>
-              <Typography variant="body1">
-                {spread.toFixed(2)}%
+              <Typography variant="caption" color="text.secondary">
+                Spread
               </Typography>
+              <Typography variant="body1">{spread.toFixed(2)}%</Typography>
             </Box>
             <Box sx={{ textAlign: 'right' }}>
-              <Typography variant="caption" color="text.secondary">Ask</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Ask
+              </Typography>
               <Typography variant="body1" color="error.main" fontWeight="bold">
                 {formatPrice(currentAsk)}
               </Typography>
@@ -203,46 +204,50 @@ const OrderDialog = ({
             </Typography>
           </Box>
         </Box>
-        
+
         {/* Buy/Sell Toggle */}
         <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>Direction</Typography>
+          <Typography variant="subtitle2" gutterBottom>
+            Direction
+          </Typography>
           <ToggleButtonGroup
             value={side}
             exclusive
             onChange={(e, val) => val && setSide(val)}
             fullWidth
           >
-            <ToggleButton 
-              value="buy" 
-              sx={{ 
-                '&.Mui-selected': { 
-                  bgcolor: 'success.dark', 
+            <ToggleButton
+              value="buy"
+              sx={{
+                '&.Mui-selected': {
+                  bgcolor: 'success.dark',
                   color: 'white',
-                  '&:hover': { bgcolor: 'success.main' }
-                }
+                  '&:hover': { bgcolor: 'success.main' },
+                },
               }}
             >
               BUY
             </ToggleButton>
-            <ToggleButton 
+            <ToggleButton
               value="sell"
-              sx={{ 
-                '&.Mui-selected': { 
-                  bgcolor: 'error.dark', 
+              sx={{
+                '&.Mui-selected': {
+                  bgcolor: 'error.dark',
                   color: 'white',
-                  '&:hover': { bgcolor: 'error.main' }
-                }
+                  '&:hover': { bgcolor: 'error.main' },
+                },
               }}
             >
               SELL
             </ToggleButton>
           </ToggleButtonGroup>
         </Box>
-        
+
         {/* Order Type Toggle */}
         <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>Order Type</Typography>
+          <Typography variant="subtitle2" gutterBottom>
+            Order Type
+          </Typography>
           <ToggleButtonGroup
             value={orderType}
             exclusive
@@ -254,7 +259,7 @@ const OrderDialog = ({
             <ToggleButton value="limit">Limit</ToggleButton>
           </ToggleButtonGroup>
         </Box>
-        
+
         {/* Size Input */}
         <Box sx={{ mb: 3 }}>
           <TextField
@@ -266,7 +271,7 @@ const OrderDialog = ({
             fullWidth
           />
         </Box>
-        
+
         {/* Limit Price Input */}
         {orderType === 'limit' && (
           <Box sx={{ mb: 3 }}>
@@ -281,12 +286,19 @@ const OrderDialog = ({
             />
           </Box>
         )}
-        
+
         {/* Order Summary */}
-        <Box sx={{ p: 2, bgcolor: side === 'buy' ? 'success.dark' : 'error.dark', borderRadius: 1, color: 'white' }}>
+        <Box
+          sx={{
+            p: 2,
+            bgcolor: side === 'buy' ? 'success.dark' : 'error.dark',
+            borderRadius: 1,
+            color: 'white',
+          }}
+        >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography variant="body2">
-              {side.toUpperCase()} {size} × {option.symbol.split('-').slice(0,3).join('-')}
+              {side.toUpperCase()} {size} × {option.symbol.split('-').slice(0, 3).join('-')}
             </Typography>
             <Typography variant="body2">
               @ {orderType === 'market' ? 'MARKET' : formatPrice(limitPrice)}
@@ -302,7 +314,7 @@ const OrderDialog = ({
             </Typography>
           </Box>
         </Box>
-        
+
         {/* Error Display */}
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
@@ -310,7 +322,7 @@ const OrderDialog = ({
           </Alert>
         )}
       </DialogContent>
-      
+
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={handleClose} disabled={loading}>
           Cancel
@@ -322,7 +334,9 @@ const OrderDialog = ({
           disabled={loading || (orderType === 'limit' && !limitPrice)}
           startIcon={loading ? <CircularProgress size={16} /> : null}
         >
-          {loading ? 'Placing Order...' : `${side.toUpperCase()} ${size} Contract${size > 1 ? 's' : ''}`}
+          {loading
+            ? 'Placing Order...'
+            : `${side.toUpperCase()} ${size} Contract${size > 1 ? 's' : ''}`}
         </Button>
       </DialogActions>
     </Dialog>

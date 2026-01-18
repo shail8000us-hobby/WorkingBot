@@ -2,14 +2,14 @@
  * Custom Strategy Builder (Build Your Own Strategy)
  * ==================================================
  * Create custom multi-leg strategies with multiple expiries and one-click execution.
- * 
+ *
  * Features:
  * - Add any number of legs
  * - Different expiries per leg
  * - Real-time premium calculation
  * - One-click execution
  * - Payoff preview
- * 
+ *
  * Created: January 12, 2026
  */
 
@@ -40,7 +40,7 @@ import {
   CircularProgress,
   Tooltip,
   Card,
-  CardContent
+  CardContent,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -53,7 +53,7 @@ import {
   Sell as SellIcon,
   Build as BuildIcon,
   Calculate as CalcIcon,
-  Visibility as PreviewIcon
+  Visibility as PreviewIcon,
 } from '@mui/icons-material';
 
 const API_BASE = '/api/options-strategy';
@@ -69,36 +69,36 @@ const createEmptyLeg = (id = 1) => ({
   expiry: '',
   premium: null,
   greeks: null,
-  loading: false
+  loading: false,
 });
 
 export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionComplete }) {
   // Strategy name
   const [strategyName, setStrategyName] = useState('My Custom Strategy');
   const [underlying, setUnderlying] = useState('BTC');
-  
+
   // Legs management
   const [legs, setLegs] = useState([createEmptyLeg(1)]);
   const [nextLegId, setNextLegId] = useState(2);
-  
+
   // Available expiries and strikes
   const [expiries, setExpiries] = useState([]);
   const [strikesByExpiry, setStrikesByExpiry] = useState({});
   const [atmByExpiry, setAtmByExpiry] = useState({});
   const [loadingExpiries, setLoadingExpiries] = useState(false);
-  
+
   // Creation and execution state
   const [createdStrategy, setCreatedStrategy] = useState(null);
   const [creating, setCreating] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  
+
   // Fetch expiries on mount or underlying change
   useEffect(() => {
     fetchExpiries();
   }, [underlying]);
-  
+
   const fetchExpiries = async () => {
     setLoadingExpiries(true);
     try {
@@ -118,57 +118,68 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
       setLoadingExpiries(false);
     }
   };
-  
+
   // Fetch strikes when a leg's expiry changes
-  const fetchStrikes = useCallback(async (expiry) => {
-    if (!expiry || strikesByExpiry[expiry]) return;
-    
-    try {
-      const res = await fetch(`${CHAIN_API}/data?underlying=${underlying}&expiry=${expiry}`);
-      const data = await res.json();
-      if (data.chain) {
-        const strikes = data.chain.map(item => item.strike).filter(s => s).sort((a, b) => a - b);
-        setStrikesByExpiry(prev => ({ ...prev, [expiry]: strikes }));
-        setAtmByExpiry(prev => ({ ...prev, [expiry]: data.atm_strike || strikes[Math.floor(strikes.length / 2)] }));
-      }
-    } catch (err) {
-      console.error('Failed to fetch strikes:', err);
-    }
-  }, [underlying, strikesByExpiry]);
-  
-  // Fetch premium for a leg
-  const fetchPremium = useCallback(async (leg) => {
-    if (!leg.expiry || !leg.strike) return;
-    
-    try {
-      // Build symbol: C-BTC-95000-130126 or P-BTC-93000-130126
-      const prefix = leg.option_type === 'call' ? 'C' : 'P';
-      // Convert DDMMYYYY to DDMMYY
-      const expiryFormatted = leg.expiry.length === 8 
-        ? leg.expiry.slice(0, 4) + leg.expiry.slice(6, 8)
-        : leg.expiry;
-      const symbol = `${prefix}-${underlying}-${leg.strike}-${expiryFormatted}`;
-      
-      const res = await fetch(`/api/options/ticker?symbol=${symbol}`);
-      if (res.ok) {
+  const fetchStrikes = useCallback(
+    async (expiry) => {
+      if (!expiry || strikesByExpiry[expiry]) return;
+
+      try {
+        const res = await fetch(`${CHAIN_API}/data?underlying=${underlying}&expiry=${expiry}`);
         const data = await res.json();
-        return {
-          premium: data.mark_price || data.best_bid || 0,
-          bid: data.best_bid,
-          ask: data.best_ask,
-          iv: data.mark_iv,
-          delta: data.greeks?.delta,
-          gamma: data.greeks?.gamma,
-          theta: data.greeks?.theta,
-          vega: data.greeks?.vega
-        };
+        if (data.chain) {
+          const strikes = data.chain
+            .map((item) => item.strike)
+            .filter((s) => s)
+            .sort((a, b) => a - b);
+          setStrikesByExpiry((prev) => ({ ...prev, [expiry]: strikes }));
+          setAtmByExpiry((prev) => ({
+            ...prev,
+            [expiry]: data.atm_strike || strikes[Math.floor(strikes.length / 2)],
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch strikes:', err);
       }
-    } catch (err) {
-      console.error('Failed to fetch premium:', err);
-    }
-    return null;
-  }, [underlying]);
-  
+    },
+    [underlying, strikesByExpiry]
+  );
+
+  // Fetch premium for a leg
+  const fetchPremium = useCallback(
+    async (leg) => {
+      if (!leg.expiry || !leg.strike) return;
+
+      try {
+        // Build symbol: C-BTC-95000-130126 or P-BTC-93000-130126
+        const prefix = leg.option_type === 'call' ? 'C' : 'P';
+        // Convert DDMMYYYY to DDMMYY
+        const expiryFormatted =
+          leg.expiry.length === 8 ? leg.expiry.slice(0, 4) + leg.expiry.slice(6, 8) : leg.expiry;
+        const symbol = `${prefix}-${underlying}-${leg.strike}-${expiryFormatted}`;
+
+        const res = await fetch(`/api/options/ticker?symbol=${symbol}`);
+        if (res.ok) {
+          const data = await res.json();
+          return {
+            premium: data.mark_price || data.best_bid || 0,
+            bid: data.best_bid,
+            ask: data.best_ask,
+            iv: data.mark_iv,
+            delta: data.greeks?.delta,
+            gamma: data.greeks?.gamma,
+            theta: data.greeks?.theta,
+            vega: data.greeks?.vega,
+          };
+        }
+      } catch (err) {
+        console.error('Failed to fetch premium:', err);
+      }
+      return null;
+    },
+    [underlying]
+  );
+
   // Add a new leg
   const addLeg = () => {
     const lastLeg = legs[legs.length - 1];
@@ -180,38 +191,40 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
     setLegs([...legs, newLeg]);
     setNextLegId(nextLegId + 1);
   };
-  
+
   // Remove a leg
   const removeLeg = (legId) => {
     if (legs.length <= 1) {
       setError('Strategy must have at least one leg');
       return;
     }
-    setLegs(legs.filter(l => l.id !== legId));
+    setLegs(legs.filter((l) => l.id !== legId));
   };
-  
+
   // Update a leg property
   const updateLeg = async (legId, field, value) => {
-    setLegs(legs.map(leg => {
-      if (leg.id !== legId) return leg;
-      
-      const updatedLeg = { ...leg, [field]: value };
-      
-      // Clear premium if strike/expiry/type changes
-      if (['strike', 'expiry', 'option_type'].includes(field)) {
-        updatedLeg.premium = null;
-        updatedLeg.greeks = null;
-      }
-      
-      return updatedLeg;
-    }));
-    
+    setLegs(
+      legs.map((leg) => {
+        if (leg.id !== legId) return leg;
+
+        const updatedLeg = { ...leg, [field]: value };
+
+        // Clear premium if strike/expiry/type changes
+        if (['strike', 'expiry', 'option_type'].includes(field)) {
+          updatedLeg.premium = null;
+          updatedLeg.greeks = null;
+        }
+
+        return updatedLeg;
+      })
+    );
+
     // Fetch strikes if expiry changed
     if (field === 'expiry' && value) {
       fetchStrikes(value);
     }
   };
-  
+
   // Refresh all premiums
   const refreshAllPremiums = async () => {
     const updatedLegs = await Promise.all(
@@ -221,19 +234,21 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
         return {
           ...leg,
           premium: premiumData?.premium || null,
-          greeks: premiumData ? {
-            delta: premiumData.delta,
-            gamma: premiumData.gamma,
-            theta: premiumData.theta,
-            vega: premiumData.vega,
-            iv: premiumData.iv
-          } : null
+          greeks: premiumData
+            ? {
+                delta: premiumData.delta,
+                gamma: premiumData.gamma,
+                theta: premiumData.theta,
+                vega: premiumData.vega,
+                iv: premiumData.iv,
+              }
+            : null,
         };
       })
     );
     setLegs(updatedLegs);
   };
-  
+
   // Calculate totals
   const totals = useMemo(() => {
     let totalPremium = 0;
@@ -242,13 +257,13 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
     let totalTheta = 0;
     let totalVega = 0;
     let validLegs = 0;
-    
-    legs.forEach(leg => {
+
+    legs.forEach((leg) => {
       if (leg.premium) {
         const multiplier = leg.side === 'buy' ? -1 : 1;
         totalPremium += multiplier * leg.premium * leg.quantity;
         validLegs++;
-        
+
         if (leg.greeks) {
           const deltaMultiplier = leg.side === 'buy' ? 1 : -1;
           totalDelta += deltaMultiplier * (leg.greeks.delta || 0) * leg.quantity;
@@ -258,7 +273,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
         }
       }
     });
-    
+
     return {
       premium: totalPremium,
       delta: totalDelta,
@@ -266,52 +281,52 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
       theta: totalTheta,
       vega: totalVega,
       validLegs,
-      isCredit: totalPremium > 0
+      isCredit: totalPremium > 0,
     };
   }, [legs]);
-  
+
   // Validate strategy
   const validation = useMemo(() => {
     const errors = [];
-    
+
     if (!strategyName.trim()) {
       errors.push('Strategy name is required');
     }
-    
+
     legs.forEach((leg, idx) => {
       if (!leg.expiry) errors.push(`Leg ${idx + 1}: Expiry required`);
       if (!leg.strike) errors.push(`Leg ${idx + 1}: Strike required`);
       if (leg.quantity < 1) errors.push(`Leg ${idx + 1}: Quantity must be at least 1`);
     });
-    
+
     // Check for duplicate legs
-    const legSignatures = legs.map(l => `${l.option_type}-${l.strike}-${l.expiry}-${l.side}`);
+    const legSignatures = legs.map((l) => `${l.option_type}-${l.strike}-${l.expiry}-${l.side}`);
     const duplicates = legSignatures.filter((s, i) => legSignatures.indexOf(s) !== i);
     if (duplicates.length > 0) {
       errors.push('Duplicate legs detected');
     }
-    
+
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }, [strategyName, legs]);
-  
+
   // Create strategy
   const handleCreate = async () => {
     if (!validation.isValid) {
       setError(validation.errors.join(', '));
       return;
     }
-    
+
     setCreating(true);
     setError(null);
-    
+
     try {
       // Group legs by expiry for multi-expiry support
       // For now, use the first leg's expiry as primary
       const primaryExpiry = legs[0].expiry;
-      
+
       const res = await fetch(`${API_BASE}/create-custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -319,18 +334,18 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
           name: strategyName,
           underlying,
           expiry: primaryExpiry,
-          legs: legs.map(leg => ({
+          legs: legs.map((leg) => ({
             option_type: leg.option_type,
             strike: parseFloat(leg.strike),
             side: leg.side,
             quantity: leg.quantity,
-            expiry: leg.expiry // Include per-leg expiry
-          }))
-        })
+            expiry: leg.expiry, // Include per-leg expiry
+          })),
+        }),
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
         setCreatedStrategy(data.strategy);
         setSuccess(`Strategy "${strategyName}" created successfully!`);
@@ -346,7 +361,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
       setCreating(false);
     }
   };
-  
+
   // Execute strategy (one-click)
   const handleExecute = async () => {
     if (!createdStrategy) {
@@ -354,19 +369,19 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
       await handleCreate();
       return;
     }
-    
+
     setExecuting(true);
     setError(null);
-    
+
     try {
       const res = await fetch(`${API_BASE}/execute/${createdStrategy.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'market' })
+        body: JSON.stringify({ mode: 'market' }),
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
         setSuccess(`Strategy executed! ${data.legs_filled || 0} legs placed.`);
         if (onExecutionComplete) {
@@ -381,17 +396,17 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
       setExecuting(false);
     }
   };
-  
+
   // One-click create and execute
   const handleOneClickExecute = async () => {
     if (!validation.isValid) {
       setError(validation.errors.join(', '));
       return;
     }
-    
+
     setExecuting(true);
     setError(null);
-    
+
     try {
       // First create
       const createRes = await fetch(`${API_BASE}/create-custom`, {
@@ -401,31 +416,31 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
           name: strategyName,
           underlying,
           expiry: legs[0].expiry,
-          legs: legs.map(leg => ({
+          legs: legs.map((leg) => ({
             option_type: leg.option_type,
             strike: parseFloat(leg.strike),
             side: leg.side,
             quantity: leg.quantity,
-            expiry: leg.expiry
-          }))
-        })
+            expiry: leg.expiry,
+          })),
+        }),
       });
-      
+
       const createData = await createRes.json();
-      
+
       if (!createData.success) {
         throw new Error(createData.error || 'Failed to create strategy');
       }
-      
+
       // Then execute
       const execRes = await fetch(`${API_BASE}/execute/${createData.strategy.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'market' })
+        body: JSON.stringify({ mode: 'market' }),
       });
-      
+
       const execData = await execRes.json();
-      
+
       if (execData.success) {
         setCreatedStrategy(createData.strategy);
         setSuccess(`Strategy created and executed! ${execData.legs_filled || 0} legs placed.`);
@@ -442,7 +457,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
       setExecuting(false);
     }
   };
-  
+
   // Reset form
   const handleReset = () => {
     setStrategyName('My Custom Strategy');
@@ -452,7 +467,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
     setError(null);
     setSuccess(null);
   };
-  
+
   // Format expiry for display
   const formatExpiry = (expiry) => {
     if (!expiry || expiry.length !== 8) return expiry;
@@ -477,20 +492,20 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
           </Typography>
         </Box>
       </Box>
-      
+
       {/* Alerts */}
       <Collapse in={!!error}>
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
           {error}
         </Alert>
       </Collapse>
-      
+
       <Collapse in={!!success}>
         <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>
           {success}
         </Alert>
       </Collapse>
-      
+
       {/* Strategy Settings */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6}>
@@ -521,21 +536,21 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
             variant="outlined"
             startIcon={<RefreshIcon />}
             onClick={refreshAllPremiums}
-            disabled={legs.every(l => !l.strike || !l.expiry)}
+            disabled={legs.every((l) => !l.strike || !l.expiry)}
           >
             Refresh Prices
           </Button>
         </Grid>
       </Grid>
-      
+
       <Divider sx={{ mb: 3 }} />
-      
+
       {/* Legs Table */}
       <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         Strategy Legs
         <Chip label={`${legs.length} leg${legs.length > 1 ? 's' : ''}`} size="small" />
       </Typography>
-      
+
       <TableContainer sx={{ mb: 2 }}>
         <Table size="small">
           <TableHead>
@@ -555,7 +570,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
             {legs.map((leg, idx) => (
               <TableRow key={leg.id}>
                 <TableCell>{idx + 1}</TableCell>
-                
+
                 {/* Option Type */}
                 <TableCell>
                   <FormControl size="small" sx={{ minWidth: 100 }}>
@@ -578,7 +593,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                     </Select>
                   </FormControl>
                 </TableCell>
-                
+
                 {/* Side */}
                 <TableCell>
                   <FormControl size="small" sx={{ minWidth: 90 }}>
@@ -601,7 +616,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                     </Select>
                   </FormControl>
                 </TableCell>
-                
+
                 {/* Expiry */}
                 <TableCell>
                   <FormControl size="small" sx={{ minWidth: 120 }}>
@@ -613,7 +628,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                       <MenuItem value="">
                         <em>{loadingExpiries ? 'Loading...' : 'Select'}</em>
                       </MenuItem>
-                      {expiries.map(exp => (
+                      {expiries.map((exp) => (
                         <MenuItem key={exp} value={exp}>
                           {formatExpiry(exp)}
                         </MenuItem>
@@ -621,7 +636,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                     </Select>
                   </FormControl>
                 </TableCell>
-                
+
                 {/* Strike */}
                 <TableCell>
                   <FormControl size="small" sx={{ minWidth: 110 }}>
@@ -634,13 +649,14 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                         <MenuItem value="">
                           <em>Select</em>
                         </MenuItem>
-                        {strikesByExpiry[leg.expiry].map(strike => (
-                          <MenuItem 
-                            key={strike} 
+                        {strikesByExpiry[leg.expiry].map((strike) => (
+                          <MenuItem
+                            key={strike}
                             value={strike}
                             sx={{
                               fontWeight: strike === atmByExpiry[leg.expiry] ? 'bold' : 'normal',
-                              bgcolor: strike === atmByExpiry[leg.expiry] ? 'action.selected' : 'inherit'
+                              bgcolor:
+                                strike === atmByExpiry[leg.expiry] ? 'action.selected' : 'inherit',
                             }}
                           >
                             ${strike.toLocaleString()}
@@ -656,13 +672,13 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                         onChange={(e) => updateLeg(leg.id, 'strike', e.target.value)}
                         placeholder="Strike"
                         InputProps={{
-                          startAdornment: <InputAdornment position="start">$</InputAdornment>
+                          startAdornment: <InputAdornment position="start">$</InputAdornment>,
                         }}
                       />
                     )}
                   </FormControl>
                 </TableCell>
-                
+
                 {/* Quantity */}
                 <TableCell>
                   <TextField
@@ -674,7 +690,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                     sx={{ width: 70 }}
                   />
                 </TableCell>
-                
+
                 {/* Premium */}
                 <TableCell align="right">
                   {leg.premium ? (
@@ -687,10 +703,12 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                       </Typography>
                     </Tooltip>
                   ) : (
-                    <Typography variant="body2" color="text.disabled">-</Typography>
+                    <Typography variant="body2" color="text.disabled">
+                      -
+                    </Typography>
                   )}
                 </TableCell>
-                
+
                 {/* Delta */}
                 <TableCell align="right">
                   {leg.greeks?.delta ? (
@@ -698,10 +716,12 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
                       {((leg.side === 'buy' ? 1 : -1) * leg.greeks.delta * leg.quantity).toFixed(3)}
                     </Typography>
                   ) : (
-                    <Typography variant="body2" color="text.disabled">-</Typography>
+                    <Typography variant="body2" color="text.disabled">
+                      -
+                    </Typography>
                   )}
                 </TableCell>
-                
+
                 {/* Actions */}
                 <TableCell align="center">
                   <IconButton
@@ -718,19 +738,14 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
           </TableBody>
         </Table>
       </TableContainer>
-      
+
       {/* Add Leg Button */}
-      <Button
-        variant="outlined"
-        startIcon={<AddIcon />}
-        onClick={addLeg}
-        sx={{ mb: 3 }}
-      >
+      <Button variant="outlined" startIcon={<AddIcon />} onClick={addLeg} sx={{ mb: 3 }}>
         Add Leg
       </Button>
-      
+
       <Divider sx={{ mb: 3 }} />
-      
+
       {/* Summary */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6}>
@@ -741,28 +756,35 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
               </Typography>
               <Grid container spacing={1}>
                 <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">Net Premium:</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Net Premium:
+                  </Typography>
                 </Grid>
                 <Grid item xs={6}>
-                  <Typography 
-                    variant="body1" 
+                  <Typography
+                    variant="body1"
                     fontWeight="bold"
                     color={totals.isCredit ? 'success.main' : 'error.main'}
                   >
-                    {totals.isCredit ? '+' : ''}{totals.premium.toFixed(2)} USD
+                    {totals.isCredit ? '+' : ''}
+                    {totals.premium.toFixed(2)} USD
                     <Typography variant="caption" component="span" sx={{ ml: 1 }}>
                       ({totals.isCredit ? 'Credit' : 'Debit'})
                     </Typography>
                   </Typography>
                 </Grid>
                 <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">Net Delta:</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Net Delta:
+                  </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body1">{totals.delta.toFixed(3)}</Typography>
                 </Grid>
                 <Grid item xs={6}>
-                  <Typography variant="body2" color="text.secondary">Total Theta:</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Total Theta:
+                  </Typography>
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="body1">{totals.theta.toFixed(2)}/day</Typography>
@@ -771,7 +793,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} sm={6}>
           <Card variant="outlined">
             <CardContent>
@@ -792,16 +814,13 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
           </Card>
         </Grid>
       </Grid>
-      
+
       {/* Action Buttons */}
       <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-        <Button
-          variant="outlined"
-          onClick={handleReset}
-        >
+        <Button variant="outlined" onClick={handleReset}>
           Reset
         </Button>
-        
+
         <Button
           variant="contained"
           color="primary"
@@ -811,7 +830,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
         >
           Create Strategy
         </Button>
-        
+
         <Button
           variant="contained"
           color="success"
@@ -823,7 +842,7 @@ export default function CustomStrategyBuilder({ onStrategyCreated, onExecutionCo
           One-Click Execute
         </Button>
       </Box>
-      
+
       {/* Created Strategy Info */}
       {createdStrategy && (
         <Box sx={{ mt: 3 }}>
