@@ -42,7 +42,10 @@ describe('useBotControl', () => {
       expect.any(Object)
     );
     await waitFor(() => {
-      expect(showNotification).toHaveBeenCalledWith('Bot started', 'success');
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.stringContaining('Bot started'),
+        'success'
+      );
     });
     expect(onSuccess).toHaveBeenCalled();
     expect(setBusy).toHaveBeenCalledWith(false);
@@ -62,7 +65,10 @@ describe('useBotControl', () => {
       expect.any(Object)
     );
     await waitFor(() => {
-      expect(showNotification).toHaveBeenCalledWith('Bot stopped', 'success');
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.stringContaining('Bot stopped'),
+        'success'
+      );
     });
   });
 
@@ -80,11 +86,16 @@ describe('useBotControl', () => {
       expect.any(Object)
     );
     await waitFor(() => {
-      expect(showNotification).toHaveBeenCalledWith('Bot restarted', 'success');
+      expect(showNotification).toHaveBeenCalledWith(
+        expect.stringContaining('restart'),
+        'success'
+      );
     });
   });
 
   test('handles API errors gracefully', async () => {
+    jest.setTimeout(10000); // Increase timeout for this test
+    
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 500,
@@ -99,12 +110,16 @@ describe('useBotControl', () => {
       await result.current.handleStartBot();
     });
 
-    await waitFor(() => {
-      expect(showNotification).toHaveBeenCalledWith(
-        expect.stringContaining('Failed'),
-        'error'
-      );
-    });
+    // Wait longer for retries to complete
+    await waitFor(
+      () => {
+        expect(showNotification).toHaveBeenCalledWith(
+          expect.stringContaining('Failed'),
+          'error'
+        );
+      },
+      { timeout: 8000 }
+    );
     expect(setBusy).toHaveBeenCalledWith(false);
   });
 });

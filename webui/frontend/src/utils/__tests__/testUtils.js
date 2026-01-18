@@ -33,6 +33,39 @@ export function renderWithProviders(
       </ThemeModeProvider>
     );
   }
+  
+  return render(ui, { wrapper: Wrapper, ...renderOptions });
+}
+
+/**
+ * Mock notification function
+ */
+export const mockNotification = jest.fn();
+
+/**
+ * Create mock socket instance
+ */
+export function createMockSocket() {
+  return {
+    on: jest.fn(),
+    off: jest.fn(),
+    emit: jest.fn(),
+    connected: true,
+  };
+}
+
+// Test to make Jest happy
+describe('testUtils', () => {
+  it('exports renderWithProviders', () => {
+    expect(renderWithProviders).toBeDefined();
+  });
+});
+            </KeyboardProvider>
+          </NotificationProvider>
+        </SystemStatusProvider>
+      </ThemeModeProvider>
+    );
+  }
 
   return render(ui, { wrapper: Wrapper, ...renderOptions });
 }
