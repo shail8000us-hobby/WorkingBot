@@ -9,10 +9,10 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, devtools } from 'zustand/middleware';
 
 /**
- * Main application store
+ * Main application store - Enhanced for V1 modernization
  * 
  * State includes:
  * - positions: Current trading positions
@@ -20,11 +20,15 @@ import { persist } from 'zustand/middleware';
  * - config: Bot configuration
  * - health: System health status
  * - pnl: Profit & Loss data
+ * - botStatus: Bot running state
+ * - connection: WebSocket connection state
+ * - warnings: System warnings
  * - lastUpdate: Timestamp of last data refresh
  */
 export const useStore = create(
-  persist(
-    (set, get) => ({
+  devtools(
+    persist(
+      (set, get) => ({
       // =============================================
       // State
       // =============================================
@@ -42,12 +46,30 @@ export const useStore = create(
       
       // System data
       config: {},
+      configMeta: null,
       health: { 
         status: 'unknown',
         services: {},
         resources: {},
         circuit_breakers: {}
       },
+      
+      // Bot status
+      botStatus: {
+        running: false,
+        pid: null,
+        uptime: 0
+      },
+      
+      // Connection state
+      connection: {
+        state: 'disconnected',
+        quality: 'unknown',
+        latency: null
+      },
+      
+      // Warnings and notifications
+      warnings: [],
       
       // Metadata
       lastUpdate: null,
@@ -126,6 +148,51 @@ export const useStore = create(
       },
       
       /**
+       * Update bot status
+       */
+      updateBotStatus: (status) => {
+        set({ 
+          botStatus: { ...get().botStatus, ...status },
+          lastUpdate: Date.now()
+        });
+      },
+      
+      /**
+       * Update connection state
+       */
+      updateConnection: (state, quality, latency) => {
+        set({
+          connection: { state, quality, latency },
+          lastUpdate: Date.now()
+        });
+      },
+      
+      /**
+       * Add warning
+       */
+      addWarning: (warning) => {
+        const warnings = get().warnings;
+        const exists = warnings.find(w => w.id === warning.id);
+        if (!exists) {
+          set({ warnings: [...warnings, warning] });
+        }
+      },
+      
+      /**
+       * Remove warning
+       */
+      removeWarning: (id) => {
+        set({ warnings: get().warnings.filter(w => w.id !== id) });
+      },
+      
+      /**
+       * Clear all warnings
+       */
+      clearWarnings: () => {
+        set({ warnings: [] });
+      },
+      
+      /**
        * Set error state
        */
       setError: (error) => {
@@ -192,15 +259,17 @@ export const useStore = create(
         set(updates);
       }
     }),
-    {
-      name: 'webui-storage', // localStorage key
-      
-      // Only persist config and lastUpdate (not dynamic data like health)
-      partialize: (state) => ({
-        config: state.config,
-        lastUpdate: state.lastUpdate
-      })
-    }
+      {
+        name: 'webui-storage', // localStorage key
+        
+        // Only persist config and lastUpdate (not dynamic data like health)
+        partialize: (state) => ({
+          config: state.config,
+          lastUpdate: state.lastUpdate
+        })
+      }
+    ),
+    { name: 'GridBot WebUI Store' }
   )
 );
 

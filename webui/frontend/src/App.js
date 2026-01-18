@@ -34,7 +34,6 @@ import { useStore, useStoreActions } from './store';
 
 // Week 3: Feature flags and Guardian Dashboard
 import { useFeatureFlag } from './utils/featureFlags';
-import GuardianDashboard from './components/GuardianDashboard';
 
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
@@ -55,66 +54,70 @@ import { useTradingData } from './hooks/useTradingData';
 import { MobileOptimizationProvider } from './context/MobileOptimizationContext';
 import { SymbolProvider } from './context/SymbolContext';
 import { InstanceProvider } from './context/InstanceContext';
-import SymbolContextBar from './components/layout/SymbolContextBar';
-import InstanceContextBar from './components/layout/InstanceContextBar';
 import IdleIndicator from './components/IdleIndicator';
 import SafetyWarningBanner from './components/SafetyWarningBanner';
+import OfflineIndicator from './components/OfflineIndicator';
+import SymbolContextBar from './components/layout/SymbolContextBar';
+import InstanceContextBar from './components/layout/InstanceContextBar';
 // Mobile indicators removed for cleaner UI
 // import MobileBatteryIndicator from './components/MobileBatteryIndicator';
 // import TailscaleMobileOptimizer from './components/TailscaleMobileOptimizer';
 import './App.css';
 
-// Component imports
-import ConfigPanel from './components/ConfigPanel';
-import LogsPanel from './components/LogsPanel';
-import MonitoringPanel from './components/MonitoringPanel';
-import MonitoringDashboard from './components/MonitoringDashboard';
-import ProductionMonitoringDashboard from './components/ProductionMonitoringDashboard';
-import GuardianPanel from './components/GuardianPanel';
-import PM2Panel from './components/PM2Panel';
-import BotManagementDashboard from './components/BotManagement/BotManagementDashboard';
-import RobustnessPanel from './components/RobustnessPanel';
-import CapitalProtectionPanel from './components/CapitalProtectionPanel';
-import InstitutionalAIPanel from './components/InstitutionalAIPanel';
-import LiquidationProtectionPanel from './components/LiquidationProtectionPanel';
-import TradingStatusPanel from './components/TradingStatusPanel';
-import AIAdvisorWidget from './components/AIAdvisorWidget';
-import MarketNewsWidget from './components/MarketNewsWidget';
-import CommandKnowledgeBase from './components/CommandKnowledgeBase';
-import SyncReconciliationPanel from './components/SyncReconciliationPanel';
-import EmergencyControlsPanel from './components/EmergencyControlsPanel';
-import ErrorIntelligencePanel from './components/ErrorIntelligencePanel_simple';
-import ErrorIntelligenceLive from './components/ErrorIntelligenceLive';
-import ReconciliationPanelV2 from './components/ReconciliationPanelV2';
-import PositionsPanel from './components/PositionsPanel';
-import { OptionsPanel } from './components/options';
-import { OptionsChainPanel } from './components/optionsChain';
-import { StrategyBuilder } from './components/optionsStrategy';
-import MLInsightsPanel from './components/options/MLInsightsPanel';
-import MLStyleProfile from './components/options/MLStyleProfile';
-import MLOpportunityScanner from './components/options/MLOpportunityScanner';
-import MLDecisionCenter from './components/options/MLDecisionCenter';
-import MLModelMonitor from './components/options/MLModelMonitor';
-import DeltaTradeSync from './components/options/DeltaTradeSync';
-import MarketSignalPanel from './components/MarketSignalPanel';
-import ShutdownPanel from './components/ShutdownPanel';
-import OpportunisticRecoveryPanel from './components/OpportunisticRecoveryPanel';
-import BotActionsPanel from './components/BotActionsPanel';
-import BackendDownError from './components/BackendDownError';
-import TodoListPanel from './components/TodoListPanel';
-import BotBrainAnalyzer from './components/BotBrainAnalyzer';
-import FileEditor from './components/FileEditor';
-import StrategyEditor from './components/StrategyEditor';
-import FloatingPriceWidget from './components/FloatingPriceWidget';
-import ConfigVisualEditor from './components/ConfigVisualEditor';
-import ModeSwitcherPanel from './components/ModeSwitcherPanel';
-import SystemHealthPanel from './components/SystemHealthPanel';
-import MultiInstanceManager from './components/MultiInstanceManager';
-import MonitoringRecoveryPanel from './components/panels/MonitoringRecoveryPanel';
-import RSIPanel from './components/RSIPanel';
-import SymbolPortfolio from './components/SymbolPortfolio';
-import RiskSafetyDashboard from './components/RiskSafetyDashboard';
-import ZeroDTEDashboard from './components/zero_dte/ZeroDTEDashboard';
+// Lazy load heavy components for better performance
+const GuardianDashboard = React.lazy(() => import('./components/GuardianDashboard'));
+
+// Lazy load heavy components for better initial load performance
+const ConfigPanel = React.lazy(() => import('./components/ConfigPanel'));
+const LogsPanel = React.lazy(() => import('./components/LogsPanel'));
+const MonitoringPanel = React.lazy(() => import('./components/MonitoringPanel'));
+const MonitoringDashboard = React.lazy(() => import('./components/MonitoringDashboard'));
+const ProductionMonitoringDashboard = React.lazy(() => import('./components/ProductionMonitoringDashboard'));
+const GuardianPanel = React.lazy(() => import('./components/GuardianPanel'));
+const PM2Panel = React.lazy(() => import('./components/PM2Panel'));
+const BotManagementDashboard = React.lazy(() => import('./components/BotManagement/BotManagementDashboard'));
+const RobustnessPanel = React.lazy(() => import('./components/RobustnessPanel'));
+const CapitalProtectionPanel = React.lazy(() => import('./components/CapitalProtectionPanel'));
+const InstitutionalAIPanel = React.lazy(() => import('./components/InstitutionalAIPanel'));
+const LiquidationProtectionPanel = React.lazy(() => import('./components/LiquidationProtectionPanel'));
+const TradingStatusPanel = React.lazy(() => import('./components/TradingStatusPanel'));
+const AIAdvisorWidget = React.lazy(() => import('./components/AIAdvisorWidget'));
+const MarketNewsWidget = React.lazy(() => import('./components/MarketNewsWidget'));
+const CommandKnowledgeBase = React.lazy(() => import('./components/CommandKnowledgeBase'));
+const SyncReconciliationPanel = React.lazy(() => import('./components/SyncReconciliationPanel'));
+const EmergencyControlsPanel = React.lazy(() => import('./components/EmergencyControlsPanel'));
+const ErrorIntelligencePanel = React.lazy(() => import('./components/ErrorIntelligencePanel_simple'));
+const ErrorIntelligenceLive = React.lazy(() => import('./components/ErrorIntelligenceLive'));
+const ReconciliationPanelV2 = React.lazy(() => import('./components/ReconciliationPanelV2'));
+const PositionsPanel = React.lazy(() => import('./components/PositionsPanel'));
+const OptionsPanel = React.lazy(() => import('./components/options').then(m => ({ default: m.OptionsPanel })));
+const OptionsChainPanel = React.lazy(() => import('./components/optionsChain').then(m => ({ default: m.OptionsChainPanel })));
+const StrategyBuilder = React.lazy(() => import('./components/optionsStrategy').then(m => ({ default: m.StrategyBuilder })));
+const MLInsightsPanel = React.lazy(() => import('./components/options/MLInsightsPanel'));
+const MLStyleProfile = React.lazy(() => import('./components/options/MLStyleProfile'));
+const MLOpportunityScanner = React.lazy(() => import('./components/options/MLOpportunityScanner'));
+const MLDecisionCenter = React.lazy(() => import('./components/options/MLDecisionCenter'));
+const MLModelMonitor = React.lazy(() => import('./components/options/MLModelMonitor'));
+const DeltaTradeSync = React.lazy(() => import('./components/options/DeltaTradeSync'));
+const MarketSignalPanel = React.lazy(() => import('./components/MarketSignalPanel'));
+const ShutdownPanel = React.lazy(() => import('./components/ShutdownPanel'));
+const OpportunisticRecoveryPanel = React.lazy(() => import('./components/OpportunisticRecoveryPanel'));
+const BotActionsPanel = React.lazy(() => import('./components/BotActionsPanel'));
+const BackendDownError = React.lazy(() => import('./components/BackendDownError'));
+const TodoListPanel = React.lazy(() => import('./components/TodoListPanel'));
+const BotBrainAnalyzer = React.lazy(() => import('./components/BotBrainAnalyzer'));
+const FileEditor = React.lazy(() => import('./components/FileEditor'));
+const StrategyEditor = React.lazy(() => import('./components/StrategyEditor'));
+const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceWidget'));
+const ConfigVisualEditor = React.lazy(() => import('./components/ConfigVisualEditor'));
+const ModeSwitcherPanel = React.lazy(() => import('./components/ModeSwitcherPanel'));
+const SystemHealthPanel = React.lazy(() => import('./components/SystemHealthPanel'));
+const MultiInstanceManager = React.lazy(() => import('./components/MultiInstanceManager'));
+const MonitoringRecoveryPanel = React.lazy(() => import('./components/panels/MonitoringRecoveryPanel'));
+const RSIPanel = React.lazy(() => import('./components/RSIPanel'));
+const SymbolPortfolio = React.lazy(() => import('./components/SymbolPortfolio'));
+const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDashboard'));
+const ZeroDTEDashboard = React.lazy(() => import('./components/zero_dte/ZeroDTEDashboard'));
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
   <div className="flex items-center justify-center py-10 text-sm text-slate-400">
@@ -324,7 +327,7 @@ function App() {
     } catch (error) {
       showNotification(`Failed to clear cache: ${error.message}`, 'error');
     }
-  }, []);
+  }, [showNotification]);
 
   // Bot control hook
   const { handleStartBot, handleStopBot, handleRestartBot } = useBotControl({
@@ -594,7 +597,6 @@ function App() {
       showNotification(`Navigated to ${sectionId.replace('_', ' ')}`, 'info');
     }
   }, [showNotification]);
-  
   // Navigation handler that clears params when navigating via sidebar
   const handleSectionSelect = useCallback((sectionId) => {
     setActiveSection(sectionId);
@@ -1586,6 +1588,9 @@ function App() {
       {/* Idle Mode Indicator */}
       <IdleIndicator />
       
+      {/* Offline Mode Indicator */}
+      <OfflineIndicator />
+      
       {/* Safety Warning - Shows bots are still running */}
       <SafetyWarningBanner />
       
@@ -1594,7 +1599,9 @@ function App() {
       {/* <TailscaleMobileOptimizer /> */}
       
       {/* Floating Price Widget - Real-time BTC/ETH prices */}
-      <FloatingPriceWidget />
+      <Suspense fallback={null}>
+        <FloatingPriceWidget />
+      </Suspense>
         </div>
       </MobileOptimizationProvider>
     </SymbolProvider>

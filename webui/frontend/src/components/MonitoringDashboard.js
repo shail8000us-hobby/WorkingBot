@@ -79,7 +79,7 @@ const MonitoringDashboard = () => {
   // Auto-refresh on mount and symbol change
   useEffect(() => {
     fetchMonitoringData();
-    const interval = setInterval(fetchMonitoringData, 10000); // Poll every 10s for faster updates
+    const interval = setInterval(fetchMonitoringData, 30000); // Poll every 30s for faster updates
     return () => clearInterval(interval);
   }, [selectedSymbol]);
 

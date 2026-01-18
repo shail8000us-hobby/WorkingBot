@@ -67,7 +67,7 @@ const RealTimePredictions = () => {
   // Auto-refresh every 3 seconds
   useEffect(() => {
     fetchPredictions();
-    const interval = setInterval(fetchPredictions, 3000);
+    const interval = setInterval(fetchPredictions, 30000);
     return () => clearInterval(interval);
   }, []);
 

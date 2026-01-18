@@ -99,7 +99,7 @@ function CapitalProtectionPanel() {
 
   useEffect(() => {
     fetchAllData();
-    const interval = setInterval(fetchAllData, 5000); // Update every 5 seconds
+    const interval = setInterval(fetchAllData, 15000); // Update every 15 seconds
     return () => clearInterval(interval);
   }, [fetchAllData]);
 

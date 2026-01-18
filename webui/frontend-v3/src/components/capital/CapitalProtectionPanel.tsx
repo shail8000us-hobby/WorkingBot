@@ -28,13 +28,13 @@ import {
   TrendingDown,
   Zap,
   Wallet,
+  X,
   Users,
   Book,
   AlertTriangle,
   CheckCircle2,
   XCircle,
   Edit2,
-  X,
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -289,13 +289,21 @@ export function CapitalProtectionPanel() {
     <div className="space-y-6">
       {/* Notification Alert */}
       {notification.open && (
-        <Alert
-          variant={notification.severity === 'error' ? 'destructive' : notification.severity === 'info' ? 'default' : 'default'}
-          className="mb-4"
-          onClose={() => setNotification({ ...notification, open: false })}
-        >
-          <AlertDescription>{notification.message}</AlertDescription>
-        </Alert>
+        <div className="relative">
+          <Alert
+            variant={notification.severity === 'error' ? 'destructive' : notification.severity === 'info' ? 'default' : 'default'}
+            className="mb-4"
+          >
+            <AlertDescription>{notification.message}</AlertDescription>
+            <button
+              onClick={() => setNotification({ ...notification, open: false })}
+              className="absolute top-3 right-3 p-1 hover:bg-white/10 rounded transition-colors"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Alert>
+        </div>
       )}
 
       <Card>
@@ -577,7 +585,7 @@ export function CapitalProtectionPanel() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  const ef = data.equityFloor || {};
+                                  const ef: any = data.equityFloor || {};
                                   setEditing({
                                     ...editing,
                                     equityFloorEdit: true,

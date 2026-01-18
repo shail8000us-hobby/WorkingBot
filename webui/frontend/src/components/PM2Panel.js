@@ -67,7 +67,7 @@ const PM2Panel = () => {
   // Auto-refresh every 5 seconds
   useEffect(() => {
     fetchPM2Status();
-    const interval = setInterval(fetchPM2Status, 5000);
+    const interval = setInterval(fetchPM2Status, 30000);
     return () => clearInterval(interval);
   }, [fetchPM2Status]);
 

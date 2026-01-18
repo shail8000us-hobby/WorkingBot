@@ -108,7 +108,7 @@ const RiskSafetyDashboard = () => {
 
   useEffect(() => {
     fetchSafetyData();
-    const interval = setInterval(fetchSafetyData, 5000); // Refresh every 5 seconds
+    const interval = setInterval(fetchSafetyData, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
   }, [fetchSafetyData]);
 

@@ -105,7 +105,7 @@ export default function TradingStatusPanel({ onNavigate, featureFlags = {} }) {
   // Auto-refresh reconciliation every 15 seconds
   useEffect(() => {
     fetchReconStatus();
-    const interval = setInterval(fetchReconStatus, 15000);
+    const interval = setInterval(fetchReconStatus, 30000);
     return () => clearInterval(interval);
   }, [fetchReconStatus]);
 

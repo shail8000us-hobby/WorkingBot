@@ -55,7 +55,7 @@ const TradingModeSwitch = ({ botRunning }) => {
   // Fetch current mode on mount and every 5 seconds
   useEffect(() => {
     fetchCurrentMode();
-    const interval = setInterval(fetchCurrentMode, 5000);
+    const interval = setInterval(fetchCurrentMode, 30000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

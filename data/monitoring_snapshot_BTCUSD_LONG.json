@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768730009.234038,
+  "timestamp": 1768737252.1345952,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 67665.05227208138,
+  "uptime": 74907.95282912254,
   "state": {
     "open_tranches": [
       {
@@ -44,7 +44,7 @@
       "total_closed": 0,
       "avg_entry_price": 95000.0,
       "total_size": 5,
-      "oldest_position_age": 31672.557228803635,
+      "oldest_position_age": 38915.46796607971,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
@@ -75,10 +75,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 46018,
+        "processed_count": 50976,
         "error_count": 0,
-        "avg_processing_time_ms": 0.07559458026662469,
-        "max_processing_time_ms": 0.8242909971158952,
+        "avg_processing_time_ms": 0.1068871004099492,
+        "max_processing_time_ms": 1.6279170085908845,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -86,11 +86,11 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 13264,
+        "processed_count": 14667,
         "error_count": 2,
-        "avg_processing_time_ms": 0.03932285020709969,
-        "max_processing_time_ms": 0.30625000363215804,
-        "error_rate": 0.00015078407720144752
+        "avg_processing_time_ms": 0.042664580105338246,
+        "max_processing_time_ms": 0.3472910029813647,
+        "error_rate": 0.0001363605372605168
       }
     },
     "fills_processed": 1,
@@ -107,8 +107,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 95260.0,
-      "price_age_seconds": 1.7862589359283447,
+      "price": 95152.0,
+      "price_age_seconds": 2.8159029483795166,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -118,7 +118,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 12804,
+        "total_updates": 14234,
         "websocket_updates": 0,
         "rest_api_updates": 67,
         "stale_warnings": 306,

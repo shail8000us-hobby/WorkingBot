@@ -123,7 +123,7 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
     };
     
     fetchMarketData();
-    const interval = setInterval(fetchMarketData, 5000); // Update every 5 seconds
+    const interval = setInterval(fetchMarketData, 30000); // Update every 30 seconds
     
     return () => clearInterval(interval);
   }, []);

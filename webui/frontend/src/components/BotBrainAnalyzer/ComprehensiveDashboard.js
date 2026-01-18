@@ -80,7 +80,7 @@ const ComprehensiveDashboard = () => {
     fetchData();
     let interval;
     if (autoRefresh) {
-      interval = setInterval(fetchData, 3000);
+      interval = setInterval(fetchData, 30000);
     }
     return () => {
       if (interval) clearInterval(interval);

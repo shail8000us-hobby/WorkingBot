@@ -8,12 +8,12 @@ If you need to revert all Phase 1 and Phase 2 changes, follow these steps:
 
 ## 📋 Quick Rollback (Recommended)
 
-### One-Command Rollback
+### One-Command Rollback (All Phases)
 
 ```bash
 cd /Users/ssr/Projects/WorkingBot
 
-# Revert all Phase 1 + Phase 2 changes
+# Revert all Phase 1 + Phase 2 + Phase 3 changes
 git checkout HEAD -- \
   webui/frontend-v3/src/app/globals.css \
   webui/frontend-v3/src/components/ui/card.tsx \
@@ -24,8 +24,13 @@ git checkout HEAD -- \
   webui/frontend-v3/src/components/layout/Sidebar.tsx \
   webui/frontend-v3/src/components/layout/AppShell.tsx
 
-# Remove new files created in Phase 2
+# Remove Phase 2 & Phase 3 new files
 rm webui/frontend-v3/src/components/ui/skeleton.tsx
+rm webui/frontend-v3/src/components/ui/empty-state.tsx
+rm webui/frontend-v3/src/components/ui/animated-counter.tsx
+rm webui/frontend-v3/src/components/ui/toast.tsx
+rm webui/frontend-v3/src/components/ui/animated-chart.tsx
+rm webui/frontend-v3/src/components/ui/performance-monitor.tsx
 
 # Verify rollback
 git status
@@ -91,6 +96,17 @@ Modified (4 files):
 
 Created (1 file):
 4. ✅ `src/components/ui/skeleton.tsx` - **DELETE THIS FILE**
+
+### Phase 3 Files (6 total)
+Modified (1 file):
+1. ✅ `src/app/globals.css` - Phase 3 CSS animations (additional)
+
+Created (5 files):
+2. ✅ `src/components/ui/empty-state.tsx` - **DELETE THIS FILE**
+3. ✅ `src/components/ui/animated-counter.tsx` - **DELETE THIS FILE**
+4. ✅ `src/components/ui/toast.tsx` - **DELETE THIS FILE**
+5. ✅ `src/components/ui/animated-chart.tsx` - **DELETE THIS FILE**
+6. ✅ `src/components/ui/performance-monitor.tsx` - **DELETE THIS FILE**
 
 ---
 

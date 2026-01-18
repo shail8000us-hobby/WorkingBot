@@ -36,12 +36,19 @@
   "scripts": {
     "start": "react-app-rewired start",
     "build": "react-app-rewired build",
-    "test": "react-app-rewired test",
+    "test": "react-app-rewired test --env=jsdom",
+    "test:watch": "react-app-rewired test --env=jsdom --watch",
+    "test:coverage": "react-app-rewired test --env=jsdom --coverage --watchAll=false",
+    "test:ci": "CI=true react-app-rewired test --env=jsdom --coverage --watchAll=false",
     "eject": "react-scripts eject",
     "help:build": "cd ../.. && python3 tools/help/extract_help_metadata.py",
     "help:watch": "echo 'Help watch mode - run help:build after making changes'",
     "help:validate": "node tools/validate_help_coverage.js || echo 'Validation script not yet created'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx --max-warnings 200",
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,css,md}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx,css,md}\"",
+    "analyze": "source-map-explorer 'build/static/js/*.js'"
   },
   "eslintConfig": {
     "extends": [
@@ -65,13 +72,52 @@
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
     "@tailwindcss/typography": "^0.5.13",
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/user-event": "^14.5.1",
     "autoprefixer": "^10.4.20",
     "compression-webpack-plugin": "^11.1.0",
     "customize-cra": "^1.0.0",
+    "eslint": "^8.55.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
     "postcss": "^8.4.47",
+    "prettier": "^3.1.1",
     "react-app-rewired": "^2.2.1",
+    "source-map-explorer": "^2.5.3",
     "tailwindcss": "^3.4.13",
     "terser-webpack-plugin": "^5.3.14",
     "typescript": "^5.4.5"
+  },
+  "jest": {
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx,ts,tsx}",
+      "!src/**/*.test.{js,jsx,ts,tsx}",
+      "!src/index.js",
+      "!src/reportWebVitals.js",
+      "!src/**/*.d.ts"
+    ],
+    "coverageThresholds": {
+      "global": {
+        "branches": 50,
+        "functions": 50,
+        "lines": 50,
+        "statements": 50
+      }
+    }
+  },
+  "lint-staged": {
+    "src/**/*.{js,jsx,ts,tsx}": [
+      "eslint --fix --max-warnings 0",
+      "prettier --write"
+    ],
+    "src/**/*.{css,md}": [
+      "prettier --write"
+    ]
   }
 }

@@ -252,10 +252,14 @@ export function RiskSafetyDashboard() {
     queryKey: ['safety-dashboard'],
     queryFn: fetchSafetyDashboard,
     refetchInterval: 5000, // Refresh every 5 seconds
-    onSuccess: () => {
-      setLastUpdate(new Date());
-    },
   });
+
+  // Update last update time when data changes
+  React.useEffect(() => {
+    if (data) {
+      setLastUpdate(new Date());
+    }
+  }, [data]);
 
   const guardianMutation = useMutation({
     mutationFn: handleGuardianAction,

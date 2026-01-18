@@ -218,7 +218,7 @@ const RobustnessPanel = () => {
     tick();
     // OPTIMIZED: Update every 5 seconds instead of 1 second to reduce re-renders
     // IDLE-AWARE: Pauses when user is idle
-    const interval = setInterval(tick, 5000);
+    const interval = setInterval(tick, 30000);
     return () => clearInterval(interval);
   }, [volatility?.last_update, volatility?.config?.check_interval, isActive]);
 

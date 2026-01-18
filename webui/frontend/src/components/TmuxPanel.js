@@ -42,7 +42,7 @@ const TmuxPanel = () => {
 
   useEffect(() => {
     fetchTmuxStatus();
-    const interval = setInterval(fetchTmuxStatus, 5000); // Poll every 5 seconds
+    const interval = setInterval(fetchTmuxStatus, 30000); // Poll every 30 seconds
     return () => clearInterval(interval);
   }, []);
 
