@@ -225,10 +225,10 @@ describe('EmptyState', () => {
   });
 
   describe('Animations', () => {
-    it('has animated background circle', () => {
+    it('has background styling', () => {
       const { container } = render(<EmptyState />);
-      const animatedBg = container.querySelector('.animate-pulse');
-      expect(animatedBg).toBeInTheDocument();
+      const bgElement = container.querySelector('.bg-gradient-to-br');
+      expect(bgElement).toBeInTheDocument();
     });
 
     it('has gradient background on icon container', () => {

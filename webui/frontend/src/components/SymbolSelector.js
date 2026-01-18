@@ -100,7 +100,7 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
     
     switch (status) {
       case 'active':
-        return <Activity className="h-4 w-4 text-emerald-400 animate-pulse" />;
+        return <Activity className="h-4 w-4 text-emerald-400" />;
       case 'stale':
         return <Clock className="h-4 w-4 text-amber-400" />;
       case 'disabled':

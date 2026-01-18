@@ -65,9 +65,9 @@ describe('AnimatedNumber', () => {
       expect(container.querySelector('.tabular-nums')).toBeInTheDocument();
     });
 
-    it('has number-highlight class', () => {
+    it('has tabular-nums class', () => {
       const { container } = render(<AnimatedNumber value={100} />);
-      expect(container.querySelector('.number-highlight')).toBeInTheDocument();
+      expect(container.querySelector('.tabular-nums')).toBeInTheDocument();
     });
   });
 
@@ -191,24 +191,24 @@ describe('AnimatedNumber', () => {
   describe('Animation Duration', () => {
     it('accepts custom duration prop', () => {
       const { container } = render(<AnimatedNumber value={100} duration={1.5} />);
-      expect(container.querySelector('.number-highlight')).toBeInTheDocument();
+      expect(container.querySelector('.tabular-nums')).toBeInTheDocument();
     });
 
     it('uses default duration when not specified', () => {
       const { container } = render(<AnimatedNumber value={100} />);
-      expect(container.querySelector('.number-highlight')).toBeInTheDocument();
+      expect(container.querySelector('.tabular-nums')).toBeInTheDocument();
     });
   });
 
   describe('Highlight on Change', () => {
     it('can disable highlight on change', () => {
       const { container } = render(<AnimatedNumber value={100} highlightOnChange={false} />);
-      expect(container.querySelector('.number-highlight')).toBeInTheDocument();
+      expect(container.querySelector('.tabular-nums')).toBeInTheDocument();
     });
 
     it('enables highlight by default', () => {
       const { container } = render(<AnimatedNumber value={100} />);
-      expect(container.querySelector('.number-highlight')).toBeInTheDocument();
+      expect(container.querySelector('.tabular-nums')).toBeInTheDocument();
     });
   });
 

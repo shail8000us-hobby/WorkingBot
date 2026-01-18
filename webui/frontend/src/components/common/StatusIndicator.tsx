@@ -28,14 +28,14 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   className
 }) => {
   const statusConfig: Record<StatusType, { color: string; bgColor: string; label: string; pulse: boolean }> = {
-    running: { color: 'text-green-400', bgColor: 'bg-green-500', label: 'Running', pulse: true },
+    running: { color: 'text-green-400', bgColor: 'bg-green-500', label: 'Running', pulse: false },
     stopped: { color: 'text-red-400', bgColor: 'bg-red-500', label: 'Stopped', pulse: false },
     idle: { color: 'text-yellow-400', bgColor: 'bg-yellow-500', label: 'Idle', pulse: false },
-    loading: { color: 'text-blue-400', bgColor: 'bg-blue-500', label: 'Loading', pulse: true },
+    loading: { color: 'text-blue-400', bgColor: 'bg-blue-500', label: 'Loading', pulse: false },
     connected: { color: 'text-green-400', bgColor: 'bg-green-500', label: 'Connected', pulse: false },
     disconnected: { color: 'text-gray-400', bgColor: 'bg-gray-500', label: 'Disconnected', pulse: false },
-    warning: { color: 'text-orange-400', bgColor: 'bg-orange-500', label: 'Warning', pulse: true },
-    error: { color: 'text-red-400', bgColor: 'bg-red-500', label: 'Error', pulse: true }
+    warning: { color: 'text-orange-400', bgColor: 'bg-orange-500', label: 'Warning', pulse: false },
+    error: { color: 'text-red-400', bgColor: 'bg-red-500', label: 'Error', pulse: false }
   };
   
   const sizeClasses: Record<SizeType, { dot: string; text: string }> = {

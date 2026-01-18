@@ -31,7 +31,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
     <div className={clsx('flex flex-col items-center justify-center py-12 px-4 text-center', className)}>
       {/* Animated background */}
       <div className="relative mb-6">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-full blur-2xl animate-pulse" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-full blur-2xl" />
         <div className="relative bg-slate-800/60 rounded-full p-6 backdrop-blur-sm">
           <Icon className="w-12 h-12 text-slate-400" />
         </div>

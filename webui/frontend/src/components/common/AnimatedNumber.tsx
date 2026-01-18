@@ -27,17 +27,17 @@ const AnimatedNumber: React.FC<AnimatedNumberProps> = ({
   suffix = '',
   className,
   duration = 0.5,
-  highlightOnChange = true
+  highlightOnChange = false
 }) => {
   const formattedValue = value?.toFixed(decimals) ?? '0.00';
   
   return (
     <motion.span
       key={value}
-      initial={{ opacity: highlightOnChange ? 0.5 : 1 }}
+      initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
-      transition={{ duration }}
-      className={clsx('tabular-nums number-highlight', className)}
+      transition={{ duration: 0 }}
+      className={clsx('tabular-nums', className)}
     >
       {prefix}{formattedValue}{suffix}
     </motion.span>

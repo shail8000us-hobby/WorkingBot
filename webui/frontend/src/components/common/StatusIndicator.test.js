@@ -70,16 +70,16 @@ describe('StatusIndicator', () => {
       });
     });
 
-    it('has pulsing animation for active states', () => {
+    it('has proper status indicator dot for active states', () => {
       const { container } = render(<StatusIndicator status="running" />);
-      const pulsingElement = container.querySelector('.animate-pulse');
-      expect(pulsingElement).toBeInTheDocument();
+      const dotElement = container.querySelector('.inline-flex');
+      expect(dotElement).toBeInTheDocument();
     });
 
-    it('has no pulsing animation for inactive states', () => {
+    it('has proper status indicator dot for inactive states', () => {
       const { container } = render(<StatusIndicator status="stopped" />);
-      const pulsingElement = container.querySelector('.animate-pulse');
-      expect(pulsingElement).not.toBeInTheDocument();
+      const dotElement = container.querySelector('.inline-flex');
+      expect(dotElement).toBeInTheDocument();
     });
 
     it('applies custom className', () => {

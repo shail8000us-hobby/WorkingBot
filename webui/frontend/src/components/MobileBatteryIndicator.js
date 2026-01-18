@@ -154,12 +154,7 @@ function MobileBatteryIndicator() {
               bgcolor: 'rgba(255, 152, 0, 0.9)',
               color: 'white',
               fontWeight: 'bold',
-              fontSize: '0.7rem',
-              animation: 'pulse 2s infinite',
-              '@keyframes pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.7 }
-              }
+              fontSize: '0.7rem'
             }}
           />
         </Tooltip>

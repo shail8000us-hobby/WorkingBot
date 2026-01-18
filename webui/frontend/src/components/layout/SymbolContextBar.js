@@ -197,12 +197,7 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: SYMBOL_COLORS.BTCUSD.primary,
-              animation: marketData.BTCUSD.price ? 'pulse 2s infinite' : 'none',
-              '@keyframes pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.5 }
-              }
+              backgroundColor: SYMBOL_COLORS.BTCUSD.primary
             }}
           />
           <Typography variant="body2" sx={{ fontWeight: 700, color: SYMBOL_COLORS.BTCUSD.primary, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
@@ -242,12 +237,7 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              backgroundColor: SYMBOL_COLORS.ETHUSD.primary,
-              animation: marketData.ETHUSD.price ? 'pulse 2s infinite' : 'none',
-              '@keyframes pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.5 }
-              }
+              backgroundColor: SYMBOL_COLORS.ETHUSD.primary
             }}
           />
           <Typography variant="body2" sx={{ fontWeight: 700, color: SYMBOL_COLORS.ETHUSD.primary, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>

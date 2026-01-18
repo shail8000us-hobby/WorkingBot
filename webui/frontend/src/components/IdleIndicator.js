@@ -68,12 +68,7 @@ function IdleIndicator() {
               px: 1,
               py: 2,
               boxShadow: 3,
-              cursor: 'help',
-              animation: 'pulse 2s infinite',
-              '@keyframes pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.7 }
-              }
+              cursor: 'help'
             }}
           />
         </Tooltip>

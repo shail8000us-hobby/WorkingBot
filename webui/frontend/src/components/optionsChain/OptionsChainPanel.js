@@ -497,7 +497,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
             label="LIVE" 
             color="success" 
             size="small" 
-            sx={{ animation: 'pulse 2s infinite' }}
+            sx={{}}
           />
         </Box>
         

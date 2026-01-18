@@ -333,8 +333,7 @@ const ChainTable = ({ chainData, spotPrice, atmStrike, onTrade, strategyMode, st
                     borderTop: isATM ? '2px solid #ffc107' : 
                                isSuggested && strategyMode && !builderMode ? '1px solid #2196f3' : 'none',
                     borderBottom: isATM ? '2px solid #ffc107' : 
-                                  isSuggested && strategyMode && !builderMode ? '1px solid #2196f3' : 'none',
-                    animation: isSuggested && strategyMode && !builderMode ? 'suggestedPulse 2s infinite' : 'none'
+                                  isSuggested && strategyMode && !builderMode ? '1px solid #2196f3' : 'none'
                   }}
                 >
                   {/* CALL Trade */}
