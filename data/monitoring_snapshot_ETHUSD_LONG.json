@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768739299.907706,
+  "timestamp": 1768739974.032845,
   "mode": "LONG",
   "symbol": "ETHUSD",
-  "uptime": 105152.08880090714,
+  "uptime": 105826.21393990517,
   "state": {
     "open_tranches": [],
     "pending_buy": {
@@ -63,10 +63,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 71377,
+        "processed_count": 71839,
         "error_count": 0,
-        "avg_processing_time_ms": 0.05823961953865364,
-        "max_processing_time_ms": 0.7676659879507497,
+        "avg_processing_time_ms": 0.06276462037931196,
+        "max_processing_time_ms": 0.5542080034501851,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -74,10 +74,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 20585,
+        "processed_count": 20716,
         "error_count": 0,
-        "avg_processing_time_ms": 0.04663831990910694,
-        "max_processing_time_ms": 0.3750409960048273,
+        "avg_processing_time_ms": 0.04023421002784744,
+        "max_processing_time_ms": 0.21145799837540835,
         "error_rate": 0.0
       }
     },
@@ -95,8 +95,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 3321.25,
-      "price_age_seconds": 0.3429131507873535,
+      "price": 3324.65,
+      "price_age_seconds": 1.1611649990081787,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -106,7 +106,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 20187,
+        "total_updates": 20320,
         "websocket_updates": 0,
         "rest_api_updates": 76,
         "stale_warnings": 206,

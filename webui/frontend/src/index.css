@@ -9,6 +9,7 @@
 @import './styles/micro-interactions.css';
 @import './styles/dark-mode.css';
 @import './styles/accessibility.css';
+@import './styles/modern-enhancements.css';
 
 :root {
   color-scheme: dark;

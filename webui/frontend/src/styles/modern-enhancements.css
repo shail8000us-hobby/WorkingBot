@@ -1,0 +1,524 @@
+/**
+ * Ultra-Modern Design Enhancements
+ * Cutting-edge visual effects for 2026
+ * 
+ * Created: January 18, 2026
+ * Safe: Pure CSS, no functional changes
+ */
+
+/* ============================================================================
+   MODERN GRADIENT BACKGROUNDS
+   ============================================================================ */
+
+.gradient-mesh-bg {
+  background: 
+    radial-gradient(at 40% 20%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, rgba(236, 72, 153, 0.1) 0px, transparent 50%),
+    radial-gradient(at 80% 50%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(34, 197, 94, 0.1) 0px, transparent 50%),
+    radial-gradient(at 80% 100%, rgba(251, 146, 60, 0.1) 0px, transparent 50%),
+    rgb(15, 23, 42);
+  animation: gradientShift 20s ease infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.gradient-border {
+  position: relative;
+  border-radius: 16px;
+  padding: 2px;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.5),
+    rgba(168, 85, 247, 0.5),
+    rgba(236, 72, 153, 0.5)
+  );
+  background-size: 200% 200%;
+  animation: gradientMove 3s ease infinite;
+}
+
+.gradient-border > * {
+  background: rgb(15, 23, 42);
+  border-radius: 14px;
+}
+
+@keyframes gradientMove {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* ============================================================================
+   NEON GLOW EFFECTS
+   ============================================================================ */
+
+.neon-text-primary {
+  color: rgb(99, 102, 241);
+  text-shadow: 
+    0 0 10px rgba(99, 102, 241, 0.8),
+    0 0 20px rgba(99, 102, 241, 0.6),
+    0 0 30px rgba(99, 102, 241, 0.4),
+    0 0 40px rgba(99, 102, 241, 0.2);
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+.neon-text-success {
+  color: rgb(34, 197, 94);
+  text-shadow: 
+    0 0 10px rgba(34, 197, 94, 0.8),
+    0 0 20px rgba(34, 197, 94, 0.6),
+    0 0 30px rgba(34, 197, 94, 0.4);
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+.neon-text-danger {
+  color: rgb(239, 68, 68);
+  text-shadow: 
+    0 0 10px rgba(239, 68, 68, 0.8),
+    0 0 20px rgba(239, 68, 68, 0.6),
+    0 0 30px rgba(239, 68, 68, 0.4);
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+@keyframes neonPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.neon-border {
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  box-shadow: 
+    0 0 10px rgba(99, 102, 241, 0.3),
+    0 0 20px rgba(99, 102, 241, 0.2),
+    inset 0 0 10px rgba(99, 102, 241, 0.1);
+}
+
+/* ============================================================================
+   HOLOGRAPHIC CARDS
+   ============================================================================ */
+
+.holographic-card {
+  position: relative;
+  background: rgba(51, 65, 85, 0.3);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.holographic-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    115deg,
+    transparent 20%,
+    rgba(99, 102, 241, 0.15) 40%,
+    rgba(168, 85, 247, 0.2) 50%,
+    rgba(236, 72, 153, 0.15) 55%,
+    transparent 70%
+  );
+  transform: translateX(-100%) translateY(-100%);
+  transition: transform 0.8s;
+}
+
+.holographic-card:hover::before {
+  transform: translateX(100%) translateY(100%);
+}
+
+.holographic-card:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(99, 102, 241, 0.2);
+}
+
+/* ============================================================================
+   MODERN BUTTONS
+   ============================================================================ */
+
+.btn-modern {
+  position: relative;
+  padding: 12px 28px;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 
+    0 4px 15px rgba(99, 102, 241, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.btn-modern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-modern:hover::before {
+  left: 100%;
+}
+
+.btn-modern:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 8px 25px rgba(99, 102, 241, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.btn-modern:active {
+  transform: translateY(0);
+}
+
+/* ============================================================================
+   FUTURISTIC PROGRESS BARS
+   ============================================================================ */
+
+.progress-futuristic {
+  position: relative;
+  height: 8px;
+  background: rgba(51, 65, 85, 0.5);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.progress-futuristic::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: var(--progress, 0%);
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.8),
+    rgba(168, 85, 247, 0.8),
+    rgba(236, 72, 153, 0.8)
+  );
+  background-size: 200% 100%;
+  border-radius: 10px;
+  box-shadow: 
+    0 0 10px rgba(99, 102, 241, 0.5),
+    0 0 20px rgba(168, 85, 247, 0.3);
+  animation: progressFlow 2s linear infinite;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes progressFlow {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 200% 0%;
+  }
+}
+
+/* ============================================================================
+   FLOATING PARTICLES EFFECT
+   ============================================================================ */
+
+.particles-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.particles-container::before,
+.particles-container::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: rgba(99, 102, 241, 0.6);
+  border-radius: 50%;
+  animation: floatParticle 8s infinite;
+}
+
+.particles-container::before {
+  top: 20%;
+  left: 10%;
+  animation-delay: 0s;
+}
+
+.particles-container::after {
+  top: 60%;
+  right: 15%;
+  animation-delay: 4s;
+  background: rgba(168, 85, 247, 0.6);
+}
+
+@keyframes floatParticle {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateY(-100px) scale(1.5);
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: translateY(-200px) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* ============================================================================
+   MODERN DATA CARDS
+   ============================================================================ */
+
+.data-card-modern {
+  background: linear-gradient(
+    135deg,
+    rgba(51, 65, 85, 0.6) 0%,
+    rgba(71, 85, 105, 0.4) 100%
+  );
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 16px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.data-card-modern::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(99, 102, 241, 0.8),
+    rgba(168, 85, 247, 0.8),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.data-card-modern:hover::before {
+  opacity: 1;
+}
+
+.data-card-modern:hover {
+  transform: translateY(-4px);
+  border-color: rgba(148, 163, 184, 0.3);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(99, 102, 241, 0.1);
+}
+
+/* ============================================================================
+   SCANLINE EFFECT
+   ============================================================================ */
+
+.scanline-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.scanline-effect::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: 0;
+  width: 100%;
+  height: 10px;
+  background: linear-gradient(
+    transparent,
+    rgba(99, 102, 241, 0.3),
+    transparent
+  );
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scanline {
+  0% {
+    top: -50%;
+  }
+  100% {
+    top: 150%;
+  }
+}
+
+/* ============================================================================
+   3D TRANSFORM CARDS
+   ============================================================================ */
+
+.card-3d {
+  transform-style: preserve-3d;
+  transition: transform 0.3s ease;
+}
+
+.card-3d:hover {
+  transform: perspective(1000px) rotateX(5deg) rotateY(-5deg) translateZ(20px);
+}
+
+.card-3d-content {
+  transform: translateZ(50px);
+}
+
+/* ============================================================================
+   CYBERPUNK THEME
+   ============================================================================ */
+
+.cyberpunk-border {
+  position: relative;
+  border: 2px solid;
+  border-image: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.8),
+    rgba(168, 85, 247, 0.8),
+    rgba(236, 72, 153, 0.8)
+  ) 1;
+  clip-path: polygon(
+    0 8px,
+    8px 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    0 calc(100% - 8px)
+  );
+}
+
+.cyberpunk-text {
+  font-family: 'Inter', monospace;
+  font-weight: 700;
+  font-size: 24px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  background: linear-gradient(
+    135deg,
+    #00ffff 0%,
+    #ff00ff 50%,
+    #ffff00 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 
+    0 0 20px rgba(0, 255, 255, 0.5),
+    0 0 40px rgba(255, 0, 255, 0.3);
+  animation: glitch 3s infinite;
+}
+
+@keyframes glitch {
+  0%, 90%, 100% {
+    transform: translateX(0);
+  }
+  92% {
+    transform: translateX(-2px);
+  }
+  94% {
+    transform: translateX(2px);
+  }
+  96% {
+    transform: translateX(-2px);
+  }
+}
+
+/* ============================================================================
+   MODERN BADGES
+   ============================================================================ */
+
+.badge-modern {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  box-shadow: 
+    0 2px 8px rgba(99, 102, 241, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  animation: badgeFloat 3s ease-in-out infinite;
+}
+
+@keyframes badgeFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* ============================================================================
+   RESPONSIVE UTILITIES
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .holographic-card:hover {
+    transform: translateY(-2px) scale(1);
+  }
+  
+  .card-3d:hover {
+    transform: none;
+  }
+  
+  .data-card-modern:hover {
+    transform: translateY(-2px);
+  }
+}
+
+/* Disable complex effects on low-end devices */
+@media (prefers-reduced-motion: reduce) {
+  .gradient-mesh-bg,
+  .gradient-border,
+  .holographic-card::before,
+  .scanline-effect::after,
+  .particles-container::before,
+  .particles-container::after {
+    animation: none !important;
+  }
+}
