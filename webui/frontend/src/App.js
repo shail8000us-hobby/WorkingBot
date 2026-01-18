@@ -37,7 +37,7 @@ import { useFeatureFlag } from './utils/featureFlags';
 
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
-import CollapsibleCard from './components/common/CollapsibleCard';
+import CollapsibleCard from './components/common/CollapsibleCard.tsx';
 import { VolatilityRegimePanel, UnrealizedPnLPanel } from './components/panels';
 import EmergencyKillButton from './components/EmergencyKillButton';
 import TradingModeSwitch from './components/TradingModeSwitch';
