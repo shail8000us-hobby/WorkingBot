@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768742021.9435399,
+  "timestamp": 1768742205.633075,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 79677.76177501678,
+  "uptime": 79861.45130896568,
   "state": {
     "open_tranches": [
       {
@@ -44,7 +44,7 @@
       "total_closed": 0,
       "avg_entry_price": 95000.0,
       "total_size": 5,
-      "oldest_position_age": 43685.27671098709,
+      "oldest_position_age": 43868.96319389343,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
@@ -75,10 +75,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 54247,
+        "processed_count": 54374,
         "error_count": 0,
-        "avg_processing_time_ms": 0.06972666931687854,
-        "max_processing_time_ms": 0.8185830083675683,
+        "avg_processing_time_ms": 0.08681212115334347,
+        "max_processing_time_ms": 1.1165420000907034,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -86,11 +86,11 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 15594,
+        "processed_count": 15630,
         "error_count": 2,
-        "avg_processing_time_ms": 0.045642471086466685,
+        "avg_processing_time_ms": 0.04913832119200379,
         "max_processing_time_ms": 0.9990000107791275,
-        "error_rate": 0.00012825445684237527
+        "error_rate": 0.00012795905310300704
       }
     },
     "fills_processed": 1,
@@ -107,8 +107,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 95007.5,
-      "price_age_seconds": 4.834794044494629,
+      "price": 95008.5,
+      "price_age_seconds": 1.3307557106018066,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -118,7 +118,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 15176,
+        "total_updates": 15213,
         "websocket_updates": 0,
         "rest_api_updates": 67,
         "stale_warnings": 306,
