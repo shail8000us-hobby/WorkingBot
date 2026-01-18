@@ -1,0 +1,15 @@
+{
+  "autonomy_level": "advisory",
+  "risk_limits": {
+    "max_position_size": 10,
+    "max_positions": 5,
+    "max_daily_trades": 20,
+    "max_loss_per_trade": 100.0,
+    "max_daily_loss": 500.0,
+    "max_drawdown_pct": 10.0,
+    "max_portfolio_risk": 0.2,
+    "max_single_trade_risk": 0.05,
+    "min_confidence": 0.6,
+    "min_style_match": 0.5
+  }
+}

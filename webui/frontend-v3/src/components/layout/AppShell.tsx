@@ -47,7 +47,7 @@ export function AppShell({ children }: AppShellProps) {
             </div>
             {showBrainPanel && <BrainPanel />}
             <main className={cn(
-              "transition-all duration-300 pt-14",
+              "transition-all duration-300 pt-16",
               "pb-20 md:pb-0", // Bottom padding for mobile nav
               showSidebar && "md:pl-64",
               showBrainPanel && "md:pr-80"

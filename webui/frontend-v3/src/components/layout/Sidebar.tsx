@@ -152,7 +152,7 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
   
   return (
     <aside className={cn(
-      'fixed left-0 top-14 z-40 h-[calc(100vh-3.5rem)] w-64 border-r bg-background',
+      'fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r bg-background shadow-lg',
       'transition-transform duration-300',
       className
     )}>
@@ -181,10 +181,10 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     isActive 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground hover:shadow-sm'
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -228,10 +228,10 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     isActive 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground hover:shadow-sm'
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -267,10 +267,10 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     isActive 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground hover:shadow-sm'
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -306,10 +306,10 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     isActive 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground hover:shadow-sm'
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -345,10 +345,10 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     isActive 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground hover:shadow-sm'
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -384,7 +384,7 @@ export const Sidebar = memo(function Sidebar({ className }: SidebarProps) {
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                         isActive 
                           ? 'bg-primary text-primary-foreground' 
                           : 'text-muted-foreground hover:bg-muted hover:text-foreground'

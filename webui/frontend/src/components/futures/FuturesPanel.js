@@ -30,6 +30,14 @@ import {
   TableRow,
   Collapse,
   Alert,
+  Button,
+  TextField,
+  InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -38,8 +46,15 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   ShowChart as FuturesIcon,
+  ShoppingCart as BuyIcon,
+  Sell as SellIcon,
+  Close as CloseIcon,
+  Warning as WarningIcon,
+  DeleteSweep as CloseAllIcon,
 } from '@mui/icons-material';
 import api from '../../utils/apiShim';
+import FuturesTradeDialog from './FuturesTradeDialog';
+import FuturesPayoffGraph from './FuturesPayoffGraph';
 
 const FuturesPanel = ({ pollInterval = 5000 }) => {
   // State
@@ -54,6 +69,17 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
     total_unrealized_pnl: 0,
     total_realized_pnl: 0,
   });
+
+  // Trade dialog state
+  const [tradeDialog, setTradeDialog] = useState({ open: false, position: null, side: null });
+  
+  // Max loss state (per position, stored in localStorage)
+  const [maxLossSettings, setMaxLossSettings] = useState({});
+  const [maxLossInput, setMaxLossInput] = useState({});
+  
+  // Close all confirmation dialog
+  const [closeAllDialog, setCloseAllDialog] = useState(false);
+  const [closingAll, setClosingAll] = useState(false);
 
   // Fetch futures positions
   const fetchPositions = useCallback(async () => {
@@ -103,11 +129,172 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
     return () => clearInterval(interval);
   }, [fetchPositions, fetchOrders, pollInterval]);
 
+  // Load max loss settings from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('futures_max_loss_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setMaxLossSettings(parsed);
+        
+        // Initialize max loss monitor for active settings
+        Object.entries(parsed).forEach(([productId, setting]) => {
+          if (setting.enabled && setting.max_loss > 0) {
+            activateMaxLoss(parseInt(productId), setting.max_loss);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load max loss settings:', err);
+    }
+  }, []);
+
+  // Save max loss settings to localStorage
+  const saveMaxLossSettings = (settings) => {
+    try {
+      localStorage.setItem('futures_max_loss_settings', JSON.stringify(settings));
+      setMaxLossSettings(settings);
+    } catch (err) {
+      console.error('Failed to save max loss settings:', err);
+    }
+  };
+
   // Manual refresh
   const handleRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchPositions(), fetchOrders()]);
     setRefreshing(false);
+  };
+
+  // Open trade dialog
+  const handleOpenTrade = (position, side) => {
+    setTradeDialog({ open: true, position, side });
+  };
+
+  // Close trade dialog
+  const handleCloseTrade = (success) => {
+    setTradeDialog({ open: false, position: null, side: null });
+    if (success) {
+      // Refresh positions after successful trade
+      setTimeout(() => {
+        fetchPositions();
+        fetchOrders();
+      }, 1000);
+    }
+  };
+
+  // Close single position
+  const handleClosePosition = async (position) => {
+    if (!window.confirm(`Close position ${position.symbol}?`)) {
+      return;
+    }
+
+    try {
+      const { data } = await api.post(`/api/futures/trade/close/${position.product_id}`);
+      
+      if (data?.success) {
+        // Refresh positions
+        await fetchPositions();
+        
+        // Remove max loss setting for this position
+        const newSettings = { ...maxLossSettings };
+        delete newSettings[position.product_id];
+        saveMaxLossSettings(newSettings);
+      } else {
+        alert(`Failed to close position: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to close position:', err);
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  // Handle max loss input change
+  const handleMaxLossChange = (productId, value) => {
+    setMaxLossInput({
+      ...maxLossInput,
+      [productId]: value
+    });
+  };
+
+  // Activate max loss monitoring
+  const activateMaxLoss = async (productId, maxLoss) => {
+    try {
+      const position = positions.find(p => p.product_id === productId);
+      if (!position) return;
+
+      const { data } = await api.post('/api/futures/max-loss/set', {
+        product_id: productId,
+        symbol: position.symbol,
+        max_loss: parseFloat(maxLoss),
+        enabled: true
+      });
+
+      if (data?.success) {
+        const newSettings = {
+          ...maxLossSettings,
+          [productId]: {
+            max_loss: parseFloat(maxLoss),
+            enabled: true,
+            symbol: position.symbol
+          }
+        };
+        saveMaxLossSettings(newSettings);
+        
+        // Clear input
+        setMaxLossInput({
+          ...maxLossInput,
+          [productId]: ''
+        });
+      } else {
+        alert(`Failed to set max loss: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to activate max loss:', err);
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  // Disable max loss monitoring
+  const disableMaxLoss = async (productId) => {
+    try {
+      const { data } = await api.post(`/api/futures/max-loss/disable/${productId}`);
+      
+      if (data?.success) {
+        const newSettings = { ...maxLossSettings };
+        delete newSettings[productId];
+        saveMaxLossSettings(newSettings);
+      }
+    } catch (err) {
+      console.error('Failed to disable max loss:', err);
+    }
+  };
+
+  // Close all positions
+  const handleCloseAll = async () => {
+    setClosingAll(true);
+    setCloseAllDialog(false);
+
+    try {
+      const { data } = await api.post('/api/futures/trade/close-all');
+      
+      if (data?.success) {
+        alert(`Closed ${data.closed_count}/${data.total_count} positions`);
+        
+        // Clear all max loss settings
+        saveMaxLossSettings({});
+        
+        // Refresh positions
+        await fetchPositions();
+      } else {
+        alert(`Failed to close all positions: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to close all positions:', err);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setClosingAll(false);
+    }
   };
 
   // Format price
@@ -164,6 +351,25 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
           )}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Close All Button */}
+          {positions.length > 0 && (
+            <Tooltip title="Close All Positions">
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                startIcon={<CloseAllIcon />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCloseAllDialog(true);
+                }}
+                disabled={closingAll}
+              >
+                Close All
+              </Button>
+            </Tooltip>
+          )}
+          
           {/* Summary PnL */}
           {positions.length > 0 && (
             <Chip
@@ -212,7 +418,8 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
 
           {/* Positions Table */}
           {!loading && positions.length > 0 && (
-            <TableContainer component={Paper} sx={{ bgcolor: 'background.paper', borderRadius: 1 }}>
+            <>
+              <TableContainer component={Paper} sx={{ bgcolor: 'background.paper', borderRadius: 1 }}>
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'rgba(14, 165, 233, 0.1)' }}>
@@ -224,11 +431,17 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                     <TableCell align="right" sx={{ fontWeight: 'bold' }}>Liq. Price</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 'bold' }}>Unrealized PnL</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 'bold' }}>Margin</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 'bold' }}>Max Loss</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {positions.map((pos) => {
                     const pnl = formatPnL(pos.unrealized_pnl);
+                    const productId = pos.product_id;
+                    const hasMaxLoss = maxLossSettings[productId]?.enabled;
+                    const maxLossValue = maxLossSettings[productId]?.max_loss || '';
+                    
                     return (
                       <TableRow
                         key={`${pos.symbol}-${pos.product_id}`}
@@ -290,12 +503,91 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                             ${pos.margin?.toFixed(4)}
                           </Typography>
                         </TableCell>
+                        <TableCell align="center">
+                          {hasMaxLoss ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Chip
+                                icon={<WarningIcon />}
+                                label={`$${maxLossValue}`}
+                                size="small"
+                                color="warning"
+                                onDelete={() => disableMaxLoss(productId)}
+                              />
+                            </Box>
+                          ) : (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <TextField
+                                size="small"
+                                type="number"
+                                placeholder="Max Loss"
+                                value={maxLossInput[productId] || ''}
+                                onChange={(e) => handleMaxLossChange(productId, e.target.value)}
+                                sx={{ width: 90 }}
+                                InputProps={{
+                                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                                }}
+                                inputProps={{ min: 0, step: 1 }}
+                              />
+                              <Tooltip title="Activate Max Loss">
+                                <IconButton
+                                  size="small"
+                                  color="warning"
+                                  onClick={() => {
+                                    const value = maxLossInput[productId];
+                                    if (value && parseFloat(value) > 0) {
+                                      activateMaxLoss(productId, value);
+                                    }
+                                  }}
+                                  disabled={!maxLossInput[productId] || parseFloat(maxLossInput[productId]) <= 0}
+                                >
+                                  <WarningIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          )}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                            <Tooltip title="Buy">
+                              <IconButton
+                                size="small"
+                                color="success"
+                                onClick={() => handleOpenTrade(pos, 'buy')}
+                              >
+                                <BuyIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Sell">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleOpenTrade(pos, 'sell')}
+                              >
+                                <SellIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Close Position">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleClosePosition(pos)}
+                              >
+                                <CloseIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
             </TableContainer>
+
+            {/* Payoff Graph */}
+            <Box sx={{ mt: 2 }}>
+              <FuturesPayoffGraph positions={positions} />
+            </Box>
+            </>
           )}
 
           {/* Pending Orders */}
@@ -377,6 +669,31 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
           )}
         </Box>
       </Collapse>
+
+      {/* Trade Dialog */}
+      <FuturesTradeDialog
+        open={tradeDialog.open}
+        onClose={handleCloseTrade}
+        position={tradeDialog.position}
+        side={tradeDialog.side}
+      />
+
+      {/* Close All Confirmation Dialog */}
+      <Dialog open={closeAllDialog} onClose={() => setCloseAllDialog(false)}>
+        <DialogTitle>Close All Futures Positions?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will close all {positions.length} futures position(s) at market price. 
+            This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCloseAllDialog(false)}>Cancel</Button>
+          <Button onClick={handleCloseAll} color="error" variant="contained">
+            Close All Positions
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

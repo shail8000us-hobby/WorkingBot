@@ -47,10 +47,10 @@ export const Header = memo(function Header({ className }: HeaderProps) {
   
   return (
     <header className={cn(
-      'sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+      'sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background/85 shadow-md gradient-header',
       className
     )}>
-      <div className="flex h-14 items-center px-4 gap-4">
+      <div className="flex h-16 items-center px-4 gap-4">
         {/* Left Section */}
         <div className="flex items-center gap-3">
           {/* Sidebar Toggle */}

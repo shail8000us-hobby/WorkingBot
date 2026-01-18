@@ -1,41 +1,16 @@
 {
-  "trained_at": "2026-01-16T01:31:43.591308",
-  "num_trades": 32,
-  "metrics": {
-    "accuracy": 0.8571428571428571,
-    "precision": 0.8333333333333334,
-    "recall": 1.0,
-    "f1_score": 0.9090909090909091,
-    "cv_mean": 0.9095238095238095,
-    "cv_std": 0.11703053073756672
-  },
-  "feature_importance": {
-    "avg_buy_price": 0.8276519339477642,
-    "avg_sell_price": 0.17234806605223588,
-    "hour_of_day": 0.0,
-    "day_of_week": 0.0,
-    "is_call": 0.0,
-    "is_net_buyer": 0.0,
-    "strike": 0.0,
-    "net_qty_abs": 0.0,
-    "buy_value": 0.0,
-    "sell_value": 0.0,
-    "num_orders": 0.0,
-    "duration_hours": 0.0
-  },
-  "win_rate_actual": 0.75,
+  "accuracy": 0.8888888888888888,
+  "trained_on": 131,
+  "source": "delta_exchange",
   "feature_columns": [
-    "hour_of_day",
+    "hour",
     "day_of_week",
     "is_call",
     "is_net_buyer",
     "strike",
-    "net_qty_abs",
-    "buy_value",
-    "sell_value",
-    "avg_buy_price",
+    "total_sell_qty",
     "avg_sell_price",
-    "num_orders",
-    "duration_hours"
+    "avg_buy_price",
+    "num_trades"
   ]
 }

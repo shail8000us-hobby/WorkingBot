@@ -3,48 +3,12 @@
     "type": "low_win_rate",
     "message": "Win rate (0%) below threshold (40%)",
     "severity": "warning",
-    "timestamp": "2026-01-18T12:01:52.120103"
+    "timestamp": "2026-01-18T14:18:32.217150"
   },
   {
     "type": "style_drift",
     "message": "Style match (0%) below threshold (50%)",
     "severity": "info",
-    "timestamp": "2026-01-18T12:01:52.120107"
-  },
-  {
-    "type": "low_win_rate",
-    "message": "Win rate (0%) below threshold (40%)",
-    "severity": "warning",
-    "timestamp": "2026-01-18T12:02:00.302822"
-  },
-  {
-    "type": "style_drift",
-    "message": "Style match (0%) below threshold (50%)",
-    "severity": "info",
-    "timestamp": "2026-01-18T12:02:00.302829"
-  },
-  {
-    "type": "low_win_rate",
-    "message": "Win rate (0%) below threshold (40%)",
-    "severity": "warning",
-    "timestamp": "2026-01-18T12:03:45.166264"
-  },
-  {
-    "type": "style_drift",
-    "message": "Style match (0%) below threshold (50%)",
-    "severity": "info",
-    "timestamp": "2026-01-18T12:03:45.166269"
-  },
-  {
-    "type": "low_win_rate",
-    "message": "Win rate (0%) below threshold (40%)",
-    "severity": "warning",
-    "timestamp": "2026-01-18T12:04:17.547911"
-  },
-  {
-    "type": "style_drift",
-    "message": "Style match (0%) below threshold (50%)",
-    "severity": "info",
-    "timestamp": "2026-01-18T12:04:17.547922"
+    "timestamp": "2026-01-18T14:18:32.217158"
   }
 ]

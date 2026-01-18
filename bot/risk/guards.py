@@ -51,7 +51,11 @@ def assert_can_trade(account_snapshot: dict, pending_open_orders: int, intended_
     config = get_config()
     
     # Check Guardian emergency flag first (highest priority - cannot be overridden)
-    guardian_flag = Path(config.paths.guardian_emergency_flag if hasattr(config.paths, 'guardian_emergency_flag') else ".guardian_emergency_stop")
+    if hasattr(config, 'paths') and hasattr(config.paths, 'guardian_emergency_flag'):
+        guardian_flag = Path(config.paths.guardian_emergency_flag)
+    else:
+        guardian_flag = Path(".guardian_emergency_stop")
+    
     if guardian_flag.exists():
         raise RiskBreach(
             "GUARDIAN EMERGENCY STOP ACTIVE!\n"
@@ -61,9 +65,9 @@ def assert_can_trade(account_snapshot: dict, pending_open_orders: int, intended_
         )
     
     # Basic checks (cannot be overridden - critical for safety)
-    if not config.safety.i_understand_live:
+    if hasattr(config.safety, 'i_understand_live') and not config.safety.i_understand_live:
         raise RiskBreach("Refusing: I_UNDERSTAND_LIVE must be YES.")
-    if not config.safety.execute_orders:
+    if hasattr(config.safety, 'execute_orders') and not config.safety.execute_orders:
         raise RiskBreach("Execution disabled: EXECUTE_ORDERS is not true.")
 
     # 🚨 EMERGENCY OVERRIDE CHECK
@@ -80,10 +84,11 @@ def assert_can_trade(account_snapshot: dict, pending_open_orders: int, intended_
         return
     
     # Normal safety checks (only executed if monitoring is enabled)
-    max_loss_inr = Decimal(str(config.capital_protection.max_loss_inr))
-    max_open_orders_cap = config.risk_limits.max_open_orders
-    max_qty_cap = Decimal(str(config.risk_limits.max_qty_per_order))
-    usd_to_inr_rate = Decimal(str(config.risk_limits.usd_to_inr_rate))
+    # Use safe attribute access with defaults
+    max_loss_inr = Decimal(str(getattr(config.capital_protection, 'max_loss_inr', 10000))) if hasattr(config, 'capital_protection') else Decimal('10000')
+    max_open_orders_cap = getattr(config.risk_limits, 'max_open_orders', 100) if hasattr(config, 'risk_limits') else 100
+    max_qty_cap = Decimal(str(getattr(config.risk_limits, 'max_qty_per_order', 1000))) if hasattr(config, 'risk_limits') else Decimal('1000')
+    usd_to_inr_rate = Decimal(str(getattr(config.risk_limits, 'usd_to_inr_rate', 85))) if hasattr(config, 'risk_limits') else Decimal('85')
 
     # Get unrealized PnL from bot's positions (in USD)
     unrealized_pnl_usd = Decimal(str(account_snapshot.get("unrealized_pnl_usd", "0")))

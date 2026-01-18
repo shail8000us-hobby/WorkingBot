@@ -291,6 +291,24 @@ except Exception as e:
     print(f"⚠️ Could not register futures blueprint: {e}")
     log.warning(f"Futures routes not available: {e}")
 
+# Register Futures Trading blueprint (JAN 18, 2026: Buy/Sell/Close operations - ISOLATED MODULE)
+try:
+    from webui.backend.routes.futures.futures_trading_api import futures_trading_bp
+    app.register_blueprint(futures_trading_bp)
+    print(f"✅ Registered futures_trading blueprint (buy/sell/close operations)")
+except Exception as e:
+    print(f"⚠️ Could not register futures_trading blueprint: {e}")
+    log.warning(f"Futures trading routes not available: {e}")
+
+# Register Futures Max Loss Monitor (JAN 18, 2026: Per-position max loss safety - ISOLATED MODULE)
+try:
+    from webui.backend.routes.futures.futures_max_loss_monitor import futures_max_loss_bp
+    app.register_blueprint(futures_max_loss_bp)
+    print(f"✅ Registered futures_max_loss blueprint (overnight protection)")
+except Exception as e:
+    print(f"⚠️ Could not register futures_max_loss blueprint: {e}")
+    log.warning(f"Futures max loss routes not available: {e}")
+
 # Register Production Monitoring blueprint (JAN 12, 2026: Enhanced monitoring from OptionBot)
 try:
     from webui.backend.routes.production_monitoring import production_monitoring_bp
@@ -1049,6 +1067,25 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         print("   Options SL/TP will not auto-trigger (manual mode only)\n")
+
+    # ============================================================================
+    # Initialize and Start Max Loss Monitor (Options Trading)
+    # ============================================================================
+    try:
+        print("\n🛑 Starting Max Loss Monitor...")
+        from webui.backend.options_strategy.max_loss_manager import init_max_loss_monitoring, get_max_loss_manager
+        # Use the same api_client as above
+        max_loss_manager = get_max_loss_manager()
+        max_loss_monitor = init_max_loss_monitoring(api_client, max_loss_manager, auto_start=True)
+        if max_loss_monitor and getattr(max_loss_monitor, 'start', None):
+            print("✅ Max Loss Monitor started (per-strike/expiry loss limits enforced)\n")
+        else:
+            print("⚠️  Max Loss Monitor failed to start\n")
+    except Exception as e:
+        print(f"⚠️  Failed to start Max Loss Monitor: {e}")
+        import traceback
+        traceback.print_exc()
+        print("   Per-strike/expiry max loss will NOT be enforced!\n")
     
     # ============================================================================
     # Initialize Delta Exchange Price WebSocket
