@@ -1,8 +1,21 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+/**
+ * Theme Mode Hook
+ * Migrated to TypeScript: January 18, 2026
+ */
+
+import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import { createAppTheme } from '../theme';
 
-const ThemeModeContext = createContext({
+type ThemeMode = 'light' | 'dark';
+
+interface ThemeModeContextValue {
+  mode: ThemeMode;
+  toggleMode: () => void;
+  setMode: (mode: ThemeMode) => void;
+}
+
+const ThemeModeContext = createContext<ThemeModeContextValue>({
   mode: 'dark',
   toggleMode: () => {},
   setMode: () => {}
@@ -10,8 +23,12 @@ const ThemeModeContext = createContext({
 
 const THEME_STORAGE_KEY = 'gridbot-ui-theme-mode';
 
-export const ThemeModeProvider = ({ children }) => {
-  const [mode, setMode] = useState(() => {
+interface ThemeModeProviderProps {
+  children: ReactNode;
+}
+
+export const ThemeModeProvider = ({ children }: ThemeModeProviderProps) => {
+  const [mode, setMode] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') {
       return 'dark';
     }
@@ -59,4 +76,4 @@ export const ThemeModeProvider = ({ children }) => {
   );
 };
 
-export const useThemeMode = () => useContext(ThemeModeContext);
+export const useThemeMode = (): ThemeModeContextValue => useContext(ThemeModeContext);
