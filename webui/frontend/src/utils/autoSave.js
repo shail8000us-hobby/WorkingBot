@@ -4,7 +4,7 @@
  */
 
 import { storage } from './storage.ts';
-import { debounce } from './rateLimiting';
+import { debounce } from './rateLimiting.ts';
 
 class AutoSaveManager {
   constructor(options = {}) {

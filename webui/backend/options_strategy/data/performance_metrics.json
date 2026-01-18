@@ -1,5 +1,5 @@
 {
-  "total_trades": 7881,
+  "total_trades": 7885,
   "winning_trades": 0,
   "losing_trades": 0,
   "win_rate": 0.0,
@@ -13,6 +13,6 @@
   "style_match_avg": 0,
   "confidence_avg": 0,
   "prediction_accuracy": 0.0,
-  "period_start": "2025-12-19T17:05:07.256880",
-  "period_end": "2026-01-18T17:05:07.363130"
+  "period_start": "2025-12-19T18:38:51.421861",
+  "period_end": "2026-01-18T18:38:51.493415"
 }
