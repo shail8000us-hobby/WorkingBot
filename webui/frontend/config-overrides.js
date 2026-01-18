@@ -1,6 +1,7 @@
 const { override, addBabelPlugin, addWebpackPlugin } = require('customize-cra');
 const CompressionPlugin = require('compression-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
+const webpack = require('webpack');
 
 module.exports = override(
   // Enable code splitting with optimized chunk strategy
@@ -10,9 +11,12 @@ module.exports = override(
       // Enable runtime chunk for better long-term caching
       config.optimization.runtimeChunk = 'single';
       
-      // Optimize chunk splitting
+      // Optimize chunk splitting with enhanced strategy
       config.optimization.splitChunks = {
         chunks: 'all',
+        maxInitialRequests: Infinity,
+        minSize: 20000, // 20KB minimum chunk size
+        maxSize: 244000, // 244KB maximum chunk size (split larger chunks)
         cacheGroups: {
           // Vendor chunk: React, React-DOM, and core libraries
           vendor: {
@@ -62,8 +66,9 @@ module.exports = override(
             name: 'vendors',
             priority: 10,
             reuseExistingChunk: true,
+            enforce: true,
           },
-          // Common shared code
+          // Common shared code (used in multiple chunks)
           common: {
             minChunks: 2,
             priority: 5,

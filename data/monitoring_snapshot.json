@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-01-18T20:27:56.958074",
+  "timestamp": "2026-01-18T20:33:00.188075",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 3325.7,
+    "current_price": 3320.25,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 3325.7,
-      "price_age_seconds": 2.2907650470733643,
+      "price": 3320.25,
+      "price_age_seconds": 3.6443748474121094,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 21958,
+        "total_updates": 22017,
         "websocket_updates": 0,
         "rest_api_updates": 76,
         "stale_warnings": 206,
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 3325.7,
+        "price": 3320.25,
         "grid_step": 100.0,
         "positions": 0,
         "max_positions": 10,
@@ -89,7 +89,7 @@
             "action": "BUY",
             "price": 3200.0,
             "tp_price": 3300.0,
-            "change_pct": -3.779655410890935,
+            "change_pct": -3.6217152322867254,
             "reason": "Grid level #1",
             "sequence": 1,
             "profit_target": 100.0
@@ -98,7 +98,7 @@
             "action": "BUY",
             "price": 3100.0,
             "tp_price": 3200.0,
-            "change_pct": -6.786541179300594,
+            "change_pct": -6.6335366312777655,
             "reason": "Grid level #2",
             "sequence": 2,
             "profit_target": 100.0
@@ -107,7 +107,7 @@
             "action": "BUY",
             "price": 3000.0,
             "tp_price": 3100.0,
-            "change_pct": -9.793426947710252,
+            "change_pct": -9.645358030268806,
             "reason": "Grid level #3",
             "sequence": 3,
             "profit_target": 100.0
@@ -159,7 +159,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2026-01-18T20:27:57.045416"
+      "timestamp": "2026-01-18T20:33:00.268858"
     },
     "opportunistic_recovery": {
       "active": false,
@@ -173,5 +173,7 @@
       "current_opportunistic_positions": [],
       "recent_recoveries": []
     }
+  }
+} }
   }
 }

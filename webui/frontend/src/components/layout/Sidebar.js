@@ -1,8 +1,30 @@
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
 import React from 'react';
+import { prefetchChunk } from '../../utils/chunkPrefetch.ts';
+
+// Map section IDs to their corresponding chunk names for prefetching
+const sectionChunkMap = {
+  dashboard: 'monitoring',
+  positions: 'positions',
+  options: 'options',
+  'options-chain': 'optionsChain',
+  'strategy-builder': 'strategyBuilder',
+  config: 'configPanel',
+  logs: 'logsPanel',
+  guardian: 'guardianDashboard',
+  monitoring: 'monitoring'
+};
 
 const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSelect }) {
+  const handleMouseEnter = React.useCallback((sectionId) => {
+    // Prefetch chunk when user hovers over navigation item
+    const chunkName = sectionChunkMap[sectionId];
+    if (chunkName) {
+      prefetchChunk(chunkName, { priority: 'high' });
+    }
+  }, []);
+
   return (
     <nav
       className="fixed left-0 right-0 z-38 hidden border-b border-slate-800/80 bg-slate-950/90 backdrop-blur lg:block"
@@ -19,6 +41,8 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
                 key={id}
                 type="button"
                 onClick={() => onSelect?.(id)}
+                onMouseEnter={() => handleMouseEnter(id)}
+                data-prefetch={sectionChunkMap[id]}
                 className={clsx(
                   'group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition whitespace-nowrap',
                   active
