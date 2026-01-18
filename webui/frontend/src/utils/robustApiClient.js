@@ -4,7 +4,7 @@
  */
 
 import { request as apiRequest, ApiError } from '../lib/api';
-import { ensureAuthToken, buildAuthHeaders } from './authToken';
+import { ensureAuthToken, buildAuthHeaders } from './authToken.ts';
 
 class RobustApiClient {
   constructor(options = {}) {

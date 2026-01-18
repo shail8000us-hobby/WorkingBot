@@ -33,7 +33,7 @@ import { dataAggregator } from './services/dataAggregator';
 import { useStore, useStoreActions } from './store';
 
 // Week 3: Feature flags and Guardian Dashboard
-import { useFeatureFlag } from './utils/featureFlags';
+import { useFeatureFlag } from './utils/featureFlags.ts';
 
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
