@@ -29,7 +29,7 @@ import { motion } from 'framer-motion';
 import { useInstanceSafe, parseInstanceName as parseInstance } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
 import AddSymbolDialog from './AddSymbolDialog';
-import { getSymbolColor } from '../utils/symbolColors';
+import { getSymbolColor } from '../utils/symbolColors.ts';
 
 /**
  * SymbolPortfolio - Multi-Symbol Overview Dashboard (Phase 5)

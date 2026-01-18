@@ -1,6 +1,6 @@
 import React from 'react';
 import { Chip, Box } from '@mui/material';
-import { getSymbolColor, getSymbolBadgeProps } from '../../utils/symbolColors';
+import { getSymbolColor, getSymbolBadgeProps } from '../../utils/symbolColors.ts';
 
 /**
  * SymbolBadge - Reusable symbol indicator component
