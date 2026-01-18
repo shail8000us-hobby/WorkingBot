@@ -92,4 +92,31 @@ export class CircuitBreaker {
 export const apiCircuit = new CircuitBreaker('backend_api', 5, 20000);
 export const wsCircuit = new CircuitBreaker('websocket', 5, 30000);
 
+interface CircuitStateInfo {
+  name: string;
+  state: CircuitState;
+  failureCount: number;
+  lastFailureTime: number | null;
+  nextAttemptTime: number | null;
+}
+
+export function getAllCircuitStates(): CircuitStateInfo[] {
+  return [
+    {
+      name: apiCircuit.name,
+      state: apiCircuit.getState(),
+      failureCount: apiCircuit.failureCount,
+      lastFailureTime: apiCircuit.lastFailureTime,
+      nextAttemptTime: apiCircuit.nextAttemptTime
+    },
+    {
+      name: wsCircuit.name,
+      state: wsCircuit.getState(),
+      failureCount: wsCircuit.failureCount,
+      lastFailureTime: wsCircuit.lastFailureTime,
+      nextAttemptTime: wsCircuit.nextAttemptTime
+    }
+  ];
+}
+
 export default CircuitBreaker;

@@ -82,7 +82,7 @@ async function fetchFeatureFlags(): Promise<FlagCache> {
     }
 
     // Fetch from backend
-    const response = await apiClient.get('/api/config/feature-flags', { timeout: 5000 });
+    const response = await apiClient.get('/api/config/feature-flags', { timeout: 5000 }) as { flags?: FlagCache };
     
     if (response && response.flags) {
       flagCache = { ...DEFAULT_FLAGS, ...response.flags };
@@ -205,7 +205,7 @@ export async function toggleFeatureFlag(featureName: string, enabled: boolean): 
     const response = await apiClient.post('/api/config/feature-flags', {
       flag: featureName,
       enabled
-    });
+    }) as { success?: boolean };
 
     if (response && response.success) {
       // Update cache immediately
