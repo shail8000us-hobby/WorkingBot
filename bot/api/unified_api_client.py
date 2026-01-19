@@ -721,11 +721,11 @@ class UnifiedAPIClient:
             
             for product in products:
                 symbol = product.get('symbol', '')
-                product_type = product.get('product_type', '')
+                contract_type = product.get('contract_type', '')  # Delta Exchange uses contract_type, not product_type
                 underlying_asset = product.get('underlying_asset', {})
                 
                 # Skip non-options
-                if product_type not in ['call_options', 'put_options']:
+                if contract_type not in ['call_options', 'put_options']:
                     continue
                 
                 # Check underlying
@@ -771,9 +771,9 @@ class UnifiedAPIClient:
                     }
                     
                     # Categorize as call or put
-                    if product_type == 'call_options' or symbol.startswith('C-'):
+                    if contract_type == 'call_options' or symbol.startswith('C-'):
                         option_chain['calls'][strike_key] = option_data
-                    elif product_type == 'put_options' or symbol.startswith('P-'):
+                    elif contract_type == 'put_options' or symbol.startswith('P-'):
                         option_chain['puts'][strike_key] = option_data
                     
                 except Exception as e:
