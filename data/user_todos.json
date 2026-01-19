@@ -138,5 +138,19 @@
     "completed": false,
     "createdAt": "2026-01-05T19:48:26.452688",
     "updatedAt": "2026-01-05T19:48:26.452694"
+  },
+  {
+    "id": "1768813449353",
+    "text": "soundManager.setVolume(0.5)     // Adjust volume (0.0-1.0)\nsoundManager.setEnabled(false)  // Disable sounds\nsoundManager.playTradeFilled()  // Test sound",
+    "completed": false,
+    "createdAt": "2026-01-19T14:34:09.353297",
+    "updatedAt": "2026-01-19T14:34:09.353302"
+  },
+  {
+    "id": "1768828983567",
+    "text": "# Follow logs in real-time (Ctrl+C to stop)\ntail -f ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"(Monitor loop|MAX LOSS|Found limit|Checking)\"\n\n# View recent position checks with PnL values\ntail -100 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"(PnL=|Limit=|Negative=)\"\n\n# Check for max loss breaches\ntail -200 ~/Projects/WorkingBot/logs/launchagent_webui_error.log | grep -E \"(BREACH|CLOSING|Triggered)\"\n\n# See all monitored symbols\ntail -50 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep \"DEBUG Limit:\"",
+    "completed": false,
+    "createdAt": "2026-01-19T18:53:03.567099",
+    "updatedAt": "2026-01-19T18:53:03.567117"
   }
 ]

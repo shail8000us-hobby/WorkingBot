@@ -364,13 +364,14 @@ def place_chain_order():
 # Cancel Order
 # ============================================================================
 
-@options_chain_bp.route('/order/<order_id>', methods=['DELETE'])
-def cancel_order(order_id):
+@options_chain_bp.route('/order/<order_id>/<int:product_id>', methods=['DELETE'])
+def cancel_order(order_id, product_id):
     """
     Cancel an open order
     
     Args:
         order_id: Order ID to cancel
+        product_id: Product ID for the order
         
     Returns:
         Cancellation result
@@ -386,7 +387,7 @@ def cancel_order(order_id):
         
         try:
             result = loop.run_until_complete(
-                order_service.cancel_order(order_id)
+                order_service.cancel_order(order_id, product_id)
             )
         finally:
             loop.close()

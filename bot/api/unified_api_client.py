@@ -502,11 +502,12 @@ class UnifiedAPIClient:
         """
         Get all positions (futures + options) and separate them by type.
         Uses product detail caching to avoid rate limiting.
+        INCLUDES calculated unrealized_pnl for each position.
         
         Returns:
             {
-                'futures': [...],  # Perpetual/futures positions
-                'options': [...]   # Options positions
+                'futures': [...],  # Perpetual/futures positions with PnL
+                'options': [...]   # Options positions with PnL
             }
         """
         await self.rate_limiter.acquire()
@@ -517,6 +518,10 @@ class UnifiedAPIClient:
         try:
             # Get positions for BTC (underlying_asset_symbol) which includes futures + options
             all_positions = await self.rest_client.get_positions_for_underlying("BTC")
+            
+            # CRITICAL FIX: Calculate unrealized_pnl for all positions
+            # Delta Exchange API doesn't include unrealized_pnl, only realized_pnl
+            all_positions = await self._add_unrealized_pnl(all_positions)
             
             # Separate by product type
             futures_positions = []
@@ -534,7 +539,12 @@ class UnifiedAPIClient:
             
             self.circuit_breaker.record_success()
             
+            # Log PnL summary
+            total_pnl = sum(p.get('unrealized_pnl', 0) for p in all_positions)
+            losing_positions = [p for p in all_positions if p.get('unrealized_pnl', 0) < 0]
+            
             log.info(f"📊 Fetched positions: {len(futures_positions)} futures, {len(options_positions)} options")
+            log.info(f"💰 Total unrealized PnL: ${total_pnl:.4f} | Losing: {len(losing_positions)}")
             
             return {
                 'futures': futures_positions,
@@ -545,6 +555,153 @@ class UnifiedAPIClient:
             self.circuit_breaker.record_failure()
             log.error(f"Failed to fetch positions with options: {e}")
             raise
+    
+    async def _add_unrealized_pnl(self, positions: List[Dict]) -> List[Dict]:
+        """
+        Calculate and add unrealized_pnl to positions.
+        
+        Delta Exchange Options Specifications:
+        - 1 lot = 0.001 BTC (contract_value)
+        - Position size is in lots, need to convert to BTC
+        
+        PnL Calculation:
+        - Quantity in BTC = abs(size) * 0.001
+        - For SHORT (size < 0): PnL = Quantity_BTC * (Entry_Price - Current_Price)
+        - For LONG (size > 0): PnL = Quantity_BTC * (Current_Price - Entry_Price)
+        - Loss is negative PnL
+        
+        Args:
+            positions: List of position dicts
+            
+        Returns:
+            Same list with unrealized_pnl added to each position
+        """
+        if not positions:
+            return positions
+        
+        try:
+            # Extract product IDs from positions
+            product_ids = [p.get('product_id') for p in positions if p.get('product_id')]
+            
+            if not product_ids:
+                log.warning("⚠️ No product IDs found in positions")
+                return positions
+            
+            # Fetch mark prices (or mid prices) for all products in batch
+            mark_prices = await self._get_mark_prices_batch(product_ids)
+            
+            # Calculate PnL for each position
+            for pos in positions:
+                try:
+                    product_id = pos.get('product_id')
+                    product_symbol = pos.get('product_symbol', '')
+                    entry_price = float(pos.get('entry_price', 0))
+                    size = float(pos.get('size', 0))
+                    
+                    if size == 0:
+                        pos['unrealized_pnl'] = 0.0
+                        continue
+                    
+                    # Get mark price from batch fetch
+                    current_price = mark_prices.get(product_id, 0)
+                    
+                    if current_price == 0 or entry_price == 0:
+                        log.warning(f"⚠️ Missing price data for product {product_id}")
+                        pos['unrealized_pnl'] = 0.0
+                        continue
+                    
+                    # CRITICAL FIX: Calculate quantity in BTC
+                    # Delta Exchange: 1 lot = 0.001 BTC for options
+                    contract_value = 0.001  # BTC per lot
+                    
+                    # For futures (BTCUSD), contract value is 1 USD
+                    if 'BTCUSD' in product_symbol or 'ETHUSD' in product_symbol:
+                        contract_value = 1  # 1 USD per contract for perpetuals
+                        quantity = abs(size) * contract_value
+                    else:
+                        # Options: quantity in BTC
+                        quantity_btc = abs(size) * contract_value
+                        quantity = quantity_btc
+                    
+                    # Calculate PnL based on position direction
+                    # For OPTIONS (priced in USD per BTC):
+                    # - PnL = Quantity_BTC * Price_Difference
+                    if size > 0:  # Long position
+                        # Long profits when current price > entry price
+                        unrealized_pnl = quantity * (current_price - entry_price)
+                    else:  # Short position (size < 0)
+                        # Short profits when current price < entry price
+                        unrealized_pnl = quantity * (entry_price - current_price)
+                    
+                    pos['unrealized_pnl'] = unrealized_pnl
+                    
+                    # Debug log for positions with significant loss
+                    if unrealized_pnl < -0.1:
+                        log.debug(f"📉 {product_symbol}: Entry ${entry_price:.4f}, Mark ${current_price:.4f}, Size {size} lots, Qty {quantity:.4f} BTC, PnL ${unrealized_pnl:.4f}")
+                    
+                except Exception as e:
+                    log.error(f"❌ Error calculating PnL for position: {e}")
+                    pos['unrealized_pnl'] = 0.0
+            
+            return positions
+            
+        except Exception as e:
+            log.error(f"❌ Error in _add_unrealized_pnl: {e}", exc_info=True)
+            # Return positions with 0 PnL as fallback
+            for pos in positions:
+                if 'unrealized_pnl' not in pos:
+                    pos['unrealized_pnl'] = 0.0
+            return positions
+    
+    async def _get_mark_prices_batch(self, product_ids: List[int]) -> Dict[int, float]:
+        """
+        Fetch current prices for multiple products in batch.
+        Uses mid-price (average of best bid and ask) for more accurate PnL.
+        Falls back to mark_price if orderbook not available.
+        
+        Args:
+            product_ids: List of product IDs
+            
+        Returns:
+            Dict mapping product_id -> current_price
+        """
+        current_prices = {}
+        
+        try:
+            # Delta Exchange: GET /v2/tickers returns all tickers with mark_price
+            await self.rate_limiter.acquire()
+            
+            response = await self.rest_client.get_all_tickers()
+            
+            if not response:
+                log.error("❌ Invalid response from tickers API")
+                return current_prices
+            
+            # Build map of product_id -> price
+            # Use mark_price as it's already calculated by exchange
+            # (mark_price is typically derived from index price and funding, more accurate than mid)
+            for ticker in response:
+                product_id = ticker.get('product_id')
+                mark_price = float(ticker.get('mark_price', 0))
+                
+                # Optional: Could also use mid-price from quotes if available
+                # quotes = ticker.get('quotes')
+                # if quotes:
+                #     best_bid = float(quotes.get('best_bid', 0))
+                #     best_ask = float(quotes.get('best_ask', 0))
+                #     if best_bid > 0 and best_ask > 0:
+                #         mid_price = (best_bid + best_ask) / 2
+                #         mark_price = mid_price
+                
+                if product_id in product_ids and mark_price > 0:
+                    current_prices[product_id] = mark_price
+            
+            log.debug(f"✅ Fetched mark prices for {len(current_prices)}/{len(product_ids)} products")
+            
+        except Exception as e:
+            log.error(f"❌ Error fetching mark prices: {e}", exc_info=True)
+        
+        return current_prices
     
     async def get_option_ticker(self, symbol: str) -> Dict:
         """

@@ -616,6 +616,20 @@ class AsyncDeltaClient:
         
         return response.get("result", {})
     
+    async def get_all_tickers(self) -> List[Dict[str, Any]]:
+        """
+        Get ticker data for all products (includes mark prices).
+        
+        Returns:
+            List of ticker data for all products
+        """
+        response = await self._request_with_retry(
+            method="GET",
+            path="/v2/tickers"
+        )
+        
+        return response.get("result", [])
+    
     async def get_orderbook(self, symbol: str, depth: int = 10) -> Dict[str, Any]:
         """
         Get orderbook snapshot.

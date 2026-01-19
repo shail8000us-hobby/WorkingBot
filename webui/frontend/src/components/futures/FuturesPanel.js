@@ -110,6 +110,27 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
     }
   }, []);
 
+  // Cancel futures order
+  const handleCancelFuturesOrder = useCallback(async (order) => {
+    if (!window.confirm('Cancel this order?')) {
+      return;
+    }
+    
+    try {
+      const { data } = await api.delete(`/api/options-chain/order/${order.id}/${order.product_id}`);
+      if (data?.success) {
+        // Refresh orders list
+        await fetchOrders();
+      } else {
+        console.error('Failed to cancel order:', data?.error);
+        alert(`Failed to cancel order: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to cancel order:', err);
+      alert(`Failed to cancel order: ${err.message || 'Unknown error'}`);
+    }
+  }, [fetchOrders]);
+
   // Initial load
   useEffect(() => {
     const loadData = async () => {
@@ -648,6 +669,12 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                       <TableCell align="center" sx={{ fontWeight: 'bold' }}>
                         Status
                       </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                        Date & Time
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold' }}>
+                        Actions
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -694,6 +721,24 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                             color={order.state === 'open' ? 'warning' : 'default'}
                             sx={{ fontSize: '0.7rem' }}
                           />
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="caption" color="text.secondary">
+                            {order.created_at
+                              ? new Date(order.created_at).toLocaleString()
+                              : '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Tooltip title="Cancel Order">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleCancelFuturesOrder(order)}
+                            >
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </TableCell>
                       </TableRow>
                     ))}

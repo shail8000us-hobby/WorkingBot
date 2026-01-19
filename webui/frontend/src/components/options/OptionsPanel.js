@@ -71,6 +71,7 @@ import {
   Settings as SettingsIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
+  VolumeUp as VolumeIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -89,6 +90,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/apiShim';
+import soundManager from '../../utils/soundManager';
 import OptionsPayoffDiagram from './OptionsPayoffDiagram';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
@@ -96,6 +98,8 @@ import SLTPIndicator from './SLTPIndicator';
 import MaxLossIndicator from './MaxLossIndicator';
 import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
 import useMarketPrices from '../../hooks/useMarketPrices';
+import SoundSettingsPanel from '../SoundSettingsPanel';
+import TradeNotification from '../TradeNotification';
 // JAN 17, 2026: Futures panel - separate file structure, minimal invasion
 import FuturesPanel from '../futures/FuturesPanel';
 
@@ -363,6 +367,12 @@ const OptionsPanel = () => {
     orderCount: 0,
     estimatedTime: 0,
   });
+  
+  // Sound settings dialog state (JAN 19, 2026 - Independent UI component)
+  const [soundSettingsOpen, setSoundSettingsOpen] = useState(false);
+  
+  // Trade notification state (JAN 19, 2026 - Visual feedback)
+  const [tradeNotification, setTradeNotification] = useState(null);
   const [orderResult, setOrderResult] = useState(null);
   const [submittingOrder, setSubmittingOrder] = useState(false); // Prevent double submission
 
@@ -956,6 +966,27 @@ const OptionsPanel = () => {
     }
   }, []);
 
+  // Cancel pending order
+  const handleCancelPendingOrder = useCallback(async (order) => {
+    if (!window.confirm('Cancel this order?')) {
+      return;
+    }
+    
+    try {
+      const { data } = await api.delete(`/api/options-chain/order/${order.id}/${order.product_id}`);
+      if (data?.success) {
+        // Refresh pending orders list
+        await fetchPendingOrders();
+      } else {
+        console.error('Failed to cancel order:', data?.error);
+        alert(`Failed to cancel order: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to cancel order:', err);
+      alert(`Failed to cancel order: ${err.message || 'Unknown error'}`);
+    }
+  }, [fetchPendingOrders]);
+
   // Initial load
   useEffect(() => {
     const loadData = async () => {
@@ -1124,7 +1155,16 @@ const OptionsPanel = () => {
       });
 
       if (data?.success) {
+        // Play calming sound when position is closed
+        soundManager.playTradeFilled();
         setOrderResult({ type: 'success', message: `Closed ${position.product_symbol}` });
+        // Show visual notification
+        setTradeNotification({
+          symbol: position.product_symbol,
+          side: 'close',
+          size: Math.abs(position.size),
+          price: data.fill_price,
+        });
         fetchPositions();
       } else {
         setOrderResult({ type: 'error', message: data?.error || 'Failed to close position' });
@@ -1156,9 +1196,18 @@ const OptionsPanel = () => {
       if (data?.success) {
         const execType = data.execution_type || 'unknown';
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
+        // Play calming sound for quick order fills
+        soundManager.playTradeFilled();
         setOrderResult({
           type: 'success',
           message: `⚡ ${side.toUpperCase()} ${size} ${symbol} ${fillPrice} (${execType})`,
+        });
+        // Show visual notification
+        setTradeNotification({
+          symbol: symbol,
+          side: side,
+          size: size,
+          price: data.fill_price,
         });
         fetchPositions();
       } else {
@@ -1287,9 +1336,18 @@ const OptionsPanel = () => {
       if (data?.success) {
         const execType = data.execution_type || 'unknown';
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
+        // Play calming sound when order is filled
+        soundManager.playTradeFilled();
         setOrderResult({
           type: 'success',
           message: `${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`,
+        });
+        // Show visual notification
+        setTradeNotification({
+          symbol: position.product_symbol,
+          side: side,
+          size: size,
+          price: data.fill_price,
         });
         fetchPositions();
       } else {
@@ -1546,6 +1604,17 @@ const OptionsPanel = () => {
             if (executionMode === 'smart') {
               submittedOrders.push(result); // Only track for smart mode
             }
+            // Play calming sound for immediate fills
+            if (executionMode === 'immediate') {
+              soundManager.playTradeFilled();
+              // Show visual notification
+              setTradeNotification({
+                symbol: order.symbol,
+                side: order.side,
+                size: order.size,
+                price: data.fill_price,
+              });
+            }
             success = true;
           } else {
             // If order failed, check if it's rate limit or other error
@@ -1677,6 +1746,9 @@ const OptionsPanel = () => {
                 // More robust: could track original size and compare delta
                 orderResult.filled = true;
                 orderResult.message = `✅ ${orderResult.side.toUpperCase()} ${orderResult.size} FILLED - position now ${actualSize}`;
+                
+                // Play sound for individual order fills
+                soundManager.playTradeFilled();
               }
             });
 
@@ -1688,6 +1760,8 @@ const OptionsPanel = () => {
             const allFilled = submittedOrders.every((o) => o.filled);
 
             if (allFilled) {
+              // Play calming sound for successful fills
+              soundManager.playTradeFilled();
               setOrderResult({
                 type: 'success',
                 message: `✅ All ${submittedOrders.length} orders filled!`,
@@ -1738,6 +1812,8 @@ const OptionsPanel = () => {
             if (data?.success) {
               orderResult.filled = true;
               orderResult.message = `✅ ${orderResult.side.toUpperCase()} ${orderResult.size} FILLED via MARKET @ ${data.fill_price ? '$' + parseFloat(data.fill_price).toFixed(2) : 'market'}`;
+              // Play sound for auto-market fills
+              soundManager.playTradeFilled();
             } else {
               orderResult.message = `❌ Market order failed: ${data?.error || 'Unknown error'}`;
             }
@@ -1966,11 +2042,23 @@ const OptionsPanel = () => {
               </Tooltip>
             </Box>
 
-            <Tooltip title="Refresh">
-              <IconButton onClick={handleRefresh} disabled={refreshing}>
-                {refreshing ? <CircularProgress size={20} /> : <RefreshIcon />}
-              </IconButton>
-            </Tooltip>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Tooltip title="Sound Settings">
+                <IconButton 
+                  onClick={() => setSoundSettingsOpen(true)} 
+                  size="small"
+                  color="primary"
+                >
+                  <VolumeIcon />
+                </IconButton>
+              </Tooltip>
+              
+              <Tooltip title="Refresh">
+                <IconButton onClick={handleRefresh} disabled={refreshing}>
+                  {refreshing ? <CircularProgress size={20} /> : <RefreshIcon />}
+                </IconButton>
+              </Tooltip>
+            </Box>
           </Box>
 
           {/* Expiry Filter Tabs */}
@@ -2398,7 +2486,8 @@ const OptionsPanel = () => {
                       <TableCell align="right">Price</TableCell>
                       <TableCell align="center">Type</TableCell>
                       <TableCell align="center">Status</TableCell>
-                      <TableCell align="right">Created</TableCell>
+                      <TableCell align="right">Date & Time</TableCell>
+                      <TableCell align="center">Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -2449,9 +2538,20 @@ const OptionsPanel = () => {
                         <TableCell align="right">
                           <Typography variant="caption" color="text.secondary">
                             {order.created_at
-                              ? new Date(order.created_at).toLocaleTimeString()
+                              ? new Date(order.created_at).toLocaleString()
                               : '-'}
                           </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Tooltip title="Cancel Order">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleCancelPendingOrder(order)}
+                            >
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -2663,14 +2763,14 @@ const OptionsPanel = () => {
                         const isCall = optionInfo.type === 'Call';
                         const isPut = optionInfo.type === 'Put';
                         const rowBgColor = isCall
-                          ? 'rgba(16, 185, 129, 0.12)'
+                          ? 'rgba(16, 185, 129, 0.03)'
                           : isPut
-                            ? 'rgba(239, 68, 68, 0.12)'
+                            ? 'rgba(239, 68, 68, 0.03)'
                             : 'transparent';
                         const rowHoverColor = isCall
-                          ? 'rgba(16, 185, 129, 0.2)'
+                          ? 'rgba(16, 185, 129, 0.06)'
                           : isPut
-                            ? 'rgba(239, 68, 68, 0.2)'
+                            ? 'rgba(239, 68, 68, 0.06)'
                             : 'action.hover';
 
                         // Common cell style
@@ -4031,6 +4131,18 @@ const OptionsPanel = () => {
           setSlTpDialogOpen(false);
           setSelectedPositionForSLTP(null);
         }}
+      />
+      
+      {/* Sound Settings Panel (JAN 19, 2026 - Independent UI component) */}
+      <SoundSettingsPanel 
+        open={soundSettingsOpen} 
+        onClose={() => setSoundSettingsOpen(false)} 
+      />
+      
+      {/* Trade Notification (JAN 19, 2026 - Visual feedback) */}
+      <TradeNotification 
+        notification={tradeNotification} 
+        onDismiss={() => setTradeNotification(null)} 
       />
     </motion.div>
   );

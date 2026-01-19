@@ -8,11 +8,13 @@
  */
 
 import { NOTIFICATION_TYPES } from '../types/constants';
+import soundManager from '../../../../utils/soundManager';
 
 class NotificationService {
   constructor() {
     this.soundEnabled = true;
     this.toastCallback = null; // Will be set by UI component
+    this.soundManager = soundManager;
 
     // Pre-load sound effects (you'll need to add actual sound files)
     this.sounds = {
@@ -93,6 +95,11 @@ class NotificationService {
    */
   _playSound(soundType) {
     try {
+      // Use sound manager for trade filled notifications (calming chime)
+      if (soundType === 'success') {
+        this.soundManager.playTradeFilled();
+      }
+      
       const sound = this.sounds[soundType];
       if (sound) {
         sound.currentTime = 0;

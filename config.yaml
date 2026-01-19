@@ -307,11 +307,14 @@ api:
 telegram:
   bot_token: '***REDACTED***'
   chat_id: '8170794676'
-  live_bot_token: '***REDACTED***'
+  live_bot_token: '8577856008:AAH4C52AeHRvcWjrRt3ztWt6RZS5MAkinxU'
   live_chat_id: '8170794676'
   demo_bot_token: '***REDACTED***'
   demo_chat_id: '8170794676'
   enabled: true
+  # Options trading bot (separate from grid/guardian bot)
+  options_bot_token: '8509485131:AAFyCFj9mZZWcHO_qEzSq8aqWy9jGkMWHK0'
+  options_chat_id: '8170794676'
 logging:
   level: INFO
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

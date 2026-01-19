@@ -623,6 +623,9 @@ class TelegramConfig(BaseModel):
     live_chat_id: Optional[str] = Field(None, description="Live mode chat ID")
     demo_bot_token: Optional[str] = Field(None, description="Demo mode bot token")
     demo_chat_id: Optional[str] = Field(None, description="Demo mode chat ID")
+    # Options trading bot (separate from grid/guardian)
+    options_bot_token: Optional[str] = Field(None, description="Options trading bot token")
+    options_chat_id: Optional[str] = Field(None, description="Options trading chat ID")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768809046.160017,
+  "timestamp": 1768845969.987943,
   "mode": "LONG",
   "symbol": "ETHUSD",
-  "uptime": 174898.3411128521,
+  "uptime": 211822.1690378189,
   "state": {
     "open_tranches": [
       {
@@ -17,13 +17,13 @@
       }
     ],
     "pending_buy": {
-      "order_id": 1129723531,
+      "order_id": 1130290528,
       "price": 3100.0,
       "size": 1,
-      "timestamp": 1768782054.560452
+      "timestamp": 1768822811.1350799
     },
     "pending_sell": null,
-    "last_buy_order_time": 1768782054.560454,
+    "last_buy_order_time": 1768822811.135082,
     "last_sell_order_time": 0,
     "total_positions_opened": 1,
     "total_positions_closed": 0,
@@ -44,19 +44,19 @@
       "total_closed": 0,
       "avg_entry_price": 3200.0,
       "total_size": 1,
-      "oldest_position_age": 26997.05057501793,
+      "oldest_position_age": 63920.879189014435,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
     "orders": {
       "active_orders": 2,
-      "total_placed": 5,
-      "total_cancelled": 2,
+      "total_placed": 6,
+      "total_cancelled": 3,
       "total_failures": 0,
       "success_rate": 1.0,
       "active_order_ids": [
         1129723366,
-        1129723531
+        1130290528
       ]
     },
     "sagas": {
@@ -75,10 +75,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 119473,
+        "processed_count": 144716,
         "error_count": 0,
-        "avg_processing_time_ms": 0.08570796257117763,
-        "max_processing_time_ms": 0.8587909978814423,
+        "avg_processing_time_ms": 0.06862297974294052,
+        "max_processing_time_ms": 0.6489579973276705,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -86,10 +86,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 34285,
+        "processed_count": 41471,
         "error_count": 0,
-        "avg_processing_time_ms": 0.047841670748312026,
-        "max_processing_time_ms": 0.33529201755300164,
+        "avg_processing_time_ms": 0.04411496047396213,
+        "max_processing_time_ms": 0.3045419871341437,
         "error_rate": 0.0
       }
     },
@@ -107,8 +107,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 3204.65,
-      "price_age_seconds": 2.90800404548645,
+      "price": 3213.55,
+      "price_age_seconds": 4.614752769470215,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -118,7 +118,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 33926,
+        "total_updates": 41185,
         "websocket_updates": 0,
         "rest_api_updates": 76,
         "stale_warnings": 206,

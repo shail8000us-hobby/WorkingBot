@@ -308,60 +308,70 @@ class PremiumBalancer:
         logger.success(f"Reduced {lots} {leg_type} lots @ ₹{fill_price:.2f}")
     
     async def _place_order(self, symbol: str, side: str, lots: int) -> Dict:
-        """Place order with maker-first preference"""
+        """
+        Place order with maker-first preference
+        
+        **0DTE SYSTEM** - Uses async_client.place_order_by_symbol()
+        """
         preference = self.config.rebalancing.orders.preference
         timeout = self.config.rebalancing.orders.timeout_seconds
         
         try:
             ticker = await self.api_client.get_option_ticker(symbol)
+            quotes = ticker.get('quotes', {})
             
             if side == 'sell':
-                limit_price = ticker.get('quotes', {}).get('best_bid', ticker.get('mark_price'))
+                limit_price = float(quotes.get('best_bid', 0)) if quotes.get('best_bid') else float(ticker.get('mark_price', 0))
             else:
-                limit_price = ticker.get('quotes', {}).get('best_ask', ticker.get('mark_price'))
+                limit_price = float(quotes.get('best_ask', 0)) if quotes.get('best_ask') else float(ticker.get('mark_price', 0))
             
             if preference == 'maker_first':
                 # Try maker order first
-                order = await self.api_client.place_order(
+                response = await self.api_client.async_client.place_order_by_symbol(
                     symbol=symbol,
                     side=side,
+                    price=limit_price,
                     size=lots,
-                    order_type='limit',
-                    price=limit_price
+                    order_type='limit_order',
+                    post_only=True
                 )
                 
-                order_id = order.get('id')
+                order_id = response.get('result', {}).get('id')
                 fill_price = await self._wait_for_fill(order_id, timeout)
                 
                 if fill_price is None:
                     # Cancel and use market
-                    await self.api_client.cancel_order(order_id)
+                    logger.info(f"Maker order {order_id} not filled, converting to market")
+                    product_id = await self.api_client.async_client.get_product_id(symbol)
+                    await self.api_client.async_client.cancel_order(order_id, product_id)
                     
-                    order = await self.api_client.place_order(
+                    response = await self.api_client.async_client.place_order_by_symbol(
                         symbol=symbol,
                         side=side,
+                        price=limit_price,
                         size=lots,
-                        order_type='market'
+                        order_type='market_order'
                     )
-                    order_id = order.get('id')
+                    order_id = response.get('result', {}).get('id')
                     fill_price = await self._wait_for_fill(order_id, 10) or limit_price
                 
                 return {'fill_price': fill_price, 'order_id': order_id}
             else:
                 # Market order
-                order = await self.api_client.place_order(
+                response = await self.api_client.async_client.place_order_by_symbol(
                     symbol=symbol,
                     side=side,
+                    price=limit_price,
                     size=lots,
-                    order_type='market'
+                    order_type='market_order'
                 )
-                order_id = order.get('id')
+                order_id = response.get('result', {}).get('id')
                 fill_price = await self._wait_for_fill(order_id, 10) or limit_price
                 
                 return {'fill_price': fill_price, 'order_id': order_id}
                 
         except Exception as e:
-            logger.error(f"Order failed: {side} {lots} {symbol}: {e}")
+            logger.error(f"❌ Order failed: {side} {lots} {symbol}: {e}")
             raise
     
     async def _wait_for_fill(self, order_id: str, timeout: int) -> Optional[float]:

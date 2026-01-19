@@ -35,6 +35,15 @@ from bot.options.utils.options_helper import (
     determine_close_side,
 )
 
+# Import options notifier for Telegram alerts
+try:
+    from bot.options.notifications.options_notifier import get_options_notifier
+    NOTIFICATIONS_ENABLED = True
+except Exception as e:
+    print(f"⚠️ Options notifier not available: {e}")
+    get_options_notifier = None
+    NOTIFICATIONS_ENABLED = False
+
 # Import trade logger for ML learning
 try:
     from ...options_strategy.trade_logger import trade_logger
@@ -748,6 +757,42 @@ def close_options_position():
         
         log.info(f"📉 OPTIONS CLOSE: {symbol} size={close_size} side={side} exec={execution_type}")
         
+        # Send Telegram notification for position close
+        if NOTIFICATIONS_ENABLED and get_options_notifier:
+            try:
+                cfg = get_config()
+                options_token = cfg.telegram.options_bot_token if hasattr(cfg.telegram, 'options_bot_token') else None
+                options_chat = cfg.telegram.options_chat_id if hasattr(cfg.telegram, 'options_chat_id') else cfg.telegram.live_chat_id
+                
+                if options_token and options_chat:
+                    notifier = get_options_notifier(token=options_token, chat_id=options_chat)
+                    
+                    # Calculate hold time
+                    from datetime import datetime, timedelta
+                    # Estimate hold time (would need to track open time in production)
+                    hold_time = "Unknown"
+                    
+                    # Calculate P&L
+                    entry_price = position.get('entry_price', 0)
+                    pnl = (fill_price - entry_price) * float(close_size) if side == 'sell' else (entry_price - fill_price) * float(close_size)
+                    pnl_pct = ((fill_price - entry_price) / entry_price * 100) if entry_price else 0
+                    
+                    notifier.notify_position_closed(
+                        symbol=symbol,
+                        entry_price=entry_price,
+                        exit_price=fill_price,
+                        size=int(close_size),
+                        pnl=pnl,
+                        pnl_pct=pnl_pct,
+                        hold_time=hold_time,
+                        side=side,
+                        order_type=order_preference,
+                        greeks=position.get('greeks', {}),
+                        spot_price=position.get('greeks', {}).get('spot', 0)
+                    )
+            except Exception as e:
+                log.warning(f"Failed to send close notification: {e}")
+        
         return jsonify({
             'success': True,
             'action': 'closed',
@@ -934,6 +979,60 @@ def add_to_options_position():
                 log.warning(f"Failed to log trade: {e}")
         
         log.info(f"📈 OPTIONS ADD: {symbol} size={size} side={side} exec={execution_type} price={fill_price}")
+        
+        # Send Telegram notification for position opened/added
+        if NOTIFICATIONS_ENABLED and get_options_notifier:
+            try:
+                cfg = get_config()
+                options_token = cfg.telegram.options_bot_token if hasattr(cfg.telegram, 'options_bot_token') else None
+                options_chat = cfg.telegram.options_chat_id if hasattr(cfg.telegram, 'options_chat_id') else cfg.telegram.live_chat_id
+                
+                if options_token and options_chat:
+                    notifier = get_options_notifier(token=options_token, chat_id=options_chat)
+                    
+                    # Get updated position for notification
+                    async def get_updated_position():
+                        positions = await client.get_all_positions_with_options()
+                        for pos in positions['options']:
+                            if pos.get('product_symbol') == symbol:
+                                return pos
+                        return None
+                    
+                    updated_pos = asyncio.run(get_updated_position())
+                    
+                    if updated_pos:
+                        new_size = updated_pos.get('size', 0)
+                        avg_entry = updated_pos.get('entry_price', 0)
+                        current_pnl = updated_pos.get('unrealized_pnl', 0)
+                        pnl_pct = ((updated_pos.get('mark_price', fill_price) - avg_entry) / avg_entry * 100) if avg_entry else 0
+                        
+                        # Check if this is a new position or addition
+                        old_size = new_size - (int(size) if side == 'buy' else -int(size))
+                        
+                        if old_size == 0:
+                            # New position
+                            notifier.notify_position_opened(
+                                position=updated_pos,
+                                fill_price=fill_price if fill_price else mid_price,
+                                size=int(size),
+                                side=side,
+                                order_type=order_preference
+                            )
+                        else:
+                            # Addition to existing
+                            notifier.notify_position_added(
+                                symbol=symbol,
+                                added_size=int(size) if side == 'buy' else -int(size),
+                                fill_price=fill_price if fill_price else mid_price,
+                                old_size=old_size,
+                                new_size=new_size,
+                                avg_entry=avg_entry,
+                                current_pnl=current_pnl,
+                                pnl_pct=pnl_pct,
+                                order_type=order_preference
+                            )
+            except Exception as e:
+                log.warning(f"Failed to send options notification: {e}")
         
         return jsonify({
             'success': True,

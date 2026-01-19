@@ -119,22 +119,23 @@ class OptionsChainOrderService:
                 'size': size
             }
     
-    async def cancel_order(self, order_id: str) -> dict:
+    async def cancel_order(self, order_id: str, product_id: int) -> dict:
         """
         Cancel an open order
         
         Args:
             order_id: Order ID to cancel
+            product_id: Product ID for the order
             
         Returns:
             dict with success status
         """
         client = self._get_client()
         
-        log.info(f"📤 Cancelling order: {order_id}")
+        log.info(f"📤 Cancelling order: {order_id} (product_id: {product_id})")
         
         try:
-            result = await client.rest_client.cancel_order(order_id)
+            result = await client.rest_client.cancel_order(order_id, product_id)
             
             log.info(f"✅ Order {order_id} cancelled")
             

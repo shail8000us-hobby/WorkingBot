@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768809050.011193,
+  "timestamp": 1768845970.463139,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 146705.82942724228,
+  "uptime": 183626.2813720703,
   "state": {
     "open_tranches": [
       {
@@ -54,29 +54,19 @@
         "timestamp": 1768780907.96721,
         "entry_order_id": "1b27f56f-c113-4aa3-a8a7-8984b883a533",
         "tp_order_id": "1129687207"
-      },
-      {
-        "position_id": "1dc0005e-253c-4a76-b0e8-2e2e6c3ff854",
-        "entry_price": 92500.0,
-        "tp_price": 93000.0,
-        "size": 5,
-        "correlation_id": "fill-7057f93a2cb74c889181b29afe4e1b78-1768787064135",
-        "timestamp": 1768787065.083432,
-        "entry_order_id": "1dc0005e-253c-4a76-b0e8-2e2e6c3ff854",
-        "tp_order_id": "1129796967"
       }
     ],
     "pending_buy": {
-      "order_id": 1130001030,
-      "price": 92000.0,
+      "order_id": 1130290549,
+      "price": 92500.0,
       "size": 5,
-      "timestamp": 1768804008.8660018
+      "timestamp": 1768822812.041635
     },
     "pending_sell": null,
-    "last_buy_order_time": 1768804008.8660202,
+    "last_buy_order_time": 1768822812.0416472,
     "last_sell_order_time": 0,
     "total_positions_opened": 10,
-    "total_positions_closed": 4,
+    "total_positions_closed": 5,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
       "total_recoveries": 0,
@@ -89,19 +79,19 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 6,
+      "open_count": 5,
       "total_opened": 10,
-      "total_closed": 4,
-      "avg_entry_price": 93750.0,
-      "total_size": 30,
-      "oldest_position_age": 31588.467746257782,
+      "total_closed": 5,
+      "avg_entry_price": 94000.0,
+      "total_size": 25,
+      "oldest_position_age": 68508.91944813728,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
     "orders": {
-      "active_orders": 7,
-      "total_placed": 31,
-      "total_cancelled": 10,
+      "active_orders": 8,
+      "total_placed": 33,
+      "total_cancelled": 12,
       "total_failures": 0,
       "success_rate": 1.0,
       "active_order_ids": [
@@ -111,13 +101,14 @@
         1129677963,
         1129687207,
         1129796967,
-        1130001030
+        1130001030,
+        1130290549
       ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 14,
-      "total_completed": 14,
+      "total_started": 15,
+      "total_completed": 15,
       "total_failed": 0,
       "total_compensated": 0,
       "success_rate": 1.0,
@@ -130,10 +121,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 98273,
+        "processed_count": 123490,
         "error_count": 0,
-        "avg_processing_time_ms": 0.09057255054358393,
-        "max_processing_time_ms": 1.038165995851159,
+        "avg_processing_time_ms": 0.07019330863840878,
+        "max_processing_time_ms": 0.5481249827425927,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -141,15 +132,15 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 28802,
+        "processed_count": 35976,
         "error_count": 10,
-        "avg_processing_time_ms": 0.048470769834239036,
-        "max_processing_time_ms": 0.4129169974476099,
-        "error_rate": 0.00034719811124227484
+        "avg_processing_time_ms": 0.048301671049557626,
+        "max_processing_time_ms": 0.5236669967416674,
+        "error_rate": 0.00027796308650211254
       }
     },
-    "fills_processed": 14,
-    "sagas_completed": 14,
+    "fills_processed": 15,
+    "sagas_completed": 15,
     "sagas_failed": 0
   },
   "grid_config": {
@@ -162,8 +153,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 92702.0,
-      "price_age_seconds": 1.6921398639678955,
+      "price": 93109.5,
+      "price_age_seconds": 0.0054340362548828125,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -173,7 +164,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 28383,
+        "total_updates": 35637,
         "websocket_updates": 0,
         "rest_api_updates": 67,
         "stale_warnings": 306,
