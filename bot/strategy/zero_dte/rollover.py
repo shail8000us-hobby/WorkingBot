@@ -262,11 +262,12 @@ class StrikeRolloverManager:
         return await self._place_order(symbol, 'sell', lots)
     
     async def _place_order(self, symbol: str, side: str, lots: int) -> Dict:
-        """Place order with maker-first preference"""
+        """Place order with maker-first preference using correct Delta Exchange API"""
         preference = self.config.rebalancing.orders.preference
         timeout = self.config.rebalancing.orders.timeout_seconds
         
         try:
+            # Get ticker for price reference
             ticker = await self.api_client.get_option_ticker(symbol)
             
             if side == 'sell':
@@ -275,41 +276,48 @@ class StrikeRolloverManager:
                 limit_price = ticker.get('quotes', {}).get('best_ask', ticker.get('mark_price'))
             
             if preference == 'maker_first':
-                # Try maker order first
-                order = await self.api_client.place_order(
+                # Try maker order first using async_client with correct signature
+                response = await self.api_client.async_client.place_order_by_symbol(
                     symbol=symbol,
                     side=side,
+                    price=limit_price,
                     size=lots,
-                    order_type='limit',
-                    price=limit_price
+                    order_type='limit_order',
+                    post_only=True
                 )
                 
-                order_id = order.get('id')
+                order_id = response.get('result', {}).get('id')
+                if not order_id:
+                    raise Exception(f"Order creation failed: {response}")
+                
                 fill_price = await self._wait_for_fill(order_id, timeout)
                 
                 if fill_price is None:
                     # Cancel and use market
-                    await self.api_client.cancel_order(order_id)
+                    await self.api_client.async_client.cancel_order(order_id)
                     
-                    order = await self.api_client.place_order(
+                    response = await self.api_client.async_client.place_order_by_symbol(
                         symbol=symbol,
                         side=side,
                         size=lots,
-                        order_type='market'
+                        order_type='market_order'
                     )
-                    order_id = order.get('id')
+                    order_id = response.get('result', {}).get('id')
                     fill_price = await self._wait_for_fill(order_id, 10) or limit_price
                 
                 return {'fill_price': fill_price, 'order_id': order_id}
             else:
-                # Market order
-                order = await self.api_client.place_order(
+                # Market order using async_client with correct signature
+                response = await self.api_client.async_client.place_order_by_symbol(
                     symbol=symbol,
                     side=side,
                     size=lots,
-                    order_type='market'
+                    order_type='market_order'
                 )
-                order_id = order.get('id')
+                order_id = response.get('result', {}).get('id')
+                if not order_id:
+                    raise Exception(f"Order creation failed: {response}")
+                    
                 fill_price = await self._wait_for_fill(order_id, 10) or limit_price
                 
                 return {'fill_price': fill_price, 'order_id': order_id}
