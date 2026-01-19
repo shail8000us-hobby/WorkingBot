@@ -582,7 +582,7 @@ def handle_connect():
         
         # Send recent logs on connect (last 100 lines)
         try:
-            from utils.file_helpers import get_recent_logs
+            from webui.backend.utils.file_helpers import get_recent_logs
             recent_logs = get_recent_logs(100)
             if recent_logs:
                 for log_line in recent_logs:

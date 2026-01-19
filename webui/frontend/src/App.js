@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense, startTransition } from 'react';
 import { Alert, Snackbar, CircularProgress } from '@mui/material';
 import {
   LayoutDashboard,
@@ -31,6 +31,7 @@ import { useFeatureFlag } from './utils/featureFlags.ts';
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
 import CollapsibleCard from './components/common/CollapsibleCard.tsx';
+import PanelSkeleton from './components/common/PanelSkeleton';
 import { VolatilityRegimePanel, UnrealizedPnLPanel } from './components/panels';
 import EmergencyKillButton from './components/EmergencyKillButton';
 import TradingModeSwitch from './components/TradingModeSwitch';
@@ -116,17 +117,10 @@ const ShutdownPanel = React.lazy(() => import('./components/ShutdownPanel'));
 const OpportunisticRecoveryPanel = React.lazy(
   () => import('./components/OpportunisticRecoveryPanel')
 );
-const BotActionsPanel = React.lazy(() => import('./components/BotActionsPanel'));
 const BackendDownError = React.lazy(() => import('./components/BackendDownError'));
 const TodoListPanel = React.lazy(() => import('./components/TodoListPanel'));
-const BotBrainAnalyzer = React.lazy(() => import('./components/BotBrainAnalyzer'));
-const FileEditor = React.lazy(() => import('./components/FileEditor'));
-const StrategyEditor = React.lazy(() => import('./components/StrategyEditor'));
 const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceWidget'));
-const ConfigVisualEditor = React.lazy(() => import('./components/ConfigVisualEditor'));
-const ModeSwitcherPanel = React.lazy(() => import('./components/ModeSwitcherPanel'));
 const SystemHealthPanel = React.lazy(() => import('./components/SystemHealthPanel'));
-const MultiInstanceManager = React.lazy(() => import('./components/MultiInstanceManager'));
 const MonitoringRecoveryPanel = React.lazy(
   () => import('./components/panels/MonitoringRecoveryPanel')
 );
@@ -510,58 +504,16 @@ function App() {
         description: 'tmux control, process management, and emergency controls',
       },
       {
-        id: 'actions',
-        label: 'Bot Actions',
-        icon: Zap,
-        description: 'Real-time bot decisions and future intentions',
-      },
-      {
-        id: 'brain_flow',
-        label: 'Brain Flow Graph',
-        icon: TrendingUp,
-        description: 'Visual decision flowchart - see bot complete decision tree',
-      },
-      {
         id: 'intelligence',
         label: 'Intelligence',
         icon: BookOpen,
         description: 'AI insights, documentation, market intel',
       },
       {
-        id: 'file_editor',
-        label: 'File Editor',
-        icon: Code,
-        description: 'Edit code with AI assistance - syntax highlighting, templates, auto-backup',
-      },
-      {
-        id: 'strategy_editor',
-        label: 'Strategy Editor',
-        icon: SlidersHorizontal,
-        description: 'Visual strategy builder - templates, forms, comparison, backtest',
-      },
-      {
-        id: 'config_visual_editor',
-        label: 'Config Editor',
-        icon: SlidersHorizontal,
-        description: 'Edit configuration with forms or YAML - validation, diff, backups',
-      },
-      {
-        id: 'mode_switcher',
-        label: 'Mode Switcher',
-        icon: RefreshCw,
-        description: 'Auto LONG/SHORT switching - configure thresholds, manual override',
-      },
-      {
         id: 'system_health',
         label: 'System Health',
         icon: Activity,
         description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts',
-      },
-      {
-        id: 'instance_manager',
-        label: 'Instance Manager',
-        icon: Layers3,
-        description: 'Run multiple bots simultaneously - demo + live, different strategies',
       },
       {
         id: 'todos',
@@ -635,181 +587,76 @@ function App() {
   );
   // Navigation handler that clears params when navigating via sidebar
   const handleSectionSelect = useCallback((sectionId) => {
-    setActiveSection(sectionId);
-    // Clear nav params when navigating via normal sidebar click
-    setNavParams(null);
+    // Use startTransition for non-blocking navigation
+    startTransition(() => {
+      setActiveSection(sectionId);
+      // Clear nav params when navigating via normal sidebar click
+      setNavParams(null);
+    });
   }, []);
 
-  const renderActions = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="bot-actions"
-        title="Bot Actions"
-        subtitle="Real-time bot decisions, future intentions, and event stream"
-        accent="cyan"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="BotActionsPanel">
-          <BotActionsPanel />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
-  );
-
   const renderTodos = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="todo-list"
-        title="📝 Improvement Todo List"
-        subtitle="Track your ideas and improvements for the trading bot"
-        accent="amber"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="TodoListPanel">
-          <TodoListPanel />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
-  );
-
-  const renderFileEditor = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="file-editor"
-        title="💻 File Editor with AI"
-        subtitle="Edit code files with AI assistance, syntax highlighting, templates, and auto-backup"
-        accent="purple"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="FileEditor">
-          <FileEditor />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
-  );
-
-  const renderStrategyEditor = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="strategy-editor"
-        title="📊 Strategy Editor"
-        subtitle="Visual strategy builder with templates, forms, comparison, and backtest capabilities"
-        accent="blue"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="StrategyEditor">
-          <StrategyEditor />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
-  );
-
-  const renderConfigVisualEditor = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="config-visual-editor"
-        title="⚙️ Configuration Editor"
-        subtitle="Edit configuration with forms or YAML - validation, diff preview, and auto-backup"
-        accent="purple"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="ConfigVisualEditor">
-          <ConfigVisualEditor />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
-  );
-
-  const renderModeSwitcher = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="mode-switcher"
-        title="🔄 Auto Mode Switcher"
-        subtitle="Automatic LONG/SHORT switching based on price - hysteresis, manual override, switch history"
-        accent="cyan"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="ModeSwitcherPanel">
-          <ModeSwitcherPanel />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="list" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="todo-list"
+          title="📝 Improvement Todo List"
+          subtitle="Track your ideas and improvements for the trading bot"
+          accent="amber"
+          defaultOpen={true}
+        >
+          <EnhancedErrorBoundary componentName="TodoListPanel">
+            <TodoListPanel />
+          </EnhancedErrorBoundary>
+        </CollapsibleCard>
+      </div>
+    </Suspense>
   );
 
   const renderSystemHealth = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="system-health"
-        title="📊 System Health Monitor"
-        subtitle="Real-time system monitoring - CPU, memory, disk, process health, API status, alerts with auto-healing"
-        accent="green"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="SystemHealthPanel">
-          <SystemHealthPanel />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
-  );
-
-  const renderInstanceManager = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="instance-manager"
-        title="🤖 Multi-Instance Manager"
-        subtitle="Run multiple bot instances simultaneously - demo + live, different strategies, independent control"
-        accent="emerald"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="MultiInstanceManager">
-          <MultiInstanceManager />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="monitoring" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="system-health"
+          title="📊 System Health Monitor"
+          subtitle="Real-time system monitoring - CPU, memory, disk, process health, API status, alerts with auto-healing"
+          accent="green"
+          defaultOpen={true}
+        >
+          <EnhancedErrorBoundary componentName="SystemHealthPanel">
+            <SystemHealthPanel />
+          </EnhancedErrorBoundary>
+        </CollapsibleCard>
+      </div>
+    </Suspense>
   );
 
   const renderZeroDTE = () => (
-    <div className="grid gap-6">
-      <Suspense fallback={<LoadingFallback message="Loading 0DTE Dashboard..." />}>
+    <Suspense fallback={<PanelSkeleton type="dashboard" />}>
+      <div className="grid gap-6">
         <EnhancedErrorBoundary componentName="ZeroDTEDashboard">
           <ZeroDTEDashboard />
         </EnhancedErrorBoundary>
-      </Suspense>
-    </div>
-  );
-
-  const renderBrainFlow = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="brain-flow"
-        title="🧠 Bot Brain Decision Flow"
-        subtitle="Visual flowchart showing complete decision tree"
-        accent="purple"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="BotBrainAnalyzer">
-          <BotBrainAnalyzer />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-    </div>
+      </div>
+    </Suspense>
   );
 
   const renderDashboard = () => (
-    <div className="grid gap-6">
-      {/* Bot Monitoring Dashboard - Top Priority */}
-      <CollapsibleCard
-        id="bot-monitoring-dashboard"
-        title="🔍 Bot Monitoring Dashboard"
-        subtitle="5-layer monitoring system: Price health, pre-order stats, TP verification, anomaly detection, and predictive actions"
-        accent="purple"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading bot monitoring..." />}>
-          <EnhancedErrorBoundary componentName="MonitoringDashboard">
-            <MonitoringDashboard />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="dashboard" />}>
+      <div className="grid gap-6">{/* Bot Monitoring Dashboard - Top Priority */}
+        <CollapsibleCard
+          id="bot-monitoring-dashboard"
+          title="🔍 Bot Monitoring Dashboard"
+          subtitle="5-layer monitoring system: Price health, pre-order stats, TP verification, anomaly detection, and predictive actions"
+          accent="purple"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading bot monitoring..." />}>
+            <EnhancedErrorBoundary componentName="MonitoringDashboard">
+              <MonitoringDashboard />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
       {/* Volatility Chart - Full Width at Top */}
       <CollapsibleCard
@@ -938,126 +785,137 @@ function App() {
         </Suspense>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderPositions = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="positions-panel"
-        title="Open Positions"
-        subtitle="Real-time grid exposure and unrealized PnL"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <Suspense fallback={<LoadingFallback message="Loading positions..." />}>
-            <EnhancedErrorBoundary componentName="PositionsPanel">
-              <PositionsPanel />
-            </EnhancedErrorBoundary>
-          </Suspense>
-        ) : (
-          renderInactivePanel(
-            'No positions until bot starts',
-            'Position inventory and tranche breakdown appear here after the trading engine is online.'
-          )
-        )}
-      </CollapsibleCard>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="table" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="positions-panel"
+          title="Open Positions"
+          subtitle="Real-time grid exposure and unrealized PnL"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <Suspense fallback={<LoadingFallback message="Loading positions..." />}>
+              <EnhancedErrorBoundary componentName="PositionsPanel">
+                <PositionsPanel />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          ) : (
+            renderInactivePanel(
+              'No positions until bot starts',
+              'Position inventory and tranche breakdown appear here after the trading engine is online.'
+            )
+          )}
+        </CollapsibleCard>
+      </div>
+    </Suspense>
   );
 
   // Options Trading Panel (Jan 2026)
   const renderOptions = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="options-panel"
-        title="📈 Options Trading"
-        subtitle="Manage options positions - Close or add to existing positions"
-        accent="violet"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading options..." />}>
-          <EnhancedErrorBoundary componentName="OptionsPanel">
-            <OptionsPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="table" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="options-panel"
+          title="📈 Options Trading"
+          subtitle="Manage options positions - Close or add to existing positions"
+          accent="violet"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading options..." />}>
+            <EnhancedErrorBoundary componentName="OptionsPanel">
+              <OptionsPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
+    </Suspense>
   );
 
   // Options Chain Panel (Jan 2026) - Market Data Viewer
   const renderOptionsChain = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="options-chain-panel"
-        title="🔗 Options Chain"
-        subtitle="Live options chain - IV, Greeks, strike selection by expiry"
-        accent="cyan"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading options chain..." />}>
-          <EnhancedErrorBoundary componentName="OptionsChainPanel">
-            <OptionsChainPanel buildYourOwnMode={navParams?.buildYourOwnMode || false} />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="table" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="options-chain-panel"
+          title="🔗 Options Chain"
+          subtitle="Live options chain - IV, Greeks, strike selection by expiry"
+          accent="cyan"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading options chain..." />}>
+            <EnhancedErrorBoundary componentName="OptionsChainPanel">
+              <OptionsChainPanel buildYourOwnMode={navParams?.buildYourOwnMode || false} />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
+    </Suspense>
   );
 
   // Options Strategy Builder (Jan 2026) - Multi-leg strategy builder
   const renderStrategyBuilder = () => (
-    <div className="grid gap-6">
-      <Suspense fallback={<LoadingFallback message="Loading strategy builder..." />}>
-        <EnhancedErrorBoundary componentName="StrategyBuilder">
-          <StrategyBuilder
-            onNavigateToTab={(tabId, params) => {
-              setActiveSection(tabId);
-              // Store params for the target tab (e.g., buildYourOwnMode for Options Chain)
-              if (params) {
-                setNavParams(params);
-              } else {
-                setNavParams(null);
-              }
-            }}
-          />
-        </EnhancedErrorBoundary>
-      </Suspense>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="dashboard" />}>
+      <div className="grid gap-6">
+        <Suspense fallback={<LoadingFallback message="Loading strategy builder..." />}>
+          <EnhancedErrorBoundary componentName="StrategyBuilder">
+            <StrategyBuilder
+              onNavigateToTab={(tabId, params) => {
+                setActiveSection(tabId);
+                // Store params for the target tab (e.g., buildYourOwnMode for Options Chain)
+                if (params) {
+                  setNavParams(params);
+                } else {
+                  setNavParams(null);
+                }
+              }}
+            />
+          </EnhancedErrorBoundary>
+        </Suspense>
+      </div>
+    </Suspense>
   );
 
   const renderRSI = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="rsi-panel"
-        title="📊 RSI Safety Monitor (Layer 6)"
-        subtitle="Mode-specific RSI thresholds with hysteresis protection"
-        accent="purple"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading RSI monitor..." />}>
-          <EnhancedErrorBoundary componentName="RSIPanel">
-            <RSIPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+    <Suspense fallback={<PanelSkeleton type="monitoring" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="rsi-panel"
+          title="📊 RSI Safety Monitor (Layer 6)"
+          subtitle="Mode-specific RSI thresholds with hysteresis protection"
+          accent="purple"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading RSI monitor..." />}>
+            <EnhancedErrorBoundary componentName="RSIPanel">
+              <RSIPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
+    </Suspense>
   );
 
   const renderRisk = () => (
-    <div className="grid gap-6">
-      {/* Modern Unified Risk & Safety Dashboard */}
-      <CollapsibleCard
-        id="risk-safety-dashboard"
-        title="🛡️ Risk & Safety Control Center"
-        subtitle="6-Layer Guardian Protection • Real-time Monitoring • Institutional Grade Safety"
-        accent="sky"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading safety dashboard..." />}>
-          <EnhancedErrorBoundary componentName="RiskSafetyDashboard">
-            <RiskSafetyDashboard />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="monitoring" />}>
+      <div className="grid gap-6">{/* Modern Unified Risk & Safety Dashboard */}
+        <CollapsibleCard
+          id="risk-safety-dashboard"
+          title="🛡️ Risk & Safety Control Center"
+          subtitle="6-Layer Guardian Protection • Real-time Monitoring • Institutional Grade Safety"
+          accent="sky"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading safety dashboard..." />}>
+            <EnhancedErrorBoundary componentName="RiskSafetyDashboard">
+              <RiskSafetyDashboard />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
       {/* Legacy panels kept for detailed configuration */}
       <CollapsibleCard
@@ -1137,37 +995,39 @@ function App() {
         </div>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderConfig = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="config-panel"
-        title="GridBot Configuration"
-        subtitle="Edit, validate, and persist bot parameters"
-        accent="sky"
-        actions={
-          <button
-            type="button"
-            onClick={handleClearCache}
-            className="rounded-full border border-slate-600/60 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-sky-400 hover:text-sky-200"
-          >
-            Clear Cache
-          </button>
-        }
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading configuration..." />}>
-          <EnhancedErrorBoundary componentName="ConfigPanel">
-            <ConfigPanel
-              config={config}
-              meta={configMeta}
-              onUpdate={handleConfigUpdate}
-              loading={busy || loading}
-            />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="default" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="config-panel"
+          title="GridBot Configuration"
+          subtitle="Edit, validate, and persist bot parameters"
+          accent="sky"
+          actions={
+            <button
+              type="button"
+              onClick={handleClearCache}
+              className="rounded-full border border-slate-600/60 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-sky-400 hover:text-sky-200"
+            >
+              Clear Cache
+            </button>
+          }
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading configuration..." />}>
+            <EnhancedErrorBoundary componentName="ConfigPanel">
+              <ConfigPanel
+                config={config}
+                meta={configMeta}
+                onUpdate={handleConfigUpdate}
+                loading={busy || loading}
+              />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
       <CollapsibleCard
         id="sync-reconciliation"
@@ -1190,23 +1050,25 @@ function App() {
         </div>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderEmergency = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="emergency-controls"
-        title="Emergency Controls"
-        subtitle="Emergency stop flags, reset tools, and safety overrides"
-        accent="rose"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading emergency controls..." />}>
-          <EnhancedErrorBoundary componentName="EmergencyControlsPanel">
-            <EmergencyControlsPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="default" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="emergency-controls"
+          title="Emergency Controls"
+          subtitle="Emergency stop flags, reset tools, and safety overrides"
+          accent="rose"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading emergency controls..." />}>
+            <EnhancedErrorBoundary componentName="EmergencyControlsPanel">
+              <EmergencyControlsPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
       <CollapsibleCard
         id="shutdown-report"
@@ -1222,34 +1084,36 @@ function App() {
         </Suspense>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderMonitoring = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="system-monitoring"
-        title="System Monitoring"
-        subtitle="Guardian daemons, watchdog status, and bot telemetry"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
-            <EnhancedErrorBoundary componentName="MonitoringPanel">
-              <MonitoringPanel
-                botStatus={botStatus}
-                config={config}
-                onNavigate={(section) => console.log('Navigate to:', section)}
-              />
-            </EnhancedErrorBoundary>
-          </Suspense>
-        ) : (
-          renderInactivePanel(
-            'Monitoring idle',
-            'Process metrics and guardian heartbeat dashboards become available once services start.'
-          )
-        )}
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="monitoring" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="system-monitoring"
+          title="System Monitoring"
+          subtitle="Guardian daemons, watchdog status, and bot telemetry"
+          accent="sky"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
+              <EnhancedErrorBoundary componentName="MonitoringPanel">
+                <MonitoringPanel
+                  botStatus={botStatus}
+                  config={config}
+                  onNavigate={(section) => console.log('Navigate to:', section)}
+                />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          ) : (
+            renderInactivePanel(
+              'Monitoring idle',
+              'Process metrics and guardian heartbeat dashboards become available once services start.'
+            )
+          )}
+        </CollapsibleCard>
 
       <CollapsibleCard
         id="monitoring-recovery-system"
@@ -1265,37 +1129,39 @@ function App() {
         </Suspense>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderIntelligence = () => (
-    <div className="grid gap-6">
-      <CollapsibleCard
-        id="ai-insights"
-        title="AI Advisor & Institutional Toolkit"
-        subtitle="Continuous intelligence, incident analysis, and strategic guidance"
-        accent="violet"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <div className="flex flex-col gap-6 max-w-[1485px]">
-            <Suspense fallback={<LoadingFallback message="Loading AI advisor..." />}>
-              <EnhancedErrorBoundary componentName="AIAdvisorWidget">
-                <AIAdvisorWidget />
-              </EnhancedErrorBoundary>
-            </Suspense>
-            <Suspense fallback={<LoadingFallback message="Loading institutional AI tools..." />}>
-              <EnhancedErrorBoundary componentName="InstitutionalAIPanel">
-                <InstitutionalAIPanel />
-              </EnhancedErrorBoundary>
-            </Suspense>
-          </div>
-        ) : (
-          renderInactivePanel(
-            'AI Advisor paused',
-            'AI-driven insights populate after the trading engine streams fresh telemetry and market states.'
-          )
-        )}
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="default" />}>
+      <div className="grid gap-6">
+        <CollapsibleCard
+          id="ai-insights"
+          title="AI Advisor & Institutional Toolkit"
+          subtitle="Continuous intelligence, incident analysis, and strategic guidance"
+          accent="violet"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <div className="flex flex-col gap-6 max-w-[1485px]">
+              <Suspense fallback={<LoadingFallback message="Loading AI advisor..." />}>
+                <EnhancedErrorBoundary componentName="AIAdvisorWidget">
+                  <AIAdvisorWidget />
+                </EnhancedErrorBoundary>
+              </Suspense>
+              <Suspense fallback={<LoadingFallback message="Loading institutional AI tools..." />}>
+                <EnhancedErrorBoundary componentName="InstitutionalAIPanel">
+                  <InstitutionalAIPanel />
+                </EnhancedErrorBoundary>
+              </Suspense>
+            </div>
+          ) : (
+            renderInactivePanel(
+              'AI Advisor paused',
+              'AI-driven insights populate after the trading engine streams fresh telemetry and market states.'
+            )
+          )}
+        </CollapsibleCard>
 
       <CollapsibleCard
         id="docs"
@@ -1325,24 +1191,25 @@ function App() {
         </Suspense>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderMLTrading = () => (
-    <div className="grid gap-6">
-      {/* ML Trading Insights */}
-      <CollapsibleCard
-        id="ml-insights"
-        title="ML Trading Insights"
-        subtitle="Machine learning model performance, trade statistics, and pattern recognition"
-        accent="purple"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading ML insights..." />}>
-          <EnhancedErrorBoundary componentName="MLInsightsPanel">
-            <MLInsightsPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="dashboard" />}>
+      <div className="grid gap-6">{/* ML Trading Insights */}
+        <CollapsibleCard
+          id="ml-insights"
+          title="ML Trading Insights"
+          subtitle="Machine learning model performance, trade statistics, and pattern recognition"
+          accent="purple"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading ML insights..." />}>
+            <EnhancedErrorBoundary componentName="MLInsightsPanel">
+              <MLInsightsPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
       {/* Trading Style Profile */}
       <CollapsibleCard
@@ -1419,24 +1286,25 @@ function App() {
         </Suspense>
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const renderBotManagement = () => (
-    <div className="grid gap-6">
-      {/* PM2 Process Manager */}
-      <CollapsibleCard
-        id="pm2-control"
-        title="PM2 Process Manager"
-        subtitle="Production-ready process management for GridBot, Guardian, and Heartbeat"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading PM2 status..." />}>
-          <EnhancedErrorBoundary componentName="PM2Panel">
-            <PM2Panel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+    <Suspense fallback={<PanelSkeleton type="monitoring" />}>
+      <div className="grid gap-6">{/* PM2 Process Manager */}
+        <CollapsibleCard
+          id="pm2-control"
+          title="PM2 Process Manager"
+          subtitle="Production-ready process management for GridBot, Guardian, and Heartbeat"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading PM2 status..." />}>
+            <EnhancedErrorBoundary componentName="PM2Panel">
+              <PM2Panel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
       {/* Bot Management Dashboard */}
       <CollapsibleCard
@@ -1475,20 +1343,18 @@ function App() {
         )}
       </CollapsibleCard>
     </div>
+    </Suspense>
   );
 
   const sectionContent = {
-    actions: renderActions(),
     todos: renderTodos(),
-    file_editor: renderFileEditor(),
-    strategy_editor: renderStrategyEditor(),
-    config_visual_editor: renderConfigVisualEditor(),
-    mode_switcher: renderModeSwitcher(),
     system_health: renderSystemHealth(),
-    instance_manager: renderInstanceManager(),
-    brain_flow: renderBrainFlow(),
     dashboard: renderDashboard(),
-    portfolio: <SymbolPortfolio />,
+    portfolio: (
+      <Suspense fallback={<PanelSkeleton type="list" />}>
+        <SymbolPortfolio />
+      </Suspense>
+    ),
     positions: renderPositions(),
     options: renderOptions(), // Jan 2026: Options Trading Panel
     options_chain: renderOptionsChain(), // Jan 2026: Options Chain Market Data
@@ -1502,21 +1368,23 @@ function App() {
     intelligence: renderIntelligence(),
     // Week 3: Guardian Dashboard
     guardian: guardianEnabled ? (
-      <div className="grid gap-6">
-        <CollapsibleCard
-          id="guardian-dashboard"
-          title="🛡️ Guardian Dashboard"
-          subtitle="WebUI Robustness Monitor - Circuit breakers, metrics, and health"
-          accent="emerald"
-          defaultOpen={true}
-        >
-          <Suspense fallback={<LoadingFallback message="Loading Guardian Dashboard..." />}>
-            <EnhancedErrorBoundary componentName="GuardianDashboard">
-              <GuardianDashboard />
-            </EnhancedErrorBoundary>
-          </Suspense>
-        </CollapsibleCard>
-      </div>
+      <Suspense fallback={<PanelSkeleton type="monitoring" />}>
+        <div className="grid gap-6">
+          <CollapsibleCard
+            id="guardian-dashboard"
+            title="🛡️ Guardian Dashboard"
+            subtitle="WebUI Robustness Monitor - Circuit breakers, metrics, and health"
+            accent="emerald"
+            defaultOpen={true}
+          >
+            <Suspense fallback={<LoadingFallback message="Loading Guardian Dashboard..." />}>
+              <EnhancedErrorBoundary componentName="GuardianDashboard">
+                <GuardianDashboard />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          </CollapsibleCard>
+        </div>
+      </Suspense>
     ) : null,
     // 0DTE Autonomous Trading
     zero_dte: renderZeroDTE(),

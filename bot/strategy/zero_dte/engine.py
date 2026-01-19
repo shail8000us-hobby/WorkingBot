@@ -510,14 +510,13 @@ class ZeroDTEEngine:
         logger.info("Entry conditions validated ✓")
     
     async def _fetch_option_chain(self, underlying: str, expiry_date: str) -> Dict:
-        """Fetch option chain from Delta Exchange"""
-        try:
-            chain = await self.api_client.get_option_chain(underlying, expiry_date)
-            logger.debug(f"Fetched option chain: {len(chain.get('calls', {}))} calls, {len(chain.get('puts', {}))} puts")
-            return chain
-        except Exception as e:
-            logger.error(f"Failed to fetch option chain: {e}")
-            raise
+        """Fetch option chain from Delta Exchange - TEMPORARY STUB"""
+        logger.error("❌ Option chain fetching not yet implemented")
+        logger.error("❌ 0DTE system requires API integration - See ZERO_DTE_PHASE1_BACKEND_CORE.md")
+        raise NotImplementedError(
+            "0DTE API integration incomplete. Missing get_option_chain() implementation. "
+            "This feature requires Delta Exchange products API integration."
+        )
     
     async def _select_strikes(
         self,

@@ -216,6 +216,21 @@ def export_trades():
         }), 500
 
 
+@ml_trading_bp.route('/api/ml/trades/reconcile', methods=['POST'])
+def reconcile_trades():
+    """Reconcile trades to calculate PnL for matched SELL/BUY pairs."""
+    try:
+        result = trade_logger.reconcile_trades()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500
+
+
 # ============================================================
 # ML MODEL ENDPOINTS
 # ============================================================

@@ -128,6 +128,17 @@ class OptionsMLModel:
         df['outcome_pnl'] = pd.to_numeric(df['outcome_pnl'], errors='coerce')
         return (df['outcome_pnl'] > 0).astype(int)
     
+    def _clean_nan_values(self, obj):
+        """Recursively replace NaN values with None for valid JSON."""
+        if isinstance(obj, dict):
+            return {k: self._clean_nan_values(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_nan_values(item) for item in obj]
+        elif isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+            return None
+        else:
+            return obj
+    
     def can_train(self) -> Tuple[bool, str]:
         """Check if we have enough data to train."""
         try:
@@ -401,11 +412,14 @@ class OptionsMLModel:
                 'puts': df[df['is_call'] == 0]['outcome_pnl'].mean(),
             }
             
+            # FIX: Replace NaN with None for valid JSON
+            patterns = self._clean_nan_values(patterns)
+            
             return {
                 'success': True,
                 'patterns': patterns,
                 'total_trades_analyzed': len(df),
-                'overall_win_rate': df['is_winner'].mean(),
+                'overall_win_rate': float(df['is_winner'].mean()) if not pd.isna(df['is_winner'].mean()) else 0,
             }
             
         except Exception as e:
@@ -691,11 +705,25 @@ class OptionsMLModel:
         """Get current model status and metrics."""
         can_train, train_message = self.can_train()
         
+        # Ensure metadata has correct structure (backward compatibility)
+        metadata = None
+        if self.is_trained and self.model_metadata:
+            metadata = self.model_metadata.copy()
+            # If old format (accuracy not in metrics), wrap it
+            if 'metrics' not in metadata and 'accuracy' in metadata:
+                metrics = {
+                    'accuracy': metadata.pop('accuracy', 0),
+                    'precision': metadata.pop('precision', 0),
+                    'recall': metadata.pop('recall', 0),
+                    'f1_score': metadata.pop('f1_score', 0),
+                }
+                metadata['metrics'] = metrics
+        
         return {
             'is_trained': self.is_trained,
             'can_train': can_train,
             'train_message': train_message,
-            'metadata': self.model_metadata if self.is_trained else None,
+            'metadata': metadata,
             'feature_columns': self.feature_columns if self.is_trained else [],
         }
 

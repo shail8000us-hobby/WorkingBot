@@ -409,6 +409,69 @@ class TradeLogger:
         
         df.to_csv(output_file, index=False)
         return output_file
+    
+    def reconcile_trades(self) -> dict:
+        """
+        Reconcile open SELL/BUY trades to calculate realized PnL.
+        Matches trades by symbol and calculates outcomes.
+        Returns summary of reconciliation.
+        """
+        df = self.get_all_trades()
+        
+        if len(df) == 0:
+            return {'success': False, 'message': 'No trades to reconcile'}
+        
+        updated_count = 0
+        
+        # Group by symbol
+        for symbol in df['symbol'].unique():
+            symbol_trades = df[df['symbol'] == symbol].copy()
+            symbol_trades['timestamp'] = pd.to_datetime(symbol_trades['timestamp'])
+            symbol_trades = symbol_trades.sort_values('timestamp')
+            
+            # Match SELL OPEN with BUY CLOSE
+            sells = symbol_trades[symbol_trades['action'] == 'SELL'].copy()
+            buys = symbol_trades[symbol_trades['action'] == 'BUY'].copy()
+            
+            for idx, sell in sells.iterrows():
+                # Find corresponding buy (after sell timestamp)
+                matching_buys = buys[buys['timestamp'] > sell['timestamp']]
+                
+                if len(matching_buys) > 0:
+                    buy = matching_buys.iloc[0]
+                    
+                    # Calculate PnL (SELL price - BUY price) * quantity
+                    qty = min(abs(sell['quantity']), abs(buy['quantity']))
+                    pnl = (sell['price'] - buy['price']) * qty
+                    pnl_pct = (pnl / (sell['price'] * qty)) * 100 if sell['price'] > 0 else 0
+                    
+                    # Calculate duration
+                    duration = (buy['timestamp'] - sell['timestamp']).total_seconds() / 3600
+                    
+                    # FIX: Only assign PnL to SELL trade to avoid double-counting
+                    # Update sell trade outcome (opening trade gets the PnL)
+                    df.loc[df['trade_id'] == sell['trade_id'], 'outcome_pnl'] = pnl
+                    df.loc[df['trade_id'] == sell['trade_id'], 'outcome_pnl_pct'] = pnl_pct
+                    df.loc[df['trade_id'] == sell['trade_id'], 'outcome_duration_hours'] = duration
+                    df.loc[df['trade_id'] == sell['trade_id'], 'outcome_status'] = 'closed'
+                    
+                    # Update buy trade outcome (closing trade gets 0 to avoid double-count)
+                    df.loc[df['trade_id'] == buy['trade_id'], 'outcome_pnl'] = 0
+                    df.loc[df['trade_id'] == buy['trade_id'], 'outcome_pnl_pct'] = 0
+                    df.loc[df['trade_id'] == buy['trade_id'], 'outcome_duration_hours'] = duration
+                    df.loc[df['trade_id'] == buy['trade_id'], 'outcome_status'] = 'paired'  # Mark as paired
+                    
+                    updated_count += 2
+        
+        # Save reconciled trades
+        if updated_count > 0:
+            df.to_csv(TRADES_FILE, index=False)
+        
+        return {
+            'success': True,
+            'updated_count': updated_count,
+            'message': f'Reconciled {updated_count} trades'
+        }
 
 
 # Singleton instance

@@ -4,23 +4,23 @@
   "max_loss_tolerance": 0.0,
   "drawdown_tolerance": 0.0,
   "preferred_entry_hours": [
-    14,
-    15,
+    11,
+    12,
     16
   ],
   "preferred_days": [
-    5
+    6
   ],
   "avg_hold_duration_hours": 0.0,
-  "patience_factor": 0.03694069923611111,
+  "patience_factor": 0.0006111446643518518,
   "volatility_preference": "low",
   "trend_preference": "neutral",
   "scaling_behavior": "scale_in",
   "profit_taking_style": "mixed",
   "loss_cutting_speed": "moderate",
-  "avg_position_size": 16.47826086956522,
-  "call_preference": 0.3695652173913043,
-  "buy_preference": 0.010869565217391304,
+  "avg_position_size": 12.770527116066903,
+  "call_preference": 0.5660162189559047,
+  "buy_preference": 0.10098834262544348,
   "preferred_strikes": [
     "ATM"
   ],
@@ -31,7 +31,7 @@
   "trades_after_win": 1.0,
   "trades_after_loss": 1.0,
   "revenge_trading_tendency": 0.0,
-  "confidence": 0.4000000000000001,
-  "total_trades_analyzed": 92,
-  "analysis_date": "2026-01-18T10:15:52.784453"
+  "confidence": 0.4666666666666666,
+  "total_trades_analyzed": 7892,
+  "analysis_date": "2026-01-19T08:52:01.152304"
 }
