@@ -667,3 +667,165 @@ class UnifiedAPIClient:
             return False
         
         return True
+    
+    # =========================================================================
+    # 0DTE SYSTEM - OPTION CHAIN METHODS (JAN 19, 2026)
+    # =========================================================================
+    
+    async def get_option_chain(self, underlying: str, expiry_date: str) -> Dict:
+        """
+        Fetch option chain for given underlying and expiry date
+        
+        **Added for 0DTE System** - Independent implementation
+        
+        Args:
+            underlying: 'BTC' or 'ETH'
+            expiry_date: Date in 'YYYY-MM-DD' format
+        
+        Returns:
+            Dict with structure:
+            {
+                'calls': {
+                    '90000': {
+                        'symbol': 'C-BTC-90000-310125',
+                        'mark_price': 1250.5,
+                        'strike_price': 90000,
+                        'spot_price': 91500,
+                        'volume': 100,
+                        'oi': 5000,
+                        'quotes': {'best_bid': 1245, 'best_ask': 1255},
+                        'greeks': {'delta': 0.45, 'gamma': 0.01, ...}
+                    }
+                },
+                'puts': {
+                    '85000': {...}
+                }
+            }
+        """
+        from datetime import datetime
+        
+        try:
+            logger.info(f"Fetching option chain: {underlying} expiring {expiry_date}")
+            
+            # Get all products from Delta Exchange
+            products = await self.async_client.get_products()
+            
+            if not products:
+                raise RuntimeError("Failed to fetch products from Delta Exchange")
+            
+            # Parse expiry date
+            dt = datetime.strptime(expiry_date, '%Y-%m-%d')
+            
+            # Filter options by underlying and expiry
+            option_chain = {'calls': {}, 'puts': {}}
+            
+            for product in products:
+                symbol = product.get('symbol', '')
+                product_type = product.get('product_type', '')
+                underlying_asset = product.get('underlying_asset', {})
+                
+                # Skip non-options
+                if product_type not in ['call_options', 'put_options']:
+                    continue
+                
+                # Check underlying
+                if isinstance(underlying_asset, dict):
+                    asset_symbol = underlying_asset.get('symbol', '')
+                else:
+                    asset_symbol = str(underlying_asset)
+                
+                if asset_symbol != underlying:
+                    continue
+                
+                # Check expiry date
+                settlement_time = product.get('settlement_time')
+                if settlement_time:
+                    try:
+                        product_expiry = datetime.fromisoformat(settlement_time.replace('Z', '+00:00'))
+                        if product_expiry.date() != dt.date():
+                            continue
+                    except:
+                        continue
+                
+                # Get strike price
+                strike_price = product.get('strike_price')
+                if not strike_price:
+                    continue
+                
+                strike_key = str(int(float(strike_price)))
+                
+                # Get ticker data for this option
+                try:
+                    ticker = await self.get_ticker(symbol)
+                    
+                    option_data = {
+                        'symbol': symbol,
+                        'strike_price': float(strike_price),
+                        'mark_price': float(ticker.get('mark_price', 0)),
+                        'spot_price': float(ticker.get('spot_price', 0)),
+                        'volume': float(ticker.get('volume', 0)),
+                        'oi': float(ticker.get('oi', 0)),
+                        'quotes': ticker.get('quotes', {}),
+                        'greeks': ticker.get('greeks', {}),
+                        'product_id': product.get('id')
+                    }
+                    
+                    # Categorize as call or put
+                    if product_type == 'call_options' or symbol.startswith('C-'):
+                        option_chain['calls'][strike_key] = option_data
+                    elif product_type == 'put_options' or symbol.startswith('P-'):
+                        option_chain['puts'][strike_key] = option_data
+                    
+                except Exception as e:
+                    logger.debug(f"Skipping option {symbol}: {e}")
+                    continue
+            
+            logger.success(
+                f"✅ Option chain loaded: {len(option_chain['calls'])} calls, "
+                f"{len(option_chain['puts'])} puts for {underlying} expiring {expiry_date}"
+            )
+            
+            return option_chain
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch option chain: {e}")
+            raise
+    
+    async def get_current_price(self, underlying: str) -> float:
+        """
+        Get current spot price for underlying asset
+        
+        **Added for 0DTE System** - Independent implementation
+        
+        Args:
+            underlying: 'BTC' or 'ETH'
+        
+        Returns:
+            float: Current spot price in USD
+        """
+        try:
+            # Construct futures symbol for the underlying
+            futures_symbol = f"{underlying}USD"
+            
+            # Get ticker for futures contract
+            ticker = await self.get_ticker(futures_symbol)
+            
+            if not ticker:
+                raise RuntimeError(f"Failed to get ticker for {futures_symbol}")
+            
+            # Extract spot price
+            spot_price = float(ticker.get('spot_price', 0))
+            
+            if spot_price == 0:
+                # Fallback to mark price
+                spot_price = float(ticker.get('mark_price', 0))
+            
+            if spot_price == 0:
+                raise RuntimeError(f"Invalid spot price for {underlying}: {spot_price}")
+            
+            logger.debug(f"Current {underlying} price: ${spot_price:.2f}")
+            return spot_price
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get current price for {underlying}: {e}")
+            raise

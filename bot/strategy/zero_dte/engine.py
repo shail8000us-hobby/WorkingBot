@@ -510,13 +510,28 @@ class ZeroDTEEngine:
         logger.info("Entry conditions validated ✓")
     
     async def _fetch_option_chain(self, underlying: str, expiry_date: str) -> Dict:
-        """Fetch option chain from Delta Exchange - TEMPORARY STUB"""
-        logger.error("❌ Option chain fetching not yet implemented")
-        logger.error("❌ 0DTE system requires API integration - See ZERO_DTE_PHASE1_BACKEND_CORE.md")
-        raise NotImplementedError(
-            "0DTE API integration incomplete. Missing get_option_chain() implementation. "
-            "This feature requires Delta Exchange products API integration."
-        )
+        """Fetch option chain from Delta Exchange"""
+        try:
+            logger.info(f"Fetching option chain: {underlying} expiring {expiry_date}")
+            
+            option_chain = await self.api_client.get_option_chain(underlying, expiry_date)
+            
+            if not option_chain.get('calls') or not option_chain.get('puts'):
+                raise RuntimeError(
+                    f"No options found for {underlying} expiring {expiry_date}. "
+                    "Check if the expiry date is valid and options are listed."
+                )
+            
+            logger.success(
+                f"✅ Option chain loaded: {len(option_chain['calls'])} calls, "
+                f"{len(option_chain['puts'])} puts"
+            )
+            
+            return option_chain
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch option chain: {e}")
+            raise
     
     async def _select_strikes(
         self,
@@ -686,6 +701,8 @@ class ZeroDTEEngine:
         """
         Place sell order with maker-first preference
         
+        **0DTE SYSTEM** - Uses async_delta_client.place_order_by_symbol()
+        
         1. Try limit order at best bid (maker)
         2. If not filled in timeout, convert to market
         """
@@ -695,74 +712,88 @@ class ZeroDTEEngine:
         try:
             # Get current ticker
             ticker = await self.api_client.get_option_ticker(symbol)
-            best_bid = ticker.get('quotes', {}).get('best_bid', ticker.get('mark_price'))
+            quotes = ticker.get('quotes', {})
+            best_bid = float(quotes.get('best_bid', 0)) if quotes.get('best_bid') else float(ticker.get('mark_price', 0))
             
             if preference == 'maker_first':
-                # Try maker order first
-                order = await self.api_client.place_order(
+                # Try maker order first (limit at best bid)
+                response = await self.api_client.async_client.place_order_by_symbol(
                     symbol=symbol,
                     side='sell',
+                    price=best_bid,
                     size=lots,
-                    order_type='limit',
-                    price=best_bid
+                    order_type='limit_order',
+                    post_only=True
                 )
                 
-                order_id = order.get('id')
+                order_id = response.get('result', {}).get('id')
                 
                 # Wait for fill
                 fill_price = await self._wait_for_fill(order_id, timeout)
                 
                 if fill_price is None:
                     # Cancel and place market order
-                    await self.api_client.cancel_order(order_id)
+                    logger.info(f"Limit order {order_id} not filled, converting to market")
+                    product_id = await self.api_client.async_client.get_product_id(symbol)
+                    await self.api_client.async_client.cancel_order(order_id, product_id)
                     
-                    order = await self.api_client.place_order(
+                    # Market order
+                    response = await self.api_client.async_client.place_order_by_symbol(
                         symbol=symbol,
                         side='sell',
+                        price=best_bid,  # Still needed for record
                         size=lots,
-                        order_type='market'
+                        order_type='market_order'
                     )
-                    order_id = order.get('id')
+                    order_id = response.get('result', {}).get('id')
                     fill_price = await self._wait_for_fill(order_id, 10)
                 
                 return {'fill_price': fill_price or best_bid, 'order_id': order_id}
             else:
                 # Market order directly
-                order = await self.api_client.place_order(
+                response = await self.api_client.async_client.place_order_by_symbol(
                     symbol=symbol,
                     side='sell',
+                    price=best_bid,  # For record
                     size=lots,
-                    order_type='market'
+                    order_type='market_order'
                 )
-                order_id = order.get('id')
+                order_id = response.get('result', {}).get('id')
                 fill_price = await self._wait_for_fill(order_id, 10)
                 
                 return {'fill_price': fill_price or best_bid, 'order_id': order_id}
                 
         except Exception as e:
-            logger.error(f"Sell order failed for {symbol}: {e}")
+            logger.error(f"❌ Sell order failed for {symbol}: {e}")
             raise
     
     async def _place_buy_order(self, symbol: str, lots: int) -> Dict:
-        """Place buy order to close position"""
+        """
+        Place buy order to close position
+        
+        **0DTE SYSTEM** - Always uses market order for quick exit
+        """
         try:
             ticker = await self.api_client.get_option_ticker(symbol)
-            best_ask = ticker.get('quotes', {}).get('best_ask', ticker.get('mark_price'))
+            quotes = ticker.get('quotes', {})
+            best_ask = float(quotes.get('best_ask', 0)) if quotes.get('best_ask') else float(ticker.get('mark_price', 0))
             
-            order = await self.api_client.place_order(
+            # Market order for fast execution
+            response = await self.api_client.async_client.place_order_by_symbol(
                 symbol=symbol,
                 side='buy',
+                price=best_ask,  # For record
                 size=lots,
-                order_type='market'
+                order_type='market_order'
             )
             
-            order_id = order.get('id')
+            order_id = response.get('result', {}).get('id')
             fill_price = await self._wait_for_fill(order_id, 10)
             
             return {'fill_price': fill_price or best_ask, 'order_id': order_id}
             
         except Exception as e:
-            logger.error(f"Buy order failed for {symbol}: {e}")
+            logger.error(f"❌ Buy order failed for {symbol}: {e}")
             raise
     
     async def _wait_for_fill(self, order_id: str, timeout: int) -> Optional[float]:

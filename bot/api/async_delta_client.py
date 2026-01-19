@@ -823,6 +823,37 @@ class AsyncDeltaClient:
         log.info(f"All orders cancelled for {symbol or 'all symbols'}")
         return response
     
+    async def get_products(self) -> List[Dict[str, Any]]:
+        """
+        Get all products from Delta Exchange
+        
+        **Added for 0DTE System** - Fetch option chain data
+        
+        Returns:
+            List of product dictionaries with details like:
+            - symbol, product_type, underlying_asset
+            - strike_price, settlement_time
+            - contract_unit_currency, etc.
+        """
+        try:
+            response = await self._request_with_retry(
+                method="GET",
+                path="/v2/products",
+                authenticated=False  # Public endpoint
+            )
+            
+            if response.get('success'):
+                products = response.get('result', [])
+                log.debug(f"Fetched {len(products)} products from Delta Exchange")
+                return products
+            else:
+                log.error(f"Failed to fetch products: {response.get('error')}")
+                return []
+                
+        except Exception as e:
+            log.error(f"Exception fetching products: {e}")
+            return []
+    
     def get_metrics(self) -> Dict[str, Any]:
         """
         Get client metrics.

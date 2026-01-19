@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768808765.560846,
+  "timestamp": 1768808937.1006851,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 146421.37907910347,
+  "uptime": 146592.91891908646,
   "state": {
     "open_tranches": [
       {
@@ -94,7 +94,7 @@
       "total_closed": 4,
       "avg_entry_price": 93750.0,
       "total_size": 30,
-      "oldest_position_age": 31304.01741528511,
+      "oldest_position_age": 31475.556791067123,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
@@ -130,10 +130,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 98078,
+        "processed_count": 98195,
         "error_count": 0,
-        "avg_processing_time_ms": 0.06644955312367529,
-        "max_processing_time_ms": 0.5219579907134175,
+        "avg_processing_time_ms": 0.06848131830338389,
+        "max_processing_time_ms": 0.5214579869061708,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -141,11 +141,11 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 28747,
+        "processed_count": 28780,
         "error_count": 10,
-        "avg_processing_time_ms": 0.04421287827426568,
-        "max_processing_time_ms": 0.38525002310052514,
-        "error_rate": 0.0003478623856402407
+        "avg_processing_time_ms": 0.042436189542058855,
+        "max_processing_time_ms": 0.4129169974476099,
+        "error_rate": 0.00034746351633078526
       }
     },
     "fills_processed": 14,
@@ -162,8 +162,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 92679.0,
-      "price_age_seconds": 1.6071131229400635,
+      "price": 92648.0,
+      "price_age_seconds": 0.4057738780975342,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -173,7 +173,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 28327,
+        "total_updates": 28361,
         "websocket_updates": 0,
         "rest_api_updates": 67,
         "stale_warnings": 306,
