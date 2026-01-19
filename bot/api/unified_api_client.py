@@ -705,10 +705,10 @@ class UnifiedAPIClient:
         from datetime import datetime
         
         try:
-            logger.info(f"Fetching option chain: {underlying} expiring {expiry_date}")
+            log.info(f"Fetching option chain: {underlying} expiring {expiry_date}")
             
             # Get all products from Delta Exchange
-            products = await self.async_client.get_products()
+            products = await self.rest_client.get_products()
             
             if not products:
                 raise RuntimeError("Failed to fetch products from Delta Exchange")
@@ -777,10 +777,10 @@ class UnifiedAPIClient:
                         option_chain['puts'][strike_key] = option_data
                     
                 except Exception as e:
-                    logger.debug(f"Skipping option {symbol}: {e}")
+                    log.debug(f"Skipping option {symbol}: {e}")
                     continue
             
-            logger.success(
+            log.success(
                 f"✅ Option chain loaded: {len(option_chain['calls'])} calls, "
                 f"{len(option_chain['puts'])} puts for {underlying} expiring {expiry_date}"
             )
@@ -788,7 +788,7 @@ class UnifiedAPIClient:
             return option_chain
             
         except Exception as e:
-            logger.error(f"❌ Failed to fetch option chain: {e}")
+            log.error(f"❌ Failed to fetch option chain: {e}")
             raise
     
     async def get_current_price(self, underlying: str) -> float:
@@ -823,9 +823,9 @@ class UnifiedAPIClient:
             if spot_price == 0:
                 raise RuntimeError(f"Invalid spot price for {underlying}: {spot_price}")
             
-            logger.debug(f"Current {underlying} price: ${spot_price:.2f}")
+            log.debug(f"Current {underlying} price: ${spot_price:.2f}")
             return spot_price
             
         except Exception as e:
-            logger.error(f"❌ Failed to get current price for {underlying}: {e}")
+            log.error(f"❌ Failed to get current price for {underlying}: {e}")
             raise

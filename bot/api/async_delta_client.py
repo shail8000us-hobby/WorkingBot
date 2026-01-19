@@ -838,8 +838,7 @@ class AsyncDeltaClient:
         try:
             response = await self._request_with_retry(
                 method="GET",
-                path="/v2/products",
-                authenticated=False  # Public endpoint
+                path="/v2/products"
             )
             
             if response.get('success'):
