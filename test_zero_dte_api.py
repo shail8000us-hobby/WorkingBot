@@ -38,7 +38,7 @@ async def test_zero_dte_api():
     
     # Load credentials from config
     try:
-        from config import load_config
+        from bot.strategy.zero_dte.config import load_config
         cfg = load_config()
         api_key = cfg.delta.api_key
         api_secret = cfg.delta.api_secret

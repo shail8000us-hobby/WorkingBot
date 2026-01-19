@@ -797,24 +797,40 @@ class ZeroDTEEngine:
             raise
     
     async def _wait_for_fill(self, order_id: str, timeout: int) -> Optional[float]:
-        """Wait for order to fill"""
+        """Wait for order fill with robust error handling"""
         start = datetime.now()
         
         while (datetime.now() - start).seconds < timeout:
             try:
                 order = await self.api_client.get_order(order_id)
                 
-                if order.get('state') == 'filled':
-                    return order.get('average_fill_price')
-                elif order.get('state') in ['cancelled', 'rejected']:
+                # Handle missing or invalid order data
+                if not order:
+                    logger.warning(f"Order {order_id} not found, retrying...")
+                    await asyncio.sleep(0.5)
+                    continue
+                
+                state = order.get('state')
+                
+                if state == 'filled':
+                    fill_price = order.get('average_fill_price')
+                    if fill_price is None:
+                        logger.error(f"Order {order_id} filled but no fill price available")
+                        return None
+                    return float(fill_price)
+                    
+                elif state in ['cancelled', 'rejected']:
+                    logger.warning(f"Order {order_id} {state}")
                     return None
                 
+                # Order still pending
                 await asyncio.sleep(0.5)
                 
             except Exception as e:
                 logger.warning(f"Error checking order {order_id}: {e}")
                 await asyncio.sleep(0.5)
         
+        logger.warning(f"Order {order_id} fill timeout after {timeout}s")
         return None  # Timeout
     
     # ==========================================================================
