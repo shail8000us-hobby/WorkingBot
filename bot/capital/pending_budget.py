@@ -130,7 +130,10 @@ class PendingBudgetControl:
             pending_orders = self.get_pending_orders()
         
         total_notional_inr = 0.0
-        USD_TO_INR = 85.0
+        
+        # ✅ FIX JAN 20 2026: Use configured USD_TO_INR rate instead of hardcoded value
+        yaml_config = get_config()
+        USD_TO_INR = yaml_config.capital.usd_to_inr_rate
         
         for order in pending_orders:
             try:

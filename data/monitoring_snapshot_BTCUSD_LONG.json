@@ -1,8 +1,8 @@
 {
-  "timestamp": 1768896074.1601229,
+  "timestamp": 1768896350.593795,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 23279.47285580635,
+  "uptime": 23555.90652704239,
   "state": {
     "open_tranches": [
       {
@@ -64,7 +64,7 @@
       "total_closed": 0,
       "avg_entry_price": 91500.0,
       "total_size": 15,
-      "oldest_position_age": 10961.465039014816,
+      "oldest_position_age": 11237.899001836777,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
@@ -97,10 +97,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 15139,
+        "processed_count": 15326,
         "error_count": 0,
-        "avg_processing_time_ms": 0.17761744009476388,
-        "max_processing_time_ms": 5.906875001528533,
+        "avg_processing_time_ms": 0.09062917000846937,
+        "max_processing_time_ms": 0.835541999549605,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -108,11 +108,11 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 4570,
+        "processed_count": 4623,
         "error_count": 3,
-        "avg_processing_time_ms": 37.03980702015542,
+        "avg_processing_time_ms": 37.045857880038966,
         "max_processing_time_ms": 1857.2319999984757,
-        "error_rate": 0.0006564551422319475
+        "error_rate": 0.0006489292667099286
       }
     },
     "fills_processed": 3,
@@ -129,8 +129,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 91107.5,
-      "price_age_seconds": 3.2785210609436035,
+      "price": 91057.0,
+      "price_age_seconds": 4.205436944961548,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -140,7 +140,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 4573,
+        "total_updates": 4627,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
