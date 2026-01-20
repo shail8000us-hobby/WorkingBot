@@ -253,6 +253,20 @@ class EventStore:
     
     def append_event(self, event: Event) -> None:
         with self._write_lock:
+            # Overflow protection: Prevent unbounded queue growth
+            if len(self._write_queue) > 10000:  # 10K limit
+                log.critical("🚨 Event write queue overflow - forcing flush")
+                self._flush_write_queue()
+                
+                # If still full after flush, drop oldest events (circuit breaker)
+                if len(self._write_queue) > 10000:
+                    log.critical("🚨 Write queue still full - dropping oldest events")
+                    dropped_count = 0
+                    while len(self._write_queue) > 8000:
+                        self._write_queue.popleft()
+                        dropped_count += 1
+                    log.critical(f"🚨 Dropped {dropped_count} oldest events to prevent memory exhaustion")
+            
             self._write_queue.append(event)
         
         if self._should_flush():

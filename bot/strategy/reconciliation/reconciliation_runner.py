@@ -498,6 +498,166 @@ class ReconciliationEngine:
             
         except Exception as e:
             log.error(f"Error updating state: {e}")
+    
+    def _load_shutdown_signal(self) -> Optional[Dict]:
+        """Load shutdown signal from file"""
+        try:
+            if not self.shutdown_signal_file.exists():
+                return None
+            
+            with open(self.shutdown_signal_file) as f:
+                return json.load(f)
+        except Exception as e:
+            log.error(f"Error loading shutdown signal: {e}")
+            return None
+    
+    def _load_emergency_signal(self) -> Optional[Dict]:
+        """Load emergency signal from file"""
+        try:
+            if not self.emergency_signal_file.exists():
+                return None
+            
+            with open(self.emergency_signal_file) as f:
+                return json.load(f)
+        except Exception as e:
+            log.error(f"Error loading emergency signal: {e}")
+            return None
+    
+    def _remove_signal_file(self, signal_file: Path):
+        """Remove signal file after processing"""
+        try:
+            if signal_file.exists():
+                signal_file.unlink()
+                log.info(f"✅ Removed signal file: {signal_file.name}")
+        except Exception as e:
+            log.error(f"Error removing signal file: {e}")
+    
+    async def _handle_shutdown_cleanup(self, signal: Dict):
+        """
+        Handle bot shutdown cleanup with MODE-AWARE cancellation.
+        
+        CRITICAL FIX (Nov 20, 2025):
+        - LONG mode: Cancel only pending BUY orders (entry orders)
+        - SHORT mode: Cancel only pending SELL orders (entry orders)
+        - Preserve TP orders (reduce_only) in both modes
+        """
+        log.info("🛑 Processing shutdown cleanup...")
+        log.info(f"   Shutdown reason: {signal.get('reason', 'unknown')}")
+        log.info(f"   Timestamp: {signal.get('timestamp')}")
+        
+        # Get bot mode for mode-aware cleanup
+        mode = signal.get("mode", "LONG")  # Default to LONG if not specified
+        log.info(f"   Bot mode: {mode}")
+        
+        actions = []
+        
+        # Get pending orders from signal
+        pending_buy = signal.get("pending_buy")
+        pending_sell = signal.get("pending_sell")
+        
+        # MODE-AWARE CLEANUP
+        if mode == "LONG":
+            # LONG mode: Cancel only pending BUY orders (entry orders)
+            # Keep pending SELL orders (they are TP orders)
+            if pending_buy and pending_buy.get("order_id"):
+                actions.append({
+                    "id": f"shutdown_cleanup_buy_{int(time.time())}",
+                    "type": "cancel_pending_order",
+                    "order_id": pending_buy["order_id"],
+                    "side": "buy",
+                    "price": pending_buy.get("price"),
+                    "reason": "bot_shutdown_long_mode",
+                    "priority": "high",
+                    "status": "pending",
+                    "created_at": time.time()
+                })
+                log.info(f"   📝 [LONG MODE] Cancel pending BUY order #{pending_buy['order_id']} @ ${pending_buy.get('price')}")
+            
+            if pending_sell:
+                log.info(f"   ✅ [LONG MODE] Preserve pending SELL order (TP) @ ${pending_sell.get('price')}")
+        
+        elif mode == "SHORT":
+            # SHORT mode: Cancel only pending SELL orders (entry orders)
+            # Keep pending BUY orders (they are TP orders)
+            if pending_sell and pending_sell.get("order_id"):
+                actions.append({
+                    "id": f"shutdown_cleanup_sell_{int(time.time())}",
+                    "type": "cancel_pending_order",
+                    "order_id": pending_sell["order_id"],
+                    "side": "sell",
+                    "price": pending_sell.get("price"),
+                    "reason": "bot_shutdown_short_mode",
+                    "priority": "high",
+                    "status": "pending",
+                    "created_at": time.time()
+                })
+                log.info(f"   📝 [SHORT MODE] Cancel pending SELL order #{pending_sell['order_id']} @ ${pending_sell.get('price')}")
+            
+            if pending_buy:
+                log.info(f"   ✅ [SHORT MODE] Preserve pending BUY order (TP) @ ${pending_buy.get('price')}")
+        
+        # Write actions to queue
+        if actions:
+            self._append_to_action_queue(actions)
+            log.info(f"✅ Generated {len(actions)} shutdown cleanup action(s)")
+            self.actions_generated += len(actions)
+        else:
+            log.info("✅ No pending orders to clean up")
+    
+    async def _handle_emergency_cleanup(self, signal: Dict):
+        """Handle emergency cleanup"""
+        log.warning("🚨 Processing EMERGENCY cleanup...")
+        log.warning(f"   Emergency reason: {signal.get('reason', 'unknown')}")
+        
+        # Emergency cleanup: Cancel ALL orders
+        try:
+            orders = await self.api_client.list_orders(symbol=self.symbol, state="open")
+            
+            actions = []
+            for order in orders:
+                # Cancel all non-TP orders
+                if not order.get("reduce_only"):
+                    actions.append({
+                        "id": f"emergency_cleanup_{order['id']}",
+                        "type": "cancel_pending_order",
+                        "order_id": str(order["id"]),
+                        "side": order.get("side"),
+                        "price": order.get("limit_price"),
+                        "reason": "emergency_cleanup",
+                        "priority": "critical",
+                        "status": "pending",
+                        "created_at": time.time()
+                    })
+            
+            if actions:
+                self._append_to_action_queue(actions)
+                log.warning(f"🚨 Generated {len(actions)} EMERGENCY cleanup action(s)")
+                self.actions_generated += len(actions)
+        
+        except Exception as e:
+            log.error(f"Error in emergency cleanup: {e}")
+    
+    def _append_to_action_queue(self, new_actions: List[Dict]):
+        """Append new actions to existing action queue"""
+        try:
+            # Load existing queue
+            existing_queue = {"actions": [], "updated_at": time.time()}
+            if self.action_queue_file.exists():
+                with open(self.action_queue_file) as f:
+                    existing_queue = json.load(f)
+            
+            # Append new actions
+            existing_queue["actions"].extend(new_actions)
+            existing_queue["updated_at"] = time.time()
+            
+            # Write back
+            temp_file = self.action_queue_file.with_suffix('.tmp')
+            with open(temp_file, 'w') as f:
+                json.dump(existing_queue, f, indent=2)
+            temp_file.replace(self.action_queue_file)
+            
+        except Exception as e:
+            log.error(f"Error appending to action queue: {e}")
 
 
 async def main():
@@ -534,165 +694,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-# Shutdown signal handling methods for reconciliation_runner.py
-# Add these methods to the ReconciliationEngine class
-
-def _load_shutdown_signal(self) -> Optional[Dict]:
-    """Load shutdown signal from file"""
-    try:
-        if not self.shutdown_signal_file.exists():
-            return None
-        
-        with open(self.shutdown_signal_file) as f:
-            return json.load(f)
-    except Exception as e:
-        log.error(f"Error loading shutdown signal: {e}")
-        return None
-
-def _load_emergency_signal(self) -> Optional[Dict]:
-    """Load emergency signal from file"""
-    try:
-        if not self.emergency_signal_file.exists():
-            return None
-        
-        with open(self.emergency_signal_file) as f:
-            return json.load(f)
-    except Exception as e:
-        log.error(f"Error loading emergency signal: {e}")
-        return None
-
-def _remove_signal_file(self, signal_file: Path):
-    """Remove signal file after processing"""
-    try:
-        if signal_file.exists():
-            signal_file.unlink()
-            log.info(f"✅ Removed signal file: {signal_file.name}")
-    except Exception as e:
-        log.error(f"Error removing signal file: {e}")
-
-async def _handle_shutdown_cleanup(self, signal: Dict):
-    """
-    Handle bot shutdown cleanup with MODE-AWARE cancellation.
-    
-    CRITICAL FIX (Nov 20, 2025):
-    - LONG mode: Cancel only pending BUY orders (entry orders)
-    - SHORT mode: Cancel only pending SELL orders (entry orders)
-    - Preserve TP orders (reduce_only) in both modes
-    """
-    log.info("🛑 Processing shutdown cleanup...")
-    log.info(f"   Shutdown reason: {signal.get('reason', 'unknown')}")
-    log.info(f"   Timestamp: {signal.get('timestamp')}")
-    
-    # Get bot mode for mode-aware cleanup
-    mode = signal.get("mode", "LONG")  # Default to LONG if not specified
-    log.info(f"   Bot mode: {mode}")
-    
-    actions = []
-    
-    # Get pending orders from signal
-    pending_buy = signal.get("pending_buy")
-    pending_sell = signal.get("pending_sell")
-    
-    # MODE-AWARE CLEANUP
-    if mode == "LONG":
-        # LONG mode: Cancel only pending BUY orders (entry orders)
-        # Keep pending SELL orders (they are TP orders)
-        if pending_buy and pending_buy.get("order_id"):
-            actions.append({
-                "id": f"shutdown_cleanup_buy_{int(time.time())}",
-                "type": "cancel_pending_order",
-                "order_id": pending_buy["order_id"],
-                "side": "buy",
-                "price": pending_buy.get("price"),
-                "reason": "bot_shutdown_long_mode",
-                "priority": "high",
-                "status": "pending",
-                "created_at": time.time()
-            })
-            log.info(f"   📝 [LONG MODE] Cancel pending BUY order #{pending_buy['order_id']} @ ${pending_buy.get('price')}")
-        
-        if pending_sell:
-            log.info(f"   ✅ [LONG MODE] Preserve pending SELL order (TP) @ ${pending_sell.get('price')}")
-    
-    elif mode == "SHORT":
-        # SHORT mode: Cancel only pending SELL orders (entry orders)
-        # Keep pending BUY orders (they are TP orders)
-        if pending_sell and pending_sell.get("order_id"):
-            actions.append({
-                "id": f"shutdown_cleanup_sell_{int(time.time())}",
-                "type": "cancel_pending_order",
-                "order_id": pending_sell["order_id"],
-                "side": "sell",
-                "price": pending_sell.get("price"),
-                "reason": "bot_shutdown_short_mode",
-                "priority": "high",
-                "status": "pending",
-                "created_at": time.time()
-            })
-            log.info(f"   📝 [SHORT MODE] Cancel pending SELL order #{pending_sell['order_id']} @ ${pending_sell.get('price')}")
-        
-        if pending_buy:
-            log.info(f"   ✅ [SHORT MODE] Preserve pending BUY order (TP) @ ${pending_buy.get('price')}")
-    
-    # Write actions to queue
-    if actions:
-        self._append_to_action_queue(actions)
-        log.info(f"✅ Generated {len(actions)} shutdown cleanup action(s)")
-        self.actions_generated += len(actions)
-    else:
-        log.info("✅ No pending orders to clean up")
-
-async def _handle_emergency_cleanup(self, signal: Dict):
-    """Handle emergency cleanup"""
-    log.warning("🚨 Processing EMERGENCY cleanup...")
-    log.warning(f"   Emergency reason: {signal.get('reason', 'unknown')}")
-    
-    # Emergency cleanup: Cancel ALL orders
-    try:
-        orders = await self.api_client.list_orders(symbol=self.symbol, state="open")
-        
-        actions = []
-        for order in orders:
-            # Cancel all non-TP orders
-            if not order.get("reduce_only"):
-                actions.append({
-                    "id": f"emergency_cleanup_{order['id']}",
-                    "type": "cancel_pending_order",
-                    "order_id": str(order["id"]),
-                    "side": order.get("side"),
-                    "price": order.get("limit_price"),
-                    "reason": "emergency_cleanup",
-                    "priority": "critical",
-                    "status": "pending",
-                    "created_at": time.time()
-                })
-        
-        if actions:
-            self._append_to_action_queue(actions)
-            log.warning(f"🚨 Generated {len(actions)} EMERGENCY cleanup action(s)")
-            self.actions_generated += len(actions)
-    
-    except Exception as e:
-        log.error(f"Error in emergency cleanup: {e}")
-
-def _append_to_action_queue(self, new_actions: List[Dict]):
-    """Append new actions to existing action queue"""
-    try:
-        # Load existing queue
-        existing_queue = {"actions": [], "updated_at": time.time()}
-        if self.action_queue_file.exists():
-            with open(self.action_queue_file) as f:
-                existing_queue = json.load(f)
-        
-        # Append new actions
-        existing_queue["actions"].extend(new_actions)
-        existing_queue["updated_at"] = time.time()
-        
-        # Write back
-        temp_file = self.action_queue_file.with_suffix('.tmp')
-        with open(temp_file, 'w') as f:
-            json.dump(existing_queue, f, indent=2)
-        temp_file.replace(self.action_queue_file)
-        
-    except Exception as e:
-        log.error(f"Error appending to action queue: {e}")

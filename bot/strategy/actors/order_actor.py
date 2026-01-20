@@ -65,6 +65,9 @@ class OrderManagerActor(Actor):
         self._order_history: list = []
         self._max_history = 100
         
+        # Deduplication tracking
+        self._last_order_timestamps: Dict[str, float] = {}
+        
         # Metrics
         self._total_orders_placed = 0
         self._total_orders_cancelled = 0
@@ -165,18 +168,16 @@ class OrderManagerActor(Actor):
         except Exception as e:
             log.warning(f"⚠️ [DEDUP] Could not verify exchange orders: {e} - proceeding with placement")
         
-        # Mark timestamp for this price level BEFORE placing (optimistic locking)
-        self._last_order_timestamps[last_buy_key] = current_time
-        
         # =====================================================================
         
-        # Validate order
+        # Validate order BEFORE setting timestamp (prevent failed validations from blocking future orders)
         validation = self._validate_order(price, size, "buy")
         if validation["status"] == "error":
             log.error(f"Order validation failed: {validation['error']}")
-            # Clear timestamp on validation failure
-            self._last_order_timestamps.pop(last_buy_key, None)
             return validation
+        
+        # Mark timestamp for this price level AFTER validation passes
+        self._last_order_timestamps[last_buy_key] = current_time
         
         # Generate order tag
         order_tag = self._generate_order_tag("buy", price)
@@ -341,16 +342,17 @@ class OrderManagerActor(Actor):
                             return {"status": "skipped", "reason": "order_exists_on_exchange", "existing_order_id": order.get("id")}
             except Exception as e:
                 log.warning(f"⚠️ [DEDUP] Could not verify exchange orders: {e} - proceeding with placement")
-            
-            # Mark timestamp BEFORE placing
-            self._last_order_timestamps[last_sell_key] = current_time
         # =====================================================================
         
-        # Validate order
+        # Validate order BEFORE setting timestamp (prevent failed validations from blocking future orders)
         validation = self._validate_order(price, size, "sell")
         if validation["status"] == "error":
             log.error(f"Order validation failed: {validation['error']}")
             return validation
+        
+        # Mark timestamp AFTER validation passes (only for entry orders)
+        if order_purpose == "entry":
+            self._last_order_timestamps[last_sell_key] = current_time
         
         # Generate order tag
         order_tag = self._generate_order_tag("sell", price)
