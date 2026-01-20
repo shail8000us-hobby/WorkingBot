@@ -1567,6 +1567,7 @@ class AsyncGridBot:
             asyncio.create_task(self._rest_fallback_monitor_loop(), name="rest_fallback"),  # NOV 13: REST fallback
             asyncio.create_task(self._watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
             asyncio.create_task(self._safety_gatekeeper_loop(), name="safety_gatekeeper"),  # Safety check every 5 min
+            asyncio.create_task(self._fill_polling_fallback_loop(), name="fill_polling"),  # JAN 20: Fill polling fallback every 60s
             asyncio.create_task(self._guardian_health_monitor_loop(), name="guardian_monitor"),  # CRITICAL: Guardian health check every 15s
             asyncio.create_task(self.api_client.start_websocket_health_monitor(), name="ws_health_monitor"),  # CRITICAL FIX: WebSocket health monitor (5s checks)
             asyncio.create_task(self.state_coordinator.monitor_guardian(), name="state_guardian_monitor"),  # NOV 20: State coordinator Guardian monitor
@@ -3591,6 +3592,79 @@ class AsyncGridBot:
             except Exception as e:
                 log.error(f"Monitoring error: {e}")
     
+    async def _fill_polling_fallback_loop(self) -> None:
+        """
+        CRITICAL FIX (Jan 20, 2026): Fill polling fallback.
+        
+        Polls exchange for recent fills every 60 seconds as backup for WebSocket.
+        This catches fills that were missed due to:
+        - WebSocket message queue overflow
+        - WebSocket disconnection
+        - WebSocket delivery failures
+        
+        Uses existing fill deduplication (_seen_fill_ids) to prevent double-processing.
+        """
+        log.info("🔄 Fill polling fallback started - checking every 60 seconds")
+        log.info("   This is a safety backup for WebSocket fill notifications")
+        
+        await asyncio.sleep(120)  # Initial delay to let WebSocket establish
+        
+        while self._running:
+            try:
+                # Query recently filled orders from exchange
+                filled_orders = await self.api_client.list_orders(
+                    symbol=self.symbol, 
+                    states='filled'
+                )
+                
+                if filled_orders:
+                    # Process only fills we haven't seen via WebSocket
+                    new_fills_found = 0
+                    
+                    for order in filled_orders:
+                        order_id = str(order.get('id'))
+                        fill_marker = f"order-{order_id}"
+                        
+                        # Check if this fill was already processed via WebSocket
+                        if fill_marker not in self._seen_fill_ids:
+                            # New fill detected! Process it
+                            new_fills_found += 1
+                            log.warning("=" * 80)
+                            log.warning("⚠️  FILL POLLING FALLBACK: Missed fill detected!")
+                            log.warning(f"   Order ID: {order_id}")
+                            log.warning(f"   Price: ${float(order.get('average_fill_price', order.get('limit_price', 0))):,.2f}")
+                            log.warning(f"   Side: {order.get('side', '').upper()}")
+                            log.warning(f"   Size: {order.get('size')}")
+                            log.warning("   This fill was NOT received via WebSocket")
+                            log.warning("=" * 80)
+                            
+                            # Create a fill-like object for processing
+                            fill_data = {
+                                'id': order_id,
+                                'order_id': order_id,
+                                'product_id': order.get('product_id'),
+                                'size': order.get('size'),
+                                'price': order.get('average_fill_price', order.get('limit_price')),
+                                'side': order.get('side'),
+                                'timestamp': order.get('created_at')
+                            }
+                            
+                            # Process the fill through normal fill handler
+                            await self._process_fill(fill_data)
+                    
+                    if new_fills_found > 0:
+                        log.error(f"🚨 Fill polling found {new_fills_found} missed fill(s)")
+                        human_log.error(f"Fill polling caught {new_fills_found} missed fill(s)")
+                    else:
+                        log.debug("✅ Fill polling: No missed fills")
+                
+                # Wait 60 seconds before next poll
+                await asyncio.sleep(60)
+                
+            except Exception as e:
+                log.error(f"Fill polling fallback error: {e}")
+                await asyncio.sleep(60)  # Continue despite errors
+    
     async def _safety_gatekeeper_loop(self) -> None:
         """
         Periodic safety check loop - runs every 5 minutes.
@@ -3606,8 +3680,12 @@ class AsyncGridBot:
                 # Check if 5 minutes (300 seconds) have elapsed since last check
                 if current_time - self._last_safety_check_time >= 300:
                     log.info("🔒 Running periodic safety check (5-minute interval)...")
+                    
+                    # CRITICAL FIX (Jan 20, 2026): Check for unhedged positions
+                    # Detects positions without TP orders (missed fills due to WebSocket drops)
+                    await self._check_for_unhedged_positions()
+                    
                     # Safety limit checking removed - Guardian monitors all risk parameters
-                    # Just update timestamp to keep loop alive
                     self._last_safety_check_time = current_time
                 
                 # Sleep for 30 seconds, then check again
@@ -3616,6 +3694,70 @@ class AsyncGridBot:
             except Exception as e:
                 log.error(f"Safety gatekeeper error: {e}")
                 await asyncio.sleep(60)  # Back off on error
+    
+    async def _check_for_unhedged_positions(self) -> None:
+        """
+        CRITICAL FIX (Jan 20, 2026): Check for unhedged positions.
+        
+        Detects positions that exist on exchange but don't have TP orders.
+        This can happen when:
+        - WebSocket fill notification is dropped
+        - Bot crashes after fill but before placing TP
+        - TP order placement fails during Guardian STOP
+        """
+        try:
+            # Get positions from bot memory
+            state = await self.position_actor.ask("GET_STATE", {})
+            bot_positions = state.get("open_tranches", [])
+            
+            # Get all open orders from exchange
+            open_orders = await self.api_client.list_orders(symbol=self.symbol, states='open')
+            
+            # Find positions without TP orders
+            unhedged_positions = []
+            
+            for position in bot_positions:
+                tp_order_id = position.get("tp_order_id")
+                tp_price = position.get("tp_price")
+                entry_price = position.get("entry_price")
+                
+                if not tp_order_id:
+                    # Position has no TP order ID - check if TP exists by price
+                    tp_exists = any(
+                        abs(float(o.get('limit_price', 0)) - tp_price) < 0.01
+                        and o.get('reduce_only', False)
+                        and o.get('side', '').lower() == ('sell' if self.mode == 'LONG' else 'buy')
+                        for o in open_orders
+                    )
+                    
+                    if not tp_exists:
+                        unhedged_positions.append({
+                            'position_id': position.get('position_id'),
+                            'entry_price': entry_price,
+                            'tp_price': tp_price,
+                            'size': position.get('size')
+                        })
+            
+            if unhedged_positions:
+                log.error("=" * 80)
+                log.error("⚠️  CRITICAL: UNHEDGED POSITIONS DETECTED")
+                log.error(f"   Found {len(unhedged_positions)} position(s) without TP orders")
+                log.error("=" * 80)
+                
+                for pos in unhedged_positions:
+                    log.error(f"   Position: Entry=${pos['entry_price']:,.0f}, Expected TP=${pos['tp_price']:,.0f}, Size={pos['size']}")
+                    log.error(f"   Position ID: {pos['position_id']}")
+                    log.error(f"   ⚠️  RECOMMENDED: Manually place TP order at ${pos['tp_price']:,.0f} (reduce_only=True)")
+                
+                log.error("=" * 80)
+                
+                # Log to human logger for visibility
+                human_log.error(f"UNHEDGED POSITIONS: {len(unhedged_positions)} positions without TP orders")
+            else:
+                log.debug("✅ All positions have TP orders")
+                
+        except Exception as e:
+            log.error(f"Error checking for unhedged positions: {e}")
     
     async def _guardian_health_monitor_loop(self) -> None:
         """

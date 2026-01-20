@@ -28,8 +28,15 @@ import { useInstance, parseInstanceName } from '../context/InstanceContext';
 function LogsPanel() {
   const { selectedInstance, instances, withInstance } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
-  const selectedSymbol = instanceInfo?.symbol;
   const logsEndRef = useRef(null);
+  const logsContainerRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const lastLogsHashRef = useRef({
+    trading: '',
+    guardian: '',
+    btcusd: '',
+    ethusd: '',
+  });
   const [logSource, setLogSource] = useState('trading'); // 'trading', 'guardian', 'btcusd', 'ethusd'
   const [guardianLogs, setGuardianLogs] = useState([]);
   const [loadingGuardian, setLoadingGuardian] = useState(false);
@@ -39,98 +46,179 @@ function LogsPanel() {
   const [loadingBtc, setLoadingBtc] = useState(false);
   const [ethLogs, setEthLogs] = useState([]);
   const [loadingEth, setLoadingEth] = useState(false);
+  const [error, setError] = useState(null);
 
   // Get available symbols from instances
   const availableSymbols = [
     ...new Set(instances.map((i) => parseInstanceName(i.name)?.symbol).filter(Boolean)),
   ];
 
+  // Helper to check if user is scrolled to bottom
+  const isScrolledToBottom = useCallback(() => {
+    if (!logsContainerRef.current) return true;
+    const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current;
+    return scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+  }, []);
+
+  // Helper to create a simple hash for comparison
+  const createLogsHash = useCallback((logs) => {
+    if (!logs || logs.length === 0) return '';
+    // Use first, last, and length as a simple hash
+    return `${logs.length}-${logs[0]?.substring(0, 50)}-${logs[logs.length - 1]?.substring(0, 50)}`;
+  }, []);
+
   // Fetch Trading logs (instance-aware)
   const fetchTradingLogs = useCallback(async () => {
+    if (!isMountedRef.current) return;
     try {
       setLoadingTrading(true);
+      setError(null);
       const url = selectedInstance ? withInstance('/api/logs') : '/api/logs';
-      console.log('[LogsPanel] Fetching logs from:', url);
-      const response = await apiClient.get(url, { lines: 200 });
-      console.log('[LogsPanel] Response:', response);
-      if (response && response.logs) {
-        console.log('[LogsPanel] Setting logs, count:', response.logs.length);
-        setTradingLogs(response.logs);
-      } else {
-        console.log('[LogsPanel] No logs in response');
-        setTradingLogs([]);
+      const response = await apiClient.get(url, { lines: 100 });
+      
+      if (response && response.logs && isMountedRef.current) {
+        const newHash = createLogsHash(response.logs);
+        // Only update if logs have actually changed
+        if (newHash !== lastLogsHashRef.current.trading) {
+          lastLogsHashRef.current.trading = newHash;
+          const shouldScroll = isScrolledToBottom();
+          setTradingLogs(response.logs);
+          if (shouldScroll) {
+            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching trading logs:', error);
-      setTradingLogs([]);
+      if (isMountedRef.current) {
+        setError('Failed to fetch trading logs');
+        setTradingLogs([]);
+      }
     } finally {
-      setLoadingTrading(false);
+      if (isMountedRef.current) {
+        setLoadingTrading(false);
+      }
     }
-  }, [selectedInstance, withInstance]);
+  }, [selectedInstance, withInstance, createLogsHash, isScrolledToBottom]);
 
   // Fetch Guardian logs
   const fetchGuardianLogs = useCallback(async () => {
+    if (!isMountedRef.current) return;
     try {
       setLoadingGuardian(true);
-      // Use /api/logs/recent endpoint which supports bot_type parameter
+      setError(null);
       const response = await apiClient.get('/api/logs/recent', {
-        lines: 200,
+        lines: 100,
         bot_type: 'guardian',
       });
-      if (response && response.success && response.logs) {
-        setGuardianLogs(response.logs);
-      } else {
-        console.warn('[LogsPanel] Guardian logs response:', response);
-        setGuardianLogs([]);
+      
+      if (response && response.success && response.logs && isMountedRef.current) {
+        const newHash = createLogsHash(response.logs);
+        if (newHash !== lastLogsHashRef.current.guardian) {
+          lastLogsHashRef.current.guardian = newHash;
+          const shouldScroll = isScrolledToBottom();
+          setGuardianLogs(response.logs);
+          if (shouldScroll) {
+            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching Guardian logs:', error);
-      setGuardianLogs([]);
+      if (isMountedRef.current) {
+        setError('Failed to fetch Guardian logs');
+        setGuardianLogs([]);
+      }
     } finally {
-      setLoadingGuardian(false);
+      if (isMountedRef.current) {
+        setLoadingGuardian(false);
+      }
     }
-  }, []);
+  }, [createLogsHash, isScrolledToBottom]);
 
   // Fetch BTCUSD logs
   const fetchBtcLogs = useCallback(async () => {
+    if (!isMountedRef.current) return;
     try {
       setLoadingBtc(true);
-      const response = await apiClient.get('/api/logs', { lines: 200, instance: 'BTCUSD_LONG' });
-      if (response && response.logs) {
-        setBtcLogs(response.logs);
+      setError(null);
+      const response = await apiClient.get('/api/logs', { lines: 100, instance: 'BTCUSD_LONG' });
+      
+      if (response && response.logs && isMountedRef.current) {
+        const newHash = createLogsHash(response.logs);
+        if (newHash !== lastLogsHashRef.current.btcusd) {
+          lastLogsHashRef.current.btcusd = newHash;
+          const shouldScroll = isScrolledToBottom();
+          setBtcLogs(response.logs);
+          if (shouldScroll) {
+            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching BTCUSD logs:', error);
-      setBtcLogs([]);
+      if (isMountedRef.current) {
+        setError('Failed to fetch BTCUSD logs');
+        setBtcLogs([]);
+      }
     } finally {
-      setLoadingBtc(false);
+      if (isMountedRef.current) {
+        setLoadingBtc(false);
+      }
     }
-  }, []);
+  }, [createLogsHash, isScrolledToBottom]);
 
   // Fetch ETHUSD logs
   const fetchEthLogs = useCallback(async () => {
+    if (!isMountedRef.current) return;
     try {
       setLoadingEth(true);
-      const response = await apiClient.get('/api/logs', { lines: 200, instance: 'ETHUSD_LONG' });
-      if (response && response.logs) {
-        setEthLogs(response.logs);
+      setError(null);
+      const response = await apiClient.get('/api/logs', { lines: 100, instance: 'ETHUSD_LONG' });
+      
+      if (response && response.logs && isMountedRef.current) {
+        const newHash = createLogsHash(response.logs);
+        if (newHash !== lastLogsHashRef.current.ethusd) {
+          lastLogsHashRef.current.ethusd = newHash;
+          const shouldScroll = isScrolledToBottom();
+          setEthLogs(response.logs);
+          if (shouldScroll) {
+            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching ETHUSD logs:', error);
-      setEthLogs([]);
+      if (isMountedRef.current) {
+        setError('Failed to fetch ETHUSD logs');
+        setEthLogs([]);
+      }
     } finally {
-      setLoadingEth(false);
+      if (isMountedRef.current) {
+        setLoadingEth(false);
+      }
     }
-  }, []);
+  }, [createLogsHash, isScrolledToBottom]);
 
+  // Main effect: Set up interval for current log source only
   useEffect(() => {
-    fetchTradingLogs();
-    fetchGuardianLogs();
-    fetchBtcLogs();
-    fetchEthLogs();
+    isMountedRef.current = true;
+    
+    // Initial fetch based on current source
+    if (logSource === 'guardian') {
+      fetchGuardianLogs();
+    } else if (logSource === 'btcusd') {
+      fetchBtcLogs();
+    } else if (logSource === 'ethusd') {
+      fetchEthLogs();
+    } else {
+      fetchTradingLogs();
+    }
 
-    // Refresh logs every 5 seconds
+    // Set up interval for only the current source
     const interval = setInterval(() => {
+      if (!isMountedRef.current) return;
+      
       if (logSource === 'guardian') {
         fetchGuardianLogs();
       } else if (logSource === 'btcusd') {
@@ -140,35 +228,21 @@ function LogsPanel() {
       } else {
         fetchTradingLogs();
       }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [
-    fetchTradingLogs,
-    fetchGuardianLogs,
-    fetchBtcLogs,
-    fetchEthLogs,
-    logSource,
-    selectedInstance,
-  ]);
+    }, 20000);
+    
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [logSource, fetchTradingLogs, fetchGuardianLogs, fetchBtcLogs, fetchEthLogs]);
 
-  // Fetch logs when source changes
-  useEffect(() => {
-    if (logSource === 'guardian') {
-      fetchGuardianLogs();
-    } else if (logSource === 'btcusd') {
-      fetchBtcLogs();
-    } else if (logSource === 'ethusd') {
-      fetchEthLogs();
-    }
-  }, [logSource, fetchGuardianLogs, fetchBtcLogs, fetchEthLogs]);
+  // Removed duplicate useEffect for log source changes
 
   const scrollToBottom = () => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [tradingLogs, guardianLogs, logSource]);
+  // Removed auto-scroll effect - now handled in fetch functions
 
   const handleClear = () => {
     // This would require backend support
@@ -197,6 +271,7 @@ function LogsPanel() {
     a.href = url;
     a.download = `${filename}-logs-${new Date().toISOString()}.txt`;
     a.click();
+    URL.revokeObjectURL(url); // Clean up
   };
 
   const getLogColor = (log) => {
@@ -247,15 +322,6 @@ function LogsPanel() {
         : logSource === 'ethusd'
           ? loadingEth
           : loadingTrading;
-
-  // Get symbol color
-  const getSymbolColor = (symbol) => {
-    const colors = {
-      BTCUSD: '#f7931a',
-      ETHUSD: '#627eea',
-    };
-    return colors[symbol] || '#64748b';
-  };
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -336,8 +402,15 @@ function LogsPanel() {
             title="Refresh Logs"
             aria-label="Refresh logs"
             disabled={isLoading}
+            sx={{
+              animation: isLoading ? 'spin 1s linear infinite' : 'none',
+              '@keyframes spin': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(360deg)' },
+              },
+            }}
           >
-            <Refresh className={isLoading ? 'spin' : ''} />
+            <Refresh />
           </IconButton>
           <IconButton
             onClick={handleDownload}
@@ -350,15 +423,38 @@ function LogsPanel() {
         </Box>
       </Box>
 
+      {/* Error message */}
+      {error && (
+        <Box
+          sx={{
+            bgcolor: 'error.main',
+            color: 'error.contrastText',
+            p: 1.5,
+            borderRadius: 1,
+            mb: 2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+          }}
+        >
+          <Typography variant="body2">{error}</Typography>
+        </Box>
+      )}
+
       <Box
+        ref={logsContainerRef}
         sx={{
           background: '#000',
           p: 2,
           borderRadius: 1,
           height: '600px',
+          minHeight: '600px',
+          maxHeight: '600px',
           overflowY: 'auto',
+          overflowX: 'hidden',
           fontFamily: 'monospace',
           fontSize: '13px',
+          display: 'block',
         }}
       >
         {displayLogs.length === 0 ? (
@@ -368,34 +464,36 @@ function LogsPanel() {
               : `No ${logSource === 'guardian' ? 'Guardian' : 'trading bot'} logs available. ${logSource === 'guardian' ? 'Guardian should be running via LaunchAgent.' : 'Start the bot to see live logs.'}`}
           </Typography>
         ) : (
-          displayLogs.map((log, index) => {
-            const logColor = getLogColor(log);
-            const isError =
-              log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error');
+          <>
+            {displayLogs.map((log, index) => {
+              const logColor = getLogColor(log);
+              const isError =
+                log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error');
 
-            return (
-              <Box
-                key={index}
-                className="log-entry"
-                sx={{
-                  color: logColor,
-                  py: 0.5,
-                  borderLeft: `3px solid ${logColor}`,
-                  pl: 1,
-                  mb: 0.5,
-                  fontWeight: isError ? 600 : 400,
-                  backgroundColor: isError ? 'rgba(255, 23, 68, 0.1)' : 'transparent',
-                  '&:hover': {
-                    background: isError ? 'rgba(255, 23, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                  },
-                }}
-              >
-                {log}
-              </Box>
-            );
-          })
+              return (
+                <Box
+                  key={index}
+                  className="log-entry"
+                  sx={{
+                    color: logColor,
+                    py: 0.5,
+                    borderLeft: `3px solid ${logColor}`,
+                    pl: 1,
+                    mb: 0.5,
+                    fontWeight: isError ? 600 : 400,
+                    backgroundColor: isError ? 'rgba(255, 23, 68, 0.1)' : 'transparent',
+                    '&:hover': {
+                      background: isError ? 'rgba(255, 23, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    },
+                  }}
+                >
+                  {log}
+                </Box>
+              );
+            })}
+            <div ref={logsEndRef} />
+          </>
         )}
-        <div ref={logsEndRef} />
       </Box>
     </Paper>
   );

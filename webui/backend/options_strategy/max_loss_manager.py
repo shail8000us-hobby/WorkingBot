@@ -1119,11 +1119,21 @@ class MaxLossMonitor:
             
             try:
                 # Get position details to know size and side
-                positions = loop.run_until_complete(
+                positions_response = loop.run_until_complete(
                     self.api_client.get_all_positions_with_options()
                 )
                 
-                pos = next((p for p in positions if p.get("product_symbol") == symbol), None)
+                # FIX: get_all_positions_with_options() returns {'futures': [...], 'options': [...]}
+                # We need to extract the flat list of all positions
+                if isinstance(positions_response, dict):
+                    futures_list = positions_response.get('futures', [])
+                    options_list = positions_response.get('options', [])
+                    positions = futures_list + options_list
+                    logger.debug(f"Extracted {len(positions)} positions for close operation")
+                else:
+                    positions = positions_response if positions_response else []
+                
+                pos = next((p for p in positions if isinstance(p, dict) and p.get("product_symbol") == symbol), None)
                 if not pos:
                     logger.error(f"❌ Position not found: {symbol}")
                     return
@@ -1167,10 +1177,19 @@ class MaxLossMonitor:
                     loop.run_until_complete(asyncio.sleep(0.5))
                     
                     # Verify position was actually closed by checking size
-                    updated_positions = loop.run_until_complete(
+                    updated_positions_response = loop.run_until_complete(
                         self.api_client.get_all_positions_with_options()
                     )
-                    updated_pos = next((p for p in updated_positions if p.get("product_symbol") == symbol), None)
+                    
+                    # FIX: Extract positions from dict response
+                    if isinstance(updated_positions_response, dict):
+                        updated_futures = updated_positions_response.get('futures', [])
+                        updated_options = updated_positions_response.get('options', [])
+                        updated_positions = updated_futures + updated_options
+                    else:
+                        updated_positions = updated_positions_response if updated_positions_response else []
+                    
+                    updated_pos = next((p for p in updated_positions if isinstance(p, dict) and p.get("product_symbol") == symbol), None)
                     
                     if updated_pos and abs(updated_pos.get("size", 0)) > 0:
                         remaining_size = abs(updated_pos.get("size", 0))
@@ -1453,9 +1472,17 @@ class MaxLossWebSocketMonitor:
             
             # Get position details
             loop = asyncio.get_event_loop()
-            positions = await self.api_client.get_all_positions_with_options()
+            positions_response = await self.api_client.get_all_positions_with_options()
             
-            pos = next((p for p in positions if p.get("product_symbol") == symbol), None)
+            # FIX: get_all_positions_with_options() returns {'futures': [...], 'options': [...]}
+            if isinstance(positions_response, dict):
+                futures_list = positions_response.get('futures', [])
+                options_list = positions_response.get('options', [])
+                positions = futures_list + options_list
+            else:
+                positions = positions_response if positions_response else []
+            
+            pos = next((p for p in positions if isinstance(p, dict) and p.get("product_symbol") == symbol), None)
             if not pos:
                 logger.error(f"❌ WS: Position not found: {symbol}")
                 return

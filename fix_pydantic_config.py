@@ -46,9 +46,13 @@ def main():
         config = yaml.safe_load(f)
     
     # Convert symbols section (the problematic one)
-    if 'symbols' in config and 'BTCUSD' in config['symbols']:
-        print("🔄 Converting numeric/bool values to strings in symbols.BTCUSD...")
-        config['symbols']['BTCUSD'] = convert_to_strings(config['symbols']['BTCUSD'])
+    if 'symbols' in config:
+        if 'BTCUSD' in config['symbols']:
+            print("🔄 Converting numeric/bool values to strings in symbols.BTCUSD...")
+            config['symbols']['BTCUSD'] = convert_to_strings(config['symbols']['BTCUSD'])
+        if 'ETHUSD' in config['symbols']:
+            print("🔄 Converting numeric/bool values to strings in symbols.ETHUSD...")
+            config['symbols']['ETHUSD'] = convert_to_strings(config['symbols']['ETHUSD'])
     
     # Save
     print(f"💾 Saving fixed config: {CONFIG_PATH}")

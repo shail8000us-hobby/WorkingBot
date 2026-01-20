@@ -246,9 +246,10 @@ class AsyncWebSocketManager:
             
             # Create message queues within running event loop
             if self._message_queue is None:
-                # Larger queue to handle bursts (10K messages)
+                # Larger queue to handle bursts (50K messages)
+                # CRITICAL FIX (Jan 20, 2026): Increased from 10K to prevent fill notification drops
                 # Message queue holds pre-routed messages for async iteration
-                self._message_queue = asyncio.Queue(maxsize=10000)
+                self._message_queue = asyncio.Queue(maxsize=50000)
             if self._outbound_queue is None:
                 self._outbound_queue = asyncio.Queue(maxsize=100)
             

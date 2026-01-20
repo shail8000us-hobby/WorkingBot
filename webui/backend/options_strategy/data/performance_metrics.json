@@ -1,8 +1,8 @@
 {
-  "total_trades": 7892,
+  "total_trades": 7995,
   "winning_trades": 4193,
   "losing_trades": 1105,
-  "win_rate": 0.5312975164723771,
+  "win_rate": 0.5244527829893684,
   "total_pnl": 722663.9931034248,
   "avg_win": 290.1747650024276,
   "avg_loss": 447.0939335309993,
@@ -13,6 +13,6 @@
   "style_match_avg": 0,
   "confidence_avg": 0,
   "prediction_accuracy": 0.0,
-  "period_start": "2025-12-20T08:59:54.148486",
-  "period_end": "2026-01-19T08:59:54.312424"
+  "period_start": "2025-12-21T08:53:24.823635",
+  "period_end": "2026-01-20T08:53:24.912288"
 }

@@ -6,25 +6,58 @@ bot:
   heartbeat_seconds: '20'
 symbols:
   BTCUSD:
-    enabled: true
+    enabled: 'True'
     mode: LONG
-    product_id: 27
+    product_id: '27'
     grid:
       geometry:
-        reference: 95500
-        lower: 90000
-        upper: 100000
-        step: 500
+        reference: '92500'
+        lower: '90000'
+        upper: '100000'
+        step: '500'
       limits:
-        max_open_positions: 50
-        lot_size: 5
+        max_open_positions: '50'
+        lot_size: '5'
         short_lot_size: '1'
+        max_open_orders: '20'
+        max_qty_per_order: '5'
+      behavior:
+        strict_grid: 'True'
+        rung_snap_mode: below
+        tick_size: '0.5'
+        dynamic_tick_size: 'True'
+        seed_initial_count: '0'
+      smart_gap_fill:
+        order_type: limit
+        max_levels: '3'
+        enabled: 'False'
+    safety:
+      max_account_loss_inr: '25000'
+      min_liquidation_distance_pct: '50'
+      rsi:
+        enabled: 'True'
+        long_threshold: '19.5'
+        short_threshold: '25'
+  ETHUSD:
+    enabled: true
+    mode: LONG
+    product_id: '3136'
+    grid:
+      geometry:
+        reference: 3200
+        lower: 3000
+        upper: 3600
+        step: 100
+      limits:
+        max_open_positions: 10
+        lot_size: 1
+        short_lot_size: '30'
         max_open_orders: 20
-        max_qty_per_order: 5
+        max_qty_per_order: 1
       behavior:
         strict_grid: true
         rung_snap_mode: below
-        tick_size: 0.5
+        tick_size: 0.05
         dynamic_tick_size: true
         seed_initial_count: 0
       smart_gap_fill:
@@ -34,39 +67,6 @@ symbols:
     safety:
       max_account_loss_inr: 25000
       min_liquidation_distance_pct: 50
-      rsi:
-        enabled: true
-        long_threshold: 19.5
-        short_threshold: 25
-  ETHUSD:
-    enabled: true
-    mode: LONG
-    product_id: '3136'
-    grid:
-      geometry:
-        reference: '3300'
-        lower: '3000'
-        upper: '3600'
-        step: '100'
-      limits:
-        max_open_positions: '10'
-        lot_size: '1'
-        short_lot_size: '30'
-        max_open_orders: 20
-        max_qty_per_order: '1'
-      behavior:
-        strict_grid: 'true'
-        rung_snap_mode: below
-        tick_size: '0.05'
-        dynamic_tick_size: 'true'
-        seed_initial_count: '0'
-      smart_gap_fill:
-        order_type: limit
-        max_levels: '3'
-        enabled: 'false'
-    safety:
-      max_account_loss_inr: '25000'
-      min_liquidation_distance_pct: '50'
       rsi:
         enabled: true
         long_threshold: 19.5
@@ -307,11 +307,13 @@ api:
 telegram:
   bot_token: '***REDACTED***'
   chat_id: '8170794676'
-  live_bot_token: '***REDACTED***'
+  live_bot_token: 8577856008:AAH4C52AeHRvcWjrRt3ztWt6RZS5MAkinxU
   live_chat_id: '8170794676'
   demo_bot_token: '***REDACTED***'
   demo_chat_id: '8170794676'
   enabled: true
+  options_bot_token: 8509485131:AAFyCFj9mZZWcHO_qEzSq8aqWy9jGkMWHK0
+  options_chat_id: '8170794676'
 logging:
   level: INFO
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

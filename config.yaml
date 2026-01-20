@@ -11,7 +11,7 @@ symbols:
     product_id: '27'
     grid:
       geometry:
-        reference: '95500'
+        reference: '92500'
         lower: '90000'
         upper: '100000'
         step: '500'
@@ -39,12 +39,12 @@ symbols:
         long_threshold: '19.5'
         short_threshold: '25'
   ETHUSD:
-    enabled: true
+    enabled: 'True'
     mode: LONG
     product_id: '3136'
     grid:
       geometry:
-        reference: '3300'
+        reference: '3200'
         lower: '3000'
         upper: '3600'
         step: '100'
@@ -52,25 +52,25 @@ symbols:
         max_open_positions: '10'
         lot_size: '1'
         short_lot_size: '30'
-        max_open_orders: 20
+        max_open_orders: '20'
         max_qty_per_order: '1'
       behavior:
-        strict_grid: 'true'
+        strict_grid: 'True'
         rung_snap_mode: below
         tick_size: '0.05'
-        dynamic_tick_size: 'true'
+        dynamic_tick_size: 'True'
         seed_initial_count: '0'
       smart_gap_fill:
         order_type: limit
         max_levels: '3'
-        enabled: 'false'
+        enabled: 'False'
     safety:
       max_account_loss_inr: '25000'
       min_liquidation_distance_pct: '50'
       rsi:
-        enabled: true
-        long_threshold: 19.5
-        short_threshold: 25
+        enabled: 'True'
+        long_threshold: '19.5'
+        short_threshold: '25'
 capital_protection:
   equity_floor:
     floor_inr: 70000
@@ -143,7 +143,7 @@ safety:
     period: 14
     overbought_threshold: 70.0
     oversold_threshold: 30.0
-    long_threshold: 19.5
+    long_threshold: 25
     short_threshold: 25
     hysteresis_seconds: 60
     timeframe: 1h
@@ -307,13 +307,12 @@ api:
 telegram:
   bot_token: '***REDACTED***'
   chat_id: '8170794676'
-  live_bot_token: '8577856008:AAH4C52AeHRvcWjrRt3ztWt6RZS5MAkinxU'
+  live_bot_token: 8577856008:AAH4C52AeHRvcWjrRt3ztWt6RZS5MAkinxU
   live_chat_id: '8170794676'
   demo_bot_token: '***REDACTED***'
   demo_chat_id: '8170794676'
   enabled: true
-  # Options trading bot (separate from grid/guardian bot)
-  options_bot_token: '8509485131:AAFyCFj9mZZWcHO_qEzSq8aqWy9jGkMWHK0'
+  options_bot_token: 8509485131:AAFyCFj9mZZWcHO_qEzSq8aqWy9jGkMWHK0
   options_chat_id: '8170794676'
 logging:
   level: INFO

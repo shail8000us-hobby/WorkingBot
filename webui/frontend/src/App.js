@@ -1332,7 +1332,7 @@ function App() {
         {botIsRunning ? (
           <Suspense fallback={<LoadingFallback message="Streaming logs..." />}>
             <EnhancedErrorBoundary componentName="LogsPanel">
-              <LogsPanel logs={logs} />
+              <LogsPanel />
             </EnhancedErrorBoundary>
           </Suspense>
         ) : (
