@@ -73,14 +73,19 @@ class CircuitBreaker:
     """
     
     # ✅ FIX NOV 6: Expected API errors that should NOT trigger circuit breaker
+    # ✅ FIX JAN 20 2026: Added more expected errors per Delta Exchange recommendation
     IGNORED_ERRORS = [
         'order_not_found',
         'order_already_cancelled',
         'order_already_filled',
+        'order_expired',  # 410 Gone - order expired
         'insufficient_margin',
         'invalid_price',
+        'invalid_contract',  # 422 - invalid parameters
         'position_not_found',
         'position_already_closed',
+        '410',  # HTTP 410 Gone
+        '422',  # HTTP 422 Unprocessable Entity
     ]
     
     def __init__(

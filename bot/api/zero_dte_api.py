@@ -91,6 +91,24 @@ async def start_session():
             'error': 'Engine not initialized. Please restart backend.'
         }), 500
     
+    # ✅ FIX JAN 20 2026: Check Guardian status before starting session
+    # Per Delta Exchange recommendation - prevent trading when Guardian is STOP
+    try:
+        from bot.guardian.signal_store import SignalStore
+        signal_store = SignalStore()
+        guardian_signal = signal_store.read_signal()
+        
+        if guardian_signal and guardian_signal.get('signal') == 'STOP':
+            logger.warning("🚫 Cannot start 0DTE session - Guardian is in STOP state")
+            return jsonify({
+                'success': False,
+                'error': 'Guardian is in STOP state. Cannot start session.'
+            }), 403
+    except ImportError:
+        logger.debug("Guardian signal store not available - skipping check")
+    except Exception as e:
+        logger.warning(f"Could not check Guardian status: {e} - proceeding anyway")
+    
     try:
         data = request.get_json() or {}
         

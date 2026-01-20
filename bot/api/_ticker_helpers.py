@@ -17,7 +17,7 @@ def extract_price(payload: object, symbol: object | None = None) -> Optional[flo
       - {"success": true, "result": {...ticker...}}
       - {"success": true, "result": [...tickers...]}
       - plain {...} or [...]
-    Price keys tried (in order): last_price, last, price, ltp, close, mark_price, spot_price, ask, bid
+    Price keys tried (in order): last_price, last, price, ltp, close, mark_price, mid_price, spot_price, ask, bid
     """
     PRICE_KEYS = [
         "last_price",
@@ -26,6 +26,7 @@ def extract_price(payload: object, symbol: object | None = None) -> Optional[flo
         "ltp",
         "close",
         "mark_price",
+        "mid_price",  # Delta Exchange suggestion: add mid_price for options
         "spot_price",
         "ask",
         "bid",
