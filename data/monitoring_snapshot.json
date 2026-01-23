@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-01-23T15:55:40.288074",
+  "timestamp": "2026-01-23T15:57:59.955872",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 89073.0,
+    "current_price": 89078.0,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 89073.0,
-      "price_age_seconds": 1.656785011291504,
+      "price": 89078.0,
+      "price_age_seconds": 4.640013217926025,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 46678,
+        "total_updates": 46705,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 89073.0,
+        "price": 89078.0,
         "grid_step": 500.0,
         "positions": 0,
         "max_positions": 10,
@@ -137,7 +137,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2026-01-23T15:55:41.074662"
+      "timestamp": "2026-01-23T15:58:00.148744"
     },
     "opportunistic_recovery": {
       "active": false,
