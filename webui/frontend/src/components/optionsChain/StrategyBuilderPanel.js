@@ -60,6 +60,8 @@ import {
   Area,
   ComposedChart,
 } from 'recharts';
+import { calculatePoP, calculateStrategyPoP } from '../../utils/probabilityCalc';
+import { getContractMultiplier } from '../../utils/constants';
 
 const API_BASE = '/api/options-strategy';
 
@@ -106,10 +108,10 @@ const generatePayoffData = (legs, spotPrice, range = 0.15) => {
   return data;
 };
 
-// Calculate max profit, max loss, breakeven
-const calculateStrategyMetrics = (payoffData) => {
+// Calculate max profit, max loss, breakeven, and PoP
+const calculateStrategyMetrics = (payoffData, legs, spotPrice, expiry) => {
   if (!payoffData || payoffData.length === 0) {
-    return { maxProfit: 0, maxLoss: 0, breakevens: [] };
+    return { maxProfit: 0, maxLoss: 0, breakevens: [], pop: null };
   }
 
   const pnls = payoffData.map((d) => d.pnl);
@@ -126,7 +128,65 @@ const calculateStrategyMetrics = (payoffData) => {
     }
   }
 
-  return { maxProfit, maxLoss, breakevens };
+  // Calculate Probability of Profit
+  let pop = null;
+  if (legs && legs.length > 0 && spotPrice && expiry) {
+    try {
+      // Calculate time to expiry (rough estimate)
+      const now = new Date();
+      const expiryDate = parseExpiry(expiry);
+      const timeToExpiry = expiryDate ? (expiryDate - now) / (1000 * 60 * 60 * 24 * 365) : 0.1;
+
+      // Get average IV from legs
+      const avgIV = legs.reduce((sum, leg) => sum + (leg.iv || 0.8), 0) / legs.length;
+
+      // For multi-leg strategies, use weighted PoP based on each leg's contribution
+      if (legs.length === 1) {
+        const leg = legs[0];
+        pop = calculatePoP({
+          spotPrice,
+          strike: leg.strike,
+          entryPrice: leg.premium || leg.ltp || 0,
+          timeToExpiry,
+          volatility: leg.iv || avgIV,
+          optionType: leg.type,
+          side: leg.side,
+        });
+      } else {
+        // For multi-leg, calculate PoP based on probability of final PnL > 0
+        // This is a simplified approximation
+        const profitCount = pnls.filter(pnl => pnl > 0).length;
+        pop = profitCount / pnls.length;
+      }
+    } catch (error) {
+      console.error('Failed to calculate PoP:', error);
+    }
+  }
+
+  return { maxProfit, maxLoss, breakevens, pop };
+};
+
+// Parse expiry string (DDMMYYYY or YYMMDD) to Date
+const parseExpiry = (expiry) => {
+  if (!expiry) return null;
+  const expStr = String(expiry).trim();
+  
+  let day, month, year;
+  if (expStr.length === 8) {
+    // DDMMYYYY format
+    day = parseInt(expStr.slice(0, 2));
+    month = parseInt(expStr.slice(2, 4)) - 1; // Month is 0-indexed
+    year = parseInt(expStr.slice(4, 8));
+  } else if (expStr.length === 6) {
+    // YYMMDD format
+    year = 2000 + parseInt(expStr.slice(0, 2));
+    month = parseInt(expStr.slice(2, 4)) - 1;
+    day = parseInt(expStr.slice(4, 6));
+  } else {
+    return null;
+  }
+  
+  return new Date(year, month, day, 17, 30); // 5:30 PM IST expiry
 };
 
 export default function StrategyBuilderPanel({
@@ -179,8 +239,8 @@ export default function StrategyBuilderPanel({
 
   // Calculate strategy metrics
   const metrics = useMemo(() => {
-    return calculateStrategyMetrics(payoffData);
-  }, [payoffData]);
+    return calculateStrategyMetrics(payoffData, legs, spotPrice, expiry);
+  }, [payoffData, legs, spotPrice, expiry]);
 
   // Convert DDMMYYYY to YYMMDD format for API
   const convertExpiryFormat = (exp) => {
@@ -646,6 +706,17 @@ export default function StrategyBuilderPanel({
                   sx={{ fontSize: '0.65rem' }}
                 />
               </Tooltip>
+              {metrics.pop !== null && (
+                <Tooltip title="Probability of Profit at Expiry">
+                  <Chip
+                    label={`PoP: ${(metrics.pop * 100).toFixed(1)}%`}
+                    size="small"
+                    color={metrics.pop > 0.5 ? 'success' : 'warning'}
+                    variant="outlined"
+                    sx={{ fontSize: '0.65rem', fontWeight: 'bold' }}
+                  />
+                </Tooltip>
+              )}
             </Box>
           </Box>
         )}
