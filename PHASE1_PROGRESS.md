@@ -2,19 +2,66 @@
 
 ## ⏱️ Time Tracking
 - **Day 1 Started**: Thursday, Jan 23, 2026 - 2:00 PM
-- **Time Spent**: 4 hours total
-- **Current Status**: ✅ **Day 1 COMPLETE!**
+- **Day 1 Completed**: Thursday, Jan 23, 2026 - 6:00 PM (4 hours)
+- **Day 2 Started**: Thursday, Jan 23, 2026 - 6:00 PM (same day)
+- **Day 2 Completed**: Thursday, Jan 23, 2026 - 11:00 PM (5 hours)
+- **Total Time**: 9 hours (Days 1-2 complete!)
+- **Current Status**: ✅ **Day 2 COMPLETE!**
+
+---
+
+## ✅ Day 2 Complete (5 hours) - Probability Overlay & Backend Engine
+
+### Morning: Probability Distribution Overlay (2h)
+**Changes Made to `webui/frontend/src/components/options/OptionsPayoffDiagram.js`:**
+- ✅ Imported calculatePriceDistribution from probabilityCalc
+- ✅ Calculate price probability distribution using average IV and time to expiry
+- ✅ Merge probability data into chart data points
+- ✅ Added secondary Y-axis for probability (0-100%, right side, green color)
+- ✅ Added dotted green line showing probability distribution overlay
+- ✅ Updated tooltip to show probability percentage at each price point
+- ✅ Updated legend to include probability line indicator
+- ✅ All lines properly mapped to correct Y-axes (left for P&L, right for probability)
+
+**Result:** Users can now see bell curve probability distribution overlaid on payoff chart, showing where price is most likely to be at expiry
+
+### Afternoon: Backend Payoff Engine (3h)
+**Created `webui/backend/options_strategy/payoff_engine.py` (550+ lines):**
+- ✅ Black-Scholes option pricing for European options
+- ✅ Full Greeks calculation (Delta, Gamma, Theta, Vega, Rho)
+- ✅ Probability of Profit (PoP) calculation using risk-neutral measure
+- ✅ Price distribution generation (lognormal distribution)
+- ✅ Single-leg payoff calculation with contract multipliers
+- ✅ Multi-leg strategy payoff calculation
+- ✅ Breakeven point detection with linear interpolation
+- ✅ API-ready interface functions
+- ✅ Delta Exchange specifications baked in:
+  - Risk-free rate: 0% (crypto standard)
+  - Dividend yield: 0% (crypto has no dividends)
+  - Contract multiplier: 0.001 for BTC/ETH
+  - European options only
+
+**Updated `webui/backend/options_strategy.py`:**
+- ✅ Integrated payoff_engine module
+- ✅ Implemented POST /api/options-strategy/payoff/calculate endpoint
+- ✅ Accepts legs, spot price, price range, time to expiry
+- ✅ Returns payoff curves, max profit/loss, breakeven points
+- ✅ Updated health check to show payoff engine operational
+
+**Testing:**
+- ✅ Tested with simple call spread (buy $100k call, sell $105k call)
+- ✅ Max profit calculated correctly: $4.00
+- ✅ Max loss calculated correctly: $-1.00
+- ✅ Breakeven point accurate: $101k
+
+**Result:** Backend now has single source of truth for all payoff calculations. Frontend can call API for consistent results.
 
 ---
 
 ## ✅ Day 1 Complete (4 hours) - Payoff Calculation Fixes
 
 ### Morning: Foundation Setup (1.5h)
-- ✅ Created tag `23-jan-before-payoff-upgrade`
-- ✅ Pushed to GitHub with full commit history
-- ✅ Safe rollback point established
-
-### 2. Foundation Utilities Created (Morning - 1.5h)
+1. Repository Tagged & Backed Up
 **Files Created:**
 1. `webui/frontend/src/utils/constants.js` (150 lines)
    - Contract multipliers for BTC/ETH (0.001)
