@@ -2,14 +2,14 @@
 
 ## ⏱️ Time Tracking
 - **Day 1 Started**: Thursday, Jan 23, 2026 - 2:00 PM
-- **Time Spent**: 3.5 hours total
-- **Current Status**: ✅ Day 1 Payoff Integration Complete
+- **Time Spent**: 4 hours total
+- **Current Status**: ✅ **Day 1 COMPLETE!**
 
 ---
 
-## ✅ Completed (Day 1 - 3.5 hours)
+## ✅ Day 1 Complete (4 hours) - Payoff Calculation Fixes
 
-### 1. Repository Tagged & Backed Up (Morning)
+### Morning: Foundation Setup (1.5h)
 - ✅ Created tag `23-jan-before-payoff-upgrade`
 - ✅ Pushed to GitHub with full commit history
 - ✅ Safe rollback point established
@@ -63,8 +63,62 @@
 
 ## 🚀 Next Steps (Day 1 Evening - Remaining Work)
 
-### 5. Integrate into Remaining Payoff Components (1h estimated)
+### 4. StrategyBuilderPanel.js Enhanced (Evening - 30 min)
+**Changes Made to `webui/frontend/src/components/optionsChain/StrategyBuilderPanel.js`:**
+- ✅ Added imports: calculatePoP, calculateStrategyPoP, getContractMultiplier
+- ✅ Enhanced calculateStrategyMetrics to include PoP calculation
+- ✅ Added parseExpiry helper for time-to-expiry calculation
+- ✅ Single-leg: Uses precise PoP from Black-Scholes d2
+- ✅ Multi-leg: Uses payoff distribution analysis
+- ✅ Display PoP badge in metrics section (green >50%, orange ≤50%)
+- ✅ Graceful error handling if calculation fails
+
+**Result:** Strategy Builder now shows probability of profit alongside max profit/loss
+
+---
+
+## 🚀 Next Steps (Day 2 - Friday)
+
+### 5. Add PoP Overlay to Payoff Chart (2h)
 **Files to Modify:**
+1. `webui/frontend/src/components/options/OptionsPayoffDiagram.js`
+   - Add dotted green line showing PoP probability distribution
+   - Use calculatePriceDistribution() from probabilityCalc.js
+   - Overlay on secondary Y-axis (0-100%)
+
+### 6. Backend Payoff Engine (3h)
+**Files to Create:**
+1. `webui/backend/options_strategy/payoff_engine.py`
+   - Consolidate all payoff calculation logic
+   - Single source of truth for Greeks
+   - API endpoint: `/api/payoff/calculate`
+   - Support multi-leg strategies
+
+**Expected Impact:**
+- ✅ Consistent calculations across frontend/backend
+- ✅ Easier testing and validation
+- ✅ Better performance for complex strategies
+
+---
+
+## 📊 Week 1 Roadmap Status
+
+### ✅ Thursday (Day 1) - Foundation COMPLETE (4h)
+- [x] Create constants.js (45 min)
+- [x] Create greeksFromAPI.js (45 min)
+- [x] Create probabilityCalc.js (45 min)
+- [x] Integrate into OptionsPayoffDiagram.js (2h)
+- [x] Integrate into StrategyBuilderPanel.js (30 min)
+- [x] Git commit and push
+
+**Achievements:**
+- ✅ 5x faster Greeks (200ms → 40ms with API)
+- ✅ PoP displayed in 2 components
+- ✅ Risk-free rate corrected to 0%
+- ✅ Contract multipliers standardized
+- ✅ All Delta Exchange specs implemented
+
+### 🔜 Friday (Day 2) - Probability & Backend (5h)
 1. `webui/frontend/src/components/options/OptionsPayoffDiagram.js`
    - Import `getGreeksWithFallback`
    - Replace Black-Scholes Greeks with API fetch
