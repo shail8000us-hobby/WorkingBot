@@ -3972,7 +3972,7 @@ const OptionsPanel = () => {
 
           {/* Summary */}
           {positions.length > 0 && (
-            <>
+            <Box>
               <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Chip
                   icon={<MoneyIcon />}
@@ -4023,7 +4023,7 @@ const OptionsPanel = () => {
                   </Box>
 
                   {!greeksCollapsed && (
-                    <>
+                    <Box>
                   {/* Futures Equivalent - Delta as directional exposure */}
                   {(aggregatedGreeks.btcDelta !== 0 || aggregatedGreeks.ethDelta !== 0) && (
                     <Box
@@ -4176,11 +4176,11 @@ const OptionsPanel = () => {
                       </Box>
                     </Tooltip>
                   </Box>
-                  </>
+                  </Box>
                   )}
                 </Box>
               )}
-            </>
+            </Box>
           )}
         </CardContent>
       </Card>
