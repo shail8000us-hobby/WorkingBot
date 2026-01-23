@@ -1186,15 +1186,15 @@ const OptionsPanel = () => {
         // Calculate PoP using Black-Scholes
         const pop = calculatePoP({
           spotPrice,
-          strikePrice: pos.strike_price,
+          strike: pos.strike_price,
+          entryPrice: Math.abs(pos.entry_price) || 0,
           timeToExpiry,
-          impliedVol: pos.iv || 0.8, // Use position IV or default 80%
-          riskFreeRate: RISK_FREE_RATE, // 0% for crypto
-          optionType: pos.option_type, // 'call' or 'put'
-          isLong: pos.size > 0, // Long = bought, Short = sold
+          volatility: pos.iv || 0.8, // Use position IV or default 80%
+          optionType: pos.option_type || 'call', // 'call' or 'put'
+          side: pos.size > 0 ? 'buy' : 'sell', // Long = buy, Short = sell
         });
 
-        newPopData[pos.product_symbol] = pop;
+        newPopData[pos.product_symbol] = pop * 100; // Convert to percentage
       } catch (err) {
         console.warn(`Failed to calculate PoP for ${pos.product_symbol}:`, err);
       }
