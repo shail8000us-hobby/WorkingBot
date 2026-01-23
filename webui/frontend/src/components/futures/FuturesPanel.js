@@ -55,6 +55,7 @@ import {
 } from '@mui/icons-material';
 import api from '../../utils/apiShim';
 import FuturesTradeDialog from './FuturesTradeDialog';
+import { LeverageIndicator, LiquidationProximity } from '../indicators/LeverageIndicator';
 
 const FuturesPanel = ({ pollInterval = 5000 }) => {
   // State
@@ -479,6 +480,36 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
             </Alert>
           )}
 
+          {/* Day 4 Enhancement: Liquidation Warning Alert */}
+          {!loading && positions.length > 0 && (() => {
+            const nearLiquidation = positions.filter(pos => {
+              const current = Number(pos.mark_price) || 0;
+              const liq = Number(pos.liquidation_price) || 0;
+              if (!current || !liq) return false;
+              
+              const side = pos.size > 0 ? 'long' : 'short';
+              const distance = side === 'long' 
+                ? ((current - liq) / current) * 100
+                : ((liq - current) / current) * 100;
+              
+              return distance < 10;
+            });
+            
+            if (nearLiquidation.length > 0) {
+              return (
+                <Alert severity="error" sx={{ mb: 2 }} icon={<WarningIcon />}>
+                  <Typography variant="subtitle2" fontWeight="bold">
+                    ⚠️ {nearLiquidation.length} Position{nearLiquidation.length > 1 ? 's' : ''} Near Liquidation!
+                  </Typography>
+                  <Typography variant="body2">
+                    {nearLiquidation.map(p => p.product_symbol).join(', ')} - Consider adding margin or closing positions
+                  </Typography>
+                </Alert>
+              );
+            }
+            return null;
+          })()}
+
           {/* Positions Table */}
           {!loading && positions.length > 0 && (
             <>
@@ -521,8 +552,18 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>
                         Mark
                       </TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold', minWidth: 120 }}>
+                        <Tooltip title="Position leverage - Safe: <3x, Medium: 3-5x, High: >5x">
+                          <span>Leverage</span>
+                        </Tooltip>
+                      </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>
                         Liq. Price
+                      </TableCell>
+                      <TableCell align="left" sx={{ fontWeight: 'bold', minWidth: 150 }}>
+                        <Tooltip title="Distance to liquidation - Red <10%, Orange 10-20%, Green >20%">
+                          <span>Liq. Distance</span>
+                        </Tooltip>
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>
                         Unrealized PnL
@@ -591,6 +632,15 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                               {formatPrice(pos.mark_price)}
                             </Typography>
                           </TableCell>
+                          
+                          {/* Day 4 Enhancement: Leverage Indicator */}
+                          <TableCell align="center">
+                            <LeverageIndicator 
+                              leverage={pos.leverage || 1} 
+                              size="small"
+                            />
+                          </TableCell>
+                          
                           <TableCell align="right">
                             <Typography
                               variant="body2"
@@ -601,6 +651,16 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                             >
                               {formatPrice(pos.liquidation_price)}
                             </Typography>
+                          </TableCell>
+                          
+                          {/* Day 4 Enhancement: Liquidation Proximity Bar */}
+                          <TableCell align="left">
+                            <LiquidationProximity
+                              currentPrice={pos.mark_price}
+                              liquidationPrice={pos.liquidation_price}
+                              side={pos.size > 0 ? 'long' : 'short'}
+                              showLabel={false}
+                            />
                           </TableCell>
                           <TableCell align="right">
                             <Typography
