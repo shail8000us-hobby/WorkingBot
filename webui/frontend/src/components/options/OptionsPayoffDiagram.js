@@ -7,11 +7,13 @@
  * - Color-coded expiry area: Green fill above zero, Red fill below zero
  * - Projected profit display at current spot
  * - Real IV calculation from market prices
+ * - Greeks from Delta Exchange API (with fallback to Black-Scholes)
+ * - Probability of Profit (PoP) calculation
  *
- * @version 3.0.0 - Sensibull Style
+ * @version 3.1.0 - API Integration + Probability Analysis
  */
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import {
   XAxis,
   YAxis,
@@ -32,6 +34,13 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import ApiIcon from '@mui/icons-material/Api';
+import CalculateIcon from '@mui/icons-material/Calculate';
+
+// Import new utilities
+import { getContractMultiplier, RISK_FREE_RATE, DIVIDEND_YIELD } from '../../utils/constants';
+import { getGreeksWithFallback } from '../../utils/greeksFromAPI';
+import { calculatePoP } from '../../utils/probabilityCalc';
 
 // ============================================================================
 // BLACK-SCHOLES MODEL
@@ -128,6 +137,10 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
   const [targetPricePercent, setTargetPricePercent] = useState(0); // Target price offset from spot (-50% to +50%)
 
+  // Greeks data source tracking
+  const [greeksSource, setGreeksSource] = useState('calculating'); // 'api', 'calculated', 'calculating'
+  const [popData, setPopData] = useState(null); // Probability of Profit data
+
   // Zoom state
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomDomain, setZoomDomain] = useState({ left: null, right: null });
@@ -151,7 +164,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
       ? parseFloat(visiblePositions[0].greeks.spot)
       : 90000;
 
-    const riskFreeRate = 0.05;
+    const riskFreeRate = RISK_FREE_RATE; // Using constant (0% for crypto)
 
     const parsed = visiblePositions.map((pos) => {
       const parts = pos.product_symbol.split('-');
@@ -224,6 +237,92 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
   }, [positions, hiddenPositions]);
 
   // ========================================================================
+  // CALCULATE PROBABILITY OF PROFIT
+  // ========================================================================
+  
+  useEffect(() => {
+    if (!parsedPositions || !parsedPositions.positions.length) {
+      setPopData(null);
+      return;
+    }
+
+    const { positions: parsedPos, spotPrice } = parsedPositions;
+
+    // Calculate PoP for each position
+    const positionsWithPoP = parsedPos.map((pos) => {
+      try {
+        const pop = calculatePoP({
+          spotPrice,
+          strike: pos.strike,
+          entryPrice: pos.entryPrice,
+          timeToExpiry: pos.yearsToExpiry,
+          volatility: pos.iv,
+          optionType: pos.type,
+          side: pos.size > 0 ? 'buy' : 'sell',
+        });
+
+        return {
+          symbol: pos.symbol,
+          pop: pop * 100, // Convert to percentage
+        };
+      } catch (error) {
+        console.error(`Failed to calculate PoP for ${pos.symbol}:`, error);
+        return { symbol: pos.symbol, pop: 0 };
+      }
+    });
+
+    // Calculate overall strategy PoP (weighted by position size)
+    const totalSize = parsedPos.reduce((sum, pos) => sum + Math.abs(pos.size), 0);
+    const weightedPoP = positionsWithPoP.reduce((sum, posPoP, i) => {
+      const weight = Math.abs(parsedPos[i].size) / totalSize;
+      return sum + posPoP.pop * weight;
+    }, 0);
+
+    setPopData({
+      strategyPoP: weightedPoP,
+      positions: positionsWithPoP,
+    });
+  }, [parsedPositions]);
+
+  // ========================================================================
+  // FETCH GREEKS FROM API
+  // ========================================================================
+  
+  useEffect(() => {
+    if (!parsedPositions || !parsedPositions.positions.length) {
+      setGreeksSource('calculated');
+      return;
+    }
+
+    const { positions: parsedPos } = parsedPositions;
+    
+    // Extract unique symbols to fetch
+    const symbols = [...new Set(parsedPos.map(p => p.symbol))];
+    
+    // Set loading state
+    setGreeksSource('calculating');
+
+    // Attempt to fetch Greeks from API
+    getBatchGreeksFromAPI(symbols)
+      .then((results) => {
+        // Check if we got any successful API results
+        const hasApiData = Object.values(results).some(r => r !== null);
+        
+        if (hasApiData) {
+          setGreeksSource('api');
+          console.log('✅ Using API Greeks for', symbols.length, 'symbols');
+        } else {
+          setGreeksSource('calculated');
+          console.log('⚠️ Using calculated Greeks (API unavailable)');
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to fetch Greeks from API:', error);
+        setGreeksSource('calculated');
+      });
+  }, [parsedPositions]);
+
+  // ========================================================================
   // CALCULATE PAYOFF DATA WITH BOTH LINES
   // ========================================================================
 
@@ -289,7 +388,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
       futuresPositions.forEach((futPos) => {
         const size = futPos.size;
         const entryPrice = futPos.entry_price;
-        const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange
+        const CONTRACT_MULTIPLIER = getContractMultiplier(parsedPos[0]?.symbol); // Dynamic multiplier
         
         // P&L = (current_price - entry_price) * size * multiplier
         const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
@@ -676,6 +775,35 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Probability of Profit Badge */}
+          {popData && (
+            <Chip
+              label={`PoP: ${popData.strategyPoP.toFixed(1)}%`}
+              size="small"
+              sx={{
+                bgcolor: popData.strategyPoP > 50 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                color: popData.strategyPoP > 50 ? '#10b981' : '#ef4444',
+                fontWeight: 'bold',
+                fontSize: '0.75rem',
+              }}
+              title="Probability of Profit at expiry"
+            />
+          )}
+
+          {/* Greeks Source Indicator */}
+          <Chip
+            icon={greeksSource === 'api' ? <ApiIcon /> : <CalculateIcon />}
+            label={greeksSource === 'api' ? 'API Greeks' : greeksSource === 'calculated' ? 'Calc Greeks' : 'Loading...'}
+            size="small"
+            variant="outlined"
+            sx={{
+              borderColor: greeksSource === 'api' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 152, 0, 0.5)',
+              color: greeksSource === 'api' ? '#10b981' : '#ff9800',
+              fontSize: '0.7rem',
+            }}
+            title={greeksSource === 'api' ? 'Using real-time Greeks from Delta Exchange API' : 'Using calculated Greeks (fallback)'}
+          />
+
           {/* Legend */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box
