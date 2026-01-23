@@ -72,8 +72,6 @@ import {
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
   VolumeUp as VolumeIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -94,7 +92,6 @@ import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/apiShim';
 import soundManager from '../../utils/soundManager';
 import OptionsPayoffDiagram from './OptionsPayoffDiagram';
-import LogPanel from '../optionsChain/LogPanel';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
@@ -138,21 +135,11 @@ const OptionsPanel = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [positions, setPositions] = useState([]);
-  const [futuresPositions, setFuturesPositions] = useState([]);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   // Pending orders state (from Delta Exchange)
   const [pendingOrders, setPendingOrders] = useState([]);
   const [pendingOrdersError, setPendingOrdersError] = useState(null);
-  // Collapse state for pending orders
-  const [pendingOrdersCollapsed, setPendingOrdersCollapsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_pending_orders_collapsed');
-      return saved ? JSON.parse(saved) : false;
-    } catch {
-      return false;
-    }
-  });
   // Focus mode: hidden positions (persisted)
   const [hiddenPositions, setHiddenPositions] = useState(() => {
     try {
@@ -162,11 +149,6 @@ const OptionsPanel = () => {
       return [];
     }
   });
-
-  // Save pending orders collapsed state to localStorage
-  useEffect(() => {
-    localStorage.setItem('options_pending_orders_collapsed', JSON.stringify(pendingOrdersCollapsed));
-  }, [pendingOrdersCollapsed]);
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = useState(() => {
     try {
@@ -177,42 +159,13 @@ const OptionsPanel = () => {
     }
   });
 
-  // Expiry filter (persisted) - now supports multiple selection
-  const [selectedExpiries, setSelectedExpiries] = useState(() => {
+  // Expiry filter (persisted)
+  const [expiryFilter, setExpiryFilter] = useState(() => {
     try {
-      const saved = localStorage.getItem('options_selected_expiries');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Quick Filters (persisted) - Day 3 Enhancement
-  const [pnlFilter, setPnlFilter] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_pnl_filter');
-      return saved || 'all'; // 'all', 'profit', 'loss'
+      const saved = localStorage.getItem('options_expiry_filter');
+      return saved || 'all';
     } catch {
       return 'all';
-    }
-  });
-
-  const [moneynessFilter, setMoneynessFilter] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_moneyness_filter');
-      return saved || 'all'; // 'all', 'itm', 'atm', 'otm'
-    } catch {
-      return 'all';
-    }
-  });
-
-  // Greeks panel collapsed state (persisted) - Day 3 Enhancement
-  const [greeksCollapsed, setGreeksCollapsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_greeks_collapsed');
-      return saved ? JSON.parse(saved) : false;
-    } catch {
-      return false;
     }
   });
 
@@ -249,7 +202,6 @@ const OptionsPanel = () => {
             ask: true,
             sltp: true,
             maxLoss: true,
-            iv: true,
             pnl: true,
             actions: true,
           };
@@ -267,7 +219,6 @@ const OptionsPanel = () => {
         ask: true,
         sltp: true,
         maxLoss: true,
-        iv: true,
         pnl: true,
         actions: true,
       };
@@ -288,7 +239,6 @@ const OptionsPanel = () => {
     { key: 'ask', label: 'Ask' },
     { key: 'sltp', label: 'SL/TP' },
     { key: 'maxLoss', label: 'Max Loss' },
-    { key: 'iv', label: 'IV' },
     { key: 'pnl', label: 'PnL' },
     { key: 'actions', label: 'Actions' },
   ];
@@ -452,6 +402,10 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('options_poll_interval', pollInterval);
   }, [pollInterval]);
+  // Save expiryFilter to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('options_expiry_filter', expiryFilter);
+  }, [expiryFilter]);
   // Save lastUsedSize to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('options_last_used_size', lastUsedSize);
@@ -603,73 +557,14 @@ const OptionsPanel = () => {
     });
   }, []);
 
-  // Toggle expiry selection (multi-select)
-  const toggleExpirySelection = (expiry) => {
-    setSelectedExpiries((prev) => {
-      const newSelection = prev.includes(expiry)
-        ? prev.filter((e) => e !== expiry) // Remove if already selected
-        : [...prev, expiry]; // Add if not selected
-      localStorage.setItem('options_selected_expiries', JSON.stringify(newSelection));
-      return newSelection;
-    });
-  };
-
-  // Clear all expiry selections (show all)
-  const clearExpirySelection = () => {
-    setSelectedExpiries([]);
-    localStorage.setItem('options_selected_expiries', JSON.stringify([]));
-  };
-
-  // Live index prices state (fetched from WebSocket, not from positions)
-  const { btcPrice, ethPrice } = useMarketPrices();
-  const indexPrices = useMemo(
-    () => ({
-      BTC: btcPrice || 0,
-      ETH: ethPrice || 0,
-    }),
-    [btcPrice, ethPrice]
-  );
-
   // Sort positions by custom order or default (days to expiration)
   const sortedPositions = useMemo(() => {
     // First filter out hidden positions
     let filtered = positions.filter((p) => !hiddenPositions.includes(p.product_symbol));
 
-    // Apply expiry filter if any expiries are selected
-    if (selectedExpiries.length > 0) {
-      filtered = filtered.filter((p) => selectedExpiries.includes(getExpiryCode(p.product_symbol)));
-    }
-
-    // Apply P&L filter - Day 3 Enhancement
-    if (pnlFilter === 'profit') {
-      filtered = filtered.filter((p) => (p.unrealized_pnl || 0) > 0);
-    } else if (pnlFilter === 'loss') {
-      filtered = filtered.filter((p) => (p.unrealized_pnl || 0) < 0);
-    }
-
-    // Apply Moneyness filter - Day 3 Enhancement
-    if (moneynessFilter !== 'all') {
-      filtered = filtered.filter((p) => {
-        const optionInfo = parseOptionSymbol(p.product_symbol);
-        const spotPrice = indexPrices.BTC; // Use BTC price for both (ETH would need separate logic)
-        const strike = optionInfo.strike;
-        
-        if (!strike || !spotPrice) return true; // Keep if can't determine
-        
-        const moneyness = spotPrice / strike;
-        
-        if (moneynessFilter === 'itm') {
-          // ITM: Call if spot > strike, Put if spot < strike
-          return optionInfo.isCall ? moneyness > 1.02 : moneyness < 0.98;
-        } else if (moneynessFilter === 'atm') {
-          // ATM: within 2% of strike
-          return moneyness >= 0.98 && moneyness <= 1.02;
-        } else if (moneynessFilter === 'otm') {
-          // OTM: Call if spot < strike, Put if spot > strike
-          return optionInfo.isCall ? moneyness < 0.98 : moneyness > 1.02;
-        }
-        return true;
-      });
+    // Apply expiry filter if not 'all'
+    if (expiryFilter !== 'all') {
+      filtered = filtered.filter((p) => getExpiryCode(p.product_symbol) === expiryFilter);
     }
 
     // Always sort by expiry first (nearest first)
@@ -729,7 +624,17 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  }, [positions, hiddenPositions, customOrder, selectedExpiries, pnlFilter, moneynessFilter, symbolSort, strikeSort, indexPrices]);
+  }, [positions, hiddenPositions, customOrder, expiryFilter, symbolSort, strikeSort]);
+
+  // Live index prices state (fetched from WebSocket, not from positions)
+  const { btcPrice, ethPrice } = useMarketPrices();
+  const indexPrices = useMemo(
+    () => ({
+      BTC: btcPrice || 0,
+      ETH: ethPrice || 0,
+    }),
+    [btcPrice, ethPrice]
+  );
 
   // Calculate aggregated greeks for currently visible positions (respects expiry filter and hidden positions)
   const aggregatedGreeks = useMemo(() => {
@@ -961,13 +866,8 @@ const OptionsPanel = () => {
     try {
       const { data } = await api.get('/api/options/positions');
       if (data?.success) {
-        const rawPositions = data.positions || [];
-        
-        // Enrich positions with IV data from Delta Exchange
-        const positionsWithIV = await enrichPositionsWithIV(rawPositions);
-        
-        setPositions(positionsWithIV);
-        hasPositionsRef.current = positionsWithIV.length > 0;
+        setPositions(data.positions || []);
+        hasPositionsRef.current = (data.positions || []).length > 0;
         // Only clear error if we got fresh (non-cached) data
         if (!data.cached) {
           setError(null);
@@ -993,76 +893,6 @@ const OptionsPanel = () => {
       }
     }
   }, []); // No dependencies - safe
-
-  // Fetch futures positions for combined payoff diagram
-  const fetchFuturesPositions = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/futures/positions');
-      if (data?.success) {
-        setFuturesPositions(data.positions || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch futures positions:', err);
-      // Don't show error for futures, just log it
-    }
-  }, []);
-
-  // Filter futures positions based on hidden state (from localStorage)
-  const visibleFuturesPositions = useMemo(() => {
-    try {
-      const hiddenFutures = JSON.parse(localStorage.getItem('futures_hidden_positions') || '[]');
-      return futuresPositions.filter((pos) => !hiddenFutures.includes(pos.product_symbol));
-    } catch {
-      return futuresPositions;
-    }
-  }, [futuresPositions]);
-
-  // Enrich positions with IV data from Delta Exchange
-  const enrichPositionsWithIV = async (positions) => {
-    try {
-      // Fetch IV data for all positions' symbols
-      const symbols = positions.map(pos => pos.product_symbol).filter(Boolean);
-      
-      if (symbols.length === 0) {
-        return positions;
-      }
-
-      // Fetch ticker data from Delta Exchange API (public endpoint, no auth needed)
-      const tickerPromises = symbols.map(async (symbol) => {
-        try {
-          const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
-          const result = await response.json();
-          
-          if (result?.success && result?.result) {
-            const quotes = result.result.quotes || {};
-            // Use average of bid_iv and ask_iv
-            const bidIV = parseFloat(quotes.bid_iv) || 0;
-            const askIV = parseFloat(quotes.ask_iv) || 0;
-            const avgIV = bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV);
-            
-            return { symbol, iv: avgIV };
-          }
-          return { symbol, iv: null };
-        } catch (err) {
-          console.warn(`Failed to fetch IV for ${symbol}:`, err.message);
-          return { symbol, iv: null };
-        }
-      });
-
-      const ivData = await Promise.all(tickerPromises);
-      const ivMap = Object.fromEntries(ivData.map(d => [d.symbol, d.iv]));
-
-      // Enrich positions with IV data
-      return positions.map(pos => ({
-        ...pos,
-        iv: ivMap[pos.product_symbol] || null
-      }));
-    } catch (err) {
-      console.error('Failed to enrich positions with IV:', err);
-      // Return original positions if enrichment fails
-      return positions;
-    }
-  };
 
   // Load SL/TP settings for all positions
   const loadSLTPSettings = useCallback(async () => {
@@ -1167,12 +997,11 @@ const OptionsPanel = () => {
         loadSLTPSettings(),
         loadMaxLossSettings(),
         fetchPendingOrders(),
-        fetchFuturesPositions(),
       ]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders, fetchFuturesPositions]);
+  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders]);
 
   // Auto-refresh every pollInterval ms
   useEffect(() => {
@@ -1180,11 +1009,10 @@ const OptionsPanel = () => {
       fetchPositions();
       fetchStatus();
       fetchPendingOrders();
-      fetchFuturesPositions();
       loadMaxLossSettings(); // Refresh max loss settings too
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchPositions, fetchStatus, fetchPendingOrders, fetchFuturesPositions, loadMaxLossSettings, pollInterval]);
+  }, [fetchPositions, fetchStatus, fetchPendingOrders, loadMaxLossSettings, pollInterval]);
 
   // Cleanup active batch polling intervals on unmount
   useEffect(() => {
@@ -1307,7 +1135,7 @@ const OptionsPanel = () => {
   // Manual refresh
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStatus(), fetchPositions(), fetchPendingOrders(), fetchFuturesPositions()]);
+    await Promise.all([fetchStatus(), fetchPositions(), fetchPendingOrders()]);
     setRefreshing(false);
   };
 
@@ -2233,19 +2061,19 @@ const OptionsPanel = () => {
             </Box>
           </Box>
 
-          {/* Expiry Filter Tabs - Multi-Select */}
+          {/* Expiry Filter Tabs */}
           {uniqueExpiries.length > 1 && (
             <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
               <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
                 📅 Expiry:
               </Typography>
               <Chip
-                label={selectedExpiries.length === 0 ? "All" : `All (${selectedExpiries.length} selected)`}
+                label="All"
                 size="small"
-                onClick={clearExpirySelection}
-                color={selectedExpiries.length === 0 ? 'primary' : 'default'}
-                variant={selectedExpiries.length === 0 ? 'filled' : 'outlined'}
-                sx={{ fontWeight: selectedExpiries.length === 0 ? 'bold' : 'normal' }}
+                onClick={() => setExpiryFilter('all')}
+                color={expiryFilter === 'all' ? 'primary' : 'default'}
+                variant={expiryFilter === 'all' ? 'filled' : 'outlined'}
+                sx={{ fontWeight: expiryFilter === 'all' ? 'bold' : 'normal' }}
               />
               {uniqueExpiries.map((expiry) => {
                 const day = expiry.substring(0, 2);
@@ -2255,177 +2083,18 @@ const OptionsPanel = () => {
                 const posCount = positions.filter(
                   (p) => getExpiryCode(p.product_symbol) === expiry
                 ).length;
-                const isSelected = selectedExpiries.includes(expiry);
                 return (
                   <Chip
                     key={expiry}
                     label={`${formattedDate} (${posCount})`}
                     size="small"
-                    onClick={() => toggleExpirySelection(expiry)}
-                    color={isSelected ? 'primary' : 'default'}
-                    variant={isSelected ? 'filled' : 'outlined'}
-                    sx={{ fontWeight: isSelected ? 'bold' : 'normal' }}
+                    onClick={() => setExpiryFilter(expiry)}
+                    color={expiryFilter === expiry ? 'primary' : 'default'}
+                    variant={expiryFilter === expiry ? 'filled' : 'outlined'}
+                    sx={{ fontWeight: expiryFilter === expiry ? 'bold' : 'normal' }}
                   />
                 );
               })}
-            </Box>
-          )}
-
-          {/* Quick Filters - Day 3 Enhancement */}
-          <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', bgcolor: 'action.hover', p: 1.5, borderRadius: 1 }}>
-            {/* P&L Filter */}
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                📊 P&L:
-              </Typography>
-              <Chip
-                label="All"
-                size="small"
-                onClick={() => {
-                  setPnlFilter('all');
-                  localStorage.setItem('options_pnl_filter', 'all');
-                }}
-                color={pnlFilter === 'all' ? 'primary' : 'default'}
-                variant={pnlFilter === 'all' ? 'filled' : 'outlined'}
-              />
-              <Chip
-                label="Profit"
-                size="small"
-                onClick={() => {
-                  setPnlFilter('profit');
-                  localStorage.setItem('options_pnl_filter', 'profit');
-                }}
-                color={pnlFilter === 'profit' ? 'success' : 'default'}
-                variant={pnlFilter === 'profit' ? 'filled' : 'outlined'}
-              />
-              <Chip
-                label="Loss"
-                size="small"
-                onClick={() => {
-                  setPnlFilter('loss');
-                  localStorage.setItem('options_pnl_filter', 'loss');
-                }}
-                color={pnlFilter === 'loss' ? 'error' : 'default'}
-                variant={pnlFilter === 'loss' ? 'filled' : 'outlined'}
-              />
-            </Box>
-
-            {/* Moneyness Filter */}
-            <Divider orientation="vertical" flexItem />
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                🎯 Moneyness:
-              </Typography>
-              <Chip
-                label="All"
-                size="small"
-                onClick={() => {
-                  setMoneynessFilter('all');
-                  localStorage.setItem('options_moneyness_filter', 'all');
-                }}
-                color={moneynessFilter === 'all' ? 'primary' : 'default'}
-                variant={moneynessFilter === 'all' ? 'filled' : 'outlined'}
-              />
-              <Chip
-                label="ITM"
-                size="small"
-                onClick={() => {
-                  setMoneynessFilter('itm');
-                  localStorage.setItem('options_moneyness_filter', 'itm');
-                }}
-                color={moneynessFilter === 'itm' ? 'success' : 'default'}
-                variant={moneynessFilter === 'itm' ? 'filled' : 'outlined'}
-              />
-              <Chip
-                label="ATM"
-                size="small"
-                onClick={() => {
-                  setMoneynessFilter('atm');
-                  localStorage.setItem('options_moneyness_filter', 'atm');
-                }}
-                color={moneynessFilter === 'atm' ? 'info' : 'default'}
-                variant={moneynessFilter === 'atm' ? 'filled' : 'outlined'}
-              />
-              <Chip
-                label="OTM"
-                size="small"
-                onClick={() => {
-                  setMoneynessFilter('otm');
-                  localStorage.setItem('options_moneyness_filter', 'otm');
-                }}
-                color={moneynessFilter === 'otm' ? 'warning' : 'default'}
-                variant={moneynessFilter === 'otm' ? 'filled' : 'outlined'}
-              />
-            </Box>
-
-            {/* Active filter count */}
-            {(pnlFilter !== 'all' || moneynessFilter !== 'all') && (
-              <>
-                <Divider orientation="vertical" flexItem />
-                <Chip
-                  label={`${sortedPositions.length} shown`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                  sx={{ fontWeight: 'bold' }}
-                />
-              </>
-            )}
-          </Box>
-
-          {/* Portfolio Summary Stats - Day 3 Enhancement */}
-          {sortedPositions.length > 0 && (
-            <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: 'action.hover', borderRadius: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Total Positions
-                </Typography>
-                <Typography variant="h6" fontWeight="bold">
-                  {sortedPositions.length}
-                </Typography>
-              </Paper>
-              
-              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) >= 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderRadius: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Total P&L
-                </Typography>
-                <Typography 
-                  variant="h6" 
-                  fontWeight="bold"
-                  sx={{ 
-                    color: sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) >= 0 ? '#22c55e' : '#ef4444' 
-                  }}
-                >
-                  {sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) >= 0 ? '+' : ''}
-                  ${sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0).toFixed(2)}
-                </Typography>
-              </Paper>
-              
-              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: 'action.hover', borderRadius: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Winners / Losers
-                </Typography>
-                <Typography variant="h6" fontWeight="bold">
-                  <span style={{ color: '#22c55e' }}>
-                    {sortedPositions.filter(p => (Number(p.unrealized_pnl) || 0) > 0).length}
-                  </span>
-                  {' / '}
-                  <span style={{ color: '#ef4444' }}>
-                    {sortedPositions.filter(p => (Number(p.unrealized_pnl) || 0) < 0).length}
-                  </span>
-                </Typography>
-              </Paper>
-              
-              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: 'action.hover', borderRadius: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Win Rate
-                </Typography>
-                <Typography variant="h6" fontWeight="bold">
-                  {sortedPositions.length > 0 
-                    ? ((sortedPositions.filter(p => (Number(p.unrealized_pnl) || 0) > 0).length / sortedPositions.length) * 100).toFixed(0)
-                    : 0}%
-                </Typography>
-              </Paper>
             </Box>
           )}
 
@@ -2782,39 +2451,28 @@ const OptionsPanel = () => {
           <FuturesPanel pollInterval={pollInterval} />
 
           {/* Pending Orders Panel */}
-          {!pendingOrdersError && (
+          {pendingOrders.length > 0 && (
             <Box
               sx={{
                 mb: 2,
                 p: 2,
                 borderRadius: 1,
                 border: '1px solid',
-                borderColor: pendingOrders.length > 0 ? 'warning.main' : 'divider',
+                borderColor: 'warning.main',
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <TimerIcon sx={{ color: pendingOrders.length > 0 ? 'warning.main' : 'text.secondary' }} />
+                <TimerIcon sx={{ color: 'warning.main' }} />
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
                   ⏳ Pending Orders ({pendingOrders.length})
                 </Typography>
-                {pendingOrders.length > 0 && (
-                  <Chip
-                    label="Live"
-                    size="small"
-                    color="error"
-                    sx={{ animation: 'pulse 1.5s infinite' }}
-                  />
-                )}
-                <IconButton 
-                  size="small" 
-                  onClick={() => setPendingOrdersCollapsed(!pendingOrdersCollapsed)}
-                  sx={{ ml: 'auto', color: 'text.secondary' }}
-                >
-                  {pendingOrdersCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-                </IconButton>
+                <Chip
+                  label="Live"
+                  size="small"
+                  color="error"
+                  sx={{ animation: 'pulse 1.5s infinite', ml: 'auto' }}
+                />
               </Box>
-              <Collapse in={!pendingOrdersCollapsed}>
-              {pendingOrders.length > 0 ? (
               <TableContainer
                 component={Paper}
                 sx={{ maxHeight: 200, bgcolor: 'background.paper' }}
@@ -2900,14 +2558,6 @@ const OptionsPanel = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
-              ) : (
-                <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No pending orders
-                  </Typography>
-                </Paper>
-              )}
-              </Collapse>
             </Box>
           )}
 
@@ -2935,13 +2585,13 @@ const OptionsPanel = () => {
                 Open positions manually on Delta Exchange to manage them here
               </Typography>
             </Paper>
-          ) : sortedPositions.length === 0 && selectedExpiries.length > 0 ? (
+          ) : sortedPositions.length === 0 && expiryFilter !== 'all' ? (
             <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'action.hover' }}>
-              <Typography color="text.secondary">No positions for selected {selectedExpiries.length === 1 ? 'expiry' : 'expiries'}</Typography>
+              <Typography color="text.secondary">No positions for selected expiry</Typography>
               <Button
                 size="small"
                 variant="outlined"
-                onClick={clearExpirySelection}
+                onClick={() => setExpiryFilter('all')}
                 sx={{ mt: 1 }}
               >
                 Show All Expiries
@@ -2952,25 +2602,25 @@ const OptionsPanel = () => {
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
-                    {/* Selection Checkbox - Payoff Graph Visibility */}
+                    {/* Selection Checkbox */}
                     <TableCell width="40px" padding="checkbox">
-                      <Tooltip title="Select/deselect all for payoff graph">
-                        <Checkbox
-                          checked={hiddenPositions.length === 0}
-                          indeterminate={
-                            hiddenPositions.length > 0 &&
-                            hiddenPositions.length < sortedPositions.length
-                          }
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setHiddenPositions([]);
-                            } else {
-                              setHiddenPositions(sortedPositions.map((p) => p.product_symbol));
-                            }
-                          }}
-                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
-                        />
-                      </Tooltip>
+                      <Checkbox
+                        indeterminate={
+                          Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length >
+                            0 &&
+                          Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length <
+                            sortedPositions.length
+                        }
+                        checked={
+                          sortedPositions.length > 0 &&
+                          Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length ===
+                            sortedPositions.length
+                        }
+                        onChange={(e) =>
+                          e.target.checked ? selectAllStrikes() : deselectAllStrikes()
+                        }
+                        sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                      />
                     </TableCell>
                     <TableCell width="30px">
                       <Tooltip title="Column settings">
@@ -3085,27 +2735,11 @@ const OptionsPanel = () => {
                         </Tooltip>
                       </TableCell>
                     )}
-                    {visibleColumns.iv && (
-                      <TableCell align="right" sx={{ minWidth: 50 }}>
-                        <Tooltip title="Implied Volatility">
-                          <Box>IV</Box>
-                        </Tooltip>
-                      </TableCell>
-                    )}
                     {visibleColumns.pnl && <TableCell align="right">PnL</TableCell>}
                     {visibleColumns.actions && <TableCell align="center">Actions</TableCell>}
                   </TableRow>
                 </TableHead>
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={sortedPositions.map((p) => p.product_symbol)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <TableBody>
+                <TableBody>
                       {sortedPositions.map((pos, index) => {
                         const optionInfo = parseOptionSymbol(pos.product_symbol);
                         const posType = getPositionType(pos.product_symbol);
@@ -3119,32 +2753,16 @@ const OptionsPanel = () => {
 
                         const isCall = optionInfo.type === 'Call';
                         const isPut = optionInfo.type === 'Put';
-                        
-                        // Day 3 Enhancement: Row colors reflect both option type AND P&L status
-                        const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
-                        const isProfit = unrealizedPnl > 0;
-                        const isLoss = unrealizedPnl < 0;
-                        
-                        // Base colors: subtle green for calls, subtle red for puts
-                        let rowBgColor = isCall
+                        const rowBgColor = isCall
                           ? 'rgba(16, 185, 129, 0.03)'
                           : isPut
                             ? 'rgba(239, 68, 68, 0.03)'
                             : 'transparent';
-                        let rowHoverColor = isCall
+                        const rowHoverColor = isCall
                           ? 'rgba(16, 185, 129, 0.06)'
                           : isPut
                             ? 'rgba(239, 68, 68, 0.06)'
                             : 'action.hover';
-                        
-                        // Override with P&L colors if significant profit/loss
-                        if (isProfit && Math.abs(unrealizedPnl) > 5) {
-                          rowBgColor = 'rgba(34, 197, 94, 0.08)'; // Stronger green for profit
-                          rowHoverColor = 'rgba(34, 197, 94, 0.12)';
-                        } else if (isLoss && Math.abs(unrealizedPnl) > 5) {
-                          rowBgColor = 'rgba(239, 68, 68, 0.08)'; // Stronger red for loss
-                          rowHoverColor = 'rgba(239, 68, 68, 0.12)';
-                        }
 
                         // Common cell style
                         const cellSx = {
@@ -3153,24 +2771,22 @@ const OptionsPanel = () => {
                         };
 
                         return (
-                          <SortableRow key={pos.product_symbol} pos={pos}>
-                            {(attributes, listeners) => (
-                              <>
-                                {/* Selection Checkbox */}
-                                <TableCell
-                                  padding="checkbox"
+                          <TableRow key={pos.product_symbol}>
+                            {/* Selection Checkbox */}
+                            <TableCell
+                              padding="checkbox"
+                              sx={{
+                                backgroundColor: `${rowBgColor} !important`,
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Checkbox
+                                  checked={!!selectedStrikes[pos.product_symbol]}
+                                  onChange={() => toggleStrikeSelection(pos.product_symbol)}
                                   sx={{
-                                    backgroundColor: `${rowBgColor} !important`,
+                                    color: isCall ? '#10b981' : '#ef4444',
+                                    '&.Mui-checked': { color: isCall ? '#10b981' : '#ef4444' },
                                   }}
-                                >
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <Checkbox
-                                      checked={!!selectedStrikes[pos.product_symbol]}
-                                      onChange={() => toggleStrikeSelection(pos.product_symbol)}
-                                      sx={{
-                                        color: isCall ? '#10b981' : '#ef4444',
-                                        '&.Mui-checked': { color: isCall ? '#10b981' : '#ef4444' },
-                                      }}
                                     />
                                     {/* Ratio quick set buttons */}
                                     {selectedStrikes[pos.product_symbol] && (
@@ -3241,16 +2857,13 @@ const OptionsPanel = () => {
                                   </Box>
                                 </TableCell>
 
-                                {/* Drag Handle */}
+                                {/* Drag Handle - Disabled for testing */}
                                 <TableCell
                                   sx={{
                                     backgroundColor: `${rowBgColor} !important`,
                                     borderLeft: `3px solid ${posType.color}`,
-                                    cursor: 'grab',
-                                    '&:active': { cursor: 'grabbing' },
+                                    opacity: 0.3,
                                   }}
-                                  {...attributes}
-                                  {...listeners}
                                 >
                                   <DragIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
                                 </TableCell>
@@ -3267,21 +2880,31 @@ const OptionsPanel = () => {
                                       <Tooltip
                                         title={
                                           hiddenPositions.includes(pos.product_symbol)
-                                            ? 'Show in payoff graph'
-                                            : 'Hide from payoff graph'
+                                            ? 'Unhide position'
+                                            : 'Hide position (focus mode)'
                                         }
                                       >
-                                        <Checkbox
-                                          checked={!hiddenPositions.includes(pos.product_symbol)}
-                                          onChange={() => {
+                                        <IconButton
+                                          size="small"
+                                          color={
+                                            hiddenPositions.includes(pos.product_symbol)
+                                              ? 'success'
+                                              : 'default'
+                                          }
+                                          onClick={() => {
                                             setHiddenPositions((prev) =>
                                               prev.includes(pos.product_symbol)
                                                 ? prev.filter((s) => s !== pos.product_symbol)
                                                 : [...prev, pos.product_symbol]
                                             );
                                           }}
-                                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
-                                        />
+                                        >
+                                          {hiddenPositions.includes(pos.product_symbol) ? (
+                                            <CheckCircleIcon />
+                                          ) : (
+                                            <BlockIcon />
+                                          )}
+                                        </IconButton>
                                       </Tooltip>
                                       <Chip
                                         label={optionInfo.type}
@@ -3485,15 +3108,6 @@ const OptionsPanel = () => {
                                   </TableCell>
                                 )}
 
-                                {/* IV (Implied Volatility) */}
-                                {visibleColumns.iv && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    <Typography variant="body2">
-                                      {pos.iv ? `${(pos.iv * 100).toFixed(1)}%` : '-'}
-                                    </Typography>
-                                  </TableCell>
-                                )}
-
                                 {/* PnL */}
                                 {visibleColumns.pnl && (
                                   <TableCell align="right" sx={cellSx}>
@@ -3642,15 +3256,11 @@ const OptionsPanel = () => {
                                     </Box>
                                   </TableCell>
                                 )}
-                              </>
-                            )}
-                          </SortableRow>
+                          </TableRow>
                         );
                       })}
                     </TableBody>
-                  </SortableContext>
-                </DndContext>
-              </Table>
+                  </Table>
             </TableContainer>
           )}
 
@@ -3972,7 +3582,7 @@ const OptionsPanel = () => {
 
           {/* Summary */}
           {positions.length > 0 && (
-            <Box>
+            <>
               <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Chip
                   icon={<MoneyIcon />}
@@ -3997,33 +3607,13 @@ const OptionsPanel = () => {
                 />
               </Box>
 
-              {/* Greeks Summary - Only for visible positions - Day 3 Enhancement: Collapsible */}
+              {/* Greeks Summary - Only for visible positions */}
               {aggregatedGreeks.count > 0 && (
                 <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      mb: greeksCollapsed ? 0 : 1,
-                    }}
-                    onClick={() => {
-                      const newState = !greeksCollapsed;
-                      setGreeksCollapsed(newState);
-                      localStorage.setItem('options_greeks_collapsed', JSON.stringify(newState));
-                    }}
-                  >
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Portfolio Greeks ({sortedPositions.length} visible positions)
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      {greeksCollapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
-                    </Box>
-                  </Box>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                    Portfolio Greeks ({sortedPositions.length} visible positions)
+                  </Typography>
 
-                  {!greeksCollapsed && (
-                    <Box>
                   {/* Futures Equivalent - Delta as directional exposure */}
                   {(aggregatedGreeks.btcDelta !== 0 || aggregatedGreeks.ethDelta !== 0) && (
                     <Box
@@ -4176,11 +3766,9 @@ const OptionsPanel = () => {
                       </Box>
                     </Tooltip>
                   </Box>
-                  </Box>
-                  )}
                 </Box>
               )}
-            </Box>
+            </>
           )}
         </CardContent>
       </Card>
@@ -4188,18 +3776,9 @@ const OptionsPanel = () => {
       {/* Payoff Diagram */}
       {positions.length > 0 && (
         <Box sx={{ mt: 2 }}>
-          <OptionsPayoffDiagram 
-            positions={sortedPositions} 
-            hiddenPositions={hiddenPositions} 
-            futuresPositions={visibleFuturesPositions}
-          />
+          <OptionsPayoffDiagram positions={sortedPositions} hiddenPositions={[]} />
         </Box>
       )}
-      
-      {/* Live Execution Status */}
-      <Box sx={{ mt: 2 }}>
-        <LogPanel refreshTrigger={0} />
-      </Box>
 
       {/* Close Confirmation Dialog */}
       <Dialog

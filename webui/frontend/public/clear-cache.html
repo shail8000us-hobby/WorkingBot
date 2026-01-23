@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cache Cleared</title>
+    <style>
+        body {
+            background: #0a0e27;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .success { color: #10b981; font-size: 48px; margin-bottom: 20px; }
+        .message { font-size: 24px; margin-bottom: 40px; }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        button:hover { background: #2563eb; }
+        .steps {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .steps li { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="success">✓</div>
+    <div class="message">All caches cleared!</div>
+    <button onclick="window.location.href='/'">Return to Dashboard</button>
+    
+    <div class="steps">
+        <h3>What was cleared:</h3>
+        <ul>
+            <li>✓ Local Storage</li>
+            <li>✓ Session Storage</li>
+            <li>✓ IndexedDB</li>
+            <li>✓ Cache Storage</li>
+            <li>✓ Service Workers</li>
+            <li>✓ Cookies</li>
+        </ul>
+    </div>
+    
+    <script>
+        // Unregister all service workers
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                    console.log('Service Worker unregistered');
+                }
+            });
+        }
+        
+        // Clear all storage
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // Clear IndexedDB
+        if (window.indexedDB) {
+            indexedDB.databases().then(databases => {
+                databases.forEach(db => {
+                    indexedDB.deleteDatabase(db.name);
+                    console.log('IndexedDB cleared:', db.name);
+                });
+            });
+        }
+        
+        // Clear cache storage
+        if ('caches' in window) {
+            caches.keys().then(names => {
+                names.forEach(name => {
+                    caches.delete(name);
+                    console.log('Cache cleared:', name);
+                });
+            });
+        }
+        
+        console.log('ALL CACHES CLEARED');
+    </script>
+</body>
+</html>

@@ -98,6 +98,7 @@ try:
     from .routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from .routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
     from .routes.market import market_bp  # JAN 2026: Market data (spot price)
+    from .routes.ticker import ticker_bp  # JAN 2026: Ticker API (Greeks data)
     # JAN 2026: WebUI v3 API endpoints
     from .routes.trades import trades_bp
     from .routes.analytics import analytics_bp
@@ -128,6 +129,7 @@ except ImportError:
     from routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
     from routes.market import market_bp  # JAN 2026: Market data (spot price)
+    from routes.ticker import ticker_bp  # JAN 2026: Ticker API (Greeks data)
     # JAN 2026: WebUI v3 API endpoints
     from routes.trades import trades_bp
     from routes.analytics import analytics_bp
@@ -198,6 +200,7 @@ blueprints = [
     dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp,
     unified_safety_bp,  # DEC 27: Unified Risk & Safety Dashboard
     market_bp,  # JAN 2026: Market data API (spot price)
+    ticker_bp,  # JAN 2026: Ticker API (Greeks data)
     # JAN 2026: WebUI v3 endpoints
     trades_bp, analytics_bp, performance_bp, chart_bp, backtest_bp, strategies_bp
 ]
