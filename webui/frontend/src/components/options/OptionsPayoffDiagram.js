@@ -7,13 +7,11 @@
  * - Color-coded expiry area: Green fill above zero, Red fill below zero
  * - Projected profit display at current spot
  * - Real IV calculation from market prices
- * - Greeks from Delta Exchange API (with fallback to Black-Scholes)
- * - Probability of Profit (PoP) calculation
  *
- * @version 3.1.0 - API Integration + Probability Analysis
+ * @version 3.0.0 - Sensibull Style
  */
 
-import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import {
   XAxis,
   YAxis,
@@ -34,13 +32,6 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import ApiIcon from '@mui/icons-material/Api';
-import CalculateIcon from '@mui/icons-material/Calculate';
-
-// Import new utilities
-import { getContractMultiplier, RISK_FREE_RATE, DIVIDEND_YIELD } from '../../utils/constants';
-import { getGreeksWithFallback, getBatchGreeksFromAPI } from '../../utils/greeksFromAPI';
-import { calculatePoP, calculatePriceDistribution } from '../../utils/probabilityCalc';
 
 // ============================================================================
 // BLACK-SCHOLES MODEL
@@ -137,10 +128,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
   const [targetPricePercent, setTargetPricePercent] = useState(0); // Target price offset from spot (-50% to +50%)
 
-  // Greeks data source tracking
-  const [greeksSource, setGreeksSource] = useState('calculating'); // 'api', 'calculated', 'calculating'
-  const [popData, setPopData] = useState(null); // Probability of Profit data
-
   // Zoom state
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomDomain, setZoomDomain] = useState({ left: null, right: null });
@@ -164,7 +151,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
       ? parseFloat(visiblePositions[0].greeks.spot)
       : 90000;
 
-    const riskFreeRate = RISK_FREE_RATE; // Using constant (0% for crypto)
+    const riskFreeRate = 0.05;
 
     const parsed = visiblePositions.map((pos) => {
       const parts = pos.product_symbol.split('-');
@@ -237,92 +224,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
   }, [positions, hiddenPositions]);
 
   // ========================================================================
-  // CALCULATE PROBABILITY OF PROFIT
-  // ========================================================================
-  
-  useEffect(() => {
-    if (!parsedPositions || !parsedPositions.positions.length) {
-      setPopData(null);
-      return;
-    }
-
-    const { positions: parsedPos, spotPrice } = parsedPositions;
-
-    // Calculate PoP for each position
-    const positionsWithPoP = parsedPos.map((pos) => {
-      try {
-        const pop = calculatePoP({
-          spotPrice,
-          strike: pos.strike,
-          entryPrice: pos.entryPrice,
-          timeToExpiry: pos.yearsToExpiry,
-          volatility: pos.iv,
-          optionType: pos.type,
-          side: pos.size > 0 ? 'buy' : 'sell',
-        });
-
-        return {
-          symbol: pos.symbol,
-          pop: pop * 100, // Convert to percentage
-        };
-      } catch (error) {
-        console.error(`Failed to calculate PoP for ${pos.symbol}:`, error);
-        return { symbol: pos.symbol, pop: 0 };
-      }
-    });
-
-    // Calculate overall strategy PoP (weighted by position size)
-    const totalSize = parsedPos.reduce((sum, pos) => sum + Math.abs(pos.size), 0);
-    const weightedPoP = positionsWithPoP.reduce((sum, posPoP, i) => {
-      const weight = Math.abs(parsedPos[i].size) / totalSize;
-      return sum + posPoP.pop * weight;
-    }, 0);
-
-    setPopData({
-      strategyPoP: weightedPoP,
-      positions: positionsWithPoP,
-    });
-  }, [parsedPositions]);
-
-  // ========================================================================
-  // FETCH GREEKS FROM API
-  // ========================================================================
-  
-  useEffect(() => {
-    if (!parsedPositions || !parsedPositions.positions.length) {
-      setGreeksSource('calculated');
-      return;
-    }
-
-    const { positions: parsedPos } = parsedPositions;
-    
-    // Extract unique symbols to fetch
-    const symbols = [...new Set(parsedPos.map(p => p.symbol))];
-    
-    // Set loading state
-    setGreeksSource('calculating');
-
-    // Attempt to fetch Greeks from API
-    getBatchGreeksFromAPI(symbols)
-      .then((results) => {
-        // Check if we got any successful API results
-        const hasApiData = Object.values(results).some(r => r !== null);
-        
-        if (hasApiData) {
-          setGreeksSource('api');
-          console.log('✅ Using API Greeks for', symbols.length, 'symbols');
-        } else {
-          setGreeksSource('calculated');
-          console.log('⚠️ Using calculated Greeks (API unavailable)');
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to fetch Greeks from API:', error);
-        setGreeksSource('calculated');
-      });
-  }, [parsedPositions]);
-
-  // ========================================================================
   // CALCULATE PAYOFF DATA WITH BOTH LINES
   // ========================================================================
 
@@ -388,7 +289,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
       futuresPositions.forEach((futPos) => {
         const size = futPos.size;
         const entryPrice = futPos.entry_price;
-        const CONTRACT_MULTIPLIER = getContractMultiplier(parsedPos[0]?.symbol); // Dynamic multiplier
+        const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange
         
         // P&L = (current_price - entry_price) * size * multiplier
         const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
@@ -518,34 +419,8 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
     const profitPct =
       totalPremiumCollected > 0 ? ((projectedProfit / totalPremiumCollected) * 100).toFixed(2) : 0;
 
-    // Calculate probability distribution for overlay
-    let probabilityData = [];
-    if (parsedPos.length > 0) {
-      try {
-        // Use average IV and time to expiry
-        const avgIV = parsedPos.reduce((sum, p) => sum + (p.iv || 0), 0) / parsedPos.length;
-        const avgTimeToExpiry = parsedPos.reduce((sum, p) => sum + p.yearsToExpiry, 0) / parsedPos.length;
-        
-        // Calculate price distribution
-        probabilityData = calculatePriceDistribution(
-          spotPrice,
-          avgIV,
-          avgTimeToExpiry,
-          data.length // Match number of points
-        );
-      } catch (error) {
-        console.error('Failed to calculate probability distribution:', error);
-      }
-    }
-
-    // Merge probability data into chart data
-    const dataWithProbability = data.map((point, i) => ({
-      ...point,
-      probability: probabilityData[i]?.probability || 0,
-    }));
-
     return {
-      data: dataWithProbability,
+      data,
       spotPrice,
       targetPrice,
       maxProfit: isFinite(maxProfit) ? maxProfit : 0,
@@ -746,7 +621,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
 
     const expiry = payload.find((p) => p.dataKey === 'expiry')?.value ?? 0;
     const target = payload.find((p) => p.dataKey === 'target')?.value ?? 0;
-    const probability = payload.find((p) => p.dataKey === 'probability')?.value ?? 0;
 
     return (
       <Paper
@@ -768,14 +642,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             {target >= 0 ? '+' : ''}${target.toFixed(2)}
           </strong>
         </Typography>
-        {probability > 0 && (
-          <Typography variant="body2" sx={{ color: '#10b981', mt: 0.5 }}>
-            Probability:{' '}
-            <strong>
-              {probability.toFixed(1)}%
-            </strong>
-          </Typography>
-        )}
       </Paper>
     );
   };
@@ -810,35 +676,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Probability of Profit Badge */}
-          {popData && (
-            <Chip
-              label={`PoP: ${popData.strategyPoP.toFixed(1)}%`}
-              size="small"
-              sx={{
-                bgcolor: popData.strategyPoP > 50 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                color: popData.strategyPoP > 50 ? '#10b981' : '#ef4444',
-                fontWeight: 'bold',
-                fontSize: '0.75rem',
-              }}
-              title="Probability of Profit at expiry"
-            />
-          )}
-
-          {/* Greeks Source Indicator */}
-          <Chip
-            icon={greeksSource === 'api' ? <ApiIcon /> : <CalculateIcon />}
-            label={greeksSource === 'api' ? 'API Greeks' : greeksSource === 'calculated' ? 'Calc Greeks' : 'Loading...'}
-            size="small"
-            variant="outlined"
-            sx={{
-              borderColor: greeksSource === 'api' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 152, 0, 0.5)',
-              color: greeksSource === 'api' ? '#10b981' : '#ff9800',
-              fontSize: '0.7rem',
-            }}
-            title={greeksSource === 'api' ? 'Using real-time Greeks from Delta Exchange API' : 'Using calculated Greeks (fallback)'}
-          />
-
           {/* Legend */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box
@@ -857,22 +694,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             <Box sx={{ width: 24, height: 3, bgcolor: '#3b82f6' }} />
             <Typography variant="caption" color="text.secondary">
               On Target Date
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Box 
-              sx={{ 
-                width: 24, 
-                height: 3, 
-                bgcolor: '#10b981',
-                opacity: 0.7,
-                borderTop: '3px dashed #10b981',
-                height: 0,
-                marginTop: '1.5px',
-              }} 
-            />
-            <Typography variant="caption" color="text.secondary">
-              Probability
             </Typography>
           </Box>
 
@@ -999,24 +820,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
               fill: '#888',
               fontSize: 12,
             }}
-            yAxisId="left"
-          />
-          
-          {/* Secondary Y-axis for Probability (0-100%) */}
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            tickFormatter={(v) => `${v.toFixed(0)}%`}
-            stroke="#10b981"
-            tick={{ fontSize: 11, fill: '#10b981' }}
-            domain={[0, 100]}
-            label={{
-              value: 'Probability (%)',
-              angle: 90,
-              position: 'insideRight',
-              fill: '#10b981',
-              fontSize: 11,
-            }}
           />
 
           <Tooltip content={<CustomTooltip />} />
@@ -1051,7 +854,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             fill="url(#profitGradient)"
             fillOpacity={1}
             isAnimationActive={false}
-            yAxisId="left"
           />
 
           {/* Loss area (below zero) - Red fill */}
@@ -1062,7 +864,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             fill="url(#lossGradient)"
             fillOpacity={1}
             isAnimationActive={false}
-            yAxisId="left"
           />
 
           {/* On Expiry line - with gradient color (rendered as two separate paths) */}
@@ -1074,7 +875,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             dot={false}
             name="On Expiry"
             isAnimationActive={false}
-            yAxisId="left"
             // Custom stroke to show red below 0, green above - handled via CSS
             style={{ filter: 'none' }}
           />
@@ -1088,21 +888,6 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             dot={false}
             name="On Target Date"
             isAnimationActive={false}
-            yAxisId="left"
-          />
-
-          {/* Probability Distribution Overlay - Dotted Green Line */}
-          <Line
-            type="monotone"
-            dataKey="probability"
-            stroke="#10b981"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            dot={false}
-            name="Probability (%)"
-            isAnimationActive={false}
-            yAxisId="right"
-            opacity={0.7}
           />
 
           {/* Target price vertical line (dashed yellow) - Always visible at ATM/target */}
