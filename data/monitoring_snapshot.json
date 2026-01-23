@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-23T13:06:14.133303",
+  "timestamp": "2026-01-23T13:07:07.389023",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
@@ -12,7 +12,7 @@
     "price_health": {
       "active": true,
       "price": 89630.5,
-      "price_age_seconds": 4.847605228424072,
+      "price_age_seconds": 1.8124041557312012,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 44677,
+        "total_updates": 44688,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -137,7 +137,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2026-01-23T13:06:14.257065"
+      "timestamp": "2026-01-23T13:07:07.491859"
     },
     "opportunistic_recovery": {
       "active": false,
