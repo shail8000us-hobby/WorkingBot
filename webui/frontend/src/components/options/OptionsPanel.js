@@ -2373,6 +2373,62 @@ const OptionsPanel = () => {
             )}
           </Box>
 
+          {/* Portfolio Summary Stats - Day 3 Enhancement */}
+          {sortedPositions.length > 0 && (
+            <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: 'action.hover', borderRadius: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Total Positions
+                </Typography>
+                <Typography variant="h6" fontWeight="bold">
+                  {sortedPositions.length}
+                </Typography>
+              </Paper>
+              
+              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) >= 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderRadius: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Total P&L
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  fontWeight="bold"
+                  sx={{ 
+                    color: sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) >= 0 ? '#22c55e' : '#ef4444' 
+                  }}
+                >
+                  {sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0) >= 0 ? '+' : ''}
+                  ${sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0).toFixed(2)}
+                </Typography>
+              </Paper>
+              
+              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: 'action.hover', borderRadius: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Winners / Losers
+                </Typography>
+                <Typography variant="h6" fontWeight="bold">
+                  <span style={{ color: '#22c55e' }}>
+                    {sortedPositions.filter(p => (Number(p.unrealized_pnl) || 0) > 0).length}
+                  </span>
+                  {' / '}
+                  <span style={{ color: '#ef4444' }}>
+                    {sortedPositions.filter(p => (Number(p.unrealized_pnl) || 0) < 0).length}
+                  </span>
+                </Typography>
+              </Paper>
+              
+              <Paper sx={{ p: 1.5, flex: 1, minWidth: 150, bgcolor: 'action.hover', borderRadius: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Win Rate
+                </Typography>
+                <Typography variant="h6" fontWeight="bold">
+                  {sortedPositions.length > 0 
+                    ? ((sortedPositions.filter(p => (Number(p.unrealized_pnl) || 0) > 0).length / sortedPositions.length) * 100).toFixed(0)
+                    : 0}%
+                </Typography>
+              </Paper>
+            </Box>
+          )}
+
           {/* Per-Expiry Max Loss Settings */}
           {positions.length > 0 && uniqueExpiries.length > 0 && (
             <ExpiryMaxLossPanel
@@ -3063,16 +3119,32 @@ const OptionsPanel = () => {
 
                         const isCall = optionInfo.type === 'Call';
                         const isPut = optionInfo.type === 'Put';
-                        const rowBgColor = isCall
+                        
+                        // Day 3 Enhancement: Row colors reflect both option type AND P&L status
+                        const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
+                        const isProfit = unrealizedPnl > 0;
+                        const isLoss = unrealizedPnl < 0;
+                        
+                        // Base colors: subtle green for calls, subtle red for puts
+                        let rowBgColor = isCall
                           ? 'rgba(16, 185, 129, 0.03)'
                           : isPut
                             ? 'rgba(239, 68, 68, 0.03)'
                             : 'transparent';
-                        const rowHoverColor = isCall
+                        let rowHoverColor = isCall
                           ? 'rgba(16, 185, 129, 0.06)'
                           : isPut
                             ? 'rgba(239, 68, 68, 0.06)'
                             : 'action.hover';
+                        
+                        // Override with P&L colors if significant profit/loss
+                        if (isProfit && Math.abs(unrealizedPnl) > 5) {
+                          rowBgColor = 'rgba(34, 197, 94, 0.08)'; // Stronger green for profit
+                          rowHoverColor = 'rgba(34, 197, 94, 0.12)';
+                        } else if (isLoss && Math.abs(unrealizedPnl) > 5) {
+                          rowBgColor = 'rgba(239, 68, 68, 0.08)'; // Stronger red for loss
+                          rowHoverColor = 'rgba(239, 68, 68, 0.12)';
+                        }
 
                         // Common cell style
                         const cellSx = {
