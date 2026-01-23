@@ -5,8 +5,43 @@
 - **Day 1 Completed**: Thursday, Jan 23, 2026 - 6:00 PM (4 hours)
 - **Day 2 Started**: Thursday, Jan 23, 2026 - 6:00 PM (same day)
 - **Day 2 Completed**: Thursday, Jan 23, 2026 - 11:00 PM (5 hours)
-- **Total Time**: 9 hours (Days 1-2 complete!)
-- **Current Status**: ✅ **Day 2 COMPLETE!**
+- **Day 3 Started**: Friday, Jan 24, 2026 - 9:00 AM
+- **Day 3 Morning Completed**: Friday, Jan 24, 2026 - 11:30 AM (2.5 hours)
+- **Total Time**: 11.5 hours (Days 1-2 complete, Day 3 in progress)
+- **Current Status**: 🟡 **Day 3 IN PROGRESS** (Morning complete, afternoon pending)
+
+---
+
+## 🟡 Day 3 In Progress (2.5h so far) - Options Panel UI Improvements
+
+### Morning: Quick Filters & Collapsible Greeks (2.5h)
+**Changes Made to `webui/frontend/src/components/options/OptionsPanel.js`:**
+- ✅ Added P&L filter state with localStorage persistence
+  - Options: All / Profit / Loss
+  - Color coding: Default / Green / Red chips
+  - Filters sortedPositions based on unrealized_pnl
+- ✅ Added Moneyness filter state with localStorage persistence
+  - Options: All / ITM / ATM / OTM
+  - Color coding: Default / Green / Blue / Orange chips
+  - ITM: Call if spot/strike >1.02, Put if spot/strike <0.98
+  - ATM: Between 0.98 and 1.02
+  - OTM: Call if spot/strike <0.98, Put if spot/strike >1.02
+- ✅ Made Portfolio Greeks section collapsible
+  - Click to expand/collapse with icon indicator
+  - State persisted in localStorage
+  - Reduces clutter when viewing 20+ positions
+- ✅ Fixed circular dependency (moved indexPrices before sortedPositions)
+- ✅ Added active filter count display
+- ✅ Quick filter chips UI with visual feedback
+
+**Result:** Options panel now has powerful filtering to navigate large portfolios quickly
+
+### Afternoon: Visual Hierarchy & Color Coding (Pending - 1.5h)
+**Planned Changes:**
+- Add row background colors for P&L (subtle green/red)
+- Improve column grouping visually
+- Better spacing and layout
+- Position name truncation for mobile
 
 ---
 
