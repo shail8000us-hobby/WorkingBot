@@ -187,6 +187,35 @@ const OptionsPanel = () => {
     }
   });
 
+  // Quick Filters (persisted) - Day 3 Enhancement
+  const [pnlFilter, setPnlFilter] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_pnl_filter');
+      return saved || 'all'; // 'all', 'profit', 'loss'
+    } catch {
+      return 'all';
+    }
+  });
+
+  const [moneynessFilter, setMoneynessFilter] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_moneyness_filter');
+      return saved || 'all'; // 'all', 'itm', 'atm', 'otm'
+    } catch {
+      return 'all';
+    }
+  });
+
+  // Greeks panel collapsed state (persisted) - Day 3 Enhancement
+  const [greeksCollapsed, setGreeksCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_greeks_collapsed');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
   // Sort state
   const [symbolSort, setSymbolSort] = useState(null); // null = no sort, 'grouped' = CE/PE grouped
   const [strikeSort, setStrikeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
@@ -591,6 +620,16 @@ const OptionsPanel = () => {
     localStorage.setItem('options_selected_expiries', JSON.stringify([]));
   };
 
+  // Live index prices state (fetched from WebSocket, not from positions)
+  const { btcPrice, ethPrice } = useMarketPrices();
+  const indexPrices = useMemo(
+    () => ({
+      BTC: btcPrice || 0,
+      ETH: ethPrice || 0,
+    }),
+    [btcPrice, ethPrice]
+  );
+
   // Sort positions by custom order or default (days to expiration)
   const sortedPositions = useMemo(() => {
     // First filter out hidden positions
@@ -599,6 +638,38 @@ const OptionsPanel = () => {
     // Apply expiry filter if any expiries are selected
     if (selectedExpiries.length > 0) {
       filtered = filtered.filter((p) => selectedExpiries.includes(getExpiryCode(p.product_symbol)));
+    }
+
+    // Apply P&L filter - Day 3 Enhancement
+    if (pnlFilter === 'profit') {
+      filtered = filtered.filter((p) => (p.unrealized_pnl || 0) > 0);
+    } else if (pnlFilter === 'loss') {
+      filtered = filtered.filter((p) => (p.unrealized_pnl || 0) < 0);
+    }
+
+    // Apply Moneyness filter - Day 3 Enhancement
+    if (moneynessFilter !== 'all') {
+      filtered = filtered.filter((p) => {
+        const optionInfo = parseOptionSymbol(p.product_symbol);
+        const spotPrice = indexPrices.BTC; // Use BTC price for both (ETH would need separate logic)
+        const strike = optionInfo.strike;
+        
+        if (!strike || !spotPrice) return true; // Keep if can't determine
+        
+        const moneyness = spotPrice / strike;
+        
+        if (moneynessFilter === 'itm') {
+          // ITM: Call if spot > strike, Put if spot < strike
+          return optionInfo.isCall ? moneyness > 1.02 : moneyness < 0.98;
+        } else if (moneynessFilter === 'atm') {
+          // ATM: within 2% of strike
+          return moneyness >= 0.98 && moneyness <= 1.02;
+        } else if (moneynessFilter === 'otm') {
+          // OTM: Call if spot < strike, Put if spot > strike
+          return optionInfo.isCall ? moneyness < 0.98 : moneyness > 1.02;
+        }
+        return true;
+      });
     }
 
     // Always sort by expiry first (nearest first)
@@ -658,17 +729,7 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  }, [positions, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort]);
-
-  // Live index prices state (fetched from WebSocket, not from positions)
-  const { btcPrice, ethPrice } = useMarketPrices();
-  const indexPrices = useMemo(
-    () => ({
-      BTC: btcPrice || 0,
-      ETH: ethPrice || 0,
-    }),
-    [btcPrice, ethPrice]
-  );
+  }, [positions, hiddenPositions, customOrder, selectedExpiries, pnlFilter, moneynessFilter, symbolSort, strikeSort, indexPrices]);
 
   // Calculate aggregated greeks for currently visible positions (respects expiry filter and hidden positions)
   const aggregatedGreeks = useMemo(() => {
@@ -2209,6 +2270,108 @@ const OptionsPanel = () => {
               })}
             </Box>
           )}
+
+          {/* Quick Filters - Day 3 Enhancement */}
+          <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', bgcolor: 'action.hover', p: 1.5, borderRadius: 1 }}>
+            {/* P&L Filter */}
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                📊 P&L:
+              </Typography>
+              <Chip
+                label="All"
+                size="small"
+                onClick={() => {
+                  setPnlFilter('all');
+                  localStorage.setItem('options_pnl_filter', 'all');
+                }}
+                color={pnlFilter === 'all' ? 'primary' : 'default'}
+                variant={pnlFilter === 'all' ? 'filled' : 'outlined'}
+              />
+              <Chip
+                label="Profit"
+                size="small"
+                onClick={() => {
+                  setPnlFilter('profit');
+                  localStorage.setItem('options_pnl_filter', 'profit');
+                }}
+                color={pnlFilter === 'profit' ? 'success' : 'default'}
+                variant={pnlFilter === 'profit' ? 'filled' : 'outlined'}
+              />
+              <Chip
+                label="Loss"
+                size="small"
+                onClick={() => {
+                  setPnlFilter('loss');
+                  localStorage.setItem('options_pnl_filter', 'loss');
+                }}
+                color={pnlFilter === 'loss' ? 'error' : 'default'}
+                variant={pnlFilter === 'loss' ? 'filled' : 'outlined'}
+              />
+            </Box>
+
+            {/* Moneyness Filter */}
+            <Divider orientation="vertical" flexItem />
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                🎯 Moneyness:
+              </Typography>
+              <Chip
+                label="All"
+                size="small"
+                onClick={() => {
+                  setMoneynessFilter('all');
+                  localStorage.setItem('options_moneyness_filter', 'all');
+                }}
+                color={moneynessFilter === 'all' ? 'primary' : 'default'}
+                variant={moneynessFilter === 'all' ? 'filled' : 'outlined'}
+              />
+              <Chip
+                label="ITM"
+                size="small"
+                onClick={() => {
+                  setMoneynessFilter('itm');
+                  localStorage.setItem('options_moneyness_filter', 'itm');
+                }}
+                color={moneynessFilter === 'itm' ? 'success' : 'default'}
+                variant={moneynessFilter === 'itm' ? 'filled' : 'outlined'}
+              />
+              <Chip
+                label="ATM"
+                size="small"
+                onClick={() => {
+                  setMoneynessFilter('atm');
+                  localStorage.setItem('options_moneyness_filter', 'atm');
+                }}
+                color={moneynessFilter === 'atm' ? 'info' : 'default'}
+                variant={moneynessFilter === 'atm' ? 'filled' : 'outlined'}
+              />
+              <Chip
+                label="OTM"
+                size="small"
+                onClick={() => {
+                  setMoneynessFilter('otm');
+                  localStorage.setItem('options_moneyness_filter', 'otm');
+                }}
+                color={moneynessFilter === 'otm' ? 'warning' : 'default'}
+                variant={moneynessFilter === 'otm' ? 'filled' : 'outlined'}
+              />
+            </Box>
+
+            {/* Active filter count */}
+            {(pnlFilter !== 'all' || moneynessFilter !== 'all') && (
+              <>
+                <Divider orientation="vertical" flexItem />
+                <Chip
+                  label={`${sortedPositions.length} shown`}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  sx={{ fontWeight: 'bold' }}
+                />
+              </>
+            )}
+          </Box>
 
           {/* Per-Expiry Max Loss Settings */}
           {positions.length > 0 && uniqueExpiries.length > 0 && (
@@ -3762,13 +3925,33 @@ const OptionsPanel = () => {
                 />
               </Box>
 
-              {/* Greeks Summary - Only for visible positions */}
+              {/* Greeks Summary - Only for visible positions - Day 3 Enhancement: Collapsible */}
               {aggregatedGreeks.count > 0 && (
                 <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                    Portfolio Greeks ({sortedPositions.length} visible positions)
-                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      mb: greeksCollapsed ? 0 : 1,
+                    }}
+                    onClick={() => {
+                      const newState = !greeksCollapsed;
+                      setGreeksCollapsed(newState);
+                      localStorage.setItem('options_greeks_collapsed', JSON.stringify(newState));
+                    }}
+                  >
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Portfolio Greeks ({sortedPositions.length} visible positions)
+                    </Typography>
+                    <IconButton size="small">
+                      {greeksCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                    </IconButton>
+                  </Box>
 
+                  {!greeksCollapsed && (
+                    <>
                   {/* Futures Equivalent - Delta as directional exposure */}
                   {(aggregatedGreeks.btcDelta !== 0 || aggregatedGreeks.ethDelta !== 0) && (
                     <Box
@@ -3921,6 +4104,8 @@ const OptionsPanel = () => {
                       </Box>
                     </Tooltip>
                   </Box>
+                  </>
+                  )}
                 </Box>
               )}
             </>
