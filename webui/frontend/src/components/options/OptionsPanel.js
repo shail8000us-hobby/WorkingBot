@@ -4017,9 +4017,9 @@ const OptionsPanel = () => {
                     <Typography variant="subtitle2" color="text.secondary">
                       Portfolio Greeks ({sortedPositions.length} visible positions)
                     </Typography>
-                    <IconButton size="small">
-                      {greeksCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-                    </IconButton>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      {greeksCollapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
+                    </Box>
                   </Box>
 
                   {!greeksCollapsed && (
