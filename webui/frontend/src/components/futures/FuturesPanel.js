@@ -11,7 +11,7 @@
  * This component only displays futures positions, never touches options logic.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Card,
@@ -39,6 +39,10 @@ import {
   DialogContentText,
   DialogActions,
   Checkbox,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -102,6 +106,16 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
     }
   });
 
+  // Day 4 Enhancement: Collapse state for asset groups (BTC/ETH/etc)
+  const [assetGroupsCollapsed, setAssetGroupsCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('futures_asset_groups_collapsed');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Save hidden futures positions to localStorage
   useEffect(() => {
     localStorage.setItem('futures_hidden_positions', JSON.stringify(hiddenFuturesPositions));
@@ -111,6 +125,42 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
   useEffect(() => {
     localStorage.setItem('futures_pending_orders_collapsed', JSON.stringify(pendingOrdersCollapsed));
   }, [pendingOrdersCollapsed]);
+
+  // Save asset groups collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('futures_asset_groups_collapsed', JSON.stringify(assetGroupsCollapsed));
+  }, [assetGroupsCollapsed]);
+
+  // Day 4 Enhancement: Group positions by underlying asset (BTC, ETH, etc)
+  const groupedPositions = useMemo(() => {
+    const groups = {};
+    
+    positions.forEach(pos => {
+      // Extract asset from symbol (e.g., "BTCUSD" -> "BTC", "BTC-USDT" -> "BTC")
+      const symbol = pos.product_symbol || '';
+      let asset = 'OTHER';
+      
+      if (symbol.includes('BTC')) asset = 'BTC';
+      else if (symbol.includes('ETH')) asset = 'ETH';
+      else if (symbol.includes('SOL')) asset = 'SOL';
+      else if (symbol.includes('AVAX')) asset = 'AVAX';
+      
+      if (!groups[asset]) {
+        groups[asset] = [];
+      }
+      groups[asset].push(pos);
+    });
+    
+    return groups;
+  }, [positions]);
+
+  // Toggle asset group collapsed state
+  const toggleAssetGroup = (asset) => {
+    setAssetGroupsCollapsed(prev => ({
+      ...prev,
+      [asset]: !prev[asset]
+    }));
+  };
 
   // Toggle futures position visibility
   const toggleFuturesPositionVisibility = useCallback((productSymbol) => {
@@ -510,12 +560,50 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
             return null;
           })()}
 
-          {/* Positions Table */}
+          {/* Day 4 Enhancement: Positions Grouped by Asset */}
           {!loading && positions.length > 0 && (
-            <>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {Object.entries(groupedPositions).map(([asset, assetPositions]) => {
+                const totalPnl = assetPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0);
+                const isCollapsed = assetGroupsCollapsed[asset] || false;
+                
+                return (
+                  <Accordion
+                    key={asset}
+                    expanded={!isCollapsed}
+                    onChange={() => toggleAssetGroup(asset)}
+                    sx={{ bgcolor: 'background.paper', borderRadius: 1 }}
+                  >
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon />}
+                      sx={{
+                        bgcolor: 'rgba(14, 165, 233, 0.05)',
+                        '&:hover': { bgcolor: 'rgba(14, 165, 233, 0.1)' }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                          {asset}
+                        </Typography>
+                        <Chip 
+                          label={`${assetPositions.length} position${assetPositions.length > 1 ? 's' : ''}`} 
+                          size="small" 
+                          color="primary"
+                          variant="outlined"
+                        />
+                        <Chip
+                          icon={totalPnl >= 0 ? <TrendingUp /> : <TrendingDown />}
+                          label={`Total: ${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`}
+                          size="small"
+                          color={totalPnl >= 0 ? 'success' : 'error'}
+                          sx={{ fontWeight: 'bold' }}
+                        />
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ p: 0 }}>
               <TableContainer
                 component={Paper}
-                sx={{ bgcolor: 'background.paper', borderRadius: 1 }}
+                sx={{ bgcolor: 'background.paper', borderRadius: 0 }}
               >
                 <Table size="small">
                   <TableHead>
@@ -523,16 +611,16 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                       <TableCell padding="checkbox" width="40px">
                         <Tooltip title="Select/deselect all for payoff graph">
                           <Checkbox
-                            checked={hiddenFuturesPositions.length === 0}
+                            checked={assetPositions.every(p => !hiddenFuturesPositions.includes(p.product_symbol))}
                             indeterminate={
-                              hiddenFuturesPositions.length > 0 &&
-                              hiddenFuturesPositions.length < positions.length
+                              assetPositions.some(p => !hiddenFuturesPositions.includes(p.product_symbol)) &&
+                              assetPositions.some(p => hiddenFuturesPositions.includes(p.product_symbol))
                             }
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setHiddenFuturesPositions([]);
+                                setHiddenFuturesPositions(prev => prev.filter(s => !assetPositions.find(p => p.product_symbol === s)));
                               } else {
-                                setHiddenFuturesPositions(positions.map((p) => p.product_symbol));
+                                setHiddenFuturesPositions(prev => [...new Set([...prev, ...assetPositions.map(p => p.product_symbol)])]);
                               }
                             }}
                             sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
@@ -580,7 +668,7 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {positions.map((pos) => {
+                    {assetPositions.map((pos) => {
                       const pnl = formatPnL(pos.unrealized_pnl);
                       const productId = pos.product_id;
                       const hasMaxLoss = maxLossSettings[productId]?.enabled;
@@ -760,7 +848,11 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                   </TableBody>
                 </Table>
               </TableContainer>
-            </>
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
+            </Box>
           )}
 
           {/* Pending Orders */}
