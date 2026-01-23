@@ -218,19 +218,19 @@ class AsyncGridBot:
             self.symbol = instance_config.symbol
             self.product_id = instance_config.product_id
             self.mode = instance_config.mode.value
-            self.lower_price = int(instance_config.grid.geometry.lower)
-            self.upper_price = int(instance_config.grid.geometry.upper)
-            self.grid_step = int(instance_config.grid.geometry.step)
-            self.ref_price = int(instance_config.grid.geometry.reference)
-            self.max_positions = int(instance_config.grid.limits.max_open_positions)
-            self.lot_size = int(instance_config.grid.limits.lot_size)
-            self.max_qty_per_order = int(instance_config.grid.limits.max_qty_per_order)
-            self.strict_grid = instance_config.grid.behavior.strict_grid.lower() == 'true'
+            self.lower_price = instance_config.grid.geometry.lower
+            self.upper_price = instance_config.grid.geometry.upper
+            self.grid_step = instance_config.grid.geometry.step
+            self.ref_price = instance_config.grid.geometry.reference
+            self.max_positions = instance_config.grid.limits.max_open_positions
+            self.lot_size = instance_config.grid.limits.lot_size
+            self.max_qty_per_order = instance_config.grid.limits.max_qty_per_order
+            self.strict_grid = instance_config.grid.behavior.strict_grid
             self.rung_snap_mode = instance_config.grid.behavior.rung_snap_mode
-            self.seed_initial_count = int(instance_config.grid.behavior.seed_initial_count) if instance_config.grid.behavior.seed_initial_count else 0
+            self.seed_initial_count = instance_config.grid.behavior.seed_initial_count
             
             # Instance-specific safety limits
-            self.max_account_loss_inr_display = float(instance_config.safety.max_account_loss_inr)
+            self.max_account_loss_inr_display = instance_config.safety.max_account_loss_inr
             self.min_liq_distance_pct_display = instance_config.safety.min_liquidation_distance_pct
             
             # Instance RSI config (for logging)
@@ -238,7 +238,7 @@ class AsyncGridBot:
             
             # Smart gap fill
             if instance_config.grid.smart_gap_fill:
-                self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled.lower() == 'true'
+                self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled
             else:
                 self.smart_gap_fill = False
             
@@ -276,19 +276,19 @@ class AsyncGridBot:
             self.symbol = instance_config.symbol
             self.product_id = instance_config.product_id
             self.mode = instance_config.mode.value
-            self.lower_price = int(instance_config.grid.geometry.lower)
-            self.upper_price = int(instance_config.grid.geometry.upper)
-            self.grid_step = int(instance_config.grid.geometry.step)
-            self.ref_price = int(instance_config.grid.geometry.reference)
-            self.max_positions = int(instance_config.grid.limits.max_open_positions)
-            self.lot_size = int(instance_config.grid.limits.lot_size)
-            self.max_qty_per_order = int(instance_config.grid.limits.max_qty_per_order)
-            self.strict_grid = instance_config.grid.behavior.strict_grid.lower() == 'true'
+            self.lower_price = instance_config.grid.geometry.lower
+            self.upper_price = instance_config.grid.geometry.upper
+            self.grid_step = instance_config.grid.geometry.step
+            self.ref_price = instance_config.grid.geometry.reference
+            self.max_positions = instance_config.grid.limits.max_open_positions
+            self.lot_size = instance_config.grid.limits.lot_size
+            self.max_qty_per_order = instance_config.grid.limits.max_qty_per_order
+            self.strict_grid = instance_config.grid.behavior.strict_grid
             self.rung_snap_mode = instance_config.grid.behavior.rung_snap_mode
-            self.seed_initial_count = int(instance_config.grid.behavior.seed_initial_count) if instance_config.grid.behavior.seed_initial_count else 0
+            self.seed_initial_count = instance_config.grid.behavior.seed_initial_count
             
             # Instance-specific safety limits
-            self.max_account_loss_inr_display = float(instance_config.safety.max_account_loss_inr)
+            self.max_account_loss_inr_display = instance_config.safety.max_account_loss_inr
             self.min_liq_distance_pct_display = instance_config.safety.min_liquidation_distance_pct
             
             # Instance RSI config (for logging)
@@ -296,7 +296,7 @@ class AsyncGridBot:
             
             # Smart gap fill
             if instance_config.grid.smart_gap_fill:
-                self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled.lower() == 'true'
+                self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled
             else:
                 self.smart_gap_fill = False
             
@@ -324,30 +324,30 @@ class AsyncGridBot:
                     f"Set symbols.{symbol_name}.enabled=true to enable it"
                 )
             
-            # Set symbol-specific attributes (convert string config to appropriate types)
+            # Set symbol-specific attributes
             self.instance_name = f"{symbol_name}_{symbol_config.mode.value}"  # v6.0 compat
             self.symbol_name = symbol_name
             self.symbol = symbol_name
             self.product_id = symbol_config.product_id
             self.mode = symbol_config.mode.value
-            self.lower_price = int(symbol_config.grid.geometry.lower)
-            self.upper_price = int(symbol_config.grid.geometry.upper)
-            self.grid_step = int(symbol_config.grid.geometry.step)
-            self.ref_price = int(symbol_config.grid.geometry.reference)
-            self.max_positions = int(symbol_config.grid.limits.max_open_positions)
-            self.lot_size = int(symbol_config.grid.limits.lot_size)
-            self.max_qty_per_order = int(symbol_config.grid.limits.max_qty_per_order)
-            self.strict_grid = symbol_config.grid.behavior.strict_grid.lower() == 'true'
+            self.lower_price = symbol_config.grid.geometry.lower
+            self.upper_price = symbol_config.grid.geometry.upper
+            self.grid_step = symbol_config.grid.geometry.step
+            self.ref_price = symbol_config.grid.geometry.reference
+            self.max_positions = symbol_config.grid.limits.max_open_positions
+            self.lot_size = symbol_config.grid.limits.lot_size
+            self.max_qty_per_order = symbol_config.grid.limits.max_qty_per_order
+            self.strict_grid = symbol_config.grid.behavior.strict_grid
             self.rung_snap_mode = symbol_config.grid.behavior.rung_snap_mode
-            self.seed_initial_count = int(symbol_config.grid.behavior.seed_initial_count) if symbol_config.grid.behavior.seed_initial_count else 0
+            self.seed_initial_count = symbol_config.grid.behavior.seed_initial_count
             
             # Symbol-specific safety limits (for display)
-            self.max_account_loss_inr_display = float(symbol_config.safety.max_account_loss_inr)
+            self.max_account_loss_inr_display = symbol_config.safety.max_account_loss_inr
             self.min_liq_distance_pct_display = symbol_config.safety.min_liquidation_distance_pct
             
             # Smart gap fill
             if symbol_config.grid.smart_gap_fill:
-                self.smart_gap_fill = symbol_config.grid.smart_gap_fill.enabled.lower() == 'true'
+                self.smart_gap_fill = symbol_config.grid.smart_gap_fill.enabled
             else:
                 self.smart_gap_fill = False
             

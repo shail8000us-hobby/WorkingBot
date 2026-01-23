@@ -1,14 +1,9 @@
 {
   "event": "bot_shutdown",
-  "timestamp": 1768872790.070334,
+  "timestamp": 1768913300.3091998,
   "mode": "LONG",
-  "pending_buy": {
-    "order_id": 1130976261,
-    "price": 92000.0,
-    "size": 5,
-    "timestamp": 1768872759.278102
-  },
+  "pending_buy": null,
   "pending_sell": null,
   "reason": "graceful_shutdown",
-  "bot_uptime": 40.35219407081604
+  "bot_uptime": 40505.62193894386
 }

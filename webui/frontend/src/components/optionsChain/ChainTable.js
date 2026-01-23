@@ -126,6 +126,7 @@ const ChainTable = ({
   strategyContext,
   selectedLegs,
   builderMode,
+  expiry,
 }) => {
   const [moneynessFilter, setMoneynessFilter] = useState('atm10');
 
@@ -182,9 +183,13 @@ const ChainTable = ({
       side: side,
       bid: optionData.bid,
       ask: optionData.ask,
+      best_bid_price: optionData.best_bid_price || optionData.bid,
+      best_ask_price: optionData.best_ask_price || optionData.ask,
       ltp: optionData.ltp || optionData.mark_price || (optionData.bid + optionData.ask) / 2,
+      mark_price: optionData.mark_price,
       iv: optionData.iv,
       delta: optionData.delta,
+      expiry: expiry,
     });
   };
 

@@ -779,6 +779,10 @@ def get_pending_orders():
         # Format orders for frontend
         formatted_orders = []
         for order in orders_list:
+            # Handle None values for limit_price (market orders, stop orders, etc.)
+            limit_price = order.get('limit_price')
+            price_value = float(limit_price) if limit_price is not None else 0.0
+            
             formatted_orders.append({
                 'id': order.get('id'),
                 'symbol': order.get('product', {}).get('symbol', 'UNKNOWN'),
@@ -786,7 +790,7 @@ def get_pending_orders():
                 'side': order.get('side'),
                 'size': order.get('size'),
                 'unfilled_size': order.get('unfilled_size'),
-                'price': float(order.get('limit_price', 0)),
+                'price': price_value,
                 'order_type': order.get('order_type'),
                 'state': order.get('state'),
                 'created_at': order.get('created_at'),

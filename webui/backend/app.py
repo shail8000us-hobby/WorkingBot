@@ -580,10 +580,10 @@ def handle_connect():
             _log_tailer_thread.start()
             print("✅ Log tailer thread started")
         
-        # Send recent logs on connect (last 100 lines)
+        # Send recent logs on connect (last 30 lines)
         try:
             from webui.backend.utils.file_helpers import get_recent_logs
-            recent_logs = get_recent_logs(100)
+            recent_logs = get_recent_logs(30)
             if recent_logs:
                 for log_line in recent_logs:
                     emit('log_entry', {'message': log_line.strip()})

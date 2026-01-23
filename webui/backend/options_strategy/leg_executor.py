@@ -131,8 +131,14 @@ class LegExecutor:
             )
         
         # Phase 2: Get current prices for limit orders
+        # Only fetch if not already provided from frontend (current_price == 0)
         if order_type == "limit":
-            await self._fetch_leg_prices(strategy, price_tolerance_pct)
+            has_prices = all(leg.current_price > 0 for leg in strategy.legs)
+            if has_prices:
+                log.info("   Using prices from frontend (mid-price calculation)")
+            else:
+                log.info("   Fetching prices from exchange")
+                await self._fetch_leg_prices(strategy, price_tolerance_pct)
         
         # Phase 3: Execute legs
         strategy.status = StrategyStatus.EXECUTING.value
@@ -470,8 +476,9 @@ class LegExecutor:
                     retry_after=wait_time
                 )
         
-        # Try market order first for reliability, fallback handled below
-        use_market = order_type == 'market' or leg.current_price == 0
+        # Use market order only if explicitly requested
+        # If current_price is set (from frontend limit_price), use it for limit orders
+        use_market = order_type == 'market'
         
         for attempt in range(self._max_retries):
             # Build order data

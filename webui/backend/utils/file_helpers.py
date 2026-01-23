@@ -11,14 +11,14 @@ from pathlib import Path
 from typing import List, Optional
 
 
-def get_recent_logs(lines: int = 100, log_file: str = "bot/logs/bot.log") -> List[str]:
+def get_recent_logs(lines: int = 30, log_file: str = "bot/logs/bot.log") -> List[str]:
     """
     Get recent log lines from file
     
     ✅ FIXED: Changed default path from logs/gridbot.log to bot/logs/bot.log
     
     Args:
-        lines: Number of lines to return (default: 100)
+        lines: Number of lines to return (default: 30)
         log_file: Path to log file (default: bot/logs/bot.log)
         
     Returns:

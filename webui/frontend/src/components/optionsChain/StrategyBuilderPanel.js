@@ -144,6 +144,7 @@ export default function StrategyBuilderPanel({
   const [expanded, setExpanded] = useState(initialExpanded);
   const [executing, setExecuting] = useState(false);
   const [strategyName, setStrategyName] = useState('My Custom Strategy');
+  const [error, setError] = useState(null);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -183,12 +184,64 @@ export default function StrategyBuilderPanel({
 
   // Convert DDMMYYYY to YYMMDD format for API
   const convertExpiryFormat = (exp) => {
-    if (!exp || exp.length !== 8) return exp;
+    // Validate input
+    if (!exp) {
+      console.error('Expiry is null or undefined');
+      return null;
+    }
+    
+    // Convert to string if needed
+    const expStr = String(exp).trim();
+    
+    console.log('Converting expiry:', expStr);
+    
+    if (expStr.length !== 8) {
+      console.error(`Invalid expiry length: ${expStr} (expected 8 characters, got ${expStr.length})`);
+      return null;
+    }
+    
+    // Validate it's all digits
+    if (!/^\d{8}$/.test(expStr)) {
+      console.error(`Expiry contains non-numeric characters: ${expStr}`);
+      return null;
+    }
+    
     // DDMMYYYY -> YYMMDD
-    const day = exp.slice(0, 2);
-    const month = exp.slice(2, 4);
-    const year = exp.slice(6, 8); // Last 2 digits of year
-    return `${year}${month}${day}`;
+    const day = expStr.slice(0, 2);
+    const month = expStr.slice(2, 4);
+    const year = expStr.slice(6, 8); // Last 2 digits of year
+    
+    const result = `${year}${month}${day}`;
+    
+    console.log(`Converted ${expStr} (DDMMYYYY) -> ${result} (YYMMDD)`);
+    
+    // Validate result
+    if (result.length !== 6 || isNaN(result)) {
+      console.error(`Invalid expiry conversion result: ${result}`);
+      return null;
+    }
+    
+    return result;
+  };
+
+  // Calculate mid-price (average of bid and ask) for smart limit orders
+  const calculateMidPrice = (leg) => {
+    const bid = leg.bid || leg.best_bid_price || 0;
+    const ask = leg.ask || leg.best_ask_price || 0;
+    
+    console.log(`  Calculating mid-price - Bid: ${bid}, Ask: ${ask}`);
+    
+    // If both bid and ask are available, use mid-price
+    if (bid > 0 && ask > 0) {
+      const mid = (bid + ask) / 2;
+      console.log(`  Mid-price: ${mid}`);
+      return mid;
+    }
+    
+    // Fallback to mark price or LTP
+    const fallback = leg.mark_price || leg.ltp || leg.premium || 0;
+    console.log(`  Using fallback price: ${fallback}`);
+    return fallback;
   };
 
   // Handle execute
@@ -196,31 +249,115 @@ export default function StrategyBuilderPanel({
     if (legs.length === 0) return;
 
     setExecuting(true);
+    setError(null); // Clear previous errors
+    
     try {
-      // Convert expiry to API format (YYMMDD)
-      const apiExpiry = convertExpiryFormat(expiry);
+      console.log('=== Starting Strategy Execution ===');
+      console.log('Legs:', JSON.stringify(legs, null, 2));
+      
+      // Validate we have legs
+      if (!legs || legs.length === 0) {
+        throw new Error('No legs selected. Please add at least one leg.');
+      }
+      
+      // Validate each leg has a symbol (format: C-BTC-90000-270226)
+      for (let i = 0; i < legs.length; i++) {
+        if (!legs[i].symbol) {
+          throw new Error(`Leg ${i + 1} is missing a symbol. Please ensure all legs are properly selected from the options chain.`);
+        }
+      }
+      
+      // Extract expiry from first leg's symbol for backend validation
+      // Symbol format: C-BTC-90000-270226 (last 6 digits are DDMMYY)
+      let backendExpiry = expiry; // Use dropdown value if available
+      
+      if (!backendExpiry && legs[0]?.symbol) {
+        // Extract from symbol: C-BTC-90000-270226 -> 270226
+        const symbolParts = legs[0].symbol.split('-');
+        const ddmmyy = symbolParts[symbolParts.length - 1]; // Last part is date
+        
+        if (ddmmyy && ddmmyy.length === 6) {
+          // Convert DDMMYY to DDMMYYYY for backend
+          const dd = ddmmyy.slice(0, 2);
+          const mm = ddmmyy.slice(2, 4);
+          const yy = ddmmyy.slice(4, 6);
+          const yyyy = '20' + yy; // Assume 20xx century
+          backendExpiry = dd + mm + yyyy; // DDMMYYYY
+          console.log(`Extracted expiry from symbol: ${ddmmyy} -> ${backendExpiry}`);
+        }
+      }
+      
+      if (!backendExpiry) {
+        throw new Error('Cannot determine expiry date. Please ensure legs are properly selected.');
+      }
 
-      // Format legs for API
-      const formattedLegs = legs.map((leg) => ({
-        option_type: leg.type,
-        strike: leg.strike,
-        side: leg.side,
-        quantity: leg.quantity || 1,
-        symbol: leg.symbol,
-        expiry: convertExpiryFormat(leg.expiry || expiry),
-      }));
+      // Format legs for API with limit orders at mid-price
+      // Backend needs option_type/strike for tracking, Delta Exchange uses product_symbol
+      const formattedLegs = legs.map((leg, index) => {
+        console.log(`\n=== Processing leg ${index + 1} ===`);
+        console.log(`  Full leg object:`, leg);
+        console.log(`  Quantity value: leg.quantity = ${leg.quantity}`);
+        console.log(`  Will send size = ${leg.quantity || 1}`);
+        
+        // Validate symbol exists (format: C-BTC-90000-270226)
+        if (!leg.symbol) {
+          const errorMsg = `Missing symbol for leg ${index + 1}`;
+          console.error(errorMsg);
+          throw new Error(errorMsg);
+        }
+        
+        // Calculate mid-price for smart limit order
+        const midPrice = calculateMidPrice(leg);
+        
+        // Round to 1 decimal place (standard for options on Delta Exchange)
+        const limitPrice = Math.round(midPrice * 10) / 10;
+        
+        console.log(`  Pricing details:`, {
+          symbol: leg.symbol,
+          bid: leg.bid || leg.best_bid_price || 0,
+          ask: leg.ask || leg.best_ask_price || 0,
+          midPrice: midPrice,
+          limitPrice: limitPrice,
+        });
+        
+        // Backend expects: option_type, strike for tracking
+        // Delta Exchange uses: product_symbol for orders
+        const formattedLeg = {
+          // Backend tracking fields
+          option_type: leg.type,       // "call" or "put"
+          strike: leg.strike,          // e.g., 90000
+          // Delta Exchange order fields
+          product_symbol: leg.symbol,  // e.g., "C-BTC-90000-270226"
+          size: leg.quantity || 1,     // Use "size" not "quantity"
+          side: leg.side,              // "buy" or "sell"
+          order_type: 'limit_order',
+          limit_price: limitPrice.toString(),
+        };
+        
+        console.log(`  Final formatted leg:`, formattedLeg);
+        return formattedLeg;
+      });
+      
+      // Delta Exchange India: Send expiry for backend validation
+      // Backend converts it internally, but actual orders use symbol format
+      const payload = {
+        name: strategyName,
+        underlying,
+        expiry: backendExpiry, // DDMMYYYY format for backend
+        legs: formattedLegs,
+      };
+      
+      console.log('Final payload:', JSON.stringify(payload, null, 2));
 
       // Call parent handler or API directly
       if (onExecute) {
-        await onExecute({
-          name: strategyName,
-          underlying,
-          expiry: apiExpiry,
-          legs: formattedLegs,
-        });
+        await onExecute(payload);
       }
     } catch (err) {
       console.error('Execution failed:', err);
+      setError(err.message || 'Failed to execute strategy');
+      // Also show alert for immediate feedback
+      alert(err.message || 'Failed to execute strategy');
     } finally {
       setExecuting(false);
     }
@@ -397,7 +534,18 @@ export default function StrategyBuilderPanel({
 
                       {/* Price */}
                       <TableCell sx={{ py: 0.5, fontSize: '0.75rem' }}>
-                        {(leg.premium || leg.ltp || 0).toFixed(1)}
+                        {(() => {
+                          const bid = leg.bid || leg.best_bid_price || 0;
+                          const ask = leg.ask || leg.best_ask_price || 0;
+                          const midPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : (leg.premium || leg.ltp || 0);
+                          return (
+                            <Tooltip title={`Bid: ${bid.toFixed(1)} | Ask: ${ask.toFixed(1)} | Mid: ${midPrice.toFixed(1)}`}>
+                              <span style={{ cursor: 'help', borderBottom: '1px dotted #666' }}>
+                                {midPrice.toFixed(1)}
+                              </span>
+                            </Tooltip>
+                          );
+                        })()}
                       </TableCell>
 
                       {/* Delete */}
@@ -535,6 +683,13 @@ export default function StrategyBuilderPanel({
         {/* Strategy Name & Execute */}
         {legs.length > 0 && (
           <Box sx={{ p: 2 }}>
+            {/* Error Alert */}
+            {error && (
+              <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            
             <TextField
               fullWidth
               size="small"

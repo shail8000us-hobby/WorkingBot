@@ -27,6 +27,8 @@ class ConfigFileHandler(FileSystemEventHandler):
         self.callback = callback
         self.last_modified = 0
         self.debounce_seconds = 1  # Debounce rapid file changes
+        self._callback_in_progress = False  # Re-entrancy guard
+        self._pending_task = None  # Track active task
         
     def on_modified(self, event):
         """Handle file modification event"""
@@ -43,8 +45,24 @@ class ConfigFileHandler(FileSystemEventHandler):
             return
         self.last_modified = now
         
-        # Trigger callback
-        asyncio.create_task(self.callback(Path(event.src_path)))
+        # RE-ENTRANCY GUARD: Prevent recursive callback amplification
+        if self._callback_in_progress:
+            return
+        
+        # Cancel pending task if still running
+        if self._pending_task and not self._pending_task.done():
+            return
+        
+        # Trigger callback with guard
+        self._callback_in_progress = True
+        self._pending_task = asyncio.create_task(self._safe_callback(Path(event.src_path)))
+    
+    async def _safe_callback(self, path: Path):
+        """Execute callback with re-entrancy protection"""
+        try:
+            await self.callback(path)
+        finally:
+            self._callback_in_progress = False
 
 
 class ConfigWatcher:

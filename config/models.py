@@ -1012,34 +1012,34 @@ class InstanceSafetyConfig(BaseModel):
 
 class InstanceGridGeometry(BaseModel):
     """Instance-specific grid geometry"""
-    lower: str = Field(description="Grid lower boundary")
-    upper: str = Field(description="Grid upper boundary")
-    step: str = Field(description="Grid step size")
-    reference: str = Field(description="Reference price for starting")
+    lower: int = Field(gt=0, description="Grid lower boundary")
+    upper: int = Field(gt=0, description="Grid upper boundary")
+    step: int = Field(gt=0, description="Grid step size")
+    reference: int = Field(gt=0, description="Reference price for starting")
 
 
 class InstanceGridLimits(BaseModel):
     """Instance-specific position limits"""
-    max_open_positions: str = Field(description="Maximum open positions")
-    lot_size: str = Field(description="Lot size for trades")
-    max_open_orders: int = Field(description="Maximum open orders")
-    max_qty_per_order: str = Field(description="Maximum quantity per order")
+    max_open_positions: int = Field(gt=0, description="Maximum open positions")
+    lot_size: int = Field(gt=0, description="Lot size for trades")
+    max_open_orders: int = Field(gt=0, description="Maximum open orders")
+    max_qty_per_order: int = Field(gt=0, description="Maximum quantity per order")
 
 
 class InstanceGridBehavior(BaseModel):
     """Instance-specific grid behavior"""
-    strict_grid: str = Field(default="true", description="Enforce strict grid levels")
+    strict_grid: bool = Field(default=True, description="Enforce strict grid levels")
     rung_snap_mode: RungSnapMode = Field(default=RungSnapMode.BELOW, description="Grid level snapping")
-    tick_size: str = Field(description="Tick size for price rounding")
-    dynamic_tick_size: Optional[str] = Field(default="false", description="Enable dynamic tick size")
-    seed_initial_count: Optional[str] = Field(default="0", description="Seed initial order count")
+    tick_size: float = Field(gt=0, description="Tick size for price rounding")
+    dynamic_tick_size: Optional[bool] = Field(default=False, description="Enable dynamic tick size")
+    seed_initial_count: Optional[int] = Field(default=0, description="Seed initial order count")
 
 
 class InstanceSmartGapFill(BaseModel):
     """Instance-specific smart gap fill config"""
-    enabled: str = Field(default="false", description="Enable smart gap fill")
+    enabled: bool = Field(default=False, description="Enable smart gap fill")
     order_type: str = Field(default="maker", description="Order type for gap fill")
-    max_levels: str = Field(default="0", description="Maximum gap levels to fill")
+    max_levels: int = Field(default=0, ge=0, description="Maximum gap levels to fill")
 
 
 class InstanceGridConfig(BaseModel):
@@ -1128,35 +1128,35 @@ class CapitalAllocationConfig(BaseModel):
 
 class SymbolGridGeometry(BaseModel):
     """Symbol-specific grid geometry"""
-    lower: str = Field(description="Grid lower boundary")
-    upper: str = Field(description="Grid upper boundary")
-    step: str = Field(description="Grid step size")
-    reference: str = Field(description="Reference price for starting")
+    lower: int = Field(gt=0, description="Grid lower boundary")
+    upper: int = Field(gt=0, description="Grid upper boundary")
+    step: int = Field(gt=0, description="Grid step size")
+    reference: int = Field(gt=0, description="Reference price for starting")
 
 
 class SymbolGridLimits(BaseModel):
     """Symbol-specific position limits"""
-    max_open_positions: str = Field(description="Maximum open positions")
-    lot_size: str = Field(description="Lot size for LONG trades")
-    short_lot_size: Optional[str] = Field(default="1", description="Lot size for SHORT trades")
-    max_open_orders: int = Field(description="Maximum open orders")
-    max_qty_per_order: str = Field(description="Maximum quantity per order")
+    max_open_positions: int = Field(gt=0, description="Maximum open positions")
+    lot_size: int = Field(gt=0, description="Lot size for LONG trades")
+    short_lot_size: Optional[int] = Field(default=1, description="Lot size for SHORT trades")
+    max_open_orders: int = Field(gt=0, description="Maximum open orders")
+    max_qty_per_order: int = Field(gt=0, description="Maximum quantity per order")
 
 
 class SymbolGridBehavior(BaseModel):
     """Symbol-specific grid behavior"""
-    strict_grid: str = Field(default="true", description="Enforce strict grid levels")
+    strict_grid: bool = Field(default=True, description="Enforce strict grid levels")
     rung_snap_mode: RungSnapMode = Field(default=RungSnapMode.BELOW, description="Grid level snapping")
-    tick_size: str = Field(description="Tick size for price rounding")
-    dynamic_tick_size: Optional[str] = Field(default="false", description="Enable dynamic tick size")
-    seed_initial_count: Optional[str] = Field(default="0", description="Seed initial order count")
+    tick_size: float = Field(gt=0, description="Tick size for price rounding")
+    dynamic_tick_size: Optional[bool] = Field(default=False, description="Enable dynamic tick size")
+    seed_initial_count: Optional[int] = Field(default=0, description="Seed initial order count")
 
 
 class SymbolSmartGapFill(BaseModel):
     """Symbol-specific smart gap fill config"""
-    enabled: str = Field(default="false", description="Enable smart gap fill")
+    enabled: bool = Field(default=False, description="Enable smart gap fill")
     order_type: str = Field(default="maker", description="Order type for gap fill")
-    max_levels: str = Field(default="0", description="Maximum gap levels to fill")
+    max_levels: int = Field(default=0, ge=0, description="Maximum gap levels to fill")
 
 
 class SymbolGridConfig(BaseModel):
@@ -1169,8 +1169,8 @@ class SymbolGridConfig(BaseModel):
 
 class SymbolSafety(BaseModel):
     """Symbol-specific safety limits"""
-    max_account_loss_inr: str = Field(description="Maximum account loss in INR")
-    min_liquidation_distance_pct: float = Field(description="Minimum liquidation distance %")
+    max_account_loss_inr: int = Field(gt=0, description="Maximum account loss in INR")
+    min_liquidation_distance_pct: float = Field(gt=0, description="Minimum liquidation distance %")
 
 
 class SymbolConfig(BaseModel):
@@ -1303,9 +1303,9 @@ class RootConfig(BaseModel):
                 
                 # Validate grid geometry
                 try:
-                    lower = int(instance_config.grid.geometry.lower)
-                    upper = int(instance_config.grid.geometry.upper)
-                    step = int(instance_config.grid.geometry.step)
+                    lower = instance_config.grid.geometry.lower
+                    upper = instance_config.grid.geometry.upper
+                    step = instance_config.grid.geometry.step
                     
                     levels = (upper - lower) / step
                     if levels > 100:
@@ -1340,11 +1340,11 @@ class RootConfig(BaseModel):
         # V5.0 multi-symbol validation (deprecated)
         if self.symbols:
             for symbol_name, symbol_config in self.symbols.items():
-                # Convert string fields to int for validation
+                # Validate grid levels
                 try:
-                    lower = int(symbol_config.grid.geometry.lower)
-                    upper = int(symbol_config.grid.geometry.upper)
-                    step = int(symbol_config.grid.geometry.step)
+                    lower = symbol_config.grid.geometry.lower
+                    upper = symbol_config.grid.geometry.upper
+                    step = symbol_config.grid.geometry.step
                     
                     # Ensure grid step creates reasonable number of levels
                     levels = (upper - lower) / step

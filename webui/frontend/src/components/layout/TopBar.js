@@ -18,6 +18,8 @@ import { useState, useEffect } from 'react';
 import SymbolSelector from '../SymbolSelector';
 import { useInstance } from '../../context/InstanceContext';
 import useMarketPrices from '../../hooks/useMarketPrices';
+import WalletBalanceIndicator from '../WalletBalanceIndicator';
+import UnrealizedPnLIndicator from '../UnrealizedPnLIndicator';
 
 const qualityIconMap = {
   excellent: SignalHigh,
@@ -109,30 +111,38 @@ function TopBar({
       }}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-        {/* Left: Brand */}
-        <motion.div
-          className="flex items-center gap-2 rounded-lg bg-slate-800/50 px-3 py-1.5"
-          layout
-        >
+        {/* Left: Brand & Wallet Balance */}
+        <div className="flex items-center gap-3">
           <motion.div
-            className={clsx(
-              'grid h-8 w-8 place-items-center rounded border',
-              running
-                ? 'border-emerald-400/50 bg-emerald-500/10'
-                : 'border-rose-400/40 bg-rose-500/10'
-            )}
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+            className="flex items-center gap-2 rounded-lg bg-slate-800/50 px-3 py-1.5"
+            layout
           >
-            <Bot className={clsx('h-4 w-4', running ? 'text-emerald-400' : 'text-rose-400')} />
+            <motion.div
+              className={clsx(
+                'grid h-8 w-8 place-items-center rounded border',
+                running
+                  ? 'border-emerald-400/50 bg-emerald-500/10'
+                  : 'border-rose-400/40 bg-rose-500/10'
+              )}
+              animate={{ scale: [1, 1.05, 1] }}
+              transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+            >
+              <Bot className={clsx('h-4 w-4', running ? 'text-emerald-400' : 'text-rose-400')} />
+            </motion.div>
+            <div>
+              <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
+                SSR BOT
+              </p>
+              <p className="text-xs font-semibold text-slate-100">{running ? 'Online' : 'Standby'}</p>
+            </div>
           </motion.div>
-          <div>
-            <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
-              SSR BOT
-            </p>
-            <p className="text-xs font-semibold text-slate-100">{running ? 'Online' : 'Standby'}</p>
-          </div>
-        </motion.div>
+          
+          {/* Wallet Balance Indicator */}
+          <WalletBalanceIndicator />
+          
+          {/* Unrealized PnL Indicator */}
+          <UnrealizedPnLIndicator />
+        </div>
 
         {/* Center: System Status & Symbol Selector */}
         <div className="flex items-center gap-3">

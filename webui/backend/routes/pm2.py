@@ -465,7 +465,7 @@ def pm2_get_logs(name):
                 'message': 'PM2 not enabled'
             }), 400
         
-        lines = int(request.args.get('lines', 100))
+        lines = int(request.args.get('lines', 30))
         log_type = request.args.get('type', 'all')
         
         pm2 = get_pm2_adapter()

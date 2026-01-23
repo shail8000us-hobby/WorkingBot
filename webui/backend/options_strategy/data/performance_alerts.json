@@ -3,12 +3,12 @@
     "type": "high_drawdown",
     "message": "Drawdown (484%) exceeds limit (20%)",
     "severity": "critical",
-    "timestamp": "2026-01-20T08:53:24.922600"
+    "timestamp": "2026-01-20T23:38:42.002335"
   },
   {
     "type": "style_drift",
     "message": "Style match (0%) below threshold (50%)",
     "severity": "info",
-    "timestamp": "2026-01-20T08:53:24.922608"
+    "timestamp": "2026-01-20T23:38:42.002344"
   }
 ]

@@ -744,7 +744,7 @@ def pm2_bot_logs(mode):
                 'message': 'PM2 is not enabled'
             }), 400
         
-        lines = request.args.get('lines', 100, type=int)
+        lines = request.args.get('lines', 30, type=int)
         
         success, logs = pm2.get_bot_logs(mode, lines)
         

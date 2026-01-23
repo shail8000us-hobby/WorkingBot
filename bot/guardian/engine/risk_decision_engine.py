@@ -43,16 +43,27 @@ class ConfigChangeHandler(FileSystemEventHandler):
     def __init__(self, callback):
         self.callback = callback
         self.last_modified = 0
+        self._callback_in_progress = False  # Re-entrancy guard
         
     def on_modified(self, event):
         # Debounce - only trigger if >2 seconds since last change
         if event.src_path.endswith('config.yaml'):
             log.debug(f"Config file modified detected: {event.src_path}")
             now = time.time()
+            
+            # RE-ENTRANCY GUARD: Prevent recursive callback amplification
+            if self._callback_in_progress:
+                log.debug(f"Config callback already in progress, skipping")
+                return
+            
             if now - self.last_modified > 2:
                 self.last_modified = now
                 log.info(f"📝 Triggering config reload (debounced)")
-                self.callback()
+                self._callback_in_progress = True
+                try:
+                    self.callback()
+                finally:
+                    self._callback_in_progress = False
             else:
                 log.debug(f"Config change ignored (debounce: {now - self.last_modified:.1f}s < 2s)")
 

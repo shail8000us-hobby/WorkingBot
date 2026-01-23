@@ -374,7 +374,7 @@ class PM2Adapter:
         
         return bots
     
-    def get_bot_logs(self, mode: str = 'live', lines: int = 100) -> Tuple[bool, str]:
+    def get_bot_logs(self, mode: str = 'live', lines: int = 30) -> Tuple[bool, str]:
         """
         Get bot logs from PM2
         
@@ -681,7 +681,7 @@ class PM2Adapter:
         self._run_pm2_command(['save', '--force'])
         return True, 'All processes restarted successfully'
     
-    def get_logs(self, name: str, lines: int = 100, log_type: str = 'all') -> Dict[str, List[str]]:
+    def get_logs(self, name: str, lines: int = 30, log_type: str = 'all') -> Dict[str, List[str]]:
         """
         Get logs for a specific process
         

@@ -72,6 +72,8 @@ import {
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
   VolumeUp as VolumeIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -92,6 +94,7 @@ import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/apiShim';
 import soundManager from '../../utils/soundManager';
 import OptionsPayoffDiagram from './OptionsPayoffDiagram';
+import LogPanel from '../optionsChain/LogPanel';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
@@ -135,11 +138,21 @@ const OptionsPanel = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [positions, setPositions] = useState([]);
+  const [futuresPositions, setFuturesPositions] = useState([]);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   // Pending orders state (from Delta Exchange)
   const [pendingOrders, setPendingOrders] = useState([]);
   const [pendingOrdersError, setPendingOrdersError] = useState(null);
+  // Collapse state for pending orders
+  const [pendingOrdersCollapsed, setPendingOrdersCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_pending_orders_collapsed');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
   // Focus mode: hidden positions (persisted)
   const [hiddenPositions, setHiddenPositions] = useState(() => {
     try {
@@ -149,6 +162,11 @@ const OptionsPanel = () => {
       return [];
     }
   });
+
+  // Save pending orders collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('options_pending_orders_collapsed', JSON.stringify(pendingOrdersCollapsed));
+  }, [pendingOrdersCollapsed]);
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = useState(() => {
     try {
@@ -159,13 +177,13 @@ const OptionsPanel = () => {
     }
   });
 
-  // Expiry filter (persisted)
-  const [expiryFilter, setExpiryFilter] = useState(() => {
+  // Expiry filter (persisted) - now supports multiple selection
+  const [selectedExpiries, setSelectedExpiries] = useState(() => {
     try {
-      const saved = localStorage.getItem('options_expiry_filter');
-      return saved || 'all';
+      const saved = localStorage.getItem('options_selected_expiries');
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return 'all';
+      return [];
     }
   });
 
@@ -202,6 +220,7 @@ const OptionsPanel = () => {
             ask: true,
             sltp: true,
             maxLoss: true,
+            iv: true,
             pnl: true,
             actions: true,
           };
@@ -219,6 +238,7 @@ const OptionsPanel = () => {
         ask: true,
         sltp: true,
         maxLoss: true,
+        iv: true,
         pnl: true,
         actions: true,
       };
@@ -239,6 +259,7 @@ const OptionsPanel = () => {
     { key: 'ask', label: 'Ask' },
     { key: 'sltp', label: 'SL/TP' },
     { key: 'maxLoss', label: 'Max Loss' },
+    { key: 'iv', label: 'IV' },
     { key: 'pnl', label: 'PnL' },
     { key: 'actions', label: 'Actions' },
   ];
@@ -402,10 +423,6 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('options_poll_interval', pollInterval);
   }, [pollInterval]);
-  // Save expiryFilter to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('options_expiry_filter', expiryFilter);
-  }, [expiryFilter]);
   // Save lastUsedSize to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('options_last_used_size', lastUsedSize);
@@ -557,14 +574,31 @@ const OptionsPanel = () => {
     });
   }, []);
 
+  // Toggle expiry selection (multi-select)
+  const toggleExpirySelection = (expiry) => {
+    setSelectedExpiries((prev) => {
+      const newSelection = prev.includes(expiry)
+        ? prev.filter((e) => e !== expiry) // Remove if already selected
+        : [...prev, expiry]; // Add if not selected
+      localStorage.setItem('options_selected_expiries', JSON.stringify(newSelection));
+      return newSelection;
+    });
+  };
+
+  // Clear all expiry selections (show all)
+  const clearExpirySelection = () => {
+    setSelectedExpiries([]);
+    localStorage.setItem('options_selected_expiries', JSON.stringify([]));
+  };
+
   // Sort positions by custom order or default (days to expiration)
   const sortedPositions = useMemo(() => {
     // First filter out hidden positions
     let filtered = positions.filter((p) => !hiddenPositions.includes(p.product_symbol));
 
-    // Apply expiry filter if not 'all'
-    if (expiryFilter !== 'all') {
-      filtered = filtered.filter((p) => getExpiryCode(p.product_symbol) === expiryFilter);
+    // Apply expiry filter if any expiries are selected
+    if (selectedExpiries.length > 0) {
+      filtered = filtered.filter((p) => selectedExpiries.includes(getExpiryCode(p.product_symbol)));
     }
 
     // Always sort by expiry first (nearest first)
@@ -624,7 +658,7 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  }, [positions, hiddenPositions, customOrder, expiryFilter, symbolSort, strikeSort]);
+  }, [positions, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
@@ -866,8 +900,13 @@ const OptionsPanel = () => {
     try {
       const { data } = await api.get('/api/options/positions');
       if (data?.success) {
-        setPositions(data.positions || []);
-        hasPositionsRef.current = (data.positions || []).length > 0;
+        const rawPositions = data.positions || [];
+        
+        // Enrich positions with IV data from Delta Exchange
+        const positionsWithIV = await enrichPositionsWithIV(rawPositions);
+        
+        setPositions(positionsWithIV);
+        hasPositionsRef.current = positionsWithIV.length > 0;
         // Only clear error if we got fresh (non-cached) data
         if (!data.cached) {
           setError(null);
@@ -893,6 +932,76 @@ const OptionsPanel = () => {
       }
     }
   }, []); // No dependencies - safe
+
+  // Fetch futures positions for combined payoff diagram
+  const fetchFuturesPositions = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/futures/positions');
+      if (data?.success) {
+        setFuturesPositions(data.positions || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch futures positions:', err);
+      // Don't show error for futures, just log it
+    }
+  }, []);
+
+  // Filter futures positions based on hidden state (from localStorage)
+  const visibleFuturesPositions = useMemo(() => {
+    try {
+      const hiddenFutures = JSON.parse(localStorage.getItem('futures_hidden_positions') || '[]');
+      return futuresPositions.filter((pos) => !hiddenFutures.includes(pos.product_symbol));
+    } catch {
+      return futuresPositions;
+    }
+  }, [futuresPositions]);
+
+  // Enrich positions with IV data from Delta Exchange
+  const enrichPositionsWithIV = async (positions) => {
+    try {
+      // Fetch IV data for all positions' symbols
+      const symbols = positions.map(pos => pos.product_symbol).filter(Boolean);
+      
+      if (symbols.length === 0) {
+        return positions;
+      }
+
+      // Fetch ticker data from Delta Exchange API (public endpoint, no auth needed)
+      const tickerPromises = symbols.map(async (symbol) => {
+        try {
+          const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
+          const result = await response.json();
+          
+          if (result?.success && result?.result) {
+            const quotes = result.result.quotes || {};
+            // Use average of bid_iv and ask_iv
+            const bidIV = parseFloat(quotes.bid_iv) || 0;
+            const askIV = parseFloat(quotes.ask_iv) || 0;
+            const avgIV = bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV);
+            
+            return { symbol, iv: avgIV };
+          }
+          return { symbol, iv: null };
+        } catch (err) {
+          console.warn(`Failed to fetch IV for ${symbol}:`, err.message);
+          return { symbol, iv: null };
+        }
+      });
+
+      const ivData = await Promise.all(tickerPromises);
+      const ivMap = Object.fromEntries(ivData.map(d => [d.symbol, d.iv]));
+
+      // Enrich positions with IV data
+      return positions.map(pos => ({
+        ...pos,
+        iv: ivMap[pos.product_symbol] || null
+      }));
+    } catch (err) {
+      console.error('Failed to enrich positions with IV:', err);
+      // Return original positions if enrichment fails
+      return positions;
+    }
+  };
 
   // Load SL/TP settings for all positions
   const loadSLTPSettings = useCallback(async () => {
@@ -997,11 +1106,12 @@ const OptionsPanel = () => {
         loadSLTPSettings(),
         loadMaxLossSettings(),
         fetchPendingOrders(),
+        fetchFuturesPositions(),
       ]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders]);
+  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders, fetchFuturesPositions]);
 
   // Auto-refresh every pollInterval ms
   useEffect(() => {
@@ -1009,10 +1119,11 @@ const OptionsPanel = () => {
       fetchPositions();
       fetchStatus();
       fetchPendingOrders();
+      fetchFuturesPositions();
       loadMaxLossSettings(); // Refresh max loss settings too
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchPositions, fetchStatus, fetchPendingOrders, loadMaxLossSettings, pollInterval]);
+  }, [fetchPositions, fetchStatus, fetchPendingOrders, fetchFuturesPositions, loadMaxLossSettings, pollInterval]);
 
   // Cleanup active batch polling intervals on unmount
   useEffect(() => {
@@ -1135,7 +1246,7 @@ const OptionsPanel = () => {
   // Manual refresh
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStatus(), fetchPositions(), fetchPendingOrders()]);
+    await Promise.all([fetchStatus(), fetchPositions(), fetchPendingOrders(), fetchFuturesPositions()]);
     setRefreshing(false);
   };
 
@@ -2061,19 +2172,19 @@ const OptionsPanel = () => {
             </Box>
           </Box>
 
-          {/* Expiry Filter Tabs */}
+          {/* Expiry Filter Tabs - Multi-Select */}
           {uniqueExpiries.length > 1 && (
             <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
               <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
                 📅 Expiry:
               </Typography>
               <Chip
-                label="All"
+                label={selectedExpiries.length === 0 ? "All" : `All (${selectedExpiries.length} selected)`}
                 size="small"
-                onClick={() => setExpiryFilter('all')}
-                color={expiryFilter === 'all' ? 'primary' : 'default'}
-                variant={expiryFilter === 'all' ? 'filled' : 'outlined'}
-                sx={{ fontWeight: expiryFilter === 'all' ? 'bold' : 'normal' }}
+                onClick={clearExpirySelection}
+                color={selectedExpiries.length === 0 ? 'primary' : 'default'}
+                variant={selectedExpiries.length === 0 ? 'filled' : 'outlined'}
+                sx={{ fontWeight: selectedExpiries.length === 0 ? 'bold' : 'normal' }}
               />
               {uniqueExpiries.map((expiry) => {
                 const day = expiry.substring(0, 2);
@@ -2083,15 +2194,16 @@ const OptionsPanel = () => {
                 const posCount = positions.filter(
                   (p) => getExpiryCode(p.product_symbol) === expiry
                 ).length;
+                const isSelected = selectedExpiries.includes(expiry);
                 return (
                   <Chip
                     key={expiry}
                     label={`${formattedDate} (${posCount})`}
                     size="small"
-                    onClick={() => setExpiryFilter(expiry)}
-                    color={expiryFilter === expiry ? 'primary' : 'default'}
-                    variant={expiryFilter === expiry ? 'filled' : 'outlined'}
-                    sx={{ fontWeight: expiryFilter === expiry ? 'bold' : 'normal' }}
+                    onClick={() => toggleExpirySelection(expiry)}
+                    color={isSelected ? 'primary' : 'default'}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    sx={{ fontWeight: isSelected ? 'bold' : 'normal' }}
                   />
                 );
               })}
@@ -2451,28 +2563,39 @@ const OptionsPanel = () => {
           <FuturesPanel pollInterval={pollInterval} />
 
           {/* Pending Orders Panel */}
-          {pendingOrders.length > 0 && (
+          {!pendingOrdersError && (
             <Box
               sx={{
                 mb: 2,
                 p: 2,
                 borderRadius: 1,
                 border: '1px solid',
-                borderColor: 'warning.main',
+                borderColor: pendingOrders.length > 0 ? 'warning.main' : 'divider',
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <TimerIcon sx={{ color: 'warning.main' }} />
+                <TimerIcon sx={{ color: pendingOrders.length > 0 ? 'warning.main' : 'text.secondary' }} />
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
                   ⏳ Pending Orders ({pendingOrders.length})
                 </Typography>
-                <Chip
-                  label="Live"
-                  size="small"
-                  color="error"
-                  sx={{ animation: 'pulse 1.5s infinite', ml: 'auto' }}
-                />
+                {pendingOrders.length > 0 && (
+                  <Chip
+                    label="Live"
+                    size="small"
+                    color="error"
+                    sx={{ animation: 'pulse 1.5s infinite' }}
+                  />
+                )}
+                <IconButton 
+                  size="small" 
+                  onClick={() => setPendingOrdersCollapsed(!pendingOrdersCollapsed)}
+                  sx={{ ml: 'auto', color: 'text.secondary' }}
+                >
+                  {pendingOrdersCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                </IconButton>
               </Box>
+              <Collapse in={!pendingOrdersCollapsed}>
+              {pendingOrders.length > 0 ? (
               <TableContainer
                 component={Paper}
                 sx={{ maxHeight: 200, bgcolor: 'background.paper' }}
@@ -2558,6 +2681,14 @@ const OptionsPanel = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              ) : (
+                <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No pending orders
+                  </Typography>
+                </Paper>
+              )}
+              </Collapse>
             </Box>
           )}
 
@@ -2585,13 +2716,13 @@ const OptionsPanel = () => {
                 Open positions manually on Delta Exchange to manage them here
               </Typography>
             </Paper>
-          ) : sortedPositions.length === 0 && expiryFilter !== 'all' ? (
+          ) : sortedPositions.length === 0 && selectedExpiries.length > 0 ? (
             <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'action.hover' }}>
-              <Typography color="text.secondary">No positions for selected expiry</Typography>
+              <Typography color="text.secondary">No positions for selected {selectedExpiries.length === 1 ? 'expiry' : 'expiries'}</Typography>
               <Button
                 size="small"
                 variant="outlined"
-                onClick={() => setExpiryFilter('all')}
+                onClick={clearExpirySelection}
                 sx={{ mt: 1 }}
               >
                 Show All Expiries
@@ -2602,25 +2733,25 @@ const OptionsPanel = () => {
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
-                    {/* Selection Checkbox */}
+                    {/* Selection Checkbox - Payoff Graph Visibility */}
                     <TableCell width="40px" padding="checkbox">
-                      <Checkbox
-                        indeterminate={
-                          Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length >
-                            0 &&
-                          Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length <
-                            sortedPositions.length
-                        }
-                        checked={
-                          sortedPositions.length > 0 &&
-                          Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length ===
-                            sortedPositions.length
-                        }
-                        onChange={(e) =>
-                          e.target.checked ? selectAllStrikes() : deselectAllStrikes()
-                        }
-                        sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
-                      />
+                      <Tooltip title="Select/deselect all for payoff graph">
+                        <Checkbox
+                          checked={hiddenPositions.length === 0}
+                          indeterminate={
+                            hiddenPositions.length > 0 &&
+                            hiddenPositions.length < sortedPositions.length
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setHiddenPositions([]);
+                            } else {
+                              setHiddenPositions(sortedPositions.map((p) => p.product_symbol));
+                            }
+                          }}
+                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                        />
+                      </Tooltip>
                     </TableCell>
                     <TableCell width="30px">
                       <Tooltip title="Column settings">
@@ -2732,6 +2863,13 @@ const OptionsPanel = () => {
                       <TableCell align="center" sx={{ minWidth: 60 }}>
                         <Tooltip title="Max Loss per strike - auto square-off when exceeded">
                           <Box>Max Loss</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.iv && (
+                      <TableCell align="right" sx={{ minWidth: 50 }}>
+                        <Tooltip title="Implied Volatility">
+                          <Box>IV</Box>
                         </Tooltip>
                       </TableCell>
                     )}
@@ -2894,31 +3032,21 @@ const OptionsPanel = () => {
                                       <Tooltip
                                         title={
                                           hiddenPositions.includes(pos.product_symbol)
-                                            ? 'Unhide position'
-                                            : 'Hide position (focus mode)'
+                                            ? 'Show in payoff graph'
+                                            : 'Hide from payoff graph'
                                         }
                                       >
-                                        <IconButton
-                                          size="small"
-                                          color={
-                                            hiddenPositions.includes(pos.product_symbol)
-                                              ? 'success'
-                                              : 'default'
-                                          }
-                                          onClick={() => {
+                                        <Checkbox
+                                          checked={!hiddenPositions.includes(pos.product_symbol)}
+                                          onChange={() => {
                                             setHiddenPositions((prev) =>
                                               prev.includes(pos.product_symbol)
                                                 ? prev.filter((s) => s !== pos.product_symbol)
                                                 : [...prev, pos.product_symbol]
                                             );
                                           }}
-                                        >
-                                          {hiddenPositions.includes(pos.product_symbol) ? (
-                                            <CheckCircleIcon />
-                                          ) : (
-                                            <BlockIcon />
-                                          )}
-                                        </IconButton>
+                                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                                        />
                                       </Tooltip>
                                       <Chip
                                         label={optionInfo.type}
@@ -3119,6 +3247,15 @@ const OptionsPanel = () => {
                                       settings={maxLossSettings[pos.product_symbol]}
                                       onUpdate={handleMaxLossUpdate}
                                     />
+                                  </TableCell>
+                                )}
+
+                                {/* IV (Implied Volatility) */}
+                                {visibleColumns.iv && (
+                                  <TableCell align="right" sx={cellSx}>
+                                    <Typography variant="body2">
+                                      {pos.iv ? `${(pos.iv * 100).toFixed(1)}%` : '-'}
+                                    </Typography>
                                   </TableCell>
                                 )}
 
@@ -3794,9 +3931,18 @@ const OptionsPanel = () => {
       {/* Payoff Diagram */}
       {positions.length > 0 && (
         <Box sx={{ mt: 2 }}>
-          <OptionsPayoffDiagram positions={sortedPositions} hiddenPositions={[]} />
+          <OptionsPayoffDiagram 
+            positions={sortedPositions} 
+            hiddenPositions={hiddenPositions} 
+            futuresPositions={visibleFuturesPositions}
+          />
         </Box>
       )}
+      
+      {/* Live Execution Status */}
+      <Box sx={{ mt: 2 }}>
+        <LogPanel refreshTrigger={0} />
+      </Box>
 
       {/* Close Confirmation Dialog */}
       <Dialog

@@ -38,6 +38,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  Checkbox,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -54,7 +55,6 @@ import {
 } from '@mui/icons-material';
 import api from '../../utils/apiShim';
 import FuturesTradeDialog from './FuturesTradeDialog';
-import FuturesPayoffGraph from './FuturesPayoffGraph';
 
 const FuturesPanel = ({ pollInterval = 5000 }) => {
   // State
@@ -80,6 +80,45 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
   // Close all confirmation dialog
   const [closeAllDialog, setCloseAllDialog] = useState(false);
   const [closingAll, setClosingAll] = useState(false);
+
+  // Hidden positions for payoff diagram (persisted)
+  const [hiddenFuturesPositions, setHiddenFuturesPositions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('futures_hidden_positions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Collapse state for pending futures orders
+  const [pendingOrdersCollapsed, setPendingOrdersCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('futures_pending_orders_collapsed');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  // Save hidden futures positions to localStorage
+  useEffect(() => {
+    localStorage.setItem('futures_hidden_positions', JSON.stringify(hiddenFuturesPositions));
+  }, [hiddenFuturesPositions]);
+
+  // Save pending orders collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('futures_pending_orders_collapsed', JSON.stringify(pendingOrdersCollapsed));
+  }, [pendingOrdersCollapsed]);
+
+  // Toggle futures position visibility
+  const toggleFuturesPositionVisibility = useCallback((productSymbol) => {
+    setHiddenFuturesPositions((prev) =>
+      prev.includes(productSymbol)
+        ? prev.filter((s) => s !== productSymbol)
+        : [...prev, productSymbol]
+    );
+  }, []);
 
   // Fetch futures positions
   const fetchPositions = useCallback(async () => {
@@ -450,6 +489,25 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                 <Table size="small">
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'rgba(14, 165, 233, 0.1)' }}>
+                      <TableCell padding="checkbox" width="40px">
+                        <Tooltip title="Select/deselect all for payoff graph">
+                          <Checkbox
+                            checked={hiddenFuturesPositions.length === 0}
+                            indeterminate={
+                              hiddenFuturesPositions.length > 0 &&
+                              hiddenFuturesPositions.length < positions.length
+                            }
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setHiddenFuturesPositions([]);
+                              } else {
+                                setHiddenFuturesPositions(positions.map((p) => p.product_symbol));
+                              }
+                            }}
+                            sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                          />
+                        </Tooltip>
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 'bold' }}>Symbol</TableCell>
                       <TableCell align="center" sx={{ fontWeight: 'bold' }}>
                         Side
@@ -486,12 +544,22 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                       const productId = pos.product_id;
                       const hasMaxLoss = maxLossSettings[productId]?.enabled;
                       const maxLossValue = maxLossSettings[productId]?.max_loss || '';
+                      const isHidden = hiddenFuturesPositions.includes(pos.product_symbol);
 
                       return (
                         <TableRow
                           key={`${pos.symbol}-${pos.product_id}`}
                           sx={{ '&:hover': { bgcolor: 'action.hover' } }}
                         >
+                          <TableCell padding="checkbox">
+                            <Tooltip title={isHidden ? 'Show in payoff graph' : 'Hide from payoff graph'}>
+                              <Checkbox
+                                checked={!isHidden}
+                                onChange={() => toggleFuturesPositionVisibility(pos.product_symbol)}
+                                sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                              />
+                            </Tooltip>
+                          </TableCell>
                           <TableCell>
                             <Typography
                               variant="body2"
@@ -632,20 +700,25 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                   </TableBody>
                 </Table>
               </TableContainer>
-
-              {/* Payoff Graph */}
-              <Box sx={{ mt: 2 }}>
-                <FuturesPayoffGraph positions={positions} />
-              </Box>
             </>
           )}
 
           {/* Pending Orders */}
           {!loading && orders.length > 0 && (
             <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1, color: 'warning.main' }}>
-                Pending Futures Orders ({orders.length})
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ color: 'warning.main' }}>
+                  Pending Futures Orders ({orders.length})
+                </Typography>
+                <IconButton 
+                  size="small" 
+                  onClick={() => setPendingOrdersCollapsed(!pendingOrdersCollapsed)}
+                  sx={{ color: 'warning.main' }}
+                >
+                  {pendingOrdersCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+                </IconButton>
+              </Box>
+              <Collapse in={!pendingOrdersCollapsed}>
               <TableContainer
                 component={Paper}
                 sx={{ bgcolor: 'background.paper', borderRadius: 1 }}
@@ -745,6 +818,7 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                   </TableBody>
                 </Table>
               </TableContainer>
+              </Collapse>
             </Box>
           )}
 

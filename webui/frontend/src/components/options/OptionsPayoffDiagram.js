@@ -123,7 +123,7 @@ const formatDate = (date) => {
 // MAIN COMPONENT
 // ============================================================================
 
-const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
+const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPositions = [] }) => {
   const [priceRangePercent, setPriceRangePercent] = useState(20);
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
   const [targetPricePercent, setTargetPricePercent] = useState(0); // Target price offset from spot (-50% to +50%)
@@ -260,7 +260,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       const price = minPrice + i * priceStep;
       const point = { price: Math.round(price) };
 
-      // Calculate "On Expiry" payoff
+      // Calculate "On Expiry" payoff for OPTIONS
       // For SHORT positions (size < 0): You SOLD the option, received premium
       //   P&L = (entryPrice - intrinsicAtExpiry) * |size| * multiplier
       //   If OTM at expiry (intrinsic=0): P&L = entryPrice * |size| * 0.001 (keep full premium)
@@ -283,6 +283,17 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
           const pnl = (intrinsic - pos.entryPrice) * absSize * 0.001;
           expiryPayoff += pnl;
         }
+      });
+
+      // Add FUTURES payoff at expiry (linear P&L)
+      futuresPositions.forEach((futPos) => {
+        const size = futPos.size;
+        const entryPrice = futPos.entry_price;
+        const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange
+        
+        // P&L = (current_price - entry_price) * size * multiplier
+        const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
+        expiryPayoff += pnl;
       });
 
       // Split into profit/loss for colored areas
@@ -340,6 +351,17 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
         // Total P&L = current actual P&L + projected change
         targetPayoff += currentUnrealizedPnL + projectedChange;
       });
+
+      // Add FUTURES payoff for target date (same as expiry, linear)
+      futuresPositions.forEach((futPos) => {
+        const size = futPos.size;
+        const entryPrice = futPos.entry_price;
+        const CONTRACT_MULTIPLIER = 0.001;
+        
+        const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
+        targetPayoff += pnl;
+      });
+
       point.target = targetPayoff;
 
       data.push(point);
@@ -650,7 +672,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
         }}
       >
         <Typography variant="h6" fontWeight="bold">
-          Payoff Graph
+          Payoff Graph {futuresPositions.length > 0 && `(Options + Futures)`}
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1070,7 +1092,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
       {parsedPositions?.positions && (
         <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
           <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
-            <strong>Positions ({parsedPositions.positions.length}):</strong>
+            <strong>Options Positions ({parsedPositions.positions.length}):</strong>
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             {parsedPositions.positions.map((pos, idx) => (
@@ -1083,6 +1105,29 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [] }) => {
                   color: pos.type === 'call' ? '#10b981' : '#ef4444',
                 }}
                 label={`${pos.size > 0 ? 'Long' : 'Short'} ${Math.abs(pos.size)} ${pos.type.toUpperCase()} $${pos.strike.toLocaleString()} • IV ${Math.round(pos.iv * 100)}%`}
+              />
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* Futures Position Details */}
+      {futuresPositions.length > 0 && (
+        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
+            <strong>Futures Positions ({futuresPositions.length}):</strong>
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {futuresPositions.map((pos, idx) => (
+              <Chip
+                key={idx}
+                size="small"
+                variant="outlined"
+                sx={{
+                  borderColor: '#3b82f6',
+                  color: '#3b82f6',
+                }}
+                label={`${pos.size > 0 ? 'Long' : 'Short'} ${Math.abs(pos.size)} ${pos.product_symbol} @ $${parseFloat(pos.entry_price).toLocaleString()}`}
               />
             ))}
           </Box>

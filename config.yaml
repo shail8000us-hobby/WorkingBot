@@ -6,71 +6,71 @@ bot:
   heartbeat_seconds: '20'
 symbols:
   BTCUSD:
-    enabled: 'True'
+    enabled: true
     mode: LONG
     product_id: '27'
     grid:
       geometry:
-        reference: '92500'
-        lower: '90000'
-        upper: '100000'
-        step: '500'
+        reference: 91000
+        lower: 90000
+        upper: 100000
+        step: 500
       limits:
-        max_open_positions: '50'
-        lot_size: '5'
+        max_open_positions: 50
+        lot_size: 5
         short_lot_size: '1'
         max_open_orders: '20'
-        max_qty_per_order: '5'
+        max_qty_per_order: 5
       behavior:
-        strict_grid: 'True'
+        strict_grid: true
         rung_snap_mode: below
-        tick_size: '0.5'
-        dynamic_tick_size: 'True'
-        seed_initial_count: '0'
+        tick_size: 0.5
+        dynamic_tick_size: true
+        seed_initial_count: 0
       smart_gap_fill:
         order_type: limit
-        max_levels: '3'
-        enabled: 'False'
+        max_levels: 3
+        enabled: false
     safety:
-      max_account_loss_inr: '25000'
-      min_liquidation_distance_pct: '50'
+      max_account_loss_inr: 25000
+      min_liquidation_distance_pct: 50
       rsi:
-        enabled: 'True'
-        long_threshold: '19.5'
-        short_threshold: '25'
+        enabled: true
+        long_threshold: 19.5
+        short_threshold: 25
   ETHUSD:
-    enabled: 'True'
+    enabled: true
     mode: LONG
     product_id: '3136'
     grid:
       geometry:
-        reference: '3200'
-        lower: '3000'
-        upper: '3600'
-        step: '100'
+        reference: 3100
+        lower: 3000
+        upper: 3600
+        step: 100
       limits:
-        max_open_positions: '10'
-        lot_size: '1'
+        max_open_positions: 10
+        lot_size: 1
         short_lot_size: '30'
         max_open_orders: '20'
-        max_qty_per_order: '1'
+        max_qty_per_order: 1
       behavior:
-        strict_grid: 'True'
+        strict_grid: true
         rung_snap_mode: below
-        tick_size: '0.05'
-        dynamic_tick_size: 'True'
-        seed_initial_count: '0'
+        tick_size: 0.05
+        dynamic_tick_size: true
+        seed_initial_count: 0
       smart_gap_fill:
         order_type: limit
-        max_levels: '3'
-        enabled: 'False'
+        max_levels: 3
+        enabled: false
     safety:
-      max_account_loss_inr: '25000'
-      min_liquidation_distance_pct: '50'
+      max_account_loss_inr: 25000
+      min_liquidation_distance_pct: 50
       rsi:
-        enabled: 'True'
-        long_threshold: '19.5'
-        short_threshold: '25'
+        enabled: true
+        long_threshold: 19.5
+        short_threshold: 25
 capital_protection:
   equity_floor:
     floor_inr: 70000
@@ -143,7 +143,7 @@ safety:
     period: 14
     overbought_threshold: 70.0
     oversold_threshold: 30.0
-    long_threshold: 25
+    long_threshold: 40
     short_threshold: 25
     hysteresis_seconds: 60
     timeframe: 1h

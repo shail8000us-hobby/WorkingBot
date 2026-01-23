@@ -27,7 +27,7 @@ interface LogsResponse {
   error?: string;
 }
 
-async function fetchLogs(source: string, lines: number = 200): Promise<LogsResponse> {
+async function fetchLogs(source: string, lines: number = 30): Promise<LogsResponse> {
   const botType = source === 'guardian' ? 'guardian' : 'trading';
   const response = await fetch(`http://localhost:5557/api/logs/recent?lines=${lines}&bot_type=${botType}`);
   if (!response.ok) {
@@ -58,7 +58,7 @@ export function LogViewerPanel() {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['logs', logSource],
-    queryFn: () => fetchLogs(logSource, 200),
+    queryFn: () => fetchLogs(logSource, 30),
     refetchInterval: 5000, // Refresh every 5 seconds
   });
 

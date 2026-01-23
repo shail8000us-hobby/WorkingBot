@@ -83,6 +83,31 @@ except ImportError:
 # Liquidation Status Routes
 # ============================================================================
 
+@liquidation_bp.route('/api/liquidation/debug', methods=['GET'])
+def get_liquidation_debug():
+    """Debug endpoint to check if Delta API is accessible"""
+    import os
+    from bot.api.delta_client import DeltaClient
+    
+    try:
+        delta_client = DeltaClient()
+        wallet_response = delta_client._req('GET', '/v2/wallet/balances')
+        
+        return jsonify({
+            'success': True,
+            'delta_api_key_set': bool(os.getenv('DELTA_API_KEY') or os.getenv('LIVE_DELTA_API_KEY')),
+            'wallet_api_success': wallet_response.get('success'),
+            'wallet_count': len(wallet_response.get('result', [])),
+            'raw_response': wallet_response
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'delta_api_key_set': bool(os.getenv('DELTA_API_KEY') or os.getenv('LIVE_DELTA_API_KEY'))
+        }), 500
+
+
 @liquidation_bp.route('/api/liquidation/status', methods=['GET'])
 def get_liquidation_status():
     """Get comprehensive liquidation protection status"""
@@ -90,6 +115,7 @@ def get_liquidation_status():
         # Check trading mode
         cfg = get_config()
         trading_mode = cfg.trading_mode.lower()
+        log.info(f"🔍 Liquidation endpoint called - trading_mode={trading_mode}")
         
         # Default safe values
         margin_status = {
@@ -122,7 +148,8 @@ def get_liquidation_status():
         guardian_health_file = Path(__file__).parent.parent.parent.parent / '.guardian_health'
         guardian_data_used = False
         
-        if guardian_health_file.exists() and trading_mode == 'live':
+        # ALWAYS try to fetch real data in live mode
+        if trading_mode == 'live' and guardian_health_file.exists():
             try:
                 with open(guardian_health_file, 'r') as f:
                     health_data = json.load(f)
@@ -185,127 +212,190 @@ def get_liquidation_status():
             except Exception as e:
                 log.warning(f"Could not get liquidation monitor data: {e}")
         
-        # 2. Fallback: Get MTM from Delta Exchange API (same as positions blueprint)
-        try:
-            from bot.api.delta_client import DeltaClient
-            
-            delta_client = DeltaClient()
-            usd_to_inr_rate = float(get_config_value('risk_limits.usd_to_inr_rate', 'USD_TO_INR_RATE', 85.0))
-            
-            # Get positions for MTM
+        # 3. Get REAL DATA from Delta Exchange API (ALWAYS in live mode)
+        # PRIORITY: Use positions_upl from portfolio_margins (WebSocket/Guardian)
+        # FALLBACK: Calculate from positions endpoint
+        if trading_mode == 'live':
             try:
-                positions_response = delta_client._req('GET', '/v2/positions/margined')
+                from bot.api.delta_client import DeltaClient
                 
-                if positions_response.get('success'):
-                    pos_list = positions_response.get('result', [])
-                    total_pnl_usd = 0
-                    
-                    for pos_data in pos_list:
-                        size = int(pos_data.get('size', 0))
-                        if size == 0:
-                            continue
+                delta_client = DeltaClient()
+                usd_to_inr_rate = float(get_config_value('risk_limits.usd_to_inr_rate', 'USD_TO_INR_RATE', 85.0))
+                
+                log.info("🔄 Fetching real data from Delta Exchange API...")
+                
+                # Only calculate manually if WebSocket data not available
+                if mtm_status['current_mtm_inr'] == 0:
+                    try:
+                        positions_response = delta_client._req('GET', '/v2/positions/margined')
                         
-                        # Calculate PnL same way as positions endpoint: (Mark - Entry) × Size × 0.001
-                        entry_price = float(pos_data.get('entry_price', 0))
-                        mark_price = float(pos_data.get('mark_price', 0))
-                        CONTRACT_MULTIPLIER = 0.001
-                        unrealized_pnl_usd = (mark_price - entry_price) * size * CONTRACT_MULTIPLIER
-                        total_pnl_usd += unrealized_pnl_usd
-                    
-                    # Convert to INR
-                    total_pnl_inr = total_pnl_usd * usd_to_inr_rate
-                    
-                    mtm_status['current_mtm_inr'] = round(total_pnl_inr, 2)
-                    margin_status['unrealized_pnl'] = round(total_pnl_inr, 2)
-                    
-                    # Determine trend
-                    if total_pnl_inr > 1000:
-                        mtm_status['trend'] = 'UP'
-                    elif total_pnl_inr < -1000:
-                        mtm_status['trend'] = 'DOWN'
-                    else:
-                        mtm_status['trend'] = 'STABLE'
-                    
-                    log.debug(f"MTM: ${total_pnl_usd:.2f} USD = ₹{total_pnl_inr:.2f} INR")
-                        
-            except Exception as e:
-                log.debug(f"Could not fetch positions: {e}")
-            
-            # Get wallet balance for margin utilization
-            try:
+                        if positions_response.get('success'):
+                            pos_list = positions_response.get('result', [])
+                            total_pnl_usd = 0
+                            
+                            for pos_data in pos_list:
+                                size = int(pos_data.get('size', 0))
+                                if size == 0:
+                                    continue
+                                
+                                # ⚠️ FALLBACK CALCULATION (less accurate than positions_upl)
+                                # Calculate PnL: (Mark - Entry) × Size × Contract Value
+                                # Note: Contract value varies by product (get from /v2/products)
+                                entry_price = float(pos_data.get('entry_price', 0))
+                                mark_price = float(pos_data.get('mark_price', 0))
+                                CONTRACT_MULTIPLIER = 0.001  # Standard for BTC/ETH futures
+                                unrealized_pnl_usd = (mark_price - entry_price) * size * CONTRACT_MULTIPLIER
+                                total_pnl_usd += unrealized_pnl_usd
+                            
+                            # Convert to INR
+                            total_pnl_inr = total_pnl_usd * usd_to_inr_rate
+                            
+                            mtm_status['current_mtm_inr'] = round(total_pnl_inr, 2)
+                            margin_status['unrealized_pnl'] = round(total_pnl_inr, 2)
+                            
+                            # Determine trend
+                            if total_pnl_inr > 1000:
+                                mtm_status['trend'] = 'UP'
+                            elif total_pnl_inr < -1000:
+                                mtm_status['trend'] = 'DOWN'
+                            else:
+                                mtm_status['trend'] = 'STABLE'
+                            
+                            log.debug(f"[FALLBACK] MTM calculated: ${total_pnl_usd:.2f} USD = ₹{total_pnl_inr:.2f} INR")
+                                
+                    except Exception as e:
+                        log.debug(f"Could not fetch positions: {e}")
                 wallet_response = delta_client._req('GET', '/v2/wallet/balances')
+                
+                # ✅ STEP 2: Try to get portfolio_margins data from WebSocket/REST
+                # This contains: mm_w_ucf, im_w_ucf, positions_upl, liquidation_risk
+                portfolio_margins_data = None
+                try:
+                    # Check if WebSocket data is available in Guardian health file
+                    if guardian_health_file.exists():
+                        with open(guardian_health_file, 'r') as f:
+                            health = json.load(f)
+                            portfolio_margins_data = health.get('portfolio_margins', {})
+                except Exception as e:
+                    log.debug(f"No WebSocket portfolio_margins data: {e}")
                 
                 if wallet_response.get('success'):
                     result = wallet_response.get('result', [])
-                    if result and len(result) > 0:
+                    # Find USD wallet (not BTC/ETH)
+                    wallet_data = None
+                    for wallet in result:
+                        if wallet.get('asset_symbol') == 'USD':
+                            wallet_data = wallet
+                            break
+                    
+                    if not wallet_data and result:
+                        # Fallback to first wallet if USD not found
                         wallet_data = result[0]
-                        
+                    
+                    if wallet_data:
                         balance_usd = float(wallet_data.get('balance', 0))
                         available_balance_usd = float(wallet_data.get('available_balance', 0))
-                        portfolio_margin_usd = float(wallet_data.get('portfolio_margin', 0))
+                        blocked_margin_usd = float(wallet_data.get('blocked_margin', 0))
                         
                         if balance_usd > 0:
                             # Convert USD to INR
                             balance = balance_usd * usd_to_inr_rate
                             available_balance = available_balance_usd * usd_to_inr_rate
-                            maintenance_margin = portfolio_margin_usd * usd_to_inr_rate
+                            blocked_margin = blocked_margin_usd * usd_to_inr_rate
                             
                             margin_status['total_balance'] = round(balance, 2)
                             margin_status['available_balance'] = round(available_balance, 2)
+                            margin_status['blocked_margin'] = round(blocked_margin, 2)
                             
-                            # Calculate utilization (percentage is same in USD or INR)
-                            used = balance - available_balance
-                            margin_status['blocked_margin'] = round(used, 2)
-                            utilization = (used / balance) * 100
+                            # ✅ DELTA EXCHANGE CORRECT FORMULAS (Portfolio Margin Mode)
+                            
+                            # Get Initial Margin and Maintenance Margin from portfolio_margins
+                            if portfolio_margins_data:
+                                im_w_ucf_usd = float(portfolio_margins_data.get('im_w_ucf', blocked_margin_usd))
+                                mm_w_ucf_usd = float(portfolio_margins_data.get('mm_w_ucf', blocked_margin_usd * 0.8))
+                                positions_upl_usd = float(portfolio_margins_data.get('positions_upl', 0))
+                                api_liquidation_risk = portfolio_margins_data.get('liquidation_risk', False)
+                                api_under_liquidation = portfolio_margins_data.get('under_liquidation', False)
+                                margin_shortfall_usd = float(portfolio_margins_data.get('margin_shortfall', 0))
+                            else:
+                                # Fallback estimates (80% rule for MM)
+                                im_w_ucf_usd = blocked_margin_usd
+                                mm_w_ucf_usd = blocked_margin_usd * 0.8
+                                positions_upl_usd = 0
+                                api_liquidation_risk = False
+                                api_under_liquidation = False
+                                margin_shortfall_usd = 0
+                            
+                            im_w_ucf = im_w_ucf_usd * usd_to_inr_rate
+                            mm_w_ucf = mm_w_ucf_usd * usd_to_inr_rate
+                            
+                            # ✅ MARGIN UTILIZATION (CORRECT FORMULA)
+                            # Formula: (Initial Margin / Balance) × 100
+                            utilization = (im_w_ucf / balance) * 100
                             margin_status['utilization'] = round(utilization, 1)
                             
-                            # Only calculate margin-based distance if Guardian didn't provide price-based distance
-                            if not guardian_data_used and maintenance_margin > 0:
-                                # OLD FORMULA (margin-based): Only used as fallback
-                                # Note: This is DIFFERENT from Delta Exchange India price-based calculation
-                                liquidation_distance = ((available_balance / maintenance_margin) - 1) * 100
+                            # ✅ LIQUIDATION DISTANCE (CORRECT FORMULA)
+                            # Formula: ((Balance - MM) / MM) × 100
+                            if mm_w_ucf > 0:
+                                liquidation_distance = ((balance - mm_w_ucf) / mm_w_ucf) * 100
                                 distance_status['distance'] = round(liquidation_distance, 1)
-                                distance_status['maintenance_margin'] = round(maintenance_margin, 2)
+                                distance_status['maintenance_margin'] = round(mm_w_ucf, 2)
                                 
-                                # Determine zone based on margin distance (different thresholds)
-                                if liquidation_distance < 20:
+                                # ✅ DELTA EXCHANGE RISK ZONES (Recommended Thresholds)
+                                if api_under_liquidation or liquidation_distance < 5:
                                     distance_status['zone'] = 'CRITICAL'
                                     distance_status['liquidation_risk'] = True
-                                elif liquidation_distance < 40:
+                                elif api_liquidation_risk or liquidation_distance < 20:
                                     distance_status['zone'] = 'DANGER'
                                     distance_status['liquidation_risk'] = True
-                                elif liquidation_distance < 60:
+                                elif liquidation_distance < 50:
                                     distance_status['zone'] = 'WARNING'
                                     distance_status['liquidation_risk'] = False
                                 else:
                                     distance_status['zone'] = 'SAFE'
                                     distance_status['liquidation_risk'] = False
                                 
-                                log.debug(f"[FALLBACK] Margin-based liquidation distance: {liquidation_distance:.1f}% (Available: ₹{available_balance:.2f} / MM: ₹{maintenance_margin:.2f})")
-                            else:
-                                distance_status['maintenance_margin'] = round(maintenance_margin, 2)
+                                # Add Delta Exchange flags
+                                distance_status['api_liquidation_risk'] = api_liquidation_risk
+                                distance_status['under_liquidation'] = api_under_liquidation
+                                if margin_shortfall_usd > 0:
+                                    distance_status['margin_shortfall'] = round(margin_shortfall_usd * usd_to_inr_rate, 2)
+                                
+                                log.debug(f"✅ DELTA EXCHANGE FORMULA: Liquidation Distance = ((₹{balance:.2f} - ₹{mm_w_ucf:.2f}) / ₹{mm_w_ucf:.2f}) × 100 = {liquidation_distance:.1f}%")
                             
-                            log.debug(f"Wallet balance: ${balance_usd:.2f} USD = ₹{balance:.2f} INR")
+                            # Update unrealized PnL if WebSocket data available
+                            if portfolio_margins_data and positions_upl_usd != 0:
+                                positions_upl_inr = positions_upl_usd * usd_to_inr_rate
+                                mtm_status['current_mtm_inr'] = round(positions_upl_inr, 2)
+                                margin_status['unrealized_pnl'] = round(positions_upl_inr, 2)
+                                log.debug(f"✅ Using WebSocket positions_upl: ${positions_upl_usd:.2f} = ₹{positions_upl_inr:.2f}")
                             
-                            # Determine zone
-                            if utilization >= 80:
+                            log.debug(f"Wallet: ${balance_usd:.2f} USD = ₹{balance:.2f} INR")
+                            log.debug(f"IM (w/ UCF): ${im_w_ucf_usd:.2f} USD = ₹{im_w_ucf:.2f} INR")
+                            log.debug(f"MM (w/ UCF): ${mm_w_ucf_usd:.2f} USD = ₹{mm_w_ucf:.2f} INR")
+                            
+                            # ✅ MARGIN UTILIZATION ZONES (Delta Exchange Thresholds)
+                            if utilization >= 100:
                                 margin_status['zone'] = 'RED'
-                            elif utilization >= 70:
+                                margin_status['can_open_positions'] = False
+                            elif utilization >= 80:
                                 margin_status['zone'] = 'ORANGE'
+                                margin_status['can_open_positions'] = False
                             elif utilization >= 60:
                                 margin_status['zone'] = 'YELLOW'
+                                margin_status['can_open_positions'] = True
                             else:
                                 margin_status['zone'] = 'GREEN'
+                                margin_status['can_open_positions'] = True
                             
-                            margin_status['can_open_positions'] = utilization < 80
-                            
-                            log.debug(f"Fetched margin: {utilization:.1f}% utilization")
+                            log.debug(f"Margin Utilization: {utilization:.1f}% (IM/Balance)")
                         
             except Exception as e:
-                log.debug(f"Could not fetch wallet balance: {e}")
-                
-        except Exception as e:
-            log.warning(f"Error fetching Delta Exchange data: {e}")
+                log.warning(f"Could not fetch wallet balance: {e}")
+                        
+                log.error(f"Error fetching Delta Exchange data: {e}", exc_info=True)
+        else:
+            log.info("Demo mode - using placeholder values")
         
         return jsonify({
             'success': True,

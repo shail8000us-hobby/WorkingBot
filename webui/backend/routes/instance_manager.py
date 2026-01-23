@@ -590,7 +590,7 @@ def get_instance_logs(instance_id: str):
         if not config:
             return jsonify({'error': f'Instance {instance_id} not found'}), 404
         
-        lines = request.args.get('lines', 100, type=int)
+        lines = request.args.get('lines', 30, type=int)
         
         # Get PM2 adapter
         pm2 = get_pm2_adapter()

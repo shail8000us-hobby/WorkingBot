@@ -74,7 +74,7 @@ function LogsPanel() {
       setLoadingTrading(true);
       setError(null);
       const url = selectedInstance ? withInstance('/api/logs') : '/api/logs';
-      const response = await apiClient.get(url, { lines: 100 });
+      const response = await apiClient.get(url, { lines: 30 });
       
       if (response && response.logs && isMountedRef.current) {
         const newHash = createLogsHash(response.logs);
@@ -108,7 +108,7 @@ function LogsPanel() {
       setLoadingGuardian(true);
       setError(null);
       const response = await apiClient.get('/api/logs/recent', {
-        lines: 100,
+        lines: 30,
         bot_type: 'guardian',
       });
       
@@ -142,7 +142,7 @@ function LogsPanel() {
     try {
       setLoadingBtc(true);
       setError(null);
-      const response = await apiClient.get('/api/logs', { lines: 100, instance: 'BTCUSD_LONG' });
+      const response = await apiClient.get('/api/logs', { lines: 30, instance: 'BTCUSD_LONG' });
       
       if (response && response.logs && isMountedRef.current) {
         const newHash = createLogsHash(response.logs);
@@ -174,7 +174,7 @@ function LogsPanel() {
     try {
       setLoadingEth(true);
       setError(null);
-      const response = await apiClient.get('/api/logs', { lines: 100, instance: 'ETHUSD_LONG' });
+      const response = await apiClient.get('/api/logs', { lines: 30, instance: 'ETHUSD_LONG' });
       
       if (response && response.logs && isMountedRef.current) {
         const newHash = createLogsHash(response.logs);

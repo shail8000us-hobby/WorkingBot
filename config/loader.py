@@ -137,6 +137,7 @@ class ConfigLoader:
 # Global configuration instance (singleton)
 _config: Optional[RootConfig] = None
 _config_loader: Optional[ConfigLoader] = None
+_reload_in_progress: bool = False  # Re-entrancy guard for reload
 
 
 def get_config(reload: bool = False) -> RootConfig:
@@ -148,12 +149,23 @@ def get_config(reload: bool = False) -> RootConfig:
     Returns:
         Global RootConfig instance
     """
-    global _config, _config_loader
+    global _config, _config_loader, _reload_in_progress
+    
+    # RE-ENTRANCY GUARD: Prevent recursive reload_config() calls
+    if reload and _reload_in_progress:
+        # Return current config instead of triggering recursion
+        return _config if _config else RootConfig()
     
     if _config is None or reload:
-        if _config_loader is None:
-            _config_loader = ConfigLoader()
-        _config = _config_loader.load()
+        if reload:
+            _reload_in_progress = True
+        try:
+            if _config_loader is None:
+                _config_loader = ConfigLoader()
+            _config = _config_loader.load()
+        finally:
+            if reload:
+                _reload_in_progress = False
     
     return _config
 
@@ -376,13 +388,13 @@ def _symbol_to_instance_config(symbol: str, symbol_config) -> InstanceConfig:
             strict_grid=symbol_config.grid.behavior.strict_grid,
             rung_snap_mode=symbol_config.grid.behavior.rung_snap_mode,
             tick_size=symbol_config.grid.behavior.tick_size,
-            dynamic_tick_size=getattr(symbol_config.grid.behavior, 'dynamic_tick_size', 'false'),
-            seed_initial_count=getattr(symbol_config.grid.behavior, 'seed_initial_count', '0')
+            dynamic_tick_size=getattr(symbol_config.grid.behavior, 'dynamic_tick_size', False),
+            seed_initial_count=getattr(symbol_config.grid.behavior, 'seed_initial_count', 0)
         ),
         smart_gap_fill=InstanceSmartGapFill(
-            enabled=symbol_config.grid.smart_gap_fill.enabled if symbol_config.grid.smart_gap_fill else 'false',
+            enabled=symbol_config.grid.smart_gap_fill.enabled if symbol_config.grid.smart_gap_fill else False,
             order_type=symbol_config.grid.smart_gap_fill.order_type if symbol_config.grid.smart_gap_fill else 'maker',
-            max_levels=symbol_config.grid.smart_gap_fill.max_levels if symbol_config.grid.smart_gap_fill else '0'
+            max_levels=symbol_config.grid.smart_gap_fill.max_levels if symbol_config.grid.smart_gap_fill else 0
         ) if symbol_config.grid.smart_gap_fill else None
     )
     
@@ -394,7 +406,7 @@ def _symbol_to_instance_config(symbol: str, symbol_config) -> InstanceConfig:
     )
     
     safety = InstanceSafetyConfig(
-        max_account_loss_inr=float(symbol_config.safety.max_account_loss_inr),
+        max_account_loss_inr=symbol_config.safety.max_account_loss_inr,
         min_liquidation_distance_pct=symbol_config.safety.min_liquidation_distance_pct,
         rsi=rsi_config
     )

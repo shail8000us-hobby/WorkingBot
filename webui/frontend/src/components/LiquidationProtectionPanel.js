@@ -349,14 +349,38 @@ const LiquidationProtectionPanel = () => {
                   variant="body2"
                   sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 1 }}
                 >
-                  Formula: (Current Price - Liquidation Price) / Current Price × 100
+                  Formula: ((Balance - MM) / MM) × 100
                 </Typography>
                 <Typography
                   variant="body2"
                   sx={{ fontSize: '0.7rem', color: 'text.disabled', mt: 0.5, fontStyle: 'italic' }}
                 >
-                  Delta Exchange India (price-based, minimum across positions)
+                  Delta Exchange (Portfolio Margin Mode)
                 </Typography>
+                {distance?.api_liquidation_risk && (
+                  <Typography
+                    variant="body2"
+                    sx={{ fontSize: '0.7rem', color: 'error.main', mt: 0.5, fontWeight: 'bold' }}
+                  >
+                    ⚠️ API LIQUIDATION RISK FLAG
+                  </Typography>
+                )}
+                {distance?.under_liquidation && (
+                  <Typography
+                    variant="body2"
+                    sx={{ fontSize: '0.7rem', color: 'error.main', mt: 0.5, fontWeight: 'bold' }}
+                  >
+                    🚨 UNDER LIQUIDATION
+                  </Typography>
+                )}
+                {distance?.margin_shortfall && (
+                  <Typography
+                    variant="body2"
+                    sx={{ fontSize: '0.7rem', color: 'warning.main', mt: 0.5 }}
+                  >
+                    Top-up needed: {formatINR(distance.margin_shortfall)}
+                  </Typography>
+                )}
               </Box>
             </CardContent>
           </Card>

@@ -914,3 +914,178 @@ def health_check():
             'auto_entry_running': auto_entry.is_running()
         }
     })
+
+
+@options_strategy_bp.route('/logs', methods=['GET'])
+@handle_errors
+def get_strategy_logs():
+    """
+    Get recent logs from options strategy execution
+    
+    Query params:
+        lines: number of lines to return (default: 100, max: 500)
+        level: filter by level (info, warning, error, all)
+    
+    Response:
+        {
+            logs: ["log line 1", "log line 2", ...],
+            count: 150
+        }
+    """
+    import os
+    from pathlib import Path
+    
+    lines = min(int(request.args.get('lines', 100)), 500)
+    level_filter = request.args.get('level', 'all').lower()
+    
+    # Read from backend error log (contains all logging output)
+    log_file = Path(__file__).parent.parent.parent / 'logs' / 'launchagent_webui_error.log'
+    
+    if not log_file.exists():
+        return jsonify({'logs': [], 'count': 0})
+    
+    try:
+        # Read last N lines from log file
+        with open(log_file, 'r', encoding='utf-8') as f:
+            all_lines = f.readlines()
+        
+        # Filter for options strategy related logs
+        strategy_logs = []
+        for line in all_lines[-lines * 3:]:  # Read more to ensure we get enough after filtering
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            
+            # Filter for strategy-related logs
+            if any(keyword in line_stripped for keyword in [
+                'strategy', 'Strategy', 'STRATEGY',
+                'leg_executor', 'leg', 'Leg',
+                'option', 'Option', 'OPTIONS',
+                'Executing', 'Order', 'order',
+                'Delta Exchange', 'product_symbol',
+                'limit_price', 'size=', 'quantity=',
+                '🚀', '✅', '❌', '⚠️', '⏳'
+            ]):
+                # Apply level filter
+                if level_filter != 'all':
+                    line_lower = line_stripped.lower()
+                    if level_filter == 'error' and 'error' not in line_lower:
+                        continue
+                    if level_filter == 'warning' and 'warning' not in line_lower:
+                        continue
+                    if level_filter == 'info' and ('error' in line_lower or 'warning' in line_lower):
+                        continue
+                
+                strategy_logs.append(line_stripped)
+        
+        # Return last N lines
+        recent_logs = strategy_logs[-lines:] if len(strategy_logs) > lines else strategy_logs
+        
+        return jsonify({
+            'logs': recent_logs,
+            'count': len(recent_logs)
+        })
+    
+    except Exception as e:
+        log.error(f"Failed to read logs: {e}")
+        return jsonify({
+            'logs': [f"Error reading logs: {str(e)}"],
+            'count': 1
+        })
+
+
+@options_strategy_bp.route('/execution-status', methods=['GET'])
+@handle_errors
+def get_execution_status():
+    """
+    Get detailed execution status for recent orders with market prices
+    
+    Response:
+        {
+            executions: [
+                {
+                    symbol: "C-BTC-90000-270226",
+                    side: "buy",
+                    quantity: 5,
+                    filled_qty: 3,
+                    order_price: 3850.0,
+                    fill_price: 3845.0,
+                    market_price: 3852.0,
+                    status: "partial",
+                    order_id: "1234567"
+                },
+                ...
+            ],
+            logs: ["recent log lines"]
+        }
+    """
+    log.info("📊 Fetching execution status...")
+    manager = StrategyManager()
+    
+    # Get active strategies
+    active_strategies = manager.get_active_strategies()
+    log.info(f"Found {len(active_strategies)} active strategies")
+    
+    executions = []
+    
+    # Build execution status from active strategies
+    for strategy in active_strategies:
+        log.info(f"Processing strategy {strategy.id} with {len(strategy.legs)} legs")
+        for leg in strategy.legs:
+            # Skip legs with no order activity (never executed or failed with no data)
+            if leg.status == 'pending' and not leg.order_id and leg.current_price == 0:
+                continue
+            
+            # Skip old failed legs with no useful data
+            if leg.status == 'failed' and not leg.order_id and leg.current_price == 0:
+                continue
+                
+            exec_status = {
+                'symbol': leg.symbol,
+                'side': leg.side,
+                'quantity': leg.quantity,
+                'filled_qty': leg.filled_qty,
+                'order_price': leg.current_price,
+                'fill_price': leg.avg_fill_price,
+                'market_price': leg.current_bid if leg.side == 'sell' else leg.current_ask,
+                'status': leg.status,
+                'order_id': leg.order_id,
+                'timestamp': strategy.executed_at or strategy.created_at
+            }
+            executions.append(exec_status)
+            log.info(f"  Leg: {leg.symbol} | Status: {leg.status} | Qty: {leg.quantity} | Filled: {leg.filled_qty} | Order ID: {leg.order_id}")
+    
+    # Sort by timestamp (most recent first) and limit to last 50
+    executions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    executions = executions[:50]
+    
+    # Get recent logs
+    from pathlib import Path
+    log_file = Path(__file__).parent.parent.parent / 'logs' / 'launchagent_webui_error.log'
+    
+    logs = []
+    if log_file.exists():
+        try:
+            with open(log_file, 'r', encoding='utf-8') as f:
+                all_lines = f.readlines()
+            
+            # Get last 50 strategy-related log lines
+            for line in all_lines[-300:]:
+                line_stripped = line.strip()
+                if any(keyword in line_stripped for keyword in [
+                    'Executing', 'Order', 'placed', 'filled', 'waiting',
+                    'lot', 'lots', 'market price', 'execution',
+                    '🚀', '✅', '❌', 'ℹ️', '⚠️', 'Leg', 'Strategy'
+                ]):
+                    logs.append(line_stripped)
+            
+            logs = logs[-50:]  # Last 50 relevant logs
+            log.info(f"Returning {len(logs)} log lines")
+        except Exception as e:
+            log.error(f"Failed to read logs: {e}")
+    
+    log.info(f"✅ Returning {len(executions)} executions and {len(logs)} logs")
+    return jsonify({
+        'executions': executions,
+        'logs': logs
+    })

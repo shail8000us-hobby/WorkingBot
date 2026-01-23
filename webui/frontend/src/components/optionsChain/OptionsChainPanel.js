@@ -113,6 +113,9 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   // Build Your Own mode (free-form strategy building)
   const [builderMode, setBuilderMode] = useState(buildYourOwnMode);
   const [builderLegs, setBuilderLegs] = useState([]);
+  
+  // Execution trigger for log panel
+  const [executionRefreshTrigger, setExecutionRefreshTrigger] = useState(0);
 
   // Enable builder mode from prop or sessionStorage
   useEffect(() => {
@@ -243,12 +246,18 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
           severity: 'info',
         });
       } else {
-        // Add new leg with current expiry
+        // Add new leg with current expiry and complete pricing data
         const newLeg = {
           ...optionData,
           expiry: expiry,
           quantity: 1,
-          premium: optionData.ltp || optionData.bid || 0,
+          premium: optionData.ltp || optionData.mark_price || 0,
+          ltp: optionData.ltp,
+          bid: optionData.bid,
+          ask: optionData.ask,
+          best_bid_price: optionData.best_bid_price || optionData.bid,
+          best_ask_price: optionData.best_ask_price || optionData.ask,
+          mark_price: optionData.mark_price,
         };
         setBuilderLegs((prev) => [...prev, newLeg]);
         setSnackbar({
@@ -284,54 +293,6 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
     setBuilderLegs([]);
   }, []);
 
-  // Execute builder strategy
-  const handleExecuteBuilderStrategy = useCallback(async (strategyData) => {
-    setExecuting(true);
-    try {
-      // Create strategy
-      const createRes = await fetch('/api/options-strategy/create-custom', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(strategyData),
-      });
-
-      const createData = await createRes.json();
-
-      if (!createData.success) {
-        throw new Error(createData.error || 'Failed to create strategy');
-      }
-
-      // Execute strategy
-      const execRes = await fetch(`/api/options-strategy/execute/${createData.strategy.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'market' }),
-      });
-
-      const execData = await execRes.json();
-
-      if (execData.success) {
-        setSnackbar({
-          open: true,
-          message: `✅ Strategy executed! ${execData.legs_filled || 0} legs placed.`,
-          severity: 'success',
-        });
-        setBuilderLegs([]);
-        fetchChainData();
-      } else {
-        throw new Error(execData.error || execData.message || 'Execution failed');
-      }
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: `❌ ${err.message}`,
-        severity: 'error',
-      });
-    } finally {
-      setExecuting(false);
-    }
-  }, []);
-
   // Handle removing a leg
   const handleRemoveLeg = useCallback((index) => {
     setSelectedLegs((prev) => {
@@ -363,6 +324,8 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
         message: `Strategy executed successfully! ${result.orders?.length || 0} legs placed.`,
         severity: 'success',
       });
+      // Trigger immediate log panel refresh
+      setExecutionRefreshTrigger(prev => prev + 1);
       handleCancelStrategy();
       fetchChainData(); // Refresh chain
     },
@@ -393,6 +356,24 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
+  // Fetch chain data when expiry changes - DEFINED EARLY to avoid initialization errors
+  const fetchChainData = useCallback(async () => {
+    if (!expiry) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const data = await optionsChainAPI.getChainData(underlying, expiry);
+      setChainData(data);
+      setLastUpdated(new Date());
+    } catch (err) {
+      setError(`Failed to fetch chain data: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [underlying, expiry]);
+
   // Fetch expirations when underlying changes
   useEffect(() => {
     const fetchExpirations = async () => {
@@ -417,26 +398,67 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
     fetchExpirations();
   }, [underlying]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch chain data when expiry changes
-  const fetchChainData = useCallback(async () => {
-    if (!expiry) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const data = await optionsChainAPI.getChainData(underlying, expiry);
-      setChainData(data);
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(`Failed to fetch chain data: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [underlying, expiry]);
-
   useEffect(() => {
     fetchChainData();
+  }, [fetchChainData]);
+
+  // Execute builder strategy using quick-execute endpoint
+  const handleExecuteBuilderStrategy = useCallback(async (strategyData) => {
+    setExecuting(true);
+    try {
+      console.log('=== Executing Strategy via quick-execute ===' );
+      console.log('Strategy data:', JSON.stringify(strategyData, null, 2));
+      
+      const requestPayload = {
+        ...strategyData,
+        execution_mode: 'parallel',
+        order_type: 'limit'
+      };
+      
+      console.log('Full request payload:', JSON.stringify(requestPayload, null, 2));
+      
+      // Use quick-execute endpoint - single call to create and execute
+      const response = await fetch('/api/options-strategy/quick-execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload),
+      });
+
+      console.log('Response status:', response.status, response.statusText);
+      
+      const result = await response.json();
+      console.log('Quick-execute response:', JSON.stringify(result, null, 2));
+
+      if (!response.ok || !result.success) {
+        // Extract detailed error info
+        const errorMsg = result.error || result.message || 'Execution failed';
+        const legErrors = result.execution?.leg_results?.filter(r => !r.success) || [];
+        const detailedError = legErrors.length > 0 
+          ? `${errorMsg}: ${legErrors.map(r => r.error).join(', ')}`
+          : errorMsg;
+        console.error('Execution error details:', { errorMsg, legErrors, fullResult: result });
+        throw new Error(detailedError);
+      }
+
+      // Success!
+      const legsFilled = result.execution?.legs_filled || result.legs_filled || strategyData.legs.length;
+      setSnackbar({
+        open: true,
+        message: `✅ Strategy executed! ${legsFilled}/${strategyData.legs.length} legs placed.`,
+        severity: 'success',
+      });
+      setBuilderLegs([]);
+      fetchChainData();
+    } catch (err) {
+      console.error('Strategy execution error:', err);
+      setSnackbar({
+        open: true,
+        message: `❌ ${err.message}`,
+        severity: 'error',
+      });
+    } finally {
+      setExecuting(false);
+    }
   }, [fetchChainData]);
 
   // Auto-refresh
@@ -732,6 +754,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
                 strategyMode={strategyMode}
                 strategyContext={strategyContext}
                 selectedLegs={selectedLegs}
+                expiry={expiry}
               />
             )}
           </Grid>
@@ -754,6 +777,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
           spotPrice={chainData.spot_price}
           atmStrike={chainData.atm_strike}
           onTrade={handleTrade}
+          expiry={expiry}
         />
       )}
 
@@ -769,6 +793,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
               strategyMode={true}
               builderMode={true}
               selectedLegs={builderLegs}
+              expiry={expiry}
             />
           </Grid>
           {builderLegs.length > 0 && (
@@ -777,6 +802,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
                 legs={builderLegs}
                 underlying={underlying}
                 spotPrice={chainData.spot_price}
+                expiry={expiry}
                 onUpdateLeg={handleUpdateBuilderLeg}
                 onRemoveLeg={handleRemoveBuilderLeg}
                 onClearAll={handleClearBuilderLegs}

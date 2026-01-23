@@ -332,7 +332,7 @@ export default function PM2Panel() {
     setLogsLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/pm2/${process.name}/logs?lines=100`);
+      const res = await fetch(`${API_URL}/api/pm2/${process.name}/logs?lines=30`);
       const result: PM2Logs = await res.json();
       if (result.success) {
         setLogs(result.logs);

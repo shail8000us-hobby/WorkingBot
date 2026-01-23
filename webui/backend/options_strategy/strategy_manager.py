@@ -281,19 +281,27 @@ class StrategyManager:
         strategy_legs = []
         for i, leg_data in enumerate(legs, 1):
             # Build complete leg dict with all required fields
+            # Use 'size' from Delta Exchange API format, fallback to 'quantity'
+            quantity = leg_data.get('size', leg_data.get('quantity', 1))
+            
+            # Use provided limit_price from frontend (mid-price calculation)
+            limit_price = float(leg_data.get('limit_price', 0))
+            
+            log.info(f"  Leg {i} input: size={leg_data.get('size')}, quantity={leg_data.get('quantity')}, final={quantity}, limit_price={limit_price}")
+            
             leg_dict = {
                 'leg_id': i,
                 'option_type': leg_data['option_type'],
                 'strike': float(leg_data['strike']),
                 'expiry': expiry_formatted,
                 'side': leg_data['side'],
-                'quantity': leg_data.get('quantity', 1),
+                'quantity': quantity,
                 'symbol': '',
                 'status': 'pending',
                 'order_id': '',
                 'filled_qty': 0,
                 'avg_fill_price': 0.0,
-                'current_price': 0.0,
+                'current_price': limit_price,
                 'current_bid': 0.0,
                 'current_ask': 0.0
             }
