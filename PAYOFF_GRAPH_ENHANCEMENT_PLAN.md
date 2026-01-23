@@ -29,6 +29,85 @@ After analyzing the current implementation across 3 main components:
 
 ---
 
+## ✅ Completed Work (January 26, 2026)
+
+### Day 1 & Day 2: Basic PoP Integration into OptionsPanel
+
+**Status:** COMPLETED  
+**Commit:** 1df458e3b (feat: Integrate Day 1 & Day 2 PoP calculation into OptionsPanel)  
+**Branch:** BTEH
+
+#### What Was Built:
+Simple integration of Probability of Profit (PoP) calculation into the main Options Panel using existing utilities. This provides traders with immediate visibility of their position probability of success.
+
+#### Files Created (Pre-existing utilities):
+1. **webui/frontend/src/utils/constants.js**
+   - Contains `RISK_FREE_RATE = 0` for Delta Exchange (0% risk-free rate for crypto)
+   - Contract multipliers for BTC/ETH (0.001)
+
+2. **webui/frontend/src/utils/greeksFromAPI.js**
+   - Greeks data caching with 5-second cache duration
+   - Fetches and caches IV, delta, gamma, theta, vega from backend
+
+3. **webui/frontend/src/utils/probabilityCalc.js**
+   - `calculatePoP()` - Black-Scholes-based probability calculation
+   - Uses spot price, strike, IV, time to expiry, and risk-free rate
+   - Returns probability percentage (0-100%)
+
+#### Files Modified:
+1. **webui/frontend/src/components/options/OptionsPanel.js**
+   - Added PoP calculation useEffect that runs whenever positions change
+   - Parses expiry from DDMMYYYY format to calculate time to expiry
+   - Filters out expired options from PoP calculations
+   - Added PoP column to table with color-coded chips:
+     - Green chip for PoP > 50%
+     - Orange chip for PoP ≤ 50%
+   - Fixed localStorage column visibility to ensure new columns appear for existing users
+   - Column defaults now merge with saved preferences: `{ ...defaults, ...parsed }`
+
+#### Technical Implementation Details:
+- **PoP Calculation Logic:**
+  ```javascript
+  const calculatePoP = (spot, strike, iv, timeToExpiry, optionType) => {
+    // Black-Scholes probability calculation
+    // Returns probability that option expires in-the-money
+  }
+  ```
+
+- **Time to Expiry Parsing:**
+  - Converts DDMMYYYY format to JavaScript Date
+  - Calculates days remaining and converts to years
+  - Filters positions with < 0.001 years remaining (expired)
+
+- **localStorage Fix:**
+  - Previous bug: New columns hidden for users with saved preferences
+  - Solution: Merge defaults with saved state to ensure new columns always appear
+  - Pattern: `const defaults = { ...allColumns }; return parsed ? { ...defaults, ...parsed } : defaults;`
+
+#### User Experience:
+- PoP column appears in main Options Panel table
+- Real-time probability display for all active positions
+- Color-coded chips for quick visual assessment
+- Automatic filtering of expired positions
+- Works seamlessly with existing column visibility controls
+
+#### Testing & Deployment:
+- ✅ Frontend built successfully (npm run build)
+- ✅ Backend restarted and healthy
+- ✅ PoP column visibility fixed for existing users
+- ✅ Git commits pushed to origin/BTEH
+
+#### Limitations & Future Work:
+- Uses simplified Black-Scholes (European options)
+- No support for American-style early exercise
+- No portfolio-level PoP aggregation
+- No probability density visualization (planned for Phase 3)
+- No Monte Carlo simulation (planned for Phase 2)
+
+**Next Steps:** This basic integration provides immediate value to traders and establishes the foundation for more advanced probability analysis features outlined in Phase 2 of this plan.
+
+---
+
 ## Part 1: Mathematical Foundation & Calculation Engine
 
 ### 1.1 Core Pricing Models (Backend Enhancement)

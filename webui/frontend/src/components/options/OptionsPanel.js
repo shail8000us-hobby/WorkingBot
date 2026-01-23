@@ -211,25 +211,30 @@ const OptionsPanel = () => {
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
       const saved = localStorage.getItem('options_visible_columns');
-      return saved
-        ? JSON.parse(saved)
-        : {
-            symbol: true,
-            strike: true,
-            auto: true,
-            expiry: true,
-            size: true,
-            batchQty: true,
-            cashflow: true,
-            entry: true,
-            bid: true,
-            ask: true,
-            sltp: true,
-            maxLoss: true,
-            iv: true,
-            pnl: true,
-            actions: true,
-          };
+      const parsed = saved ? JSON.parse(saved) : null;
+      
+      // Default columns with PoP
+      const defaults = {
+        symbol: true,
+        strike: true,
+        auto: true,
+        expiry: true,
+        size: true,
+        batchQty: true,
+        cashflow: true,
+        entry: true,
+        bid: true,
+        ask: true,
+        sltp: true,
+        maxLoss: true,
+        iv: true,
+        pop: true,  // Day 1 & 2: Always show PoP by default
+        pnl: true,
+        actions: true,
+      };
+      
+      // Merge saved with defaults (ensures new columns appear for existing users)
+      return parsed ? { ...defaults, ...parsed } : defaults;
     } catch {
       return {
         symbol: true,
