@@ -39,8 +39,8 @@ import CalculateIcon from '@mui/icons-material/Calculate';
 
 // Import new utilities
 import { getContractMultiplier, RISK_FREE_RATE, DIVIDEND_YIELD } from '../../utils/constants';
-import { getGreeksWithFallback } from '../../utils/greeksFromAPI';
-import { calculatePoP } from '../../utils/probabilityCalc';
+import { getGreeksWithFallback, getBatchGreeksFromAPI } from '../../utils/greeksFromAPI';
+import { calculatePoP, calculatePriceDistribution } from '../../utils/probabilityCalc';
 
 // ============================================================================
 // BLACK-SCHOLES MODEL
@@ -518,8 +518,34 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
     const profitPct =
       totalPremiumCollected > 0 ? ((projectedProfit / totalPremiumCollected) * 100).toFixed(2) : 0;
 
+    // Calculate probability distribution for overlay
+    let probabilityData = [];
+    if (parsedPos.length > 0) {
+      try {
+        // Use average IV and time to expiry
+        const avgIV = parsedPos.reduce((sum, p) => sum + (p.iv || 0), 0) / parsedPos.length;
+        const avgTimeToExpiry = parsedPos.reduce((sum, p) => sum + p.yearsToExpiry, 0) / parsedPos.length;
+        
+        // Calculate price distribution
+        probabilityData = calculatePriceDistribution(
+          spotPrice,
+          avgIV,
+          avgTimeToExpiry,
+          data.length // Match number of points
+        );
+      } catch (error) {
+        console.error('Failed to calculate probability distribution:', error);
+      }
+    }
+
+    // Merge probability data into chart data
+    const dataWithProbability = data.map((point, i) => ({
+      ...point,
+      probability: probabilityData[i]?.probability || 0,
+    }));
+
     return {
-      data,
+      data: dataWithProbability,
       spotPrice,
       targetPrice,
       maxProfit: isFinite(maxProfit) ? maxProfit : 0,
@@ -720,6 +746,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
 
     const expiry = payload.find((p) => p.dataKey === 'expiry')?.value ?? 0;
     const target = payload.find((p) => p.dataKey === 'target')?.value ?? 0;
+    const probability = payload.find((p) => p.dataKey === 'probability')?.value ?? 0;
 
     return (
       <Paper
@@ -741,6 +768,14 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             {target >= 0 ? '+' : ''}${target.toFixed(2)}
           </strong>
         </Typography>
+        {probability > 0 && (
+          <Typography variant="body2" sx={{ color: '#10b981', mt: 0.5 }}>
+            Probability:{' '}
+            <strong>
+              {probability.toFixed(1)}%
+            </strong>
+          </Typography>
+        )}
       </Paper>
     );
   };
@@ -822,6 +857,22 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             <Box sx={{ width: 24, height: 3, bgcolor: '#3b82f6' }} />
             <Typography variant="caption" color="text.secondary">
               On Target Date
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box 
+              sx={{ 
+                width: 24, 
+                height: 3, 
+                bgcolor: '#10b981',
+                opacity: 0.7,
+                borderTop: '3px dashed #10b981',
+                height: 0,
+                marginTop: '1.5px',
+              }} 
+            />
+            <Typography variant="caption" color="text.secondary">
+              Probability
             </Typography>
           </Box>
 
@@ -948,6 +999,24 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
               fill: '#888',
               fontSize: 12,
             }}
+            yAxisId="left"
+          />
+          
+          {/* Secondary Y-axis for Probability (0-100%) */}
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tickFormatter={(v) => `${v.toFixed(0)}%`}
+            stroke="#10b981"
+            tick={{ fontSize: 11, fill: '#10b981' }}
+            domain={[0, 100]}
+            label={{
+              value: 'Probability (%)',
+              angle: 90,
+              position: 'insideRight',
+              fill: '#10b981',
+              fontSize: 11,
+            }}
           />
 
           <Tooltip content={<CustomTooltip />} />
@@ -982,6 +1051,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             fill="url(#profitGradient)"
             fillOpacity={1}
             isAnimationActive={false}
+            yAxisId="left"
           />
 
           {/* Loss area (below zero) - Red fill */}
@@ -992,6 +1062,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             fill="url(#lossGradient)"
             fillOpacity={1}
             isAnimationActive={false}
+            yAxisId="left"
           />
 
           {/* On Expiry line - with gradient color (rendered as two separate paths) */}
@@ -1003,6 +1074,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             dot={false}
             name="On Expiry"
             isAnimationActive={false}
+            yAxisId="left"
             // Custom stroke to show red below 0, green above - handled via CSS
             style={{ filter: 'none' }}
           />
@@ -1016,6 +1088,21 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
             dot={false}
             name="On Target Date"
             isAnimationActive={false}
+            yAxisId="left"
+          />
+
+          {/* Probability Distribution Overlay - Dotted Green Line */}
+          <Line
+            type="monotone"
+            dataKey="probability"
+            stroke="#10b981"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
+            name="Probability (%)"
+            isAnimationActive={false}
+            yAxisId="right"
+            opacity={0.7}
           />
 
           {/* Target price vertical line (dashed yellow) - Always visible at ATM/target */}
