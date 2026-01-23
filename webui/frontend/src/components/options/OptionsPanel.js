@@ -105,6 +105,9 @@ import SoundSettingsPanel from '../SoundSettingsPanel';
 import TradeNotification from '../TradeNotification';
 // JAN 17, 2026: Futures panel - separate file structure, minimal invasion
 import FuturesPanel from '../futures/FuturesPanel';
+// JAN 23, 2026: Day 1 & 2 utilities for PoP calculation
+import { calculatePoP } from '../../utils/probabilityCalc';
+import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
 
 // Sortable Row Component
 const SortableRow = ({ pos, children }) => {
@@ -162,6 +165,9 @@ const OptionsPanel = () => {
       return [];
     }
   });
+
+  // Day 1: Probability of Profit (PoP) data
+  const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
 
   // Save pending orders collapsed state to localStorage
   useEffect(() => {
@@ -239,6 +245,7 @@ const OptionsPanel = () => {
         sltp: true,
         maxLoss: true,
         iv: true,
+        pop: true,
         pnl: true,
         actions: true,
       };
@@ -260,6 +267,7 @@ const OptionsPanel = () => {
     { key: 'sltp', label: 'SL/TP' },
     { key: 'maxLoss', label: 'Max Loss' },
     { key: 'iv', label: 'IV' },
+    { key: 'pop', label: 'PoP' },
     { key: 'pnl', label: 'PnL' },
     { key: 'actions', label: 'Actions' },
   ];
@@ -1142,6 +1150,52 @@ const OptionsPanel = () => {
   useEffect(() => {
     sortedPositionsRef.current = sortedPositions;
     indexPricesRef.current = indexPrices;
+  }, [sortedPositions, indexPrices]);
+
+  // Day 1: Calculate Probability of Profit (PoP) for each position
+  useEffect(() => {
+    if (!sortedPositions || sortedPositions.length === 0) {
+      setPopData({});
+      return;
+    }
+
+    const newPopData = {};
+    
+    sortedPositions.forEach((pos) => {
+      const spotPrice = indexPrices[pos.underlying_asset] || 0;
+      if (!spotPrice || !pos.strike_price) return;
+
+      // Calculate time to expiry from expiry date (format: "DDMMYYYY")
+      const expiry = pos.expiry;
+      if (!expiry || expiry.length !== 8) return;
+      
+      try {
+        const day = parseInt(expiry.slice(0, 2));
+        const month = parseInt(expiry.slice(2, 4)) - 1; // JS months are 0-indexed
+        const year = parseInt(expiry.slice(4, 8));
+        const expiryDate = new Date(year, month, day, 8, 0, 0); // 8am UTC (Delta Exchange settlement)
+        const timeToExpiry = (expiryDate - new Date()) / (1000 * 60 * 60 * 24 * 365); // in years
+        
+        if (timeToExpiry <= 0) return; // Skip expired options
+
+        // Calculate PoP using Black-Scholes
+        const pop = calculatePoP({
+          spotPrice,
+          strikePrice: pos.strike_price,
+          timeToExpiry,
+          impliedVol: pos.iv || 0.8, // Use position IV or default 80%
+          riskFreeRate: RISK_FREE_RATE, // 0% for crypto
+          optionType: pos.option_type, // 'call' or 'put'
+          isLong: pos.size > 0, // Long = bought, Short = sold
+        });
+
+        newPopData[pos.product_symbol] = pop;
+      } catch (err) {
+        console.warn(`Failed to calculate PoP for ${pos.product_symbol}:`, err);
+      }
+    });
+
+    setPopData(newPopData);
   }, [sortedPositions, indexPrices]);
 
   // Automation monitor initialization (only once on mount)
@@ -2873,6 +2927,13 @@ const OptionsPanel = () => {
                         </Tooltip>
                       </TableCell>
                     )}
+                    {visibleColumns.pop && (
+                      <TableCell align="center" sx={{ minWidth: 70 }}>
+                        <Tooltip title="Probability of Profit at Expiry">
+                          <Box>PoP</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
                     {visibleColumns.pnl && <TableCell align="right">PnL</TableCell>}
                     {visibleColumns.actions && <TableCell align="center">Actions</TableCell>}
                   </TableRow>
@@ -3256,6 +3317,31 @@ const OptionsPanel = () => {
                                     <Typography variant="body2">
                                       {pos.iv ? `${(pos.iv * 100).toFixed(1)}%` : '-'}
                                     </Typography>
+                                  </TableCell>
+                                )}
+
+                                {/* PoP (Probability of Profit) - Day 1 */}
+                                {visibleColumns.pop && (
+                                  <TableCell align="center" sx={cellSx}>
+                                    {popData[pos.product_symbol] !== undefined ? (
+                                      <Chip
+                                        label={`${popData[pos.product_symbol].toFixed(1)}%`}
+                                        size="small"
+                                        sx={{
+                                          bgcolor: popData[pos.product_symbol] > 50 
+                                            ? 'success.main' 
+                                            : 'warning.main',
+                                          color: 'white',
+                                          fontWeight: 'bold',
+                                          fontSize: '0.75rem',
+                                          height: 22,
+                                        }}
+                                      />
+                                    ) : (
+                                      <Typography variant="body2" color="text.secondary">
+                                        -
+                                      </Typography>
+                                    )}
                                   </TableCell>
                                 )}
 
