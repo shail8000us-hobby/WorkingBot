@@ -371,9 +371,8 @@ const OptionsPanel = () => {
 
   // Batch order state - strike selection and order quantity
   const [selectedStrikes, setSelectedStrikes] = useState({}); // { symbol: true/false }
-  const [orderQuantity, setOrderQuantity] = useState(1); // Base unit for ratio scaling
+  const [orderQuantity, setOrderQuantity] = useState(1); // Simple multiplier based on current position lots
   const [executionMode, setExecutionMode] = useState('smart'); // 'immediate' or 'smart'
-  const [strikeRatios, setStrikeRatios] = useState({}); // { symbol: { buy: 1, sell: 2 } } - Buy:Sell ratio per strike
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
 
@@ -1579,99 +1578,37 @@ const OptionsPanel = () => {
     return sortedPositions.filter((pos) => selectedStrikes[pos.product_symbol]);
   };
 
-  // Calculate batch orders maintaining buy:sell ratio
-  // Example: Ratio 1:2 means 4 buy + 8 sell
-  // Quantity +1 = 1 buy + 2 sell
-  // Quantity +2 = 2 buy + 4 sell
+  // Calculate batch orders using simple multiplier based on current position lots
+  // Example: Position has 1 lot bought → Multiplier 1 = 1 lot new buy
+  // Example: Position has 2 lots sold → Multiplier 1 = 2 lots new sell
   const calculateBatchOrders = () => {
     const selectedPos = getSelectedPositions();
     const orders = [];
-    const errors = [];
 
     selectedPos.forEach((pos) => {
-      const symbol = pos.product_symbol;
-      const ratio = strikeRatios[symbol];
-
-      // Check if ratio is defined for this strike
-      if (!ratio || !ratio.buy || !ratio.sell) {
-        // No ratio defined - generate single order (legacy behavior)
-        const currentSize = pos.size;
-        const orderSize = Math.abs(orderQuantity);
-        const isLong = currentSize > 0;
-
-        let side;
-        if (orderQuantity > 0) {
-          side = isLong ? 'buy' : 'sell';
-        } else {
-          side = isLong ? 'sell' : 'buy';
-        }
-
-        const midPrice = ((pos.best_bid || 0) + (pos.best_ask || 0)) / 2;
-
-        orders.push({
-          symbol: pos.product_symbol,
-          size: orderSize,
-          side,
-          midPrice,
-          originalSize: pos.size,
-          optionType: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
-        });
-        return;
-      }
-
-      // Ratio is defined - generate TWO orders (buy and sell) maintaining ratio
-      const buyRatio = ratio.buy;
-      const sellRatio = ratio.sell;
-
-      // Validate ratio: must be integers
-      if (
-        !Number.isInteger(buyRatio) ||
-        !Number.isInteger(sellRatio) ||
-        buyRatio <= 0 ||
-        sellRatio <= 0
-      ) {
-        errors.push({
-          symbol,
-          message: `Invalid ratio ${buyRatio}:${sellRatio}. Please place manually.`,
-        });
-        return;
-      }
-
-      // Calculate actual order sizes
-      const buySize = Math.abs(orderQuantity) * buyRatio;
-      const sellSize = Math.abs(orderQuantity) * sellRatio;
-
+      const currentSize = pos.size;
+      const absCurrentSize = Math.abs(currentSize);
+      const multiplier = Math.abs(orderQuantity);
+      
       const midPrice = ((pos.best_bid || 0) + (pos.best_ask || 0)) / 2;
-
-      // Generate BUY order
+      
+      // If position is long (size > 0), create BUY orders
+      // If position is short (size < 0), create SELL orders
+      // Order size = abs(position size) * multiplier
+      
+      const isLong = currentSize > 0;
+      const orderSize = absCurrentSize * multiplier;
+      const side = isLong ? 'buy' : 'sell';
+      
       orders.push({
         symbol: pos.product_symbol,
-        size: buySize,
-        side: 'buy',
+        size: orderSize,
+        side: side,
         midPrice,
         originalSize: pos.size,
         optionType: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
-        ratioInfo: `${buyRatio}:${sellRatio}`,
-      });
-
-      // Generate SELL order
-      orders.push({
-        symbol: pos.product_symbol,
-        size: sellSize,
-        side: 'sell',
-        midPrice,
-        originalSize: pos.size,
-        optionType: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
-        ratioInfo: `${buyRatio}:${sellRatio}`,
       });
     });
-
-    // Show errors if any
-    if (errors.length > 0) {
-      const errorMsg = errors.map((e) => `${e.symbol}: ${e.message}`).join('\\n');
-      setOrderResult({ type: 'error', message: errorMsg });
-      return [];
-    }
 
     return orders;
   };
@@ -3003,72 +2940,6 @@ const OptionsPanel = () => {
                                         '&.Mui-checked': { color: isCall ? '#10b981' : '#ef4444' },
                                       }}
                                     />
-                                    {/* Ratio quick set buttons */}
-                                    {selectedStrikes[pos.product_symbol] && (
-                                      <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                                        <Tooltip title="Set Buy:Sell ratio to 1:2 (1 buy + 2 sell per multiplier)">
-                                          <Chip
-                                            label="1:2"
-                                            size="small"
-                                            onClick={() => {
-                                              setStrikeRatios((prev) => ({
-                                                ...prev,
-                                                [pos.product_symbol]: { buy: 1, sell: 2 },
-                                              }));
-                                            }}
-                                            sx={{
-                                              fontSize: '10px',
-                                              height: '20px',
-                                              cursor: 'pointer',
-                                              bgcolor:
-                                                strikeRatios[pos.product_symbol]?.buy === 1 &&
-                                                strikeRatios[pos.product_symbol]?.sell === 2
-                                                  ? 'rgba(59, 130, 246, 0.5)'
-                                                  : 'rgba(255,255,255,0.1)',
-                                              '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.3)' },
-                                            }}
-                                          />
-                                        </Tooltip>
-                                        <Tooltip title="Set Buy:Sell ratio to 1:1 (equal quantities)">
-                                          <Chip
-                                            label="1:1"
-                                            size="small"
-                                            onClick={() => {
-                                              setStrikeRatios((prev) => ({
-                                                ...prev,
-                                                [pos.product_symbol]: { buy: 1, sell: 1 },
-                                              }));
-                                            }}
-                                            sx={{
-                                              fontSize: '10px',
-                                              height: '20px',
-                                              cursor: 'pointer',
-                                              bgcolor:
-                                                strikeRatios[pos.product_symbol]?.buy === 1 &&
-                                                strikeRatios[pos.product_symbol]?.sell === 1
-                                                  ? 'rgba(59, 130, 246, 0.5)'
-                                                  : 'rgba(255,255,255,0.1)',
-                                              '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.3)' },
-                                            }}
-                                          />
-                                        </Tooltip>
-                                        <Tooltip title="Clear ratio (single order mode)">
-                                          <IconButton
-                                            size="small"
-                                            onClick={() => {
-                                              setStrikeRatios((prev) => {
-                                                const next = { ...prev };
-                                                delete next[pos.product_symbol];
-                                                return next;
-                                              });
-                                            }}
-                                            sx={{ padding: '2px' }}
-                                          >
-                                            <CloseIcon sx={{ fontSize: 14 }} />
-                                          </IconButton>
-                                        </Tooltip>
-                                      </Box>
-                                    )}
                                   </Box>
                                 </TableCell>
 
@@ -3546,47 +3417,6 @@ const OptionsPanel = () => {
                         : 'default'
                     }
                   />
-                  {Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length > 0 && (
-                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Set All Ratio:
-                      </Typography>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => {
-                          const selected = Object.keys(selectedStrikes).filter(
-                            (k) => selectedStrikes[k]
-                          );
-                          const newRatios = {};
-                          selected.forEach((symbol) => {
-                            newRatios[symbol] = { buy: 1, sell: 2 };
-                          });
-                          setStrikeRatios((prev) => ({ ...prev, ...newRatios }));
-                        }}
-                        sx={{ minWidth: 'auto', px: 1, py: 0.25, fontSize: '0.7rem' }}
-                      >
-                        1:2
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => {
-                          const selected = Object.keys(selectedStrikes).filter(
-                            (k) => selectedStrikes[k]
-                          );
-                          const newRatios = {};
-                          selected.forEach((symbol) => {
-                            newRatios[symbol] = { buy: 1, sell: 1 };
-                          });
-                          setStrikeRatios((prev) => ({ ...prev, ...newRatios }));
-                        }}
-                        sx={{ minWidth: 'auto', px: 1, py: 0.25, fontSize: '0.7rem' }}
-                      >
-                        1:1
-                      </Button>
-                    </Box>
-                  )}
                 </Box>
 
                 {/* Center: Quantity Control */}
@@ -3640,9 +3470,7 @@ const OptionsPanel = () => {
                   </Box>
                   <Tooltip
                     title={
-                      orderQuantity > 0
-                        ? `Multiplier for ratio-based orders. If ratio is 1:2, quantity 1 = 1 buy + 2 sell. Without ratio, adds ${orderQuantity} lots to each position.`
-                        : `Multiplier for ratio-based orders. Without ratio, reduces ${Math.abs(orderQuantity)} lots from each position.`
+                      `Simple multiplier based on current position lots. If position has 1 lot bought and 2 lots sold, multiplier ${Math.abs(orderQuantity)} = ${Math.abs(orderQuantity)} lot buy + ${Math.abs(orderQuantity) * 2} lots sell.`
                     }
                   >
                     <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
@@ -3758,7 +3586,7 @@ const OptionsPanel = () => {
                       <Chip
                         key={idx}
                         size="small"
-                        label={`${order.side.toUpperCase()} ${order.size} ${order.optionType === 'Call' ? 'C' : 'P'} ${order.symbol.split('-')[2]}${order.ratioInfo ? ` [${order.ratioInfo}]` : ''} ${executionMode === 'immediate' ? '🚀' : '🧠'}`}
+                        label={`${order.side.toUpperCase()} ${order.size} ${order.optionType === 'Call' ? 'C' : 'P'} ${order.symbol.split('-')[2]} ${executionMode === 'immediate' ? '🚀' : '🧠'}`}
                         sx={{
                           bgcolor:
                             order.side === 'buy'

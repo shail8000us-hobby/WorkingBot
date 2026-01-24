@@ -14,7 +14,7 @@ Stability is more important than elegance.
 OPERATING MODE (MANDATORY):
 You must follow this sequence internally, without asking:
 1. Read and understand the project first.
-2. Identify which parts are UI-only and safe.
+2. Identify which parts are UI-only and safe.r
 3. Perform ONLY the requested change.
 4. Do nothing else.
 
