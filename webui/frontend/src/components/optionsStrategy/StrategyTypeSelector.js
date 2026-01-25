@@ -34,6 +34,12 @@ const STRATEGY_CONFIG = {
     color: '#9c27b0',
     bgColor: 'rgba(156, 39, 176, 0.15)',
   },
+  // MV Straddle (Enhanced)
+  mv_straddle: {
+    icon: '📊',
+    color: '#00bcd4',
+    bgColor: 'rgba(0, 188, 212, 0.15)', // Cyan with alpha
+  },
   // Strangle variants
   long_strangle: {
     icon: '🔀',

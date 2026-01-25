@@ -112,6 +112,18 @@ def get_templates():
             'max_profit': 'Premium received',
             'position': 'short'
         },
+        # MV Straddle (Enhanced)
+        {
+            'type': 'mv_straddle',
+            'name': 'MV Straddle',
+            'description': 'Market View Straddle - Enhanced with volatility analysis, auto ATM strike, and position adjustment tools.',
+            'legs': 2,
+            'parameters': ['strike', 'direction'],
+            'direction': 'neutral',
+            'max_loss': 'Premium paid (long) / Unlimited (short)',
+            'max_profit': 'Unlimited (long) / Premium received (short)',
+            'features': ['Auto ATM Strike', 'Volatility Analysis', 'Breakeven Calculator', 'Position Adjustments']
+        },
         # Strangle variants
         {
             'type': 'long_strangle',

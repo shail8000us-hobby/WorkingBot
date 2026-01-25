@@ -40,6 +40,7 @@ import AutomationControls from './AutomationControls';
 import StrikeSuggestions from './StrikeSuggestions';
 import StrategyValidationStatus from './StrategyValidationStatus';
 import CustomStrategyBuilder from './CustomStrategyBuilder';
+import MVStraddleForm from './strategies/MVStraddleForm';
 
 const API_BASE = '/api/options-strategy';
 
@@ -392,12 +393,24 @@ export default function StrategyBuilder({ onNavigateToTab }) {
                   <Typography variant="h6" gutterBottom>
                     2. Configure Parameters
                   </Typography>
-                  <StrategyForm
-                    strategyType={selectedType}
-                    template={templates.find((t) => t.type === selectedType)}
-                    onSubmit={handleCreateStrategy}
-                    loading={loading}
-                  />
+                  {selectedType === 'mv_straddle' ? (
+                    <MVStraddleForm
+                      onSubmit={(strategy) => {
+                        setCreatedStrategy(strategy);
+                        fetchActiveStrategies();
+                        fetchSummary();
+                        showNotification(`MV Straddle "${strategy.name}" created!`, 'success');
+                      }}
+                      onCancel={() => setSelectedType(null)}
+                    />
+                  ) : (
+                    <StrategyForm
+                      strategyType={selectedType}
+                      template={templates.find((t) => t.type === selectedType)}
+                      onSubmit={handleCreateStrategy}
+                      loading={loading}
+                    />
+                  )}
                 </Paper>
               </>
             )}
