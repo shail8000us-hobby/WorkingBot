@@ -1089,3 +1089,234 @@ def get_execution_status():
         'executions': executions,
         'logs': logs
     })
+
+
+# ==================== MV Straddle Routes ====================
+
+@options_strategy_bp.route('/mv-straddle/preview', methods=['POST'])
+def preview_mv_straddle():
+    """
+    Preview MV Straddle before execution
+    
+    Request body:
+    {
+        "underlying": "BTC",
+        "expiry": "25012026",
+        "strike": null,
+        "direction": "long",
+        "quantity": 1,
+        "autoStrike": true,
+        "strikeOffset": 0
+    }
+    
+    Returns:
+        Preview with legs, analytics, volatility analysis
+    """
+    try:
+        data = request.json
+        log.info(f"📊 MV Straddle preview request: {data}")
+        
+        manager = StrategyManager()
+        
+        result = manager.get_mv_straddle_preview(
+            underlying=data.get('underlying', 'BTC'),
+            expiry=data.get('expiry'),
+            strike=data.get('strike'),
+            direction=data.get('direction', 'long'),
+            quantity=data.get('quantity', 1),
+            auto_strike=data.get('autoStrike', True),
+            strike_offset=data.get('strikeOffset', 0)
+        )
+        
+        if result.get('success'):
+            log.info(f"✅ Preview generated successfully")
+            return jsonify(result)
+        else:
+            log.error(f"❌ Preview failed: {result.get('error')}")
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"❌ Error in preview_mv_straddle: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_strategy_bp.route('/mv-straddle/create', methods=['POST'])
+def create_mv_straddle():
+    """
+    Create and execute MV Straddle
+    
+    Request body: Same as preview
+    
+    Returns:
+        Created strategy with execution results
+    """
+    try:
+        data = request.json
+        log.info(f"🚀 MV Straddle create request: {data}")
+        
+        manager = StrategyManager()
+        
+        # Create strategy
+        result = manager.create_mv_straddle(
+            name=data.get('name', f"MV Straddle {datetime.now().strftime('%Y-%m-%d %H:%M')}"),
+            underlying=data.get('underlying', 'BTC'),
+            expiry=data.get('expiry'),
+            strike=data.get('strike'),
+            direction=data.get('direction', 'long'),
+            quantity=data.get('quantity', 1),
+            auto_strike=data.get('autoStrike', True),
+            strike_offset=data.get('strikeOffset', 0),
+            preview_only=False
+        )
+        
+        if not result.get('success'):
+            log.error(f"❌ Create failed: {result.get('error')}")
+            return jsonify(result), 400
+        
+        strategy = result['strategy']
+        log.info(f"✅ Strategy created: {strategy['id']}")
+        
+        # Execute legs
+        from .leg_executor import LegExecutor
+        executor = LegExecutor()
+        
+        execution_result = executor.execute_strategy(
+            strategy_id=strategy['id'],
+            legs=strategy['legs']
+        )
+        
+        log.info(f"Execution result: {execution_result}")
+        
+        return jsonify({
+            'success': True,
+            'strategy': strategy,
+            'execution': execution_result
+        })
+        
+    except Exception as e:
+        log.error(f"❌ Error in create_mv_straddle: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_strategy_bp.route('/mv-straddle/<strategy_id>/close-leg', methods=['POST'])
+def close_mv_straddle_leg(strategy_id):
+    """
+    Close one leg of MV Straddle
+    
+    Request body:
+    {
+        "leg_type": "call"  // or "put"
+    }
+    """
+    try:
+        data = request.json
+        leg_type = data.get('leg_type')
+        
+        if not leg_type or leg_type not in ['call', 'put']:
+            return jsonify({
+                'success': False,
+                'error': 'leg_type must be "call" or "put"'
+            }), 400
+        
+        log.info(f"🔧 Close {leg_type} leg of strategy {strategy_id}")
+        
+        manager = StrategyManager()
+        result = manager.close_mv_straddle_leg(strategy_id, leg_type)
+        
+        if result.get('success'):
+            log.info(f"✅ Closed {leg_type} leg successfully")
+            return jsonify(result)
+        else:
+            log.error(f"❌ Close leg failed: {result.get('error')}")
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"❌ Error closing leg: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_strategy_bp.route('/mv-straddle/<strategy_id>/roll', methods=['POST'])
+def roll_mv_straddle(strategy_id):
+    """
+    Roll MV Straddle to new expiry
+    
+    Request body:
+    {
+        "new_expiry": "01022026",
+        "new_strike": null,
+        "keep_same_strike": true
+    }
+    """
+    try:
+        data = request.json
+        new_expiry = data.get('new_expiry')
+        
+        if not new_expiry:
+            return jsonify({
+                'success': False,
+                'error': 'new_expiry is required'
+            }), 400
+        
+        log.info(f"🔄 Roll strategy {strategy_id} to expiry {new_expiry}")
+        
+        manager = StrategyManager()
+        result = manager.roll_mv_straddle(
+            strategy_id=strategy_id,
+            new_expiry=new_expiry,
+            new_strike=data.get('new_strike'),
+            keep_same_strike=data.get('keep_same_strike', True)
+        )
+        
+        if result.get('success'):
+            log.info(f"✅ Rolled successfully")
+            return jsonify(result)
+        else:
+            log.error(f"❌ Roll failed: {result.get('error')}")
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"❌ Error rolling: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_strategy_bp.route('/mv-straddle/<strategy_id>/adjust-ratio', methods=['POST'])
+def adjust_mv_straddle_ratio(strategy_id):
+    """
+    Adjust MV Straddle call:put ratio
+    
+    Request body:
+    {
+        "call_quantity": 2,
+        "put_quantity": 1
+    }
+    """
+    try:
+        data = request.json
+        call_qty = data.get('call_quantity')
+        put_qty = data.get('put_quantity')
+        
+        if call_qty is None or put_qty is None:
+            return jsonify({
+                'success': False,
+                'error': 'call_quantity and put_quantity are required'
+            }), 400
+        
+        log.info(f"⚙️ Adjust ratio of strategy {strategy_id} to {call_qty}:{put_qty}")
+        
+        manager = StrategyManager()
+        result = manager.adjust_mv_straddle_ratio(
+            strategy_id=strategy_id,
+            call_quantity=call_qty,
+            put_quantity=put_qty
+        )
+        
+        if result.get('success'):
+            log.info(f"✅ Ratio adjusted successfully")
+            return jsonify(result)
+        else:
+            log.error(f"❌ Adjust ratio failed: {result.get('error')}")
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"❌ Error adjusting ratio: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500

@@ -24,6 +24,13 @@ from .strategy_models import (
 from .strategy_definitions import StrategyDefinitions
 from .leg_executor import LegExecutor
 
+# MV Straddle imports
+from .strategies.mv_straddle_strategy import MVStraddleStrategy
+from .mv_straddle.volatility_analyzer import VolatilityAnalyzer
+from .mv_straddle.strike_selector import StrikeSelector
+from .mv_straddle.breakeven_calculator import BreakevenCalculator
+from .mv_straddle.position_adjuster import PositionAdjuster
+
 log = logging.getLogger(__name__)
 
 
@@ -57,6 +64,34 @@ class StrategyManager:
         self._db_path = Path(__file__).parent / "strategies.db"
         self._active_strategies: Dict[str, Strategy] = {}
         self._executor = LegExecutor()
+        
+        # Initialize MV Straddle components
+        try:
+            # Get API client and chain service from existing imports
+            from ...bot.api.unified_api_client import UnifiedAPIClient
+            from ..options_chain.chain_service import ChainService
+            
+            self._api_client = UnifiedAPIClient()
+            self._chain_service = ChainService()
+            
+            # Initialize MV Straddle utilities
+            self._volatility_analyzer = VolatilityAnalyzer(self._api_client)
+            self._strike_selector = StrikeSelector(self._chain_service)
+            self._breakeven_calculator = BreakevenCalculator()
+            self._position_adjuster = PositionAdjuster(self._api_client, self)
+            
+            # Initialize MV Straddle strategy
+            self._mv_straddle = MVStraddleStrategy(
+                api_client=self._api_client,
+                chain_service=self._chain_service,
+                volatility_analyzer=self._volatility_analyzer,
+                strike_selector=self._strike_selector
+            )
+            
+            log.info("✅ MV Straddle components initialized")
+        except Exception as e:
+            log.warning(f"⚠️ MV Straddle initialization skipped: {e}")
+            self._mv_straddle = None
         
         self._init_db()
         self._load_active_strategies()
@@ -720,3 +755,204 @@ class StrategyManager:
             price_range_pct=price_range_pct,
             num_points=num_points
         ).to_dict()
+    
+    # ==================== MV Straddle Methods ====================
+    
+    def create_mv_straddle(
+        self,
+        name: str,
+        underlying: str,
+        expiry: str,
+        strike: Optional[int] = None,
+        direction: str = "long",
+        quantity: int = 1,
+        auto_strike: bool = True,
+        strike_offset: int = 0,
+        preview_only: bool = False
+    ) -> Dict:
+        """
+        Create MV Straddle strategy
+        
+        Args:
+            name: Strategy name
+            underlying: BTC or ETH
+            expiry: DDMMYYYY format
+            strike: Strike price (optional if auto_strike=True)
+            direction: "long" or "short"
+            quantity: Contracts per leg
+            auto_strike: Auto-select ATM strike
+            strike_offset: Offset from ATM
+            preview_only: If True, don't save to DB
+        
+        Returns:
+            Strategy dict with ID or error
+        """
+        try:
+            if not self._mv_straddle:
+                return {
+                    "success": False,
+                    "error": "MV Straddle not initialized"
+                }
+            
+            # Validate parameters
+            is_valid, error_msg = self._mv_straddle.validate_parameters(
+                underlying=underlying,
+                expiry=expiry,
+                direction=direction,
+                quantity=quantity
+            )
+            
+            if not is_valid:
+                return {"success": False, "error": error_msg}
+            
+            # Calculate legs
+            legs = self._mv_straddle.calculate_legs(
+                underlying=underlying,
+                expiry=expiry,
+                strike=strike,
+                direction=direction,
+                quantity=quantity,
+                auto_strike=auto_strike,
+                strike_offset=strike_offset
+            )
+            
+            # Calculate analytics
+            breakeven = self._mv_straddle.calculate_breakeven(legs)
+            max_pnl = self._mv_straddle.calculate_max_profit_loss(legs)
+            vol_analysis = self._mv_straddle.get_volatility_analysis(legs, expiry, underlying)
+            
+            # Calculate P&L curve
+            pnl_curve = self._breakeven_calculator.calculate_pnl_curve(legs)
+            
+            # Build strategy dict
+            strategy = {
+                "id": f"mv_straddle_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "name": name,
+                "strategy_type": "mv_straddle",
+                "underlying": underlying,
+                "expiry": expiry,
+                "direction": direction,
+                "legs": legs,
+                "total_premium": sum(leg["current_price"] * leg["quantity"] for leg in legs),
+                "breakeven": breakeven,
+                "max_profit_loss": max_pnl,
+                "volatility_analysis": vol_analysis,
+                "pnl_curve": pnl_curve,
+                "created_at": datetime.now().isoformat(),
+                "status": "pending"
+            }
+            
+            # Save to DB if not preview
+            if not preview_only:
+                self._save_mv_straddle_to_db(strategy)
+                log.info(f"Created MV Straddle strategy: {strategy['id']}")
+            
+            return {
+                "success": True,
+                "strategy": strategy
+            }
+            
+        except Exception as e:
+            log.error(f"Error creating MV Straddle: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def _save_mv_straddle_to_db(self, strategy: Dict):
+        """Save MV Straddle to database"""
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO strategies (
+                    id, name, strategy_type, underlying, expiry, status,
+                    legs_json, total_cost, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                strategy['id'],
+                strategy['name'],
+                strategy['strategy_type'],
+                strategy['underlying'],
+                strategy['expiry'],
+                strategy['status'],
+                json.dumps(strategy['legs']),
+                strategy['total_premium'],
+                strategy['created_at']
+            ))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            log.error(f"Error saving MV Straddle to DB: {e}")
+            raise
+    
+    def get_mv_straddle_preview(
+        self,
+        underlying: str,
+        expiry: str,
+        strike: Optional[int] = None,
+        direction: str = "long",
+        quantity: int = 1,
+        auto_strike: bool = True,
+        strike_offset: int = 0
+    ) -> Dict:
+        """
+        Get MV Straddle preview without saving
+        
+        Returns:
+            Preview dict with all analytics
+        """
+        return self.create_mv_straddle(
+            name="Preview",
+            underlying=underlying,
+            expiry=expiry,
+            strike=strike,
+            direction=direction,
+            quantity=quantity,
+            auto_strike=auto_strike,
+            strike_offset=strike_offset,
+            preview_only=True
+        )
+    
+    def close_mv_straddle_leg(
+        self,
+        strategy_id: str,
+        leg_type: str
+    ) -> Dict:
+        """Close one leg of MV Straddle"""
+        if not self._position_adjuster:
+            return {"success": False, "error": "Position adjuster not initialized"}
+        
+        return self._position_adjuster.close_one_leg(strategy_id, leg_type)
+    
+    def roll_mv_straddle(
+        self,
+        strategy_id: str,
+        new_expiry: str,
+        new_strike: Optional[int] = None,
+        keep_same_strike: bool = True
+    ) -> Dict:
+        """Roll MV Straddle to new expiry"""
+        if not self._position_adjuster:
+            return {"success": False, "error": "Position adjuster not initialized"}
+        
+        return self._position_adjuster.roll_straddle(
+            strategy_id, new_expiry, new_strike, keep_same_strike
+        )
+    
+    def adjust_mv_straddle_ratio(
+        self,
+        strategy_id: str,
+        call_quantity: int,
+        put_quantity: int
+    ) -> Dict:
+        """Adjust MV Straddle call:put ratio"""
+        if not self._position_adjuster:
+            return {"success": False, "error": "Position adjuster not initialized"}
+        
+        return self._position_adjuster.adjust_ratio(
+            strategy_id, call_quantity, put_quantity
+        )
