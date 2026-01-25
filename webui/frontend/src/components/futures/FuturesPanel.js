@@ -86,10 +86,10 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
   const [closeAllDialog, setCloseAllDialog] = useState(false);
   const [closingAll, setClosingAll] = useState(false);
 
-  // Hidden positions for payoff diagram (persisted)
-  const [hiddenFuturesPositions, setHiddenFuturesPositions] = useState(() => {
+  // Selected positions for payoff diagram (whitelist - default: none selected)
+  const [selectedFuturesForPayoff, setSelectedFuturesForPayoff] = useState(() => {
     try {
-      const saved = localStorage.getItem('futures_hidden_positions');
+      const saved = localStorage.getItem('futures_selected_positions_payoff');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -116,10 +116,12 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
     }
   });
 
-  // Save hidden futures positions to localStorage
+  // Save selected futures positions to localStorage
   useEffect(() => {
-    localStorage.setItem('futures_hidden_positions', JSON.stringify(hiddenFuturesPositions));
-  }, [hiddenFuturesPositions]);
+    localStorage.setItem('futures_selected_positions_payoff', JSON.stringify(selectedFuturesForPayoff));
+    // Dispatch custom event so OptionsPanel can react to changes
+    window.dispatchEvent(new Event('futures_selected_changed'));
+  }, [selectedFuturesForPayoff]);
 
   // Save pending orders collapsed state to localStorage
   useEffect(() => {
@@ -164,7 +166,7 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
 
   // Toggle futures position visibility
   const toggleFuturesPositionVisibility = useCallback((productSymbol) => {
-    setHiddenFuturesPositions((prev) =>
+    setSelectedFuturesForPayoff((prev) =>
       prev.includes(productSymbol)
         ? prev.filter((s) => s !== productSymbol)
         : [...prev, productSymbol]
@@ -611,16 +613,16 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                       <TableCell padding="checkbox" width="40px">
                         <Tooltip title="Select/deselect all for payoff graph">
                           <Checkbox
-                            checked={assetPositions.every(p => !hiddenFuturesPositions.includes(p.product_symbol))}
+                            checked={assetPositions.every(p => selectedFuturesForPayoff.includes(p.product_symbol))}
                             indeterminate={
-                              assetPositions.some(p => !hiddenFuturesPositions.includes(p.product_symbol)) &&
-                              assetPositions.some(p => hiddenFuturesPositions.includes(p.product_symbol))
+                              assetPositions.some(p => selectedFuturesForPayoff.includes(p.product_symbol)) &&
+                              assetPositions.some(p => !selectedFuturesForPayoff.includes(p.product_symbol))
                             }
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setHiddenFuturesPositions(prev => prev.filter(s => !assetPositions.find(p => p.product_symbol === s)));
+                                setSelectedFuturesForPayoff(prev => [...new Set([...prev, ...assetPositions.map(p => p.product_symbol)])]);
                               } else {
-                                setHiddenFuturesPositions(prev => [...new Set([...prev, ...assetPositions.map(p => p.product_symbol)])]);
+                                setSelectedFuturesForPayoff(prev => prev.filter(s => !assetPositions.find(p => p.product_symbol === s)));
                               }
                             }}
                             sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
@@ -673,7 +675,7 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                       const productId = pos.product_id;
                       const hasMaxLoss = maxLossSettings[productId]?.enabled;
                       const maxLossValue = maxLossSettings[productId]?.max_loss || '';
-                      const isHidden = hiddenFuturesPositions.includes(pos.product_symbol);
+                      const isSelected = selectedFuturesForPayoff.includes(pos.product_symbol);
 
                       return (
                         <TableRow
@@ -681,9 +683,9 @@ const FuturesPanel = ({ pollInterval = 5000 }) => {
                           sx={{ '&:hover': { bgcolor: 'action.hover' } }}
                         >
                           <TableCell padding="checkbox">
-                            <Tooltip title={isHidden ? 'Show in payoff graph' : 'Hide from payoff graph'}>
+                            <Tooltip title={isSelected ? 'Selected for payoff graph' : 'Click to include in payoff graph'}>
                               <Checkbox
-                                checked={!isHidden}
+                                checked={isSelected}
                                 onChange={() => toggleFuturesPositionVisibility(pos.product_symbol)}
                                 sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
                               />

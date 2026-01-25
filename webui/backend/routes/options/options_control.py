@@ -114,7 +114,7 @@ def rate_limit(f):
 
 
 def prevent_duplicate(f):
-    """Decorator to prevent duplicate orders within 5 seconds"""
+    """Decorator to prevent duplicate orders within 3 seconds"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         global _pending_orders
@@ -122,10 +122,18 @@ def prevent_duplicate(f):
         # Get request data
         try:
             data = request.get_json() or {}
-            # Create unique hash from request
+            # Create unique hash from request - INCLUDE order_preference to differentiate market vs limit
             import hashlib
-            request_str = f"{data.get('symbol')}_{data.get('size')}_{data.get('side')}"
+            order_pref = data.get('order_preference', 'maker_first')
+            request_str = f"{data.get('symbol')}_{data.get('size')}_{data.get('side')}_{order_pref}"
             request_hash = hashlib.md5(request_str.encode()).hexdigest()
+            
+            # Also create a simpler hash for market orders specifically (more strict)
+            if order_pref == 'market_only':
+                market_str = f"MARKET_{data.get('symbol')}_{data.get('size')}_{data.get('side')}"
+                market_hash = hashlib.md5(market_str.encode()).hexdigest()
+            else:
+                market_hash = None
         except:
             return f(*args, **kwargs)  # Continue if we can't hash
         
@@ -135,7 +143,7 @@ def prevent_duplicate(f):
         _pending_orders = {k: v for k, v in _pending_orders.items() 
                           if now - v < DUPLICATE_WINDOW_SECONDS}
         
-        # Check for duplicate
+        # Check for duplicate (regular hash)
         if request_hash in _pending_orders:
             elapsed = now - _pending_orders[request_hash]
             log.warning(f"🛑 DUPLICATE ORDER BLOCKED: {request_str} (submitted {elapsed:.1f}s ago)")
@@ -144,17 +152,32 @@ def prevent_duplicate(f):
                 'error': f'Duplicate order blocked. Same order submitted {elapsed:.1f}s ago.'
             }), 429
         
-        # Mark as pending
+        # EXTRA CHECK: For market orders, also check the market-specific hash
+        if market_hash and market_hash in _pending_orders:
+            elapsed = now - _pending_orders[market_hash]
+            log.warning(f"🛑 DUPLICATE MARKET ORDER BLOCKED: {request_str} (submitted {elapsed:.1f}s ago)")
+            return jsonify({
+                'success': False,
+                'error': f'Duplicate market order blocked. Same market order submitted {elapsed:.1f}s ago.'
+            }), 429
+        
+        # Mark as pending (both hashes for market orders)
         _pending_orders[request_hash] = now
+        if market_hash:
+            _pending_orders[market_hash] = now
         
         try:
             result = f(*args, **kwargs)
             # Remove from pending on successful execution
             _pending_orders.pop(request_hash, None)
+            if market_hash:
+                _pending_orders.pop(market_hash, None)
             return result
         except Exception as e:
             # Remove from pending on error too
             _pending_orders.pop(request_hash, None)
+            if market_hash:
+                _pending_orders.pop(market_hash, None)
             log.error(f"❌ Error in {f.__name__}: {e}")
             raise
     
@@ -348,7 +371,8 @@ async def place_options_order(client, product_symbol: str, size: int, side: str,
 
 async def place_smart_order(client, symbol: str, size: float, side: str, 
                            order_preference: str = ORDER_TYPE_MAKER_FIRST,
-                           reduce_only: bool = False):
+                           reduce_only: bool = False,
+                           limit_price: float = None):
     """
     Place order with smart execution strategy.
     
@@ -363,6 +387,7 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         side: 'buy' or 'sell'
         order_preference: ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY
         reduce_only: If True, only reduces position
+        limit_price: Optional custom limit price (if None, calculates mid-price)
         
     Returns:
         dict: Order result with execution details
@@ -400,21 +425,29 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
             order['execution_type'] = 'market_fallback_no_quotes'
             return order
         
-        # Calculate mid-price
-        mid_price = (best_bid + best_ask) / 2
+        # Use provided limit price or calculate mid-price
+        if limit_price is not None:
+            # Get tick size for rounding
+            tick_size = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
+            # Round to tick size
+            price = round(float(limit_price) / tick_size) * tick_size
+            log.info(f"📊 LIMIT order at custom ${price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
+        else:
+            # Calculate mid-price
+            mid_price = (best_bid + best_ask) / 2
+            
+            # Get tick size for rounding
+            # Try to get from ticker, fallback to 0.01 for BTC options
+            tick_size = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
+            price = round(mid_price / tick_size) * tick_size
+            
+            log.info(f"📊 LIMIT order at mid ${price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
         
-        # Get tick size for rounding
-        # Try to get from ticker, fallback to 0.01 for BTC options
-        tick_size = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
-        mid_price = round(mid_price / tick_size) * tick_size
-        
-        log.info(f"📊 LIMIT order at mid ${mid_price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
-        
-        # Place limit order at mid-price
+        # Place limit order at specified price
         limit_order = await place_options_order(
             client, symbol, size, side,
             order_type='limit_order',
-            limit_price=mid_price,
+            limit_price=price,
             reduce_only=reduce_only
         )
         
@@ -423,7 +456,7 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         if order_preference == ORDER_TYPE_MAKER_ONLY:
             # Return immediately, don't wait for fill
             limit_order['execution_type'] = 'limit_maker'
-            limit_order['limit_price'] = mid_price
+            limit_order['limit_price'] = price
             return limit_order
         
         # MAKER_FIRST: Wait 2 seconds for fill
@@ -847,6 +880,7 @@ def add_to_options_position():
         side = data.get('side')
         confirm = data.get('confirm', False)
         order_preference = data.get('order_preference', ORDER_TYPE_MAKER_FIRST)  # Add uses maker_first by default
+        limit_price = data.get('limit_price')  # Optional custom limit price
         
         if not all([symbol, size, side]):
             return jsonify({
@@ -934,7 +968,8 @@ def add_to_options_position():
                     symbol=symbol,
                     size=float(size),
                     side=side,
-                    order_preference=order_preference
+                    order_preference=order_preference,
+                    limit_price=float(limit_price) if limit_price else None
                 ),
                 timeout_seconds=30
             )

@@ -165,6 +165,15 @@ const OptionsPanel = () => {
       return [];
     }
   });
+  // Selected positions for payoff diagram (whitelist approach - default: none selected)
+  const [selectedPositionsForPayoff, setSelectedPositionsForPayoff] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_selected_positions_payoff');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
@@ -173,6 +182,10 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('options_pending_orders_collapsed', JSON.stringify(pendingOrdersCollapsed));
   }, [pendingOrdersCollapsed]);
+  // Save hiddenPositions to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('options_hidden_positions', JSON.stringify(hiddenPositions));
+  }, [hiddenPositions]);
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = useState(() => {
     try {
@@ -427,10 +440,10 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('options_skip_confirm_strikes', JSON.stringify(skipConfirmStrikes));
   }, [skipConfirmStrikes]);
-  // Save hiddenPositions to localStorage whenever it changes
+  // Save selected positions to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem('options_hidden_positions', JSON.stringify(hiddenPositions));
-  }, [hiddenPositions]);
+    localStorage.setItem('options_selected_positions_payoff', JSON.stringify(selectedPositionsForPayoff));
+  }, [selectedPositionsForPayoff]);
   // Save pollInterval to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('options_poll_interval', pollInterval);
@@ -670,7 +683,7 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  }, [positions, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort]);
+  }, [positions, hiddenPositions, selectedPositionsForPayoff, customOrder, selectedExpiries, symbolSort, strikeSort]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
@@ -958,15 +971,40 @@ const OptionsPanel = () => {
     }
   }, []);
 
-  // Filter futures positions based on hidden state (from localStorage)
-  const visibleFuturesPositions = useMemo(() => {
+  // Track selected futures from localStorage (updates when FuturesPanel changes selection)
+  const [selectedFuturesState, setSelectedFuturesState] = useState(() => {
     try {
-      const hiddenFutures = JSON.parse(localStorage.getItem('futures_hidden_positions') || '[]');
-      return futuresPositions.filter((pos) => !hiddenFutures.includes(pos.product_symbol));
+      return JSON.parse(localStorage.getItem('futures_selected_positions_payoff') || '[]');
     } catch {
-      return futuresPositions;
+      return [];
     }
-  }, [futuresPositions]);
+  });
+
+  // Listen for localStorage changes (when FuturesPanel updates the selection)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const selectedFutures = JSON.parse(localStorage.getItem('futures_selected_positions_payoff') || '[]');
+        setSelectedFuturesState(selectedFutures);
+      } catch {
+        setSelectedFuturesState([]);
+      }
+    };
+
+    // Listen for storage events (cross-tab) and custom events (same-tab)
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('futures_selected_changed', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('futures_selected_changed', handleStorageChange);
+    };
+  }, []);
+
+  // Filter futures positions to only selected ones
+  const visibleFuturesPositions = useMemo(() => {
+    return futuresPositions.filter((pos) => selectedFuturesState.includes(pos.product_symbol));
+  }, [futuresPositions, selectedFuturesState]);
 
   // Enrich positions with IV data from Delta Exchange
   const enrichPositionsWithIV = async (positions) => {
@@ -1653,6 +1691,9 @@ const OptionsPanel = () => {
   // Actual batch execution logic (split from executeBatchOrders for confirmation flow)
   const executeBatch = async (orders) => {
     // Lock execution immediately
+    console.log(`[BATCH EXECUTE] Starting batch execution with ${orders.length} orders`, orders);
+    console.log(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${executionMode === 'immediate' ? 'market_only' : 'maker_first'}`);
+    
     setBatchExecuting(true);
     setBatchOrderResults([]);
 
@@ -1671,6 +1712,10 @@ const OptionsPanel = () => {
       let success = false;
       let retries = 0;
 
+      // Generate unique request ID for tracking
+      const requestId = `${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log(`[BATCH-${i+1}/${orders.length}] Preparing: ${order.side.toUpperCase()} ${order.size} ${order.symbol} [RequestID: ${requestId}]`);
+
       // Update UI to show progress
       setBatchOrderResults((prev) => [
         ...prev,
@@ -1686,6 +1731,7 @@ const OptionsPanel = () => {
 
       while (!success && retries <= MAX_RETRIES) {
         try {
+          console.log(`[BATCH-${i+1}/${orders.length}] Submitting API call... [RequestID: ${requestId}]`);
           const { data } = await api.post('/api/options/add', {
             symbol: order.symbol,
             size: order.size,
@@ -1693,6 +1739,7 @@ const OptionsPanel = () => {
             order_preference: orderPreference,
             confirm: true,
           });
+          console.log(`[BATCH-${i+1}/${orders.length}] API response received [RequestID: ${requestId}]`, data);
 
           if (data?.success) {
             const result = {
@@ -2122,18 +2169,22 @@ const OptionsPanel = () => {
                   </Button>
                 </Tooltip>
               )}
-              {/* Focus mode: show hidden count and unhide all */}
+              {/* Show hidden positions button */}
               {hiddenPositions.length > 0 && (
                 <Tooltip title="Show all hidden positions">
-                  <Button
-                    size="small"
-                    color="secondary"
-                    variant="outlined"
-                    onClick={() => setHiddenPositions([])}
-                  >
+                  <Button size="small" color="warning" variant="outlined" onClick={() => setHiddenPositions([])}>
                     Show {hiddenPositions.length} Hidden
                   </Button>
                 </Tooltip>
+              )}
+              {/* Show count of selected positions for payoff */}
+              {selectedPositionsForPayoff.length > 0 && (
+                <Chip
+                  size="small"
+                  label={`${selectedPositionsForPayoff.length} Selected for Payoff`}
+                  color="primary"
+                  variant="outlined"
+                />
               )}
               {/* Polling interval control */}
               <Tooltip title="Change price polling interval">
@@ -2733,16 +2784,16 @@ const OptionsPanel = () => {
                     <TableCell width="40px" padding="checkbox">
                       <Tooltip title="Select/deselect all for payoff graph">
                         <Checkbox
-                          checked={hiddenPositions.length === 0}
+                          checked={selectedPositionsForPayoff.length === sortedPositions.length}
                           indeterminate={
-                            hiddenPositions.length > 0 &&
-                            hiddenPositions.length < sortedPositions.length
+                            selectedPositionsForPayoff.length > 0 &&
+                            selectedPositionsForPayoff.length < sortedPositions.length
                           }
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setHiddenPositions([]);
+                              setSelectedPositionsForPayoff(sortedPositions.map((p) => p.product_symbol));
                             } else {
-                              setHiddenPositions(sortedPositions.map((p) => p.product_symbol));
+                              setSelectedPositionsForPayoff([]);
                             }
                           }}
                           sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
@@ -2968,15 +3019,15 @@ const OptionsPanel = () => {
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                       <Tooltip
                                         title={
-                                          hiddenPositions.includes(pos.product_symbol)
-                                            ? 'Show in payoff graph'
-                                            : 'Hide from payoff graph'
+                                          selectedPositionsForPayoff.includes(pos.product_symbol)
+                                            ? 'Selected for payoff graph'
+                                            : 'Click to include in payoff graph'
                                         }
                                       >
                                         <Checkbox
-                                          checked={!hiddenPositions.includes(pos.product_symbol)}
+                                          checked={selectedPositionsForPayoff.includes(pos.product_symbol)}
                                           onChange={() => {
-                                            setHiddenPositions((prev) =>
+                                            setSelectedPositionsForPayoff((prev) =>
                                               prev.includes(pos.product_symbol)
                                                 ? prev.filter((s) => s !== pos.product_symbol)
                                                 : [...prev, pos.product_symbol]
@@ -3018,6 +3069,25 @@ const OptionsPanel = () => {
                                     </Box>
                                   </TableCell>
                                 )}
+
+                                {/* Hide/Show Button - between Symbol and Strike */}
+                                <TableCell align="center" sx={cellSx} width="50px">
+                                  <Tooltip title="Hide from table and payoff graph">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        setHiddenPositions((prev) =>
+                                          prev.includes(pos.product_symbol)
+                                            ? prev.filter((s) => s !== pos.product_symbol)
+                                            : [...prev, pos.product_symbol]
+                                        );
+                                      }}
+                                      sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
+                                    >
+                                      <VisibilityIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </TableCell>
 
                                 {/* Strike */}
                                 {visibleColumns.strike && (
@@ -3852,7 +3922,7 @@ const OptionsPanel = () => {
         <Box sx={{ mt: 2 }}>
           <OptionsPayoffDiagram 
             positions={sortedPositions} 
-            hiddenPositions={hiddenPositions} 
+            selectedPositions={selectedPositionsForPayoff} 
             futuresPositions={visibleFuturesPositions}
           />
         </Box>

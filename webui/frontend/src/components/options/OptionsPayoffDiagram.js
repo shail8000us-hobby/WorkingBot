@@ -123,7 +123,11 @@ const formatDate = (date) => {
 // MAIN COMPONENT
 // ============================================================================
 
-const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPositions = [] }) => {
+const OptionsPayoffDiagram = ({ 
+  positions, 
+  selectedPositions = [], 
+  futuresPositions = []
+}) => {
   const [priceRangePercent, setPriceRangePercent] = useState(20);
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
   const [targetPricePercent, setTargetPricePercent] = useState(0); // Target price offset from spot (-50% to +50%)
@@ -144,12 +148,32 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
   const parsedPositions = useMemo(() => {
     if (!positions || positions.length === 0) return null;
 
-    const visiblePositions = positions.filter((p) => !hiddenPositions.includes(p.product_symbol));
-    if (visiblePositions.length === 0) return null;
+    // Filter to only selected positions (whitelist approach)
+    const visiblePositions = positions.filter((p) => selectedPositions.includes(p.product_symbol));
+    
+    // Get spot price from first position, or from futures, or default
+    let spotPrice = 90000;
+    if (visiblePositions.length > 0 && visiblePositions[0]?.greeks?.spot) {
+      spotPrice = parseFloat(visiblePositions[0].greeks.spot);
+    } else if (futuresPositions.length > 0 && futuresPositions[0]?.mark_price) {
+      spotPrice = parseFloat(futuresPositions[0].mark_price);
+    }
 
-    const spotPrice = visiblePositions[0]?.greeks?.spot
-      ? parseFloat(visiblePositions[0].greeks.spot)
-      : 90000;
+    // If no selected options AND no visible futures, return null
+    if (visiblePositions.length === 0 && futuresPositions.length === 0) {
+      return null;
+    }
+
+    // If no selected options but have futures, return minimal data structure
+    if (visiblePositions.length === 0) {
+      return {
+        positions: [],
+        spotPrice,
+        minDaysToExpiry: 0.001,
+        riskFreeRate: 0.05,
+        nearestExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
+      };
+    }
 
     const riskFreeRate = 0.05;
 
@@ -221,7 +245,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
     const minDaysToExpiry = Math.max(0.001, actualDaysToExpiry);
 
     return { positions: parsed, spotPrice, minDaysToExpiry, riskFreeRate, nearestExpiry };
-  }, [positions, hiddenPositions]);
+  }, [positions, selectedPositions, futuresPositions]);
 
   // ========================================================================
   // CALCULATE PAYOFF DATA WITH BOTH LINES
@@ -437,7 +461,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
       yMin: isFinite(yMin) ? yMin : -10,
       yMax: isFinite(yMax) ? yMax : 10,
     };
-  }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent]);
+  }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent, futuresPositions]);
 
   // ========================================================================
   // ZOOM HANDLERS
@@ -592,7 +616,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
     return (
       <Paper sx={{ p: 3, textAlign: 'center', bgcolor: 'background.default' }}>
         <Typography color="text.secondary">
-          No visible positions to display payoff diagram
+          Select positions using checkboxes to display payoff diagram
         </Typography>
       </Paper>
     );
@@ -660,6 +684,67 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
 
   return (
     <Paper sx={{ p: 2, bgcolor: 'background.paper' }}>
+      {/* Positions Used in Payoff - Show at top */}
+      <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+        <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5, color: 'primary.main' }}>
+          📊 Positions Used in This Payoff Graph
+        </Typography>
+        
+        {parsedPositions?.positions && parsedPositions.positions.length > 0 && (
+          <Box sx={{ mb: futuresPositions.length > 0 ? 1.5 : 0 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
+              Options ({parsedPositions.positions.length}):
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {parsedPositions.positions.map((pos, idx) => (
+                <Chip
+                  key={idx}
+                  size="small"
+                  sx={{
+                    bgcolor: pos.type === 'call' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                    color: pos.type === 'call' ? '#10b981' : '#ef4444',
+                    fontWeight: 500,
+                    border: '1px solid',
+                    borderColor: pos.type === 'call' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+                  }}
+                  label={`${pos.size > 0 ? '📈 Long' : '📉 Short'} ${Math.abs(pos.size)} ${pos.type.toUpperCase()} $${pos.strike.toLocaleString()}`}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {futuresPositions.length > 0 && (
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
+              Futures ({futuresPositions.length}):
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {futuresPositions.map((pos, idx) => (
+                <Chip
+                  key={idx}
+                  size="small"
+                  sx={{
+                    bgcolor: 'rgba(59,130,246,0.15)',
+                    color: '#3b82f6',
+                    fontWeight: 500,
+                    border: '1px solid',
+                    borderColor: 'rgba(59,130,246,0.3)',
+                  }}
+                  label={`${pos.size > 0 ? '📈 Long' : '📉 Short'} ${Math.abs(pos.size)} ${pos.product_symbol} @ $${parseFloat(pos.entry_price).toLocaleString()}`}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {(!parsedPositions?.positions || parsedPositions.positions.length === 0) && futuresPositions.length === 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            No positions selected. Check the boxes next to positions to include them in the payoff graph.
+          </Typography>
+        )}
+      </Box>
+
       {/* Header with Legend */}
       <Box
         sx={{
@@ -672,7 +757,7 @@ const OptionsPayoffDiagram = ({ positions, hiddenPositions = [], futuresPosition
         }}
       >
         <Typography variant="h6" fontWeight="bold">
-          Payoff Graph {futuresPositions.length > 0 && `(Options + Futures)`}
+          Payoff Graph
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
