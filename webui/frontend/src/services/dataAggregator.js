@@ -21,14 +21,18 @@ class DataAggregator {
   constructor() {
     this.interval = null;
     this.isRunning = false;
-    this.pollInterval = 2000; // 2 seconds
+    this.pollInterval = 5000; // 5 seconds (reduced from 2s for performance)
+    this.pollIntervalFast = 3000; // 3 seconds for active trading
+    this.pollIntervalSlow = 10000; // 10 seconds for idle
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 5;
+    this.isDocumentVisible = true;
+    this.hasActivePositions = false;
   }
 
   /**
    * Start the data aggregator
-   * Begins polling every 2 seconds
+   * Begins adaptive polling based on document visibility and trading activity
    */
   start() {
     if (this.isRunning) {
@@ -38,26 +42,95 @@ class DataAggregator {
 
     this.isRunning = true;
     this.consecutiveErrors = 0;
-    console.log('📡 Data aggregator started (polling every 2s)');
+    
+    // Listen for visibility changes to pause polling when tab is hidden
+    this._setupVisibilityListener();
+    
+    console.log('📡 Data aggregator started (adaptive polling: 3-10s)');
 
-    // Start polling loop
-    this.interval = setInterval(() => {
-      this._fetchAllData();
-    }, this.pollInterval);
+    // Start polling loop with adaptive interval
+    this._startPollingLoop();
 
     // Immediate first fetch
     this._fetchAllData();
   }
 
   /**
+   * Setup visibility change listener for smart polling
+   * @private
+   */
+  _setupVisibilityListener() {
+    if (typeof document === 'undefined') return;
+    
+    const handleVisibilityChange = () => {
+      this.isDocumentVisible = !document.hidden;
+      console.log(`📡 Document ${this.isDocumentVisible ? 'visible' : 'hidden'} - adjusting polling`);
+      
+      // Restart polling loop with new interval
+      this._restartPollingLoop();
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    this._visibilityHandler = handleVisibilityChange;
+  }
+
+  /**
+   * Start or restart the polling loop with adaptive interval
+   * @private
+   */
+  _startPollingLoop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+    }
+    
+    const currentInterval = this._getAdaptiveInterval();
+    this.interval = setInterval(() => {
+      if (this.isDocumentVisible) {
+        this._fetchAllData();
+      }
+    }, currentInterval);
+  }
+
+  /**
+   * Restart polling loop (when conditions change)
+   * @private
+   */
+  _restartPollingLoop() {
+    if (this.isRunning) {
+      this._startPollingLoop();
+    }
+  }
+
+  /**
+   * Get adaptive polling interval based on activity
+   * @private
+   */
+  _getAdaptiveInterval() {
+    if (!this.isDocumentVisible) {
+      return this.pollIntervalSlow; // 10s when tab hidden
+    }
+    if (this.hasActivePositions) {
+      return this.pollIntervalFast; // 3s when trading
+    }
+    return this.pollInterval; // 5s default
+  }
+
+  /**
    * Stop the data aggregator
-   * Clears polling interval
+   * Clears polling interval and cleanup listeners
    */
   stop() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
       this.isRunning = false;
+      
+      // Cleanup visibility listener
+      if (this._visibilityHandler && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', this._visibilityHandler);
+        this._visibilityHandler = null;
+      }
+      
       console.log('📡 Data aggregator stopped');
     }
   }

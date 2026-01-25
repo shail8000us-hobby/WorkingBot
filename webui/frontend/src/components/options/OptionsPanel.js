@@ -1197,46 +1197,106 @@ const OptionsPanel = () => {
   // Day 1: Calculate Probability of Profit (PoP) for each position
   useEffect(() => {
     if (!sortedPositions || sortedPositions.length === 0) {
+      console.log('PoP: No positions to calculate');
       setPopData({});
       return;
     }
 
+    console.log(`PoP: Starting calculation for ${sortedPositions.length} positions`);
+    console.log('PoP: Index prices:', indexPrices);
+
     const newPopData = {};
+    let calculatedCount = 0;
+    let skippedReasons = {};
     
     sortedPositions.forEach((pos) => {
-      const spotPrice = indexPrices[pos.underlying_asset] || 0;
-      if (!spotPrice || !pos.strike_price) return;
+      const symbol = pos.product_symbol;
+      
+      // Parse symbol: C-BTC-113000-300126 or P-BTC-69000-270226
+      const symbolParts = (pos.product_symbol || '').split('-');
+      if (symbolParts.length < 4) {
+        skippedReasons[symbol] = 'Invalid symbol format';
+        return;
+      }
 
-      // Calculate time to expiry from expiry date (format: "DDMMYYYY")
-      const expiry = pos.expiry;
-      if (!expiry || expiry.length !== 8) return;
+      const optionTypeChar = symbolParts[0];
+      const underlying = symbolParts[1]; // BTC or ETH
+      const strikePrice = parseFloat(symbolParts[2]);
+      const expiryStr = symbolParts[3]; // DDMMYY format (e.g., 270226)
+
+      // Validate option type
+      const optionType = optionTypeChar === 'C' ? 'call' : optionTypeChar === 'P' ? 'put' : null;
+      if (!optionType) {
+        skippedReasons[symbol] = `Unknown option type: ${optionTypeChar}`;
+        return;
+      }
+
+      // Get spot price - try greeks.spot first, then indexPrices
+      let spotPrice = pos.greeks?.spot || indexPrices[underlying] || 0;
+      if (!spotPrice || spotPrice <= 0) {
+        skippedReasons[symbol] = `No spot price for ${underlying} (greeks.spot: ${pos.greeks?.spot}, indexPrices: ${indexPrices[underlying]})`;
+        return;
+      }
+
+      // Validate strike price
+      if (!strikePrice || strikePrice <= 0) {
+        skippedReasons[symbol] = `Invalid strike price: ${strikePrice}`;
+        return;
+      }
+
+      // Parse expiry date from DDMMYY format to full date
+      if (!expiryStr || expiryStr.length !== 6) {
+        skippedReasons[symbol] = `Invalid expiry format: ${expiryStr} (expected DDMMYY)`;
+        return;
+      }
+
       
       try {
-        const day = parseInt(expiry.slice(0, 2));
-        const month = parseInt(expiry.slice(2, 4)) - 1; // JS months are 0-indexed
-        const year = parseInt(expiry.slice(4, 8));
+        // Parse DDMMYY to full date
+        const day = parseInt(expiryStr.slice(0, 2));
+        const month = parseInt(expiryStr.slice(2, 4)) - 1; // JS months are 0-indexed
+        const year = 2000 + parseInt(expiryStr.slice(4, 6)); // Convert YY to YYYY
         const expiryDate = new Date(year, month, day, 8, 0, 0); // 8am UTC (Delta Exchange settlement)
         const timeToExpiry = (expiryDate - new Date()) / (1000 * 60 * 60 * 24 * 365); // in years
         
-        if (timeToExpiry <= 0) return; // Skip expired options
+        if (timeToExpiry <= 0) {
+          skippedReasons[symbol] = `Expired (${expiryDate.toLocaleDateString()})`;
+          return;
+        }
 
+        // Get IV - try multiple sources
+        // 1. Check if there's an 'iv' field in position
+        // 2. Calculate from greeks if available
+        // 3. Default to 80% (0.8)
+        let volatility = pos.iv || 0.8; // Default 80% IV
+        
+        // If we have vega and other greeks, IV might be calculable
+        // For now, use default since IV isn't in the response
+        
         // Calculate PoP using Black-Scholes
         const pop = calculatePoP({
           spotPrice,
-          strike: pos.strike_price,
+          strike: strikePrice,
           entryPrice: Math.abs(pos.entry_price) || 0,
           timeToExpiry,
-          volatility: pos.iv || 0.8, // Use position IV or default 80%
-          optionType: pos.option_type || 'call', // 'call' or 'put'
+          volatility,
+          optionType, // 'call' or 'put' parsed from symbol
           side: pos.size > 0 ? 'buy' : 'sell', // Long = buy, Short = sell
         });
 
         newPopData[pos.product_symbol] = pop * 100; // Convert to percentage
+        calculatedCount++;
+        console.log(`PoP: ✓ ${symbol} = ${(pop * 100).toFixed(1)}% (spot: $${spotPrice.toFixed(0)}, strike: $${strikePrice}, DTE: ${(timeToExpiry * 365).toFixed(0)}d, IV: ${(volatility * 100).toFixed(0)}%)`);
       } catch (err) {
-        console.warn(`Failed to calculate PoP for ${pos.product_symbol}:`, err);
+        skippedReasons[symbol] = `Error: ${err.message}`;
+        console.warn(`PoP: Failed for ${symbol}:`, err);
       }
     });
 
+    console.log(`PoP: Calculated ${calculatedCount} of ${sortedPositions.length} positions`);
+    if (Object.keys(skippedReasons).length > 0) {
+      console.log('PoP: Skipped reasons:', skippedReasons);
+    }
     setPopData(newPopData);
   }, [sortedPositions, indexPrices]);
 
@@ -1653,6 +1713,7 @@ const OptionsPanel = () => {
 
   // Track batch execution to prevent duplicates
   const [batchExecuting, setBatchExecuting] = useState(false);
+  const [pendingBatchOrders, setPendingBatchOrders] = useState(null); // CRITICAL FIX: Store orders to prevent recalculation
 
   // Execute batch orders with robust rate limiting and retry logic
   const executeBatchOrders = async () => {
@@ -1674,6 +1735,9 @@ const OptionsPanel = () => {
       return;
     }
 
+    // CRITICAL FIX: Store orders BEFORE showing dialog to prevent recalculation
+    setPendingBatchOrders(orders);
+
     // Show warning for large batches
     if (orders.length > 10) {
       setBatchConfirmDialog({
@@ -1681,7 +1745,7 @@ const OptionsPanel = () => {
         orderCount: orders.length,
         estimatedTime: Math.ceil(orders.length * 1.5),
       });
-      return; // Will be called again when user confirms
+      return; // Will be called when user confirms - uses pendingBatchOrders
     }
 
     // Execute batch (this is called after confirmation or if < 10 orders)
@@ -2854,6 +2918,14 @@ const OptionsPanel = () => {
                         </Box>
                       </TableCell>
                     )}
+                    {/* Hide/Show column header */}
+                    <TableCell align="center" width="50px">
+                      <Tooltip title="Show/Hide positions">
+                        <Box>
+                          <VisibilityIcon sx={{ fontSize: 18, opacity: 0.6 }} />
+                        </Box>
+                      </Tooltip>
+                    </TableCell>
                     {visibleColumns.strike && (
                       <TableCell
                         align="right"
@@ -4233,15 +4305,20 @@ const OptionsPanel = () => {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button
-            onClick={() => setBatchConfirmDialog({ open: false, orderCount: 0, estimatedTime: 0 })}
+            onClick={() => {
+              setBatchConfirmDialog({ open: false, orderCount: 0, estimatedTime: 0 });
+              setPendingBatchOrders(null); // Clear pending orders on cancel
+            }}
             variant="outlined"
           >
             Cancel
           </Button>
           <Button
             onClick={() => {
-              const orders = calculateBatchOrders();
+              // CRITICAL FIX: Use stored orders instead of recalculating (prevents double order placement)
+              const orders = pendingBatchOrders || calculateBatchOrders();
               setBatchConfirmDialog({ open: false, orderCount: 0, estimatedTime: 0 });
+              setPendingBatchOrders(null); // Clear after use
               executeBatch(orders);
             }}
             color="warning"

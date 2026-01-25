@@ -67,6 +67,7 @@ import './App.css';
 const GuardianDashboard = React.lazy(() => import('./components/GuardianDashboard'));
 
 // Lazy load heavy components for better initial load performance
+// Using dynamic import with preload support for instant panel switches
 const ConfigPanel = React.lazy(() => import('./components/ConfigPanel'));
 const LogsPanel = React.lazy(() => import('./components/LogsPanel'));
 const MonitoringPanel = React.lazy(() => import('./components/MonitoringPanel'));
@@ -128,6 +129,52 @@ const RSIPanel = React.lazy(() => import('./components/RSIPanel'));
 const SymbolPortfolio = React.lazy(() => import('./components/SymbolPortfolio'));
 const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDashboard'));
 const ZeroDTEDashboard = React.lazy(() => import('./components/zero_dte/ZeroDTEDashboard'));
+
+// Preload function to eagerly load all lazy components
+const preloadAllComponents = () => {
+  // Start loading all components in parallel
+  ConfigPanel.preload = () => import('./components/ConfigPanel');
+  LogsPanel.preload = () => import('./components/LogsPanel');
+  MonitoringPanel.preload = () => import('./components/MonitoringPanel');
+  MonitoringDashboard.preload = () => import('./components/MonitoringDashboard');
+  ProductionMonitoringDashboard.preload = () => import('./components/ProductionMonitoringDashboard');
+  GuardianPanel.preload = () => import('./components/GuardianPanel');
+  PM2Panel.preload = () => import('./components/PM2Panel');
+  BotManagementDashboard.preload = () => import('./components/BotManagement/BotManagementDashboard');
+  RobustnessPanel.preload = () => import('./components/RobustnessPanel');
+  CapitalProtectionPanel.preload = () => import('./components/CapitalProtectionPanel');
+  InstitutionalAIPanel.preload = () => import('./components/InstitutionalAIPanel');
+  LiquidationProtectionPanel.preload = () => import('./components/LiquidationProtectionPanel');
+  AIAdvisorWidget.preload = () => import('./components/AIAdvisorWidget');
+  MarketNewsWidget.preload = () => import('./components/MarketNewsWidget');
+  CommandKnowledgeBase.preload = () => import('./components/CommandKnowledgeBase');
+  SyncReconciliationPanel.preload = () => import('./components/SyncReconciliationPanel');
+  EmergencyControlsPanel.preload = () => import('./components/EmergencyControlsPanel');
+  ErrorIntelligencePanel.preload = () => import('./components/ErrorIntelligencePanel_simple');
+  ErrorIntelligenceLive.preload = () => import('./components/ErrorIntelligenceLive');
+  ReconciliationPanelV2.preload = () => import('./components/ReconciliationPanelV2');
+  PositionsPanel.preload = () => import('./components/PositionsPanel');
+  OptionsPanel.preload = () => import('./components/options');
+  OptionsChainPanel.preload = () => import('./components/optionsChain');
+  StrategyBuilder.preload = () => import('./components/optionsStrategy');
+  MLInsightsPanel.preload = () => import('./components/options/MLInsightsPanel');
+  MLStyleProfile.preload = () => import('./components/options/MLStyleProfile');
+  MLOpportunityScanner.preload = () => import('./components/options/MLOpportunityScanner');
+  MLDecisionCenter.preload = () => import('./components/options/MLDecisionCenter');
+  MLModelMonitor.preload = () => import('./components/options/MLModelMonitor');
+  DeltaTradeSync.preload = () => import('./components/options/DeltaTradeSync');
+  MarketSignalPanel.preload = () => import('./components/MarketSignalPanel');
+  ShutdownPanel.preload = () => import('./components/ShutdownPanel');
+  OpportunisticRecoveryPanel.preload = () => import('./components/OpportunisticRecoveryPanel');
+  TodoListPanel.preload = () => import('./components/TodoListPanel');
+  FloatingPriceWidget.preload = () => import('./components/FloatingPriceWidget');
+  SystemHealthPanel.preload = () => import('./components/SystemHealthPanel');
+  MonitoringRecoveryPanel.preload = () => import('./components/panels/MonitoringRecoveryPanel');
+  RSIPanel.preload = () => import('./components/RSIPanel');
+  SymbolPortfolio.preload = () => import('./components/SymbolPortfolio');
+  RiskSafetyDashboard.preload = () => import('./components/RiskSafetyDashboard');
+  ZeroDTEDashboard.preload = () => import('./components/zero_dte/ZeroDTEDashboard');
+};
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
   <div className="flex items-center justify-center py-10 text-sm text-slate-400">
@@ -418,6 +465,37 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = run only once on mount
 
+  // Preload all lazy components after initial render for instant panel switches
+  useEffect(() => {
+    const preloadTimer = setTimeout(() => {
+      // Call preload initialization
+      preloadAllComponents();
+      // Trigger actual preloading
+      const preloadComponents = [
+        ConfigPanel, LogsPanel, MonitoringPanel, MonitoringDashboard,
+        ProductionMonitoringDashboard, GuardianPanel, PM2Panel,
+        BotManagementDashboard, RobustnessPanel, CapitalProtectionPanel,
+        InstitutionalAIPanel, LiquidationProtectionPanel, AIAdvisorWidget,
+        MarketNewsWidget, CommandKnowledgeBase, SyncReconciliationPanel,
+        EmergencyControlsPanel, ErrorIntelligencePanel, ErrorIntelligenceLive,
+        ReconciliationPanelV2, PositionsPanel, OptionsPanel, OptionsChainPanel,
+        StrategyBuilder, MLInsightsPanel, MLStyleProfile, MLOpportunityScanner,
+        MLDecisionCenter, MLModelMonitor, DeltaTradeSync, MarketSignalPanel,
+        ShutdownPanel, OpportunisticRecoveryPanel, TodoListPanel,
+        FloatingPriceWidget, SystemHealthPanel, MonitoringRecoveryPanel,
+        RSIPanel, SymbolPortfolio, RiskSafetyDashboard, ZeroDTEDashboard
+      ];
+      // Execute preload functions
+      preloadComponents.forEach(component => {
+        if (component && component.preload) {
+          component.preload().catch(() => {}); // Ignore errors
+        }
+      });
+      console.log('🚀 Preloading all components for instant panel switches');
+    }, 1500); // Start preloading 1.5 seconds after initial load
+    return () => clearTimeout(preloadTimer);
+  }, []);
+
   // Week 3: Check guardian dashboard feature flag
   const { enabled: guardianEnabled } = useFeatureFlag('guardian_dashboard');
 
@@ -595,7 +673,7 @@ function App() {
     });
   }, []);
 
-  const renderTodos = () => (
+  const renderTodos = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="list" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -611,9 +689,9 @@ function App() {
         </CollapsibleCard>
       </div>
     </Suspense>
-  );
+  ), []);
 
-  const renderSystemHealth = () => (
+  const renderSystemHealth = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="monitoring" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -629,9 +707,9 @@ function App() {
         </CollapsibleCard>
       </div>
     </Suspense>
-  );
+  ), []);
 
-  const renderZeroDTE = () => (
+  const renderZeroDTE = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="dashboard" />}>
       <div className="grid gap-6">
         <EnhancedErrorBoundary componentName="ZeroDTEDashboard">
@@ -639,9 +717,9 @@ function App() {
         </EnhancedErrorBoundary>
       </div>
     </Suspense>
-  );
+  ), []);
 
-  const renderDashboard = () => (
+  const renderDashboard = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="dashboard" />}>
       <div className="grid gap-6">{/* Bot Monitoring Dashboard - Top Priority */}
         <CollapsibleCard
@@ -786,9 +864,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [socket, latencyStats, connectionQuality, botIsRunning, isMobile, botStatus, config]);
 
-  const renderPositions = () => (
+  const renderPositions = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="table" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -813,10 +891,10 @@ function App() {
         </CollapsibleCard>
       </div>
     </Suspense>
-  );
+  ), [botIsRunning, isMobile]);
 
   // Options Trading Panel (Jan 2026)
-  const renderOptions = () => (
+  const renderOptions = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="table" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -834,10 +912,10 @@ function App() {
         </CollapsibleCard>
       </div>
     </Suspense>
-  );
+  ), []);
 
   // Options Chain Panel (Jan 2026) - Market Data Viewer
-  const renderOptionsChain = () => (
+  const renderOptionsChain = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="table" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -855,10 +933,10 @@ function App() {
         </CollapsibleCard>
       </div>
     </Suspense>
-  );
+  ), [navParams]);
 
   // Options Strategy Builder (Jan 2026) - Multi-leg strategy builder
-  const renderStrategyBuilder = () => (
+  const renderStrategyBuilder = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="dashboard" />}>
       <div className="grid gap-6">
         <Suspense fallback={<LoadingFallback message="Loading strategy builder..." />}>
@@ -878,9 +956,9 @@ function App() {
         </Suspense>
       </div>
     </Suspense>
-  );
+  ), []);
 
-  const renderRSI = () => (
+  const renderRSI = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="monitoring" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -898,9 +976,9 @@ function App() {
         </CollapsibleCard>
       </div>
     </Suspense>
-  );
+  ), [isMobile]);
 
-  const renderRisk = () => (
+  const renderRisk = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="monitoring" />}>
       <div className="grid gap-6">{/* Modern Unified Risk & Safety Dashboard */}
         <CollapsibleCard
@@ -996,9 +1074,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [isMobile]);
 
-  const renderConfig = () => (
+  const renderConfig = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="default" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -1051,9 +1129,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [config, configMeta, busy, loading, isMobile, featureFlags, handleConfigUpdate, handleClearCache]);
 
-  const renderEmergency = () => (
+  const renderEmergency = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="default" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -1085,9 +1163,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [isMobile, socket]);
 
-  const renderMonitoring = () => (
+  const renderMonitoring = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="monitoring" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -1130,9 +1208,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [isMobile, botIsRunning, botStatus, config]);
 
-  const renderIntelligence = () => (
+  const renderIntelligence = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="default" />}>
       <div className="grid gap-6">
         <CollapsibleCard
@@ -1192,9 +1270,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [isMobile, botIsRunning]);
 
-  const renderMLTrading = () => (
+  const renderMLTrading = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="dashboard" />}>
       <div className="grid gap-6">{/* ML Trading Insights */}
         <CollapsibleCard
@@ -1287,9 +1365,9 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [isMobile]);
 
-  const renderBotManagement = () => (
+  const renderBotManagement = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="monitoring" />}>
       <div className="grid gap-6">{/* PM2 Process Manager */}
         <CollapsibleCard
@@ -1344,28 +1422,28 @@ function App() {
       </CollapsibleCard>
     </div>
     </Suspense>
-  );
+  ), [isMobile, botIsRunning, logs]);
 
   const sectionContent = {
-    todos: renderTodos(),
-    system_health: renderSystemHealth(),
-    dashboard: renderDashboard(),
+    todos: renderTodos,
+    system_health: renderSystemHealth,
+    dashboard: renderDashboard,
     portfolio: (
       <Suspense fallback={<PanelSkeleton type="list" />}>
         <SymbolPortfolio />
       </Suspense>
     ),
-    positions: renderPositions(),
-    options: renderOptions(), // Jan 2026: Options Trading Panel
-    options_chain: renderOptionsChain(), // Jan 2026: Options Chain Market Data
-    strategy_builder: renderStrategyBuilder(), // Jan 2026: Options Strategy Builder
-    risk: renderRisk(),
-    rsi: renderRSI(),
-    config: renderConfig(),
-    ml_trading: renderMLTrading(), // Jan 2026: ML Trading Panel
-    botmanagement: renderBotManagement(),
-    emergency: renderEmergency(),
-    intelligence: renderIntelligence(),
+    positions: renderPositions,
+    options: renderOptions, // Jan 2026: Options Trading Panel
+    options_chain: renderOptionsChain, // Jan 2026: Options Chain Market Data
+    strategy_builder: renderStrategyBuilder, // Jan 2026: Options Strategy Builder
+    risk: renderRisk,
+    rsi: renderRSI,
+    config: renderConfig,
+    ml_trading: renderMLTrading, // Jan 2026: ML Trading Panel
+    botmanagement: renderBotManagement,
+    emergency: renderEmergency,
+    intelligence: renderIntelligence,
     // Week 3: Guardian Dashboard
     guardian: guardianEnabled ? (
       <Suspense fallback={<PanelSkeleton type="monitoring" />}>
@@ -1387,7 +1465,7 @@ function App() {
       </Suspense>
     ) : null,
     // 0DTE Autonomous Trading
-    zero_dte: renderZeroDTE(),
+    zero_dte: renderZeroDTE,
   };
 
   const activeContent = sectionContent[activeSection] || renderDashboard();

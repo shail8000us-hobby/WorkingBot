@@ -60,7 +60,7 @@ export function useConfigManager({
 
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 5000)
+        setTimeout(() => reject(new Error('Request timeout')), 3000)
       );
 
       const [configData, botData] = await Promise.race([criticalDataPromise, timeoutPromise]);
@@ -68,13 +68,10 @@ export function useConfigManager({
       // Backend is responsive, clear backend down state
       setBackendDown(false);
 
-      // Small delay between batches to prevent resource exhaustion
-      await new Promise((resolve) => setTimeout(resolve, 50)); // Reduced from 100ms
-
-      // Batch 2: Secondary data (v5.0: symbol-aware where applicable)
+      // Fetch all secondary data in parallel (no batching delay)
       const [tradingData, logsData, positionsResponse, flagsData] = await Promise.all([
-        robustApiClient.get('/api/trading_status'),
-        robustApiClient.get('/api/logs', { params: { limit: 120 } }),
+        robustApiClient.get('/api/trading_status').catch(() => ({})),
+        robustApiClient.get('/api/logs', { params: { limit: 50 } }), // Reduced from 120 to 50 for faster load
         fetchWithSymbol('/api/positions')
           .then((r) => r.json())
           .catch(() => null),

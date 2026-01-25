@@ -1,8 +1,8 @@
 {
-  "timestamp": 1769309814.5842528,
+  "timestamp": 1769325316.295326,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 52951.71993970871,
+  "uptime": 68453.431016922,
   "state": {
     "open_tranches": [
       {
@@ -14,18 +14,28 @@
         "timestamp": 1769258086.0635688,
         "entry_order_id": "04654e8e-8442-436e-a619-a84e6de6d1a1",
         "tp_order_id": "1137468579"
+      },
+      {
+        "position_id": "c1fb287a-0ede-4939-a99b-e430a3608a45",
+        "entry_price": 89000.0,
+        "tp_price": 89500.0,
+        "size": 5,
+        "correlation_id": "fill-129a404889ab49ea9e9313bbf5ba5204-1769311153932",
+        "timestamp": 1769311154.576769,
+        "entry_order_id": "c1fb287a-0ede-4939-a99b-e430a3608a45",
+        "tp_order_id": "1137925696"
       }
     ],
     "pending_buy": {
-      "order_id": 1137468614,
-      "price": 89000.0,
+      "order_id": 1137925745,
+      "price": 88500.0,
       "size": 5,
-      "timestamp": 1769258091.0226262
+      "timestamp": 1769311158.871256
     },
     "pending_sell": null,
-    "last_buy_order_time": 1769258091.022628,
+    "last_buy_order_time": 1769311158.871259,
     "last_sell_order_time": 0,
-    "total_positions_opened": 1,
+    "total_positions_opened": 2,
     "total_positions_closed": 0,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
@@ -39,30 +49,31 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 1,
-      "total_opened": 1,
+      "open_count": 2,
+      "total_opened": 2,
       "total_closed": 0,
-      "avg_entry_price": 89500.0,
-      "total_size": 5,
-      "oldest_position_age": 51728.52032518387,
+      "avg_entry_price": 89250.0,
+      "total_size": 10,
+      "oldest_position_age": 67230.23105931282,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
     "orders": {
-      "active_orders": 2,
-      "total_placed": 3,
+      "active_orders": 3,
+      "total_placed": 5,
       "total_cancelled": 0,
       "total_failures": 0,
       "success_rate": 1.0,
       "active_order_ids": [
         1137468579,
-        1137468614
+        1137925696,
+        1137925745
       ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 1,
-      "total_completed": 1,
+      "total_started": 2,
+      "total_completed": 2,
       "total_failed": 0,
       "total_compensated": 0,
       "success_rate": 1.0,
@@ -75,10 +86,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 36454,
+        "processed_count": 47082,
         "error_count": 0,
-        "avg_processing_time_ms": 0.07379790047707502,
-        "max_processing_time_ms": 0.5835839983774349,
+        "avg_processing_time_ms": 0.06615368940401822,
+        "max_processing_time_ms": 0.4732919915113598,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -86,15 +97,15 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 10281,
+        "processed_count": 13276,
         "error_count": 0,
-        "avg_processing_time_ms": 0.04509915997914504,
-        "max_processing_time_ms": 0.42883300193352625,
+        "avg_processing_time_ms": 0.05143624061020091,
+        "max_processing_time_ms": 0.32395801099482924,
         "error_rate": 0.0
       }
     },
-    "fills_processed": 1,
-    "sagas_completed": 1,
+    "fills_processed": 2,
+    "sagas_completed": 2,
     "sagas_failed": 0
   },
   "grid_config": {
@@ -107,8 +118,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 89117.5,
-      "price_age_seconds": 1.8369040489196777,
+      "price": 88718.5,
+      "price_age_seconds": 2.929811954498291,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -118,7 +129,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 10438,
+        "total_updates": 13488,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
