@@ -3,7 +3,7 @@ Intelligent Strike Selector for MV Straddle
 Selects optimal ATM strike based on spot price and available strikes
 """
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 

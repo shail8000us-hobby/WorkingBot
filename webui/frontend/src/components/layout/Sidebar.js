@@ -10,6 +10,7 @@ const sectionChunkMap = {
   options: 'options',
   'options-chain': 'optionsChain',
   'strategy-builder': 'strategyBuilder',
+  'mv-straddle': 'mvStraddle',
   config: 'configPanel',
   logs: 'logsPanel',
   guardian: 'guardianDashboard',

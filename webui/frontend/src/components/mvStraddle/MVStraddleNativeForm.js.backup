@@ -1,0 +1,523 @@
+/**
+ * Simplified Native MV Straddle Form
+ * Crash-proof version with manual data loading
+ * 
+ * MV Straddle = Native Delta Exchange India product (contract_type: move_options)
+ * Symbol format: MV-BTC-89400-250126
+ */
+import React, { useState } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  TextField,
+  Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Grid,
+  Alert,
+  Chip,
+  Divider,
+  CircularProgress,
+  ToggleButtonGroup,
+  ToggleButton
+} from '@mui/material';
+import {
+  TrendingUp,
+  TrendingDown,
+  RefreshCw
+} from 'lucide-react';
+
+const MVStraddleNativeForm = ({ onSubmit, onCancel }) => {
+  // Form state
+  const [formData, setFormData] = useState({
+    underlying: 'BTC',
+    expiry: '',
+    strike: '',
+    side: 'buy',
+    quantity: 1,
+    orderType: 'limit_order',
+    limitPrice: ''
+  });
+
+  // UI state
+  const [availableExpiries, setAvailableExpiries] = useState([]);
+  const [availableStrikes, setAvailableStrikes] = useState([]);
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchExpiries = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/mv-straddle/expirations?underlying=${formData.underlying}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setAvailableExpiries(data.expirations);
+      } else {
+        setError(data.error || 'Failed to load expirations');
+      }
+    } catch (err) {
+      setError('Failed to load expirations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStrikes = async () => {
+    if (!formData.expiry) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/mv-straddle/strikes?underlying=${formData.underlying}&expiry=${formData.expiry}`
+      );
+      const data = await response.json();
+      
+      if (data.success) {
+        setAvailableStrikes(data.strikes);
+        
+        // Auto-select ATM strike if autoStrike is enabled
+        if (formData.autoStrike && data.atm_strike) {
+          setFormData(prev => ({ ...prev, strike: data.atm_strike }));
+        }
+      } else {
+        setError(data.error || 'Failed to load strikes');
+      }
+    } catch (err) {
+      console.error('Error fetching strikes:', err);
+      setError('Failed to load strikes: ' + err.message);
+    } finally {
+      setStrikeLoading(false);
+    }
+  };
+
+  const fetchPreview = async () => {
+    setPreviewLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/mv-straddle/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          underlying: formData.underlying,
+          expiry: formData.expiry,
+          strike: formData.strike,
+          side: formData.side,
+          quantity: formData.quantity,
+          autoStrike: formData.autoStrike
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setPreview(data.preview);
+        setSpotPrice(data.preview.spot_price);
+        
+        // Set limit price to mark price
+        if (formData.orderType === 'limit_order' && !formData.limitPrice) {
+          setFormData(prev => ({ 
+            ...prev, 
+            limitPrice: data.preview.mark_price.toFixed(2) 
+          }));
+        }
+      } else {
+        setError(data.error || 'Failed to load preview');
+        setPreview(null);
+      }
+    } catch (err) {
+      console.error('Error fetching preview:', err);
+      setError('Failed to load preview: ' + err.message);
+      setPreview(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleFieldChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Special handling for autoStrike toggle
+    if (field === 'autoStrike' && value) {
+      const atmStrike = availableStrikes.find(s => s.is_atm);
+      if (atmStrike) {
+        setFormData(prev => ({ ...prev, strike: atmStrike.strike }));
+      }
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!preview) {
+      setError('Please wait for preview to load');
+      return;
+    }
+
+    if (formData.orderType === 'limit_order' && !formData.limitPrice) {
+      setError('Please enter limit price');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/mv-straddle/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: preview.symbol,
+          side: formData.side,
+          quantity: formData.quantity,
+          orderType: formData.orderType,
+          limitPrice: formData.limitPrice ? parseFloat(formData.limitPrice) : null
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        if (onSubmit) {
+          onSubmit(data);
+        }
+      } else {
+        setError(data.error || 'Order failed');
+      }
+    } catch (err) {
+      console.error('Error placing order:', err);
+      setError('Order failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+      <Grid container spacing={3}>
+        {/* Left Column - Form */}
+        <Grid item xs={12} md={6}>
+          <Paper elevation={2} sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LineChart size={20} />
+              MV Straddle Order
+            </Typography>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Native Delta Exchange product - Single instrument combining ATM Call + Put
+            </Typography>
+
+            <Divider sx={{ mb: 3 }} />
+
+            {/* Underlying */}
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Underlying</InputLabel>
+              <Select
+                value={formData.underlying}
+                onChange={(e) => handleFieldChange('underlying', e.target.value)}
+                label="Underlying"
+              >
+                <MenuItem value="BTC">BTC</MenuItem>
+                <MenuItem value="ETH">ETH</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Expiry */}
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Expiry</InputLabel>
+              <Select
+                value={formData.expiry}
+                onChange={(e) => handleFieldChange('expiry', e.target.value)}
+                label="Expiry"
+                disabled={expiryLoading || availableExpiries.length === 0}
+              >
+                {availableExpiries.map((exp) => (
+                  <MenuItem key={exp.expiry} value={exp.expiry}>
+                    {exp.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {expiryLoading && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Loading expirations...
+                </Typography>
+              )}
+            </FormControl>
+
+            {/* Auto Strike Toggle */}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.autoStrike}
+                  onChange={(e) => handleFieldChange('autoStrike', e.target.checked)}
+                  color="primary"
+                />
+              }
+              label="Auto ATM Strike"
+              sx={{ mb: 2 }}
+            />
+
+            {/* Strike (manual selection) */}
+            {!formData.autoStrike && (
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Strike</InputLabel>
+                <Select
+                  value={formData.strike}
+                  onChange={(e) => handleFieldChange('strike', e.target.value)}
+                  label="Strike"
+                  disabled={strikeLoading || availableStrikes.length === 0}
+                >
+                  {availableStrikes.map((strike) => (
+                    <MenuItem key={strike.strike} value={strike.strike}>
+                      {strike.strike.toLocaleString()} 
+                      {strike.is_atm && ' (ATM)'}
+                      {strike.distance_from_spot !== 0 && (
+                        <span style={{ fontSize: '0.85em', color: 'gray', marginLeft: 8 }}>
+                          {strike.distance_from_spot > 0 ? '+' : ''}
+                          {strike.distance_from_spot.toFixed(0)}
+                        </span>
+                      )}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {/* Direction */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" gutterBottom>Direction</Typography>
+              <ToggleButtonGroup
+                value={formData.side}
+                exclusive
+                onChange={(e, value) => value && handleFieldChange('side', value)}
+                fullWidth
+              >
+                <ToggleButton value="buy" sx={{ py: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TrendingUp size={18} />
+                    Long (Buy)
+                  </Box>
+                </ToggleButton>
+                <ToggleButton value="sell" sx={{ py: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TrendingDown size={18} />
+                    Short (Sell)
+                  </Box>
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+
+            {/* Quantity */}
+            <TextField
+              fullWidth
+              type="number"
+              label="Quantity"
+              value={formData.quantity}
+              onChange={(e) => handleFieldChange('quantity', parseInt(e.target.value) || 1)}
+              inputProps={{ min: 1 }}
+              sx={{ mb: 2 }}
+            />
+
+            {/* Order Type */}
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Order Type</InputLabel>
+              <Select
+                value={formData.orderType}
+                onChange={(e) => handleFieldChange('orderType', e.target.value)}
+                label="Order Type"
+              >
+                <MenuItem value="limit_order">Limit Order</MenuItem>
+                <MenuItem value="market_order">Market Order</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Limit Price */}
+            {formData.orderType === 'limit_order' && (
+              <TextField
+                fullWidth
+                type="number"
+                label="Limit Price"
+                value={formData.limitPrice}
+                onChange={(e) => handleFieldChange('limitPrice', e.target.value)}
+                inputProps={{ step: 0.1 }}
+                sx={{ mb: 2 }}
+                helperText={preview && `Mark Price: ${preview.mark_price.toFixed(2)}`}
+              />
+            )}
+
+            {/* Error Alert */}
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
+
+            {/* Action Buttons */}
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                fullWidth
+                variant="contained"
+                onClick={handleSubmit}
+                disabled={loading || !preview || previewLoading}
+                sx={{ py: 1.5 }}
+              >
+                {loading ? <CircularProgress size={24} /> : `${formData.side === 'buy' ? 'Buy' : 'Sell'} MV Straddle`}
+              </Button>
+              {onCancel && (
+                <Button
+                  variant="outlined"
+                  onClick={onCancel}
+                  disabled={loading}
+                  sx={{ py: 1.5 }}
+                >
+                  Cancel
+                </Button>
+              )}
+            </Box>
+          </Paper>
+        </Grid>
+
+        {/* Right Column - Preview */}
+        <Grid item xs={12} md={6}>
+          <Paper elevation={2} sx={{ p: 3, position: 'sticky', top: 20 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Info size={20} />
+              Order Preview
+            </Typography>
+
+            {previewLoading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            )}
+
+            {!previewLoading && preview && (
+              <>
+                {/* Symbol & Product Info */}
+                <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Symbol
+                    </Typography>
+                    <Typography variant="h6" sx={{ fontFamily: 'monospace' }}>
+                      {preview.symbol}
+                    </Typography>
+                    <Chip 
+                      label="Native MV Straddle" 
+                      size="small" 
+                      color="primary" 
+                      sx={{ mt: 1 }}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Market Data */}
+                <Table size="small" sx={{ mb: 2 }}>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Spot Price</TableCell>
+                      <TableCell align="right">
+                        <strong>${preview.spot_price.toLocaleString()}</strong>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Strike</TableCell>
+                      <TableCell align="right">${preview.strike.toLocaleString()}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Mark Price</TableCell>
+                      <TableCell align="right">
+                        <strong>${preview.mark_price.toFixed(2)}</strong>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>IV</TableCell>
+                      <TableCell align="right">{(preview.iv * 100).toFixed(2)}%</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+
+                {/* Greeks */}
+                {preview.greeks && (
+                  <>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
+                      Combined Greeks
+                    </Typography>
+                    <Table size="small" sx={{ mb: 2 }}>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>Delta</TableCell>
+                          <TableCell align="right">{preview.greeks.delta?.toFixed(4)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Gamma</TableCell>
+                          <TableCell align="right">{preview.greeks.gamma?.toFixed(6)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Theta</TableCell>
+                          <TableCell align="right">{preview.greeks.theta?.toFixed(2)}</TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell>Vega</TableCell>
+                          <TableCell align="right">{preview.greeks.vega?.toFixed(4)}</TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </>
+                )}
+
+                {/* Order Summary */}
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle2" gutterBottom>
+                  Order Summary
+                </Typography>
+                <Table size="small">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Side</TableCell>
+                      <TableCell align="right">
+                        <Chip 
+                          label={formData.side === 'buy' ? 'LONG' : 'SHORT'}
+                          color={formData.side === 'buy' ? 'success' : 'error'}
+                          size="small"
+                        />
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Quantity</TableCell>
+                      <TableCell align="right">{formData.quantity}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><strong>Estimated Cost</strong></TableCell>
+                      <TableCell align="right">
+                        <strong>${preview.estimated_cost.toFixed(2)}</strong>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+
+                {/* Contract Info */}
+                <Alert severity="info" sx={{ mt: 2 }} icon={<CheckCircle2 size={20} />}>
+                  <Typography variant="caption">
+                    Contract Value: {preview.contract_value} BTC per contract
+                  </Typography>
+                </Alert>
+              </>
+            )}
+
+            {!previewLoading && !preview && (
+              <Alert severity="warning" icon={<AlertCircle size={20} />}>
+                Select expiry and strike to see preview
+              </Alert>
+            )}
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+};
+
+export default MVStraddleNativeForm;

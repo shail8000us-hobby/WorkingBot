@@ -68,11 +68,21 @@ class StrategyManager:
         # Initialize MV Straddle components
         try:
             # Get API client and chain service from existing imports
-            from ...bot.api.unified_api_client import UnifiedAPIClient
-            from ..options_chain.chain_service import ChainService
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+            from bot.api.unified_api_client import UnifiedAPIClient
+            from webui.backend.options_chain.chain_service import OptionsChainService
+            from config.loader import get_api_credentials
             
-            self._api_client = UnifiedAPIClient()
-            self._chain_service = ChainService()
+            # Get API credentials
+            creds = get_api_credentials()
+            self._api_client = UnifiedAPIClient(
+                api_key=creds['api_key'],
+                api_secret=creds['api_secret'],
+                symbol='BTCUSD',
+                enable_websocket=False
+            )
+            self._chain_service = OptionsChainService()
             
             # Initialize MV Straddle utilities
             self._volatility_analyzer = VolatilityAnalyzer(self._api_client)

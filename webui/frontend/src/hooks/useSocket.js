@@ -19,13 +19,17 @@ export const useSocket = () => {
       return;
     }
 
-    // Create new socket connection
+    // Create new socket connection with polling-first strategy
     const newSocket = io({
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],  // Try polling first to avoid WebSocket frame errors
       reconnection: true,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
+      timeout: 20000,
+      autoConnect: true,
+      upgrade: true,  // Allow upgrade from polling to websocket after stable connection
     });
 
     newSocket.on('connect', () => {
@@ -39,7 +43,13 @@ export const useSocket = () => {
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('🔴 Socket connection error:', error);
+      console.warn('⚠️  Socket connection error (non-fatal):', error.message);
+      // Don't throw - let polling fallback handle it
+    });
+
+    newSocket.on('error', (error) => {
+      console.warn('⚠️  Socket error (non-fatal):', error.message);
+      // Don't throw - connection will retry
     });
 
     socketInstance = newSocket;

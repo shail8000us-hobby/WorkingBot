@@ -51,8 +51,9 @@ class ConnectionManager {
 
     const connectionOptions = {
       path: '/socket.io',
-      // Try WebSocket first, fallback to polling for mobile/firewall compatibility
-      transports: ['websocket', 'polling'],
+      // FORCE POLLING FIRST to avoid WebSocket frame header errors
+      // After stable connection, Socket.IO can upgrade to WebSocket
+      transports: ['polling', 'websocket'],  // Changed: polling first, websocket second
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
@@ -60,7 +61,7 @@ class ConnectionManager {
       // Enable transport upgrade (polling → websocket)
       upgrade: true,
       // Remember transport for faster subsequent connections
-      rememberUpgrade: true,
+      rememberUpgrade: false,  // Changed: don't remember - always start with polling
       // Mobile-specific: longer intervals for battery optimization
       pingInterval: 60000, // Ping every 60s (matches backend)
       pingTimeout: 120000, // 120s timeout (matches backend)

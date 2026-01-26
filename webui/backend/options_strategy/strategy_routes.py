@@ -1189,16 +1189,15 @@ def create_mv_straddle():
         strategy = result['strategy']
         log.info(f"✅ Strategy created: {strategy['id']}")
         
-        # Execute legs
-        from .leg_executor import LegExecutor
-        executor = LegExecutor()
+        # Execute legs if requested (for now, just return strategy without execution)
+        # TODO: Add execution support - requires converting dict to Strategy object
+        execution_result = {
+            'success': True,
+            'message': 'Strategy created successfully. Execute legs manually from Active Positions.',
+            'legs_created': len(strategy['legs'])
+        }
         
-        execution_result = executor.execute_strategy(
-            strategy_id=strategy['id'],
-            legs=strategy['legs']
-        )
-        
-        log.info(f"Execution result: {execution_result}")
+        log.info(f"Strategy saved: {strategy['id']}, execution pending")
         
         return jsonify({
             'success': True,

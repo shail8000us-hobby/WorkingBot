@@ -129,6 +129,7 @@ const RSIPanel = React.lazy(() => import('./components/RSIPanel'));
 const SymbolPortfolio = React.lazy(() => import('./components/SymbolPortfolio'));
 const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDashboard'));
 const ZeroDTEDashboard = React.lazy(() => import('./components/zero_dte/ZeroDTEDashboard'));
+const MVStraddlePanel = React.lazy(() => import('./components/mvStraddle/MVStraddlePanel'));
 
 // Preload function to eagerly load all lazy components
 const preloadAllComponents = () => {
@@ -174,6 +175,7 @@ const preloadAllComponents = () => {
   SymbolPortfolio.preload = () => import('./components/SymbolPortfolio');
   RiskSafetyDashboard.preload = () => import('./components/RiskSafetyDashboard');
   ZeroDTEDashboard.preload = () => import('./components/zero_dte/ZeroDTEDashboard');
+  MVStraddlePanel.preload = () => import('./components/mvStraddle/MVStraddlePanel');
 };
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
@@ -483,7 +485,8 @@ function App() {
         MLDecisionCenter, MLModelMonitor, DeltaTradeSync, MarketSignalPanel,
         ShutdownPanel, OpportunisticRecoveryPanel, TodoListPanel,
         FloatingPriceWidget, SystemHealthPanel, MonitoringRecoveryPanel,
-        RSIPanel, SymbolPortfolio, RiskSafetyDashboard, ZeroDTEDashboard
+        RSIPanel, SymbolPortfolio, RiskSafetyDashboard, ZeroDTEDashboard,
+        MVStraddlePanel
       ];
       // Execute preload functions
       preloadComponents.forEach(component => {
@@ -556,6 +559,12 @@ function App() {
         label: '🏗️ Strategy Builder',
         icon: Layers3,
         description: 'Multi-leg options strategies - straddles, iron condors, spreads',
+      },
+      {
+        id: 'mv_straddle',
+        label: '📊 MV Straddle',
+        icon: TrendingUp,
+        description: 'Market View Straddle - volatility-driven directional neutral strategy',
       },
       // Week 3: Guardian Dashboard (feature flag controlled)
       ...(guardianEnabled
@@ -1437,6 +1446,11 @@ function App() {
     options: renderOptions, // Jan 2026: Options Trading Panel
     options_chain: renderOptionsChain, // Jan 2026: Options Chain Market Data
     strategy_builder: renderStrategyBuilder, // Jan 2026: Options Strategy Builder
+    mv_straddle: (
+      <Suspense fallback={<PanelSkeleton type="default" />}>
+        <MVStraddlePanel />
+      </Suspense>
+    ), // Jan 2026: MV Straddle Panel
     risk: renderRisk,
     rsi: renderRSI,
     config: renderConfig,

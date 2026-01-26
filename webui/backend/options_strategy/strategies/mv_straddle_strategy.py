@@ -66,14 +66,15 @@ class MVStraddleStrategy(BaseStrategy):
             call_symbol = f"C-{underlying}-{strike}-{expiry_6digit}"
             put_symbol = f"P-{underlying}-{strike}-{expiry_6digit}"
             
-            call_ticker = self.api_client.get_option_ticker(call_symbol)
-            put_ticker = self.api_client.get_option_ticker(put_symbol)
+            # Get option tickers
+            call_ticker = self.chain_service.get_option_ticker(call_symbol)
+            put_ticker = self.chain_service.get_option_ticker(put_symbol)
             
             if not call_ticker or not put_ticker:
                 logger.warning(f"Could not fetch tickers for {call_symbol} or {put_symbol}, creating legs with estimated data")
                 # Continue with estimated prices rather than failing
-                call_ticker = self._create_fallback_ticker(call_symbol, spot_price, strike, "call")
-                put_ticker = self._create_fallback_ticker(put_symbol, spot_price, strike, "put")
+                call_ticker = call_ticker or self._create_fallback_ticker(call_symbol, spot_price, strike, "call")
+                put_ticker = put_ticker or self._create_fallback_ticker(put_symbol, spot_price, strike, "put")
             
             # Determine side based on direction
             side = "buy" if direction == "long" else "sell"
@@ -86,10 +87,15 @@ class MVStraddleStrategy(BaseStrategy):
                 "side": side,
                 "quantity": quantity,
                 "current_price": self._get_mid_price(call_ticker),
-                "iv": call_ticker.get("iv", 0) * 100 if call_ticker.get("iv") else 0,
-                "greeks": call_ticker.get("greeks", {}),
-                "bid": call_ticker.get("quotes", {}).get("best_bid", 0),
-                "ask": call_ticker.get("quotes", {}).get("best_ask", 0)
+                "iv": (call_ticker.get("iv", 0) * 100) if call_ticker.get("iv") else 0,
+                "greeks": {
+                    "delta": call_ticker.get("delta", 0),
+                    "gamma": call_ticker.get("gamma", 0),
+                    "theta": call_ticker.get("theta", 0),
+                    "vega": call_ticker.get("vega", 0)
+                },
+                "bid": call_ticker.get("bid", 0),
+                "ask": call_ticker.get("ask", 0)
             }
             
             # Build put leg
@@ -100,10 +106,15 @@ class MVStraddleStrategy(BaseStrategy):
                 "side": side,
                 "quantity": quantity,
                 "current_price": self._get_mid_price(put_ticker),
-                "iv": put_ticker.get("iv", 0) * 100 if put_ticker.get("iv") else 0,
-                "greeks": put_ticker.get("greeks", {}),
-                "bid": put_ticker.get("quotes", {}).get("best_bid", 0),
-                "ask": put_ticker.get("quotes", {}).get("best_ask", 0)
+                "iv": (put_ticker.get("iv", 0) * 100) if put_ticker.get("iv") else 0,
+                "greeks": {
+                    "delta": put_ticker.get("delta", 0),
+                    "gamma": put_ticker.get("gamma", 0),
+                    "theta": put_ticker.get("theta", 0),
+                    "vega": put_ticker.get("vega", 0)
+                },
+                "bid": put_ticker.get("bid", 0),
+                "ask": put_ticker.get("ask", 0)
             }
             
             legs = [call_leg, put_leg]
@@ -279,9 +290,9 @@ class MVStraddleStrategy(BaseStrategy):
     def _get_mid_price(self, ticker: Dict) -> float:
         """Get mid price from ticker"""
         try:
-            quotes = ticker.get("quotes", {})
-            bid = quotes.get("best_bid", 0)
-            ask = quotes.get("best_ask", 0)
+            # Ticker format from get_option_ticker has bid/ask at top level
+            bid = ticker.get("bid", 0)
+            ask = ticker.get("ask", 0)
             
             if bid > 0 and ask > 0:
                 mid = (bid + ask) / 2
@@ -316,16 +327,12 @@ class MVStraddleStrategy(BaseStrategy):
         
         return {
             "symbol": symbol,
-            "quotes": {
-                "best_bid": estimated_price * 0.98,
-                "best_ask": estimated_price * 1.02
-            },
+            "bid": estimated_price * 0.98,
+            "ask": estimated_price * 1.02,
             "mark_price": estimated_price,
             "iv": 0.65,  # Estimated 65% IV
-            "greeks": {
-                "delta": 0.5 if option_type == "call" else -0.5,
-                "gamma": 0.001,
-                "vega": strike * 0.01,
-                "theta": -0.5
-            }
+            "delta": 0.5 if option_type == "call" else -0.5,
+            "gamma": 0.001,
+            "vega": strike * 0.01,
+            "theta": -0.5
         }

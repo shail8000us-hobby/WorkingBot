@@ -205,6 +205,14 @@ blueprints = [
     trades_bp, analytics_bp, performance_bp, chart_bp, backtest_bp, strategies_bp
 ]
 
+# Register Frontend Error Logger
+try:
+    from webui.backend.routes.frontend_error_logger import frontend_error_bp
+    app.register_blueprint(frontend_error_bp)
+    log.info("✅ Frontend Error Logger registered")
+except Exception as e:
+    log.error(f"❌ Failed to register frontend error logger: {e}")
+
 # Add brain analyzer if available (same port, separate codebase)
 if BRAIN_ANALYZER_AVAILABLE:
     blueprints.append(brain_analyzer_bp)
@@ -284,6 +292,15 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register options_strategy blueprint: {e}")
     log.warning(f"Options strategy routes not available: {e}")
+
+# Register MV Straddle Native blueprint (JAN 25, 2026: Native Delta Exchange MV Straddle - ISOLATED MODULE)
+try:
+    from webui.backend.routes.mv_straddle_routes import mv_straddle_bp
+    app.register_blueprint(mv_straddle_bp)
+    print(f"✅ Registered mv_straddle_native blueprint (Delta Exchange MV Straddle product)")
+except Exception as e:
+    print(f"⚠️ Could not register mv_straddle_native blueprint: {e}")
+    log.warning(f"MV Straddle native routes not available: {e}")
 
 # Register Futures Panel blueprint (JAN 17, 2026: Futures positions display - ISOLATED MODULE)
 try:
