@@ -453,6 +453,60 @@ def calculate_pnl():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@mv_straddle_bp.route('/positions', methods=['GET'])
+def get_positions():
+    """
+    Get MV Straddle positions from Delta Exchange
+    
+    Response:
+        {
+            "success": true,
+            "positions": [...],
+            "count": 2
+        }
+    """
+    try:
+        # Get handler which has the API client
+        handler = get_mv_straddle_handler()
+        
+        # Get all positions via the API client
+        async def fetch_positions():
+            return await handler.api_client.get_all_positions_with_options()
+        
+        # Run async function
+        result = asyncio.run(fetch_positions())
+        
+        # MV positions are classified as "futures" by the API client
+        # because they don't start with C- or P-
+        all_positions = result.get('futures', []) + result.get('options', [])
+        
+        # Filter for MV Straddle positions (symbol starts with 'MV-')
+        mv_positions = []
+        for pos in all_positions:
+            if isinstance(pos, dict):
+                symbol = pos.get('product_symbol', '') or pos.get('symbol', '')
+                if isinstance(symbol, str) and symbol.startswith('MV-'):
+                    # Enrich position with current ticker data
+                    ticker = handler.get_ticker(symbol)
+                    if ticker:
+                        pos['mark_price'] = ticker.get('mark_price')
+                        pos['best_bid'] = ticker.get('best_bid')
+                        pos['best_ask'] = ticker.get('best_ask')
+                    mv_positions.append(pos)
+        
+        logger.info(f"Found {len(mv_positions)} MV Straddle positions out of {len(all_positions)} total")
+        
+        return jsonify({
+            "success": True,
+            "positions": mv_positions,
+            "count": len(mv_positions)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching MV positions: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e), "positions": [], "count": 0}), 200
+
+
 @mv_straddle_bp.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

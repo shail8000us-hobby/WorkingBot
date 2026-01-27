@@ -11,7 +11,7 @@ symbols:
     product_id: '27'
     grid:
       geometry:
-        reference: 91500
+        reference: 88500
         lower: 85000
         upper: 100000
         step: 500
@@ -99,7 +99,7 @@ safety:
   execute_orders: true
   i_understand_live: 'YES'
   live_acknowledgment: 'YES'
-  max_position_size: 1000
+  max_position_size: 2000
   min_liquidation_distance_pct: 50.0
   flash_move: {}
   spread_guard: {}

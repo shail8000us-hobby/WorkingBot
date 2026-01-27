@@ -3611,19 +3611,24 @@ class AsyncGridBot:
         
         while self._running:
             try:
-                # Query recently filled orders from exchange
-                filled_orders = await self.api_client.list_orders(
-                    symbol=self.symbol, 
-                    states='filled'
+                # Query recent fills (last 5 minutes) using /v2/fills endpoint
+                current_time_us = int(time.time() * 1_000_000)  # Current time in microseconds
+                five_min_ago_us = current_time_us - (5 * 60 * 1_000_000)  # 5 minutes ago
+                
+                recent_fills = await self.api_client.rest_client.get_fills(
+                    product_id=self.product_id,
+                    start_time=five_min_ago_us
                 )
                 
-                if filled_orders:
+                if recent_fills:
                     # Process only fills we haven't seen via WebSocket
                     new_fills_found = 0
                     
-                    for order in filled_orders:
-                        order_id = str(order.get('id'))
-                        fill_marker = f"order-{order_id}"
+                    for fill in recent_fills:
+                        # Fill records have 'id' field directly (not order_id)
+                        fill_id = str(fill.get('id'))
+                        order_id = str(fill.get('order_id'))
+                        fill_marker = f"fill-{fill_id}"
                         
                         # Check if this fill was already processed via WebSocket
                         if fill_marker not in self._seen_fill_ids:
@@ -3631,22 +3636,23 @@ class AsyncGridBot:
                             new_fills_found += 1
                             log.warning("=" * 80)
                             log.warning("⚠️  FILL POLLING FALLBACK: Missed fill detected!")
+                            log.warning(f"   Fill ID: {fill_id}")
                             log.warning(f"   Order ID: {order_id}")
-                            log.warning(f"   Price: ${float(order.get('average_fill_price', order.get('limit_price', 0))):,.2f}")
-                            log.warning(f"   Side: {order.get('side', '').upper()}")
-                            log.warning(f"   Size: {order.get('size')}")
+                            log.warning(f"   Price: ${float(fill.get('price', 0)):,.2f}")
+                            log.warning(f"   Side: {fill.get('side', '').upper()}")
+                            log.warning(f"   Size: {fill.get('size')}")
                             log.warning("   This fill was NOT received via WebSocket")
                             log.warning("=" * 80)
                             
                             # Create a fill-like object for processing
                             fill_data = {
-                                'id': order_id,
+                                'id': fill_id,
                                 'order_id': order_id,
-                                'product_id': order.get('product_id'),
-                                'size': order.get('size'),
-                                'price': order.get('average_fill_price', order.get('limit_price')),
-                                'side': order.get('side'),
-                                'timestamp': order.get('created_at')
+                                'product_id': fill.get('product_id'),
+                                'size': fill.get('size'),
+                                'price': fill.get('price'),
+                                'side': fill.get('side'),
+                                'timestamp': fill.get('created_at')
                             }
                             
                             # Process the fill through normal fill handler
@@ -3654,7 +3660,6 @@ class AsyncGridBot:
                     
                     if new_fills_found > 0:
                         log.error(f"🚨 Fill polling found {new_fills_found} missed fill(s)")
-                        human_log.error(f"Fill polling caught {new_fills_found} missed fill(s)")
                     else:
                         log.debug("✅ Fill polling: No missed fills")
                 

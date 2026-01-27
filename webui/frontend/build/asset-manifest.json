@@ -2,7 +2,7 @@
   "files": {
     "main-0a037d97.css": "/static/css/main-0a037d97.7c85375b.css",
     "main-0a037d97.js": "/static/js/main-0a037d97.36bd2797.js",
-    "runtime.js": "/static/js/runtime.3fbb7eb9.js",
+    "runtime.js": "/static/js/runtime.4887863b.js",
     "static/js/8651.1e37911b.chunk.js": "/static/js/8651.1e37911b.chunk.js",
     "static/js/9578.a80a3bcc.chunk.js": "/static/js/9578.a80a3bcc.chunk.js",
     "static/js/4513.e6fdef28.chunk.js": "/static/js/4513.e6fdef28.chunk.js",
@@ -43,7 +43,7 @@
     "static/js/7629.c0153b2d.chunk.js": "/static/js/7629.c0153b2d.chunk.js",
     "static/css/4671.17f79f72.chunk.css": "/static/css/4671.17f79f72.chunk.css",
     "static/js/4671.ab290b38.chunk.js": "/static/js/4671.ab290b38.chunk.js",
-    "static/js/7637.3496d10a.chunk.js": "/static/js/7637.3496d10a.chunk.js",
+    "static/js/7637.f52488c0.chunk.js": "/static/js/7637.f52488c0.chunk.js",
     "vendor.js": "/static/js/vendor.e39f481c.js",
     "ui-libs-ba3c9f4a.js": "/static/js/ui-libs-ba3c9f4a.08f9a465.js",
     "charts-00f04d1a.js": "/static/js/charts-00f04d1a.a3c50f01.js",
@@ -105,7 +105,7 @@
     "index.html": "/index.html"
   },
   "entrypoints": [
-    "static/js/runtime.3fbb7eb9.js",
+    "static/js/runtime.4887863b.js",
     "static/js/vendor.e39f481c.js",
     "static/js/ui-libs-15f93fc0.85791515.js",
     "static/js/ui-libs-2b4841d6.2228cbfb.js",

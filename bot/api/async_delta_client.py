@@ -788,6 +788,7 @@ class AsyncDeltaClient:
         Args:
             symbol: Optional symbol filter
             states: Comma-separated states (open,pending,closed,cancelled)
+                    Note: 'closed' means filled/completed orders
             page_size: Number of orders per page
             
         Returns:
@@ -807,6 +808,42 @@ class AsyncDeltaClient:
         response = await self._request_with_retry(
             method="GET",
             path="/v2/orders",
+            params=params
+        )
+        
+        return response.get("result", [])
+    
+    async def get_fills(
+        self,
+        product_id: Optional[int] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        page_size: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get trade fills (filled orders).
+        
+        Args:
+            product_id: Optional product ID filter
+            start_time: Optional start timestamp (microseconds)
+            end_time: Optional end timestamp (microseconds)
+            page_size: Number of fills per page
+            
+        Returns:
+            List of fill records
+        """
+        params = {"page_size": page_size}
+        
+        if product_id is not None:
+            params["product_id"] = product_id
+        if start_time is not None:
+            params["start_time"] = start_time
+        if end_time is not None:
+            params["end_time"] = end_time
+        
+        response = await self._request_with_retry(
+            method="GET",
+            path="/v2/fills",
             params=params
         )
         
