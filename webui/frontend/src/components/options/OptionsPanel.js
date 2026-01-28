@@ -225,7 +225,7 @@ const OptionsPanel = () => {
     try {
       const saved = localStorage.getItem('options_visible_columns');
       const parsed = saved ? JSON.parse(saved) : null;
-      
+
       // Default columns with PoP
       const defaults = {
         symbol: true,
@@ -245,7 +245,7 @@ const OptionsPanel = () => {
         pnl: true,
         actions: true,
       };
-      
+
       // Merge saved with defaults (ensures new columns appear for existing users)
       return parsed ? { ...defaults, ...parsed } : defaults;
     } catch {
@@ -351,14 +351,14 @@ const OptionsPanel = () => {
       return saved
         ? JSON.parse(saved)
         : {
-            maxPositionSize: 50, // Max contracts per position
-            profitThreshold: 10, // Scale in when profit > 10%
-            lossThreshold: -20, // Stop scaling when loss > -20%
-            deltaTarget: 0, // Target delta for delta-neutral
-            deltaTolerance: 5, // Rebalance when delta exceeds ±5
-            ivChangeThreshold: 10, // Scale based on IV change > 10%
-            stepSize: 5, // Default step size for scaling
-          };
+          maxPositionSize: 50, // Max contracts per position
+          profitThreshold: 10, // Scale in when profit > 10%
+          lossThreshold: -20, // Stop scaling when loss > -20%
+          deltaTarget: 0, // Target delta for delta-neutral
+          deltaTolerance: 5, // Rebalance when delta exceeds ±5
+          ivChangeThreshold: 10, // Scale based on IV change > 10%
+          stepSize: 5, // Default step size for scaling
+        };
     } catch {
       return {
         maxPositionSize: 50,
@@ -385,6 +385,7 @@ const OptionsPanel = () => {
   // Batch order state - strike selection and order quantity
   const [selectedStrikes, setSelectedStrikes] = useState({}); // { symbol: true/false }
   const [orderQuantity, setOrderQuantity] = useState(1); // Simple multiplier based on current position lots
+  const [multiplierMode, setMultiplierMode] = useState('normal'); // 'normal' or 'gcd' - Toggle between normal multiplier and GCD-based
   const [executionMode, setExecutionMode] = useState('smart'); // 'immediate' or 'smart'
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
@@ -413,10 +414,10 @@ const OptionsPanel = () => {
     orderCount: 0,
     estimatedTime: 0,
   });
-  
+
   // Sound settings dialog state (JAN 19, 2026 - Independent UI component)
   const [soundSettingsOpen, setSoundSettingsOpen] = useState(false);
-  
+
   // Trade notification state (JAN 19, 2026 - Visual feedback)
   const [tradeNotification, setTradeNotification] = useState(null);
   const [orderResult, setOrderResult] = useState(null);
@@ -926,10 +927,10 @@ const OptionsPanel = () => {
       const { data } = await api.get('/api/options/positions');
       if (data?.success) {
         const rawPositions = data.positions || [];
-        
+
         // Enrich positions with IV data from Delta Exchange
         const positionsWithIV = await enrichPositionsWithIV(rawPositions);
-        
+
         setPositions(positionsWithIV);
         hasPositionsRef.current = positionsWithIV.length > 0;
         // Only clear error if we got fresh (non-cached) data
@@ -1011,7 +1012,7 @@ const OptionsPanel = () => {
     try {
       // Fetch IV data for all positions' symbols
       const symbols = positions.map(pos => pos.product_symbol).filter(Boolean);
-      
+
       if (symbols.length === 0) {
         return positions;
       }
@@ -1021,14 +1022,14 @@ const OptionsPanel = () => {
         try {
           const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
           const result = await response.json();
-          
+
           if (result?.success && result?.result) {
             const quotes = result.result.quotes || {};
             // Use average of bid_iv and ask_iv
             const bidIV = parseFloat(quotes.bid_iv) || 0;
             const askIV = parseFloat(quotes.ask_iv) || 0;
             const avgIV = bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV);
-            
+
             return { symbol, iv: avgIV };
           }
           return { symbol, iv: null };
@@ -1130,7 +1131,7 @@ const OptionsPanel = () => {
     if (!window.confirm('Cancel this order?')) {
       return;
     }
-    
+
     try {
       const { data } = await api.delete(`/api/options-chain/order/${order.id}/${order.product_id}`);
       if (data?.success) {
@@ -1208,10 +1209,10 @@ const OptionsPanel = () => {
     const newPopData = {};
     let calculatedCount = 0;
     let skippedReasons = {};
-    
+
     sortedPositions.forEach((pos) => {
       const symbol = pos.product_symbol;
-      
+
       // Parse symbol: C-BTC-113000-300126 or P-BTC-69000-270226
       const symbolParts = (pos.product_symbol || '').split('-');
       if (symbolParts.length < 4) {
@@ -1250,7 +1251,7 @@ const OptionsPanel = () => {
         return;
       }
 
-      
+
       try {
         // Parse DDMMYY to full date
         const day = parseInt(expiryStr.slice(0, 2));
@@ -1258,7 +1259,7 @@ const OptionsPanel = () => {
         const year = 2000 + parseInt(expiryStr.slice(4, 6)); // Convert YY to YYYY
         const expiryDate = new Date(year, month, day, 8, 0, 0); // 8am UTC (Delta Exchange settlement)
         const timeToExpiry = (expiryDate - new Date()) / (1000 * 60 * 60 * 24 * 365); // in years
-        
+
         if (timeToExpiry <= 0) {
           skippedReasons[symbol] = `Expired (${expiryDate.toLocaleDateString()})`;
           return;
@@ -1269,10 +1270,10 @@ const OptionsPanel = () => {
         // 2. Calculate from greeks if available
         // 3. Default to 80% (0.8)
         let volatility = pos.iv || 0.8; // Default 80% IV
-        
+
         // If we have vega and other greeks, IV might be calculable
         // For now, use default since IV isn't in the response
-        
+
         // Calculate PoP using Black-Scholes
         const pop = calculatePoP({
           spotPrice,
@@ -1676,28 +1677,60 @@ const OptionsPanel = () => {
     return sortedPositions.filter((pos) => selectedStrikes[pos.product_symbol]);
   };
 
-  // Calculate batch orders using simple multiplier based on current position lots
+  // Helper function to calculate GCD (Greatest Common Divisor)
+  const calculateGCD = (a, b) => {
+    a = Math.abs(a);
+    b = Math.abs(b);
+    while (b !== 0) {
+      const temp = b;
+      b = a % b;
+      a = temp;
+    }
+    return a;
+  };
+
+  // Helper function to calculate GCD of all selected positions
+  const getPositionsGCD = (positions) => {
+    if (positions.length === 0) return 1;
+    if (positions.length === 1) return Math.abs(positions[0].size);
+
+    let gcd = Math.abs(positions[0].size);
+    for (let i = 1; i < positions.length; i++) {
+      gcd = calculateGCD(gcd, Math.abs(positions[i].size));
+    }
+    return gcd === 0 ? 1 : gcd; // Prevent division by zero
+  };
+
+  // Batch order quantity multiplier logic: multiply each position's size by the orderQuantity
+  // This creates scaled orders based on current position sizes
   // Example: Position has 1 lot bought → Multiplier 1 = 1 lot new buy
   // Example: Position has 2 lots sold → Multiplier 1 = 2 lots new sell
+  // GCD Mode: Uses greatest common divisor of all positions for proportional scaling
   const calculateBatchOrders = () => {
     const selectedPos = getSelectedPositions();
     const orders = [];
+
+    // Calculate GCD if in GCD mode
+    const gcd = multiplierMode === 'gcd' ? getPositionsGCD(selectedPos) : 1;
 
     selectedPos.forEach((pos) => {
       const currentSize = pos.size;
       const absCurrentSize = Math.abs(currentSize);
       const multiplier = Math.abs(orderQuantity);
-      
+
       const midPrice = ((pos.best_bid || 0) + (pos.best_ask || 0)) / 2;
-      
+
       // If position is long (size > 0), create BUY orders
       // If position is short (size < 0), create SELL orders
-      // Order size = abs(position size) * multiplier
-      
+      // In normal mode: Order size = abs(position size) * multiplier
+      // In GCD mode: Order size = (abs(position size) / GCD) * multiplier
+
       const isLong = currentSize > 0;
-      const orderSize = absCurrentSize * multiplier;
+      const orderSize = multiplierMode === 'gcd'
+        ? (absCurrentSize / gcd) * multiplier
+        : absCurrentSize * multiplier;
       const side = isLong ? 'buy' : 'sell';
-      
+
       orders.push({
         symbol: pos.product_symbol,
         size: orderSize,
@@ -1757,7 +1790,7 @@ const OptionsPanel = () => {
     // Lock execution immediately
     console.log(`[BATCH EXECUTE] Starting batch execution with ${orders.length} orders`, orders);
     console.log(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${executionMode === 'immediate' ? 'market_only' : 'maker_first'}`);
-    
+
     setBatchExecuting(true);
     setBatchOrderResults([]);
 
@@ -1778,7 +1811,7 @@ const OptionsPanel = () => {
 
       // Generate unique request ID for tracking
       const requestId = `${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`;
-      console.log(`[BATCH-${i+1}/${orders.length}] Preparing: ${order.side.toUpperCase()} ${order.size} ${order.symbol} [RequestID: ${requestId}]`);
+      console.log(`[BATCH-${i + 1}/${orders.length}] Preparing: ${order.side.toUpperCase()} ${order.size} ${order.symbol} [RequestID: ${requestId}]`);
 
       // Update UI to show progress
       setBatchOrderResults((prev) => [
@@ -1795,7 +1828,7 @@ const OptionsPanel = () => {
 
       while (!success && retries <= MAX_RETRIES) {
         try {
-          console.log(`[BATCH-${i+1}/${orders.length}] Submitting API call... [RequestID: ${requestId}]`);
+          console.log(`[BATCH-${i + 1}/${orders.length}] Submitting API call... [RequestID: ${requestId}]`);
           const { data } = await api.post('/api/options/add', {
             symbol: order.symbol,
             size: order.size,
@@ -1803,7 +1836,7 @@ const OptionsPanel = () => {
             order_preference: orderPreference,
             confirm: true,
           });
-          console.log(`[BATCH-${i+1}/${orders.length}] API response received [RequestID: ${requestId}]`, data);
+          console.log(`[BATCH-${i + 1}/${orders.length}] API response received [RequestID: ${requestId}]`, data);
 
           if (data?.success) {
             const result = {
@@ -1964,7 +1997,7 @@ const OptionsPanel = () => {
                 // More robust: could track original size and compare delta
                 orderResult.filled = true;
                 orderResult.message = `✅ ${orderResult.side.toUpperCase()} ${orderResult.size} FILLED - position now ${actualSize}`;
-                
+
                 // Play sound for individual order fills
                 soundManager.playTradeFilled();
               }
@@ -2266,15 +2299,15 @@ const OptionsPanel = () => {
 
             <Box sx={{ display: 'flex', gap: 1 }}>
               <Tooltip title="Sound Settings">
-                <IconButton 
-                  onClick={() => setSoundSettingsOpen(true)} 
+                <IconButton
+                  onClick={() => setSoundSettingsOpen(true)}
                   size="small"
                   color="primary"
                 >
                   <VolumeIcon />
                 </IconButton>
               </Tooltip>
-              
+
               <Tooltip title="Refresh">
                 <IconButton onClick={handleRefresh} disabled={refreshing}>
                   {refreshing ? <CircularProgress size={20} /> : <RefreshIcon />}
@@ -2697,8 +2730,8 @@ const OptionsPanel = () => {
                     sx={{ animation: 'pulse 1.5s infinite' }}
                   />
                 )}
-                <IconButton 
-                  size="small" 
+                <IconButton
+                  size="small"
                   onClick={() => setPendingOrdersCollapsed(!pendingOrdersCollapsed)}
                   sx={{ ml: 'auto', color: 'text.secondary' }}
                 >
@@ -2706,99 +2739,99 @@ const OptionsPanel = () => {
                 </IconButton>
               </Box>
               <Collapse in={!pendingOrdersCollapsed}>
-              {pendingOrders.length > 0 ? (
-              <TableContainer
-                component={Paper}
-                sx={{ maxHeight: 200, bgcolor: 'background.paper' }}
-              >
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Symbol</TableCell>
-                      <TableCell align="center">Side</TableCell>
-                      <TableCell align="right">Size</TableCell>
-                      <TableCell align="right">Price</TableCell>
-                      <TableCell align="center">Type</TableCell>
-                      <TableCell align="center">Status</TableCell>
-                      <TableCell align="right">Date & Time</TableCell>
-                      <TableCell align="center">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {pendingOrders.map((order) => (
-                      <TableRow key={order.id} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-                        <TableCell>
-                          <Typography
-                            variant="body2"
-                            sx={{ fontFamily: 'monospace', fontWeight: 500 }}
-                          >
-                            {order.symbol}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip
-                            label={order.side?.toUpperCase()}
-                            size="small"
-                            color={order.side === 'buy' ? 'success' : 'error'}
-                            sx={{ fontWeight: 'bold', minWidth: 50 }}
-                          />
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                            {order.unfilled_size || order.size}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                            ${parseFloat(order.price || 0).toFixed(2)}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip
-                            label={order.order_type?.replace('_', ' ') || 'limit'}
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontSize: '0.7rem' }}
-                          />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip
-                            label={order.state || 'open'}
-                            size="small"
-                            color="warning"
-                            sx={{ fontWeight: 'bold' }}
-                          />
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="caption" color="text.secondary">
-                            {order.created_at
-                              ? new Date(order.created_at).toLocaleString()
-                              : '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Tooltip title="Cancel Order">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleCancelPendingOrder(order)}
-                            >
-                              <CloseIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-              ) : (
-                <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No pending orders
-                  </Typography>
-                </Paper>
-              )}
+                {pendingOrders.length > 0 ? (
+                  <TableContainer
+                    component={Paper}
+                    sx={{ maxHeight: 200, bgcolor: 'background.paper' }}
+                  >
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Symbol</TableCell>
+                          <TableCell align="center">Side</TableCell>
+                          <TableCell align="right">Size</TableCell>
+                          <TableCell align="right">Price</TableCell>
+                          <TableCell align="center">Type</TableCell>
+                          <TableCell align="center">Status</TableCell>
+                          <TableCell align="right">Date & Time</TableCell>
+                          <TableCell align="center">Actions</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {pendingOrders.map((order) => (
+                          <TableRow key={order.id} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                            <TableCell>
+                              <Typography
+                                variant="body2"
+                                sx={{ fontFamily: 'monospace', fontWeight: 500 }}
+                              >
+                                {order.symbol}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                label={order.side?.toUpperCase()}
+                                size="small"
+                                color={order.side === 'buy' ? 'success' : 'error'}
+                                sx={{ fontWeight: 'bold', minWidth: 50 }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                {order.unfilled_size || order.size}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                ${parseFloat(order.price || 0).toFixed(2)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                label={order.order_type?.replace('_', ' ') || 'limit'}
+                                size="small"
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem' }}
+                              />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                label={order.state || 'open'}
+                                size="small"
+                                color="warning"
+                                sx={{ fontWeight: 'bold' }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="caption" color="text.secondary">
+                                {order.created_at
+                                  ? new Date(order.created_at).toLocaleString()
+                                  : '-'}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Tooltip title="Cancel Order">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleCancelPendingOrder(order)}
+                                >
+                                  <CloseIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'action.hover' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No pending orders
+                    </Typography>
+                  </Paper>
+                )}
               </Collapse>
             </Box>
           )}
@@ -3346,8 +3379,8 @@ const OptionsPanel = () => {
                                         label={`${popData[pos.product_symbol].toFixed(1)}%`}
                                         size="small"
                                         sx={{
-                                          bgcolor: popData[pos.product_symbol] > 50 
-                                            ? 'success.main' 
+                                          bgcolor: popData[pos.product_symbol] > 50
+                                            ? 'success.main'
                                             : 'warning.main',
                                           color: 'white',
                                           fontWeight: 'bold',
@@ -3612,12 +3645,75 @@ const OptionsPanel = () => {
                   </Box>
                   <Tooltip
                     title={
-                      `Simple multiplier based on current position lots. If position has 1 lot bought and 2 lots sold, multiplier ${Math.abs(orderQuantity)} = ${Math.abs(orderQuantity)} lot buy + ${Math.abs(orderQuantity) * 2} lots sell.`
+                      multiplierMode === 'normal'
+                        ? `Simple multiplier based on current position lots. If position has 1 lot bought and 2 lots sold, multiplier ${Math.abs(orderQuantity)} = ${Math.abs(orderQuantity)} lot buy + ${Math.abs(orderQuantity) * 2} lots sell.`
+                        : `GCD-based multiplier: positions scaled proportionally using their greatest common divisor (GCD=${getPositionsGCD(getSelectedPositions())}). This allows for smaller, proportional batch sizes.`
                     }
                   >
-                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                      (x{Math.abs(orderQuantity)} multiplier)
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        (x{Math.abs(orderQuantity)} {multiplierMode === 'gcd' ? 'GCD' : 'multiplier'})
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          borderRadius: 1,
+                          overflow: 'hidden',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                        }}
+                      >
+                        <Button
+                          size="small"
+                          variant={multiplierMode === 'normal' ? 'contained' : 'outlined'}
+                          onClick={() => setMultiplierMode('normal')}
+                          sx={{
+                            borderRadius: 0,
+                            minWidth: 60,
+                            fontSize: '0.7rem',
+                            py: 0.25,
+                            bgcolor:
+                              multiplierMode === 'normal'
+                                ? 'rgba(59, 130, 246, 0.8)'
+                                : 'transparent',
+                            color: multiplierMode === 'normal' ? '#fff' : 'rgba(59, 130, 246, 0.8)',
+                            borderColor: 'transparent',
+                            '&:hover': {
+                              bgcolor:
+                                multiplierMode === 'normal'
+                                  ? 'rgba(59, 130, 246, 1)'
+                                  : 'rgba(59, 130, 246, 0.1)',
+                              borderColor: 'transparent',
+                            },
+                          }}
+                        >
+                          Normal
+                        </Button>
+                        <Button
+                          size="small"
+                          variant={multiplierMode === 'gcd' ? 'contained' : 'outlined'}
+                          onClick={() => setMultiplierMode('gcd')}
+                          sx={{
+                            borderRadius: 0,
+                            minWidth: 60,
+                            fontSize: '0.7rem',
+                            py: 0.25,
+                            bgcolor:
+                              multiplierMode === 'gcd' ? 'rgba(251, 191, 36, 0.8)' : 'transparent',
+                            color: multiplierMode === 'gcd' ? '#000' : 'rgba(251, 191, 36, 0.8)',
+                            borderColor: 'transparent',
+                            '&:hover': {
+                              bgcolor:
+                                multiplierMode === 'gcd'
+                                  ? 'rgba(251, 191, 36, 1)'
+                                  : 'rgba(251, 191, 36, 0.1)',
+                              borderColor: 'transparent',
+                            },
+                          }}
+                        >
+                          GCD
+                        </Button>
+                      </Box>
+                    </Box>
                   </Tooltip>
                 </Box>
 
@@ -3992,14 +4088,14 @@ const OptionsPanel = () => {
       {/* Payoff Diagram */}
       {positions.length > 0 && (
         <Box sx={{ mt: 2 }}>
-          <OptionsPayoffDiagram 
-            positions={sortedPositions} 
-            selectedPositions={selectedPositionsForPayoff} 
+          <OptionsPayoffDiagram
+            positions={sortedPositions}
+            selectedPositions={selectedPositionsForPayoff}
             futuresPositions={visibleFuturesPositions}
           />
         </Box>
       )}
-      
+
       {/* Live Execution Status */}
       <Box sx={{ mt: 2 }}>
         <LogPanel refreshTrigger={0} />
@@ -4065,10 +4161,10 @@ const OptionsPanel = () => {
             <Alert
               severity={
                 addDialog.recommendation.action === 'scale' &&
-                addDialog.recommendation.riskLevel === 'low'
+                  addDialog.recommendation.riskLevel === 'low'
                   ? 'success'
                   : addDialog.recommendation.action === 'scale' &&
-                      addDialog.recommendation.riskLevel === 'medium'
+                    addDialog.recommendation.riskLevel === 'medium'
                     ? 'info'
                     : addDialog.recommendation.action === 'reduce'
                       ? 'error'
@@ -4344,17 +4440,17 @@ const OptionsPanel = () => {
           setSelectedPositionForSLTP(null);
         }}
       />
-      
+
       {/* Sound Settings Panel (JAN 19, 2026 - Independent UI component) */}
-      <SoundSettingsPanel 
-        open={soundSettingsOpen} 
-        onClose={() => setSoundSettingsOpen(false)} 
+      <SoundSettingsPanel
+        open={soundSettingsOpen}
+        onClose={() => setSoundSettingsOpen(false)}
       />
-      
+
       {/* Trade Notification (JAN 19, 2026 - Visual feedback) */}
-      <TradeNotification 
-        notification={tradeNotification} 
-        onDismiss={() => setTradeNotification(null)} 
+      <TradeNotification
+        notification={tradeNotification}
+        onDismiss={() => setTradeNotification(null)}
       />
     </motion.div>
   );

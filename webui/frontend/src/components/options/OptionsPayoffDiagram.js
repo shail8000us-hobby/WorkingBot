@@ -745,64 +745,105 @@ const OptionsPayoffDiagram = ({
         )}
       </Box>
 
-      {/* Breakeven & Metrics Panel (Sensibull Style) */}
-      <Box sx={{ mb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
+      {/* Breakeven & Metrics Panel (Sensibull Style - Enhanced) */}
+      <Box sx={{ mb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 2 }}>
         {/* Profit Section */}
-        <Box sx={{ p: 2, bgcolor: 'rgba(16,185,129,0.1)', borderRadius: 1, border: '1px solid rgba(16,185,129,0.3)' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-            Profit left
+        <Box
+          sx={{
+            p: 2.5,
+            background: 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.05) 100%)',
+            borderRadius: 2,
+            border: '1px solid rgba(16,185,129,0.4)',
+            boxShadow: '0 2px 8px rgba(16,185,129,0.15)',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              borderColor: 'rgba(16,185,129,0.6)',
+              boxShadow: '0 4px 12px rgba(16,185,129,0.25)',
+            }
+          }}
+        >
+          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
+            💰 Profit Potential
           </Typography>
-          <Typography variant="h6" fontWeight="bold" sx={{ color: '#10b981' }}>
-            {isFinite(maxProfit) && maxProfit > 0 ? `+$${maxProfit.toFixed(2)}` : 'Unlimited'}
+          <Typography variant="h5" fontWeight="bold" sx={{ color: '#10b981', mb: 0.5, letterSpacing: '-0.5px' }}>
+            {isFinite(maxProfit) && maxProfit > 0 ? `+$${maxProfit.toFixed(2)}` : '♾️ Unlimited'}
           </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             Max Profit: {isFinite(maxProfit) ? `$${Math.abs(maxProfit).toFixed(2)}` : 'Unlimited'}
             {isFinite(maxProfit) && maxProfit > 0 && ` (+${((maxProfit / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
           </Typography>
         </Box>
 
         {/* Loss Section */}
-        <Box sx={{ p: 2, bgcolor: 'rgba(239,68,68,0.1)', borderRadius: 1, border: '1px solid rgba(239,68,68,0.3)' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-            Loss left
+        <Box
+          sx={{
+            p: 2.5,
+            background: 'linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(239,68,68,0.05) 100%)',
+            borderRadius: 2,
+            border: '1px solid rgba(239,68,68,0.4)',
+            boxShadow: '0 2px 8px rgba(239,68,68,0.15)',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              borderColor: 'rgba(239,68,68,0.6)',
+              boxShadow: '0 4px 12px rgba(239,68,68,0.25)',
+            }
+          }}
+        >
+          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
+            ⚠️ Risk Exposure
           </Typography>
-          <Typography variant="h6" fontWeight="bold" sx={{ color: '#ef4444' }}>
-            {isFinite(maxLoss) && maxLoss < 0 ? `$${maxLoss.toFixed(2)}` : 'Unlimited'}
+          <Typography variant="h5" fontWeight="bold" sx={{ color: '#ef4444', mb: 0.5, letterSpacing: '-0.5px' }}>
+            {isFinite(maxLoss) && maxLoss < 0 ? `$${maxLoss.toFixed(2)}` : '♾️ Unlimited'}
           </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             Max Loss: {isFinite(maxLoss) ? `$${Math.abs(maxLoss).toFixed(2)}` : 'Unlimited'}
             {isFinite(maxLoss) && maxLoss < 0 && ` (${((maxLoss / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
           </Typography>
         </Box>
 
         {/* Breakeven Section */}
-        <Box sx={{ p: 2, bgcolor: 'rgba(251,191,36,0.1)', borderRadius: 1, border: '1px solid rgba(251,191,36,0.3)' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-            Breakeven
+        <Box
+          sx={{
+            p: 2.5,
+            background: 'linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.05) 100%)',
+            borderRadius: 2,
+            border: '1px solid rgba(251,191,36,0.4)',
+            boxShadow: '0 2px 8px rgba(251,191,36,0.15)',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              borderColor: 'rgba(251,191,36,0.6)',
+              boxShadow: '0 4px 12px rgba(251,191,36,0.25)',
+            }
+          }}
+        >
+          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
+            🎯 Breakeven Points
           </Typography>
           {breakevens.length > 0 ? (
             <>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                {breakevens.length === 1 ? '1 point' : `${breakevens.length} points`}
+              <Typography variant="caption" color="rgba(251,191,36,0.8)" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                {breakevens.length === 1 ? '1 Point' : `${breakevens.length} Points`}
               </Typography>
-              {breakevens.map((be, idx) => {
-                const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
-                const sign = bePercent >= 0 ? '+' : '';
-                return (
-                  <Box key={idx} sx={{ mb: idx < breakevens.length - 1 ? 0.5 : 0 }}>
-                    <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
-                      ${be.toLocaleString()}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      ({sign}{bePercent}%)
-                    </Typography>
-                  </Box>
-                );
-              })}
+              <Box sx={{ maxHeight: 120, overflowY: 'auto', '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { background: 'rgba(251,191,36,0.4)', borderRadius: 2 } }}>
+                {breakevens.map((be, idx) => {
+                  const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
+                  const sign = bePercent >= 0 ? '+' : '';
+                  return (
+                    <Box key={idx} sx={{ mb: idx < breakevens.length - 1 ? 1 : 0, pb: idx < breakevens.length - 1 ? 1 : 0, borderBottom: idx < breakevens.length - 1 ? '1px dashed rgba(251,191,36,0.2)' : 'none' }}>
+                      <Typography variant="body1" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                        ${be.toLocaleString()}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(251,191,36,0.7)' }}>
+                        {sign}{bePercent}% from current
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
             </>
           ) : (
             <>
-              <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+              <Typography variant="h5" fontWeight="bold" sx={{ color: '#fbbf24', mb: 0.5 }}>
                 N/A
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -813,22 +854,37 @@ const OptionsPayoffDiagram = ({
         </Box>
 
         {/* Reward/Risk Section */}
-        <Box sx={{ p: 2, bgcolor: 'rgba(59,130,246,0.1)', borderRadius: 1, border: '1px solid rgba(59,130,246,0.3)' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-            Reward / Risk
+        <Box
+          sx={{
+            p: 2.5,
+            background: 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 100%)',
+            borderRadius: 2,
+            border: '1px solid rgba(59,130,246,0.4)',
+            boxShadow: '0 2px 8px rgba(59,130,246,0.15)',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              borderColor: 'rgba(59,130,246,0.6)',
+              boxShadow: '0 4px 12px rgba(59,130,246,0.25)',
+            }
+          }}
+        >
+          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
+            ⚖️ Reward/Risk
           </Typography>
           {isFinite(maxProfit) && isFinite(maxLoss) && maxLoss !== 0 ? (
             <>
-              <Typography variant="h6" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+              <Typography variant="h5" fontWeight="bold" sx={{ color: '#3b82f6', mb: 0.5, letterSpacing: '-0.5px' }}>
                 {Math.abs(maxProfit / maxLoss).toFixed(2)} : 1
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {maxProfit > Math.abs(maxLoss) ? 'Favorable' : maxProfit < Math.abs(maxLoss) ? 'Unfavorable' : 'Balanced'}
-              </Typography>
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.5, borderRadius: 1, bgcolor: maxProfit > Math.abs(maxLoss) ? 'rgba(16,185,129,0.2)' : maxProfit < Math.abs(maxLoss) ? 'rgba(239,68,68,0.2)' : 'rgba(156,163,175,0.2)' }}>
+                <Typography variant="caption" fontWeight="600" sx={{ color: maxProfit > Math.abs(maxLoss) ? '#10b981' : maxProfit < Math.abs(maxLoss) ? '#ef4444' : '#9ca3af' }}>
+                  {maxProfit > Math.abs(maxLoss) ? '✓ Favorable' : maxProfit < Math.abs(maxLoss) ? '⚠ Unfavorable' : '○ Balanced'}
+                </Typography>
+              </Box>
             </>
           ) : (
             <>
-              <Typography variant="h6" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+              <Typography variant="h5" fontWeight="bold" sx={{ color: '#3b82f6', mb: 0.5 }}>
                 N/A
               </Typography>
               <Typography variant="caption" color="text.secondary">
