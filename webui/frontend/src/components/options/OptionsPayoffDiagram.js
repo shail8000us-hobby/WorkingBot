@@ -709,33 +709,91 @@ const OptionsPayoffDiagram = ({
     yMax,
   } = chartData;
 
-  // Custom Tooltip
+  // Custom Tooltip - Sensibull Style
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
 
     const expiry = payload.find((p) => p.dataKey === 'expiry')?.value ?? 0;
     const target = payload.find((p) => p.dataKey === 'target')?.value ?? 0;
+    const currentPrice = Number(label);
+
+    // Calculate price change from spot
+    const priceChange = currentPrice - spotPrice;
+    const priceChangePct = ((priceChange / spotPrice) * 100).toFixed(2);
+    const priceChangeSign = priceChange >= 0 ? '+' : '';
+
+    // Format target date
+    const targetDateFormatted = targetDate ?
+      targetDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) :
+      'Today';
 
     return (
       <Paper
-        sx={{ p: 1.5, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}
+        sx={{
+          p: 0,
+          bgcolor: 'rgba(17, 24, 39, 0.95)',
+          border: '1px solid rgba(75, 85, 99, 0.5)',
+          borderRadius: 2,
+          minWidth: 180,
+          backdropFilter: 'blur(8px)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+        }}
       >
-        <Typography variant="body2" fontWeight="bold">
-          BTC: ${Number(label).toLocaleString()}
-        </Typography>
-        <Divider sx={{ my: 0.5 }} />
-        <Typography variant="body2" sx={{ color: expiry >= 0 ? '#10b981' : '#ef4444' }}>
-          On Expiry:{' '}
-          <strong>
-            {expiry >= 0 ? '+' : ''}${expiry.toFixed(2)}
-          </strong>
-        </Typography>
-        <Typography variant="body2" sx={{ color: '#3b82f6' }}>
-          On Target Date:{' '}
-          <strong>
-            {target >= 0 ? '+' : ''}${target.toFixed(2)}
-          </strong>
-        </Typography>
+        {/* Price header */}
+        <Box sx={{ p: 1.25, borderBottom: '1px solid rgba(75, 85, 99, 0.3)' }}>
+          <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.8)', display: 'block', mb: 0.25 }}>
+            When price is at
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+            <Typography variant="h6" fontWeight="bold" sx={{ color: '#fff', lineHeight: 1 }}>
+              {currentPrice.toLocaleString()}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                color: priceChange >= 0 ? '#10b981' : '#ef4444',
+                fontWeight: 600
+              }}
+            >
+              {priceChangeSign}{priceChangePct}% ({priceChangeSign}{Math.abs(priceChange).toLocaleString(undefined, { maximumFractionDigits: 0 })})
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* P&L section */}
+        <Box sx={{ p: 1.25 }}>
+          <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.8)', display: 'block', mb: 0.75 }}>
+            Expected P&L on
+          </Typography>
+
+          {/* Target date P&L */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+            <Typography variant="body2" sx={{ color: '#9ca3af' }}>
+              {targetDateFormatted}
+            </Typography>
+            <Typography
+              variant="body2"
+              fontWeight="bold"
+              sx={{ color: target >= 0 ? '#10b981' : '#ef4444' }}
+            >
+              {target >= 0 ? '+' : ''}{target.toFixed(2)}
+            </Typography>
+          </Box>
+
+          {/* Expiry P&L */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2" sx={{ color: '#9ca3af' }}>
+              Expiry date
+            </Typography>
+            <Typography
+              variant="body2"
+              fontWeight="bold"
+              sx={{ color: expiry >= 0 ? '#10b981' : '#ef4444' }}
+            >
+              {expiry >= 0 ? '+' : ''}{expiry.toFixed(2)}
+            </Typography>
+          </Box>
+        </Box>
       </Paper>
     );
   };
@@ -815,152 +873,135 @@ const OptionsPayoffDiagram = ({
         )}
       </Box>
 
-      {/* Breakeven & Metrics Panel (Sensibull Style - Enhanced) */}
-      <Box sx={{ mb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 2 }}>
-        {/* Profit Section */}
-        <Box
-          sx={{
-            p: 2.5,
-            background: 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.05) 100%)',
-            borderRadius: 2,
-            border: '1px solid rgba(16,185,129,0.4)',
-            boxShadow: '0 2px 8px rgba(16,185,129,0.15)',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              borderColor: 'rgba(16,185,129,0.6)',
-              boxShadow: '0 4px 12px rgba(16,185,129,0.25)',
-            }
-          }}
-        >
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
-            💰 Profit Potential
+      {/* Compact Metrics Strip - Sensibull Style */}
+      <Box
+        sx={{
+          mb: 2,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 1.5,
+          p: 1.5,
+          bgcolor: 'rgba(17, 24, 39, 0.6)',
+          borderRadius: 2,
+          border: '1px solid rgba(75, 85, 99, 0.3)',
+        }}
+      >
+        {/* Profit Potential */}
+        <Box sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 1.5,
+          py: 0.75,
+          borderRadius: 1.5,
+          bgcolor: 'rgba(16,185,129,0.1)',
+          border: '1px solid rgba(16,185,129,0.3)',
+          minWidth: 'fit-content',
+        }}>
+          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
+            💰 Max Profit
           </Typography>
-          <Typography variant="h5" fontWeight="bold" sx={{ color: '#10b981', mb: 0.5, letterSpacing: '-0.5px' }}>
-            {isFinite(maxProfit) && maxProfit > 0 ? `+$${maxProfit.toFixed(2)}` : '♾️ Unlimited'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Max Profit: {isFinite(maxProfit) ? `$${Math.abs(maxProfit).toFixed(2)}` : 'Unlimited'}
-            {isFinite(maxProfit) && maxProfit > 0 && ` (+${((maxProfit / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
-          </Typography>
-        </Box>
-
-        {/* Loss Section */}
-        <Box
-          sx={{
-            p: 2.5,
-            background: 'linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(239,68,68,0.05) 100%)',
-            borderRadius: 2,
-            border: '1px solid rgba(239,68,68,0.4)',
-            boxShadow: '0 2px 8px rgba(239,68,68,0.15)',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              borderColor: 'rgba(239,68,68,0.6)',
-              boxShadow: '0 4px 12px rgba(239,68,68,0.25)',
-            }
-          }}
-        >
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
-            ⚠️ Risk Exposure
-          </Typography>
-          <Typography variant="h5" fontWeight="bold" sx={{ color: '#ef4444', mb: 0.5, letterSpacing: '-0.5px' }}>
-            {isFinite(maxLoss) && maxLoss < 0 ? `$${maxLoss.toFixed(2)}` : '♾️ Unlimited'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Max Loss: {isFinite(maxLoss) ? `$${Math.abs(maxLoss).toFixed(2)}` : 'Unlimited'}
-            {isFinite(maxLoss) && maxLoss < 0 && ` (${((maxLoss / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
+          <Typography variant="body2" fontWeight="bold" sx={{ color: '#10b981' }}>
+            {isFinite(maxProfit) && maxProfit > 0 ? `+$${maxProfit.toFixed(2)}` : '♾️'}
           </Typography>
         </Box>
 
-        {/* Breakeven Section */}
-        <Box
-          sx={{
-            p: 2.5,
-            background: 'linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.05) 100%)',
-            borderRadius: 2,
-            border: '1px solid rgba(251,191,36,0.4)',
-            boxShadow: '0 2px 8px rgba(251,191,36,0.15)',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              borderColor: 'rgba(251,191,36,0.6)',
-              boxShadow: '0 4px 12px rgba(251,191,36,0.25)',
-            }
-          }}
-        >
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
-            🎯 Breakeven Points
+        {/* Risk Exposure */}
+        <Box sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 1.5,
+          py: 0.75,
+          borderRadius: 1.5,
+          bgcolor: 'rgba(239,68,68,0.1)',
+          border: '1px solid rgba(239,68,68,0.3)',
+          minWidth: 'fit-content',
+        }}>
+          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
+            ⚠️ Max Loss
+          </Typography>
+          <Typography variant="body2" fontWeight="bold" sx={{ color: '#ef4444' }}>
+            {isFinite(maxLoss) && maxLoss < 0 ? `$${maxLoss.toFixed(2)}` : '♾️'}
+          </Typography>
+        </Box>
+
+        {/* Breakeven Points */}
+        <Box sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 1.5,
+          py: 0.75,
+          borderRadius: 1.5,
+          bgcolor: 'rgba(251,191,36,0.1)',
+          border: '1px solid rgba(251,191,36,0.3)',
+          minWidth: 'fit-content',
+        }}>
+          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
+            🎯 Breakeven
           </Typography>
           {breakevens.length > 0 ? (
-            <>
-              <Typography variant="caption" color="rgba(251,191,36,0.8)" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
-                {breakevens.length === 1 ? '1 Point' : `${breakevens.length} Points`}
-              </Typography>
-              <Box sx={{ maxHeight: 120, overflowY: 'auto', '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { background: 'rgba(251,191,36,0.4)', borderRadius: 2 } }}>
-                {breakevens.map((be, idx) => {
-                  const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
-                  const sign = bePercent >= 0 ? '+' : '';
-                  return (
-                    <Box key={idx} sx={{ mb: idx < breakevens.length - 1 ? 1 : 0, pb: idx < breakevens.length - 1 ? 1 : 0, borderBottom: idx < breakevens.length - 1 ? '1px dashed rgba(251,191,36,0.2)' : 'none' }}>
-                      <Typography variant="body1" fontWeight="bold" sx={{ color: '#fbbf24' }}>
-                        ${be.toLocaleString()}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'rgba(251,191,36,0.7)' }}>
-                        {sign}{bePercent}% from current
-                      </Typography>
-                    </Box>
-                  );
-                })}
-              </Box>
-            </>
+            <Box sx={{ display: 'flex', gap: 0.75 }}>
+              {breakevens.slice(0, 2).map((be, idx) => {
+                const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
+                const sign = bePercent >= 0 ? '+' : '';
+                return (
+                  <Typography key={idx} variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                    ${be.toLocaleString()}
+                    <Typography component="span" variant="caption" sx={{ color: 'rgba(251,191,36,0.7)', ml: 0.25 }}>
+                      ({sign}{bePercent}%)
+                    </Typography>
+                  </Typography>
+                );
+              })}
+              {breakevens.length > 2 && (
+                <Typography variant="caption" sx={{ color: 'rgba(251,191,36,0.7)' }}>
+                  +{breakevens.length - 2} more
+                </Typography>
+              )}
+            </Box>
           ) : (
-            <>
-              <Typography variant="h5" fontWeight="bold" sx={{ color: '#fbbf24', mb: 0.5 }}>
-                N/A
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                No breakeven for this strategy
-              </Typography>
-            </>
+            <Typography variant="body2" sx={{ color: '#9ca3af' }}>N/A</Typography>
           )}
         </Box>
 
-        {/* Reward/Risk Section */}
-        <Box
-          sx={{
-            p: 2.5,
-            background: 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 100%)',
-            borderRadius: 2,
-            border: '1px solid rgba(59,130,246,0.4)',
-            boxShadow: '0 2px 8px rgba(59,130,246,0.15)',
-            transition: 'all 0.2s ease',
-            '&:hover': {
-              borderColor: 'rgba(59,130,246,0.6)',
-              boxShadow: '0 4px 12px rgba(59,130,246,0.25)',
-            }
-          }}
-        >
-          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600, letterSpacing: 1 }}>
-            ⚖️ Reward/Risk
+        {/* Reward/Risk Ratio */}
+        <Box sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 1.5,
+          py: 0.75,
+          borderRadius: 1.5,
+          bgcolor: 'rgba(59,130,246,0.1)',
+          border: '1px solid rgba(59,130,246,0.3)',
+          minWidth: 'fit-content',
+        }}>
+          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
+            ⚖️ R:R
           </Typography>
           {isFinite(maxProfit) && isFinite(maxLoss) && maxLoss !== 0 ? (
-            <>
-              <Typography variant="h5" fontWeight="bold" sx={{ color: '#3b82f6', mb: 0.5, letterSpacing: '-0.5px' }}>
-                {Math.abs(maxProfit / maxLoss).toFixed(2)} : 1
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Typography variant="body2" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+                {Math.abs(maxProfit / maxLoss).toFixed(2)}:1
               </Typography>
-              <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.5, borderRadius: 1, bgcolor: maxProfit > Math.abs(maxLoss) ? 'rgba(16,185,129,0.2)' : maxProfit < Math.abs(maxLoss) ? 'rgba(239,68,68,0.2)' : 'rgba(156,163,175,0.2)' }}>
-                <Typography variant="caption" fontWeight="600" sx={{ color: maxProfit > Math.abs(maxLoss) ? '#10b981' : maxProfit < Math.abs(maxLoss) ? '#ef4444' : '#9ca3af' }}>
-                  {maxProfit > Math.abs(maxLoss) ? '✓ Favorable' : maxProfit < Math.abs(maxLoss) ? '⚠ Unfavorable' : '○ Balanced'}
+              <Box sx={{
+                px: 0.75,
+                py: 0.25,
+                borderRadius: 0.5,
+                bgcolor: maxProfit > Math.abs(maxLoss) ? 'rgba(16,185,129,0.2)' : maxProfit < Math.abs(maxLoss) ? 'rgba(239,68,68,0.2)' : 'rgba(156,163,175,0.2)'
+              }}>
+                <Typography variant="caption" fontWeight="600" sx={{
+                  color: maxProfit > Math.abs(maxLoss) ? '#10b981' : maxProfit < Math.abs(maxLoss) ? '#ef4444' : '#9ca3af',
+                  fontSize: '0.65rem'
+                }}>
+                  {maxProfit > Math.abs(maxLoss) ? '✓ Fav' : maxProfit < Math.abs(maxLoss) ? '⚠ Unfav' : '○'}
                 </Typography>
               </Box>
-            </>
+            </Box>
           ) : (
-            <>
-              <Typography variant="h5" fontWeight="bold" sx={{ color: '#3b82f6', mb: 0.5 }}>
-                N/A
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Limited profit or loss
-              </Typography>
-            </>
+            <Typography variant="body2" sx={{ color: '#9ca3af' }}>N/A</Typography>
           )}
         </Box>
       </Box>
