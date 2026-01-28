@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-01-28T21:23:50.839331",
+  "timestamp": "2026-01-28T21:44:49.736229",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 3009.05,
+    "current_price": 2996.4,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 3009.05,
-      "price_age_seconds": 0.46268677711486816,
+      "price": 2996.4,
+      "price_age_seconds": 4.1231300830841064,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 16086,
+        "total_updates": 16332,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 3009.05,
+        "price": 2996.4,
         "grid_step": 100.0,
         "positions": 0,
         "max_positions": 10,
@@ -86,19 +86,10 @@
         },
         "price_drops": [
           {
-            "action": "BUY",
-            "price": 3000.0,
-            "tp_price": 3100.0,
-            "change_pct": -0.30075937588275975,
-            "reason": "Grid level #1",
-            "sequence": 1,
-            "profit_target": 100.0
-          },
-          {
             "action": "Cannot place",
             "price": null,
             "reason": "Below grid lower bound",
-            "sequence": 2
+            "sequence": 1
           }
         ],
         "price_rises": [
@@ -147,22 +138,8 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2026-01-28T21:23:51.029645"
+      "timestamp": "2026-01-28T21:44:50.002864"
     },
-    "opportunistic_recovery": {
-      "active": false,
-      "enabled": false,
-      "total_recoveries": 0,
-      "total_positions_recovered": 0,
-      "total_capital_saved": 0.0,
-      "startup_recoveries": 0,
-      "volatility_recoveries": 0,
-      "last_recovery_time": null,
-      "current_opportunistic_positions": [],
-      "recent_recoveries": []
-    }
-  }
-}},
     "opportunistic_recovery": {
       "active": false,
       "enabled": false,

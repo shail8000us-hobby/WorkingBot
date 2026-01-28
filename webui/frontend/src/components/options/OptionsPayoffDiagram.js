@@ -262,8 +262,41 @@ const OptionsPayoffDiagram = ({
       nearestExpiry,
     } = parsedPositions;
 
-    const minPrice = spotPrice * (1 - priceRangePercent / 100);
-    const maxPrice = spotPrice * (1 + priceRangePercent / 100);
+    // Calculate ADAPTIVE X-axis range based on position strikes
+    // Goal: Show all strikes with appropriate buffer, not fixed % of spot
+    let optimalMinPrice = spotPrice;
+    let optimalMaxPrice = spotPrice;
+
+    if (parsedPos.length > 0) {
+      const strikes = parsedPos.map(p => p.strike);
+      const minStrike = Math.min(...strikes);
+      const maxStrike = Math.max(...strikes);
+
+      // Calculate range that includes all strikes with buffer
+      const strikesRange = maxStrike - minStrike;
+      const buffer = Math.max(strikesRange * 0.3, spotPrice * 0.05); // 30% of strike range or 5% of spot
+
+      // Ensure range includes spot price and all strikes
+      optimalMinPrice = Math.min(minStrike - buffer, spotPrice * 0.95);
+      optimalMaxPrice = Math.max(maxStrike + buffer, spotPrice * 1.05);
+
+      // Make range symmetric around spot if strikes are roughly centered
+      const spotToMin = spotPrice - optimalMinPrice;
+      const spotToMax = optimalMaxPrice - spotPrice;
+      const maxOffset = Math.max(spotToMin, spotToMax);
+      optimalMinPrice = spotPrice - maxOffset;
+      optimalMaxPrice = spotPrice + maxOffset;
+    } else {
+      // No positions, use 10% range (smaller default for cleaner view)
+      optimalMinPrice = spotPrice * 0.9;
+      optimalMaxPrice = spotPrice * 1.1;
+    }
+
+    // Apply user zoom override if priceRangePercent was manually changed (non-default)
+    const isDefaultRange = priceRangePercent === 20;
+    const minPrice = isDefaultRange ? optimalMinPrice : spotPrice * (1 - priceRangePercent / 100);
+    const maxPrice = isDefaultRange ? optimalMaxPrice : spotPrice * (1 + priceRangePercent / 100);
+
     const numPoints = 200; // More points for smoother curves
     const priceStep = (maxPrice - minPrice) / numPoints;
 
@@ -413,20 +446,27 @@ const OptionsPayoffDiagram = ({
       }
     });
 
-    // Calculate Y-axis domain with sensible bounds
-    // User requested: lower bound around -500, upper bound around +200
+    // Calculate Y-axis domain with ADAPTIVE bounds based on actual data
+    // Goal: Use the full graph area for actual data, not fixed arbitrary bounds
     const overallMax = Math.max(maxProfit, maxTargetProfit);
     const overallMin = Math.min(maxLoss, maxTargetLoss);
 
-    // Apply sensible bounds with some flexibility based on actual data
-    // Lower bound: use actual min but cap at -500 (or extend if needed)
-    // Upper bound: use actual max but ensure at least +200
-    const rawYMin = Math.min(overallMin, -100); // Ensure we show at least some loss area
-    const rawYMax = Math.max(overallMax, 50); // Ensure we show at least some profit area
+    // Calculate adaptive padding based on the data range
+    // Small ranges get more relative padding to make them readable
+    const dataRange = Math.max(Math.abs(overallMax), Math.abs(overallMin));
+    const paddingPercent = dataRange < 50 ? 0.4 : dataRange < 200 ? 0.25 : 0.15;
 
-    // Apply user-requested bounds: -500 to +200 with flexibility
-    const yMin = Math.max(rawYMin * 1.1, -500); // Cap lower at -500, with 10% padding
-    const yMax = Math.min(Math.max(rawYMax * 1.2, 200), 500); // At least +200, cap at +500
+    // Calculate padded min/max with symmetric padding around zero if appropriate
+    let rawYMin = overallMin - (Math.abs(overallMin) * paddingPercent);
+    let rawYMax = overallMax + (Math.abs(overallMax) * paddingPercent);
+
+    // Ensure zero line is always visible (important for reference)
+    if (rawYMin > 0) rawYMin = -(rawYMax * 0.1);
+    if (rawYMax < 0) rawYMax = -(rawYMin * 0.1);
+
+    // Final bounds with min/max safeguards
+    const yMin = Math.min(rawYMin, -5); // Always show at least a little below zero
+    const yMax = Math.max(rawYMax, 5);  // Always show at least a little above zero
 
     // Find projected profit at target price (at current spot when targetPricePercent = 0)
     const targetPricePoint = data.find((d) => Math.abs(d.price - targetPrice) < priceStep * 1.5);
