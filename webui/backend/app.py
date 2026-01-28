@@ -386,6 +386,18 @@ except Exception as e:
     print(f"⚠️ Could not register ml_trading blueprint: {e}")
     log.warning(f"ML trading routes not available: {e}")
 
+# Register Price Alerts blueprint (JAN 28, 2026: Price alerts with Telegram/ntfy notifications)
+try:
+    try:
+        from .routes.alerts.alert_routes import alerts_bp
+    except ImportError:
+        from routes.alerts.alert_routes import alerts_bp
+    app.register_blueprint(alerts_bp)
+    print(f"✅ Registered alerts blueprint (price alerts with Telegram/ntfy notifications)")
+except Exception as e:
+    print(f"⚠️ Could not register alerts blueprint: {e}")
+    log.warning(f"Price alerts routes not available: {e}")
+
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
 

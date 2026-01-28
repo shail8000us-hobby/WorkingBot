@@ -26,12 +26,17 @@ import {
   ReferenceArea,
   Brush,
 } from 'recharts';
-import { Box, Typography, Paper, Chip, Slider, Stack, Divider, IconButton, Popover } from '@mui/material';
+import {
+  Box, Typography, Paper, Chip, Slider, Stack, Divider, IconButton, Popover,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
+  RadioGroup, Radio, FormControlLabel, CircularProgress, Alert
+} from '@mui/material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 
 // ============================================================================
 // BLACK-SCHOLES MODEL
@@ -141,6 +146,15 @@ const OptionsPayoffDiagram = ({
   const [selectionEnd, setSelectionEnd] = useState(null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [breakevenAnchor, setBreakevenAnchor] = useState(null); // For expandable breakeven popover
+
+  // Alert creation state (from chart click)
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [alertPrice, setAlertPrice] = useState(null);
+  const [alertPnLExpiry, setAlertPnLExpiry] = useState(null);
+  const [alertPnLTarget, setAlertPnLTarget] = useState(null);
+  const [alertDirection, setAlertDirection] = useState('above');
+  const [alertNote, setAlertNote] = useState('');
+  const [alertLoading, setAlertLoading] = useState(false);
 
   // ========================================================================
   // PARSE POSITIONS
@@ -538,16 +552,29 @@ const OptionsPayoffDiagram = ({
     [isSelecting]
   );
 
-  // Handle mouse up on chart (complete zoom)
-  const handleMouseUp = useCallback(() => {
+  // Handle mouse up on chart (complete zoom or create alert on click)
+  const handleMouseUp = useCallback((e) => {
     if (isSelecting && selectionStart !== null && selectionEnd !== null) {
       const left = Math.min(selectionStart, selectionEnd);
       const right = Math.max(selectionStart, selectionEnd);
 
       // Only zoom if selection is meaningful (at least 1% of range)
-      if (right - left > (chartData?.maxPrice - chartData?.minPrice) * 0.01) {
+      const isDrag = right - left > (chartData?.maxPrice - chartData?.minPrice) * 0.01;
+
+      if (isDrag) {
         setZoomDomain({ left, right });
         setIsZoomed(true);
+      } else if (e && e.activePayload && e.activePayload[0]) {
+        // Simple click (not a drag) - open alert dialog
+        const payload = e.activePayload[0].payload;
+        if (payload) {
+          setAlertPrice(payload.price);
+          setAlertPnLExpiry(payload.expiry || 0);
+          setAlertPnLTarget(payload.target || 0);
+          setAlertDirection(payload.expiry >= 0 ? 'below' : 'above');
+          setAlertNote('');
+          setAlertDialogOpen(true);
+        }
       }
     }
     setSelectionStart(null);
@@ -1539,6 +1566,121 @@ const OptionsPayoffDiagram = ({
           </Box>
         </Box>
       )}
+
+      {/* Alert Creation Dialog - Opens when clicking on payoff graph */}
+      <Dialog
+        open={alertDialogOpen}
+        onClose={() => setAlertDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: 'background.paper',
+            backgroundImage: 'none',
+          }
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <NotificationsIcon sx={{ color: '#ffc107' }} />
+          Create Price Alert
+        </DialogTitle>
+        <DialogContent>
+          {alertPrice && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Click detected at <strong>${alertPrice?.toLocaleString()}</strong>
+              <br />
+              Expected P&L: <span style={{ color: alertPnLExpiry >= 0 ? '#10b981' : '#ef4444' }}>
+                ${alertPnLExpiry?.toFixed(2)}
+              </span>
+            </Alert>
+          )}
+
+          <TextField
+            label="Target Price"
+            type="number"
+            value={alertPrice || ''}
+            onChange={(e) => setAlertPrice(parseFloat(e.target.value))}
+            fullWidth
+            sx={{ mt: 1 }}
+            InputProps={{ startAdornment: <Typography sx={{ mr: 0.5 }}>$</Typography> }}
+          />
+
+          <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
+            Trigger when price:
+          </Typography>
+          <RadioGroup
+            value={alertDirection}
+            onChange={(e) => setAlertDirection(e.target.value)}
+          >
+            <FormControlLabel
+              value="above"
+              control={<Radio size="small" />}
+              label={<Typography variant="body2">Goes above ${alertPrice?.toLocaleString() || '...'}</Typography>}
+            />
+            <FormControlLabel
+              value="below"
+              control={<Radio size="small" />}
+              label={<Typography variant="body2">Drops below ${alertPrice?.toLocaleString() || '...'}</Typography>}
+            />
+            <FormControlLabel
+              value="cross"
+              control={<Radio size="small" />}
+              label={<Typography variant="body2">Crosses ${alertPrice?.toLocaleString() || '...'} (either direction)</Typography>}
+            />
+          </RadioGroup>
+
+          <TextField
+            label="Note (optional)"
+            value={alertNote}
+            onChange={(e) => setAlertNote(e.target.value)}
+            fullWidth
+            multiline
+            rows={2}
+            sx={{ mt: 2 }}
+            placeholder="e.g., Take profit at this level, or enter new position"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAlertDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!alertPrice || alertLoading}
+            onClick={async () => {
+              setAlertLoading(true);
+              try {
+                const response = await fetch('/api/alerts', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    target_price: alertPrice,
+                    direction: alertDirection,
+                    note: alertNote || undefined,
+                    expected_pnl_expiry: alertPnLExpiry,
+                    expected_pnl_target: alertPnLTarget,
+                    notification_channels: 'telegram,in_app',
+                  }),
+                });
+                const data = await response.json();
+                if (data.success) {
+                  setAlertDialogOpen(false);
+                  // Show success notification (could add a snackbar here)
+                  console.log('Alert created:', data.alert);
+                } else {
+                  console.error('Failed to create alert:', data.error);
+                }
+              } catch (err) {
+                console.error('Failed to create alert:', err);
+              } finally {
+                setAlertLoading(false);
+              }
+            }}
+            sx={{ bgcolor: '#ffc107', color: '#000', '&:hover': { bgcolor: '#ffb300' } }}
+            startIcon={alertLoading ? <CircularProgress size={16} /> : <NotificationsIcon />}
+          >
+            {alertLoading ? 'Creating...' : 'Create Alert'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 };
