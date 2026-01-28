@@ -39,11 +39,11 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
         const today = new Date().toISOString().split('T')[0];
         const todayExpiry = data.expiries.find((e) => e.date === today || e.dte === 0);
         if (todayExpiry) {
-          setConfig((prev) => ({ ...prev, expiry: todayExpiry.symbol || todayExpiry.date }));
+          setConfig((prev) => ({ ...prev, expiry: todayExpiry.date || todayExpiry.symbol }));
         } else if (data.expiries.length > 0) {
           setConfig((prev) => ({
             ...prev,
-            expiry: data.expiries[0].symbol || data.expiries[0].date,
+            expiry: data.expiries[0].date || data.expiries[0].symbol,
           }));
         }
       } else {
@@ -76,7 +76,7 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
 
     setAvailableExpiries(expiries);
     if (expiries.length > 0) {
-      setConfig((prev) => ({ ...prev, expiry: expiries[0].symbol }));
+      setConfig((prev) => ({ ...prev, expiry: expiries[0].date || expiries[0].symbol }));
     }
   };
 
@@ -235,12 +235,11 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                         <button
                           key={exp.symbol || exp.date}
                           type="button"
-                          className={`expiry-btn ${
-                            config.expiry === exp.symbol || config.expiry === exp.date
+                          className={`expiry-btn ${config.expiry === exp.symbol || config.expiry === exp.date
                               ? 'selected'
                               : ''
-                          } ${exp.dte === 0 ? 'today' : ''}`}
-                          onClick={() => setConfig({ ...config, expiry: exp.symbol || exp.date })}
+                            } ${exp.dte === 0 ? 'today' : ''}`}
+                          onClick={() => setConfig({ ...config, expiry: exp.date || exp.symbol })}
                         >
                           <span className="expiry-dte">
                             {exp.dte === 0 ? '0DTE' : `${exp.dte}DTE`}

@@ -21,9 +21,9 @@ class DataAggregator {
   constructor() {
     this.interval = null;
     this.isRunning = false;
-    this.pollInterval = 5000; // 5 seconds (reduced from 2s for performance)
-    this.pollIntervalFast = 3000; // 3 seconds for active trading
-    this.pollIntervalSlow = 10000; // 10 seconds for idle
+    this.pollInterval = 10000; // 10 seconds (was 5s - reduced for performance)
+    this.pollIntervalFast = 5000; // 5 seconds for active trading (was 3s)
+    this.pollIntervalSlow = 30000; // 30 seconds for idle/hidden tab (was 10s)
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 5;
     this.isDocumentVisible = true;
@@ -42,10 +42,10 @@ class DataAggregator {
 
     this.isRunning = true;
     this.consecutiveErrors = 0;
-    
+
     // Listen for visibility changes to pause polling when tab is hidden
     this._setupVisibilityListener();
-    
+
     console.log('📡 Data aggregator started (adaptive polling: 3-10s)');
 
     // Start polling loop with adaptive interval
@@ -61,15 +61,15 @@ class DataAggregator {
    */
   _setupVisibilityListener() {
     if (typeof document === 'undefined') return;
-    
+
     const handleVisibilityChange = () => {
       this.isDocumentVisible = !document.hidden;
       console.log(`📡 Document ${this.isDocumentVisible ? 'visible' : 'hidden'} - adjusting polling`);
-      
+
       // Restart polling loop with new interval
       this._restartPollingLoop();
     };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     this._visibilityHandler = handleVisibilityChange;
   }
@@ -82,7 +82,7 @@ class DataAggregator {
     if (this.interval) {
       clearInterval(this.interval);
     }
-    
+
     const currentInterval = this._getAdaptiveInterval();
     this.interval = setInterval(() => {
       if (this.isDocumentVisible) {
@@ -124,13 +124,13 @@ class DataAggregator {
       clearInterval(this.interval);
       this.interval = null;
       this.isRunning = false;
-      
+
       // Cleanup visibility listener
       if (this._visibilityHandler && typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', this._visibilityHandler);
         this._visibilityHandler = null;
       }
-      
+
       console.log('📡 Data aggregator stopped');
     }
   }

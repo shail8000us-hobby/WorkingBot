@@ -344,8 +344,12 @@ try:
     from bot.api.unified_api_client import UnifiedAPIClient
     
     # Initialize 0DTE engine with API client (needs credentials from config)
-    api_key, api_secret = get_api_credentials()
-    _zero_dte_client = UnifiedAPIClient(api_key, api_secret, enable_websocket=False)
+    zero_dte_credentials = get_api_credentials(cfg.trading_mode)
+    _zero_dte_client = UnifiedAPIClient(
+        zero_dte_credentials['api_key'], 
+        zero_dte_credentials['api_secret'], 
+        enable_websocket=False
+    )
     init_engine(_zero_dte_client)
     
     app.register_blueprint(zero_dte_bp, url_prefix='/api/zero-dte')

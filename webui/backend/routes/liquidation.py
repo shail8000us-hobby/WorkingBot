@@ -240,10 +240,16 @@ def get_liquidation_status():
                                 
                                 # ⚠️ FALLBACK CALCULATION (less accurate than positions_upl)
                                 # Calculate PnL: (Mark - Entry) × Size × Contract Value
-                                # Note: Contract value varies by product (get from /v2/products)
+                                # Contract sizes per Delta Exchange India:
+                                # - BTC: 1 lot = 0.001 BTC (multiplier = 0.001)
+                                # - ETH: 1 lot = 0.01 ETH (multiplier = 0.01)
                                 entry_price = float(pos_data.get('entry_price', 0))
                                 mark_price = float(pos_data.get('mark_price', 0))
-                                CONTRACT_MULTIPLIER = 0.001  # Standard for BTC/ETH futures
+                                product_symbol = pos_data.get('product_symbol', '')
+                                if 'ETH' in product_symbol.upper():
+                                    CONTRACT_MULTIPLIER = 0.01
+                                else:
+                                    CONTRACT_MULTIPLIER = 0.001  # BTC and other assets
                                 unrealized_pnl_usd = (mark_price - entry_price) * size * CONTRACT_MULTIPLIER
                                 total_pnl_usd += unrealized_pnl_usd
                             

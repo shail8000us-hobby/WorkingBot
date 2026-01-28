@@ -1,8 +1,8 @@
 {
   "risk_appetite": 1.0,
   "risk_consistency": 0.0,
-  "max_loss_tolerance": 0.0,
-  "drawdown_tolerance": 0.0,
+  "max_loss_tolerance": 25950.0,
+  "drawdown_tolerance": 59222.76551724144,
   "preferred_entry_hours": [
     11,
     12,
@@ -12,26 +12,26 @@
     6
   ],
   "avg_hold_duration_hours": 0.0,
-  "patience_factor": 0.0006111446643518518,
+  "patience_factor": 0.0015849278356481484,
   "volatility_preference": "low",
   "trend_preference": "neutral",
   "scaling_behavior": "scale_in",
   "profit_taking_style": "mixed",
   "loss_cutting_speed": "moderate",
-  "avg_position_size": 12.770527116066903,
-  "call_preference": 0.5660162189559047,
-  "buy_preference": 0.10098834262544348,
+  "avg_position_size": 13.0002414001207,
+  "call_preference": 0.568135184067592,
+  "buy_preference": 0.10030175015087507,
   "preferred_strikes": [
     "ATM"
   ],
-  "win_rate": 0.0,
-  "avg_win": 0.0,
-  "avg_loss": 0.0,
-  "profit_factor": 0.0,
+  "win_rate": 0.7306150897368879,
+  "avg_win": 290.1747650024274,
+  "avg_loss": 447.09393353099904,
+  "profit_factor": 2.462767697896212,
   "trades_after_win": 1.0,
   "trades_after_loss": 1.0,
-  "revenge_trading_tendency": 0.0,
-  "confidence": 0.4666666666666666,
-  "total_trades_analyzed": 7892,
-  "analysis_date": "2026-01-19T08:52:01.152304"
+  "revenge_trading_tendency": 1.0,
+  "confidence": 0.6975658821162743,
+  "total_trades_analyzed": 8285,
+  "analysis_date": "2026-01-27T16:14:49.170283"
 }

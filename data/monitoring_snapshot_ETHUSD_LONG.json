@@ -1,15 +1,31 @@
 {
-  "timestamp": 1769495721.3044858,
+  "timestamp": 1769574030.641113,
   "mode": "LONG",
   "symbol": "ETHUSD",
-  "uptime": 14495.656569004059,
+  "uptime": 40233.127088069916,
   "state": {
-    "open_tranches": [],
-    "pending_buy": null,
+    "open_tranches": [
+      {
+        "position_id": "6e4f402d-1daf-4e58-97a3-17418e7c7534",
+        "entry_price": 3000.0,
+        "tp_price": 3100.0,
+        "size": 1,
+        "correlation_id": "fill-f6af1643c8e14982ad96eed64011fc59-1769546526393",
+        "timestamp": 1769546527.1484969,
+        "entry_order_id": "6e4f402d-1daf-4e58-97a3-17418e7c7534",
+        "tp_order_id": "1142088614"
+      }
+    ],
+    "pending_buy": {
+      "order_id": 1142088673,
+      "price": 2900.0,
+      "size": 1,
+      "timestamp": 1769546533.056742
+    },
     "pending_sell": null,
-    "last_buy_order_time": 0,
+    "last_buy_order_time": 1769546533.056742,
     "last_sell_order_time": 0,
-    "total_positions_opened": 0,
+    "total_positions_opened": 1,
     "total_positions_closed": 0,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
@@ -23,30 +39,33 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 0,
-      "total_opened": 0,
+      "open_count": 1,
+      "total_opened": 1,
       "total_closed": 0,
-      "avg_entry_price": 0,
-      "total_size": 0,
-      "oldest_position_age": 0,
-      "has_pending_buy": false,
+      "avg_entry_price": 3000.0,
+      "total_size": 1,
+      "oldest_position_age": 27503.491972208023,
+      "has_pending_buy": true,
       "has_pending_sell": false
     },
     "orders": {
-      "active_orders": 0,
-      "total_placed": 0,
+      "active_orders": 2,
+      "total_placed": 3,
       "total_cancelled": 0,
       "total_failures": 0,
-      "success_rate": 0.0,
-      "active_order_ids": []
+      "success_rate": 1.0,
+      "active_order_ids": [
+        1142088614,
+        1142088673
+      ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 0,
-      "total_completed": 0,
+      "total_started": 1,
+      "total_completed": 1,
       "total_failed": 0,
       "total_compensated": 0,
-      "success_rate": 0.0,
+      "success_rate": 1.0,
       "compensation_rate": 0.0,
       "active_saga_ids": []
     },
@@ -56,10 +75,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 6971,
+        "processed_count": 25043,
         "error_count": 0,
-        "avg_processing_time_ms": 0.0701724900136469,
-        "max_processing_time_ms": 0.6947920010134112,
+        "avg_processing_time_ms": 0.08668420050526038,
+        "max_processing_time_ms": 0.6271669990383089,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -67,15 +86,15 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 2739,
-        "error_count": 0,
-        "avg_processing_time_ms": 0.034054140123771504,
-        "max_processing_time_ms": 0.32441700022900477,
-        "error_rate": 0.0
+        "processed_count": 7734,
+        "error_count": 1,
+        "avg_processing_time_ms": 0.054077839449746534,
+        "max_processing_time_ms": 0.3272500034654513,
+        "error_rate": 0.00012929919834497026
       }
     },
-    "fills_processed": 0,
-    "sagas_completed": 0,
+    "fills_processed": 1,
+    "sagas_completed": 1,
     "sagas_failed": 0
   },
   "grid_config": {
@@ -88,8 +107,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 2928.6,
-      "price_age_seconds": 4.646713018417358,
+      "price": 2994.8,
+      "price_age_seconds": 2.8122527599334717,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -99,7 +118,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 2844,
+        "total_updates": 7921,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,

@@ -864,6 +864,13 @@ class UnifiedAPIClient:
         try:
             log.info(f"Fetching option chain: {underlying} expiring {expiry_date}")
             
+            # Normalize expiry_date - handle symbol format like 'BTC-2026-01-28' or just date '2026-01-28'
+            parts = expiry_date.split('-') if expiry_date else []
+            if len(parts) == 4:
+                # Symbol format: ASSET-YYYY-MM-DD -> extract date part
+                expiry_date = f"{parts[1]}-{parts[2]}-{parts[3]}"
+                log.debug(f"Normalized expiry_date from symbol format to: {expiry_date}")
+            
             # Get all products from Delta Exchange
             products = await self.rest_client.get_products()
             

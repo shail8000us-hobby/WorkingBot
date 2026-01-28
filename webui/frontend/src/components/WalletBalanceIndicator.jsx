@@ -16,12 +16,14 @@ function WalletBalanceIndicator() {
 
   // Fetch wallet balance from backend
   useEffect(() => {
+    let interval = null;
+
     const fetchBalance = async () => {
       try {
         setLoading(true);
         const response = await fetch('/api/liquidation/status');
         const data = await response.json();
-        
+
         if (data.success && data.margin) {
           setBalance(data.margin.total_balance);
           setError(null);
@@ -36,21 +38,36 @@ function WalletBalanceIndicator() {
       }
     };
 
-    // Initial fetch
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Pause polling when tab hidden
+        if (interval) clearInterval(interval);
+        interval = null;
+      } else {
+        // Resume when visible
+        fetchBalance();
+        interval = setInterval(fetchBalance, 30000); // 30s instead of 5s
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Initial fetch and start polling
     fetchBalance();
+    interval = setInterval(fetchBalance, 30000); // 30s - balance doesn't change often
 
-    // Refresh every 5 seconds
-    const interval = setInterval(fetchBalance, 5000);
-
-    return () => clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Format balance with K/M suffix
   const formatBalance = (value) => {
     if (!value || isNaN(value)) return '0';
-    
+
     const num = parseFloat(value);
-    
+
     if (num >= 1000000) {
       return `${(num / 1000000).toFixed(2)}M`;
     } else if (num >= 1000) {

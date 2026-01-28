@@ -60,8 +60,8 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   const instances = instanceContext?.instances || [];
   const selectedInstance = instanceContext?.selectedInstance || null;
   const instancesLoading = instanceContext?.loading || false;
-  const changeInstance = instanceContext?.changeInstance || (() => {});
-  const loadInstances = instanceContext?.loadInstances || (() => {});
+  const changeInstance = instanceContext?.changeInstance || (() => { });
+  const loadInstances = instanceContext?.loadInstances || (() => { });
 
   // Market data state
   const [marketData, setMarketData] = useState({
@@ -96,13 +96,19 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
         const symbols = ['BTCUSD', 'ETHUSD'];
         const promises = symbols.map(async (symbol) => {
           try {
-            // Fetch market price and grid config
-            const [statusRes, configRes] = await Promise.all([
-              api.get(`/api/symbols/${symbol}/status`).catch(() => ({ data: {} })),
+            // Extract base symbol (BTC, ETH) for spot price API
+            const baseSymbol = symbol.replace('USD', '');
+
+            // Fetch market price from spot-price API and grid config in parallel
+            const [priceRes, configRes] = await Promise.all([
+              api.get(`/api/market/spot-price?symbol=${baseSymbol}`).catch(() => ({ data: {} })),
               api.get(`/api/config/symbols/${symbol}`).catch(() => ({ data: {} })),
             ]);
 
-            const price = statusRes.data?.market_price || null;
+            // Extract price from spot-price API response
+            const price = priceRes.data?.price || null;
+
+            // Extract config - API returns flat structure with GRIDBOT_* fields
             const config = configRes.data?.config || {};
             const mode = configRes.data?.mode || null;
 

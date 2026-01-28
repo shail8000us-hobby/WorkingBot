@@ -746,9 +746,16 @@ class AsyncGridBot:
                 log.warning(f"   Reason: {reason}")
             
             # CRITICAL: Check if Guardian is still alive
-            # Increased from 30s to 60s to handle API timeout scenarios where Guardian
-            # temporarily can't collect data but is still running and publishing heartbeats
-            if signal_age > 60:  # 60 seconds = 12 missed cycles (was 30s = 6 cycles)
+            # Increased from 60s to 120s to handle API rate limiting scenarios where
+            # Delta API may block requests for 60s, causing Guardian signal to appear stale
+            # JAN 27, 2026: Fixed to prevent stop/start cycle during rate limiting
+            if signal_age > 120:  # 120 seconds = 24 missed cycles (was 60s = 12 cycles)
+                # IMPORTANT: Don't trigger shutdown if we're already in graceful shutdown
+                # This prevents cascade of errors during shutdown when rate-limited
+                if not self._running:
+                    log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) but bot already shutting down - ignoring")
+                    return 'STOP', f'Guardian signal stale (bot already shutting down)'
+                
                 log.error(f"🚨 CRITICAL: Guardian signal is stale ({signal_age:.0f}s old)")
                 log.error(f"🛑 Guardian appears to have STOPPED. Shutting down bot for safety.")
                 log.error(f"🛑 RULE: No Guardian = No Trading")
@@ -777,6 +784,11 @@ class AsyncGridBot:
         Returns:
             (can_proceed, reason) - True if safe, False with reason if blocked
         """
+        # 0. Early exit: Skip all checks if bot is already shutting down
+        # JAN 27, 2026: Prevents Guardian signal errors during graceful shutdown
+        if not self._running:
+            return False, "Bot is shutting down"
+        
         # 1. Check Guardian GO/STOP signal
         signal, reason = await self._read_guardian_signal()
         if signal == 'STOP':

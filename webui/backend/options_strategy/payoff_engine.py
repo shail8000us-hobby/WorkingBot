@@ -15,7 +15,7 @@ Features:
 Standards:
 - Risk-free rate: 0% (crypto standard)
 - Dividend yield: 0% (crypto has no dividends)
-- Contract multiplier: 0.001 for BTC/ETH
+- Contract multiplier: 0.001 for BTC, 0.01 for ETH
 - European options only (no early exercise)
 """
 
@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 class ContractMultiplier:
     """Contract multipliers for different assets"""
     BTC = 0.001
-    ETH = 0.001
+    ETH = 0.01   # 1 lot = 0.01 ETH
     
     @classmethod
     def get(cls, symbol: str) -> float:

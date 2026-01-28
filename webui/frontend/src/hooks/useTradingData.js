@@ -38,7 +38,7 @@ export function useTradingData() {
   );
 
   const totalPnl = useMemo(
-    () => Number(positionsData?.summary?.total_pnl_inr ?? tradingSnapshot?.metrics?.total_pnl ?? 0),
+    () => Number(positionsData?.summary?.total_pnl_usd ?? positionsData?.summary?.total_pnl ?? tradingSnapshot?.metrics?.total_pnl ?? 0),
     [positionsData, tradingSnapshot]
   );
 

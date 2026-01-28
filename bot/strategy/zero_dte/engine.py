@@ -120,6 +120,9 @@ class ZeroDTEEngine:
         # Default expiry is today
         if expiry_date is None:
             expiry_date = datetime.now(IST).strftime('%Y-%m-%d')
+        else:
+            # Normalize expiry_date - handle symbol format like 'BTC-2026-01-28' or just date '2026-01-28'
+            expiry_date = self._normalize_expiry_date(expiry_date)
         
         logger.info(f"Starting 0DTE session: {underlying} {expiry_date} x{initial_lots} lots")
         
@@ -878,6 +881,43 @@ class ZeroDTEEngine:
         """Parse time string to time object"""
         parts = time_str.split(':')
         return time(int(parts[0]), int(parts[1]))
+    
+    def _normalize_expiry_date(self, expiry_date: str) -> str:
+        """
+        Normalize expiry_date to YYYY-MM-DD format.
+        
+        Handles multiple formats:
+        - 'YYYY-MM-DD' (already correct) -> 'YYYY-MM-DD'
+        - 'BTC-YYYY-MM-DD' (symbol format) -> 'YYYY-MM-DD'
+        - 'ETH-YYYY-MM-DD' (symbol format) -> 'YYYY-MM-DD'
+        
+        Args:
+            expiry_date: Expiry date string in various formats
+            
+        Returns:
+            Normalized date string in YYYY-MM-DD format
+        """
+        if not expiry_date:
+            return datetime.now(IST).strftime('%Y-%m-%d')
+        
+        # Check if it's in symbol format like 'BTC-2026-01-28' or 'ETH-2026-01-28'
+        # Symbol format has 4 parts when split by '-': [ASSET, YYYY, MM, DD]
+        parts = expiry_date.split('-')
+        
+        if len(parts) == 4:
+            # Symbol format: ASSET-YYYY-MM-DD
+            # Extract just the date part
+            normalized = f"{parts[1]}-{parts[2]}-{parts[3]}"
+            logger.debug(f"Normalized expiry from '{expiry_date}' to '{normalized}'")
+            return normalized
+        elif len(parts) == 3:
+            # Already in YYYY-MM-DD format
+            return expiry_date
+        else:
+            # Unknown format, log warning and return as-is
+            logger.warning(f"Unknown expiry_date format: '{expiry_date}', using as-is")
+            return expiry_date
+
     
     # ==========================================================================
     # STATUS METHODS

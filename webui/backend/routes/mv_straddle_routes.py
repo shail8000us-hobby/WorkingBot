@@ -490,8 +490,12 @@ def get_positions():
                     ticker = handler.get_ticker(symbol)
                     if ticker:
                         pos['mark_price'] = ticker.get('mark_price')
-                        pos['best_bid'] = ticker.get('best_bid')
-                        pos['best_ask'] = ticker.get('best_ask')
+                        # best_bid and best_ask are nested inside 'quotes' in Delta Exchange API
+                        quotes = ticker.get('quotes', {})
+                        pos['best_bid'] = quotes.get('best_bid') or ticker.get('best_bid')
+                        pos['best_ask'] = quotes.get('best_ask') or ticker.get('best_ask')
+                        # Also add IV for display
+                        pos['iv'] = quotes.get('mark_iv') or ticker.get('iv')
                     mv_positions.append(pos)
         
         logger.info(f"Found {len(mv_positions)} MV Straddle positions out of {len(all_positions)} total")

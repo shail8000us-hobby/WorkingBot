@@ -371,8 +371,14 @@ def _get_positions_from_delta():
             product_symbol = pos_data.get('product_symbol', 'UNKNOWN')
             product_id = int(pos_data.get('product_id', 0))
             
-            # Calculate PnL: (Mark - Entry) × Size × 0.001
-            CONTRACT_MULTIPLIER = 0.001
+            # Calculate PnL: (Mark - Entry) × Size × Contract Multiplier
+            # Contract sizes per Delta Exchange India:
+            # - BTC: 1 lot = 0.001 BTC (multiplier = 0.001)
+            # - ETH: 1 lot = 0.01 ETH (multiplier = 0.01)
+            if 'ETH' in product_symbol.upper():
+                CONTRACT_MULTIPLIER = 0.01
+            else:
+                CONTRACT_MULTIPLIER = 0.001  # BTC and other assets default to 0.001
             unrealized_pnl = (mark_price - entry_price) * size * CONTRACT_MULTIPLIER
             
             # Determine type
