@@ -26,7 +26,7 @@ import {
   ReferenceArea,
   Brush,
 } from 'recharts';
-import { Box, Typography, Paper, Chip, Slider, Stack, Divider, IconButton } from '@mui/material';
+import { Box, Typography, Paper, Chip, Slider, Stack, Divider, IconButton, Popover } from '@mui/material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -140,6 +140,7 @@ const OptionsPayoffDiagram = ({
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectionEnd, setSelectionEnd] = useState(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [breakevenAnchor, setBreakevenAnchor] = useState(null); // For expandable breakeven popover
 
   // ========================================================================
   // PARSE POSITIONS
@@ -926,23 +927,32 @@ const OptionsPayoffDiagram = ({
           </Typography>
         </Box>
 
-        {/* Breakeven Points */}
-        <Box sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          py: 0.75,
-          borderRadius: 1.5,
-          bgcolor: 'rgba(251,191,36,0.1)',
-          border: '1px solid rgba(251,191,36,0.3)',
-          minWidth: 'fit-content',
-        }}>
+        {/* Breakeven Points - Clickable with Popover */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            px: 1.5,
+            py: 0.75,
+            borderRadius: 1.5,
+            bgcolor: 'rgba(251,191,36,0.1)',
+            border: '1px solid rgba(251,191,36,0.3)',
+            minWidth: 'fit-content',
+            cursor: breakevens.length > 2 ? 'pointer' : 'default',
+            transition: 'all 0.2s ease',
+            '&:hover': breakevens.length > 2 ? {
+              borderColor: 'rgba(251,191,36,0.6)',
+              bgcolor: 'rgba(251,191,36,0.15)',
+            } : {},
+          }}
+          onClick={(e) => breakevens.length > 2 && setBreakevenAnchor(e.currentTarget)}
+        >
           <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
             🎯 Breakeven
           </Typography>
           {breakevens.length > 0 ? (
-            <Box sx={{ display: 'flex', gap: 0.75 }}>
+            <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center' }}>
               {breakevens.slice(0, 2).map((be, idx) => {
                 const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
                 const sign = bePercent >= 0 ? '+' : '';
@@ -956,15 +966,65 @@ const OptionsPayoffDiagram = ({
                 );
               })}
               {breakevens.length > 2 && (
-                <Typography variant="caption" sx={{ color: 'rgba(251,191,36,0.7)' }}>
-                  +{breakevens.length - 2} more
-                </Typography>
+                <Box
+                  sx={{
+                    px: 0.75,
+                    py: 0.25,
+                    borderRadius: 1,
+                    bgcolor: 'rgba(251,191,36,0.25)',
+                    '&:hover': { bgcolor: 'rgba(251,191,36,0.4)' },
+                  }}
+                >
+                  <Typography variant="caption" fontWeight="600" sx={{ color: '#fbbf24' }}>
+                    +{breakevens.length - 2} more ▼
+                  </Typography>
+                </Box>
               )}
             </Box>
           ) : (
             <Typography variant="body2" sx={{ color: '#9ca3af' }}>N/A</Typography>
           )}
         </Box>
+
+        {/* Breakeven Popover - Shows all when clicked */}
+        <Popover
+          open={Boolean(breakevenAnchor)}
+          anchorEl={breakevenAnchor}
+          onClose={() => setBreakevenAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+          PaperProps={{
+            sx: {
+              mt: 0.5,
+              p: 1.5,
+              bgcolor: 'rgba(17, 24, 39, 0.98)',
+              border: '1px solid rgba(251,191,36,0.3)',
+              borderRadius: 2,
+              backdropFilter: 'blur(8px)',
+              minWidth: 200,
+            }
+          }}
+        >
+          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', display: 'block', mb: 1, fontWeight: 600 }}>
+            🎯 All Breakeven Points ({breakevens.length})
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+            {breakevens.map((be, idx) => {
+              const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
+              const sign = bePercent >= 0 ? '+' : '';
+              return (
+                <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                    ${be.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'rgba(251,191,36,0.7)' }}>
+                    {sign}{bePercent}% from spot
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        </Popover>
 
         {/* Reward/Risk Ratio */}
         <Box sx={{
