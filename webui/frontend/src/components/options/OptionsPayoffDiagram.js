@@ -123,9 +123,9 @@ const formatDate = (date) => {
 // MAIN COMPONENT
 // ============================================================================
 
-const OptionsPayoffDiagram = ({ 
-  positions, 
-  selectedPositions = [], 
+const OptionsPayoffDiagram = ({
+  positions,
+  selectedPositions = [],
   futuresPositions = []
 }) => {
   const [priceRangePercent, setPriceRangePercent] = useState(20);
@@ -150,7 +150,7 @@ const OptionsPayoffDiagram = ({
 
     // Filter to only selected positions (whitelist approach)
     const visiblePositions = positions.filter((p) => selectedPositions.includes(p.product_symbol));
-    
+
     // Get spot price from first position, or from futures, or default
     let spotPrice = 90000;
     if (visiblePositions.length > 0 && visiblePositions[0]?.greeks?.spot) {
@@ -314,7 +314,7 @@ const OptionsPayoffDiagram = ({
         const size = futPos.size;
         const entryPrice = futPos.entry_price;
         const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange
-        
+
         // P&L = (current_price - entry_price) * size * multiplier
         const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
         expiryPayoff += pnl;
@@ -381,7 +381,7 @@ const OptionsPayoffDiagram = ({
         const size = futPos.size;
         const entryPrice = futPos.entry_price;
         const CONTRACT_MULTIPLIER = 0.001;
-        
+
         const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
         targetPayoff += pnl;
       });
@@ -689,7 +689,7 @@ const OptionsPayoffDiagram = ({
         <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1.5, color: 'primary.main' }}>
           📊 Positions Used in This Payoff Graph
         </Typography>
-        
+
         {parsedPositions?.positions && parsedPositions.positions.length > 0 && (
           <Box sx={{ mb: futuresPositions.length > 0 ? 1.5 : 0 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
@@ -743,6 +743,100 @@ const OptionsPayoffDiagram = ({
             No positions selected. Check the boxes next to positions to include them in the payoff graph.
           </Typography>
         )}
+      </Box>
+
+      {/* Breakeven & Metrics Panel (Sensibull Style) */}
+      <Box sx={{ mb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
+        {/* Profit Section */}
+        <Box sx={{ p: 2, bgcolor: 'rgba(16,185,129,0.1)', borderRadius: 1, border: '1px solid rgba(16,185,129,0.3)' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            Profit left
+          </Typography>
+          <Typography variant="h6" fontWeight="bold" sx={{ color: '#10b981' }}>
+            {isFinite(maxProfit) && maxProfit > 0 ? `+$${maxProfit.toFixed(2)}` : 'Unlimited'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            Max Profit: {isFinite(maxProfit) ? `$${Math.abs(maxProfit).toFixed(2)}` : 'Unlimited'}
+            {isFinite(maxProfit) && maxProfit > 0 && ` (+${((maxProfit / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
+          </Typography>
+        </Box>
+
+        {/* Loss Section */}
+        <Box sx={{ p: 2, bgcolor: 'rgba(239,68,68,0.1)', borderRadius: 1, border: '1px solid rgba(239,68,68,0.3)' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            Loss left
+          </Typography>
+          <Typography variant="h6" fontWeight="bold" sx={{ color: '#ef4444' }}>
+            {isFinite(maxLoss) && maxLoss < 0 ? `$${maxLoss.toFixed(2)}` : 'Unlimited'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            Max Loss: {isFinite(maxLoss) ? `$${Math.abs(maxLoss).toFixed(2)}` : 'Unlimited'}
+            {isFinite(maxLoss) && maxLoss < 0 && ` (${((maxLoss / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
+          </Typography>
+        </Box>
+
+        {/* Breakeven Section */}
+        <Box sx={{ p: 2, bgcolor: 'rgba(251,191,36,0.1)', borderRadius: 1, border: '1px solid rgba(251,191,36,0.3)' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            Breakeven
+          </Typography>
+          {breakevens.length > 0 ? (
+            <>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                {breakevens.length === 1 ? '1 point' : `${breakevens.length} points`}
+              </Typography>
+              {breakevens.map((be, idx) => {
+                const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
+                const sign = bePercent >= 0 ? '+' : '';
+                return (
+                  <Box key={idx} sx={{ mb: idx < breakevens.length - 1 ? 0.5 : 0 }}>
+                    <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                      ${be.toLocaleString()}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ({sign}{bePercent}%)
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                N/A
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                No breakeven for this strategy
+              </Typography>
+            </>
+          )}
+        </Box>
+
+        {/* Reward/Risk Section */}
+        <Box sx={{ p: 2, bgcolor: 'rgba(59,130,246,0.1)', borderRadius: 1, border: '1px solid rgba(59,130,246,0.3)' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            Reward / Risk
+          </Typography>
+          {isFinite(maxProfit) && isFinite(maxLoss) && maxLoss !== 0 ? (
+            <>
+              <Typography variant="h6" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+                {Math.abs(maxProfit / maxLoss).toFixed(2)} : 1
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {maxProfit > Math.abs(maxLoss) ? 'Favorable' : maxProfit < Math.abs(maxLoss) ? 'Unfavorable' : 'Balanced'}
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Typography variant="h6" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+                N/A
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Limited profit or loss
+              </Typography>
+            </>
+          )}
+        </Box>
       </Box>
 
       {/* Header with Legend */}

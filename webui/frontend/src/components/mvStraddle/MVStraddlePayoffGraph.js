@@ -803,6 +803,100 @@ const MVStraddlePayoffGraph = ({ positions = [], spotPrice: propSpotPrice }) => 
                 </Collapse>
             </Box>
 
+            {/* Breakeven & Metrics Panel (Sensibull Style) */}
+            <Box sx={{ mb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
+                {/* Profit Section */}
+                <Box sx={{ p: 2, bgcolor: 'rgba(16,185,129,0.1)', borderRadius: 1, border: '1px solid rgba(16,185,129,0.3)' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Profit left
+                    </Typography>
+                    <Typography variant="h6" fontWeight="bold" sx={{ color: '#10b981' }}>
+                        {isFinite(maxProfit) && maxProfit > 0 ? `+${formatCurrency(maxProfit)}` : 'Unlimited'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Max Profit: {isFinite(maxProfit) ? formatCurrency(Math.abs(maxProfit)) : 'Unlimited'}
+                        {isFinite(maxProfit) && maxProfit > 0 && ` (+${((maxProfit / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
+                    </Typography>
+                </Box>
+
+                {/* Loss Section */}
+                <Box sx={{ p: 2, bgcolor: 'rgba(239,68,68,0.1)', borderRadius: 1, border: '1px solid rgba(239,68,68,0.3)' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Loss left
+                    </Typography>
+                    <Typography variant="h6" fontWeight="bold" sx={{ color: '#ef4444' }}>
+                        {isFinite(maxLoss) && maxLoss < 0 ? formatCurrency(maxLoss) : 'Unlimited'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Max Loss: {isFinite(maxLoss) ? formatCurrency(Math.abs(maxLoss)) : 'Unlimited'}
+                        {isFinite(maxLoss) && maxLoss < 0 && ` (${((maxLoss / Math.abs(projectedProfit || 1)) * 100).toFixed(0)}%)`}
+                    </Typography>
+                </Box>
+
+                {/* Breakeven Section */}
+                <Box sx={{ p: 2, bgcolor: 'rgba(251,191,36,0.1)', borderRadius: 1, border: '1px solid rgba(251,191,36,0.3)' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Breakeven
+                    </Typography>
+                    {breakevens.length > 0 ? (
+                        <>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                                {breakevens.length === 1 ? '1 point' : `${breakevens.length} points`}
+                            </Typography>
+                            {breakevens.map((be, idx) => {
+                                const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
+                                const sign = bePercent >= 0 ? '+' : '';
+                                return (
+                                    <Box key={idx} sx={{ mb: idx < breakevens.length - 1 ? 0.5 : 0 }}>
+                                        <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                                            ${be.toLocaleString()}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            ({sign}{bePercent}%)
+                                        </Typography>
+                                    </Box>
+                                );
+                            })}
+                        </>
+                    ) : (
+                        <>
+                            <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                                N/A
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                No breakeven for this strategy
+                            </Typography>
+                        </>
+                    )}
+                </Box>
+
+                {/* Reward/Risk Section */}
+                <Box sx={{ p: 2, bgcolor: 'rgba(59,130,246,0.1)', borderRadius: 1, border: '1px solid rgba(59,130,246,0.3)' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Reward / Risk
+                    </Typography>
+                    {isFinite(maxProfit) && isFinite(maxLoss) && maxLoss !== 0 ? (
+                        <>
+                            <Typography variant="h6" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+                                {Math.abs(maxProfit / maxLoss).toFixed(2)} : 1
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {maxProfit > Math.abs(maxLoss) ? 'Favorable' : maxProfit < Math.abs(maxLoss) ? 'Unfavorable' : 'Balanced'}
+                            </Typography>
+                        </>
+                    ) : (
+                        <>
+                            <Typography variant="h6" fontWeight="bold" sx={{ color: '#3b82f6' }}>
+                                N/A
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                Limited profit or loss
+                            </Typography>
+                        </>
+                    )}
+                </Box>
+            </Box>
+
             {/* Chart */}
             <Box sx={{ height: 320, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1, p: 1 }}>
                 <ResponsiveContainer width="100%" height="100%">
