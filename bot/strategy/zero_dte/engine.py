@@ -580,7 +580,10 @@ class ZeroDTEEngine:
         )
         
         if ce_strike is None or pe_strike is None:
-            raise RuntimeError(f"Could not find suitable strikes. CE={ce_strike}, PE={pe_strike}")
+            failed_legs = []
+            if ce_strike is None: failed_legs.append("Call (CE)")
+            if pe_strike is None: failed_legs.append("Put (PE)")
+            raise RuntimeError(f"Could not find suitable strikes for {', '.join(failed_legs)} in premium range [{target_premium_min}, {target_premium_max}]. Try adjusting the premium range.")
         
         return ce_strike, pe_strike
     
@@ -608,7 +611,7 @@ class ZeroDTEEngine:
                     candidates.append((strike, premium, abs(premium - (min_premium + max_premium) / 2)))
         
         if not candidates:
-            logger.warning(f"No strikes found in premium range [{min_premium}, {max_premium}]")
+            logger.warning(f"No {direction} strikes found relative to {target_strike} in premium range [{min_premium}, {max_premium}]")
             return None
         
         # Sort by how close premium is to target middle
@@ -627,8 +630,13 @@ class ZeroDTEEngine:
         lots: int
     ) -> Dict:
         """Execute entry trades (sell strangle)"""
-        # Build symbols
-        expiry_formatted = expiry_date.replace('-', '')[-6:]  # DDMMYY
+        # Build symbols with CORRECT date format (DDMMYY, not YYMMDD)
+        # CRITICAL FIX: expiry_date.replace('-', '')[-6:] was giving YYMMDD (wrong!)
+        # We need DDMMYY format: e.g., 2026-01-28 → 280126
+        from datetime import datetime as dt
+        expiry_dt = dt.strptime(expiry_date, '%Y-%m-%d')
+        expiry_formatted = expiry_dt.strftime('%d%m%y')  # DDMMYY format
+        
         ce_symbol = f"C-{underlying}-{int(ce_strike)}-{expiry_formatted}"
         pe_symbol = f"P-{underlying}-{int(pe_strike)}-{expiry_formatted}"
         
@@ -704,7 +712,7 @@ class ZeroDTEEngine:
         """
         Place sell order with maker-first preference
         
-        **0DTE SYSTEM** - Uses async_delta_client.place_order_by_symbol()
+        **0DTE SYSTEM** - Uses rest_client.place_order_by_symbol()
         
         1. Try limit order at best bid (maker)
         2. If not filled in timeout, convert to market
@@ -720,7 +728,7 @@ class ZeroDTEEngine:
             
             if preference == 'maker_first':
                 # Try maker order first (limit at best bid)
-                response = await self.api_client.async_client.place_order_by_symbol(
+                response = await self.api_client.rest_client.place_order_by_symbol(
                     symbol=symbol,
                     side='sell',
                     price=best_bid,
@@ -737,14 +745,13 @@ class ZeroDTEEngine:
                 if fill_price is None:
                     # Cancel and place market order
                     logger.info(f"Limit order {order_id} not filled, converting to market")
-                    product_id = await self.api_client.async_client.get_product_id(symbol)
-                    await self.api_client.async_client.cancel_order(order_id, product_id)
+                    product_id = await self.api_client.rest_client.get_product_id(symbol)
+                    await self.api_client.rest_client.cancel_order(order_id, product_id)
                     
-                    # Market order
-                    response = await self.api_client.async_client.place_order_by_symbol(
+                    # Market order - no price needed for market orders
+                    response = await self.api_client.rest_client.place_order_by_symbol(
                         symbol=symbol,
                         side='sell',
-                        price=best_bid,  # Still needed for record
                         size=lots,
                         order_type='market_order'
                     )
@@ -753,11 +760,10 @@ class ZeroDTEEngine:
                 
                 return {'fill_price': fill_price or best_bid, 'order_id': order_id}
             else:
-                # Market order directly
-                response = await self.api_client.async_client.place_order_by_symbol(
+                # Market order directly - no price parameter needed
+                response = await self.api_client.rest_client.place_order_by_symbol(
                     symbol=symbol,
                     side='sell',
-                    price=best_bid,  # For record
                     size=lots,
                     order_type='market_order'
                 )
@@ -781,13 +787,13 @@ class ZeroDTEEngine:
             quotes = ticker.get('quotes', {})
             best_ask = float(quotes.get('best_ask', 0)) if quotes.get('best_ask') else float(ticker.get('mark_price', 0))
             
-            # Market order for fast execution
-            response = await self.api_client.async_client.place_order_by_symbol(
+            # Market order for fast execution - no price parameter needed
+            response = await self.api_client.rest_client.place_order_by_symbol(
                 symbol=symbol,
                 side='buy',
-                price=best_ask,  # For record
                 size=lots,
-                order_type='market_order'
+                order_type='market_order',
+                reduce_only=True  # Reduce only for closing positions
             )
             
             order_id = response.get('result', {}).get('id')

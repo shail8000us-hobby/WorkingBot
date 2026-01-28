@@ -36,7 +36,13 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
       if (data.success && data.expiries) {
         setAvailableExpiries(data.expiries);
         // Auto-select 0DTE (today's expiry) if available
-        const today = new Date().toISOString().split('T')[0];
+        // CRITICAL: Use IST timezone (Asia/Kolkata) for date comparison
+        const today = new Date().toLocaleDateString('en-CA', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }); // Returns YYYY-MM-DD format in IST
         const todayExpiry = data.expiries.find((e) => e.date === today || e.dte === 0);
         if (todayExpiry) {
           setConfig((prev) => ({ ...prev, expiry: todayExpiry.date || todayExpiry.symbol }));
@@ -65,7 +71,13 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
+      // Use IST timezone for date formatting
+      const dateStr = date.toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
 
       expiries.push({
         date: dateStr,
@@ -236,8 +248,8 @@ const ControlPanel = ({ isActive, onStart, onStop, loading, sessionId, currentEx
                           key={exp.symbol || exp.date}
                           type="button"
                           className={`expiry-btn ${config.expiry === exp.symbol || config.expiry === exp.date
-                              ? 'selected'
-                              : ''
+                            ? 'selected'
+                            : ''
                             } ${exp.dte === 0 ? 'today' : ''}`}
                           onClick={() => setConfig({ ...config, expiry: exp.date || exp.symbol })}
                         >

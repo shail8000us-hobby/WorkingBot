@@ -482,6 +482,19 @@ const MVStraddlePayoffGraph = ({ positions = [], spotPrice: propSpotPrice }) => 
         let yMin = overallMin - padding;
         let yMax = overallMax + padding;
 
+        const actualSpotPriceValue = propSpotPrice || spotPrice || centerPrice;
+
+        // Debug logging
+        console.log('[MVStraddlePayoffGraph] ATM Line Debug:', {
+            propSpotPrice,
+            calculatedSpotPrice: spotPrice,
+            centerPrice,
+            actualSpotPrice: actualSpotPriceValue,
+            minPrice,
+            maxPrice,
+            isInRange: actualSpotPriceValue >= minPrice && actualSpotPriceValue <= maxPrice
+        });
+
         return {
             data,
             positions: parsedPositions,
@@ -494,7 +507,8 @@ const MVStraddlePayoffGraph = ({ positions = [], spotPrice: propSpotPrice }) => 
                     entryPrice: parseFloat(pos.entry_price || 0),
                 };
             }),
-            spotPrice: centerPrice,
+            actualSpotPrice: actualSpotPriceValue,  // Real BTC market price for ATM line (fallback chain)
+            spotPrice: centerPrice,  // Center price for calculations/display
             targetPrice,
             minPrice,
             maxPrice,
@@ -680,7 +694,7 @@ const MVStraddlePayoffGraph = ({ positions = [], spotPrice: propSpotPrice }) => 
     }
 
     const {
-        spotPrice, targetPrice, maxProfit, maxLoss, breakevens, projectedProfit,
+        spotPrice, actualSpotPrice, targetPrice, maxProfit, maxLoss, breakevens, projectedProfit,
         targetDate, daysToExpiryFromTarget, minDaysToExpiry, nearestExpiry, yMin, yMax
     } = chartData;
 
@@ -845,13 +859,15 @@ const MVStraddlePayoffGraph = ({ positions = [], spotPrice: propSpotPrice }) => 
                         <ReferenceLine y={0} stroke="rgba(255,255,255,0.4)" strokeDasharray="4 4" />
 
                         {/* Spot/ATM reference */}
-                        <ReferenceLine
-                            x={spotPrice}
-                            stroke="#fbbf24"
-                            strokeWidth={2}
-                            strokeDasharray="6 3"
-                            label={{ value: 'ATM', position: 'top', fill: '#fbbf24', fontSize: 10 }}
-                        />
+                        {actualSpotPrice && actualSpotPrice > 0 && (
+                            <ReferenceLine
+                                x={actualSpotPrice}
+                                stroke="#fbbf24"
+                                strokeWidth={2}
+                                strokeDasharray="6 3"
+                                label={{ value: 'ATM', position: 'top', fill: '#fbbf24', fontSize: 10 }}
+                            />
+                        )}
 
                         {/* Strike references */}
                         {chartData.positions.map((pos, idx) => (

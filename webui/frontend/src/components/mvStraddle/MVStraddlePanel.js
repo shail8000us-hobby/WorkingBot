@@ -74,6 +74,7 @@ const MVStraddlePanel = () => {
   const [popData, setPopData] = useState({}); // Map symbol -> PoP%
   const [selectedPositionForSLTP, setSelectedPositionForSLTP] = useState(null);
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
+  const [spotPrice, setSpotPrice] = useState(null);
 
   // ---- formatting + type safety helpers (API returns numeric strings sometimes) ----
   const toFiniteNumber = (v) => {
@@ -265,6 +266,19 @@ const MVStraddlePanel = () => {
       setLoadingWatchlist(false);
     }
   }, [underlying]);
+
+  const fetchSpotPrice = useCallback(async () => {
+    try {
+      const response = await fetch('/api/market/spot-price');
+      const data = await response.json();
+
+      if (data?.price) {
+        setSpotPrice(data.price);
+      }
+    } catch (err) {
+      console.error('Failed to fetch spot price:', err);
+    }
+  }, []);
 
   // Handler for adding to position
   const handleAdd = async (position) => {
@@ -656,19 +670,24 @@ const MVStraddlePanel = () => {
     if (activeTab === 0) {
       let watchlistInterval = null;
       let positionsInterval = null;
+      let spotPriceInterval = null;
 
       const startPolling = () => {
         fetchWatchlist();
         fetchPositions();
+        fetchSpotPrice();
         watchlistInterval = setInterval(fetchWatchlist, 30000); // 30s (was 10s)
         positionsInterval = setInterval(fetchPositions, 15000); // 15s (was 5s)
+        spotPriceInterval = setInterval(fetchSpotPrice, 5000); // 5s for spot price
       };
 
       const stopPolling = () => {
         if (watchlistInterval) clearInterval(watchlistInterval);
         if (positionsInterval) clearInterval(positionsInterval);
+        if (spotPriceInterval) clearInterval(spotPriceInterval);
         watchlistInterval = null;
         positionsInterval = null;
+        spotPriceInterval = null;
       };
 
       const handleVisibility = () => {
@@ -676,6 +695,7 @@ const MVStraddlePanel = () => {
           stopPolling();
         } else {
           fetchPositions(); // Immediate refresh when visible
+          fetchSpotPrice(); // Also refresh spot price
           startPolling();
         }
       };
@@ -688,7 +708,7 @@ const MVStraddlePanel = () => {
         document.removeEventListener('visibilitychange', handleVisibility);
       };
     }
-  }, [activeTab, fetchWatchlist, fetchPositions]);
+  }, [activeTab, fetchWatchlist, fetchPositions, fetchSpotPrice]);
 
   // Load SL/TP and MaxLoss settings and calculate PoP after positions load
   const loadSLTPSettings = useCallback(async () => {
@@ -1457,7 +1477,10 @@ const MVStraddlePanel = () => {
                   {/* Payoff Graph for Active Positions */}
                   {positions.length > 0 && (
                     <Box sx={{ mt: 3 }}>
-                      <MVStraddlePayoffGraph positions={positions} />
+                      <MVStraddlePayoffGraph
+                        positions={positions}
+                        spotPrice={spotPrice}
+                      />
                     </Box>
                   )}
                 </Box>

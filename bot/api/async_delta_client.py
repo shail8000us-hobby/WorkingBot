@@ -696,8 +696,8 @@ class AsyncDeltaClient:
         self,
         symbol: str,
         side: str,
-        price: float,
-        size: int,
+        price: float = None,
+        size: int = None,
         order_type: str = "limit_order",
         time_in_force: str = "gtc",
         post_only: bool = True,
@@ -707,29 +707,43 @@ class AsyncDeltaClient:
         Place order using symbol instead of product_id.
         
         Args:
-            symbol: Trading symbol (e.g., "BTCUSD")
+            symbol: Trading symbol (e.g., "BTCUSD" or "C-BTC-100000-280126")
             side: Order side ("buy" or "sell")
-            price: Order price
+            price: Order price (required for limit orders, ignored for market)
             size: Order size (number of contracts)
             order_type: Order type ("limit_order" or "market_order")
-            time_in_force: Time in force ("gtc", "ioc", "fok")
-            post_only: Whether order is post-only (maker only)
+            time_in_force: Time in force ("gtc", "ioc", "fok") - limit orders only
+            post_only: Whether order is post-only (maker only) - limit orders only
             reduce_only: Whether order is reduce-only
             
         Returns:
             Order response with order_id
         """
         # CRITICAL: Delta Exchange expects boolean values as STRINGS, not actual booleans
+        # Build base order data
         data = {
             "product_symbol": symbol,
             "side": side,
             "order_type": order_type,
-            "limit_price": str(price),
-            "size": size,
-            "time_in_force": time_in_force,
-            "post_only": "true" if post_only else "false",      # String boolean!
-            "reduce_only": "true" if reduce_only else "false"   # String boolean!
+            "size": size
         }
+        
+        # CRITICAL: Market orders have different requirements than limit orders
+        if order_type == "market_order":
+            # Market orders: NO limit_price, NO post_only, NO time_in_force
+            # Only include reduce_only if it's True
+            if reduce_only:
+                data["reduce_only"] = "true"
+        else:
+            # Limit orders: Include all standard fields
+            if price is not None:
+                data["limit_price"] = str(price)
+            data["time_in_force"] = time_in_force
+            data["post_only"] = "true" if post_only else "false"
+            data["reduce_only"] = "true" if reduce_only else "false"
+        
+        # DEBUG: Log the exact request data
+        log.info(f"🔍 Placing order by symbol: {data}")
         
         response = await self._request_with_retry(
             method="POST",
@@ -737,7 +751,7 @@ class AsyncDeltaClient:
             data=data
         )
         
-        log.info(f"Order placed: {side} {size} @ {price} ({symbol}) -> {response.get('result', {}).get('id')}")
+        log.info(f"Order placed: {side} {size} @ {price or 'MARKET'} ({symbol}) -> {response.get('result', {}).get('id')}")
         return response
     
     async def get_open_orders_by_symbol(self, symbol: str) -> List[Dict[str, Any]]:

@@ -682,16 +682,8 @@ class UnifiedAPIClient:
             # (mark_price is typically derived from index price and funding, more accurate than mid)
             for ticker in response:
                 product_id = ticker.get('product_id')
-                mark_price = float(ticker.get('mark_price', 0))
-                
-                # Optional: Could also use mid-price from quotes if available
-                # quotes = ticker.get('quotes')
-                # if quotes:
-                #     best_bid = float(quotes.get('best_bid', 0))
-                #     best_ask = float(quotes.get('best_ask', 0))
-                #     if best_bid > 0 and best_ask > 0:
-                #         mid_price = (best_bid + best_ask) / 2
-                #         mark_price = mid_price
+                mark_price_raw = ticker.get('mark_price')
+                mark_price = float(mark_price_raw) if mark_price_raw is not None else 0.0
                 
                 if product_id in product_ids and mark_price > 0:
                     current_prices[product_id] = mark_price
@@ -737,8 +729,8 @@ class UnifiedAPIClient:
             
             # Extract quotes (bid/ask with sizes)
             quotes = ticker.get('quotes', {})
-            best_bid = float(quotes.get('best_bid', 0))
-            best_ask = float(quotes.get('best_ask', 0))
+            best_bid = float(quotes.get('best_bid') or 0)
+            best_ask = float(quotes.get('best_ask') or 0)
             
             # Calculate spread percentage
             spread_pct = 0
@@ -877,6 +869,12 @@ class UnifiedAPIClient:
             if not products:
                 raise RuntimeError("Failed to fetch products from Delta Exchange")
             
+            # OPTIMIZATION: Fetch ALL tickers in one batch call to avoid N+1 API calls
+            # This prevents "Event loop closed" errors and rate limits
+            log.info("Fetching all tickers (batch optimization)...")
+            all_tickers = await self.rest_client.get_all_tickers()
+            ticker_map = {t.get('symbol'): t for t in all_tickers if t.get('symbol')}
+            
             # Parse expiry date
             dt = datetime.strptime(expiry_date, '%Y-%m-%d')
             
@@ -918,18 +916,32 @@ class UnifiedAPIClient:
                 
                 strike_key = str(int(float(strike_price)))
                 
-                # Get ticker data for this option
+                # Get ticker data from local map instead of API call
                 try:
-                    ticker = await self.get_ticker(symbol)
+                    ticker = ticker_map.get(symbol, {})
                     
+                    # Extract quotes (bid/ask with sizes)
+                    quotes = ticker.get('quotes', {})
+                    
+                    # Safely convert prices
+                    def safe_float(val, default=0.0):
+                        try:
+                            return float(val) if val is not None else default
+                        except (ValueError, TypeError):
+                            return default
+
+                    mark_price = safe_float(ticker.get('mark_price'))
+                    spot_price = safe_float(ticker.get('spot_price'))
+                    
+                    # Create option data
                     option_data = {
                         'symbol': symbol,
                         'strike_price': float(strike_price),
-                        'mark_price': float(ticker.get('mark_price', 0)),
-                        'spot_price': float(ticker.get('spot_price', 0)),
-                        'volume': float(ticker.get('volume', 0)),
-                        'oi': float(ticker.get('oi', 0)),
-                        'quotes': ticker.get('quotes', {}),
+                        'mark_price': mark_price,
+                        'spot_price': spot_price,
+                        'volume': safe_float(ticker.get('volume')),
+                        'oi': safe_float(ticker.get('oi')),
+                        'quotes': quotes,
                         'greeks': ticker.get('greeks', {}),
                         'product_id': product.get('id')
                     }
