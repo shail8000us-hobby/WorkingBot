@@ -36,11 +36,14 @@ class TelegramNotifier:
                 'cross': 'crossed'
             }.get(alert['direction'], 'hit')
             
+            expiry_text = f"📅 Expiry: *{alert.get('expiry_date')}*\n" if alert.get('expiry_date') else ""
+            
             message = f"""
 {direction_emoji} *PRICE ALERT TRIGGERED!*
 
 🔔 *BTC* {direction_text} *${alert['target_price']:,.0f}*
 📊 Current: *${current_price:,.2f}*
+{expiry_text}
 
 {pnl_emoji} *Expected P&L:*
 ├ On Expiry: ${pnl_expiry:+,.2f}
@@ -148,7 +151,7 @@ class NtfyNotifier:
                         "Priority": priority,
                         "Tags": tags,
                     },
-                    data=f"Current: ${current_price:,.2f}\nP&L: ${pnl:+,.2f}\n{alert.get('note') or ''}"
+                    data=f"Current: ${current_price:,.2f}\nExpiry: {alert.get('expiry_date') or 'N/A'}\nP&L: ${pnl:+,.2f}\n{alert.get('note') or ''}"
                 ) as response:
                     success = response.status == 200
                     if success:
