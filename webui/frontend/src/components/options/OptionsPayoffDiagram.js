@@ -37,6 +37,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import AlertsPanel from './AlertsPanel';
 
 // ============================================================================
 // BLACK-SCHOLES MODEL
@@ -155,6 +156,7 @@ const OptionsPayoffDiagram = ({
   const [alertDirection, setAlertDirection] = useState('above');
   const [alertNote, setAlertNote] = useState('');
   const [alertLoading, setAlertLoading] = useState(false);
+  const [activeAlerts, setActiveAlerts] = useState([]); // Alerts specific to current expiry view
 
   // ========================================================================
   // PARSE POSITIONS
@@ -1336,6 +1338,23 @@ const OptionsPayoffDiagram = ({
               fontSize: 10,
             }}
           />
+
+          {/* Active Alerts - Orange lines */}
+          {activeAlerts.map(alert => (
+            <ReferenceLine
+              key={alert.id}
+              x={alert.target_price}
+              stroke="#f97316" // Orange-500
+              strokeWidth={1.5}
+              strokeDasharray="3 3"
+              label={{
+                value: '🔔',
+                position: 'insideTop',
+                fill: '#f97316',
+                fontSize: 14,
+              }}
+            />
+          ))}
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -1567,6 +1586,13 @@ const OptionsPayoffDiagram = ({
         </Box>
       )}
 
+      {/* Alerts Panel - Manage Price Notifications */}
+      <AlertsPanel
+        spotPrice={chartData?.spotPrice}
+        onAlertsChange={setActiveAlerts}
+        expiryDate={chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null}
+      />
+
       {/* Alert Creation Dialog - Opens when clicking on payoff graph */}
       <Dialog
         open={alertDialogOpen}
@@ -1658,6 +1684,7 @@ const OptionsPayoffDiagram = ({
                     expected_pnl_expiry: alertPnLExpiry,
                     expected_pnl_target: alertPnLTarget,
                     notification_channels: 'telegram,in_app',
+                    expiry_date: chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null,
                   }),
                 });
                 const data = await response.json();

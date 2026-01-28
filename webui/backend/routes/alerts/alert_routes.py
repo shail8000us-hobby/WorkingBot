@@ -41,10 +41,12 @@ def get_notification_service():
 
 @alerts_bp.route('', methods=['GET'])
 def list_alerts():
-    """Get all alerts, optionally filtered by status."""
+    """Get all alerts, optionally filtered by status and expiry."""
     try:
         status = request.args.get('status')  # active, triggered, cancelled
-        alerts = AlertsDB.get_all_alerts(status=status)
+        expiry_date = request.args.get('expiry_date') # Filter by specific expiry
+        
+        alerts = AlertsDB.get_all_alerts(status=status, expiry_date=expiry_date)
         return jsonify({
             'success': True,
             'alerts': alerts,
@@ -75,7 +77,8 @@ def create_alert():
             expected_pnl_target=data.get('expected_pnl_target'),
             symbol=data.get('symbol', 'BTCUSD'),
             is_repeating=data.get('is_repeating', False),
-            notification_channels=data.get('notification_channels', 'telegram,in_app')
+            notification_channels=data.get('notification_channels', 'telegram,in_app'),
+            expiry_date=data.get('expiry_date')
         )
         
         logger.info(f"Created alert {alert['id']} at ${alert['target_price']}")

@@ -43,7 +43,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import SendIcon from '@mui/icons-material/Send';
 
-const AlertsPanel = ({ spotPrice = 0, onAlertsChange }) => {
+const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
     const [alerts, setAlerts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -68,11 +68,15 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange }) => {
     });
     const [testingTelegram, setTestingTelegram] = useState(false);
 
-    // Fetch alerts on mount
+    // Fetch alerts on mount or expiry change
     const fetchAlerts = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch('/api/alerts');
+            // Query parameters
+            const params = new URLSearchParams();
+            if (expiryDate) params.append('expiry_date', expiryDate);
+
+            const response = await fetch(`/api/alerts?${params.toString()}`);
             const data = await response.json();
             if (data.success) {
                 setAlerts(data.alerts || []);
@@ -83,7 +87,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange }) => {
         } finally {
             setLoading(false);
         }
-    }, [onAlertsChange]);
+    }, [onAlertsChange, expiryDate]);
 
     const fetchSettings = useCallback(async () => {
         try {
@@ -100,7 +104,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange }) => {
     useEffect(() => {
         fetchAlerts();
         fetchSettings();
-    }, [fetchAlerts, fetchSettings]);
+    }, [fetchAlerts, fetchSettings, expiryDate]);
 
     // Create new alert
     const handleCreateAlert = async () => {
@@ -118,6 +122,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange }) => {
                     direction: newAlertDirection,
                     note: newAlertNote || undefined,
                     notification_channels: channels,
+                    expiry_date: expiryDate,
                 }),
             });
 

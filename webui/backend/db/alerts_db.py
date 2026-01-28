@@ -25,6 +25,7 @@ def init_alerts_db():
             note TEXT,
             expected_pnl_expiry REAL,
             expected_pnl_target REAL,
+            expiry_date TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             triggered_at TIMESTAMP,
             last_triggered_at TIMESTAMP,
@@ -35,6 +36,12 @@ def init_alerts_db():
             trigger_count INTEGER DEFAULT 0
         )
     ''')
+    
+    # Migration: Add expiry_date column if it doesn't exist
+    try:
+        cursor.execute('SELECT expiry_date FROM price_alerts LIMIT 1')
+    except sqlite3.OperationalError:
+        cursor.execute('ALTER TABLE price_alerts ADD COLUMN expiry_date TEXT')
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS alert_settings (
@@ -83,8 +90,9 @@ class AlertsDB:
     def create_alert(target_price: float, direction: str, note: str = None, 
                      expected_pnl_expiry: float = None, expected_pnl_target: float = None,
                      symbol: str = 'BTCUSD', is_repeating: bool = False,
-                     notification_channels: str = 'telegram,in_app') -> dict:
-        """Create a new price alert."""
+                     notification_channels: str = 'telegram,in_app',
+                     expiry_date: str = None) -> dict:
+        """Create a new price alert tied to a specific expiry."""
         alert_id = str(uuid.uuid4())[:8]
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -92,10 +100,10 @@ class AlertsDB:
         cursor.execute('''
             INSERT INTO price_alerts 
             (id, symbol, target_price, direction, note, expected_pnl_expiry, 
-             expected_pnl_target, is_repeating, notification_channels)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             expected_pnl_target, is_repeating, notification_channels, expiry_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (alert_id, symbol, target_price, direction, note, 
-              expected_pnl_expiry, expected_pnl_target, is_repeating, notification_channels))
+              expected_pnl_expiry, expected_pnl_target, is_repeating, notification_channels, expiry_date))
         
         conn.commit()
         
@@ -107,20 +115,33 @@ class AlertsDB:
         return dict(row)
     
     @staticmethod
-    def get_all_alerts(status: str = None) -> list:
-        """Get all alerts, optionally filtered by status."""
+    def get_all_alerts(status: str = None, expiry_date: str = None) -> list:
+        """Get all alerts, optionally filtered by status and/or expiry_date."""
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        if status:
-            cursor.execute('SELECT * FROM price_alerts WHERE status = ? ORDER BY created_at DESC', (status,))
-        else:
-            cursor.execute('SELECT * FROM price_alerts ORDER BY created_at DESC')
+        query = 'SELECT * FROM price_alerts WHERE 1=1'
+        params = []
         
+        if status:
+            query += ' AND status = ?'
+            params.append(status)
+        if expiry_date:
+            query += ' AND expiry_date = ?'
+            params.append(expiry_date)
+            
+        query += ' ORDER BY created_at DESC'
+        
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
         
         return [dict(row) for row in rows]
+    
+    @staticmethod
+    def get_alerts_by_expiry(expiry_date: str, status: str = None) -> list:
+        """Get all alerts for a specific expiry date."""
+        return AlertsDB.get_all_alerts(status=status, expiry_date=expiry_date)
     
     @staticmethod
     def get_active_alerts() -> list:
