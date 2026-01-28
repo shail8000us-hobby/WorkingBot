@@ -1794,385 +1794,128 @@ const OptionsPanel = () => {
     setBatchExecuting(true);
     setBatchOrderResults([]);
 
-    const results = [];
-    const submittedOrders = []; // Track orders that were submitted successfully
-    const MAX_RETRIES = 2;
-    const BASE_DELAY = 1500; // 1.5 seconds between orders (robust for rate limits)
-
     // Determine order preference based on execution mode
     const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
-    const executionLabel = executionMode === 'immediate' ? 'MARKET' : 'LIMIT';
+    const executionLabel = executionMode === 'immediate' ? 'MARKET' : 'SMART';
 
-    // ===== PHASE 1: Submit all orders =====
-    for (let i = 0; i < orders.length; i++) {
-      const order = orders[i];
-      let success = false;
-      let retries = 0;
+    try {
+      // NEW: Use batch_add endpoint for concurrent execution
+      console.log(`[BATCH-API] Calling /api/options/batch_add with ${orders.length} orders`);
 
-      // Generate unique request ID for tracking
-      const requestId = `${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`;
-      console.log(`[BATCH-${i + 1}/${orders.length}] Preparing: ${order.side.toUpperCase()} ${order.size} ${order.symbol} [RequestID: ${requestId}]`);
-
-      // Update UI to show progress
-      setBatchOrderResults((prev) => [
-        ...prev,
-        {
+      const { data } = await api.post('/api/options/batch_add', {
+        orders: orders.map(order => ({
           symbol: order.symbol,
           size: order.size,
-          side: order.side,
-          success: false,
-          filled: executionMode === 'immediate', // Market orders fill immediately
-          message: `⏳ Placing ${executionLabel} order ${i + 1}/${orders.length}...`,
-        },
-      ]);
-
-      while (!success && retries <= MAX_RETRIES) {
-        try {
-          console.log(`[BATCH-${i + 1}/${orders.length}] Submitting API call... [RequestID: ${requestId}]`);
-          const { data } = await api.post('/api/options/add', {
-            symbol: order.symbol,
-            size: order.size,
-            side: order.side,
-            order_preference: orderPreference,
-            confirm: true,
-          });
-          console.log(`[BATCH-${i + 1}/${orders.length}] API response received [RequestID: ${requestId}]`, data);
-
-          if (data?.success) {
-            const result = {
-              symbol: order.symbol,
-              size: order.size,
-              side: order.side,
-              success: true,
-              filled: executionMode === 'immediate', // Market orders are filled immediately
-              message:
-                executionMode === 'immediate'
-                  ? `✅ ${order.side.toUpperCase()} ${order.size} FILLED @ ${data.fill_price ? '$' + parseFloat(data.fill_price).toFixed(2) : 'market'}`
-                  : `📤 ${order.side.toUpperCase()} ${order.size} submitted @ ${data.fill_price ? '$' + parseFloat(data.fill_price).toFixed(2) : 'mid'} - checking fill...`,
-              expectedSize: order.side === 'buy' ? order.size : -order.size,
-            };
-            results.push(result);
-            if (executionMode === 'smart') {
-              submittedOrders.push(result); // Only track for smart mode
-            }
-            // Play calming sound for immediate fills
-            if (executionMode === 'immediate') {
-              soundManager.playTradeFilled();
-              // Show visual notification
-              setTradeNotification({
-                symbol: order.symbol,
-                side: order.side,
-                size: order.size,
-                price: data.fill_price,
-              });
-            }
-            success = true;
-          } else {
-            // If order failed, check if it's rate limit or other error
-            const errorMsg = data?.error || 'Failed';
-            if (
-              errorMsg.toLowerCase().includes('rate') ||
-              errorMsg.toLowerCase().includes('too many')
-            ) {
-              // Rate limit hit - increase delay and retry
-              if (retries < MAX_RETRIES) {
-                retries++;
-                results[results.length - 1] = {
-                  symbol: order.symbol,
-                  size: order.size,
-                  side: order.side,
-                  success: false,
-                  filled: false,
-                  message: `⚠️ Rate limit - retry ${retries}/${MAX_RETRIES} in ${retries * 2}s...`,
-                };
-                setBatchOrderResults([...results]);
-                await new Promise((resolve) => setTimeout(resolve, retries * 2000)); // Exponential backoff
-                continue;
-              }
-            }
-
-            results[results.length - 1] = {
-              symbol: order.symbol,
-              size: order.size,
-              side: order.side,
-              success: false,
-              filled: false,
-              message: `❌ ${errorMsg}`,
-            };
-            break;
-          }
-        } catch (err) {
-          const errorMsg = err.message || 'Unknown error';
-
-          // Check if it's a network/rate limit error
-          if (
-            errorMsg.toLowerCase().includes('rate') ||
-            errorMsg.toLowerCase().includes('429') ||
-            errorMsg.toLowerCase().includes('too many')
-          ) {
-            if (retries < MAX_RETRIES) {
-              retries++;
-              results[results.length - 1] = {
-                symbol: order.symbol,
-                size: order.size,
-                side: order.side,
-                success: false,
-                filled: false,
-                message: `⚠️ Rate limit - retry ${retries}/${MAX_RETRIES}...`,
-              };
-              setBatchOrderResults([...results]);
-              await new Promise((resolve) => setTimeout(resolve, retries * 2000)); // Exponential backoff
-              continue;
-            }
-          }
-
-          results[results.length - 1] = {
-            symbol: order.symbol,
-            size: order.size,
-            side: order.side,
-            success: false,
-            filled: false,
-            message: `❌ ${errorMsg}`,
-          };
-          break;
-        }
-      }
-
-      // Update results
-      setBatchOrderResults([...results]);
-
-      // Delay between orders (with exponential increase for large batches)
-      if (i < orders.length - 1) {
-        // Increase delay for larger batches to avoid rate limits
-        const delayMultiplier = orders.length > 5 ? 1.5 : 1;
-        const delay = Math.ceil(BASE_DELAY * delayMultiplier);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-
-    setBatchExecuting(false); // Unlock batch execution
-
-    // Clear batch quantities after successful execution
-    setBatchQuantities({});
-
-    // ===== PHASE 2: Monitor fill status with auto-market order after 5 minutes (only in smart mode) =====
-    if (submittedOrders.length > 0 && executionMode === 'smart') {
-      setOrderResult({
-        type: 'info',
-        message: `📊 Monitoring ${submittedOrders.length} orders for fills...`,
+          side: order.side
+        })),
+        order_preference: orderPreference,
+        confirm: true
       });
 
-      // Track start time for each order
-      const orderStartTime = Date.now();
-      const AUTO_MARKET_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+      console.log(`[BATCH-API] Response received:`, data);
 
-      // Poll positions to check if orders are filled
-      let pollAttempts = 0;
-      const MAX_POLL_ATTEMPTS = 150; // Poll for up to 5 minutes (150 * 2s = 300s)
-      const POLL_INTERVAL = 2000; // Check every 2 seconds
-      let autoMarketTriggered = false;
+      if (data?.success) {
+        const results = data.results || [];
+        const successful = data.successful || 0;
+        const failed = data.failed || 0;
+        const executionTime = data.execution_time || '0s';
 
-      const checkFillStatus = async () => {
-        try {
-          // Fetch fresh positions
-          const { data } = await api.get('/api/options/positions');
-          if (data?.success && data.positions) {
-            const currentPositions = data.positions;
-
-            // Check each submitted order
-            submittedOrders.forEach((orderResult, idx) => {
-              if (orderResult.filled) return; // Already marked as filled
-
-              // Find the position for this symbol
-              const position = currentPositions.find(
-                (p) => p.product_symbol === orderResult.symbol
-              );
-
-              if (position) {
-                // Check if size increased by expected amount
-                // Note: This is an approximation - we compare against original expected size
-                const actualSize = position.size;
-
-                // Mark as filled (we assume if position exists and order submitted, it's filled)
-                // More robust: could track original size and compare delta
-                orderResult.filled = true;
-                orderResult.message = `✅ ${orderResult.side.toUpperCase()} ${orderResult.size} FILLED - position now ${actualSize}`;
-
-                // Play sound for individual order fills
-                soundManager.playTradeFilled();
-              }
-            });
-
-            // Update results display
-            const updatedResults = [...results];
-            setBatchOrderResults(updatedResults);
-
-            // Check if all filled
-            const allFilled = submittedOrders.every((o) => o.filled);
-
-            if (allFilled) {
-              // Play calming sound for successful fills
-              soundManager.playTradeFilled();
-              setOrderResult({
-                type: 'success',
-                message: `✅ All ${submittedOrders.length} orders filled!`,
-              });
-              // Clear after 5 seconds
-              setTimeout(() => {
-                setOrderResult(null);
-                setBatchOrderResults([]);
-              }, 5000);
-              return true; // Stop polling
-            }
+        // Convert API results to UI format
+        const uiResults = results.map((result, index) => {
+          if (result.success) {
+            const fillPrice = result.fill_price;
+            return {
+              symbol: result.symbol,
+              size: result.size,
+              side: result.side,
+              success: true,
+              filled: executionMode === 'immediate' || result.execution_type?.includes('filled'),
+              message: `✅ ${result.side.toUpperCase()} ${result.size} ${result.execution_type === 'market' ? 'FILLED' : result.execution_type} ${fillPrice ? '@ $' + parseFloat(fillPrice).toFixed(2) : ''}`,
+            };
+          } else {
+            return {
+              symbol: result.symbol,
+              size: result.size,
+              side: result.side,
+              success: false,
+              filled: false,
+              message: `❌ ${result.error || 'Failed'}`,
+            };
           }
-        } catch (err) {
-          console.error('Error checking fill status:', err);
-        }
-
-        return false; // Continue polling
-      };
-
-      // Auto-market order function for unfilled orders after 5 minutes
-      const triggerAutoMarket = async () => {
-        const unfilledOrders = submittedOrders.filter((o) => !o.filled);
-
-        if (unfilledOrders.length === 0 || autoMarketTriggered) return;
-
-        autoMarketTriggered = true;
-
-        setOrderResult({
-          type: 'warning',
-          message: `⚡ Auto-fill: Converting ${unfilledOrders.length} unfilled orders to MARKET orders...`,
         });
 
-        // Process each unfilled order
-        for (const orderResult of unfilledOrders) {
-          try {
-            orderResult.message = `🔄 Converting to MARKET order...`;
-            setBatchOrderResults([...results]);
+        setBatchOrderResults(uiResults);
 
-            // Place market order to force fill
-            const { data } = await api.post('/api/options/add', {
-              symbol: orderResult.symbol,
-              size: orderResult.size,
-              side: orderResult.side,
-              order_preference: 'market_only', // Force market order
-              confirm: true,
-            });
+        // Play sound for successful batch
+        if (successful > 0) {
+          soundManager.playTradeFilled();
 
-            if (data?.success) {
-              orderResult.filled = true;
-              orderResult.message = `✅ ${orderResult.side.toUpperCase()} ${orderResult.size} FILLED via MARKET @ ${data.fill_price ? '$' + parseFloat(data.fill_price).toFixed(2) : 'market'}`;
-              // Play sound for auto-market fills
-              soundManager.playTradeFilled();
-            } else {
-              orderResult.message = `❌ Market order failed: ${data?.error || 'Unknown error'}`;
-            }
-          } catch (err) {
-            orderResult.message = `❌ Market order error: ${err.message}`;
-          }
-
-          setBatchOrderResults([...results]);
-
-          // Small delay between market orders
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-
-        // Check final status
-        await fetchPositions();
-        const finalUnfilled = submittedOrders.filter((o) => !o.filled).length;
-
-        if (finalUnfilled === 0) {
-          setOrderResult({
-            type: 'success',
-            message: `✅ All orders filled after auto-market conversion!`,
-          });
-          setTimeout(() => {
-            setOrderResult(null);
-            setBatchOrderResults([]);
-          }, 5000);
-        } else {
-          setOrderResult({
-            type: 'error',
-            message: `⚠️ ${finalUnfilled} orders still unfilled after market conversion. Manual intervention required.`,
-          });
-        }
-      };
-
-      // Start polling (track ref to ensure cleanup)
-      const pollIntervalRef = setInterval(async () => {
-        pollAttempts++;
-        const elapsedTime = Date.now() - orderStartTime;
-
-        // Check if 5 minutes elapsed and orders still unfilled
-        if (elapsedTime >= AUTO_MARKET_TIMEOUT && !autoMarketTriggered) {
-          const unfilledCount = submittedOrders.filter((o) => !o.filled).length;
-          if (unfilledCount > 0) {
-            clearInterval(pollIntervalRef);
-            activeIntervalsRef.current = activeIntervalsRef.current.filter(
-              (id) => id !== pollIntervalRef
-            );
-            await triggerAutoMarket();
-            return;
-          }
-        }
-
-        const shouldStop = await checkFillStatus();
-
-        if (shouldStop || pollAttempts >= MAX_POLL_ATTEMPTS) {
-          clearInterval(pollIntervalRef);
-          activeIntervalsRef.current = activeIntervalsRef.current.filter(
-            (id) => id !== pollIntervalRef
-          );
-
-          if (pollAttempts >= MAX_POLL_ATTEMPTS) {
-            const unfilledCount = submittedOrders.filter((o) => !o.filled).length;
-            if (unfilledCount > 0 && !autoMarketTriggered) {
-              // Trigger auto-market as fallback
-              await triggerAutoMarket();
-            }
-          }
-        }
-
-        // Update countdown in message
-        if (pollAttempts % 5 === 0) {
-          // Update every 10 seconds
-          const remainingTime = Math.max(0, AUTO_MARKET_TIMEOUT - elapsedTime);
-          const remainingMinutes = Math.floor(remainingTime / 60000);
-          const remainingSeconds = Math.floor((remainingTime % 60000) / 1000);
-
-          const unfilledCount = submittedOrders.filter((o) => !o.filled).length;
-          if (unfilledCount > 0 && remainingTime > 0) {
-            setOrderResult({
-              type: 'info',
-              message: `📊 ${unfilledCount} unfilled - Auto-market in ${remainingMinutes}m ${remainingSeconds}s`,
+          // Show notification for first successful order
+          const firstSuccess = results.find(r => r.success);
+          if (firstSuccess) {
+            setTradeNotification({
+              symbol: firstSuccess.symbol,
+              side: firstSuccess.side,
+              size: firstSuccess.size,
+              price: firstSuccess.fill_price,
             });
           }
         }
-      }, POLL_INTERVAL);
 
-      // Track interval for cleanup
-      activeIntervalsRef.current.push(pollIntervalRef);
+        // Show summary
+        setOrderResult({
+          type: failed === 0 ? 'success' : 'warning',
+          message: `✅ Batch complete: ${successful} success, ${failed} failed in ${executionTime}`,
+        });
+        setTimeout(() => setOrderResult(null), 5000);
 
-      // Initial check immediately
-      await checkFillStatus();
-    } else {
-      // No orders submitted successfully
-      const successCount = results.filter((r) => r.success).length;
-      const failCount = results.length - successCount;
+        console.log(`[BATCH-COMPLETE] ${successful} success, ${failed} failed in ${executionTime}`);
+
+      } else {
+        // API returned error
+        const errorMsg = data?.error || 'Batch execution failed';
+        console.error(`[BATCH-ERROR] ${errorMsg}`);
+
+        setBatchOrderResults([{
+          symbol: 'BATCH',
+          success: false,
+          filled: false,
+          message: `❌ ${errorMsg}`,
+        }]);
+
+        setOrderResult({
+          type: 'error',
+          message: `❌ Batch failed: ${errorMsg}`,
+        });
+        setTimeout(() => setOrderResult(null), 5000);
+      }
+
+    } catch (err) {
+      // Network or other error
+      const errorMsg = err.response?.data?.error || err.message || 'Unknown error';
+      console.error(`[BATCH-EXCEPTION]`, err);
+
+      setBatchOrderResults([{
+        symbol: 'BATCH',
+        success: false,
+        filled: false,
+        message: `❌ ${errorMsg}`,
+      }]);
 
       setOrderResult({
         type: 'error',
-        message: `❌ All orders failed: ${failCount} errors`,
+        message: `❌ Batch error: ${errorMsg}`,
       });
-
-      // Clear after 8 seconds
-      setTimeout(() => {
-        setOrderResult(null);
-        setBatchOrderResults([]);
-      }, 8000);
+      setTimeout(() => setOrderResult(null), 5000);
     }
+
+    // Always reset executing state
+    setBatchExecuting(false);
+    setPendingBatchOrders(null);
   };
+
+
+
 
   // Format helpers
   const formatPnl = (pnl) => {

@@ -1785,3 +1785,21 @@ def execute_close_order(symbol: str, order_preference: str = 'market_only') -> d
             'symbol': symbol
         }
 
+
+# ================================================================
+# BATCH ORDER ENDPOINT - JAN 28, 2026
+# Execute multiple orders concurrently to minimize time and market risk
+# ================================================================
+
+from .batch_add_endpoint import create_batch_add_route
+
+# Register batch_add route with all required dependencies
+create_batch_add_route(
+    options_bp=options_bp,
+    get_unified_client=get_unified_client,
+    check_guardian_signal=check_guardian_signal,
+    ORDER_TYPE_MAKER_FIRST=ORDER_TYPE_MAKER_FIRST,
+    VALID_ORDER_TYPES=VALID_ORDER_TYPES
+)
+
+
