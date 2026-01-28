@@ -262,40 +262,51 @@ const OptionsPayoffDiagram = ({
       nearestExpiry,
     } = parsedPositions;
 
-    // Calculate ADAPTIVE X-axis range based on position strikes
-    // Goal: Show all strikes with appropriate buffer, not fixed % of spot
-    let optimalMinPrice = spotPrice;
-    let optimalMaxPrice = spotPrice;
+    // Calculate X-axis range: ±6000 from ATM by default (user requested)
+    // For zooming out, allow up to ±30000 range
+    const DEFAULT_RANGE = 6000; // ±6000 from ATM
+    const MAX_ZOOM_RANGE = 30000; // Maximum range for zooming out
 
+    // Default: ±6000 from spot price
+    let optimalMinPrice = spotPrice - DEFAULT_RANGE;
+    let optimalMaxPrice = spotPrice + DEFAULT_RANGE;
+
+    // If positions have strikes outside this range, extend to include them
     if (parsedPos.length > 0) {
       const strikes = parsedPos.map(p => p.strike);
       const minStrike = Math.min(...strikes);
       const maxStrike = Math.max(...strikes);
 
-      // Calculate range that includes all strikes with buffer
-      const strikesRange = maxStrike - minStrike;
-      const buffer = Math.max(strikesRange * 0.3, spotPrice * 0.05); // 30% of strike range or 5% of spot
+      // Extend range if needed to include all strikes + 2000 buffer
+      const strikeBuffer = 2000;
+      if (minStrike - strikeBuffer < optimalMinPrice) {
+        optimalMinPrice = minStrike - strikeBuffer;
+      }
+      if (maxStrike + strikeBuffer > optimalMaxPrice) {
+        optimalMaxPrice = maxStrike + strikeBuffer;
+      }
 
-      // Ensure range includes spot price and all strikes
-      optimalMinPrice = Math.min(minStrike - buffer, spotPrice * 0.95);
-      optimalMaxPrice = Math.max(maxStrike + buffer, spotPrice * 1.05);
-
-      // Make range symmetric around spot if strikes are roughly centered
+      // Make symmetric around spot
       const spotToMin = spotPrice - optimalMinPrice;
       const spotToMax = optimalMaxPrice - spotPrice;
       const maxOffset = Math.max(spotToMin, spotToMax);
       optimalMinPrice = spotPrice - maxOffset;
       optimalMaxPrice = spotPrice + maxOffset;
-    } else {
-      // No positions, use 10% range (smaller default for cleaner view)
-      optimalMinPrice = spotPrice * 0.9;
-      optimalMaxPrice = spotPrice * 1.1;
     }
 
     // Apply user zoom override if priceRangePercent was manually changed (non-default)
+    // Allow up to MAX_ZOOM_RANGE for zooming out
     const isDefaultRange = priceRangePercent === 20;
-    const minPrice = isDefaultRange ? optimalMinPrice : spotPrice * (1 - priceRangePercent / 100);
-    const maxPrice = isDefaultRange ? optimalMaxPrice : spotPrice * (1 + priceRangePercent / 100);
+    let minPrice, maxPrice;
+    if (isDefaultRange) {
+      minPrice = optimalMinPrice;
+      maxPrice = optimalMaxPrice;
+    } else {
+      // User changed the range - use their setting but cap at MAX_ZOOM_RANGE
+      const userRange = Math.min(spotPrice * (priceRangePercent / 100), MAX_ZOOM_RANGE);
+      minPrice = spotPrice - userRange;
+      maxPrice = spotPrice + userRange;
+    }
 
     const numPoints = 200; // More points for smoother curves
     const priceStep = (maxPrice - minPrice) / numPoints;
@@ -624,10 +635,12 @@ const OptionsPayoffDiagram = ({
     return chartData.data.filter((d) => d.price >= zoomDomain.left && d.price <= zoomDomain.right);
   }, [chartData, isZoomed, zoomDomain]);
 
-  // Calculate Y-axis domain for zoomed view (recalculate based on visible data)
+  // Calculate Y-axis domain for zoomed view (TRULY ADAPTIVE based on visible data)
+  // This is critical - when user zooms to a small area, Y-axis MUST adapt
   const zoomedYDomain = useMemo(() => {
-    if (!displayData || displayData.length === 0)
-      return [chartData?.yMin || -500, chartData?.yMax || 200];
+    if (!displayData || displayData.length === 0) {
+      return [chartData?.yMin || -10, chartData?.yMax || 10];
+    }
 
     let minY = Infinity,
       maxY = -Infinity;
@@ -638,14 +651,31 @@ const OptionsPayoffDiagram = ({
       if (d.target > maxY) maxY = d.target;
     });
 
-    // Add padding
-    const range = maxY - minY;
-    const padding = Math.max(range * 0.15, 20); // At least $20 padding
+    // Handle edge case where min/max are the same or very close
+    const dataRange = maxY - minY;
+    if (dataRange < 0.5) {
+      // If range is tiny (essentially a flat line), create symmetric range around it
+      const center = (maxY + minY) / 2;
+      const smallPadding = Math.max(Math.abs(center) * 0.2, 2); // 20% or at least $2
+      return [center - smallPadding, center + smallPadding];
+    }
 
-    return [
-      Math.max(minY - padding, -500), // Cap at -500
-      Math.min(maxY + padding, 500), // Cap at +500
-    ];
+    // Add PROPORTIONAL padding - more padding for smaller ranges to make them readable
+    // Smaller ranges get larger relative padding
+    const paddingPercent = dataRange < 5 ? 0.5 : dataRange < 20 ? 0.35 : 0.2;
+    const padding = dataRange * paddingPercent;
+
+    // Ensure zero is visible if data crosses zero
+    let yMin = minY - padding;
+    let yMax = maxY + padding;
+
+    // If data is all positive but close to zero, show some negative
+    if (minY >= 0 && minY < 5) yMin = Math.min(-2, yMin);
+    // If data is all negative but close to zero, show some positive  
+    if (maxY <= 0 && maxY > -5) yMax = Math.max(2, yMax);
+
+    // NO FIXED CAPS - let Y-axis be fully adaptive to actual data
+    return [yMin, yMax];
   }, [displayData, chartData]);
 
   // ========================================================================
