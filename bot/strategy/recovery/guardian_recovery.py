@@ -69,7 +69,12 @@ class GuardianRecoveryEngine(BaseRecoveryEngine):
     async def calculate_missed_grids(self) -> List[float]:
         """
         Calculate all grids between halt price and current price.
-        No limit (Guardian recovery is critical).
+        
+        JAN 29 2026: Fixed to use grid-aligned calculation.
+        
+        For LONG mode with halt at 100 and current at 81 (step=5):
+        - Missed grids: 95, 90, 85 (from halt, going towards current)
+        - TP orders will be grid-aligned: 90→95, 85→90, etc.
         """
         if not self.halt_start_price:
             return []
@@ -79,31 +84,59 @@ class GuardianRecoveryEngine(BaseRecoveryEngine):
             step = self.config.grid.geometry.step
             lower = self.config.grid.geometry.lower
             upper = self.config.grid.geometry.upper
+            reference = self.config.grid.geometry.reference
+            
+            # Get max grids from config (default 5 for Guardian)
+            try:
+                max_grids = getattr(self.config.safety.volatility.opportunistic_recovery, 'max_grids', 5)
+            except AttributeError:
+                max_grids = 5
+            
+            # Snap halt_start_price to nearest grid level
+            # This ensures we calculate from a valid grid point
+            snapped_halt = self._snap_to_grid(self.halt_start_price, reference, step)
             
             missed = []
             
             if self.bot.mode == "LONG":
-                # Price dropped during halt
-                if current_price < self.halt_start_price:
-                    grid = self.halt_start_price - step
-                    while grid > current_price and grid >= lower:
+                # Price dropped during halt - need to buy missed grids
+                if current_price < snapped_halt:
+                    grid = snapped_halt - step
+                    while grid > current_price and grid >= lower and len(missed) < max_grids:
                         missed.append(grid)
                         grid -= step
             else:  # SHORT
-                # Price rose during halt
-                if current_price > self.halt_start_price:
-                    grid = self.halt_start_price + step
-                    while grid < current_price and grid <= upper:
+                # Price rose during halt - need to sell missed grids
+                if current_price > snapped_halt:
+                    grid = snapped_halt + step
+                    while grid < current_price and grid <= upper and len(missed) < max_grids:
                         missed.append(grid)
                         grid += step
             
-            self.logger.info(f"[GuardianRecovery] Found {len(missed)} missed grids")
-            self.logger.info(f"  Halt: ${self.halt_start_price:,.0f} → Current: ${current_price:,.0f}")
+            self.logger.info(f"[GuardianRecovery] Found {len(missed)} missed grids (max: {max_grids})")
+            self.logger.info(f"  Halt: ${self.halt_start_price:,.0f} (snapped: ${snapped_halt:,.0f})")
+            self.logger.info(f"  Current: ${current_price:,.0f}")
+            if missed:
+                self.logger.info(f"  Missed grids: {[f'${g:,.0f}' for g in missed]}")
             
             return missed
         except Exception as e:
             self.logger.error(f"Error calculating missed grids: {e}")
             return []
+    
+    def _snap_to_grid(self, price: float, reference: float, step: float) -> float:
+        """
+        Snap a price to the nearest valid grid level.
+        
+        For reference=100, step=5:
+        - 98 → 100
+        - 93 → 95
+        - 101 → 100
+        """
+        # Calculate number of steps from reference
+        steps_from_ref = round((price - reference) / step)
+        snapped = reference + (steps_from_ref * step)
+        return snapped
     
     def get_state_file_path(self) -> Path:
         return Path("data/recovery/guardian_recovery_state.json")

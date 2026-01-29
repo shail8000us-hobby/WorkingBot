@@ -504,5 +504,132 @@ is_bot_order = is_entry_order or is_tp_order
 ---
 
 **File Location:** `/Users/ssr/Projects/WorkingBot/logic_strategy.md`  
-**Last Updated:** December 12, 2025
+**Last Updated:** January 29, 2026
+
+---
+
+## 🔄 OPPORTUNISTIC RECOVERY SYSTEM (Jan 29, 2026)
+
+### Overview
+
+Recovery system handles missed grid levels when:
+1. **Startup Recovery:** Bot starts and market has moved past grid levels
+2. **Guardian Recovery:** Guardian resumes (STOP → GO) and market moved during halt
+
+### Critical Rule: Grid-Aligned TP Orders
+
+**Recovery ALWAYS places TP at grid level**, NOT at fill price + step.
+
+### LONG Mode Recovery Example
+
+**Scenario:**
+- Halt Price: $100 (reference point)
+- Current Price: $81 (market dropped)
+- Grid Step: $5
+- Mode: LONG
+
+**Missed Grids Calculation:**
+```
+Starting from $100, going down to $81:
+- $95 (100 - 5)
+- $90 (95 - 5)
+- $85 (90 - 5)
+Missed grids: [95, 90, 85]
+```
+
+**Recovery Orders Placed:**
+```
+Grid $95: Market BUY at $81 → TP SELL at $100 (95 + 5)
+Grid $90: Market BUY at $81 → TP SELL at $95  (90 + 5)
+Grid $85: Market BUY at $81 → TP SELL at $90  (85 + 5)
+```
+
+**Why This Works:**
+- Entry fills at ~$81 (current market)
+- But TP is placed at grid level (grid_price + step)
+- This maintains grid structure
+- When market rises, TPs hit in sequence: $85→$90, $90→$95, $95→$100
+
+### SHORT Mode Recovery Example
+
+**Scenario:**
+- Halt Price: $100 (reference point)
+- Current Price: $119 (market rose)
+- Grid Step: $5
+- Mode: SHORT
+
+**Missed Grids Calculation:**
+```
+Starting from $100, going up to $119:
+- $105 (100 + 5)
+- $110 (105 + 5)
+- $115 (110 + 5)
+Missed grids: [105, 110, 115]
+```
+
+**Recovery Orders Placed:**
+```
+Grid $105: Market SELL at $119 → TP BUY at $100 (105 - 5)
+Grid $110: Market SELL at $119 → TP BUY at $105 (110 - 5)
+Grid $115: Market SELL at $119 → TP BUY at $110 (115 - 5)
+```
+
+**Why This Works:**
+- Entry fills at ~$119 (current market)
+- But TP is placed at grid level (grid_price - step)
+- When market drops, TPs hit in sequence: $115→$110, $110→$105, $105→$100
+
+### Safety Mechanisms
+
+1. **Position Check:** Skips grid if position already exists
+2. **Order Check:** Skips grid if pending order exists at grid level
+3. **Max Grids:**
+   - Startup Recovery: 3 grids (configurable)
+   - Guardian Recovery: 5 grids (configurable)
+4. **Circuit Breaker:** Opens after 3 failures, auto-recovers after 60s
+5. **Rate Limiter:** 0.5 orders/sec (prevents API abuse)
+6. **Single Execution:** Startup recovery runs ONCE per session
+7. **Grid Snapping:** Halt price snapped to valid grid level
+
+### Integration with Normal Trading
+
+**Recovery runs ONLY:**
+- During startup (before normal trading)
+- During Guardian resume (trading halted)
+
+**Protection:**
+- `recovery_in_progress` flag set during recovery
+- `_check_and_place_entry_order()` checks this flag
+- Normal order placement BLOCKED during recovery
+- Fill processing sagas still work (handle recovery fills)
+- Single Pending Order Rule preserved
+
+**After Recovery:**
+- `recovery_in_progress` flag cleared
+- Normal trading resumes
+- Bot follows standard grid logic per #file:logic_strategy.md
+
+### Code Locations
+
+```
+bot/strategy/recovery/
+├── base_recovery_engine.py    # Safety mechanisms
+├── startup_recovery.py         # Startup recovery logic
+├── guardian_recovery.py        # Guardian resume recovery
+└── recovery_monitor.py         # Health monitoring
+
+bot/strategy/async_gridbot.py
+├── place_recovery_order()      # Line 5134 - Places market + TP orders
+├── get_current_price()          # Line 2829 - Price fetching for engines
+└── get_open_orders()            # Line 5219 - Order checking
+
+bot/strategy/simple_state_coordinator.py
+├── _check_and_run_recovery()   # Line 155 - Startup recovery
+└── _run_guardian_recovery()    # Line 100 - Guardian recovery
+```
+
+---
+
+**File Location:** `/Users/ssr/Projects/WorkingBot/logic_strategy.md`  
+**Last Updated:** January 29, 2026
 

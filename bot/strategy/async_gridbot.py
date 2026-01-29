@@ -549,6 +549,22 @@ class AsyncGridBot:
         self._recovered_grids = set()  # Grid levels that were recovered
         self._recovery_state_file = Path(f"data/recovery/recovery_state_{self.symbol_name}_{self.mode}.json")
         
+        # ========================================================================
+        # JAN 29 2026: Initialize Recovery Engines (FIX)
+        # ========================================================================
+        log.info("🔄 Initializing Recovery Engines...")
+        self.startup_recovery = StartupRecoveryEngine(
+            bot=self,
+            config=config,
+            logger=log
+        )
+        self.guardian_recovery = GuardianRecoveryEngine(
+            bot=self,
+            config=config,
+            logger=log
+        )
+        log.info("✅ Recovery engines initialized (StartupRecovery + GuardianRecovery)")
+        
         # REST API Fallback state (NOV 13 - WebSocket starvation protection)
         self._rest_fallback_active = False
         self._rest_fallback_task: Optional[asyncio.Task] = None
@@ -2808,6 +2824,22 @@ class AsyncGridBot:
         except Exception as e:
             log.error(f"Ticker update error: {e}")
     
+    async def get_current_price(self) -> float:
+        """
+        Get current market price (async method for recovery engines).
+        
+        JAN 29 2026: Added to support recovery engines that need async price fetching.
+        
+        Returns:
+            Current market price, or fetches from API if not available.
+        """
+        if self.current_price and self.current_price > 0:
+            return self.current_price
+        
+        # Fetch if not available
+        await self._fetch_current_price()
+        return self.current_price or 0.0
+    
     async def _fetch_current_price(self) -> None:
         """Fetch current market price via REST API."""
         try:
@@ -3201,10 +3233,17 @@ class AsyncGridBot:
         - This includes Guardian signal, account loss limits, margin, and volatility
         - If ANY check fails, order is blocked
         - Ensures grid trading respects ALL safety boundaries
+        
+        JAN 29 2026: Added recovery_in_progress check to prevent conflicts.
         """
         async with self._order_placement_lock:
             try:
                 if not self._initial_order_placed or not self.current_price:
+                    return
+                
+                # Check if recovery is in progress - skip normal order placement
+                if hasattr(self, 'state_coordinator') and self.state_coordinator.is_recovery_in_progress():
+                    log.debug("Skipping normal order placement - recovery in progress")
                     return
                 
                 # COMPREHENSIVE SAFETY CHECK before placing any order
@@ -5100,6 +5139,111 @@ class AsyncGridBot:
         self._recovery_state = None
         self._recovered_grids = set()
         return
+    
+    async def place_recovery_order(self, grid_price: float, tag: str) -> Optional[int]:
+        """
+        Place a recovery market order at the given grid level.
+        
+        JAN 29 2026: Added to support opportunistic recovery engines.
+        
+        This method is called by StartupRecoveryEngine and GuardianRecoveryEngine
+        to place market orders for missed grid levels.
+        
+        Examples:
+        LONG mode (halt at 100, current at 81, step 5):
+        - Grid 95: Market BUY at 81, TP SELL at 100 (95 + 5)
+        - Grid 90: Market BUY at 81, TP SELL at 95 (90 + 5)
+        - Grid 85: Market BUY at 81, TP SELL at 90 (85 + 5)
+        
+        SHORT mode (halt at 100, current at 119, step 5):
+        - Grid 105: Market SELL at 119, TP BUY at 100 (105 - 5)
+        - Grid 110: Market SELL at 119, TP BUY at 105 (110 - 5)
+        - Grid 115: Market SELL at 119, TP BUY at 110 (115 - 5)
+        
+        Args:
+            grid_price: The grid level to recover (for TP calculation)
+            tag: Order tag for tracking (e.g., "RECOVERY_abc123")
+            
+        Returns:
+            Order ID if successful, None if failed
+        """
+        try:
+            # Determine order side based on mode
+            side = "buy" if self.mode == "LONG" else "sell"
+            
+            # Calculate TP price (grid-aligned, not fill-price based)
+            if self.mode == "LONG":
+                tp_price = grid_price + self.grid_calc.step
+                tp_side = "sell"
+            else:  # SHORT mode
+                tp_price = grid_price - self.grid_calc.step
+                tp_side = "buy"
+            
+            log.info(f"[Recovery] 🔄 Grid ${grid_price:,.0f} recovery:")
+            log.info(f"  → Market {side.upper()} at current price")
+            log.info(f"  → TP {tp_side.upper()} at ${tp_price:,.0f} (grid-aligned)")
+            log.info(f"  → Size: {self.lot_size}, Tag: {tag}")
+            
+            # Place market order
+            order_result = await self.api_client.place_order(
+                product_id=self.product_id,
+                size=self.lot_size,
+                side=side,
+                order_type="market_order",
+                client_order_id=tag
+            )
+            
+            if not order_result or not order_result.get("id"):
+                log.error(f"[Recovery] Failed to place market order - no order ID returned")
+                return None
+            
+            order_id = order_result["id"]
+            log.info(f"[Recovery] ✅ Entry order placed: {order_id}")
+            
+            # Wait for fill
+            await asyncio.sleep(1)
+            
+            # Place TP order (grid-aligned)
+            log.info(f"[Recovery] Placing TP {tp_side.upper()} order @ ${tp_price:,.0f}")
+            
+            tp_tag = f"{tag}_TP"
+            
+            tp_result = await self.api_client.place_order(
+                product_id=self.product_id,
+                size=self.lot_size,
+                side=tp_side,
+                limit_price=tp_price,
+                order_type="limit_order",
+                reduce_only=True,
+                client_order_id=tp_tag
+            )
+            
+            if tp_result and tp_result.get("id"):
+                log.info(f"[Recovery] ✅ TP order placed: {tp_result['id']} @ ${tp_price:,.0f}")
+            else:
+                log.warning(f"[Recovery] ⚠️ TP order failed but entry succeeded - saga will handle")
+            
+            # Track as recovered
+            self._recovered_grids.add(grid_price)
+            
+            return order_id
+            
+        except Exception as e:
+            log.error(f"[Recovery] Failed to place recovery order: {e}", exc_info=True)
+            return None
+    
+    async def get_open_orders(self) -> List[Dict]:
+        """
+        Get list of open orders from exchange.
+        
+        JAN 29 2026: Added to support recovery engine position checks.
+        """
+        try:
+            orders = await self.api_client.get_open_orders()
+            return orders if orders else []
+        except Exception as e:
+            log.error(f"Error getting open orders: {e}")
+            return []
     
     async def _sync_positions_from_exchange(self) -> None:
         """
