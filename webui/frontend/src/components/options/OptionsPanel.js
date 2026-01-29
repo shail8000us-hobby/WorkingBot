@@ -3998,160 +3998,117 @@ const OptionsPanel = () => {
                 />
               </Box>
 
-              {/* Greeks Summary - Only for visible positions */}
+              {/* Greeks Summary - Only for visible positions - COMPACT */}
               {aggregatedGreeks.count > 0 && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                    Portfolio Greeks ({sortedPositions.length} visible positions)
-                  </Typography>
+                <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight="bold">
+                      Portfolio Greeks ({sortedPositions.length} visible positions)
+                    </Typography>
+                    {/* Delta Neutral / High Delta Badge - Inline */}
+                    {Math.abs(aggregatedGreeks.delta) < 0.1 && (
+                      <Chip 
+                        label="Delta Neutral ✅" 
+                        size="small" 
+                        color="info" 
+                        sx={{ height: 18, fontSize: '0.65rem' }}
+                      />
+                    )}
+                    {Math.abs(aggregatedGreeks.delta) > 10 && (
+                      <Chip 
+                        label="High Delta ⚠️" 
+                        size="small" 
+                        color="warning" 
+                        sx={{ height: 18, fontSize: '0.65rem' }}
+                      />
+                    )}
+                  </Box>
 
-                  {/* Futures Equivalent - Delta as directional exposure */}
-                  {(aggregatedGreeks.btcDelta !== 0 || aggregatedGreeks.ethDelta !== 0) && (
-                    <Box
-                      sx={{
-                        mb: 2,
-                        p: 1.5,
-                        bgcolor: 'background.paper',
-                        borderRadius: 1,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                      }}
-                    >
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'block', mb: 1 }}
-                      >
-                        Futures Equivalent (Delta Exposure)
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                        {/* BTC Equivalent */}
+                  {/* Futures Equivalent & Greeks in single row */}
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Futures Equivalent - Compact */}
+                    {(aggregatedGreeks.btcDelta !== 0 || aggregatedGreeks.ethDelta !== 0) && (
+                      <>
+                        <Typography variant="caption" color="text.secondary" sx={{ mr: -1 }}>
+                          Futures Equiv:
+                        </Typography>
                         {aggregatedGreeks.btcDelta !== 0 && (
                           <Tooltip
                             title={`Your BTC options have the same directional exposure as ${Math.abs(Number(aggregatedGreeks.btcDelta) || 0).toFixed(4)} BTC futures contracts`}
                           >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography
-                                variant="body2"
-                                fontWeight="bold"
-                                sx={{
-                                  color: aggregatedGreeks.btcDelta >= 0 ? '#10b981' : '#ef4444',
-                                }}
-                              >
-                                {aggregatedGreeks.btcDelta >= 0 ? 'Long' : 'Short'}{' '}
-                                {Math.abs(Number(aggregatedGreeks.btcDelta) || 0).toFixed(4)} BTC
-                              </Typography>
-                              {aggregatedGreeks.btcDelta >= 0 ? (
-                                <TrendingUp sx={{ fontSize: 16, color: '#10b981' }} />
-                              ) : (
-                                <TrendingDown sx={{ fontSize: 16, color: '#ef4444' }} />
-                              )}
-                            </Box>
+                            <Chip
+                              size="small"
+                              label={`${aggregatedGreeks.btcDelta >= 0 ? 'Long' : 'Short'} ${Math.abs(Number(aggregatedGreeks.btcDelta) || 0).toFixed(4)} BTC`}
+                              icon={aggregatedGreeks.btcDelta >= 0 ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
+                              sx={{ 
+                                height: 22,
+                                bgcolor: aggregatedGreeks.btcDelta >= 0 ? '#10b98120' : '#ef444420',
+                                color: aggregatedGreeks.btcDelta >= 0 ? '#10b981' : '#ef4444',
+                                fontWeight: 'bold',
+                                fontSize: '0.7rem'
+                              }}
+                            />
                           </Tooltip>
                         )}
-
-                        {/* ETH Equivalent */}
                         {aggregatedGreeks.ethDelta !== 0 && (
                           <Tooltip
                             title={`Your ETH options have the same directional exposure as ${Math.abs(Number(aggregatedGreeks.ethDelta) || 0).toFixed(4)} ETH futures contracts`}
                           >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography
-                                variant="body2"
-                                fontWeight="bold"
-                                sx={{
-                                  color: aggregatedGreeks.ethDelta >= 0 ? '#10b981' : '#ef4444',
-                                }}
-                              >
-                                {aggregatedGreeks.ethDelta >= 0 ? 'Long' : 'Short'}{' '}
-                                {Math.abs(Number(aggregatedGreeks.ethDelta) || 0).toFixed(4)} ETH
-                              </Typography>
-                              {aggregatedGreeks.ethDelta >= 0 ? (
-                                <TrendingUp sx={{ fontSize: 16, color: '#10b981' }} />
-                              ) : (
-                                <TrendingDown sx={{ fontSize: 16, color: '#ef4444' }} />
-                              )}
-                            </Box>
+                            <Chip
+                              size="small"
+                              label={`${aggregatedGreeks.ethDelta >= 0 ? 'Long' : 'Short'} ${Math.abs(Number(aggregatedGreeks.ethDelta) || 0).toFixed(4)} ETH`}
+                              icon={aggregatedGreeks.ethDelta >= 0 ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
+                              sx={{ 
+                                height: 22,
+                                bgcolor: aggregatedGreeks.ethDelta >= 0 ? '#10b98120' : '#ef444420',
+                                color: aggregatedGreeks.ethDelta >= 0 ? '#10b981' : '#ef4444',
+                                fontWeight: 'bold',
+                                fontSize: '0.7rem'
+                              }}
+                            />
                           </Tooltip>
                         )}
-                      </Box>
+                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+                      </>
+                    )}
 
-                      {/* Delta Neutral Badge */}
-                      {Math.abs(aggregatedGreeks.delta) < 0.1 && (
-                        <Alert severity="info" sx={{ mt: 1.5 }} icon={<CheckCircleIcon />}>
-                          <Typography variant="caption">
-                            ✅ Portfolio is <strong>Delta Neutral</strong> (delta ≈ 0). Minimal
-                            directional exposure.
-                          </Typography>
-                        </Alert>
-                      )}
-
-                      {/* High Delta Warning */}
-                      {Math.abs(aggregatedGreeks.delta) > 10 && (
-                        <Alert severity="warning" sx={{ mt: 1.5 }} icon={<WarningIcon />}>
-                          <Typography variant="caption">
-                            ⚠️ High directional exposure. Consider hedging with{' '}
-                            {aggregatedGreeks.delta > 0 ? 'short' : 'long'} futures.
-                          </Typography>
-                        </Alert>
-                      )}
-                    </Box>
-                  )}
-
-                  {/* Greek Values */}
-                  <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {/* Greek Values - Compact */}
                     <Tooltip title="Portfolio delta - sensitivity to underlying price change">
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
-                          Delta
-                        </Typography>
+                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">Delta:</Typography>
                         <Typography
-                          variant="body2"
+                          variant="caption"
                           fontWeight="bold"
-                          sx={{
-                            color:
-                              (Number(aggregatedGreeks.delta) || 0) >= 0 ? '#10b981' : '#ef4444',
-                          }}
+                          sx={{ color: (Number(aggregatedGreeks.delta) || 0) >= 0 ? '#10b981' : '#ef4444' }}
                         >
-                          {(Number(aggregatedGreeks.delta) || 0) >= 0 ? '+' : ''}
-                          {(Number(aggregatedGreeks.delta) || 0).toFixed(4)}
+                          {(Number(aggregatedGreeks.delta) || 0) >= 0 ? '+' : ''}{(Number(aggregatedGreeks.delta) || 0).toFixed(4)}
                         </Typography>
                       </Box>
                     </Tooltip>
                     <Tooltip title="Portfolio gamma - rate of delta change">
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
-                          Gamma
-                        </Typography>
-                        <Typography variant="body2" fontWeight="bold">
+                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">Gamma:</Typography>
+                        <Typography variant="caption" fontWeight="bold">
                           {(Number(aggregatedGreeks.gamma) || 0).toFixed(6)}
                         </Typography>
                       </Box>
                     </Tooltip>
                     <Tooltip title="Portfolio theta - daily time decay (P&L change per day)">
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
-                          Theta
-                        </Typography>
+                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">Theta:</Typography>
                         <Typography
-                          variant="body2"
+                          variant="caption"
                           fontWeight="bold"
-                          sx={{
-                            color:
-                              (Number(aggregatedGreeks.theta) || 0) >= 0 ? '#10b981' : '#ef4444',
-                          }}
+                          sx={{ color: (Number(aggregatedGreeks.theta) || 0) >= 0 ? '#10b981' : '#ef4444' }}
                         >
-                          {(Number(aggregatedGreeks.theta) || 0) >= 0 ? '+' : ''}
-                          {(Number(aggregatedGreeks.theta) || 0).toFixed(2)}
+                          {(Number(aggregatedGreeks.theta) || 0) >= 0 ? '+' : ''}{(Number(aggregatedGreeks.theta) || 0).toFixed(2)}
                         </Typography>
                       </Box>
                     </Tooltip>
                     <Tooltip title="Portfolio vega - sensitivity to 1% IV change">
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
-                          Vega
-                        </Typography>
-                        <Typography variant="body2" fontWeight="bold">
+                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">Vega:</Typography>
+                        <Typography variant="caption" fontWeight="bold">
                           {(Number(aggregatedGreeks.vega) || 0).toFixed(2)}
                         </Typography>
                       </Box>
