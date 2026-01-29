@@ -11,7 +11,7 @@
  * @version 3.0.0 - Sensibull Style
  */
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import {
   XAxis,
   YAxis,
@@ -156,10 +156,12 @@ const OptionsPayoffDiagram = ({
   const [alertDirection, setAlertDirection] = useState('above');
   const [alertNote, setAlertNote] = useState('');
   const [alertLoading, setAlertLoading] = useState(false);
-  const [activeAlerts, setActiveAlerts] = useState([]); // Alerts specific to current expiry view
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [alertsRefreshTrigger, setAlertsRefreshTrigger] = useState(0);
 
-  // ========================================================================
-  // PARSE POSITIONS
+  // Fetch alerts when expiry changes or on trigger
+
+
   // ========================================================================
 
   const parsedPositions = useMemo(() => {
@@ -530,6 +532,37 @@ const OptionsPayoffDiagram = ({
       yMax: isFinite(yMax) ? yMax : 10,
     };
   }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent, futuresPositions]);
+
+  // Fetch alerts when expiry changes or on trigger
+  const fetchAlerts = useCallback(async () => {
+    try {
+      // Fetch ALL alerts (no expiry filter) so Panel shows everything
+      const response = await fetch('/api/alerts');
+      const data = await response.json();
+      if (data.success) {
+        setActiveAlerts(data.alerts || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch alerts:', err);
+    }
+  }, []); // Remove chartData dependency as we fetch all
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts, alertsRefreshTrigger]);
+
+  // Use current expiry string for filtering
+  const currentExpiryStr = useMemo(() =>
+    chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null
+    , [chartData?.nearestExpiry]);
+
+  // Filtered alerts for this expiry view (includes null expiry alerts as "global")
+  const filteredAlerts = useMemo(() => {
+    if (!currentExpiryStr) return activeAlerts.filter(a => a.status === 'active'); // Show all active if no expiry
+    return activeAlerts.filter(a =>
+      a.status === 'active' && (a.expiry_date === currentExpiryStr || !a.expiry_date)
+    );
+  }, [activeAlerts, currentExpiryStr]);
 
   // ========================================================================
   // ZOOM HANDLERS
@@ -1339,24 +1372,29 @@ const OptionsPayoffDiagram = ({
             }}
           />
 
-          {/* Active Alerts - Orange lines */}
-          {activeAlerts.map(alert => (
+
+          {/* Active Alerts - Orange lines (Filtered by View Expiry) */}
+          {filteredAlerts.map(alert => (
             <ReferenceLine
               key={alert.id}
-              x={alert.target_price}
-              stroke="#f97316" // Orange-500
-              strokeWidth={1.5}
+              x={Number(alert.target_price)}
+              stroke="#f97316"
+              strokeWidth={2}
               strokeDasharray="3 3"
+              isFront={true}
               label={{
                 value: '🔔',
                 position: 'insideTop',
                 fill: '#f97316',
-                fontSize: 14,
+                fontSize: 14
               }}
             />
           ))}
         </ComposedChart>
       </ResponsiveContainer>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+        Debug: {activeAlerts.length} total alerts, {filteredAlerts.length} shown for expiry ({currentExpiryStr || 'all'}).
+      </Typography>
 
       {/* Projected Profit Display */}
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: -1, mb: 2 }}>
@@ -1589,7 +1627,8 @@ const OptionsPayoffDiagram = ({
       {/* Alerts Panel - Manage Price Notifications */}
       <AlertsPanel
         spotPrice={chartData?.spotPrice}
-        onAlertsChange={setActiveAlerts}
+        alerts={activeAlerts}
+        onRefresh={fetchAlerts}
         expiryDate={chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null}
       />
 
@@ -1690,8 +1729,8 @@ const OptionsPayoffDiagram = ({
                 const data = await response.json();
                 if (data.success) {
                   setAlertDialogOpen(false);
-                  // Show success notification (could add a snackbar here)
-                  console.log('Alert created:', data.alert);
+                  // Trigger panel refresh
+                  setAlertsRefreshTrigger((prev) => prev + 1);
                 } else {
                   console.error('Failed to create alert:', data.error);
                 }

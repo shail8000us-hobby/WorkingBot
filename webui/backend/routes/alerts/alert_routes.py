@@ -16,6 +16,7 @@ if str(backend_path) not in sys.path:
 
 from db.alerts_db import AlertsDB, init_alerts_db
 from services.notifications import NotificationService, TelegramNotifier
+from services.price_alert_monitor import get_price_alert_monitor, start_price_alert_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,14 @@ alerts_bp = Blueprint('alerts', __name__, url_prefix='/api/alerts')
 
 # Initialize notification service
 _notification_service = None
+_price_monitor = None
+
+def init_price_monitor():
+    """Initialize and start the price alert monitor."""
+    global _price_monitor
+    if _price_monitor is None:
+        _price_monitor = start_price_alert_monitor()
+    return _price_monitor
 
 def get_notification_service():
     """Get or create notification service with current settings."""
@@ -284,5 +293,74 @@ def get_telegram_chat_id():
                 'error': 'No messages found. Send a message to your bot first.'
             })
             
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# PRICE MONITOR ENDPOINTS
+# ============================================================================
+
+@alerts_bp.route('/monitor/status', methods=['GET'])
+def monitor_status():
+    """Get the status of the price alert monitor."""
+    try:
+        monitor = get_price_alert_monitor()
+        status = monitor.get_status()
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@alerts_bp.route('/monitor/price', methods=['POST'])
+def update_price():
+    """Update the current price for alert monitoring."""
+    try:
+        data = request.get_json()
+        price = data.get('price')
+        
+        if not price:
+            return jsonify({'success': False, 'error': 'price is required'}), 400
+            
+        monitor = get_price_alert_monitor()
+        monitor.update_price(float(price))
+        
+        return jsonify({
+            'success': True,
+            'message': f'Price updated to ${float(price):,.2f}'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@alerts_bp.route('/monitor/start', methods=['POST'])
+def start_monitor():
+    """Start the price alert monitor."""
+    try:
+        monitor = init_price_monitor()
+        return jsonify({
+            'success': True,
+            'message': 'Price alert monitor started',
+            'status': monitor.get_status()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@alerts_bp.route('/monitor/stop', methods=['POST'])
+def stop_monitor():
+    """Stop the price alert monitor."""
+    try:
+        global _price_monitor
+        if _price_monitor:
+            _price_monitor.stop()
+            _price_monitor = None
+        return jsonify({
+            'success': True,
+            'message': 'Price alert monitor stopped'
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

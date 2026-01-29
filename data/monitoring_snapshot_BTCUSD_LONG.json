@@ -1,8 +1,8 @@
 {
-  "timestamp": 1769624803.727241,
+  "timestamp": 1769659142.1320739,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 1892.0230720043182,
+  "uptime": 36230.42790603638,
   "state": {
     "open_tranches": [
       {
@@ -24,14 +24,49 @@
         "timestamp": 1769623318.5315452,
         "entry_order_id": "d799f3d4-9fbf-4ba8-a27b-fb7d6fa78773",
         "tp_order_id": "1143364739"
+      },
+      {
+        "position_id": "29ab16a4-73eb-4f36-9777-5f5c9d8fbb1e",
+        "entry_price": 89000.0,
+        "tp_price": 89500.0,
+        "size": 5,
+        "correlation_id": "fill-f54d555a00a44f9f8956c998f9303810-1769633410069",
+        "timestamp": 1769633410.847587,
+        "entry_order_id": "29ab16a4-73eb-4f36-9777-5f5c9d8fbb1e",
+        "tp_order_id": "1143524861"
+      },
+      {
+        "position_id": "f4f7227f-c741-450e-b609-f194f5fc88be",
+        "entry_price": 88500.0,
+        "tp_price": 89000.0,
+        "size": 5,
+        "correlation_id": "fill-c15ad037a09b453d8e419f43ef7582b2-1769652066327",
+        "timestamp": 1769652067.1399229,
+        "entry_order_id": "f4f7227f-c741-450e-b609-f194f5fc88be",
+        "tp_order_id": "1143630386"
+      },
+      {
+        "position_id": "3623281e-de79-4128-84ef-1db296fe02e8",
+        "entry_price": 88000.0,
+        "tp_price": 88500.0,
+        "size": 5,
+        "correlation_id": "fill-e38760b769ca43e4b1a5bc8b8a7fec1c-1769654771849",
+        "timestamp": 1769654772.722295,
+        "entry_order_id": "3623281e-de79-4128-84ef-1db296fe02e8",
+        "tp_order_id": "1143670974"
       }
     ],
-    "pending_buy": null,
+    "pending_buy": {
+      "order_id": 1143671263,
+      "price": 87500.0,
+      "size": 5,
+      "timestamp": 1769654779.9191759
+    },
     "pending_sell": null,
-    "last_buy_order_time": 1769623324.393706,
+    "last_buy_order_time": 1769654779.919179,
     "last_sell_order_time": 0,
-    "total_positions_opened": 2,
-    "total_positions_closed": 0,
+    "total_positions_opened": 6,
+    "total_positions_closed": 1,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
       "total_recoveries": 0,
@@ -44,34 +79,37 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 2,
-      "total_opened": 2,
-      "total_closed": 0,
-      "avg_entry_price": 89750.0,
-      "total_size": 10,
-      "oldest_position_age": 1576.7660310268402,
-      "has_pending_buy": false,
+      "open_count": 5,
+      "total_opened": 6,
+      "total_closed": 1,
+      "avg_entry_price": 89000.0,
+      "total_size": 25,
+      "oldest_position_age": 35915.17097902298,
+      "has_pending_buy": true,
       "has_pending_sell": false
     },
     "orders": {
-      "active_orders": 3,
-      "total_placed": 5,
-      "total_cancelled": 0,
+      "active_orders": 6,
+      "total_placed": 14,
+      "total_cancelled": 1,
       "total_failures": 0,
       "success_rate": 1.0,
       "active_order_ids": [
         1143359951,
         1143364739,
-        1143364941
+        1143524861,
+        1143630386,
+        1143670974,
+        1143671263
       ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 3,
-      "total_completed": 2,
+      "total_started": 8,
+      "total_completed": 7,
       "total_failed": 1,
       "total_compensated": 0,
-      "success_rate": 0.6666666666666666,
+      "success_rate": 0.875,
       "compensation_rate": 0.0,
       "active_saga_ids": []
     },
@@ -81,10 +119,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 1250,
+        "processed_count": 24852,
         "error_count": 0,
-        "avg_processing_time_ms": 0.04865956999310583,
-        "max_processing_time_ms": 0.39537499992547964,
+        "avg_processing_time_ms": 0.07970005011884496,
+        "max_processing_time_ms": 0.7977920031407848,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -92,15 +130,15 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 633,
+        "processed_count": 8199,
         "error_count": 0,
-        "avg_processing_time_ms": 113.94417827000325,
-        "max_processing_time_ms": 531.8716669999048,
+        "avg_processing_time_ms": 0.05777454985945951,
+        "max_processing_time_ms": 0.3644169992185198,
         "error_rate": 0.0
       }
     },
-    "fills_processed": 3,
-    "sagas_completed": 2,
+    "fills_processed": 8,
+    "sagas_completed": 7,
     "sagas_failed": 1
   },
   "grid_config": {
@@ -113,8 +151,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 89718.0,
-      "price_age_seconds": 3.173150062561035,
+      "price": 88033.5,
+      "price_age_seconds": 0.05082201957702637,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -124,7 +162,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 372,
+        "total_updates": 7133,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,

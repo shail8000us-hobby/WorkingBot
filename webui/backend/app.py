@@ -389,10 +389,21 @@ except Exception as e:
 # Register Price Alerts blueprint (JAN 28, 2026: Price alerts with Telegram/ntfy notifications)
 try:
     try:
-        from .routes.alerts.alert_routes import alerts_bp
+        from .routes.alerts.alert_routes import alerts_bp, init_price_monitor
     except ImportError:
-        from routes.alerts.alert_routes import alerts_bp
+        from routes.alerts.alert_routes import alerts_bp, init_price_monitor
     app.register_blueprint(alerts_bp)
+    # Start the price alert monitor automatically and wire to ticker
+    price_monitor = init_price_monitor()
+    try:
+        try:
+            from .routes.ticker import set_price_alert_monitor
+        except ImportError:
+            from routes.ticker import set_price_alert_monitor
+        set_price_alert_monitor(price_monitor)
+        log.info("✅ Price alert monitor wired to ticker feed")
+    except ImportError:
+        log.warning("Could not wire price monitor to ticker")
     print(f"✅ Registered alerts blueprint (price alerts with Telegram/ntfy notifications)")
 except Exception as e:
     print(f"⚠️ Could not register alerts blueprint: {e}")

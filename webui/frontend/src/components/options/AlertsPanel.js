@@ -43,8 +43,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import SendIcon from '@mui/icons-material/Send';
 
-const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
-    const [alerts, setAlerts] = useState([]);
+const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
@@ -67,27 +66,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
         ntfy_topic: '',
     });
     const [testingTelegram, setTestingTelegram] = useState(false);
-
-    // Fetch alerts on mount or expiry change
-    const fetchAlerts = useCallback(async () => {
-        try {
-            setLoading(true);
-            // Query parameters
-            const params = new URLSearchParams();
-            if (expiryDate) params.append('expiry_date', expiryDate);
-
-            const response = await fetch(`/api/alerts?${params.toString()}`);
-            const data = await response.json();
-            if (data.success) {
-                setAlerts(data.alerts || []);
-                onAlertsChange?.(data.alerts || []);
-            }
-        } catch (err) {
-            console.error('Failed to fetch alerts:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, [onAlertsChange, expiryDate]);
+    const [testingNtfy, setTestingNtfy] = useState(false);
 
     const fetchSettings = useCallback(async () => {
         try {
@@ -102,9 +81,8 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
     }, []);
 
     useEffect(() => {
-        fetchAlerts();
         fetchSettings();
-    }, [fetchAlerts, fetchSettings, expiryDate]);
+    }, [fetchSettings]);
 
     // Create new alert
     const handleCreateAlert = async () => {
@@ -132,7 +110,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
                 setNewAlertOpen(false);
                 setNewAlertPrice('');
                 setNewAlertNote('');
-                fetchAlerts();
+                onRefresh?.();
             } else {
                 setError(data.error || 'Failed to create alert');
             }
@@ -147,7 +125,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
             const response = await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
             const data = await response.json();
             if (data.success) {
-                fetchAlerts();
+                onRefresh?.();
             }
         } catch (err) {
             console.error('Failed to delete alert:', err);
@@ -160,7 +138,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
             const response = await fetch(`/api/alerts/${alertId}/cancel`, { method: 'POST' });
             const data = await response.json();
             if (data.success) {
-                fetchAlerts();
+                onRefresh?.();
             }
         } catch (err) {
             console.error('Failed to cancel alert:', err);
@@ -214,6 +192,28 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
         }
     };
 
+    // Test ntfy
+    const handleTestNtfy = async () => {
+        try {
+            setTestingNtfy(true);
+            const response = await fetch('/api/alerts/test/ntfy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setSuccess(data.message || 'Test notification sent!');
+            } else {
+                setError(data.error || 'Failed to send test notification');
+            }
+        } catch (err) {
+            setError('Failed to test ntfy: ' + err.message);
+        } finally {
+            setTestingNtfy(false);
+        }
+    };
+
     // Get chat ID helper
     const handleGetChatId = async () => {
         try {
@@ -252,6 +252,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
                     <Typography variant="subtitle1" fontWeight="bold">
                         Price Alerts
                     </Typography>
+
                     <Chip
                         size="small"
                         label={`${activeAlerts.length} active`}
@@ -310,6 +311,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
                         <Table size="small">
                             <TableHead>
                                 <TableRow>
+                                    <TableCell>Expiry</TableCell>
                                     <TableCell>Price</TableCell>
                                     <TableCell>Direction</TableCell>
                                     <TableCell>P&L</TableCell>
@@ -321,6 +323,11 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
                             <TableBody>
                                 {[...activeAlerts, ...triggeredAlerts].map((alert) => (
                                     <TableRow key={alert.id} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                                        <TableCell>
+                                            <Typography variant="body2" color="text.secondary">
+                                                {alert.expiry_date ? new Date(alert.expiry_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '-'}
+                                            </Typography>
+                                        </TableCell>
                                         <TableCell>
                                             <Typography variant="body2" fontWeight="bold">
                                                 ${parseFloat(alert.target_price).toLocaleString()}
@@ -345,7 +352,7 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
                                         <TableCell>
                                             <Chip
                                                 size="small"
-                                                label={alert.status}
+                                                label={alert.status === 'active' ? 'Monitoring' : alert.status}
                                                 color={
                                                     alert.status === 'active' ? 'success' :
                                                         alert.status === 'triggered' ? 'warning' : 'default'
@@ -508,6 +515,15 @@ const AlertsPanel = ({ spotPrice = 0, onAlertsChange, expiryDate }) => {
                         helperText="Install ntfy app, subscribe to this topic. No account needed!"
                         placeholder="e.g., my-btc-alerts"
                     />
+                    <Button
+                        size="small"
+                        startIcon={testingNtfy ? <CircularProgress size={16} /> : <SendIcon />}
+                        onClick={handleTestNtfy}
+                        disabled={testingNtfy || !settings.ntfy_topic}
+                        sx={{ mt: 1 }}
+                    >
+                        Test ntfy
+                    </Button>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setSettingsOpen(false)}>Cancel</Button>
