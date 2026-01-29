@@ -1,8 +1,8 @@
 {
-  "timestamp": 1769672082.134878,
+  "timestamp": 1769672760.501865,
   "mode": "LONG",
   "symbol": "BTCUSD",
-  "uptime": 49170.43070888519,
+  "uptime": 49848.79769492149,
   "state": {
     "open_tranches": [
       {
@@ -84,7 +84,7 @@
       "total_closed": 1,
       "avg_entry_price": 89000.0,
       "total_size": 25,
-      "oldest_position_age": 48855.17359995842,
+      "oldest_position_age": 49533.540766239166,
       "has_pending_buy": true,
       "has_pending_sell": false
     },
@@ -119,10 +119,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 33270,
+        "processed_count": 33729,
         "error_count": 0,
-        "avg_processing_time_ms": 0.12890207981399726,
-        "max_processing_time_ms": 5.268084001727402,
+        "avg_processing_time_ms": 0.08901172048354056,
+        "max_processing_time_ms": 0.6346250011119992,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -130,10 +130,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 10489,
+        "processed_count": 10617,
         "error_count": 0,
-        "avg_processing_time_ms": 0.14396035992831457,
-        "max_processing_time_ms": 9.15016599901719,
+        "avg_processing_time_ms": 0.06629711002460681,
+        "max_processing_time_ms": 0.32129199826158583,
         "error_rate": 0.0
       }
     },
@@ -151,8 +151,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 88244.5,
-      "price_age_seconds": 3.1212778091430664,
+      "price": 88259.0,
+      "price_age_seconds": 4.559045791625977,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -162,7 +162,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 9673,
+        "total_updates": 9806,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,

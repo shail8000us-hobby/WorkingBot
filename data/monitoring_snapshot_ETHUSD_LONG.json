@@ -1,8 +1,8 @@
 {
-  "timestamp": 1769672080.838805,
+  "timestamp": 1769672755.5549061,
   "mode": "LONG",
   "symbol": "ETHUSD",
-  "uptime": 138283.32477998734,
+  "uptime": 138958.04088020325,
   "state": {
     "open_tranches": [
       {
@@ -39,7 +39,7 @@
       "total_closed": 0,
       "avg_entry_price": 3000.0,
       "total_size": 1,
-      "oldest_position_age": 125553.68934226036,
+      "oldest_position_age": 126228.40617108345,
       "has_pending_buy": false,
       "has_pending_sell": false
     },
@@ -68,12 +68,12 @@
       "position_actor": {
         "name": "PositionManager",
         "running": true,
-        "mailbox_size": 1,
+        "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 84580,
+        "processed_count": 84905,
         "error_count": 0,
-        "avg_processing_time_ms": 0.08520460862200707,
-        "max_processing_time_ms": 1.1952919885516167,
+        "avg_processing_time_ms": 0.09902050078380853,
+        "max_processing_time_ms": 0.6692079768981785,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -81,11 +81,11 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 26323,
+        "processed_count": 26451,
         "error_count": 1,
-        "avg_processing_time_ms": 0.054061700066085905,
-        "max_processing_time_ms": 0.3654169850051403,
-        "error_rate": 3.7989590852106524e-05
+        "avg_processing_time_ms": 0.05394166044425219,
+        "max_processing_time_ms": 0.4958749923389405,
+        "error_rate": 3.780575403576424e-05
       }
     },
     "fills_processed": 1,
@@ -102,8 +102,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 2957.0,
-      "price_age_seconds": 1.8876018524169922,
+      "price": 2958.95,
+      "price_age_seconds": 4.698807954788208,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -113,7 +113,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 27187,
+        "total_updates": 27319,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
