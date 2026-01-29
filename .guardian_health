@@ -1,15 +1,15 @@
 {
   "guardian_version": "2.1-SQL-MULTISYMBOL",
-  "last_check": "2026-01-29T09:29:00.595889",
-  "signal": "STOP",
-  "reason": "RSI <= 30.0 (oversold) - market too weak for LONG positions",
+  "last_check": "2026-01-29T12:41:48.714141",
+  "signal": "GO",
+  "reason": "All safety checks passed",
   "check_interval": 10,
   "status": "running",
-  "pid": 11827,
+  "pid": 81580,
   "positions": {
-    "count": 63,
-    "current_price": 88033.5,
-    "total_pnl_inr": -3681.4293973286003
+    "count": 66,
+    "current_price": 88295.0,
+    "total_pnl_inr": -2641.4349645218294
   },
   "liquidation": {
     "distance": 100.0,
@@ -18,7 +18,7 @@
     "details_count": 0,
     "bankruptcy_distance": 100.0
   },
-  "timestamp": 1769659141.115736,
-  "uptime_seconds": 29724,
-  "cycle_count": 2266
+  "timestamp": 1769670709.214695,
+  "uptime_seconds": 31510,
+  "cycle_count": 2405
 }

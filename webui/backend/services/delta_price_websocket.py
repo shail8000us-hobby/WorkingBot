@@ -251,6 +251,21 @@ def start_price_service(socketio_instance):
     
     # Set up callback to broadcast prices via Socket.IO
     def broadcast_price(symbol: str, price: float):
+        # Update Alert Monitor (Sync with Live Price Widget)
+        if symbol == 'BTC':
+            try:
+                # Ensure backend is in path to match alert_routes import context
+                from pathlib import Path
+                import sys
+                backend_dir = str(Path(__file__).parent.parent)
+                if backend_dir not in sys.path:
+                    sys.path.insert(0, backend_dir)
+                
+                from services.price_alert_monitor import get_price_alert_monitor
+                get_price_alert_monitor().update_price(price)
+            except Exception as e:
+                log.error(f"[DeltaWS] Failed to update alert monitor: {e}")
+
         try:
             socketio_instance.emit('market_price_update', {
                 'symbol': symbol,

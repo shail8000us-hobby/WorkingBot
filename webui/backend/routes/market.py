@@ -84,6 +84,19 @@ def get_spot_price():
                     # Update cache with WebSocket price
                     cache_key = f"spot_{symbol}"
                     _price_cache[cache_key] = (time.time(), ws_price)
+                    
+                    # Update price alert monitor
+                    if symbol == 'BTC':
+                        try:
+                            # Ensure backend is in path to match alert_routes import context
+                            backend_dir = str(Path(__file__).parent.parent)
+                            if backend_dir not in sys.path:
+                                sys.path.insert(0, backend_dir)
+                            from services.price_alert_monitor import get_price_alert_monitor
+                            get_price_alert_monitor().update_price(ws_price)
+                        except Exception as e:
+                            log.debug(f"Failed to update monitor from WS: {e}")
+                            
                     return jsonify({
                         'symbol': symbol,
                         'price': ws_price,
@@ -123,7 +136,21 @@ def get_spot_price():
                 
                 if price:
                     price = float(price)
+                    price = float(price)
                     _price_cache[cache_key] = (time.time(), price)
+                    
+                    # Update price alert monitor
+                    if symbol == 'BTC':
+                        try:
+                            # Ensure backend is in path to match alert_routes import context
+                            backend_dir = str(Path(__file__).parent.parent)
+                            if backend_dir not in sys.path:
+                                sys.path.insert(0, backend_dir)
+                            from services.price_alert_monitor import get_price_alert_monitor
+                            get_price_alert_monitor().update_price(price)
+                        except Exception as e:
+                            log.debug(f"Failed to update monitor from API: {e}")
+                            
                     return jsonify({
                         'symbol': symbol,
                         'price': price,
@@ -140,7 +167,20 @@ def get_spot_price():
                 # For BTC, use spot_price directly
                 if symbol == 'BTC' and 'spot_price' in data:
                     price = float(data['spot_price'])
+                    price = float(data['spot_price'])
                     _price_cache[cache_key] = (time.time(), price)
+                    
+                    # Update price alert monitor
+                    try:
+                        # Ensure backend is in path to match alert_routes import context
+                        backend_dir = str(Path(__file__).parent.parent)
+                        if backend_dir not in sys.path:
+                            sys.path.insert(0, backend_dir)
+                        from services.price_alert_monitor import get_price_alert_monitor
+                        get_price_alert_monitor().update_price(price)
+                    except Exception as e:
+                        log.debug(f"Failed to update monitor from Guardian: {e}")
+                        
                     return jsonify({
                         'symbol': symbol,
                         'price': price,

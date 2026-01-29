@@ -274,6 +274,10 @@ def get_batch_tickers():
                 _ticker_cache[cache_key] = (time.time(), ticker_data)
                 results[symbol] = ticker_data
                 
+                # Update price alert monitor with spot price (for BTC symbols)
+                if ticker_data.get('spot_price') and 'BTC' in symbol.upper():
+                    _update_price_monitor(float(ticker_data['spot_price']))
+                
             except Exception as e:
                 log.error(f"Error fetching {symbol}: {e}")
                 errors[symbol] = str(e)

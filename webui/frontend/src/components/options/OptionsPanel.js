@@ -175,6 +175,17 @@ const OptionsPanel = () => {
     }
   });
 
+  // Closed positions storage - keeps squared off positions visible with size=0 and their final PnL
+  // Format: { symbol: { product_symbol, realized_pnl, closed_at, entry_price, close_price, original_size } }
+  const [closedPositions, setClosedPositions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_closed_positions');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
 
@@ -186,6 +197,10 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('options_hidden_positions', JSON.stringify(hiddenPositions));
   }, [hiddenPositions]);
+  // Save closedPositions to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('options_closed_positions', JSON.stringify(closedPositions));
+  }, [closedPositions]);
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = useState(() => {
     try {
@@ -209,6 +224,7 @@ const OptionsPanel = () => {
   // Sort state
   const [symbolSort, setSymbolSort] = useState(null); // null = no sort, 'grouped' = CE/PE grouped
   const [strikeSort, setStrikeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
+  const [sizeSort, setSizeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
 
   // SL/TP Dialog state
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
@@ -500,6 +516,19 @@ const OptionsPanel = () => {
     }
   };
 
+  // Toggle size sort (ascending/descending)
+  const toggleSizeSort = () => {
+    setSizeSort((prev) => {
+      if (prev === null) return 'asc';
+      if (prev === 'asc') return 'desc';
+      return null;
+    });
+    // Clear custom order when applying automatic sort
+    if (sizeSort === null) {
+      setCustomOrder([]);
+    }
+  };
+
   // Parse expiry date and calculate days to expiration
   const getDaysToExpiry = (symbol) => {
     try {
@@ -619,8 +648,37 @@ const OptionsPanel = () => {
 
   // Sort positions by custom order or default (days to expiration)
   const sortedPositions = useMemo(() => {
+    // Get symbols that exist in live positions
+    const liveSymbols = new Set(positions.map(p => p.product_symbol));
+
+    // Remove closed positions that now exist as live positions again (user added back)
+    // This is done in a separate effect, but we filter here too for immediacy
+    const closedToShow = Object.values(closedPositions).filter(
+      cp => !liveSymbols.has(cp.product_symbol)
+    );
+
+    // Convert closed positions to position-like objects with size=0
+    const closedAsPositions = closedToShow.map(cp => ({
+      product_symbol: cp.product_symbol,
+      size: 0,
+      entry_price: cp.entry_price,
+      unrealized_pnl: cp.realized_pnl, // Show realized PnL in the PnL column
+      realized_pnl: cp.realized_pnl,
+      close_price: cp.close_price,
+      closed_at: cp.closed_at,
+      original_size: cp.original_size,
+      is_closed: true, // Flag to identify closed positions in UI
+      greeks: cp.greeks || {},
+      // Parse symbol for display
+      best_bid: 0,
+      best_ask: 0,
+    }));
+
+    // Merge live positions with closed positions
+    const allPositions = [...positions, ...closedAsPositions];
+
     // First filter out hidden positions
-    let filtered = positions.filter((p) => !hiddenPositions.includes(p.product_symbol));
+    let filtered = allPositions.filter((p) => !hiddenPositions.includes(p.product_symbol));
 
     // Apply expiry filter if any expiries are selected
     if (selectedExpiries.length > 0) {
@@ -665,6 +723,15 @@ const OptionsPanel = () => {
       });
     }
 
+    // Apply size sort
+    if (sizeSort) {
+      sorted = sorted.sort((a, b) => {
+        const sizeA = a.size || 0;
+        const sizeB = b.size || 0;
+        return sizeSort === 'asc' ? sizeA - sizeB : sizeB - sizeA;
+      });
+    }
+
     // If custom order exists and is valid, use it (overrides all other sorting)
     if (customOrder.length > 0) {
       const ordered = [];
@@ -684,7 +751,7 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  }, [positions, hiddenPositions, selectedPositionsForPayoff, customOrder, selectedExpiries, symbolSort, strikeSort]);
+  }, [positions, closedPositions, hiddenPositions, selectedPositionsForPayoff, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
@@ -958,6 +1025,27 @@ const OptionsPanel = () => {
       }
     }
   }, []); // No dependencies - safe
+
+  // Clean up closed positions when they reappear as live positions
+  // This happens when user adds back to a closed position
+  useEffect(() => {
+    if (positions.length === 0) return;
+
+    const liveSymbols = new Set(positions.map(p => p.product_symbol));
+    const closedSymbols = Object.keys(closedPositions);
+
+    // Find closed positions that now exist as live positions
+    const toRemove = closedSymbols.filter(symbol => liveSymbols.has(symbol));
+
+    if (toRemove.length > 0) {
+      console.log(`🔄 Removing ${toRemove.length} closed positions that are now live:`, toRemove);
+      setClosedPositions(prev => {
+        const updated = { ...prev };
+        toRemove.forEach(symbol => delete updated[symbol]);
+        return updated;
+      });
+    }
+  }, [positions, closedPositions]);
 
   // Fetch futures positions for combined payoff diagram
   const fetchFuturesPositions = useCallback(async () => {
@@ -1423,6 +1511,30 @@ const OptionsPanel = () => {
       });
 
       if (data?.success) {
+        // Save the closed position to closedPositions for continued visibility
+        // This keeps the position visible with size=0 and its realized PnL
+        const closedPosData = {
+          product_symbol: position.product_symbol,
+          realized_pnl: position.unrealized_pnl || 0, // Current unrealized becomes realized
+          closed_at: new Date().toISOString(),
+          entry_price: position.entry_price || 0,
+          close_price: data.fill_price || position.best_bid || position.best_ask || 0,
+          original_size: position.size || 0,
+          greeks: position.greeks || {},
+          // Keep original position data for reference
+          underlying: position.product_symbol.split('-')[1] || 'BTC',
+          strike: parseInt(position.product_symbol.split('-')[2]) || 0,
+          expiry_code: position.product_symbol.split('-')[3] || '',
+          option_type: position.product_symbol.startsWith('C-') ? 'Call' : 'Put',
+        };
+
+        setClosedPositions(prev => ({
+          ...prev,
+          [position.product_symbol]: closedPosData
+        }));
+
+        console.log(`📦 Saved closed position: ${position.product_symbol} with realized PnL: $${closedPosData.realized_pnl.toFixed(4)}`);
+
         // Play calming sound when position is closed
         soundManager.playTradeFilled();
         setOrderResult({ type: 'success', message: `Closed ${position.product_symbol}` });
@@ -2620,23 +2732,34 @@ const OptionsPanel = () => {
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
-                    {/* Selection Checkbox - Payoff Graph Visibility */}
+                    {/* Selection Checkbox - Batch Order Selection (Green/Red) */}
                     <TableCell width="40px" padding="checkbox">
-                      <Tooltip title="Select/deselect all for payoff graph">
+                      <Tooltip title="Select/deselect all for batch orders">
                         <Checkbox
-                          checked={selectedPositionsForPayoff.length === sortedPositions.length}
+                          checked={
+                            sortedPositions.length > 0 &&
+                            sortedPositions.every((p) => selectedStrikes[p.product_symbol])
+                          }
                           indeterminate={
-                            selectedPositionsForPayoff.length > 0 &&
-                            selectedPositionsForPayoff.length < sortedPositions.length
+                            sortedPositions.some((p) => selectedStrikes[p.product_symbol]) &&
+                            !sortedPositions.every((p) => selectedStrikes[p.product_symbol])
                           }
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedPositionsForPayoff(sortedPositions.map((p) => p.product_symbol));
+                              const newSelected = {};
+                              sortedPositions.forEach((p) => {
+                                newSelected[p.product_symbol] = true;
+                              });
+                              setSelectedStrikes(newSelected);
                             } else {
-                              setSelectedPositionsForPayoff([]);
+                              setSelectedStrikes({});
                             }
                           }}
-                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                          sx={{
+                            color: '#10b981',
+                            '&.Mui-checked': { color: '#10b981' },
+                            '&.MuiCheckbox-indeterminate': { color: '#f59e0b' },
+                          }}
                         />
                       </Tooltip>
                     </TableCell>
@@ -2675,22 +2798,51 @@ const OptionsPanel = () => {
                       </Menu>
                     </TableCell>
                     {visibleColumns.symbol && (
-                      <TableCell
-                        sx={{ cursor: 'pointer', userSelect: 'none' }}
-                        onClick={toggleSymbolSort}
-                      >
+                      <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          Symbol
-                          {symbolSort === 'grouped' ? (
-                            <Chip
-                              label="CE/PE"
+                          <Tooltip title="Select/deselect all for payoff graph">
+                            <Checkbox
                               size="small"
-                              color="primary"
-                              sx={{ height: 18, fontSize: '0.65rem' }}
+                              checked={
+                                sortedPositions.length > 0 &&
+                                selectedPositionsForPayoff.length === sortedPositions.length
+                              }
+                              indeterminate={
+                                selectedPositionsForPayoff.length > 0 &&
+                                selectedPositionsForPayoff.length < sortedPositions.length
+                              }
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedPositionsForPayoff(sortedPositions.map((p) => p.product_symbol));
+                                } else {
+                                  setSelectedPositionsForPayoff([]);
+                                }
+                              }}
+                              sx={{
+                                color: '#3b82f6',
+                                '&.Mui-checked': { color: '#3b82f6' },
+                                '&.MuiCheckbox-indeterminate': { color: '#3b82f6' },
+                                padding: 0,
+                                mr: 0.5,
+                              }}
                             />
-                          ) : (
-                            <UnfoldMoreIcon sx={{ fontSize: 16, opacity: 0.5 }} />
-                          )}
+                          </Tooltip>
+                          <Box
+                            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer' }}
+                            onClick={toggleSymbolSort}
+                          >
+                            Symbol
+                            {symbolSort === 'grouped' ? (
+                              <Chip
+                                label="CE/PE"
+                                size="small"
+                                color="primary"
+                                sx={{ height: 18, fontSize: '0.65rem' }}
+                              />
+                            ) : (
+                              <UnfoldMoreIcon sx={{ fontSize: 16, opacity: 0.5 }} />
+                            )}
+                          </Box>
                         </Box>
                       </TableCell>
                     )}
@@ -2735,7 +2887,33 @@ const OptionsPanel = () => {
                       </TableCell>
                     )}
                     {visibleColumns.expiry && <TableCell align="right">Expiry</TableCell>}
-                    {visibleColumns.size && <TableCell align="right">Size</TableCell>}
+                    {visibleColumns.size && (
+                      <TableCell
+                        align="right"
+                        sx={{ cursor: 'pointer', userSelect: 'none' }}
+                        onClick={toggleSizeSort}
+                      >
+                        <Tooltip title="Click to sort by size">
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'flex-end',
+                              gap: 0.5,
+                            }}
+                          >
+                            Size
+                            {sizeSort === 'asc' ? (
+                              <ArrowUpwardIcon sx={{ fontSize: 16 }} color="primary" />
+                            ) : sizeSort === 'desc' ? (
+                              <ArrowDownwardIcon sx={{ fontSize: 16 }} color="primary" />
+                            ) : (
+                              <UnfoldMoreIcon sx={{ fontSize: 16, opacity: 0.5 }} />
+                            )}
+                          </Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
                     {visibleColumns.batchQty && (
                       <TableCell align="center" sx={{ minWidth: 90 }}>
                         <Tooltip title="Enter quantity for batch order. Positive = BUY, Negative = SELL">
@@ -2797,26 +2975,36 @@ const OptionsPanel = () => {
                         const daysToExp = getDaysToExpiry(pos.product_symbol);
                         const isQuickMode = skipConfirmStrikes[pos.product_symbol]?.enabled;
 
+                        // Check if this is a closed position (squared off but retained for PnL tracking)
+                        const isClosed = pos.is_closed === true || (pos.size === 0 && closedPositions[pos.product_symbol]);
+
                         // Use backend-calculated cashflow
                         const cashflow = pos.cashflow || 0;
 
                         const isCall = optionInfo.type === 'Call';
                         const isPut = optionInfo.type === 'Put';
-                        const rowBgColor = isCall
-                          ? 'rgba(16, 185, 129, 0.03)'
-                          : isPut
-                            ? 'rgba(239, 68, 68, 0.03)'
-                            : 'transparent';
-                        const rowHoverColor = isCall
-                          ? 'rgba(16, 185, 129, 0.06)'
-                          : isPut
-                            ? 'rgba(239, 68, 68, 0.06)'
-                            : 'action.hover';
+
+                        // Closed positions use muted gray background to indicate squared off
+                        const rowBgColor = isClosed
+                          ? 'rgba(100, 100, 100, 0.08)'
+                          : isCall
+                            ? 'rgba(16, 185, 129, 0.03)'
+                            : isPut
+                              ? 'rgba(239, 68, 68, 0.03)'
+                              : 'transparent';
+                        const rowHoverColor = isClosed
+                          ? 'rgba(100, 100, 100, 0.12)'
+                          : isCall
+                            ? 'rgba(16, 185, 129, 0.06)'
+                            : isPut
+                              ? 'rgba(239, 68, 68, 0.06)'
+                              : 'action.hover';
 
                         // Common cell style
                         const cellSx = {
                           backgroundColor: `${rowBgColor} !important`,
                           '&:hover': { backgroundColor: `${rowHoverColor} !important` },
+                          opacity: isClosed ? 0.7 : 1, // Reduce opacity for closed positions
                         };
 
                         return (
@@ -2986,15 +3174,28 @@ const OptionsPanel = () => {
                                 {/* Size */}
                                 {visibleColumns.size && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Chip
-                                      icon={isLong ? <TrendingUp /> : <TrendingDown />}
-                                      label={pos.size}
-                                      size="small"
-                                      sx={{
-                                        bgcolor: isLong ? '#10b98120' : '#ef444420',
-                                        color: isLong ? '#10b981' : '#ef4444',
-                                      }}
-                                    />
+                                    {isClosed ? (
+                                      <Chip
+                                        label="CLOSED"
+                                        size="small"
+                                        sx={{
+                                          bgcolor: 'rgba(100, 100, 100, 0.2)',
+                                          color: '#888',
+                                          fontWeight: 'bold',
+                                          fontSize: '0.65rem',
+                                        }}
+                                      />
+                                    ) : (
+                                      <Chip
+                                        icon={isLong ? <TrendingUp /> : <TrendingDown />}
+                                        label={pos.size}
+                                        size="small"
+                                        sx={{
+                                          bgcolor: isLong ? '#10b98120' : '#ef444420',
+                                          color: isLong ? '#10b981' : '#ef4444',
+                                        }}
+                                      />
+                                    )}
                                   </TableCell>
                                 )}
 
@@ -3146,9 +3347,15 @@ const OptionsPanel = () => {
                                       <Typography fontWeight="bold" sx={{ color: pnlColor }}>
                                         {formatPnl(pos.unrealized_pnl || 0)}
                                       </Typography>
-                                      <Typography variant="caption" sx={{ color: pnlColor }}>
-                                        {formatPnlPct(pos.pnl_percentage || 0)}
-                                      </Typography>
+                                      {isClosed ? (
+                                        <Typography variant="caption" sx={{ color: '#888', fontStyle: 'italic' }}>
+                                          Realized
+                                        </Typography>
+                                      ) : (
+                                        <Typography variant="caption" sx={{ color: pnlColor }}>
+                                          {formatPnlPct(pos.pnl_percentage || 0)}
+                                        </Typography>
+                                      )}
                                     </Box>
                                   </TableCell>
                                 )}
@@ -3266,24 +3473,55 @@ const OptionsPanel = () => {
                                         }}
                                       />
 
-                                      <Tooltip title="⚠️ CLOSE POSITION - This will exit your entire position!">
-                                        <IconButton
-                                          size="medium"
-                                          color="error"
-                                          onClick={() => handleClose(pos)}
-                                          disabled={!status?.trading_allowed}
-                                          sx={{
-                                            border: '2px solid',
-                                            borderColor: 'error.main',
-                                            '&:hover': {
-                                              bgcolor: 'error.main',
-                                              color: 'white',
-                                            },
-                                          }}
-                                        >
-                                          <CloseIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
+                                      {isClosed ? (
+                                        /* For closed positions: Show Remove button to remove from tracking */
+                                        <Tooltip title="🗑️ Remove from display - This removes the closed position from tracking">
+                                          <IconButton
+                                            size="medium"
+                                            color="default"
+                                            onClick={() => {
+                                              // Remove from closedPositions
+                                              setClosedPositions(prev => {
+                                                const updated = { ...prev };
+                                                delete updated[pos.product_symbol];
+                                                return updated;
+                                              });
+                                              console.log(`🗑️ Removed closed position: ${pos.product_symbol}`);
+                                            }}
+                                            sx={{
+                                              border: '2px solid',
+                                              borderColor: 'text.secondary',
+                                              color: 'text.secondary',
+                                              '&:hover': {
+                                                bgcolor: 'action.hover',
+                                                borderColor: 'error.main',
+                                                color: 'error.main',
+                                              },
+                                            }}
+                                          >
+                                            <CloseIcon fontSize="small" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      ) : (
+                                        <Tooltip title="⚠️ CLOSE POSITION - This will exit your entire position!">
+                                          <IconButton
+                                            size="medium"
+                                            color="error"
+                                            onClick={() => handleClose(pos)}
+                                            disabled={!status?.trading_allowed}
+                                            sx={{
+                                              border: '2px solid',
+                                              borderColor: 'error.main',
+                                              '&:hover': {
+                                                bgcolor: 'error.main',
+                                                color: 'white',
+                                              },
+                                            }}
+                                          >
+                                            <CloseIcon fontSize="small" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      )}
                                     </Box>
                                   </TableCell>
                                 )}

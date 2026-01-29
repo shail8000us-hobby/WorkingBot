@@ -34,19 +34,23 @@ class PriceAlertMonitor:
     Background service that monitors prices and triggers alerts.
     """
     
-    def __init__(self, check_interval: int = 30):
+    def __init__(self, check_interval: int = 5):
         """
         Initialize the price alert monitor.
         
         Args:
-            check_interval: Seconds between price checks (default: 30)
+            check_interval: Seconds between price checks (default: 5)
         """
         self.check_interval = check_interval
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._current_price: Optional[float] = None
         self._last_check: Optional[datetime] = None
-        self._notification_service = NotificationService()
+        
+        # Load notification settings from database
+        settings = AlertsDB.get_settings()
+        self._notification_service = NotificationService(settings)
+        logger.info(f"[PriceAlertMonitor] Initialized with Telegram: {bool(settings.get('telegram_bot_token'))}, Ntfy: {bool(settings.get('ntfy_topic'))}")
         
     def start(self):
         """Start the background monitoring thread."""
@@ -73,6 +77,8 @@ class PriceAlertMonitor:
         Args:
             price: Current BTC price
         """
+        if self._current_price != price:
+            logger.debug(f"Price updated in monitor: ${price:,.2f}")
         self._current_price = price
         
     def get_status(self) -> dict:
@@ -178,48 +184,36 @@ class PriceAlertMonitor:
         
     def _send_notifications(self, alert: dict, channels: str):
         """Send notifications for a triggered alert."""
-        target_price = float(alert['target_price'])
-        direction = alert['direction']
-        note = alert.get('note', '')
-        expiry_date = alert.get('expiry_date')
-        expected_pnl = alert.get('expected_pnl_expiry')
-        
         # Run async notification in sync context
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         try:
-            if 'telegram' in channels:
-                loop.run_until_complete(
-                    self._notification_service.send_alert_notification(
-                        alert_type='price_alert',
-                        message=self._format_alert_message(alert),
-                        price=self._current_price,
-                        target_price=target_price,
-                        direction=direction,
-                        expiry_date=expiry_date,
-                        expected_pnl=expected_pnl,
-                        note=note,
-                        channels=['telegram']
-                    )
-                )
-                
-            if 'ntfy' in channels:
-                loop.run_until_complete(
-                    self._notification_service.send_alert_notification(
-                        alert_type='price_alert',
-                        message=self._format_alert_message(alert),
-                        price=self._current_price,
-                        target_price=target_price,
-                        direction=direction,
-                        expiry_date=expiry_date,
-                        expected_pnl=expected_pnl,
-                        note=note,
-                        channels=['ntfy']
-                    )
-                )
+            # Use the unified send_alert method which handles logic internally
+            results = loop.run_until_complete(
+                self._notification_service.send_alert(alert, self._current_price)
+            )
+            
+            # Analyze results to see if any notification was sent successfully
+            success = False
+            errors = []
+            
+            if results:
+                for channel, result in results.items():
+                    if result is True:
+                        success = True
+                    elif result is False:
+                        errors.append(f"{channel} failed")
+            
+            error_msg = ", ".join(errors) if errors else None
+            
+            # Update history with outcome
+            AlertsDB.update_alert_history(alert['id'], success, error_msg)
+            
         except Exception as e:
             logger.error("Error sending notification: %s", e)
+            # Log the crash to DB history too
+            AlertsDB.update_alert_history(alert['id'], False, f"System Error: {str(e)}")
         finally:
             loop.close()
             

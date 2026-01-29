@@ -236,6 +236,31 @@ class AlertsDB:
         """Cancel an active alert."""
         return AlertsDB.update_alert(alert_id, status='cancelled')
     
+    @staticmethod
+    def update_alert_history(alert_id: str, notification_sent: bool, error: str = None):
+        """Update the latest history entry for this alert with notification status."""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Find the most recent history entry for this alert
+        cursor.execute('''
+            SELECT id FROM alert_history 
+            WHERE alert_id = ? 
+            ORDER BY triggered_at DESC LIMIT 1
+        ''', (alert_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            history_id = row['id']
+            cursor.execute('''
+                UPDATE alert_history 
+                SET notification_sent = ?, notification_error = ?
+                WHERE id = ?
+            ''', (notification_sent, error, history_id))
+            conn.commit()
+            
+        conn.close()
+    
     # Settings methods
     @staticmethod
     def get_settings() -> dict:

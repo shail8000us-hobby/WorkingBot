@@ -255,8 +255,8 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
 
                     <Chip
                         size="small"
-                        label={`${activeAlerts.length} active`}
-                        color={activeAlerts.length > 0 ? 'warning' : 'default'}
+                        label={`${activeAlerts.length} active${triggeredAlerts.length > 0 ? `, ${triggeredAlerts.length} triggered` : ''}`}
+                        color={triggeredAlerts.length > 0 ? 'warning' : activeAlerts.length > 0 ? 'success' : 'default'}
                         sx={{ height: 20 }}
                     />
                 </Box>
@@ -270,7 +270,7 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
 
             <Collapse in={expanded}>
                 <Box sx={{ p: 2, pt: 0 }}>
-                    {/* Messages */}
+                    {/* ... (Existing Messages and Actions code skipped for brevity if identical) ... */}
                     {error && (
                         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
                             {error}
@@ -282,7 +282,6 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                         </Alert>
                     )}
 
-                    {/* Actions */}
                     <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
                         <Button
                             variant="contained"
@@ -316,13 +315,20 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                                     <TableCell>Direction</TableCell>
                                     <TableCell>P&L</TableCell>
                                     <TableCell>Status</TableCell>
+                                    <TableCell>Triggered At</TableCell>
                                     <TableCell>Note</TableCell>
                                     <TableCell align="right">Actions</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {[...activeAlerts, ...triggeredAlerts].map((alert) => (
-                                    <TableRow key={alert.id} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                                {[...triggeredAlerts, ...activeAlerts].map((alert) => (
+                                    <TableRow
+                                        key={alert.id}
+                                        sx={{
+                                            '&:hover': { bgcolor: 'action.hover' },
+                                            bgcolor: alert.status === 'triggered' ? 'rgba(255, 193, 7, 0.05)' : 'inherit'
+                                        }}
+                                    >
                                         <TableCell>
                                             <Typography variant="body2" color="text.secondary">
                                                 {alert.expiry_date ? new Date(alert.expiry_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '-'}
@@ -352,13 +358,27 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                                         <TableCell>
                                             <Chip
                                                 size="small"
-                                                label={alert.status === 'active' ? 'Monitoring' : alert.status}
+                                                label={alert.status === 'active' ? 'Monitoring' : alert.status.toUpperCase()}
                                                 color={
                                                     alert.status === 'active' ? 'success' :
                                                         alert.status === 'triggered' ? 'warning' : 'default'
                                                 }
-                                                sx={{ height: 20 }}
+                                                sx={{ height: 20, fontWeight: alert.status === 'triggered' ? 'bold' : 'normal' }}
                                             />
+                                        </TableCell>
+                                        <TableCell>
+                                            {alert.triggered_at ? (
+                                                <Typography variant="body2" color="warning.main" fontWeight="medium">
+                                                    {new Date(alert.triggered_at).toLocaleString(undefined, {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })}
+                                                </Typography>
+                                            ) : (
+                                                <Typography variant="body2" color="text.disabled">-</Typography>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 150, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>

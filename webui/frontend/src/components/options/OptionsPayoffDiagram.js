@@ -218,6 +218,10 @@ const OptionsPayoffDiagram = ({
       const size = parseFloat(pos.size || 0);
       const entryPrice = parseFloat(pos.entry_price || 0);
 
+      // Check if this is a closed position (size=0 with realized PnL)
+      const isClosed = pos.is_closed === true || size === 0;
+      const realizedPnl = parseFloat(pos.realized_pnl || 0);
+
       // Use mid_price (bid+ask)/2 for accurate current value, fallback to mark_price
       // This matches how PnL is calculated in the backend
       const bestBid = parseFloat(pos.best_bid || 0);
@@ -227,7 +231,7 @@ const OptionsPayoffDiagram = ({
         midPrice > 0 ? midPrice : parseFloat(pos.mid_price || pos.mark_price || entryPrice);
 
       let iv = 0.8;
-      if (markPrice > 0 && yearsToExpiry > 0.001) {
+      if (markPrice > 0 && yearsToExpiry > 0.001 && !isClosed) {
         const calculatedIV = calculateImpliedVolatility(
           markPrice,
           spotPrice,
@@ -250,14 +254,23 @@ const OptionsPayoffDiagram = ({
         entryPrice,
         markPrice,
         iv,
+        isClosed,    // Flag for closed positions
+        realizedPnl, // Realized PnL from closed position
       };
     });
 
     // Calculate actual time to nearest expiry (can be fractional days)
-    const nearestExpiry = parsed.reduce(
-      (min, p) => (p.expiryDate < min ? p.expiryDate : min),
-      parsed[0].expiryDate
-    );
+    // Filter out closed positions for expiry calculation if there are non-closed ones
+    const nonClosedPositions = parsed.filter(p => !p.isClosed);
+    const positionsForExpiry = nonClosedPositions.length > 0 ? nonClosedPositions : parsed;
+
+    const nearestExpiry = positionsForExpiry.length > 0
+      ? positionsForExpiry.reduce(
+        (min, p) => (p.expiryDate < min ? p.expiryDate : min),
+        positionsForExpiry[0].expiryDate
+      )
+      : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     const now = new Date();
     const actualDaysToExpiry = Math.max(0, (nearestExpiry - now) / (1000 * 60 * 60 * 24));
     // Use actual time to expiry (not ceiling) so slider can't go beyond 5:30 PM IST on expiry day
@@ -353,8 +366,15 @@ const OptionsPayoffDiagram = ({
       //   If OTM at expiry (intrinsic=0): P&L = entryPrice * |size| * 0.001 (keep full premium)
       // For LONG positions (size > 0): You BOUGHT the option, paid premium
       //   P&L = (intrinsicAtExpiry - entryPrice) * size * multiplier
+      // For CLOSED positions (size = 0, isClosed = true): Add realized PnL as constant offset
       let expiryPayoff = 0;
       parsedPos.forEach((pos) => {
+        // Handle closed positions - add realized PnL as constant offset (no price exposure)
+        if (pos.isClosed) {
+          expiryPayoff += pos.realizedPnl || 0;
+          return;
+        }
+
         const intrinsic =
           pos.type === 'call' ? Math.max(0, price - pos.strike) : Math.max(0, pos.strike - price);
 
@@ -390,8 +410,15 @@ const OptionsPayoffDiagram = ({
 
       // Calculate "On Target Date" payoff
       // ANCHORED to actual current unrealized P&L, then project change using Black-Scholes
+      // For CLOSED positions: Add realized PnL as constant offset (no price exposure)
       let targetPayoff = 0;
       parsedPos.forEach((pos) => {
+        // Handle closed positions - add realized PnL as constant offset (no price exposure)
+        if (pos.isClosed) {
+          targetPayoff += pos.realizedPnl || 0;
+          return;
+        }
+
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
 
@@ -1266,6 +1293,7 @@ const OptionsPayoffDiagram = ({
           <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.3} />
 
           <XAxis
+            type="number"
             dataKey="price"
             tickFormatter={(v) => v.toLocaleString()}
             stroke="#666"
@@ -1274,6 +1302,7 @@ const OptionsPayoffDiagram = ({
               isZoomed && zoomDomain.left ? [zoomDomain.left, zoomDomain.right] : ['auto', 'auto']
             }
             allowDataOverflow={true}
+            scale="linear"
           />
           <YAxis
             tickFormatter={(v) => `$${v.toFixed(0)}`}
@@ -1374,22 +1403,39 @@ const OptionsPayoffDiagram = ({
 
 
           {/* Active Alerts - Orange lines (Filtered by View Expiry) */}
-          {filteredAlerts.map(alert => (
-            <ReferenceLine
-              key={alert.id}
-              x={Number(alert.target_price)}
-              stroke="#f97316"
-              strokeWidth={2}
-              strokeDasharray="3 3"
-              isFront={true}
-              label={{
-                value: '🔔',
-                position: 'insideTop',
-                fill: '#f97316',
-                fontSize: 14
-              }}
-            />
-          ))}
+          {/* Active Alerts - Orange lines (Filtered by View Expiry) */}
+          {filteredAlerts.map((alert) => {
+            // Ensure price is a valid number
+            const price = parseFloat(alert.target_price);
+            if (isNaN(price)) return null;
+
+            return (
+              <ReferenceLine
+                key={alert.id}
+                x={price}
+                stroke="#f97316"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                isFront={true}
+                ifOverflow="extendDomain"
+                label={({ viewBox }) => {
+                  // Custom label renderer
+                  const { x, y } = viewBox;
+                  // If x is undefined or NaN, don't render
+                  if (!x || isNaN(x)) return null;
+
+                  return (
+                    <g transform={`translate(${x}, 25)`}>
+                      <text x={0} y={0} textAnchor="middle" fontSize="16">🔔</text>
+                      <text x={0} y={12} textAnchor="middle" fill="#f97316" fontSize="10" fontWeight="bold">
+                        {price.toLocaleString()}
+                      </text>
+                    </g>
+                  );
+                }}
+              />
+            );
+          })}
         </ComposedChart>
       </ResponsiveContainer>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
