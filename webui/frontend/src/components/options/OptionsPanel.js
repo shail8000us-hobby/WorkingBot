@@ -991,28 +991,49 @@ const OptionsPanel = () => {
   // Fetch options positions
   const fetchPositions = useCallback(async () => {
     try {
-      const { data } = await api.get('/api/options/positions');
-      if (data?.success) {
-        const rawPositions = data.positions || [];
+      // Fetch both options and MV straddle positions in parallel
+      const [optionsResponse, mvStraddleResponse] = await Promise.all([
+        api.get('/api/options/positions'),
+        api.get('/api/mv-straddle/positions').catch(err => {
+          console.warn('MV Straddle positions unavailable:', err.message);
+          return { data: { success: false, positions: [] } };
+        })
+      ]);
+
+      const optionsData = optionsResponse?.data;
+      const mvData = mvStraddleResponse?.data;
+
+      if (optionsData?.success) {
+        const rawOptionsPositions = optionsData.positions || [];
+        const rawMVPositions = mvData?.success ? mvData.positions || [] : [];
+
+        // Merge options and MV straddle positions
+        const combinedPositions = [...rawOptionsPositions, ...rawMVPositions];
 
         // Enrich positions with IV data from Delta Exchange
-        const positionsWithIV = await enrichPositionsWithIV(rawPositions);
+        const positionsWithIV = await enrichPositionsWithIV(combinedPositions);
 
         setPositions(positionsWithIV);
         hasPositionsRef.current = positionsWithIV.length > 0;
+        
         // Only clear error if we got fresh (non-cached) data
-        if (!data.cached) {
+        if (!optionsData.cached) {
           setError(null);
-        } else if (data.warning) {
+        } else if (optionsData.warning) {
           // Show warning for cached data
-          setError(`⚠️ ${data.warning}`);
+          setError(`⚠️ ${optionsData.warning}`);
+        }
+
+        // Log MV positions count if any
+        if (rawMVPositions.length > 0) {
+          console.log(`📊 Loaded ${rawMVPositions.length} MV Straddle position(s)`);
         }
       } else {
         // Keep existing positions on error, just show warning
         if (hasPositionsRef.current) {
-          setError(`⚠️ Refresh failed: ${data?.error || 'Unknown error'}`);
+          setError(`⚠️ Refresh failed: ${optionsData?.error || 'Unknown error'}`);
         } else {
-          setError(data?.error || 'Failed to fetch positions');
+          setError(optionsData?.error || 'Failed to fetch positions');
         }
       }
     } catch (err) {
@@ -2097,10 +2118,31 @@ const OptionsPanel = () => {
   const getPositionType = (symbol) => {
     if (symbol.startsWith('C-')) return { type: 'CALL', color: '#3b82f6' };
     if (symbol.startsWith('P-')) return { type: 'PUT', color: '#a855f7' };
+    if (symbol.startsWith('MV-')) return { type: 'MV STRADDLE', color: '#00bcd4' }; // Cyan for MV Straddle
     return { type: 'UNKNOWN', color: '#6b7280' };
   };
 
   const parseOptionSymbol = (symbol) => {
+    // Handle MV Straddle format: MV-BTC-89400-250126
+    if (symbol.startsWith('MV-')) {
+      const parts = symbol.split('-');
+      if (parts.length >= 4) {
+        const underlying = parts[1];
+        const strike = parseInt(parts[2]);
+        const expiry = parts[3];
+        // Parse expiry DDMMYY to readable format
+        const day = expiry.substring(0, 2);
+        const month = expiry.substring(2, 4);
+        const year = '20' + expiry.substring(4, 6);
+        return {
+          type: 'MV Straddle',
+          underlying,
+          strike,
+          expiry: `${day}/${month}/${year}`,
+        };
+      }
+    }
+
     // Format: C-BTC-113000-300126 or P-BTC-69000-270226
     const parts = symbol.split('-');
     if (parts.length >= 4) {
