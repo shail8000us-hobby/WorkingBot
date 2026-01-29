@@ -369,11 +369,12 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                                         <TableCell>
                                             {alert.triggered_at ? (
                                                 <Typography variant="body2" color="warning.main" fontWeight="medium">
-                                                    {new Date(alert.triggered_at).toLocaleString(undefined, {
+                                                    {new Date(alert.triggered_at + 'Z').toLocaleString(undefined, {
                                                         month: 'short',
                                                         day: 'numeric',
                                                         hour: '2-digit',
-                                                        minute: '2-digit'
+                                                        minute: '2-digit',
+                                                        hour12: true
                                                     })}
                                                 </Typography>
                                             ) : (

@@ -143,23 +143,37 @@ class NtfyNotifier:
             priority = "high" if abs(pnl) > 50 else "default"
             tags = "chart,warning" if pnl < 0 else "chart,moneybag"
             
+            url = f"{self.server}/{self.topic}"
+            title = f"BTC {direction_text} ${alert['target_price']:,.0f}!"
+            body = f"Current: ${current_price:,.2f}\nExpiry: {alert.get('expiry_date') or 'N/A'}\nP&L: ${pnl:+,.2f}\n{alert.get('note') or ''}"
+            
+            logger.info(f"[ntfy] Sending to {url} with topic '{self.topic}'")
+            logger.info(f"[ntfy] Title: {title}")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{self.server}/{self.topic}",
+                    url,
                     headers={
-                        "Title": f"BTC {direction_text} ${alert['target_price']:,.0f}!",
+                        "Title": title,
                         "Priority": priority,
                         "Tags": tags,
                     },
-                    data=f"Current: ${current_price:,.2f}\nExpiry: {alert.get('expiry_date') or 'N/A'}\nP&L: ${pnl:+,.2f}\n{alert.get('note') or ''}"
+                    data=body
                 ) as response:
+                    response_text = await response.text()
                     success = response.status == 200
                     if success:
-                        logger.info(f"[ntfy] Alert sent for {alert['id']}")
+                        logger.info(f"[ntfy] ✅ Alert sent successfully for {alert['id']} (status: {response.status})")
+                        logger.info(f"[ntfy] Response: {response_text}")
+                    else:
+                        logger.error(f"[ntfy] ❌ Failed with status {response.status}")
+                        logger.error(f"[ntfy] Response: {response_text}")
                     return success
                     
         except Exception as e:
-            logger.error(f"[ntfy] Failed to send alert: {e}")
+            logger.error(f"[ntfy] ❌ Exception: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     async def send_test_message(self) -> tuple[bool, str]:
