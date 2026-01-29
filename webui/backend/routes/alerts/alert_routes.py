@@ -78,6 +78,10 @@ def create_alert():
         if 'direction' not in data or data['direction'] not in ['above', 'below', 'cross']:
             return jsonify({'success': False, 'error': 'direction must be above, below, or cross'}), 400
         
+        # Get default channels from settings
+        settings = AlertsDB.get_settings()
+        default_channels = settings.get('enabled_channels', 'telegram,ntfy,in_app')
+        
         alert = AlertsDB.create_alert(
             target_price=float(data['target_price']),
             direction=data['direction'],
@@ -86,7 +90,7 @@ def create_alert():
             expected_pnl_target=data.get('expected_pnl_target'),
             symbol=data.get('symbol', 'BTCUSD'),
             is_repeating=data.get('is_repeating', False),
-            notification_channels=data.get('notification_channels', 'telegram,in_app'),
+            notification_channels=data.get('notification_channels', default_channels),
             expiry_date=data.get('expiry_date')
         )
         

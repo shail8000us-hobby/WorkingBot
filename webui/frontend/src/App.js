@@ -194,11 +194,10 @@ const MobileNav = ({ sections = [], activeSection, onSelect }) => (
           key={id}
           type="button"
           onClick={() => onSelect?.(id)}
-          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
-            active
+          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${active
               ? 'bg-sky-500 text-slate-900 shadow-card'
               : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
-          }`}
+            }`}
         >
           {label}
         </button>
@@ -229,7 +228,7 @@ function App() {
     reconciliation_v2_dry_run: true,
   });
   const [activeSection, setActiveSection] = useState(
-    userPreferences.selectedSection || 'dashboard'
+    userPreferences.selectedSection || 'portfolio'
   );
   const [navParams, setNavParams] = useState(null); // Navigation params for section switches
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -356,7 +355,7 @@ function App() {
     latencyBufferRef.current = [...latencyBufferRef.current.slice(-59), sample];
     const avg = Math.round(
       latencyBufferRef.current.reduce((acc, item) => acc + Number(item.latency || 0), 0) /
-        Math.max(latencyBufferRef.current.length, 1)
+      Math.max(latencyBufferRef.current.length, 1)
     );
     setLatencyStats({
       history: latencyBufferRef.current,
@@ -491,7 +490,7 @@ function App() {
       // Execute preload functions
       preloadComponents.forEach(component => {
         if (component && component.preload) {
-          component.preload().catch(() => {}); // Ignore errors
+          component.preload().catch(() => { }); // Ignore errors
         }
       });
       console.log('🚀 Preloading all components for instant panel switches');
@@ -569,13 +568,13 @@ function App() {
       // Week 3: Guardian Dashboard (feature flag controlled)
       ...(guardianEnabled
         ? [
-            {
-              id: 'guardian',
-              label: '🛡️ Guardian',
-              icon: ShieldCheck,
-              description: 'WebUI robustness monitor - circuit breakers, metrics, health',
-            },
-          ]
+          {
+            id: 'guardian',
+            label: '🛡️ Guardian',
+            icon: ShieldCheck,
+            description: 'WebUI robustness monitor - circuit breakers, metrics, health',
+          },
+        ]
         : []),
       {
         id: 'ml_trading',
@@ -745,133 +744,133 @@ function App() {
           </Suspense>
         </CollapsibleCard>
 
-      {/* Volatility Chart - Full Width at Top */}
-      <CollapsibleCard
-        id="volatility-regime"
-        title="Volatility Regime"
-        subtitle="Comparing implied vs realized volatility"
-        accent="violet"
-        defaultOpen={!isMobile}
-      >
-        <VolatilityRegimePanel socket={socket} />
-      </CollapsibleCard>
+        {/* Volatility Chart - Full Width at Top */}
+        <CollapsibleCard
+          id="volatility-regime"
+          title="Volatility Regime"
+          subtitle="Comparing implied vs realized volatility"
+          accent="violet"
+          defaultOpen={!isMobile}
+        >
+          <VolatilityRegimePanel socket={socket} />
+        </CollapsibleCard>
 
-      {/* Market Signal Intelligence - Below Volatility */}
-      <CollapsibleCard
-        id="market-signal"
-        title="Market Signal Intelligence"
-        subtitle="Volatility regime, drift detection, and trade readiness"
-        accent="violet"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <Suspense fallback={<LoadingFallback message="Loading market insights..." />}>
-            <EnhancedErrorBoundary componentName="MarketSignalPanel">
-              <MarketSignalPanel />
+        {/* Market Signal Intelligence - Below Volatility */}
+        <CollapsibleCard
+          id="market-signal"
+          title="Market Signal Intelligence"
+          subtitle="Volatility regime, drift detection, and trade readiness"
+          accent="violet"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <Suspense fallback={<LoadingFallback message="Loading market insights..." />}>
+              <EnhancedErrorBoundary componentName="MarketSignalPanel">
+                <MarketSignalPanel />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          ) : (
+            renderInactivePanel(
+              'Market signal waiting for bot',
+              'Once the bot subscribes to exchange feeds we will display readiness scores and drift analytics.'
+            )
+          )}
+        </CollapsibleCard>
+
+        {/* Unrealized PnL - Full Width */}
+        <CollapsibleCard
+          id="pnl-trend"
+          title="Unrealized PnL Trend"
+          subtitle="Intraday performance across trading session"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <UnrealizedPnLPanel socket={socket} />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          id="runtime-health"
+          title="Runtime Health & Connectivity"
+          subtitle="Connectivity, safety, and backend signals"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <EnhancedErrorBoundary componentName="HealthCheckDashboard">
+            <HealthCheckDashboard
+              socket={socket}
+              latencyStats={latencyStats}
+              connectionQuality={connectionQuality}
+              botIsRunning={botIsRunning}
+            />
+          </EnhancedErrorBoundary>
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          id="bot-status"
+          title="Bot Runtime Status"
+          subtitle="Process telemetry and trading mode"
+          accent="sky"
+          defaultOpen={!isMobile}
+        >
+          <div className="mt-6">
+            <TradingModeSwitch botRunning={botIsRunning} />
+          </div>
+        </CollapsibleCard>
+
+        {/* System Monitoring - Added to Dashboard */}
+        <CollapsibleCard
+          id="system-monitoring"
+          title="System Monitoring"
+          subtitle="Guardian daemons, watchdog status, and bot telemetry"
+          accent="sky"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
+              <EnhancedErrorBoundary componentName="MonitoringPanel">
+                <MonitoringPanel
+                  botStatus={botStatus}
+                  config={config}
+                  onNavigate={(section) => console.log('Navigate to:', section)}
+                />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          ) : (
+            renderInactivePanel(
+              'Monitoring idle',
+              'Process metrics and guardian heartbeat dashboards become available once services start.'
+            )
+          )}
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          id="monitoring-recovery-system"
+          title="Monitoring & Recovery System"
+          subtitle="Combined monitoring and recovery engine status"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading monitoring & recovery..." />}>
+            <EnhancedErrorBoundary componentName="MonitoringRecoveryPanel">
+              <MonitoringRecoveryPanel />
             </EnhancedErrorBoundary>
           </Suspense>
-        ) : (
-          renderInactivePanel(
-            'Market signal waiting for bot',
-            'Once the bot subscribes to exchange feeds we will display readiness scores and drift analytics.'
-          )
-        )}
-      </CollapsibleCard>
+        </CollapsibleCard>
 
-      {/* Unrealized PnL - Full Width */}
-      <CollapsibleCard
-        id="pnl-trend"
-        title="Unrealized PnL Trend"
-        subtitle="Intraday performance across trading session"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <UnrealizedPnLPanel socket={socket} />
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="runtime-health"
-        title="Runtime Health & Connectivity"
-        subtitle="Connectivity, safety, and backend signals"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <EnhancedErrorBoundary componentName="HealthCheckDashboard">
-          <HealthCheckDashboard
-            socket={socket}
-            latencyStats={latencyStats}
-            connectionQuality={connectionQuality}
-            botIsRunning={botIsRunning}
-          />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="bot-status"
-        title="Bot Runtime Status"
-        subtitle="Process telemetry and trading mode"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        <div className="mt-6">
-          <TradingModeSwitch botRunning={botIsRunning} />
-        </div>
-      </CollapsibleCard>
-
-      {/* System Monitoring - Added to Dashboard */}
-      <CollapsibleCard
-        id="system-monitoring"
-        title="System Monitoring"
-        subtitle="Guardian daemons, watchdog status, and bot telemetry"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <Suspense fallback={<LoadingFallback message="Loading monitoring dashboard..." />}>
-            <EnhancedErrorBoundary componentName="MonitoringPanel">
-              <MonitoringPanel
-                botStatus={botStatus}
-                config={config}
-                onNavigate={(section) => console.log('Navigate to:', section)}
-              />
+        <CollapsibleCard
+          id="production-monitoring"
+          title="🔒 Production Monitoring"
+          subtitle="Health, risk metrics, rate limits, and execution statistics"
+          accent="purple"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading production monitoring..." />}>
+            <EnhancedErrorBoundary componentName="ProductionMonitoringDashboard">
+              <ProductionMonitoringDashboard />
             </EnhancedErrorBoundary>
           </Suspense>
-        ) : (
-          renderInactivePanel(
-            'Monitoring idle',
-            'Process metrics and guardian heartbeat dashboards become available once services start.'
-          )
-        )}
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="monitoring-recovery-system"
-        title="Monitoring & Recovery System"
-        subtitle="Combined monitoring and recovery engine status"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading monitoring & recovery..." />}>
-          <EnhancedErrorBoundary componentName="MonitoringRecoveryPanel">
-            <MonitoringRecoveryPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="production-monitoring"
-        title="🔒 Production Monitoring"
-        subtitle="Health, risk metrics, rate limits, and execution statistics"
-        accent="purple"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading production monitoring..." />}>
-          <EnhancedErrorBoundary componentName="ProductionMonitoringDashboard">
-            <ProductionMonitoringDashboard />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [socket, latencyStats, connectionQuality, botIsRunning, isMobile, botStatus, config]);
 
@@ -1004,84 +1003,84 @@ function App() {
           </Suspense>
         </CollapsibleCard>
 
-      {/* Legacy panels kept for detailed configuration */}
-      <CollapsibleCard
-        id="capital-protection"
-        title="Capital Protection Configuration"
-        subtitle="Detailed configuration for drawdown limits and safe operating envelope"
-        accent="emerald"
-        defaultOpen={false}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading capital protection..." />}>
-          <EnhancedErrorBoundary componentName="CapitalProtectionPanel">
-            <CapitalProtectionPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        {/* Legacy panels kept for detailed configuration */}
+        <CollapsibleCard
+          id="capital-protection"
+          title="Capital Protection Configuration"
+          subtitle="Detailed configuration for drawdown limits and safe operating envelope"
+          accent="emerald"
+          defaultOpen={false}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading capital protection..." />}>
+            <EnhancedErrorBoundary componentName="CapitalProtectionPanel">
+              <CapitalProtectionPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      <CollapsibleCard
-        id="liquidation-monitor"
-        title="Liquidation Monitor Details"
-        subtitle="Detailed liquidation proximity and margin buffer analytics"
-        accent="rose"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading liquidation monitor..." />}>
-          <EnhancedErrorBoundary componentName="LiquidationProtectionPanel">
-            <LiquidationProtectionPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        <CollapsibleCard
+          id="liquidation-monitor"
+          title="Liquidation Monitor Details"
+          subtitle="Detailed liquidation proximity and margin buffer analytics"
+          accent="rose"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading liquidation monitor..." />}>
+            <EnhancedErrorBoundary componentName="LiquidationProtectionPanel">
+              <LiquidationProtectionPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      <CollapsibleCard
-        id="risk-intelligence"
-        title="Risk Intelligence"
-        subtitle="Error intelligence, anomaly detection, and live log parsing"
-        accent="violet"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <div className="flex gap-6 lg:grid-cols-2">
-            <Suspense fallback={<LoadingFallback message="Loading risk intelligence..." />}>
-              <EnhancedErrorBoundary componentName="ErrorIntelligencePanel">
-                <ErrorIntelligencePanel />
+        <CollapsibleCard
+          id="risk-intelligence"
+          title="Risk Intelligence"
+          subtitle="Error intelligence, anomaly detection, and live log parsing"
+          accent="violet"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <div className="flex gap-6 lg:grid-cols-2">
+              <Suspense fallback={<LoadingFallback message="Loading risk intelligence..." />}>
+                <EnhancedErrorBoundary componentName="ErrorIntelligencePanel">
+                  <ErrorIntelligencePanel />
+                </EnhancedErrorBoundary>
+              </Suspense>
+              <Suspense fallback={<LoadingFallback message="Connecting live feed..." />}>
+                <EnhancedErrorBoundary componentName="ErrorIntelligenceLive">
+                  <ErrorIntelligenceLive />
+                </EnhancedErrorBoundary>
+              </Suspense>
+            </div>
+          ) : (
+            renderInactivePanel(
+              'Error intelligence idle',
+              'Live anomaly scanning requires real-time logs from the trading engine and guardian. Start the bot to resume stream analysis.'
+            )
+          )}
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          id="guardian-robustness"
+          title="Guardian & Robustness"
+          subtitle="Guardrail automation and system self-healing"
+          accent="sky"
+          defaultOpen={!isMobile}
+        >
+          <div className="space-y-6">
+            <Suspense fallback={<LoadingFallback message="Loading robustness metrics..." />}>
+              <EnhancedErrorBoundary componentName="RobustnessPanel">
+                <RobustnessPanel />
               </EnhancedErrorBoundary>
             </Suspense>
-            <Suspense fallback={<LoadingFallback message="Connecting live feed..." />}>
-              <EnhancedErrorBoundary componentName="ErrorIntelligenceLive">
-                <ErrorIntelligenceLive />
+            <Suspense fallback={<LoadingFallback message="Loading guardian status..." />}>
+              <EnhancedErrorBoundary componentName="GuardianPanel">
+                <GuardianPanel />
               </EnhancedErrorBoundary>
             </Suspense>
           </div>
-        ) : (
-          renderInactivePanel(
-            'Error intelligence idle',
-            'Live anomaly scanning requires real-time logs from the trading engine and guardian. Start the bot to resume stream analysis.'
-          )
-        )}
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        id="guardian-robustness"
-        title="Guardian & Robustness"
-        subtitle="Guardrail automation and system self-healing"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        <div className="space-y-6">
-          <Suspense fallback={<LoadingFallback message="Loading robustness metrics..." />}>
-            <EnhancedErrorBoundary componentName="RobustnessPanel">
-              <RobustnessPanel />
-            </EnhancedErrorBoundary>
-          </Suspense>
-          <Suspense fallback={<LoadingFallback message="Loading guardian status..." />}>
-            <EnhancedErrorBoundary componentName="GuardianPanel">
-              <GuardianPanel />
-            </EnhancedErrorBoundary>
-          </Suspense>
-        </div>
-      </CollapsibleCard>
-    </div>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [isMobile]);
 
@@ -1116,27 +1115,27 @@ function App() {
           </Suspense>
         </CollapsibleCard>
 
-      <CollapsibleCard
-        id="sync-reconciliation"
-        title="Sync & Reconciliation"
-        subtitle="Ensure bot, exchange, and ledger remain consistent"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Suspense fallback={<LoadingFallback message="Loading sync tools..." />}>
-            <EnhancedErrorBoundary componentName="SyncReconciliationPanel">
-              <SyncReconciliationPanel />
-            </EnhancedErrorBoundary>
-          </Suspense>
-          <Suspense fallback={<LoadingFallback message="Loading reconciliation dashboard..." />}>
-            <EnhancedErrorBoundary componentName="ReconciliationPanelV2">
-              <ReconciliationPanelV2 featureFlags={featureFlags} />
-            </EnhancedErrorBoundary>
-          </Suspense>
-        </div>
-      </CollapsibleCard>
-    </div>
+        <CollapsibleCard
+          id="sync-reconciliation"
+          title="Sync & Reconciliation"
+          subtitle="Ensure bot, exchange, and ledger remain consistent"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Suspense fallback={<LoadingFallback message="Loading sync tools..." />}>
+              <EnhancedErrorBoundary componentName="SyncReconciliationPanel">
+                <SyncReconciliationPanel />
+              </EnhancedErrorBoundary>
+            </Suspense>
+            <Suspense fallback={<LoadingFallback message="Loading reconciliation dashboard..." />}>
+              <EnhancedErrorBoundary componentName="ReconciliationPanelV2">
+                <ReconciliationPanelV2 featureFlags={featureFlags} />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          </div>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [config, configMeta, busy, loading, isMobile, featureFlags, handleConfigUpdate, handleClearCache]);
 
@@ -1157,20 +1156,20 @@ function App() {
           </Suspense>
         </CollapsibleCard>
 
-      <CollapsibleCard
-        id="shutdown-report"
-        title="Graceful Shutdown Report"
-        subtitle="Historical shutdown telemetry and cleanup outcomes"
-        accent="amber"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading shutdown reports..." />}>
-          <EnhancedErrorBoundary componentName="ShutdownPanel">
-            <ShutdownPanel socket={socket} />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+        <CollapsibleCard
+          id="shutdown-report"
+          title="Graceful Shutdown Report"
+          subtitle="Historical shutdown telemetry and cleanup outcomes"
+          accent="amber"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading shutdown reports..." />}>
+            <EnhancedErrorBoundary componentName="ShutdownPanel">
+              <ShutdownPanel socket={socket} />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [isMobile, socket]);
 
@@ -1202,20 +1201,20 @@ function App() {
           )}
         </CollapsibleCard>
 
-      <CollapsibleCard
-        id="monitoring-recovery-system"
-        title="Monitoring & Recovery System"
-        subtitle="Combined monitoring and recovery engine status"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading monitoring & recovery..." />}>
-          <EnhancedErrorBoundary componentName="MonitoringRecoveryPanel">
-            <MonitoringRecoveryPanel />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+        <CollapsibleCard
+          id="monitoring-recovery-system"
+          title="Monitoring & Recovery System"
+          subtitle="Combined monitoring and recovery engine status"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading monitoring & recovery..." />}>
+            <EnhancedErrorBoundary componentName="MonitoringRecoveryPanel">
+              <MonitoringRecoveryPanel />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [isMobile, botIsRunning, botStatus, config]);
 
@@ -1250,34 +1249,34 @@ function App() {
           )}
         </CollapsibleCard>
 
-      <CollapsibleCard
-        id="docs"
-        title="Know Your Bot"
-        subtitle="Mac terminal commands for starting, stopping, monitoring, and troubleshooting"
-        accent="purple"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading commands..." />}>
-          <EnhancedErrorBoundary componentName="CommandKnowledgeBase">
-            <CommandKnowledgeBase />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        <CollapsibleCard
+          id="docs"
+          title="Know Your Bot"
+          subtitle="Mac terminal commands for starting, stopping, monitoring, and troubleshooting"
+          accent="purple"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading commands..." />}>
+            <EnhancedErrorBoundary componentName="CommandKnowledgeBase">
+              <CommandKnowledgeBase />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      <CollapsibleCard
-        id="market-intel"
-        title="Market Intelligence"
-        subtitle="Macro signals, latency-aware news, and quant feeds"
-        accent="emerald"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading market intelligence..." />}>
-          <EnhancedErrorBoundary componentName="MarketNewsWidget">
-            <MarketNewsWidget />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+        <CollapsibleCard
+          id="market-intel"
+          title="Market Intelligence"
+          subtitle="Macro signals, latency-aware news, and quant feeds"
+          accent="emerald"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading market intelligence..." />}>
+            <EnhancedErrorBoundary componentName="MarketNewsWidget">
+              <MarketNewsWidget />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [isMobile, botIsRunning]);
 
@@ -1298,81 +1297,81 @@ function App() {
           </Suspense>
         </CollapsibleCard>
 
-      {/* Trading Style Profile */}
-      <CollapsibleCard
-        id="ml-style-profile"
-        title="Trading Style Profile"
-        subtitle="AI-analyzed trading DNA and behavioral patterns"
-        accent="violet"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading style profile..." />}>
-          <EnhancedErrorBoundary componentName="MLStyleProfile">
-            <MLStyleProfile />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        {/* Trading Style Profile */}
+        <CollapsibleCard
+          id="ml-style-profile"
+          title="Trading Style Profile"
+          subtitle="AI-analyzed trading DNA and behavioral patterns"
+          accent="violet"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading style profile..." />}>
+            <EnhancedErrorBoundary componentName="MLStyleProfile">
+              <MLStyleProfile />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      {/* Opportunity Scanner */}
-      <CollapsibleCard
-        id="ml-opportunity-scanner"
-        title="Opportunity Scanner"
-        subtitle="AI-detected trading opportunities with style matching"
-        accent="emerald"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading opportunity scanner..." />}>
-          <EnhancedErrorBoundary componentName="MLOpportunityScanner">
-            <MLOpportunityScanner symbol={'BTCUSDT'} />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        {/* Opportunity Scanner */}
+        <CollapsibleCard
+          id="ml-opportunity-scanner"
+          title="Opportunity Scanner"
+          subtitle="AI-detected trading opportunities with style matching"
+          accent="emerald"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading opportunity scanner..." />}>
+            <EnhancedErrorBoundary componentName="MLOpportunityScanner">
+              <MLOpportunityScanner symbol={'BTCUSDT'} />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      {/* Decision Center */}
-      <CollapsibleCard
-        id="ml-decision-center"
-        title="Decision Center"
-        subtitle="Autonomous AI decision engine and approval queue"
-        accent="cyan"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading decision center..." />}>
-          <EnhancedErrorBoundary componentName="MLDecisionCenter">
-            <MLDecisionCenter />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        {/* Decision Center */}
+        <CollapsibleCard
+          id="ml-decision-center"
+          title="Decision Center"
+          subtitle="Autonomous AI decision engine and approval queue"
+          accent="cyan"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading decision center..." />}>
+            <EnhancedErrorBoundary componentName="MLDecisionCenter">
+              <MLDecisionCenter />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      {/* Model Monitor */}
-      <CollapsibleCard
-        id="ml-model-monitor"
-        title="Model Monitor"
-        subtitle="ML model drift detection and retraining status"
-        accent="amber"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading model monitor..." />}>
-          <EnhancedErrorBoundary componentName="MLModelMonitor">
-            <MLModelMonitor />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
+        {/* Model Monitor */}
+        <CollapsibleCard
+          id="ml-model-monitor"
+          title="Model Monitor"
+          subtitle="ML model drift detection and retraining status"
+          accent="amber"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading model monitor..." />}>
+            <EnhancedErrorBoundary componentName="MLModelMonitor">
+              <MLModelMonitor />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
 
-      {/* Delta Exchange Trade Sync */}
-      <CollapsibleCard
-        id="delta-trade-sync"
-        title="Delta Exchange Trade Sync"
-        subtitle="Fetch and sync actual trades from Delta Exchange for accurate PnL/win rate"
-        accent="indigo"
-        defaultOpen={true}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading Delta sync..." />}>
-          <EnhancedErrorBoundary componentName="DeltaTradeSync">
-            <DeltaTradeSync />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-    </div>
+        {/* Delta Exchange Trade Sync */}
+        <CollapsibleCard
+          id="delta-trade-sync"
+          title="Delta Exchange Trade Sync"
+          subtitle="Fetch and sync actual trades from Delta Exchange for accurate PnL/win rate"
+          accent="indigo"
+          defaultOpen={true}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading Delta sync..." />}>
+            <EnhancedErrorBoundary componentName="DeltaTradeSync">
+              <DeltaTradeSync />
+            </EnhancedErrorBoundary>
+          </Suspense>
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [isMobile]);
 
@@ -1393,43 +1392,43 @@ function App() {
           </Suspense>
         </CollapsibleCard>
 
-      {/* Bot Management Dashboard */}
-      <CollapsibleCard
-        id="bot-management-dashboard"
-        title="Bot Management Dashboard"
-        subtitle="High-level view of bot orchestration and services"
-        accent="sky"
-        defaultOpen={!isMobile}
-      >
-        <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
-          <EnhancedErrorBoundary componentName="BotManagementDashboard">
-            <BotManagementDashboard />
-          </EnhancedErrorBoundary>
-        </Suspense>
-      </CollapsibleCard>
-
-      {/* Live Logs Stream */}
-      <CollapsibleCard
-        id="live-logs-botmanagement"
-        title="Live Logs Stream"
-        subtitle="Real-time bot logs with filtering and export"
-        accent="violet"
-        defaultOpen={!isMobile}
-      >
-        {botIsRunning ? (
-          <Suspense fallback={<LoadingFallback message="Streaming logs..." />}>
-            <EnhancedErrorBoundary componentName="LogsPanel">
-              <LogsPanel />
+        {/* Bot Management Dashboard */}
+        <CollapsibleCard
+          id="bot-management-dashboard"
+          title="Bot Management Dashboard"
+          subtitle="High-level view of bot orchestration and services"
+          accent="sky"
+          defaultOpen={!isMobile}
+        >
+          <Suspense fallback={<LoadingFallback message="Loading bot management..." />}>
+            <EnhancedErrorBoundary componentName="BotManagementDashboard">
+              <BotManagementDashboard />
             </EnhancedErrorBoundary>
           </Suspense>
-        ) : (
-          renderInactivePanel(
-            'Logs unavailable',
-            'Start the bot to stream live logs from guardian and trading processes'
-          )
-        )}
-      </CollapsibleCard>
-    </div>
+        </CollapsibleCard>
+
+        {/* Live Logs Stream */}
+        <CollapsibleCard
+          id="live-logs-botmanagement"
+          title="Live Logs Stream"
+          subtitle="Real-time bot logs with filtering and export"
+          accent="violet"
+          defaultOpen={!isMobile}
+        >
+          {botIsRunning ? (
+            <Suspense fallback={<LoadingFallback message="Streaming logs..." />}>
+              <EnhancedErrorBoundary componentName="LogsPanel">
+                <LogsPanel />
+              </EnhancedErrorBoundary>
+            </Suspense>
+          ) : (
+            renderInactivePanel(
+              'Logs unavailable',
+              'Start the bot to stream live logs from guardian and trading processes'
+            )
+          )}
+        </CollapsibleCard>
+      </div>
     </Suspense>
   ), [isMobile, botIsRunning, logs]);
 
