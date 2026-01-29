@@ -195,8 +195,8 @@ const MobileNav = ({ sections = [], activeSection, onSelect }) => (
           type="button"
           onClick={() => onSelect?.(id)}
           className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${active
-              ? 'bg-sky-500 text-slate-900 shadow-card'
-              : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
+            ? 'bg-sky-500 text-slate-900 shadow-card'
+            : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
             }`}
         >
           {label}
@@ -228,7 +228,7 @@ function App() {
     reconciliation_v2_dry_run: true,
   });
   const [activeSection, setActiveSection] = useState(
-    userPreferences.selectedSection || 'portfolio'
+    userPreferences.selectedSection || 'options'
   );
   const [navParams, setNavParams] = useState(null); // Navigation params for section switches
   const [lastUpdated, setLastUpdated] = useState(null);

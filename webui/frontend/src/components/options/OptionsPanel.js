@@ -2984,16 +2984,16 @@ const OptionsPanel = () => {
                         const isCall = optionInfo.type === 'Call';
                         const isPut = optionInfo.type === 'Put';
 
-                        // Closed positions use muted gray background to indicate squared off
+                        // Closed positions use light white/gray background for easy identification
                         const rowBgColor = isClosed
-                          ? 'rgba(100, 100, 100, 0.08)'
+                          ? 'rgba(255, 255, 255, 0.03)' // Light white tint - easily identifiable
                           : isCall
                             ? 'rgba(16, 185, 129, 0.03)'
                             : isPut
                               ? 'rgba(239, 68, 68, 0.03)'
                               : 'transparent';
                         const rowHoverColor = isClosed
-                          ? 'rgba(100, 100, 100, 0.12)'
+                          ? 'rgba(255, 255, 255, 0.06)' // Slightly brighter on hover
                           : isCall
                             ? 'rgba(16, 185, 129, 0.06)'
                             : isPut
@@ -3349,9 +3349,11 @@ const OptionsPanel = () => {
                                     <Box
                                       sx={{
                                         display: 'flex',
-                                        gap: 2,
+                                        gap: 0.5,
                                         justifyContent: 'center',
                                         alignItems: 'center',
+                                        minWidth: 180,
+                                        flexWrap: 'nowrap',
                                       }}
                                     >
                                       {/* Quick Execute Mode Indicator */}
@@ -3368,7 +3370,9 @@ const OptionsPanel = () => {
                                               bgcolor: '#fbbf24',
                                               color: '#000',
                                               fontWeight: 'bold',
-                                              minWidth: 40,
+                                              minWidth: 32,
+                                              maxHeight: 24,
+                                              fontSize: '0.75rem',
                                               '&:hover': {
                                                 bgcolor: '#f59e0b',
                                               }
@@ -3475,7 +3479,7 @@ const OptionsPanel = () => {
                                           width: '2px',
                                           height: '32px',
                                           bgcolor: 'divider',
-                                          mx: 1,
+                                          mx: 0.25,
                                         }}
                                       />
 

@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-01-29T15:50:20.075540",
+  "timestamp": "2026-01-29T15:56:02.114893",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 87896.0,
+    "current_price": 87869.5,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 87896.0,
-      "price_age_seconds": 0.9195499420166016,
+      "price": 87869.5,
+      "price_age_seconds": 1.696768045425415,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 11622,
+        "total_updates": 11689,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -67,7 +67,7 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 87896.0,
+        "price": 87869.5,
         "grid_step": 500.0,
         "positions": 0,
         "max_positions": 10,
@@ -89,7 +89,7 @@
             "action": "BUY",
             "price": 87500.0,
             "tp_price": 88000.0,
-            "change_pct": -0.4505324474378811,
+            "change_pct": -0.42050996079413216,
             "reason": "Grid level #1",
             "sequence": 1,
             "profit_target": 500.0
@@ -98,7 +98,7 @@
             "action": "BUY",
             "price": 87000.0,
             "tp_price": 87500.0,
-            "change_pct": -1.019386547738236,
+            "change_pct": -0.989535618161023,
             "reason": "Grid level #2",
             "sequence": 2,
             "profit_target": 500.0
@@ -107,7 +107,7 @@
             "action": "BUY",
             "price": 86500.0,
             "tp_price": 87000.0,
-            "change_pct": -1.5882406480385909,
+            "change_pct": -1.5585612755279135,
             "reason": "Grid level #3",
             "sequence": 3,
             "profit_target": 500.0
@@ -159,7 +159,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2026-01-29T15:50:21.757179"
+      "timestamp": "2026-01-29T15:56:02.271552"
     },
     "opportunistic_recovery": {
       "active": false,
