@@ -74,6 +74,7 @@ import {
   VolumeUp as VolumeIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  FlashOn as FlashIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -188,6 +189,9 @@ const OptionsPanel = () => {
 
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
+
+  // Price alerts data
+  const [priceAlerts, setPriceAlerts] = useState([]); // All active price alerts
 
   // Save pending orders collapsed state to localStorage
   useEffect(() => {
@@ -970,6 +974,12 @@ const OptionsPanel = () => {
     [scalingStrategy, scalingParams, aggregatedGreeks]
   );
 
+  // Count active alerts for a given strike price
+  const getAlertCountForStrike = useCallback((strikePrice) => {
+    if (!priceAlerts || priceAlerts.length === 0) return 0;
+    return priceAlerts.filter(alert => Math.abs(alert.target_price - strikePrice) < 0.01).length;
+  }, [priceAlerts]);
+
   // Fetch options status
   const fetchStatus = useCallback(async () => {
     try {
@@ -1057,6 +1067,20 @@ const OptionsPanel = () => {
     } catch (err) {
       console.error('Failed to fetch futures positions:', err);
       // Don't show error for futures, just log it
+    }
+  }, []);
+
+  // Fetch price alerts for displaying alert count badges
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/alerts');
+      if (data?.success) {
+        // Only keep active alerts
+        setPriceAlerts((data.alerts || []).filter(a => a.status === 'active'));
+      }
+    } catch (err) {
+      console.error('Failed to fetch price alerts:', err);
+      // Don't show error for alerts, just log it
     }
   }, []);
 
@@ -1246,11 +1270,12 @@ const OptionsPanel = () => {
         loadMaxLossSettings(),
         fetchPendingOrders(),
         fetchFuturesPositions(),
+        fetchAlerts(),
       ]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders, fetchFuturesPositions]);
+  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders, fetchFuturesPositions, fetchAlerts]);
 
   // Auto-refresh every pollInterval ms
   useEffect(() => {
@@ -1259,6 +1284,7 @@ const OptionsPanel = () => {
       fetchStatus();
       fetchPendingOrders();
       fetchFuturesPositions();
+      fetchAlerts(); // Refresh alerts too
       loadMaxLossSettings(); // Refresh max loss settings too
     }, pollInterval);
     return () => clearInterval(interval);
@@ -3461,6 +3487,36 @@ const OptionsPanel = () => {
                                             </IconButton>
                                           </Tooltip>
                                         );
+                                      })()}
+
+                                      {/* Price Alert Count Badge */}
+                                      {(() => {
+                                        const striker = pos.strike || 0;
+                                        const alertCount = getAlertCountForStrike(striker);
+                                        if (alertCount > 0) {
+                                          return (
+                                            <Tooltip title={`${alertCount} active price alert${alertCount > 1 ? 's' : ''} at this strike`}>
+                                              <Box
+                                                sx={{
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: 0.5,
+                                                  bgcolor: '#fbbf24',
+                                                  color: '#000',
+                                                  px: 1,
+                                                  py: 0.5,
+                                                  borderRadius: 1,
+                                                  fontSize: 12,
+                                                  fontWeight: 'bold',
+                                                }}
+                                              >
+                                                <FlashIcon sx={{ fontSize: 16 }} />
+                                                {alertCount}
+                                              </Box>
+                                            </Tooltip>
+                                          );
+                                        }
+                                        return null;
                                       })()}
 
                                       {/* Visual Separator */}
