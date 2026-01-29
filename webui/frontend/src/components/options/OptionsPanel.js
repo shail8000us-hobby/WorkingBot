@@ -1047,6 +1047,52 @@ const OptionsPanel = () => {
     }
   }, [positions, closedPositions]);
 
+  // **CRITICAL: Detect positions that disappear from API (expired, auto-closed, etc.)**
+  // Save them to closedPositions before they vanish from the UI
+  const prevPositionsRef = useRef([]);
+  useEffect(() => {
+    // Skip on first render
+    if (prevPositionsRef.current.length === 0 && positions.length > 0) {
+      prevPositionsRef.current = positions;
+      return;
+    }
+
+    // Find positions that existed before but are now gone
+    const currentSymbols = new Set(positions.map(p => p.product_symbol));
+    const previousSymbols = prevPositionsRef.current;
+
+    const disappeared = previousSymbols.filter(
+      prevPos => !currentSymbols.has(prevPos.product_symbol) && !closedPositions[prevPos.product_symbol]
+    );
+
+    if (disappeared.length > 0) {
+      console.log(`📦 Detected ${disappeared.length} positions that disappeared (likely expired or auto-closed)`);
+
+      const newClosedPositions = {};
+      disappeared.forEach(pos => {
+        newClosedPositions[pos.product_symbol] = {
+          product_symbol: pos.product_symbol,
+          realized_pnl: pos.unrealized_pnl || 0, // Use last known PnL
+          closed_at: new Date().toISOString(),
+          entry_price: pos.entry_price || 0,
+          close_price: pos.best_bid || pos.best_ask || 0,
+          original_size: pos.size || 0,
+          greeks: pos.greeks || {},
+          underlying: pos.product_symbol.split('-')[1] || 'BTC',
+          strike: parseInt(pos.product_symbol.split('-')[2]) || 0,
+          expiry_code: pos.product_symbol.split('-')[3] || '',
+          option_type: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
+        };
+        console.log(`  → ${pos.product_symbol}: PnL $${(pos.unrealized_pnl || 0).toFixed(4)}`);
+      });
+
+      setClosedPositions(prev => ({ ...prev, ...newClosedPositions }));
+    }
+
+    // Update the ref for next comparison
+    prevPositionsRef.current = positions;
+  }, [positions, closedPositions]);
+
   // Fetch futures positions for combined payoff diagram
   const fetchFuturesPositions = useCallback(async () => {
     try {

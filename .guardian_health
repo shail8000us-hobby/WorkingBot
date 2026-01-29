@@ -1,15 +1,15 @@
 {
   "guardian_version": "2.1-SQL-MULTISYMBOL",
-  "last_check": "2026-01-29T15:55:59.399116",
+  "last_check": "2026-01-29T16:16:17.729078",
   "signal": "GO",
   "reason": "All safety checks passed",
   "check_interval": 10,
   "status": "running",
-  "pid": 81580,
+  "pid": 11827,
   "positions": {
-    "count": 64,
-    "current_price": 87868.5,
-    "total_pnl_inr": -7362.4129258868825
+    "count": 63,
+    "current_price": 87890.0,
+    "total_pnl_inr": -7316.7399519950195
   },
   "liquidation": {
     "distance": 100.0,
@@ -18,7 +18,7 @@
     "details_count": 0,
     "bankruptcy_distance": 100.0
   },
-  "timestamp": 1769682359.909394,
-  "uptime_seconds": 43160,
-  "cycle_count": 3295
+  "timestamp": 1769683578.097769,
+  "uptime_seconds": 54161,
+  "cycle_count": 4130
 }
