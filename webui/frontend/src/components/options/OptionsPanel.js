@@ -1015,7 +1015,7 @@ const OptionsPanel = () => {
 
         setPositions(positionsWithIV);
         hasPositionsRef.current = positionsWithIV.length > 0;
-        
+
         // Only clear error if we got fresh (non-cached) data
         if (!optionsData.cached) {
           setError(null);
@@ -1071,10 +1071,21 @@ const OptionsPanel = () => {
   // **CRITICAL: Detect positions that disappear from API (expired, auto-closed, etc.)**
   // Save them to closedPositions before they vanish from the UI
   const prevPositionsRef = useRef([]);
+  const closedPositionsRef = useRef(closedPositions);
+
+  // Keep closedPositionsRef in sync
   useEffect(() => {
-    // Skip on first render
+    closedPositionsRef.current = closedPositions;
+  }, [closedPositions]);
+  useEffect(() => {
+    // Skip on first render or if no positions
     if (prevPositionsRef.current.length === 0 && positions.length > 0) {
       prevPositionsRef.current = positions;
+      return;
+    }
+
+    // Skip if positions haven't actually changed (same array reference)
+    if (prevPositionsRef.current === positions) {
       return;
     }
 
@@ -1082,8 +1093,12 @@ const OptionsPanel = () => {
     const currentSymbols = new Set(positions.map(p => p.product_symbol));
     const previousSymbols = prevPositionsRef.current;
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🔍 Position change check: prev=${previousSymbols.length}, current=${positions.length}`);
+    }
+
     const disappeared = previousSymbols.filter(
-      prevPos => !currentSymbols.has(prevPos.product_symbol) && !closedPositions[prevPos.product_symbol]
+      prevPos => !currentSymbols.has(prevPos.product_symbol) && !closedPositionsRef.current[prevPos.product_symbol]
     );
 
     if (disappeared.length > 0) {
@@ -1112,7 +1127,7 @@ const OptionsPanel = () => {
 
     // Update the ref for next comparison
     prevPositionsRef.current = positions;
-  }, [positions, closedPositions]);
+  }, [positions]); // Only depend on positions, not closedPositions!
 
   // Fetch futures positions for combined payoff diagram
   const fetchFuturesPositions = useCallback(async () => {
@@ -4007,18 +4022,18 @@ const OptionsPanel = () => {
                     </Typography>
                     {/* Delta Neutral / High Delta Badge - Inline */}
                     {Math.abs(aggregatedGreeks.delta) < 0.1 && (
-                      <Chip 
-                        label="Delta Neutral ✅" 
-                        size="small" 
-                        color="info" 
+                      <Chip
+                        label="Delta Neutral ✅"
+                        size="small"
+                        color="info"
                         sx={{ height: 18, fontSize: '0.65rem' }}
                       />
                     )}
                     {Math.abs(aggregatedGreeks.delta) > 10 && (
-                      <Chip 
-                        label="High Delta ⚠️" 
-                        size="small" 
-                        color="warning" 
+                      <Chip
+                        label="High Delta ⚠️"
+                        size="small"
+                        color="warning"
                         sx={{ height: 18, fontSize: '0.65rem' }}
                       />
                     )}
@@ -4040,7 +4055,7 @@ const OptionsPanel = () => {
                               size="small"
                               label={`${aggregatedGreeks.btcDelta >= 0 ? 'Long' : 'Short'} ${Math.abs(Number(aggregatedGreeks.btcDelta) || 0).toFixed(4)} BTC`}
                               icon={aggregatedGreeks.btcDelta >= 0 ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
-                              sx={{ 
+                              sx={{
                                 height: 22,
                                 bgcolor: aggregatedGreeks.btcDelta >= 0 ? '#10b98120' : '#ef444420',
                                 color: aggregatedGreeks.btcDelta >= 0 ? '#10b981' : '#ef4444',
@@ -4058,7 +4073,7 @@ const OptionsPanel = () => {
                               size="small"
                               label={`${aggregatedGreeks.ethDelta >= 0 ? 'Long' : 'Short'} ${Math.abs(Number(aggregatedGreeks.ethDelta) || 0).toFixed(4)} ETH`}
                               icon={aggregatedGreeks.ethDelta >= 0 ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
-                              sx={{ 
+                              sx={{
                                 height: 22,
                                 bgcolor: aggregatedGreeks.ethDelta >= 0 ? '#10b98120' : '#ef444420',
                                 color: aggregatedGreeks.ethDelta >= 0 ? '#10b981' : '#ef4444',

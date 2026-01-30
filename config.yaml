@@ -11,8 +11,8 @@ symbols:
     product_id: '27'
     grid:
       geometry:
-        reference: 90500
-        lower: 85000
+        reference: 85000
+        lower: 83000
         upper: 100000
         step: 500
       limits:
@@ -143,7 +143,7 @@ safety:
     period: 14
     overbought_threshold: 70.0
     oversold_threshold: 30.0
-    long_threshold: 30
+    long_threshold: 34
     short_threshold: 25
     hysteresis_seconds: 60
     timeframe: 1h
