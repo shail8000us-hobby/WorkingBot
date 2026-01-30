@@ -762,13 +762,14 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                     
                     if side == 'sell':
                         # Filter out our own order from asks, then find best remaining ask
-                        other_asks = [float(ask['limit_price']) for ask in sell_orders 
-                                     if abs(float(ask['limit_price']) - current_price) >= new_tick * 0.5]
+                        # L2 orderbook format: {'price': '340.0', 'size': '5'}
+                        other_asks = [float(ask['price']) for ask in sell_orders 
+                                     if abs(float(ask['price']) - current_price) >= new_tick * 0.5]
                         
                         if other_asks:
                             second_best_ask = min(other_asks)  # Best competing ask
                             new_target = second_best_ask - new_tick  # Be 1 tick better
-                            print(f"[SSR THREAD] SELL: second_best_ask=${second_best_ask}, our_target=${new_target}")
+                            print(f"[SSR THREAD] SELL: second_best_ask=${second_best_ask}, our_target=${new_target}, current=${current_price}")
                         else:
                             # No other asks - stay at current price
                             print(f"[SSR THREAD] SELL: No competing asks, staying at ${current_price}")
@@ -776,13 +777,14 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                             
                     else:  # buy
                         # Filter out our own order from bids, then find best remaining bid
-                        other_bids = [float(bid['limit_price']) for bid in buy_orders 
-                                     if abs(float(bid['limit_price']) - current_price) >= new_tick * 0.5]
+                        # L2 orderbook format: {'price': '20.0', 'size': '10'}
+                        other_bids = [float(bid['price']) for bid in buy_orders 
+                                     if abs(float(bid['price']) - current_price) >= new_tick * 0.5]
                         
                         if other_bids:
                             second_best_bid = max(other_bids)  # Best competing bid
                             new_target = second_best_bid + new_tick  # Be 1 tick better
-                            print(f"[SSR THREAD] BUY: second_best_bid=${second_best_bid}, our_target=${new_target}")
+                            print(f"[SSR THREAD] BUY: second_best_bid=${second_best_bid}, our_target=${new_target}, current=${current_price}")
                         else:
                             # No other bids - stay at current price
                             print(f"[SSR THREAD] BUY: No competing bids, staying at ${current_price}")
