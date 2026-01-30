@@ -142,137 +142,100 @@ def calculate_option_delta(option_type: str, spot: float, strike: float,
 
 def get_portfolio_greeks() -> dict:
     """
-    Calculate aggregate Greeks for the entire options portfolio.
+    Get aggregate Greeks for entire portfolio from Delta Exchange API.
+    Uses same data source as Options Panel for consistency.
     
     Returns:
-        dict: {delta, gamma, vega, theta, positions_count}
+        dict: {delta, gamma, vega, theta, positions_count, options_delta, futures_delta}
     """
     try:
-        client = get_api_client()
+        from bot.api.delta_client import DeltaClient
         
-        # Use asyncio to run the async method
-        async def fetch_positions():
-            return await client.get_all_positions_with_options()
+        delta_client = DeltaClient()
         
-        # Get or create event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If loop is already running, use run_until_complete in a new loop
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, fetch_positions())
-                    positions_data = future.result(timeout=30)
-            else:
-                positions_data = loop.run_until_complete(fetch_positions())
-        except RuntimeError:
-            positions_data = asyncio.run(fetch_positions())
+        # Fetch all positions from Delta Exchange (same as positions.py)
+        response = delta_client._req('GET', '/v2/positions/margined')
         
-        if not positions_data:
+        if not response or not response.get('success'):
+            logger.error("Failed to fetch positions from Delta Exchange")
             return {'delta': 0, 'gamma': 0, 'vega': 0, 'theta': 0, 'positions_count': 0}
         
-        options_positions = positions_data.get('options', [])
-        futures_positions = positions_data.get('futures', [])
+        pos_list = response.get('result', [])
         
-        # Get current BTC price
-        btc_price = 100000.0  # Default
-        for pos in futures_positions:
-            if pos.get('product_symbol') == 'BTCUSD':
-                mark = pos.get('mark_price') or pos.get('entry_price') or 100000
-                try:
-                    btc_price = float(mark)
-                except (ValueError, TypeError):
-                    btc_price = 100000.0
-                break
-        
-        total_delta = 0.0
+        total_options_delta = 0.0
+        total_futures_delta = 0.0
         total_gamma = 0.0
         total_vega = 0.0
         total_theta = 0.0
+        options_count = 0
+        btc_price = 100000.0
         
-        for pos in options_positions:
-            symbol = pos.get('product_symbol', '')
-            try:
-                size = float(pos.get('size', 0) or 0)
-            except (ValueError, TypeError):
-                size = 0.0
-            
-            if not symbol or size == 0:
+        for pos_data in pos_list:
+            size = int(pos_data.get('size', 0))
+            if size == 0:
                 continue
             
-            # Parse symbol: C-BTC-95000-300126 or P-BTC-88000-300126
-            parts = symbol.split('-')
-            if len(parts) != 4:
-                continue
+            product_symbol = pos_data.get('product_symbol', '')
+            mark_price = float(pos_data.get('mark_price', 0))
             
-            option_type = parts[0]  # C or P
-            strike = float(parts[2])
-            expiry_code = parts[3]  # DDMMYY
+            # Determine if option or future
+            is_option = any(x in product_symbol for x in ['C-', 'P-'])
             
-            # Calculate DTE
-            try:
-                day = int(expiry_code[:2])
-                month = int(expiry_code[2:4])
-                year = 2000 + int(expiry_code[4:6])
-                expiry_date = datetime(year, month, day)
-                dte = (expiry_date - datetime.now()).days
-                if dte < 0:
-                    dte = 0
-            except:
-                dte = 30  # Default if parsing fails
-            
-            # Get IV from position or use default
-            iv = pos.get('iv', 0.8)  # 80% default IV
-            if isinstance(iv, str):
+            if not is_option:
+                # FUTURES: delta = size (positive for long, negative for short)
+                # This matches positions.py line 398-399
+                if 'BTC' in product_symbol:
+                    btc_price = mark_price
+                    total_futures_delta += float(size)
+            else:
+                # OPTIONS: Get Greeks from ticker endpoint (same as positions.py)
+                options_count += 1
                 try:
-                    iv = float(iv.replace('%', '')) / 100
-                except:
-                    iv = 0.8
-            
-            # Calculate delta for this position
-            delta = calculate_option_delta(option_type, btc_price, strike, dte, iv, size)
-            total_delta += delta
-            
-            # Simplified gamma/vega/theta (approximations)
-            # These are rough estimates - real implementation would use full Greeks
-            btc_per_lot = 0.001
-            abs_size = abs(size) * btc_per_lot
-            
-            # Gamma is highest ATM
-            moneyness = abs(btc_price - strike) / btc_price
-            gamma_factor = max(0, 1 - moneyness * 5) * 0.01  # Rough approximation
-            total_gamma += gamma_factor * abs_size * (1 if size > 0 else -1)
-            
-            # Vega - higher for longer dated
-            vega_factor = math.sqrt(dte / 365) * 0.1
-            total_vega += vega_factor * abs_size * (1 if size > 0 else -1)
-            
-            # Theta - option sellers collect, buyers pay
-            theta_factor = -0.01 * (30 / max(dte, 1))  # Accelerates near expiry
-            total_theta += theta_factor * abs_size * (1 if size > 0 else -1)
+                    ticker_response = delta_client._req('GET', f'/v2/tickers/{product_symbol}')
+                    if ticker_response.get('success'):
+                        ticker_data = ticker_response.get('result', {})
+                        greeks = ticker_data.get('greeks', {})
+                        if greeks:
+                            # Per-contract Greeks from API
+                            delta = float(greeks.get('delta', 0))
+                            vega = float(greeks.get('vega', 0))
+                            theta = float(greeks.get('theta', 0))
+                            gamma = float(greeks.get('gamma', 0))
+                            
+                            # Position Greeks = per-contract * size
+                            # (same logic as positions.py line 440-443)
+                            pos_delta = delta * size
+                            pos_gamma = gamma * abs(size)
+                            pos_theta = theta * abs(size)
+                            pos_vega = vega * abs(size)
+                            
+                            total_options_delta += pos_delta
+                            total_gamma += pos_gamma
+                            total_theta += pos_theta
+                            total_vega += pos_vega
+                except Exception as e:
+                    logger.debug(f"Could not fetch Greeks for {product_symbol}: {e}")
         
-        # Add futures delta (BTC perpetual has delta = 1 per BTC)
-        for pos in futures_positions:
-            if pos.get('product_symbol') == 'BTCUSD':
-                # Size in lots, but for futures it's usually contracts
-                try:
-                    futures_size = float(pos.get('size', 0) or 0)
-                except (ValueError, TypeError):
-                    futures_size = 0.0
-                # Perpetual delta = size in BTC terms
-                total_delta += futures_size  # Already in BTC units
+        # Total delta = options delta + futures delta
+        total_delta = total_options_delta + total_futures_delta
+        
+        logger.info(f"Portfolio Greeks: options_delta={total_options_delta:.2f}, futures_delta={total_futures_delta:.2f}, total={total_delta:.2f}")
         
         return {
             'delta': round(total_delta, 4),
+            'options_delta': round(total_options_delta, 4),
+            'futures_delta': round(total_futures_delta, 4),
             'gamma': round(total_gamma, 4),
             'vega': round(total_vega, 4),
             'theta': round(total_theta, 4),
-            'positions_count': len(options_positions),
+            'positions_count': options_count,
             'btc_price': btc_price,
         }
         
     except Exception as e:
         logger.error(f"Error calculating portfolio Greeks: {e}")
+        import traceback
+        traceback.print_exc()
         return {'delta': 0, 'gamma': 0, 'vega': 0, 'theta': 0, 'error': str(e)}
 
 
@@ -433,6 +396,164 @@ def health():
     return jsonify({
         'success': True,
         'service': 'experimental',
-        'features': ['auto-delta-hedging', 'portfolio-greeks'],
+        'features': ['auto-delta-hedging', 'portfolio-greeks', 'gamma-scalping'],
         'timestamp': datetime.now().isoformat(),
     })
+
+
+# ============================================================================
+# GAMMA SCALPING - MARKET MAKER STRATEGY
+# ============================================================================
+#
+# Classic market maker strategy:
+# 1. When you own options (long gamma), you profit from price movement
+# 2. But you must delta-hedge to "lock in" that gamma profit
+# 3. Each time price moves by threshold, hedge the delta change
+#
+# Math: Gamma P&L = 0.5 × Γ × (ΔPrice)²
+#
+# Example:
+# - You have +0.1 gamma, price moves $1000
+# - Gamma profit = 0.5 × 0.1 × 1000² = $50,000
+# - But you need to hedge to lock it in before price reverses!
+#
+# ============================================================================
+
+@experimental_bp.route('/gamma-scalp', methods=['POST'])
+def execute_gamma_scalp():
+    """
+    Execute a gamma scalp trade.
+    
+    When price moves by threshold, the options delta changes due to gamma.
+    We hedge that delta change to "lock in" the gamma profit.
+    
+    Request body:
+        price_diff: How much price moved since last scalp
+        current_delta: Current options delta
+        current_price: Current BTC price
+        threshold: Price threshold that triggered this scalp
+    
+    Returns:
+        Scalp execution details
+    """
+    try:
+        data = request.get_json() or {}
+        
+        price_diff = float(data.get('price_diff', 0))
+        current_delta = float(data.get('current_delta', 0))
+        current_price = float(data.get('current_price', 0))
+        threshold = float(data.get('threshold', 500))
+        
+        # Get current gamma from portfolio Greeks
+        greeks = get_portfolio_greeks()
+        gamma = greeks.get('gamma', 0)
+        
+        # Calculate delta change from gamma
+        # Δdelta = gamma × ΔPrice (approximately)
+        delta_change = gamma * price_diff
+        
+        # The hedge size is the delta change we need to offset
+        # If price went UP and we're long gamma, delta increased → SELL to hedge
+        # If price went DOWN and we're long gamma, delta decreased → BUY to hedge
+        hedge_size = -delta_change  # Opposite sign to offset
+        
+        # Calculate estimated P&L from this gamma scalp
+        # Gamma P&L = 0.5 × Γ × (ΔPrice)²
+        estimated_pnl = 0.5 * abs(gamma) * (price_diff ** 2)
+        
+        # Determine direction
+        if hedge_size > 0:
+            direction = 'BUY'
+        elif hedge_size < 0:
+            direction = 'SELL'
+        else:
+            # No hedge needed
+            return jsonify({
+                'success': True,
+                'scalp': {
+                    'time': datetime.now().strftime('%H:%M:%S'),
+                    'direction': 'NONE',
+                    'price_diff': round(price_diff, 2),
+                    'size': 0,
+                    'estimated_pnl': 0,
+                    'gamma': round(gamma, 6),
+                    'status': 'no_hedge_needed',
+                },
+            })
+        
+        logger.info(f"[GAMMA-SCALP] Price moved ${price_diff:.2f}, gamma={gamma:.6f}, hedge_size={hedge_size:.4f}")
+        
+        # Try to execute the hedge order
+        try:
+            from bot.api.delta_client import DeltaClient
+            delta_client = DeltaClient()
+            
+            # Place market order to hedge
+            order_size = int(abs(hedge_size))
+            if order_size < 1:
+                order_size = 1  # Minimum 1 lot
+            
+            side = 'buy' if hedge_size > 0 else 'sell'
+            
+            order_payload = {
+                'product_id': 139,  # BTCUSD perpetual
+                'size': order_size,
+                'side': side,
+                'order_type': 'market_order',
+            }
+            
+            logger.info(f"[GAMMA-SCALP] Placing order: {order_payload}")
+            order_result = delta_client._req('POST', '/v2/orders', data=order_payload)
+            
+            order_status = 'executed' if order_result.get('success') else 'failed'
+            fill_price = order_result.get('result', {}).get('average_fill_price', current_price)
+            
+            scalp_record = {
+                'time': datetime.now().strftime('%H:%M:%S'),
+                'direction': direction,
+                'price_diff': round(price_diff, 2),
+                'size': round(hedge_size, 4),
+                'estimated_pnl': round(estimated_pnl, 2),
+                'gamma': round(gamma, 6),
+                'fill_price': fill_price,
+                'status': order_status,
+                'order_id': order_result.get('result', {}).get('id'),
+            }
+            
+            logger.info(f"[GAMMA-SCALP] Completed: {scalp_record}")
+            
+            return jsonify({
+                'success': True,
+                'scalp': scalp_record,
+            })
+            
+        except Exception as order_error:
+            logger.warning(f"[GAMMA-SCALP] Order execution failed: {order_error}")
+            
+            # Return simulated result for testing/demo
+            scalp_record = {
+                'time': datetime.now().strftime('%H:%M:%S'),
+                'direction': direction,
+                'price_diff': round(price_diff, 2),
+                'size': round(hedge_size, 4),
+                'estimated_pnl': round(estimated_pnl, 2),
+                'gamma': round(gamma, 6),
+                'fill_price': current_price,
+                'status': 'simulated',
+                'note': str(order_error),
+            }
+            
+            return jsonify({
+                'success': True,
+                'scalp': scalp_record,
+                'simulated': True,
+            })
+        
+    except Exception as e:
+        logger.error(f"Error in execute_gamma_scalp: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+        }), 500

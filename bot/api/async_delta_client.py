@@ -535,6 +535,31 @@ class AsyncDeltaClient:
         log.info(f"Order cancelled: {order_id}")
         return response
     
+    async def edit_order(self, order_id: str, product_id: int, new_price: str) -> Dict[str, Any]:
+        """
+        Edit order price without cancelling.
+        
+        Args:
+            order_id: Order ID to edit
+            product_id: Product ID for the order
+            new_price: New limit price as string
+            
+        Returns:
+            Updated order details
+        """
+        response = await self._request_with_retry(
+            method="PUT",
+            path="/v2/orders",
+            data={
+                "id": int(order_id),
+                "product_id": product_id,
+                "limit_price": new_price
+            }
+        )
+        
+        log.info(f"Order edited: {order_id} → ${new_price}")
+        return response.get('result', response)
+    
     async def get_open_orders(self, product_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get open orders.

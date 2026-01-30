@@ -280,13 +280,29 @@ const AutoDeltaHedger = () => {
               </Tooltip>
             </Box>
           </Box>
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2 }}>
+          {/* Delta Breakdown Row */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 2 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1, textAlign: 'center' }}>
-              <Typography variant="caption" color="text.secondary">Delta</Typography>
-              <Typography variant="h6" color={getDeltaColor(greeks.delta)}>
+              <Typography variant="caption" color="text.secondary">Options Delta</Typography>
+              <Typography variant="h6" color={greeks.options_delta > 0 ? 'success.main' : greeks.options_delta < 0 ? 'error.main' : 'text.primary'}>
+                {formatNumber(greeks.options_delta || 0, 2)}
+              </Typography>
+            </Box>
+            <Box sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1, textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">Futures Delta</Typography>
+              <Typography variant="h6" color={greeks.futures_delta > 0 ? 'success.main' : greeks.futures_delta < 0 ? 'error.main' : 'text.primary'}>
+                {formatNumber(greeks.futures_delta || 0, 2)}
+              </Typography>
+            </Box>
+            <Box sx={{ p: 2, bgcolor: getDeltaColor(greeks.delta) === 'error' ? 'error.dark' : getDeltaColor(greeks.delta) === 'warning' ? 'warning.dark' : 'success.dark', borderRadius: 1, textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">NET DELTA</Typography>
+              <Typography variant="h5" fontWeight="bold">
                 {formatNumber(greeks.delta, 2)}
               </Typography>
             </Box>
+          </Box>
+          {/* Other Greeks Row */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1, textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary">Gamma</Typography>
               <Typography variant="h6">{formatNumber(greeks.gamma, 2)}</Typography>

@@ -117,6 +117,13 @@ class ConnectionManager {
     });
 
     this.socket.on('connect_error', (error) => {
+      // Suppress noisy WebSocket frame header errors - they're normal during transport negotiation
+      const errorMsg = error?.message || String(error);
+      if (errorMsg.includes('Invalid frame header') || errorMsg.includes('websocket error')) {
+        // Silent fallback to polling - this is expected behavior
+        console.debug('🔄 WebSocket upgrade failed, using polling transport');
+        return;
+      }
       console.error('❌ Connection error:', error);
       this.setConnectionState('error');
       this.emit('connection', { status: 'error', error: error.message });

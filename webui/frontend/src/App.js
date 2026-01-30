@@ -18,6 +18,7 @@ import {
   Activity,
   BarChart3,
   Brain,
+  Database,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -131,6 +132,7 @@ const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDash
 const ZeroDTEDashboard = React.lazy(() => import('./components/zero_dte/ZeroDTEDashboard'));
 const MVStraddlePanel = React.lazy(() => import('./components/mvStraddle/MVStraddlePanel'));
 const ExperimentalPanel = React.lazy(() => import('./components/ExperimentalPanel'));
+const AdvancedFeaturesPanel = React.lazy(() => import('./components/AdvancedFeaturesPanel'));
 
 // Preload function to eagerly load all lazy components
 const preloadAllComponents = () => {
@@ -620,6 +622,12 @@ function App() {
         icon: Code,
         description: 'Experimental features - Auto-Delta Hedging, Kelly Criterion, research tools',
       },
+      {
+        id: 'advanced_features',
+        label: '🚀 Advanced',
+        icon: Database,
+        description: 'Advanced data collection - Delta Exchange OHLCV, live streaming, technical indicators',
+      },
     ],
     [openPositions, pendingOrders]
   );
@@ -739,6 +747,16 @@ function App() {
       <div className="grid gap-6">
         <EnhancedErrorBoundary componentName="ExperimentalPanel">
           <ExperimentalPanel />
+        </EnhancedErrorBoundary>
+      </div>
+    </Suspense>
+  ), []);
+
+  const renderAdvancedFeatures = useMemo(() => (
+    <Suspense fallback={<PanelSkeleton type="dashboard" />}>
+      <div className="grid gap-6">
+        <EnhancedErrorBoundary componentName="AdvancedFeaturesPanel">
+          <AdvancedFeaturesPanel />
         </EnhancedErrorBoundary>
       </div>
     </Suspense>
@@ -1498,6 +1516,8 @@ function App() {
     zero_dte: renderZeroDTE,
     // Experimental Features
     experimental: renderExperimental,
+    // Advanced Features - Delta Data Collection
+    advanced_features: renderAdvancedFeatures,
   };
 
   const activeContent = sectionContent[activeSection] || renderDashboard();

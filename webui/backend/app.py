@@ -293,6 +293,15 @@ except Exception as e:
     print(f"⚠️ Could not register Experimental blueprint: {e}")
     log.warning(f"Experimental routes not available: {e}")
 
+# Register Delta Data blueprint (JAN 2026: Advanced data collection - INDEPENDENT MODULE)
+try:
+    from webui.backend.routes.delta_data import delta_data_bp
+    app.register_blueprint(delta_data_bp)
+    print(f"✅ Registered delta_data blueprint (advanced data collection, OHLCV, streaming)")
+except Exception as e:
+    print(f"⚠️ Could not register delta_data blueprint: {e}")
+    log.warning(f"Delta data routes not available: {e}")
+
 # Register Options Chain blueprint (JAN 2026: Options chain market data - ISOLATED MODULE)
 try:
     from webui.backend.options_chain import options_chain_bp

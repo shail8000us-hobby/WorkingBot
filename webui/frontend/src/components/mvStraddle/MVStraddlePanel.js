@@ -22,11 +22,12 @@ const MVStraddlePanel = () => {
   const QUICK_SIZES = [1, 2, 5, 10, 20, 50];
   const ORDER_TYPES = {
     maker_first: {
-      label: 'Smart (Maker First)',
-      description: 'Try limit at mid-price, fallback to market',
+      label: 'Smart',
+      description: 'Post-only limit at mid-price (no fallback)',
     },
-    maker_only: { label: 'Maker Only', description: 'Only limit orders (may not fill)' },
-    market_only: { label: 'Market Only (Fastest)', description: 'Immediate fill, higher fees' },
+    maker_only: { label: 'Limit', description: 'Post-only limit at your price' },
+    market_only: { label: 'Market', description: 'Immediate fill, higher fees' },
+    ssr: { label: 'SSR Order', description: 'Competitive pricing: 2 ticks below best ask, auto-adjusts' },
   };
 
   // State

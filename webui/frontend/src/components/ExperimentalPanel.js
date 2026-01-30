@@ -3,6 +3,7 @@ import { Box, Typography, Alert } from '@mui/material';
 import { motion } from 'framer-motion';
 import KellyWidget from './KellyWidget';
 import AutoDeltaHedger from './AutoDeltaHedger';
+import GammaScalpingBot from './GammaScalpingBot';
 
 /**
  * Experimental Features Panel
@@ -11,6 +12,11 @@ import AutoDeltaHedger from './AutoDeltaHedger';
  * - Not yet proven in live trading
  * - Under development/testing
  * - May be useful in future but not core to current trading
+ * 
+ * Institutional Features:
+ * 1. Auto-Delta Hedger - Keep portfolio delta-neutral
+ * 2. Gamma Scalping Bot - Profit from volatility (market maker strategy)
+ * 3. Kelly Position Sizer - Optimal bet sizing
  */
 const ExperimentalPanel = () => {
   return (
@@ -26,7 +32,7 @@ const ExperimentalPanel = () => {
             🧪 Experimental Features
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Research and experimental features. Use with caution in live trading.
+            Institutional algorithms from quant trading desks. Use with caution in live trading.
           </Typography>
         </Box>
 
@@ -39,6 +45,11 @@ const ExperimentalPanel = () => {
         {/* Auto-Delta Hedging - Institutional Feature */}
         <Box sx={{ mb: 3 }}>
           <AutoDeltaHedger />
+        </Box>
+
+        {/* Gamma Scalping Bot - Market Maker Strategy */}
+        <Box sx={{ mb: 3 }}>
+          <GammaScalpingBot />
         </Box>
 
         {/* Kelly Criterion Position Sizer */}

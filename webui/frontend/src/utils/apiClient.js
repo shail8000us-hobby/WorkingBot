@@ -25,6 +25,9 @@ class APIClient {
     this.baseURL = (this.config.baseURL || '').replace(/\/$/, '');
     this.requestQueue = [];
     this.processing = false;
+    
+    // Request deduplication - prevent duplicate concurrent requests
+    this.pendingRequests = new Map();
   }
 
   buildFullUrl(path, params = undefined) {
@@ -61,11 +64,47 @@ class APIClient {
   }
 
   /**
-   * Make request with retry logic and circuit breaker protection
+   * Generate cache key for request deduplication
+   */
+  _getRequestKey(method, url, data) {
+    const normalizedMethod = (method || 'GET').toUpperCase();
+    if (normalizedMethod === 'GET') {
+      return `${normalizedMethod}:${url}`;
+    }
+    return `${normalizedMethod}:${url}:${JSON.stringify(data || {})}`;
+  }
+
+  /**
+   * Make request with retry logic, circuit breaker, and deduplication
    * Week 2: Wrapped with circuit breaker to fail fast when backend is down
+   * Enhanced: Request deduplication to prevent duplicate concurrent requests
    */
   async request(method, url, data = null, options = {}) {
-    // Wrap entire request logic in circuit breaker
+    const normalizedMethod = (method || 'GET').toUpperCase();
+    
+    // Only deduplicate GET requests to prevent data issues with mutations
+    if (normalizedMethod === 'GET' && !options.skipDedup) {
+      const requestKey = this._getRequestKey(method, url, data);
+      
+      // If there's already a pending request for this key, return the same promise
+      if (this.pendingRequests.has(requestKey)) {
+        return this.pendingRequests.get(requestKey);
+      }
+      
+      // Create the request promise
+      const requestPromise = apiCircuit.call(async () => {
+        return await this._requestImpl(method, url, data, options);
+      }).finally(() => {
+        // Remove from pending after completion (success or failure)
+        this.pendingRequests.delete(requestKey);
+      });
+      
+      // Store the pending request
+      this.pendingRequests.set(requestKey, requestPromise);
+      return requestPromise;
+    }
+    
+    // Non-GET or skipDedup: execute directly
     return await apiCircuit.call(async () => {
       return await this._requestImpl(method, url, data, options);
     });
