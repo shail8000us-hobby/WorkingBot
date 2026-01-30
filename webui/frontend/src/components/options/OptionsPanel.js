@@ -5001,8 +5001,8 @@ const OptionsPanel = () => {
                 </Box>
               )}
 
-              {/* Auto-Loop Info Panel - Show when enabled but not running */}
-              {autoLoopEnabled && !autoLoopRunning && !anyExpiryLoopRunning && calculateBatchOrders().length > 0 && (
+              {/* Auto-Loop Info Panel - Show when enabled (even if some expiry loops are running, so user can start other expiries) */}
+              {autoLoopEnabled && !autoLoopRunning && calculateBatchOrders().length > 0 && (
                 <Box sx={{ 
                   mt: 2, 
                   p: 2, 

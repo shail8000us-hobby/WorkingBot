@@ -275,6 +275,15 @@ except Exception as e:
     print(f"⚠️ Could not register options blueprint: {e}")
     log.warning(f"Options routes not available: {e}")
 
+# Register Kelly Criterion Position Sizer (JAN 2026: Institutional position sizing)
+try:
+    from webui.backend.routes.kelly import kelly_bp
+    app.register_blueprint(kelly_bp)
+    print(f"✅ Registered Kelly Criterion blueprint (institutional position sizing)")
+except Exception as e:
+    print(f"⚠️ Could not register Kelly blueprint: {e}")
+    log.warning(f"Kelly routes not available: {e}")
+
 # Register Options Chain blueprint (JAN 2026: Options chain market data - ISOLATED MODULE)
 try:
     from webui.backend.options_chain import options_chain_bp
