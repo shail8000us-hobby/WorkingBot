@@ -2221,8 +2221,9 @@ const OptionsPanel = () => {
             symbol: o.symbol,
             side: o.side,
             size: o.size,
-            order_type: orderPreference,
           })),
+          order_preference: orderPreference,
+          confirm: true,
         });
 
         if (!response.data.success) {
