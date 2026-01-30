@@ -743,65 +743,64 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                 
                 # Fetch fresh orderbook and check if we need to adjust
                 try:
-                    print(f"[SSR THREAD] Fetching orderbook for {symbol}...")
-                    # Create a mock client wrapper for fetch_fresh_orderbook_quotes
-                    class RestClientWrapper:
-                        def __init__(self, rc):
-                            self.rest_client = rc
-                    quotes = await fetch_fresh_orderbook_quotes(RestClientWrapper(rest_client), symbol)
-                    new_best_bid = quotes['best_bid']
-                    new_best_ask = quotes['best_ask']
-                    # Use tick_size from order status (more reliable than orderbook)
+                    print(f"[SSR THREAD] Fetching L2 orderbook for {symbol}...")
+                    # Get full L2 orderbook to find second-best price
+                    orderbook_data = await rest_client.get_orderbook(symbol, depth=20)
+                    buy_orders = orderbook_data.get('buy', [])
+                    sell_orders = orderbook_data.get('sell', [])
                     new_tick = tick_size
                     
-                    print(f"[SSR THREAD] Orderbook: bid=${new_best_bid}, ask=${new_best_ask}, tick=${new_tick}")
+                    print(f"[SSR THREAD] Orderbook depth: {len(buy_orders)} bids, {len(sell_orders)} asks, tick=${new_tick}")
                     
-                    if new_best_bid == 0 or new_best_ask == 0:
-                        print(f"[SSR THREAD] Invalid quotes (bid or ask is 0), skipping...")
+                    if not buy_orders or not sell_orders:
+                        print(f"[SSR THREAD] Empty orderbook, skipping...")
                         continue
                     
-                    # Check if our order IS the best ask/bid (avoid chasing ourselves!)
-                    our_price_is_best = False
-                    if side == 'sell' and abs(current_price - new_best_ask) < new_tick:
-                        our_price_is_best = True
-                        print(f"[SSR THREAD] Our order IS the best ask (${current_price} ≈ ${new_best_ask}) - no adjustment needed")
-                    elif side == 'buy' and abs(current_price - new_best_bid) < new_tick:
-                        our_price_is_best = True
-                        print(f"[SSR THREAD] Our order IS the best bid (${current_price} ≈ ${new_best_bid}) - no adjustment needed")
+                    # Find second-best price (excluding our own order)
+                    # For SELL orders: we want to be 1 tick below the second-best ask (best competing seller)
+                    # For BUY orders: we want to be 1 tick above the second-best bid (best competing buyer)
                     
-                    if our_price_is_best:
-                        print(f"[SSR THREAD] Skipping - already at front of queue")
-                        continue
-                    
-                    # Calculate new competitive price
                     if side == 'sell':
-                        new_target = new_best_ask - (tick_offset * new_tick)
-                        new_target = max(new_target, new_best_bid + new_tick)
+                        # Filter out our own order from asks, then find best remaining ask
+                        other_asks = [float(ask['limit_price']) for ask in sell_orders 
+                                     if abs(float(ask['limit_price']) - current_price) >= new_tick * 0.5]
+                        
+                        if other_asks:
+                            second_best_ask = min(other_asks)  # Best competing ask
+                            new_target = second_best_ask - new_tick  # Be 1 tick better
+                            print(f"[SSR THREAD] SELL: second_best_ask=${second_best_ask}, our_target=${new_target}")
+                        else:
+                            # No other asks - stay at current price
+                            print(f"[SSR THREAD] SELL: No competing asks, staying at ${current_price}")
+                            continue
+                            
                     else:  # buy
-                        new_target = new_best_bid + (tick_offset * new_tick)
-                        new_target = min(new_target, new_best_ask - new_tick)
+                        # Filter out our own order from bids, then find best remaining bid
+                        other_bids = [float(bid['limit_price']) for bid in buy_orders 
+                                     if abs(float(bid['limit_price']) - current_price) >= new_tick * 0.5]
+                        
+                        if other_bids:
+                            second_best_bid = max(other_bids)  # Best competing bid
+                            new_target = second_best_bid + new_tick  # Be 1 tick better
+                            print(f"[SSR THREAD] BUY: second_best_bid=${second_best_bid}, our_target=${new_target}")
+                        else:
+                            # No other bids - stay at current price
+                            print(f"[SSR THREAD] BUY: No competing bids, staying at ${current_price}")
+                            continue
                     
                     new_price = round(new_target / new_tick) * new_tick
                     
                     print(f"[SSR THREAD] Price calc: current=${current_price}, target=${new_target}, new_price=${new_price}")
                     
-                    # Check if adjustment needed - chase BOTH directions to stay competitive
+                    # Check if adjustment needed - adjust if price differs by at least 1 tick
                     price_diff = abs(new_price - current_price)
-                    should_adjust = False
                     
                     print(f"[SSR THREAD] Price diff: ${price_diff:.2f}, tick=${new_tick}, needs_adjust={price_diff >= new_tick}")
                     
                     # Adjust if price differs by at least 1 tick in EITHER direction
-                    # SSR must stay competitive - always be near top of book
                     if price_diff >= new_tick:
-                        should_adjust = True  # Chase market in any direction
                         print(f"[SSR THREAD] WILL ADJUST: ${current_price:.2f} → ${new_price:.2f}")
-                        log.debug(f"SSR price diff: ${price_diff:.2f} >= tick ${new_tick:.2f}, will adjust")
-                    else:
-                        print(f"[SSR THREAD] No adjustment needed (diff ${price_diff:.2f} < tick ${new_tick})")
-                    
-                    if should_adjust:
-                        log.info(f"🔄 SSR PRICE UPDATE: ${current_price:.2f} → ${new_price:.2f} [bid:${new_best_bid:.2f} ask:${new_best_ask:.2f}]")
+                        log.info(f"🔄 SSR PRICE UPDATE: ${current_price:.2f} → ${new_price:.2f} [staying 1 tick ahead of competition]")
                         
                         # Directly edit order price (no cancellation - just price modification)
                         try:
@@ -829,6 +828,10 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                             log.error(f"Failed to edit order price: {e}")
                             print(f"[SSR THREAD] ERROR editing order price: {e}")
                             continue  # Try again next iteration instead of breaking
+                    
+                    else:
+                        print(f"[SSR THREAD] No adjustment needed (diff ${price_diff:.2f} < tick ${new_tick})")
+
                             
                 except Exception as e:
                     log.error(f"Error in SSR monitoring: {e}")
