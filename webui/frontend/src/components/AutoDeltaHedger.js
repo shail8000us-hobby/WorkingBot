@@ -21,7 +21,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { InfoOutlined, PlayArrow, Stop, Settings, TrendingUp, TrendingDown } from '@mui/icons-material';
+import { InfoOutlined, PlayArrow, Stop, Settings, TrendingUp, TrendingDown, Refresh } from '@mui/icons-material';
 import api from '../utils/apiShim';
 
 /**
@@ -146,6 +146,21 @@ const AutoDeltaHedger = () => {
     };
   }, [enabled, monitoringLoop, fetchGreeks]);
 
+  // Fetch Greeks on initial mount and periodically even when disabled
+  useEffect(() => {
+    // Initial fetch
+    fetchGreeks();
+    
+    // Refresh every 30 seconds even when disabled (so user can see current delta)
+    const refreshInterval = setInterval(() => {
+      if (!enabled) {
+        fetchGreeks();
+      }
+    }, 30000);
+    
+    return () => clearInterval(refreshInterval);
+  }, [fetchGreeks, enabled]);
+
   // Toggle enable/disable
   const handleToggle = (event) => {
     setEnabled(event.target.checked);
@@ -254,13 +269,15 @@ const AutoDeltaHedger = () => {
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
               Portfolio Greeks
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               <Typography variant="caption" color="text.secondary">
                 Last updated: {greeks.lastUpdated || '-'}
               </Typography>
-              <IconButton size="small" onClick={handleRefresh} disabled={loading}>
-                <Settings sx={{ fontSize: 16 }} />
-              </IconButton>
+              <Tooltip title="Refresh Greeks">
+                <IconButton size="small" onClick={handleRefresh} disabled={loading}>
+                  <Refresh sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
             </Box>
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2 }}>

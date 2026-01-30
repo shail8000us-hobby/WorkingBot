@@ -2437,7 +2437,8 @@ const OptionsPanel = () => {
               orderStatuses.forEach(status => {
                 const matchingOrder = pendingOrders.find(o => o.order_id === status.order_id);
                 if (matchingOrder) {
-                  const isFilled = status.state === 'filled';
+                  // Delta Exchange uses 'closed' for filled orders, not 'filled'
+                  const isFilled = status.state === 'filled' || status.state === 'closed';
                   const isCancelled = status.state === 'cancelled';
                   const isRejected = status.state === 'rejected';
                   
@@ -2710,7 +2711,8 @@ const OptionsPanel = () => {
               orderStatuses.forEach(status => {
                 const matchingOrder = pendingOrders.find(o => o.order_id === status.order_id);
                 if (matchingOrder) {
-                  const isFilled = status.state === 'filled';
+                  // Delta Exchange uses 'closed' for filled orders, not 'filled'
+                  const isFilled = status.state === 'filled' || status.state === 'closed';
                   if (status.state === 'cancelled' || status.state === 'rejected') {
                     throw new Error(`Order ${matchingOrder.symbol} was ${status.state}`);
                   }
@@ -2988,45 +2990,69 @@ const OptionsPanel = () => {
             </Button>
           </Box>
           
-          {/* Per-expiry status chips */}
+          {/* Per-expiry detailed status */}
           {anyExpiryLoopRunning && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {Object.entries(expiryLoopState)
                 .filter(([_, state]) => state.running)
                 .map(([expiry, state]) => {
                   const filledCount = Object.values(state.progress || {}).filter(p => p.filled).length;
                   const totalCount = Object.keys(state.progress || {}).length;
+                  const pendingCount = totalCount - filledCount;
                   return (
-                    <Chip
-                      key={expiry}
-                      size="small"
-                      label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <span style={{ fontWeight: 'bold' }}>{expiry}</span>
-                          <span>R{state.currentRound}/{state.totalRounds}</span>
-                          <span style={{ opacity: 0.7 }}>({filledCount}/{totalCount})</span>
-                          <IconButton
+                    <Box key={expiry} sx={{ bgcolor: 'rgba(0,0,0,0.15)', p: 1, borderRadius: '6px' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                            📅 {expiry}
+                          </Typography>
+                          <Chip
                             size="small"
-                            onClick={(e) => { e.stopPropagation(); stopExpiryAutoLoop(expiry); }}
-                            sx={{ p: 0, ml: 0.5, color: '#ef4444' }}
-                          >
-                            <BlockIcon sx={{ fontSize: 14 }} />
-                          </IconButton>
+                            label={`Round ${state.currentRound}/${state.totalRounds}`}
+                            sx={{ bgcolor: 'rgba(0,0,0,0.2)', height: 20, fontSize: '0.7rem' }}
+                          />
+                          <Typography variant="caption" sx={{ color: 'rgba(0,0,0,0.7)' }}>
+                            ✅ {filledCount} filled • ⏳ {pendingCount} pending
+                          </Typography>
                         </Box>
-                      }
-                      sx={{
-                        bgcolor: 'rgba(0,0,0,0.2)',
-                        color: '#000',
-                        fontWeight: 500,
-                        '& .MuiChip-label': { pr: 0.5 },
-                      }}
-                    />
+                        <IconButton
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); stopExpiryAutoLoop(expiry); }}
+                          sx={{ p: 0.5, color: '#ef4444', bgcolor: 'rgba(239,68,68,0.2)', '&:hover': { bgcolor: 'rgba(239,68,68,0.3)' } }}
+                        >
+                          <BlockIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Box>
+                      {/* Per-symbol progress chips */}
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {Object.entries(state.progress || {}).map(([symbol, prog]) => {
+                          const parts = symbol.split('-');
+                          const optType = parts[0];
+                          const strike = parts[2];
+                          return (
+                            <Chip
+                              key={symbol}
+                              size="small"
+                              label={`${prog.filled ? '✅' : '⏳'} ${optType}${strike}`}
+                              sx={{
+                                bgcolor: prog.filled ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.2)',
+                                color: prog.filled ? '#065f46' : '#000',
+                                fontSize: '0.65rem',
+                                height: 18,
+                              }}
+                            />
+                          );
+                        })}
+                      </Box>
+                    </Box>
                   );
                 })}
             </Box>
           )}
         </Box>
       )}
+      
+
       
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
         <CardContent>
@@ -5001,8 +5027,8 @@ const OptionsPanel = () => {
                 </Box>
               )}
 
-              {/* Auto-Loop Info Panel - Show when enabled (even if some expiry loops are running, so user can start other expiries) */}
-              {autoLoopEnabled && !autoLoopRunning && calculateBatchOrders().length > 0 && (
+              {/* Auto-Loop Info Panel - Show when enabled OR when per-expiry loops are running for visibility */}
+              {(autoLoopEnabled || anyExpiryLoopRunning) && calculateBatchOrders().length > 0 && (
                 <Box sx={{ 
                   mt: 2, 
                   p: 2, 

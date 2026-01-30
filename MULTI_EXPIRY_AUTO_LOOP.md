@@ -179,15 +179,43 @@ User can:
 {
   "success": true,
   "orders": [
-    { "order_id": "123", "state": "filled", "fill_price": 0.0234 },
-    { "order_id": "456", "state": "filled", "fill_price": 0.0156 }
+    { "order_id": "123", "state": "closed", "fill_price": 0.0234 },
+    { "order_id": "456", "state": "closed", "fill_price": 0.0156 }
   ]
 }
 ```
 
+> **Important**: Delta Exchange uses `"closed"` for filled orders, NOT `"filled"`. The frontend checks for both: `status.state === 'filled' || status.state === 'closed'`
+
 ---
 
 ## UI Components
+
+### Sticky Status Banner (Always Visible When Running)
+Shows at the top of the page when any loop is running:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🔄 AUTO-LOOP ACTIVE                                           [STOP ALL]   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────────────────────────┐ │
+│ │ 📅 300126   [Round 5/10]   ✅ 2 filled • ⏳ 1 pending      [🛑]       │ │
+│ │ ✅ C86000   ✅ P84800   ⏳ C86000                                      │ │
+│ └─────────────────────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────────────────────┐ │
+│ │ 📅 270126   [Round 3/10]   ✅ 1 filled • ⏳ 2 pending      [🛑]       │ │
+│ │ ✅ P88000   ⏳ C90000   ⏳ P86000                                      │ │
+│ └─────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+Key features:
+- **Always sticky** at top of page
+- Shows **per-expiry** status with expiry code
+- Shows **round progress** (e.g., Round 5/10)
+- Shows **fill counts** (✅ filled • ⏳ pending)
+- Shows **per-symbol chips** with fill status
+- **Stop button** per expiry for granular control
 
 ### Auto-Loop Execution Plan Panel
 Shows when `autoLoopEnabled` is true and positions are selected.
