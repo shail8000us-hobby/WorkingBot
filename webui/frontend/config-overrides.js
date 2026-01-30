@@ -78,31 +78,63 @@ module.exports = override(
         },
       };
 
-      // Enhanced minification
-      config.optimization.minimizer = [
-        new TerserPlugin({
-          terserOptions: {
-            parse: {
-              ecma: 2020,
+      // Enhanced minification - modify existing minimizers to preserve console.log
+      if (config.optimization.minimizer) {
+        config.optimization.minimizer = config.optimization.minimizer.map((minimizer) => {
+          if (minimizer.constructor.name === 'TerserPlugin') {
+            return new TerserPlugin({
+              terserOptions: {
+                parse: {
+                  ecma: 2020,
+                },
+                compress: {
+                  ecma: 2015,
+                  comparisons: false,
+                  inline: 2,
+                  drop_console: false, // Keep console.logs for debugging - TEMPORARILY ENABLED
+                  drop_debugger: true,
+                  pure_funcs: [], // Don't remove any functions
+                },
+                mangle: {
+                  safari10: true,
+                },
+                output: {
+                  ecma: 2015,
+                  comments: false,
+                  ascii_only: true,
+                },
+              },
+            });
+          }
+          return minimizer;
+        });
+      } else {
+        config.optimization.minimizer = [
+          new TerserPlugin({
+            terserOptions: {
+              parse: {
+                ecma: 2020,
+              },
+              compress: {
+                ecma: 2015,
+                comparisons: false,
+                inline: 2,
+                drop_console: false, // Keep console.logs for debugging - TEMPORARILY ENABLED
+                drop_debugger: true,
+                pure_funcs: [], // Don't remove any functions
+              },
+              mangle: {
+                safari10: true,
+              },
+              output: {
+                ecma: 2015,
+                comments: false,
+                ascii_only: true,
+              },
             },
-            compress: {
-              ecma: 2015,
-              comparisons: false,
-              inline: 2,
-              drop_console: true, // Remove console.logs in production
-              drop_debugger: true,
-            },
-            mangle: {
-              safari10: true,
-            },
-            output: {
-              ecma: 2015,
-              comments: false,
-              ascii_only: true,
-            },
-          },
-        }),
-      ];
+          }),
+        ];
+      }
 
       // Add compression plugin for gzip
       config.plugins.push(

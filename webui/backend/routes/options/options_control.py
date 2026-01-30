@@ -315,7 +315,8 @@ async def validate_order_size(client, symbol, requested_size, side, is_close=Fal
 
 async def place_options_order(client, product_symbol: str, size: int, side: str, 
                               order_type: str = 'limit_order', limit_price: float = None,
-                              reduce_only: bool = False):
+                              reduce_only: bool = False, post_only: bool = True,
+                              mmp_level: str = None):
     """
     Place order on options contract using product_symbol.
     
@@ -330,6 +331,9 @@ async def place_options_order(client, product_symbol: str, size: int, side: str,
         order_type: 'limit_order' or 'market_order'
         limit_price: Price for limit orders
         reduce_only: If True, only reduces position
+        post_only: If True, order will be maker-only (default True for fee rebates)
+        mmp_level: Market Maker Protection level (mmp1-mmp5). If set, uses MMP tagging
+                   instead of gtc time_in_force. Only for approved market makers.
         
     Returns:
         dict: Order response
@@ -350,12 +354,20 @@ async def place_options_order(client, product_symbol: str, size: int, side: str,
         # Limit order
         if limit_price is not None:
             data["limit_price"] = str(limit_price)
-        data["time_in_force"] = "gtc"
-        data["post_only"] = "false"  # Allow taker for better fill
+        
+        # Use MMP tagging if specified, otherwise use gtc
+        if mmp_level and mmp_level in ['mmp1', 'mmp2', 'mmp3', 'mmp4', 'mmp5']:
+            data["time_in_force"] = mmp_level  # Market Maker Protection
+            data["post_only"] = "true"  # MMP orders should always be post_only
+            log.info(f"🏦 Using MMP level: {mmp_level}")
+        else:
+            data["time_in_force"] = "gtc"
+            data["post_only"] = "true" if post_only else "false"
+        
         if reduce_only:
             data["reduce_only"] = "true"
     
-    log.info(f"📊 Placing {order_type}: {side} {size} {product_symbol} @ {limit_price or 'market'}")
+    log.info(f"📊 Placing {order_type}: {side} {size} {product_symbol} @ {limit_price or 'market'} (post_only={post_only}, mmp={mmp_level})")
     
     # Make direct API call
     response = await client.rest_client._request_with_retry(
@@ -376,9 +388,14 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
     """
     Place order with smart execution strategy.
     
-    Maker First: Place limit at mid-price, wait 2s, fallback to market if not filled
-    Maker Only: Only limit orders (may not fill)
+    Maker First: Place post-only limit at maker price, wait 2s, fallback to market if not filled
+    Maker Only: Only post-only limit orders (may not fill, but guarantees fee rebates)
     Market Only: Immediate market order (highest fees)
+    
+    For MAKER orders (post_only=True):
+    - BUY: Price at best_bid (joins the bid queue, won't cross spread)
+    - SELL: Price at best_ask (joins the ask queue, won't cross spread)
+    This ensures order rests in book as maker, qualifying for fee rebates.
     
     Args:
         client: UnifiedAPIClient instance
@@ -387,7 +404,7 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         side: 'buy' or 'sell'
         order_preference: ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY
         reduce_only: If True, only reduces position
-        limit_price: Optional custom limit price (if None, calculates mid-price)
+        limit_price: Optional custom limit price (if None, calculates maker price)
         
     Returns:
         dict: Order result with execution details
@@ -400,12 +417,13 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         order = await place_options_order(
             client, symbol, size, side,
             order_type='market_order',
-            reduce_only=reduce_only
+            reduce_only=reduce_only,
+            post_only=False
         )
         order['execution_type'] = 'market'
         return order
     
-    # Get current ticker for mid-price calculation
+    # Get current ticker for maker price calculation
     try:
         ticker = await client.get_option_ticker(symbol)
         # Quotes can be in ticker.quotes or ticker.raw.quotes
@@ -420,36 +438,65 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
             order = await place_options_order(
                 client, symbol, size, side,
                 order_type='market_order',
-                reduce_only=reduce_only
+                reduce_only=reduce_only,
+                post_only=False
             )
             order['execution_type'] = 'market_fallback_no_quotes'
             return order
         
-        # Use provided limit price or calculate mid-price
-        if limit_price is not None:
-            # Get tick size for rounding
-            tick_size = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
-            # Round to tick size
-            price = round(float(limit_price) / tick_size) * tick_size
-            log.info(f"📊 LIMIT order at custom ${price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
-        else:
-            # Calculate mid-price
-            mid_price = (best_bid + best_ask) / 2
-            
-            # Get tick size for rounding
-            # Try to get from ticker, fallback to 0.01 for BTC options
-            tick_size = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
-            price = round(mid_price / tick_size) * tick_size
-            
-            log.info(f"📊 LIMIT order at mid ${price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
+        # Get tick size for price rounding
+        tick_size = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
         
-        # Place limit order at specified price
-        limit_order = await place_options_order(
-            client, symbol, size, side,
-            order_type='limit_order',
-            limit_price=price,
-            reduce_only=reduce_only
-        )
+        # Calculate maker price based on side (for post-only orders to succeed)
+        if limit_price is not None:
+            # Use custom limit price but round to tick size
+            price = round(float(limit_price) / tick_size) * tick_size
+            log.info(f"📊 MAKER order at custom ${price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
+        else:
+            # Calculate maker price:
+            # - BUY: At best_bid to join bid queue (won't cross spread)
+            # - SELL: At best_ask to join ask queue (won't cross spread)
+            if side == 'buy':
+                price = best_bid  # Join the bid, won't immediately execute
+            else:
+                price = best_ask  # Join the ask, won't immediately execute
+            
+            price = round(price / tick_size) * tick_size
+            log.info(f"📊 MAKER order at {'bid' if side == 'buy' else 'ask'} ${price:.2f} (bid: ${best_bid:.2f}, ask: ${best_ask:.2f})")
+        
+        # Place post-only limit order for maker fee rebates
+        # Handle immediate_execution_post_only rejection by adjusting price
+        try:
+            limit_order = await place_options_order(
+                client, symbol, size, side,
+                order_type='limit_order',
+                limit_price=price,
+                reduce_only=reduce_only,
+                post_only=True  # CRITICAL: Maker only for fee rebates
+            )
+        except Exception as order_err:
+            error_msg = str(order_err).lower()
+            if 'immediate_execution_post_only' in error_msg:
+                # Post-only order would have executed immediately (crossed spread)
+                # Adjust price to be more passive and retry
+                log.warning(f"⚠️ Post-only rejected (would cross spread), adjusting price...")
+                if side == 'buy':
+                    # Move price down by 1 tick for buys
+                    price = round((price - tick_size) / tick_size) * tick_size
+                else:
+                    # Move price up by 1 tick for sells
+                    price = round((price + tick_size) / tick_size) * tick_size
+                
+                log.info(f"🔄 Retrying at adjusted price ${price:.2f}")
+                limit_order = await place_options_order(
+                    client, symbol, size, side,
+                    order_type='limit_order',
+                    limit_price=price,
+                    reduce_only=reduce_only,
+                    post_only=True
+                )
+            else:
+                raise  # Re-raise other errors
         
         order_id = limit_order.get('id')
         
@@ -468,9 +515,9 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
             state = order_status.get('state', '')
             
             if state == 'filled':
-                log.info(f"✅ Limit order filled at ${mid_price:.2f}")
+                log.info(f"✅ Maker order filled at ${price:.2f}")
                 limit_order['execution_type'] = 'limit_filled'
-                limit_order['fill_price'] = mid_price
+                limit_order['fill_price'] = price
                 return limit_order
             
             if state == 'cancelled':
@@ -486,9 +533,9 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
             
             if cancel_result['state'] == 'filled':
                 # Order filled during cancellation - don't place market order!
-                log.info(f"✅ Limit order filled during cancellation at ${mid_price:.2f}")
+                log.info(f"✅ Maker order filled during cancellation at ${price:.2f}")
                 limit_order['execution_type'] = 'limit_filled_late'
-                limit_order['fill_price'] = mid_price
+                limit_order['fill_price'] = price
                 return limit_order
             
             elif cancel_result['safe_to_place_market']:
@@ -497,10 +544,11 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
                 market_order = await place_options_order(
                     client, symbol, size, side,
                     order_type='market_order',
-                    reduce_only=reduce_only
+                    reduce_only=reduce_only,
+                    post_only=False
                 )
                 market_order['execution_type'] = 'market_fallback'
-                market_order['original_limit_price'] = mid_price
+                market_order['original_limit_price'] = price
                 return market_order
             
             else:
@@ -1806,3 +1854,4 @@ create_batch_add_route(
 create_batch_order_status_route(
     options_bp=options_bp,
     get_api_client=get_unified_client
+)

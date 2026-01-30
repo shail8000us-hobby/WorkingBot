@@ -101,6 +101,17 @@ export class OfflineStorage {
     });
   }
 
+  // Alias for get() - used by OfflineIndicator
+  async load(storeName: StoreName): Promise<any> {
+    return this.get(storeName);
+  }
+
+  // Get pending actions for sync - used by OfflineIndicator
+  async getPendingActions(): Promise<any[]> {
+    const result = await this.get(STORES.pendingActions);
+    return Array.isArray(result) ? result : result ? [result] : [];
+  }
+
   async clear(storeName: StoreName): Promise<boolean> {
     if (!this.db) await this.init();
 

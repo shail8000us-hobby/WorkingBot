@@ -1,15 +1,15 @@
 {
   "guardian_version": "2.1-SQL-MULTISYMBOL",
-  "last_check": "2026-01-30T11:45:54.258012",
+  "last_check": "2026-01-30T15:00:56.893667",
   "signal": "STOP",
   "reason": "Loss limit exceeded",
   "check_interval": 10,
   "status": "running",
-  "pid": 92946,
+  "pid": 38760,
   "positions": {
-    "count": 65,
-    "current_price": 82750.0,
-    "total_pnl_inr": -42643.145495491546
+    "count": 63,
+    "current_price": 82426.0,
+    "total_pnl_inr": -46476.29686959417
   },
   "liquidation": {
     "distance": 100.0,
@@ -18,7 +18,7 @@
     "details_count": 0,
     "bankruptcy_distance": 100.0
   },
-  "timestamp": 1769753754.637103,
-  "uptime_seconds": 12915,
-  "cycle_count": 985
+  "timestamp": 1769765457.310407,
+  "uptime_seconds": 35020,
+  "cycle_count": 2674
 }

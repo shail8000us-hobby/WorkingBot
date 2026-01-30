@@ -920,10 +920,20 @@ def serve(path):
         from flask import abort
         abort(404)
     
+    from flask import make_response
+    
     if path != "" and os.path.exists(app.static_folder + '/' + path):
-        return send_from_directory(app.static_folder, path)
+        response = make_response(send_from_directory(app.static_folder, path))
     else:
-        return send_from_directory(app.static_folder, 'index.html')
+        response = make_response(send_from_directory(app.static_folder, 'index.html'))
+    
+    # Add aggressive no-cache headers for ALL files during development
+    # This ensures hard refresh always gets the latest files
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    
+    return response
 
 
 # ============================================================================

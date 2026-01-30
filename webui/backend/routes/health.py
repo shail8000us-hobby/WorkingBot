@@ -106,7 +106,9 @@ def check_cpu():
 def check_config_file():
     """Check if config file exists and is readable"""
     try:
-        config_file = Path('config.yaml')
+        # Config file is in project root, not backend directory
+        project_root = Path(__file__).parent.parent.parent.parent  # health.py -> routes -> backend -> webui -> WorkingBot
+        config_file = project_root / 'config.yaml'
         return {
             'exists': config_file.exists(),
             'readable': config_file.exists() and os.access(config_file, os.R_OK),
@@ -120,7 +122,9 @@ def check_config_file():
 def check_log_directory():
     """Check if logs directory is writable"""
     try:
-        log_dir = Path('logs')
+        # Logs directory is in project root, not backend directory
+        project_root = Path(__file__).parent.parent.parent.parent  # health.py -> routes -> backend -> webui -> WorkingBot
+        log_dir = project_root / 'logs'
         log_dir.mkdir(exist_ok=True)
         test_file = log_dir / '.health_check_test'
         
@@ -175,7 +179,7 @@ def detailed_health_check():
         from webui.backend.utils.circuit_breaker import get_all_circuit_breaker_states
         circuit_breakers = get_all_circuit_breaker_states()
     except Exception as e:
-        log.debug(f"Could not get circuit breaker states: {e}")
+        pass  # Circuit breaker states are optional
     
     # Overall health determination
     is_healthy = all([
@@ -214,7 +218,7 @@ def detailed_health_check():
     
     # Return 503 if unhealthy (for load balancers/orchestrators)
     if not is_healthy:
-        return APIResponse.service_unavailable('System is degraded'), 503
+        return APIResponse.service_unavailable('System is degraded')
     
     return APIResponse.success(data)
 
@@ -233,7 +237,7 @@ def readiness_check():
     if is_ready:
         return APIResponse.success({'status': 'ready'})
     else:
-        return APIResponse.service_unavailable('Service not ready'), 503
+        return APIResponse.service_unavailable('Service not ready')
 
 
 @health_bp.route('/health/live', methods=['GET'])

@@ -55,6 +55,8 @@ class LossLimitsValidator:
         
         try:
             # Try v6.0 per-instance config first
+            if cfg is None or not hasattr(cfg, 'instances') or cfg.instances is None:
+                raise AttributeError("No instances config")
             instance = cfg.instances[instance_key]
             self.trader_limit = instance.safety.max_account_loss_inr
             
@@ -65,7 +67,7 @@ class LossLimitsValidator:
                 # Default: Guardian limit = 90% of trader limit
                 self.guardian_limit = self.trader_limit * 0.9
                 
-        except (AttributeError, KeyError):
+        except (AttributeError, KeyError, TypeError):
             # Fallback: Use safe defaults
             log.warning(f"Could not load limits for {instance_key}, using defaults")
             self.trader_limit = 10000  # Default 10k INR

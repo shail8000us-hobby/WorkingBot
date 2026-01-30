@@ -195,7 +195,15 @@ def create_batch_add_route(options_bp, get_unified_client, check_guardian_signal
                 
                 return results, elapsed, successful, failed
             
-            results, elapsed, successful, failed = asyncio.run(execute_batch())
+            # Use get_event_loop() + run_until_complete() instead of asyncio.run()
+            # to avoid closing the event loop in a Flask/SocketIO context
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            results, elapsed, successful, failed = loop.run_until_complete(execute_batch())
             
             return jsonify({
                 'success': True,
@@ -277,42 +285,50 @@ def create_batch_order_status_route(options_bp, get_api_client):
             
             client = get_api_client()
             
-            # Fetch order status for each order ID
-            orders_data = []
-            for order_id in order_ids:
-                try:
-                    # Get order status from Delta Exchange
-                    order_response = client.get_order(order_id)
-                    
-                    if order_response and order_response.get('success'):
-                        order_info = order_response.get('result', {})
-                        
-                        orders_data.append({
+            # Fetch all order statuses concurrently using asyncio.gather
+            async def fetch_all_order_statuses():
+                """Fetch all order statuses concurrently"""
+                async def fetch_single(order_id):
+                    try:
+                        order_info = await client.get_order(str(order_id))
+                        if order_info:
+                            return {
+                                'order_id': order_id,
+                                'symbol': order_info.get('product_symbol'),
+                                'size': order_info.get('size'),
+                                'side': order_info.get('side'),
+                                'state': order_info.get('state'),
+                                'fill_price': order_info.get('fill_price'),
+                                'unfilled_size': order_info.get('unfilled_size'),
+                                'created_at': order_info.get('created_at'),
+                                'updated_at': order_info.get('updated_at'),
+                            }
+                        else:
+                            return {
+                                'order_id': order_id,
+                                'state': 'not_found',
+                                'error': 'Order not found or empty response'
+                            }
+                    except Exception as e:
+                        log.error(f"Error fetching order {order_id}: {e}")
+                        return {
                             'order_id': order_id,
-                            'symbol': order_info.get('product_symbol'),
-                            'size': order_info.get('size'),
-                            'side': order_info.get('side'),
-                            'state': order_info.get('state'),
-                            'fill_price': order_info.get('fill_price'),
-                            'unfilled_size': order_info.get('unfilled_size'),
-                            'created_at': order_info.get('created_at'),
-                            'updated_at': order_info.get('updated_at'),
-                        })
-                    else:
-                        # Order not found or error
-                        orders_data.append({
-                            'order_id': order_id,
-                            'state': 'not_found',
-                            'error': order_response.get('error', 'Order not found')
-                        })
-                        
-                except Exception as e:
-                    log.error(f"Error fetching order {order_id}: {e}")
-                    orders_data.append({
-                        'order_id': order_id,
-                        'state': 'error',
-                        'error': str(e)
-                    })
+                            'state': 'error',
+                            'error': str(e)
+                        }
+                
+                results = await asyncio.gather(*[fetch_single(oid) for oid in order_ids])
+                return list(results)
+            
+            # Use get_event_loop() + run_until_complete() instead of asyncio.run()
+            # to avoid closing the event loop in a Flask/SocketIO context
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            orders_data = loop.run_until_complete(fetch_all_order_statuses())
             
             return jsonify({
                 'success': True,

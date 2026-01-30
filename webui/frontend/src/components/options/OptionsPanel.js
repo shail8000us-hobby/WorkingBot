@@ -411,14 +411,36 @@ const OptionsPanel = () => {
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
 
-  // Auto-loop execution state
-  const [autoLoopEnabled, setAutoLoopEnabled] = useState(false);
-  const [autoLoopRounds, setAutoLoopRounds] = useState(10); // Default 10 rounds
+  // Auto-loop execution state - with localStorage persistence
+  // Now supports per-expiry loops
+  const [autoLoopEnabled, setAutoLoopEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('autoLoopEnabled');
+      return saved ? JSON.parse(saved) : false;
+    } catch { return false; }
+  });
+  const [autoLoopRounds, setAutoLoopRounds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('autoLoopRounds');
+      return saved ? parseInt(saved, 10) : 10;
+    } catch { return 10; }
+  });
+  // Per-expiry loop state: { [expiryCode]: { running, currentRound, progress, error, stopRef } }
+  const [expiryLoopState, setExpiryLoopState] = useState({});
+  // Legacy single-loop state (kept for backward compatibility)
   const [autoLoopRunning, setAutoLoopRunning] = useState(false);
   const [autoLoopCurrentRound, setAutoLoopCurrentRound] = useState(0);
   const [autoLoopProgress, setAutoLoopProgress] = useState({}); // { symbol: { filled: bool, orderId: string } }
   const [autoLoopError, setAutoLoopError] = useState(null);
+  const [autoLoopLastRun, setAutoLoopLastRun] = useState(() => {
+    try {
+      const saved = localStorage.getItem('autoLoopLastRun');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  }); // Stores last run info for recovery
   const autoLoopStopRef = useRef(false); // Flag to stop the loop
+  // Per-expiry stop refs (managed as regular object, updated via expiryLoopState)
+  const expiryStopRefs = useRef({});
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -502,6 +524,43 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('options_custom_order', JSON.stringify(customOrder));
   }, [customOrder]);
+
+  // Save auto-loop settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('autoLoopEnabled', JSON.stringify(autoLoopEnabled));
+  }, [autoLoopEnabled]);
+  
+  useEffect(() => {
+    localStorage.setItem('autoLoopRounds', autoLoopRounds.toString());
+  }, [autoLoopRounds]);
+
+  // Save auto-loop run state for recovery
+  useEffect(() => {
+    if (autoLoopLastRun) {
+      localStorage.setItem('autoLoopLastRun', JSON.stringify(autoLoopLastRun));
+    } else {
+      localStorage.removeItem('autoLoopLastRun');
+    }
+  }, [autoLoopLastRun]);
+
+  // Check for interrupted auto-loop on mount
+  useEffect(() => {
+    const savedLastRun = localStorage.getItem('autoLoopLastRun');
+    if (savedLastRun) {
+      try {
+        const lastRun = JSON.parse(savedLastRun);
+        // If the last run didn't complete (has currentRound but not completed)
+        if (lastRun && lastRun.currentRound < lastRun.totalRounds && !lastRun.completed) {
+          const timeSince = Date.now() - lastRun.startTime;
+          const minsSince = Math.floor(timeSince / 60000);
+          console.log(`[AUTO-LOOP] Found interrupted run from ${minsSince}m ago: Round ${lastRun.currentRound}/${lastRun.totalRounds}`);
+          setAutoLoopError(`⚠️ Previous run interrupted at round ${lastRun.currentRound}/${lastRun.totalRounds} (${minsSince}m ago). Check your orders!`);
+        }
+      } catch (e) {
+        console.warn('[AUTO-LOOP] Could not parse saved run state:', e);
+      }
+    }
+  }, []);
 
   // Handle drag end - save the custom order to persist across page refreshes
   const handleDragEnd = (event) => {
@@ -1961,8 +2020,12 @@ const OptionsPanel = () => {
   // Example: Position has 1 lot bought → Multiplier 1 = 1 lot new buy
   // Example: Position has 2 lots sold → Multiplier 1 = 2 lots new sell
   // GCD Mode: Uses greatest common divisor of all positions for proportional scaling
-  const calculateBatchOrders = () => {
-    const selectedPos = getSelectedPositions();
+  const calculateBatchOrders = (filterExpiry = null) => {
+    // Get selected positions, optionally filtered by expiry
+    let selectedPos = getSelectedPositions();
+    if (filterExpiry) {
+      selectedPos = selectedPos.filter(pos => getExpiryCode(pos.product_symbol) === filterExpiry);
+    }
     const orders = [];
 
     // Calculate GCD if in GCD mode
@@ -1993,6 +2056,7 @@ const OptionsPanel = () => {
         midPrice,
         originalSize: pos.size,
         optionType: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
+        expiry: getExpiryCode(pos.product_symbol),
       });
     });
 
@@ -2167,14 +2231,22 @@ const OptionsPanel = () => {
   };
 
   // Auto-loop execution: Execute batch orders multiple times with fill polling
-  const executeAutoLoop = async () => {
+  const executeAutoLoop = async (startFromRound = 1) => {
+    console.log('[AUTO-LOOP] executeAutoLoop called with startFromRound:', startFromRound);
+    
     if (autoLoopRunning) {
       console.log('⚠️ Auto-loop already running');
       return;
     }
 
     const orders = calculateBatchOrders();
+    console.log('[AUTO-LOOP] Calculated orders:', orders.length, orders);
+    
     if (orders.length === 0) {
+      console.log('[AUTO-LOOP] ERROR: No orders calculated');
+      console.log('[AUTO-LOOP] selectedStrikes:', selectedStrikes);
+      console.log('[AUTO-LOOP] sortedPositions:', sortedPositions?.length);
+      console.log('[AUTO-LOOP] orderQuantity:', orderQuantity);
       setAutoLoopError('No orders to execute. Select positions and set quantities.');
       return;
     }
@@ -2184,27 +2256,44 @@ const OptionsPanel = () => {
       return;
     }
 
+    console.log(`[AUTO-LOOP] Starting execution: ${autoLoopRounds} rounds, ${orders.length} orders per round`);
+
     // Reset state
     setAutoLoopRunning(true);
-    setAutoLoopCurrentRound(0);
+    setAutoLoopCurrentRound(startFromRound > 1 ? startFromRound - 1 : 0);
     setAutoLoopError(null);
     setAutoLoopProgress({});
     autoLoopStopRef.current = false;
 
-    console.log(`[AUTO-LOOP] Starting ${autoLoopRounds} rounds with ${orders.length} orders per round`);
+    // Save run state for recovery
+    const runState = {
+      startTime: Date.now(),
+      totalRounds: autoLoopRounds,
+      currentRound: 0,
+      orderSymbols: orders.map(o => o.symbol),
+      completed: false,
+    };
+    setAutoLoopLastRun(runState);
+
+    console.log(`[AUTO-LOOP] Starting ${autoLoopRounds} rounds with ${orders.length} orders per round (from round ${startFromRound})`);
 
     const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
 
     try {
-      for (let round = 1; round <= autoLoopRounds; round++) {
+      for (let round = startFromRound; round <= autoLoopRounds; round++) {
         // Check if user stopped the loop
         if (autoLoopStopRef.current) {
           console.log('[AUTO-LOOP] Stopped by user');
           setAutoLoopError(`Stopped by user at round ${round - 1}/${autoLoopRounds}`);
+          // Clear last run on intentional stop
+          setAutoLoopLastRun(null);
           break;
         }
 
         setAutoLoopCurrentRound(round);
+        
+        // Update recovery state
+        setAutoLoopLastRun(prev => ({ ...prev, currentRound: round }));
         console.log(`[AUTO-LOOP] Starting round ${round}/${autoLoopRounds}`);
 
         // Reset progress for this round
@@ -2355,6 +2444,8 @@ const OptionsPanel = () => {
         if (autoLoopStopRef.current) {
           console.log('[AUTO-LOOP] Stopped during polling');
           setAutoLoopError(`Stopped by user at round ${round}/${autoLoopRounds}`);
+          // Clear last run on intentional stop
+          setAutoLoopLastRun(null);
           break;
         }
 
@@ -2381,6 +2472,8 @@ const OptionsPanel = () => {
       // All rounds completed successfully
       if (!autoLoopStopRef.current) {
         console.log('[AUTO-LOOP] All rounds completed successfully');
+        // Mark as completed in recovery state
+        setAutoLoopLastRun(prev => prev ? { ...prev, completed: true, endTime: Date.now() } : null);
         setOrderResult({
           type: 'success',
           message: `✅ Auto-loop completed: ${autoLoopRounds} rounds executed successfully`,
@@ -2391,12 +2484,13 @@ const OptionsPanel = () => {
     } catch (error) {
       const errorMsg = error.message || 'Auto-loop execution failed';
       console.error('[AUTO-LOOP] Error:', error);
-      setAutoLoopError(errorMsg);
+      // Keep the lastRun state so user can see what was interrupted
+      setAutoLoopError(`${errorMsg} (Round ${autoLoopCurrentRound}/${autoLoopRounds})`);
       setOrderResult({
         type: 'error',
-        message: `❌ Auto-loop error: ${errorMsg}`,
+        message: `❌ Auto-loop error at round ${autoLoopCurrentRound}: ${errorMsg}`,
       });
-      setTimeout(() => setOrderResult(null), 5000);
+      setTimeout(() => setOrderResult(null), 8000);
     } finally {
       setAutoLoopRunning(false);
       autoLoopStopRef.current = false;
@@ -2409,7 +2503,298 @@ const OptionsPanel = () => {
     console.log('[AUTO-LOOP] Stop requested');
   };
 
+  // Clear auto-loop error/warning
+  const clearAutoLoopError = () => {
+    setAutoLoopError(null);
+    setAutoLoopLastRun(null);
+  };
 
+  // ==================== PER-EXPIRY AUTO-LOOP ====================
+  
+  // Get unique expiries from selected positions
+  const selectedExpiriesForLoop = useMemo(() => {
+    const selected = getSelectedPositions();
+    const expiries = new Set();
+    selected.forEach(pos => {
+      const exp = getExpiryCode(pos.product_symbol);
+      if (exp) expiries.add(exp);
+    });
+    return Array.from(expiries).sort((a, b) => {
+      // Sort by date
+      const dayA = parseInt(a.substring(0, 2));
+      const monthA = parseInt(a.substring(2, 4));
+      const yearA = parseInt(a.substring(4, 6));
+      const dayB = parseInt(b.substring(0, 2));
+      const monthB = parseInt(b.substring(2, 4));
+      const yearB = parseInt(b.substring(4, 6));
+      if (yearA !== yearB) return yearA - yearB;
+      if (monthA !== monthB) return monthA - monthB;
+      return dayA - dayB;
+    });
+  }, [selectedStrikes, positions]);
+
+  // Check if any expiry loop is running
+  const anyExpiryLoopRunning = useMemo(() => {
+    return Object.values(expiryLoopState).some(state => state.running);
+  }, [expiryLoopState]);
+
+  // Execute auto-loop for a specific expiry
+  const executeExpiryAutoLoop = async (expiryCode) => {
+    // Check if already running for this expiry
+    if (expiryLoopState[expiryCode]?.running) {
+      console.log(`⚠️ Auto-loop already running for ${expiryCode}`);
+      return;
+    }
+
+    const orders = calculateBatchOrders(expiryCode);
+    if (orders.length === 0) {
+      setExpiryLoopState(prev => ({
+        ...prev,
+        [expiryCode]: { ...prev[expiryCode], error: 'No orders to execute for this expiry' }
+      }));
+      return;
+    }
+
+    if (!autoLoopRounds || autoLoopRounds < 1) {
+      setExpiryLoopState(prev => ({
+        ...prev,
+        [expiryCode]: { ...prev[expiryCode], error: 'Please set number of rounds (must be >= 1)' }
+      }));
+      return;
+    }
+
+    // Initialize state for this expiry
+    expiryStopRefs.current[expiryCode] = false;
+    setExpiryLoopState(prev => ({
+      ...prev,
+      [expiryCode]: {
+        running: true,
+        currentRound: 0,
+        totalRounds: autoLoopRounds,
+        progress: {},
+        error: null,
+        startTime: Date.now(),
+      }
+    }));
+
+    console.log(`[AUTO-LOOP:${expiryCode}] Starting ${autoLoopRounds} rounds with ${orders.length} orders`);
+    const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
+
+    try {
+      for (let round = 1; round <= autoLoopRounds; round++) {
+        // Check if stopped
+        if (expiryStopRefs.current[expiryCode]) {
+          console.log(`[AUTO-LOOP:${expiryCode}] Stopped by user at round ${round - 1}`);
+          setExpiryLoopState(prev => ({
+            ...prev,
+            [expiryCode]: { ...prev[expiryCode], running: false, error: `Stopped at round ${round - 1}/${autoLoopRounds}` }
+          }));
+          break;
+        }
+
+        // Update round counter
+        setExpiryLoopState(prev => ({
+          ...prev,
+          [expiryCode]: { ...prev[expiryCode], currentRound: round }
+        }));
+
+        console.log(`[AUTO-LOOP:${expiryCode}] Round ${round}/${autoLoopRounds}`);
+
+        // Reset progress for this round
+        const roundProgress = {};
+        orders.forEach(order => {
+          roundProgress[order.symbol] = { filled: false, orderId: null, size: order.size, status: 'placing' };
+        });
+        setExpiryLoopState(prev => ({
+          ...prev,
+          [expiryCode]: { ...prev[expiryCode], progress: roundProgress }
+        }));
+
+        // Place orders
+        const response = await api.post('/api/options/batch_add', {
+          orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
+          order_preference: orderPreference,
+          confirm: true,
+        });
+
+        if (!response.data.success) {
+          throw new Error(response.data.error || 'Batch order placement failed');
+        }
+
+        const placedOrders = response.data.results || [];
+        const failedPlacements = placedOrders.filter(r => !r.success);
+        if (failedPlacements.length > 0) {
+          throw new Error(`Failed to place ${failedPlacements.length} order(s)`);
+        }
+
+        // Separate filled vs pending
+        const filledImmediately = [];
+        const pendingOrders = [];
+        placedOrders.forEach(result => {
+          if (result.success) {
+            const executionType = result.execution_type || '';
+            const isFilledType = ['market', 'market_fallback', 'limit_filled', 'limit_filled_late'].includes(executionType);
+            if (isFilledType || !result.order_id) {
+              filledImmediately.push(result);
+            } else {
+              pendingOrders.push(result);
+            }
+          }
+        });
+
+        // Update progress
+        const updatedProgress = { ...roundProgress };
+        filledImmediately.forEach(result => {
+          updatedProgress[result.symbol] = { filled: true, orderId: result.order_id, size: result.size, status: 'filled' };
+        });
+        pendingOrders.forEach(result => {
+          updatedProgress[result.symbol] = { filled: false, orderId: result.order_id, size: result.size, status: 'pending' };
+        });
+        setExpiryLoopState(prev => ({
+          ...prev,
+          [expiryCode]: { ...prev[expiryCode], progress: updatedProgress }
+        }));
+
+        // Poll for pending orders
+        if (pendingOrders.length > 0) {
+          const orderIds = pendingOrders.map(r => r.order_id).filter(id => id);
+          let allFilled = false;
+          let pollCount = 0;
+
+          while (!allFilled && !expiryStopRefs.current[expiryCode]) {
+            pollCount++;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            try {
+              const statusResponse = await api.post('/api/options/batch_order_status', { order_ids: orderIds });
+              if (!statusResponse.data.success) continue;
+
+              const orderStatuses = statusResponse.data.orders || [];
+              const progressUpdate = { ...updatedProgress };
+
+              orderStatuses.forEach(status => {
+                const matchingOrder = pendingOrders.find(o => o.order_id === status.order_id);
+                if (matchingOrder) {
+                  const isFilled = status.state === 'filled';
+                  if (status.state === 'cancelled' || status.state === 'rejected') {
+                    throw new Error(`Order ${matchingOrder.symbol} was ${status.state}`);
+                  }
+                  progressUpdate[matchingOrder.symbol] = {
+                    filled: isFilled,
+                    orderId: status.order_id,
+                    size: status.size,
+                    status: isFilled ? 'filled' : 'pending',
+                  };
+                }
+              });
+
+              setExpiryLoopState(prev => ({
+                ...prev,
+                [expiryCode]: { ...prev[expiryCode], progress: progressUpdate }
+              }));
+
+              const filledCount = Object.values(progressUpdate).filter(p => p.filled).length;
+              allFilled = filledCount === orders.length;
+              console.log(`[AUTO-LOOP:${expiryCode}] Poll ${pollCount}: ${filledCount}/${orders.length} filled`);
+
+            } catch (pollError) {
+              if (pollError.message.includes('cancelled') || pollError.message.includes('rejected')) {
+                throw pollError;
+              }
+            }
+          }
+        }
+
+        // Check if stopped during polling
+        if (expiryStopRefs.current[expiryCode]) {
+          setExpiryLoopState(prev => ({
+            ...prev,
+            [expiryCode]: { ...prev[expiryCode], running: false, error: `Stopped at round ${round}/${autoLoopRounds}` }
+          }));
+          break;
+        }
+
+        // Round complete
+        console.log(`[AUTO-LOOP:${expiryCode}] Round ${round} complete`);
+        soundManager.playTradeFilled();
+
+        // Update to all filled
+        const finalProgress = {};
+        orders.forEach(order => {
+          finalProgress[order.symbol] = { filled: true, status: 'filled', size: order.size };
+        });
+        setExpiryLoopState(prev => ({
+          ...prev,
+          [expiryCode]: { ...prev[expiryCode], progress: finalProgress }
+        }));
+
+        // Delay before next round
+        if (round < autoLoopRounds) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // All rounds complete
+      if (!expiryStopRefs.current[expiryCode]) {
+        console.log(`[AUTO-LOOP:${expiryCode}] All rounds completed`);
+        setExpiryLoopState(prev => ({
+          ...prev,
+          [expiryCode]: { ...prev[expiryCode], running: false, completed: true, endTime: Date.now() }
+        }));
+        setOrderResult({
+          type: 'success',
+          message: `✅ [${expiryCode}] Auto-loop completed: ${autoLoopRounds} rounds`,
+        });
+        setTimeout(() => setOrderResult(null), 5000);
+      }
+
+    } catch (error) {
+      console.error(`[AUTO-LOOP:${expiryCode}] Error:`, error);
+      setExpiryLoopState(prev => ({
+        ...prev,
+        [expiryCode]: {
+          ...prev[expiryCode],
+          running: false,
+          error: `${error.message} (Round ${prev[expiryCode]?.currentRound || '?'}/${autoLoopRounds})`,
+        }
+      }));
+    }
+  };
+
+  // Stop auto-loop for specific expiry
+  const stopExpiryAutoLoop = (expiryCode) => {
+    expiryStopRefs.current[expiryCode] = true;
+    console.log(`[AUTO-LOOP:${expiryCode}] Stop requested`);
+  };
+
+  // Stop all expiry loops
+  const stopAllExpiryLoops = () => {
+    Object.keys(expiryLoopState).forEach(expiry => {
+      if (expiryLoopState[expiry]?.running) {
+        expiryStopRefs.current[expiry] = true;
+      }
+    });
+    console.log('[AUTO-LOOP] Stop all requested');
+  };
+
+  // Start all expiry loops simultaneously
+  const startAllExpiryLoops = () => {
+    selectedExpiriesForLoop.forEach(expiry => {
+      if (!expiryLoopState[expiry]?.running) {
+        executeExpiryAutoLoop(expiry);
+      }
+    });
+  };
+
+  // Clear expiry loop error
+  const clearExpiryLoopError = (expiryCode) => {
+    setExpiryLoopState(prev => ({
+      ...prev,
+      [expiryCode]: { ...prev[expiryCode], error: null }
+    }));
+  };
+
+  // ==================== END PER-EXPIRY AUTO-LOOP ====================
 
   // Format helpers
   const formatPnl = (pnl) => {
@@ -2494,6 +2879,91 @@ const OptionsPanel = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
+      {/* Persistent Auto-Loop Status Banner - Always visible at top */}
+      {/* Shows per-expiry loop status when any expiry loop is running */}
+      {(autoLoopRunning || anyExpiryLoopRunning) && (
+        <Box sx={{ 
+          position: 'sticky',
+          top: 0,
+          zIndex: 1100,
+          bgcolor: 'rgba(251, 191, 36, 0.95)',
+          color: '#000',
+          py: 1,
+          px: 2,
+          mb: 1,
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(251, 191, 36, 0.4)',
+          animation: 'pulse-banner 2s infinite',
+          '@keyframes pulse-banner': {
+            '0%, 100%': { boxShadow: '0 4px 12px rgba(251, 191, 36, 0.4)' },
+            '50%': { boxShadow: '0 4px 20px rgba(251, 191, 36, 0.7)' },
+          },
+        }}>
+          {/* Header row */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: anyExpiryLoopRunning ? 1 : 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <CircularProgress size={20} thickness={5} sx={{ color: '#000' }} />
+              <Typography variant="body1" fontWeight="bold">
+                🔁 AUTO-LOOP ACTIVE
+              </Typography>
+              {!anyExpiryLoopRunning && autoLoopRunning && (
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                  Round {autoLoopCurrentRound}/{autoLoopRounds} • {Object.values(autoLoopProgress).filter(p => p.status === 'filled').length}/{Object.keys(autoLoopProgress).length} filled
+                </Typography>
+              )}
+            </Box>
+            <Button
+              variant="contained"
+              size="small"
+              color="error"
+              onClick={anyExpiryLoopRunning ? stopAllExpiryLoops : stopAutoLoop}
+              startIcon={<BlockIcon />}
+              sx={{ fontWeight: 'bold', bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}
+            >
+              STOP ALL
+            </Button>
+          </Box>
+          
+          {/* Per-expiry status chips */}
+          {anyExpiryLoopRunning && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {Object.entries(expiryLoopState)
+                .filter(([_, state]) => state.running)
+                .map(([expiry, state]) => {
+                  const filledCount = Object.values(state.progress || {}).filter(p => p.filled).length;
+                  const totalCount = Object.keys(state.progress || {}).length;
+                  return (
+                    <Chip
+                      key={expiry}
+                      size="small"
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <span style={{ fontWeight: 'bold' }}>{expiry}</span>
+                          <span>R{state.currentRound}/{state.totalRounds}</span>
+                          <span style={{ opacity: 0.7 }}>({filledCount}/{totalCount})</span>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => { e.stopPropagation(); stopExpiryAutoLoop(expiry); }}
+                            sx={{ p: 0, ml: 0.5, color: '#ef4444' }}
+                          >
+                            <BlockIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Box>
+                      }
+                      sx={{
+                        bgcolor: 'rgba(0,0,0,0.2)',
+                        color: '#000',
+                        fontWeight: 500,
+                        '& .MuiChip-label': { pr: 0.5 },
+                      }}
+                    />
+                  );
+                })}
+            </Box>
+          )}
+        </Box>
+      )}
+      
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
         <CardContent>
           {/* Header */}
@@ -4271,7 +4741,7 @@ const OptionsPanel = () => {
                     <Button
                       variant="contained"
                       startIcon={<PlayArrowIcon />}
-                      onClick={executeAutoLoop}
+                      onClick={() => executeAutoLoop(1)}
                       disabled={
                         calculateBatchOrders().length === 0 ||
                         !status?.trading_allowed ||
@@ -4381,9 +4851,11 @@ const OptionsPanel = () => {
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                       {Object.entries(autoLoopProgress).map(([symbol, progress]) => {
+                        // Symbol format: P-BTC-86000-300126 or C-BTC-91500-300126
                         const strikeInfo = symbol.split('-');
-                        const strike = strikeInfo[2] || symbol;
-                        const optType = strikeInfo[3]?.charAt(0) || '';
+                        const optType = strikeInfo[0] || '';  // 'P' or 'C'
+                        const strike = strikeInfo[2] || symbol;  // Strike price like 86000
+                        const expiry = strikeInfo[3] || '';  // Expiry like 300126
                         const statusIcon = progress.status === 'filled' ? '✅' : progress.status === 'pending' ? '⏳' : '📤';
                         const statusText = progress.status === 'filled' ? 'Filled' : progress.status === 'pending' ? 'Waiting...' : 'Placing...';
                         
@@ -4437,24 +4909,36 @@ const OptionsPanel = () => {
                 </Box>
               )}
 
-              {/* Auto-Loop Error/Completion Display */}
+              {/* Auto-Loop Error/Warning/Recovery Display */}
               {autoLoopError && (
                 <Box sx={{ mt: 2 }}>
                   <Alert 
-                    severity={autoLoopError.includes('Stopped by user') || autoLoopError.includes('completed') ? 'warning' : 'error'}
-                    onClose={() => setAutoLoopError(null)}
+                    severity={autoLoopError.includes('Stopped by user') ? 'info' : autoLoopError.includes('⚠️') ? 'warning' : 'error'}
+                    onClose={clearAutoLoopError}
+                    action={
+                      autoLoopError.includes('⚠️') ? (
+                        <Button color="inherit" size="small" onClick={clearAutoLoopError} sx={{ fontWeight: 'bold' }}>
+                          DISMISS
+                        </Button>
+                      ) : null
+                    }
                     sx={{ 
                       fontSize: '0.875rem',
                       '& .MuiAlert-message': { fontWeight: 500 },
                     }}
                   >
                     {autoLoopError}
+                    {autoLoopError.includes('⚠️') && (
+                      <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.8 }}>
+                        Check Delta Exchange → Orders to see if any orders are still pending/open.
+                      </Typography>
+                    )}
                   </Alert>
                 </Box>
               )}
 
               {/* Auto-Loop Info Panel - Show when enabled but not running */}
-              {autoLoopEnabled && !autoLoopRunning && calculateBatchOrders().length > 0 && (
+              {autoLoopEnabled && !autoLoopRunning && !anyExpiryLoopRunning && calculateBatchOrders().length > 0 && (
                 <Box sx={{ 
                   mt: 2, 
                   p: 2, 
@@ -4462,81 +4946,205 @@ const OptionsPanel = () => {
                   borderRadius: '10px',
                   border: '1px dashed rgba(251, 191, 36, 0.4)',
                 }}>
-                  <Typography variant="subtitle2" sx={{ color: '#fbbf24', fontWeight: 'bold', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    📋 Auto-Loop Execution Plan
-                  </Typography>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#fbbf24', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      📋 Auto-Loop Execution Plan {selectedExpiriesForLoop.length > 1 ? `(${selectedExpiriesForLoop.length} expiries)` : ''}
+                    </Typography>
+                    {selectedExpiriesForLoop.length > 1 && (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={startAllExpiryLoops}
+                        disabled={!status?.trading_allowed}
+                        sx={{ 
+                          bgcolor: 'rgba(251, 191, 36, 0.9)', 
+                          color: '#000',
+                          fontWeight: 'bold',
+                          '&:hover': { bgcolor: 'rgba(251, 191, 36, 1)' }
+                        }}
+                      >
+                        🚀 Start ALL Expiries
+                      </Button>
+                    )}
+                  </Box>
                   
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mb: 2 }}>
-                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Per Round</Typography>
-                      <Typography variant="h6" sx={{ color: '#e2e8f0', fontWeight: 'bold' }}>
-                        {calculateBatchOrders().length} orders
-                      </Typography>
-                    </Box>
-                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Total Rounds</Typography>
-                      <Typography variant="h6" sx={{ color: '#fbbf24', fontWeight: 'bold' }}>
-                        {autoLoopRounds} rounds
-                      </Typography>
-                    </Box>
-                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Total Orders</Typography>
-                      <Typography variant="h6" sx={{ color: '#10b981', fontWeight: 'bold' }}>
-                        {calculateBatchOrders().length * autoLoopRounds} orders
-                      </Typography>
-                    </Box>
-                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
-                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Execution</Typography>
-                      <Typography variant="body2" sx={{ color: '#60a5fa', fontWeight: 'bold' }}>
-                        {executionMode === 'immediate' ? '🚀 Market (Instant)' : '🧠 Smart (Limit @ Mid)'}
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Box sx={{ 
-                    p: 1.5, 
-                    bgcolor: 'rgba(59, 130, 246, 0.1)', 
-                    borderRadius: '8px',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                  }}>
-                    <Typography variant="caption" sx={{ color: '#60a5fa', fontWeight: 500 }}>
-                      🔄 How it works:
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.9)', display: 'block', mt: 0.5, lineHeight: 1.6 }}>
-                      1️⃣ Place all {calculateBatchOrders().length} orders at mid-price (limit orders)<br/>
-                      2️⃣ Wait indefinitely until ALL orders are filled<br/>
-                      3️⃣ Once all filled → automatically place next batch<br/>
-                      4️⃣ Repeat until all {autoLoopRounds} rounds complete<br/>
-                      ⚠️ Press STOP anytime to halt the loop
-                    </Typography>
-                  </Box>
-
-                  {/* Order breakdown */}
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block', mb: 1 }}>
-                      📊 Orders per round breakdown:
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                      {calculateBatchOrders().map((order, idx) => {
-                        const strikeInfo = order.symbol.split('-');
-                        const strike = strikeInfo[2] || order.symbol;
+                  {/* Per-Expiry Loop Controls - Always show per-expiry mode for multi-expiry support */}
+                  {selectedExpiriesForLoop.length >= 1 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                      {selectedExpiriesForLoop.map(expiry => {
+                        const expiryOrders = calculateBatchOrders(expiry);
+                        const loopState = expiryLoopState[expiry] || {};
+                        const isRunning = loopState.running;
+                        const hasError = loopState.error;
+                        
                         return (
-                          <Chip
-                            key={idx}
-                            size="small"
-                            label={`${order.side === 'buy' ? '🟢' : '🔴'} ${order.optionType === 'Call' ? 'C' : 'P'}${strike} ×${order.size}`}
-                            sx={{
-                              bgcolor: order.side === 'buy' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                              border: `1px solid ${order.side === 'buy' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
-                              color: order.side === 'buy' ? '#10b981' : '#ef4444',
-                              fontWeight: 600,
-                              fontSize: '0.7rem',
-                            }}
-                          />
+                          <Box key={expiry} sx={{ 
+                            p: 1.5, 
+                            bgcolor: isRunning ? 'rgba(251, 191, 36, 0.15)' : 'rgba(0,0,0,0.2)', 
+                            borderRadius: '8px',
+                            border: isRunning ? '2px solid rgba(251, 191, 36, 0.5)' : hasError ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid transparent',
+                          }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                <Typography variant="body2" fontWeight="bold" sx={{ color: '#fbbf24', minWidth: 70 }}>
+                                  {expiry}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.8)' }}>
+                                  {expiryOrders.length} orders × {autoLoopRounds} rounds
+                                </Typography>
+                                {loopState.completed && (
+                                  <Chip label="✅ Done" size="small" sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#10b981', fontWeight: 'bold' }} />
+                                )}
+                              </Box>
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                {isRunning ? (
+                                  <>
+                                    <Chip
+                                      size="small"
+                                      icon={<CircularProgress size={12} sx={{ color: '#fbbf24' }} />}
+                                      label={`R${loopState.currentRound}/${loopState.totalRounds}`}
+                                      sx={{ bgcolor: 'rgba(251, 191, 36, 0.25)', color: '#fbbf24', fontWeight: 'bold' }}
+                                    />
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      color="error"
+                                      onClick={() => stopExpiryAutoLoop(expiry)}
+                                      sx={{ minWidth: 60, fontSize: '0.7rem' }}
+                                    >
+                                      Stop
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    onClick={() => executeExpiryAutoLoop(expiry)}
+                                    disabled={expiryOrders.length === 0 || !status?.trading_allowed}
+                                    sx={{ 
+                                      minWidth: 80, 
+                                      bgcolor: 'rgba(16, 185, 129, 0.8)',
+                                      '&:hover': { bgcolor: 'rgba(16, 185, 129, 1)' },
+                                      fontWeight: 'bold',
+                                      fontSize: '0.75rem',
+                                    }}
+                                  >
+                                    ▶ Start
+                                  </Button>
+                                )}
+                              </Box>
+                            </Box>
+                            {hasError && (
+                              <Alert 
+                                severity="error" 
+                                onClose={() => clearExpiryLoopError(expiry)}
+                                sx={{ mt: 1, py: 0, fontSize: '0.75rem' }}
+                              >
+                                {hasError}
+                              </Alert>
+                            )}
+                            {/* Per-expiry progress */}
+                            {isRunning && Object.keys(loopState.progress || {}).length > 0 && (
+                              <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {Object.entries(loopState.progress).map(([symbol, progress]) => {
+                                  const strike = symbol.split('-')[2] || symbol;
+                                  const optType = symbol.startsWith('C-') ? 'C' : 'P';
+                                  return (
+                                    <Chip
+                                      key={symbol}
+                                      size="small"
+                                      label={`${progress.filled ? '✅' : '⏳'} ${optType}${strike}`}
+                                      sx={{
+                                        bgcolor: progress.filled ? 'rgba(16,185,129,0.2)' : 'rgba(251,191,36,0.2)',
+                                        color: progress.filled ? '#10b981' : '#fbbf24',
+                                        fontSize: '0.65rem',
+                                        height: 20,
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </Box>
+                            )}
+                          </Box>
                         );
                       })}
                     </Box>
-                  </Box>
+                  ) : (
+                    /* Single expiry - show original summary view */
+                    <>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mb: 2 }}>
+                        <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Per Round</Typography>
+                          <Typography variant="h6" sx={{ color: '#e2e8f0', fontWeight: 'bold' }}>
+                            {calculateBatchOrders().length} orders
+                          </Typography>
+                        </Box>
+                        <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Total Rounds</Typography>
+                          <Typography variant="h6" sx={{ color: '#fbbf24', fontWeight: 'bold' }}>
+                            {autoLoopRounds} rounds
+                          </Typography>
+                        </Box>
+                        <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Total Orders</Typography>
+                          <Typography variant="h6" sx={{ color: '#10b981', fontWeight: 'bold' }}>
+                            {calculateBatchOrders().length * autoLoopRounds} orders
+                          </Typography>
+                        </Box>
+                        <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                          <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Execution</Typography>
+                          <Typography variant="body2" sx={{ color: '#60a5fa', fontWeight: 'bold' }}>
+                            {executionMode === 'immediate' ? '🚀 Market (Instant)' : '🧠 Smart (Limit @ Mid)'}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      <Box sx={{ 
+                        p: 1.5, 
+                        bgcolor: 'rgba(59, 130, 246, 0.1)', 
+                        borderRadius: '8px',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                      }}>
+                        <Typography variant="caption" sx={{ color: '#60a5fa', fontWeight: 500 }}>
+                          🔄 How it works:
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.9)', display: 'block', mt: 0.5, lineHeight: 1.6 }}>
+                          1️⃣ Place all {calculateBatchOrders().length} orders at mid-price (limit orders)<br/>
+                          2️⃣ Wait indefinitely until ALL orders are filled<br/>
+                          3️⃣ Once all filled → automatically place next batch<br/>
+                          4️⃣ Repeat until all {autoLoopRounds} rounds complete<br/>
+                          ⚠️ Press STOP anytime to halt the loop
+                        </Typography>
+                      </Box>
+
+                      {/* Order breakdown */}
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block', mb: 1 }}>
+                          📊 Orders per round breakdown:
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                          {calculateBatchOrders().map((order, idx) => {
+                            const strikeInfo = order.symbol.split('-');
+                            const strike = strikeInfo[2] || order.symbol;
+                            return (
+                              <Chip
+                                key={idx}
+                                size="small"
+                                label={`${order.side === 'buy' ? '🟢' : '🔴'} ${order.optionType === 'Call' ? 'C' : 'P'}${strike} ×${order.size}`}
+                                sx={{
+                                  bgcolor: order.side === 'buy' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                  border: `1px solid ${order.side === 'buy' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                                  color: order.side === 'buy' ? '#10b981' : '#ef4444',
+                                  fontWeight: 600,
+                                  fontSize: '0.7rem',
+                                }}
+                              />
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    </>
+                  )}
                 </Box>
               )}
 
