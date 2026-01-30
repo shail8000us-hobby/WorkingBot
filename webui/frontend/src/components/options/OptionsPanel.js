@@ -2175,7 +2175,7 @@ const OptionsPanel = () => {
 
     const orders = calculateBatchOrders();
     if (orders.length === 0) {
-      setAutoLoopError('No orders to execute. Enter quantities in Batch Qty column.');
+      setAutoLoopError('No orders to execute. Select positions and set quantities.');
       return;
     }
 
@@ -2210,7 +2210,7 @@ const OptionsPanel = () => {
         // Reset progress for this round
         const roundProgress = {};
         orders.forEach(order => {
-          roundProgress[order.symbol] = { filled: false, orderId: null, size: order.size };
+          roundProgress[order.symbol] = { filled: false, orderId: null, size: order.size, status: 'placing' };
         });
         setAutoLoopProgress(roundProgress);
 
@@ -2232,82 +2232,122 @@ const OptionsPanel = () => {
         const placedOrders = response.data.results || [];
         console.log(`[AUTO-LOOP] Placed ${placedOrders.length} orders:`, placedOrders);
 
-        // Update progress with order IDs
-        const updatedProgress = { ...roundProgress };
-        placedOrders.forEach(result => {
-          if (result.success && result.order_id) {
-            updatedProgress[result.symbol] = {
-              filled: false,
-              orderId: result.order_id,
-              size: result.size,
-            };
-          }
-        });
-        setAutoLoopProgress(updatedProgress);
-
         // Check if any orders failed to place
         const failedPlacements = placedOrders.filter(r => !r.success);
         if (failedPlacements.length > 0) {
-          const errorMsg = `Round ${round}: Failed to place ${failedPlacements.length} order(s): ${failedPlacements.map(f => `${f.symbol} - ${f.message}`).join(', ')}`;
+          const errorMsg = `Round ${round}: Failed to place ${failedPlacements.length} order(s): ${failedPlacements.map(f => `${f.symbol} - ${f.error || f.message}`).join(', ')}`;
           throw new Error(errorMsg);
         }
 
-        // Step 2: Poll for fills - wait indefinitely until all orders are filled
-        console.log(`[AUTO-LOOP] Waiting for all ${placedOrders.length} orders to fill...`);
+        // Check which orders were filled immediately vs pending
+        // Orders filled via 'market' or 'limit_filled' execution types are already done
+        const filledImmediately = [];
+        const pendingOrders = [];
         
-        const orderIds = placedOrders.map(r => r.order_id);
-        let allFilled = false;
-        let pollCount = 0;
-
-        while (!allFilled && !autoLoopStopRef.current) {
-          pollCount++;
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
-
-          // Fetch order status
-          const statusResponse = await api.post('/api/options/batch_order_status', {
-            order_ids: orderIds,
-          });
-
-          if (!statusResponse.data.success) {
-            console.warn('[AUTO-LOOP] Failed to fetch order status, retrying...');
-            continue;
+        placedOrders.forEach(result => {
+          if (result.success) {
+            const executionType = result.execution_type || '';
+            const isFilledType = ['market', 'market_fallback', 'market_fallback_no_quotes', 
+                                   'market_fallback_error', 'limit_filled', 'limit_filled_late'].includes(executionType);
+            
+            if (isFilledType || !result.order_id) {
+              // Order was filled immediately
+              filledImmediately.push(result);
+            } else {
+              // Order is pending (limit order placed, waiting for fill)
+              pendingOrders.push(result);
+            }
           }
+        });
 
-          const orderStatuses = statusResponse.data.orders || [];
+        console.log(`[AUTO-LOOP] Round ${round}: ${filledImmediately.length} filled immediately, ${pendingOrders.length} pending`);
+
+        // Update progress with filled orders
+        const updatedProgress = { ...roundProgress };
+        filledImmediately.forEach(result => {
+          updatedProgress[result.symbol] = {
+            filled: true,
+            orderId: result.order_id,
+            size: result.size,
+            fillPrice: result.fill_price,
+            status: 'filled',
+          };
+        });
+        pendingOrders.forEach(result => {
+          updatedProgress[result.symbol] = {
+            filled: false,
+            orderId: result.order_id,
+            size: result.size,
+            status: 'pending',
+          };
+        });
+        setAutoLoopProgress(updatedProgress);
+
+        // Step 2: Poll for pending orders if any
+        if (pendingOrders.length > 0) {
+          console.log(`[AUTO-LOOP] Waiting for ${pendingOrders.length} pending orders to fill...`);
           
-          // Update progress
-          const progressUpdate = { ...updatedProgress };
-          orderStatuses.forEach(status => {
-            const matchingOrder = placedOrders.find(o => o.order_id === status.order_id);
-            if (matchingOrder) {
-              const isFilled = status.state === 'filled';
-              progressUpdate[matchingOrder.symbol] = {
-                filled: isFilled,
-                orderId: status.order_id,
-                size: status.size,
-                fillPrice: status.fill_price,
-              };
-            }
-          });
-          setAutoLoopProgress(progressUpdate);
+          const orderIds = pendingOrders.map(r => r.order_id).filter(id => id);
+          let allFilled = false;
+          let pollCount = 0;
 
-          // Check if all orders are filled
-          const filledCount = Object.values(progressUpdate).filter(p => p.filled).length;
-          allFilled = filledCount === orders.length;
+          while (!allFilled && !autoLoopStopRef.current) {
+            pollCount++;
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
 
-          console.log(`[AUTO-LOOP] Round ${round} - Poll ${pollCount}: ${filledCount}/${orders.length} filled`);
+            // Fetch order status
+            try {
+              const statusResponse = await api.post('/api/options/batch_order_status', {
+                order_ids: orderIds,
+              });
 
-          if (allFilled) {
-            console.log(`[AUTO-LOOP] Round ${round} complete - all orders filled`);
-            
-            // Play sound for round completion
-            soundManager.playTradeFilled();
-            
-            // Small delay before next round
-            if (round < autoLoopRounds) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              if (!statusResponse.data.success) {
+                console.warn('[AUTO-LOOP] Failed to fetch order status, retrying...', statusResponse.data.error);
+                continue;
+              }
+
+              const orderStatuses = statusResponse.data.orders || [];
+              
+              // Update progress
+              const progressUpdate = { ...updatedProgress };
+              orderStatuses.forEach(status => {
+                const matchingOrder = pendingOrders.find(o => o.order_id === status.order_id);
+                if (matchingOrder) {
+                  const isFilled = status.state === 'filled';
+                  const isCancelled = status.state === 'cancelled';
+                  const isRejected = status.state === 'rejected';
+                  
+                  if (isCancelled || isRejected) {
+                    throw new Error(`Order ${matchingOrder.symbol} was ${status.state}`);
+                  }
+                  
+                  progressUpdate[matchingOrder.symbol] = {
+                    filled: isFilled,
+                    orderId: status.order_id,
+                    size: status.size,
+                    fillPrice: status.fill_price,
+                    status: isFilled ? 'filled' : 'pending',
+                  };
+                }
+              });
+              setAutoLoopProgress(progressUpdate);
+
+              // Check if all orders are filled
+              const filledCount = Object.values(progressUpdate).filter(p => p.filled).length;
+              allFilled = filledCount === orders.length;
+
+              console.log(`[AUTO-LOOP] Round ${round} - Poll ${pollCount}: ${filledCount}/${orders.length} filled`);
+
+            } catch (pollError) {
+              console.error('[AUTO-LOOP] Poll error:', pollError);
+              if (pollError.message.includes('cancelled') || pollError.message.includes('rejected')) {
+                throw pollError;
+              }
+              // Continue polling on other errors
             }
           }
+        } else {
+          console.log(`[AUTO-LOOP] Round ${round} - All ${filledImmediately.length} orders filled immediately`);
         }
 
         // Check if stopped during polling
@@ -2315,6 +2355,25 @@ const OptionsPanel = () => {
           console.log('[AUTO-LOOP] Stopped during polling');
           setAutoLoopError(`Stopped by user at round ${round}/${autoLoopRounds}`);
           break;
+        }
+
+        // All orders in this round are filled
+        console.log(`[AUTO-LOOP] Round ${round} complete - all orders filled`);
+        
+        // Play sound for round completion
+        soundManager.playTradeFilled();
+        
+        // Update progress to show all filled
+        const finalProgress = {};
+        orders.forEach(order => {
+          finalProgress[order.symbol] = { filled: true, status: 'filled', size: order.size };
+        });
+        setAutoLoopProgress(finalProgress);
+        
+        // Small delay before next round
+        if (round < autoLoopRounds) {
+          console.log(`[AUTO-LOOP] Waiting 1s before next round...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
