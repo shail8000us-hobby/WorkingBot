@@ -760,6 +760,19 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                         print(f"[SSR THREAD] Invalid quotes (bid or ask is 0), skipping...")
                         continue
                     
+                    # Check if our order IS the best ask/bid (avoid chasing ourselves!)
+                    our_price_is_best = False
+                    if side == 'sell' and abs(current_price - new_best_ask) < new_tick:
+                        our_price_is_best = True
+                        print(f"[SSR THREAD] Our order IS the best ask (${current_price} ≈ ${new_best_ask}) - no adjustment needed")
+                    elif side == 'buy' and abs(current_price - new_best_bid) < new_tick:
+                        our_price_is_best = True
+                        print(f"[SSR THREAD] Our order IS the best bid (${current_price} ≈ ${new_best_bid}) - no adjustment needed")
+                    
+                    if our_price_is_best:
+                        print(f"[SSR THREAD] Skipping - already at front of queue")
+                        continue
+                    
                     # Calculate new competitive price
                     if side == 'sell':
                         new_target = new_best_ask - (tick_offset * new_tick)
