@@ -130,6 +130,7 @@ const SymbolPortfolio = React.lazy(() => import('./components/SymbolPortfolio'))
 const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDashboard'));
 const ZeroDTEDashboard = React.lazy(() => import('./components/zero_dte/ZeroDTEDashboard'));
 const MVStraddlePanel = React.lazy(() => import('./components/mvStraddle/MVStraddlePanel'));
+const ExperimentalPanel = React.lazy(() => import('./components/ExperimentalPanel'));
 
 // Preload function to eagerly load all lazy components
 const preloadAllComponents = () => {
@@ -613,6 +614,12 @@ function App() {
         icon: Zap,
         description: '0DTE options - autonomous strangle with premium balancing',
       },
+      {
+        id: 'experimental',
+        label: '🧪 Experimental',
+        icon: Code,
+        description: 'Experimental features - Auto-Delta Hedging, Kelly Criterion, research tools',
+      },
     ],
     [openPositions, pendingOrders]
   );
@@ -722,6 +729,16 @@ function App() {
       <div className="grid gap-6">
         <EnhancedErrorBoundary componentName="ZeroDTEDashboard">
           <ZeroDTEDashboard />
+        </EnhancedErrorBoundary>
+      </div>
+    </Suspense>
+  ), []);
+
+  const renderExperimental = useMemo(() => (
+    <Suspense fallback={<PanelSkeleton type="dashboard" />}>
+      <div className="grid gap-6">
+        <EnhancedErrorBoundary componentName="ExperimentalPanel">
+          <ExperimentalPanel />
         </EnhancedErrorBoundary>
       </div>
     </Suspense>
@@ -1479,6 +1496,8 @@ function App() {
     ) : null,
     // 0DTE Autonomous Trading
     zero_dte: renderZeroDTE,
+    // Experimental Features
+    experimental: renderExperimental,
   };
 
   const activeContent = sectionContent[activeSection] || renderDashboard();

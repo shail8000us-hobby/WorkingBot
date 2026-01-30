@@ -284,6 +284,15 @@ except Exception as e:
     print(f"⚠️ Could not register Kelly blueprint: {e}")
     log.warning(f"Kelly routes not available: {e}")
 
+# Register Experimental Features (JAN 2026: Auto-Delta Hedging, experimental algos)
+try:
+    from webui.backend.routes.experimental import experimental_bp
+    app.register_blueprint(experimental_bp)
+    print(f"✅ Registered Experimental blueprint (auto-delta hedging, Greeks)")
+except Exception as e:
+    print(f"⚠️ Could not register Experimental blueprint: {e}")
+    log.warning(f"Experimental routes not available: {e}")
+
 # Register Options Chain blueprint (JAN 2026: Options chain market data - ISOLATED MODULE)
 try:
     from webui.backend.options_chain import options_chain_bp

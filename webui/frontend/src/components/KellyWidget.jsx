@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import './KellyWidget.css';
 
-export function KellyWidget() {
+const KellyWidget = () => {
     const [kellyData, setKellyData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedStrategy, setSelectedStrategy] = useState('iron_condor');
@@ -141,4 +141,6 @@ export function KellyWidget() {
             </div>
         </div>
     );
-}
+};
+
+export default KellyWidget;
