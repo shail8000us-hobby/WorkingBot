@@ -426,7 +426,34 @@ const OptionsPanel = () => {
     } catch { return 10; }
   });
   // Per-expiry loop state: { [expiryCode]: { running, currentRound, progress, error, stopRef } }
-  const [expiryLoopState, setExpiryLoopState] = useState({});
+  // Persisted to localStorage for recovery across page refreshes
+  const [expiryLoopState, setExpiryLoopState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('expiryLoopState');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // On load, mark any "running" loops as interrupted (since they couldn't have survived the refresh)
+        const restored = {};
+        for (const [expiry, state] of Object.entries(parsed)) {
+          if (state.running) {
+            // Loop was running when page was refreshed - mark as interrupted
+            restored[expiry] = {
+              ...state,
+              running: false,
+              error: `⚠️ Loop interrupted at round ${state.currentRound}/${state.totalRounds}. Page was refreshed.`,
+              interrupted: true,
+              interruptedAt: Date.now(),
+            };
+          } else {
+            // Preserve completed/errored states for user reference
+            restored[expiry] = state;
+          }
+        }
+        return restored;
+      }
+      return {};
+    } catch { return {}; }
+  });
   // Legacy single-loop state (kept for backward compatibility)
   const [autoLoopRunning, setAutoLoopRunning] = useState(false);
   const [autoLoopCurrentRound, setAutoLoopCurrentRound] = useState(0);
@@ -533,6 +560,13 @@ const OptionsPanel = () => {
   useEffect(() => {
     localStorage.setItem('autoLoopRounds', autoLoopRounds.toString());
   }, [autoLoopRounds]);
+
+  // Save per-expiry loop state to localStorage for recovery
+  useEffect(() => {
+    if (Object.keys(expiryLoopState).length > 0) {
+      localStorage.setItem('expiryLoopState', JSON.stringify(expiryLoopState));
+    }
+  }, [expiryLoopState]);
 
   // Save auto-loop run state for recovery
   useEffect(() => {
@@ -2503,10 +2537,11 @@ const OptionsPanel = () => {
     console.log('[AUTO-LOOP] Stop requested');
   };
 
-  // Clear auto-loop error/warning
+  // Clear auto-loop error/warning and persisted state
   const clearAutoLoopError = () => {
     setAutoLoopError(null);
     setAutoLoopLastRun(null);
+    localStorage.removeItem('autoLoopLastRun');
   };
 
   // ==================== PER-EXPIRY AUTO-LOOP ====================
@@ -2786,12 +2821,41 @@ const OptionsPanel = () => {
     });
   };
 
-  // Clear expiry loop error
+  // Clear expiry loop error and interrupted state
   const clearExpiryLoopError = (expiryCode) => {
-    setExpiryLoopState(prev => ({
-      ...prev,
-      [expiryCode]: { ...prev[expiryCode], error: null }
-    }));
+    setExpiryLoopState(prev => {
+      const updated = { ...prev };
+      if (updated[expiryCode]) {
+        // Clear error and interrupted flags
+        updated[expiryCode] = { 
+          ...updated[expiryCode], 
+          error: null, 
+          interrupted: false,
+          interruptedAt: null 
+        };
+        // If the loop is not running and has no useful state, remove it entirely
+        if (!updated[expiryCode].running && !updated[expiryCode].completed) {
+          delete updated[expiryCode];
+        }
+      }
+      // Also update localStorage to reflect the cleared state
+      if (Object.keys(updated).length > 0) {
+        localStorage.setItem('expiryLoopState', JSON.stringify(updated));
+      } else {
+        localStorage.removeItem('expiryLoopState');
+      }
+      return updated;
+    });
+  };
+
+  // Clear all persisted loop state (useful for cleanup)
+  const clearAllLoopState = () => {
+    setExpiryLoopState({});
+    localStorage.removeItem('expiryLoopState');
+    localStorage.removeItem('autoLoopLastRun');
+    setAutoLoopError(null);
+    setAutoLoopLastRun(null);
+    console.log('[AUTO-LOOP] Cleared all persisted loop state');
   };
 
   // ==================== END PER-EXPIRY AUTO-LOOP ====================
