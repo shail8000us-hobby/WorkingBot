@@ -4187,21 +4187,41 @@ const OptionsPanel = () => {
                 </Box>
 
                 {/* Right: Execute Button and Auto-Loop Controls */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {/* Auto-Loop Toggle and Rounds Input */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Tooltip title="Enable auto-loop to execute batch orders multiple times. Bot will wait for all orders to fill before placing the next batch.">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  {/* Auto-Loop Toggle with Label */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 0.5,
+                    px: 1.5,
+                    py: 0.5,
+                    borderRadius: '8px',
+                    bgcolor: autoLoopEnabled ? 'rgba(251, 191, 36, 0.15)' : 'transparent',
+                    border: autoLoopEnabled ? '1px solid rgba(251, 191, 36, 0.4)' : '1px solid transparent',
+                  }}>
+                    <Tooltip title="Enable Auto-Loop: Bot places batch orders → waits for ALL fills → repeats. Perfect for low-liquidity options where you can't punch large quantities at once.">
                       <Checkbox
                         checked={autoLoopEnabled}
                         onChange={(e) => setAutoLoopEnabled(e.target.checked)}
                         size="small"
                         disabled={autoLoopRunning}
                         sx={{
-                          color: 'rgba(251, 191, 36, 0.8)',
+                          color: 'rgba(251, 191, 36, 0.6)',
                           '&.Mui-checked': { color: 'rgba(251, 191, 36, 1)' },
+                          p: 0.5,
                         }}
                       />
                     </Tooltip>
+                    <Typography 
+                      variant="caption" 
+                      sx={{ 
+                        color: autoLoopEnabled ? '#fbbf24' : 'rgba(148, 163, 184, 0.8)',
+                        fontWeight: autoLoopEnabled ? 600 : 400,
+                        mr: 0.5,
+                      }}
+                    >
+                      🔁 Auto-Loop
+                    </Typography>
                     {autoLoopEnabled && (
                       <>
                         <TextField
@@ -4210,13 +4230,17 @@ const OptionsPanel = () => {
                           onChange={(e) => setAutoLoopRounds(Math.max(1, parseInt(e.target.value) || 1))}
                           size="small"
                           disabled={autoLoopRunning}
-                          inputProps={{ min: 1, max: 1000 }}
+                          inputProps={{ min: 1, max: 1000, style: { textAlign: 'center' } }}
                           sx={{
-                            width: 80,
-                            '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem' },
+                            width: 60,
+                            '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem', fontWeight: 'bold' },
+                            '& .MuiOutlinedInput-root': {
+                              bgcolor: 'rgba(0,0,0,0.3)',
+                              '& fieldset': { borderColor: 'rgba(251, 191, 36, 0.4)' },
+                            },
                           }}
                         />
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 500 }}>
                           rounds
                         </Typography>
                       </>
@@ -4230,14 +4254,21 @@ const OptionsPanel = () => {
                       color="error"
                       startIcon={<BlockIcon />}
                       onClick={stopAutoLoop}
-                      sx={{ minWidth: 150 }}
+                      sx={{ 
+                        minWidth: 160,
+                        fontWeight: 'bold',
+                        animation: 'pulse 1.5s infinite',
+                        '@keyframes pulse': {
+                          '0%, 100%': { opacity: 1 },
+                          '50%': { opacity: 0.7 },
+                        },
+                      }}
                     >
-                      STOP Auto-Loop
+                      🛑 STOP Loop
                     </Button>
                   ) : autoLoopEnabled ? (
                     <Button
                       variant="contained"
-                      color="warning"
                       startIcon={<PlayArrowIcon />}
                       onClick={executeAutoLoop}
                       disabled={
@@ -4246,9 +4277,16 @@ const OptionsPanel = () => {
                         !autoLoopRounds ||
                         autoLoopRounds < 1
                       }
-                      sx={{ minWidth: 150 }}
+                      sx={{ 
+                        minWidth: 180,
+                        fontWeight: 'bold',
+                        bgcolor: 'rgba(251, 191, 36, 0.9)',
+                        color: '#000',
+                        '&:hover': { bgcolor: 'rgba(251, 191, 36, 1)' },
+                        '&:disabled': { bgcolor: 'rgba(100, 100, 100, 0.3)', color: 'rgba(150,150,150,0.5)' },
+                      }}
                     >
-                      Auto-Loop {autoLoopRounds}x
+                      🚀 Start Auto-Loop
                     </Button>
                   ) : (
                     <Button
@@ -4267,7 +4305,7 @@ const OptionsPanel = () => {
                         calculateBatchOrders().length === 0 ||
                         !status?.trading_allowed
                       }
-                      sx={{ minWidth: 150 }}
+                      sx={{ minWidth: 160, fontWeight: 'bold' }}
                     >
                       {batchExecuting
                         ? 'Executing...'
@@ -4277,46 +4315,227 @@ const OptionsPanel = () => {
                 </Box>
               </Box>
 
-              {/* Auto-Loop Progress Display */}
+              {/* Auto-Loop Progress Display - Enhanced */}
               {autoLoopRunning && (
-                <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(251, 191, 36, 0.3)' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                    <CircularProgress size={20} sx={{ color: 'rgba(251, 191, 36, 1)' }} />
-                    <Typography variant="body2" fontWeight="bold" color="warning.main">
-                      Auto-Loop Running: Round {autoLoopCurrentRound}/{autoLoopRounds}
-                    </Typography>
+                <Box sx={{ 
+                  mt: 2, 
+                  pt: 2, 
+                  borderTop: '2px solid rgba(251, 191, 36, 0.4)',
+                  bgcolor: 'rgba(251, 191, 36, 0.05)',
+                  borderRadius: '0 0 12px 12px',
+                  mx: -2,
+                  px: 2,
+                  pb: 2,
+                }}>
+                  {/* Header with round counter and progress bar */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <CircularProgress size={24} thickness={5} sx={{ color: '#fbbf24' }} />
+                      <Box>
+                        <Typography variant="body1" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                          🔁 Auto-Loop Active
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(251, 191, 36, 0.7)' }}>
+                          Placing orders with Smart execution (Limit @ Mid-Price)
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="h6" fontWeight="bold" sx={{ color: '#fbbf24' }}>
+                        Round {autoLoopCurrentRound} / {autoLoopRounds}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.8)' }}>
+                        {autoLoopRounds - autoLoopCurrentRound} rounds remaining
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-                    {Object.entries(autoLoopProgress).map(([symbol, progress]) => (
-                      <Chip
-                        key={symbol}
-                        size="small"
-                        icon={progress.filled ? <CheckCircleIcon /> : <CircularProgress size={12} />}
-                        label={`${symbol.split('-')[2]} ${progress.filled ? '✅ Filled' : '⏳ Waiting'}`}
-                        sx={{
-                          bgcolor: progress.filled
-                            ? 'rgba(16, 185, 129, 0.2)'
-                            : 'rgba(251, 191, 36, 0.2)',
-                          color: progress.filled ? '#10b981' : '#fbbf24',
-                          fontWeight: 'bold',
-                          fontSize: '0.7rem',
-                        }}
-                      />
-                    ))}
+
+                  {/* Progress bar */}
+                  <Box sx={{ 
+                    width: '100%', 
+                    height: 8, 
+                    bgcolor: 'rgba(0,0,0,0.3)', 
+                    borderRadius: 4, 
+                    overflow: 'hidden',
+                    mb: 2,
+                  }}>
+                    <Box sx={{ 
+                      width: `${(autoLoopCurrentRound / autoLoopRounds) * 100}%`, 
+                      height: '100%', 
+                      bgcolor: '#fbbf24',
+                      borderRadius: 4,
+                      transition: 'width 0.5s ease',
+                    }} />
+                  </Box>
+
+                  {/* Current round status */}
+                  <Box sx={{ 
+                    p: 1.5, 
+                    bgcolor: 'rgba(0,0,0,0.2)', 
+                    borderRadius: '8px',
+                    border: '1px solid rgba(251, 191, 36, 0.2)',
+                  }}>
+                    <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.8)', display: 'block', mb: 1 }}>
+                      📋 Current Round Order Status:
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {Object.entries(autoLoopProgress).map(([symbol, progress]) => {
+                        const strikeInfo = symbol.split('-');
+                        const strike = strikeInfo[2] || symbol;
+                        const optType = strikeInfo[3]?.charAt(0) || '';
+                        const statusIcon = progress.status === 'filled' ? '✅' : progress.status === 'pending' ? '⏳' : '📤';
+                        const statusText = progress.status === 'filled' ? 'Filled' : progress.status === 'pending' ? 'Waiting...' : 'Placing...';
+                        
+                        return (
+                          <Chip
+                            key={symbol}
+                            size="small"
+                            label={
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <span>{statusIcon}</span>
+                                <span style={{ fontWeight: 'bold' }}>{optType}{strike}</span>
+                                <span style={{ opacity: 0.7 }}>×{progress.size}</span>
+                                <span style={{ fontSize: '0.65rem' }}>{statusText}</span>
+                                {progress.fillPrice && (
+                                  <span style={{ color: '#10b981', fontWeight: 'bold' }}>@{progress.fillPrice}</span>
+                                )}
+                              </Box>
+                            }
+                            sx={{
+                              bgcolor: progress.status === 'filled'
+                                ? 'rgba(16, 185, 129, 0.25)'
+                                : progress.status === 'pending'
+                                  ? 'rgba(251, 191, 36, 0.25)'
+                                  : 'rgba(59, 130, 246, 0.25)',
+                              border: `1px solid ${progress.status === 'filled' ? 'rgba(16, 185, 129, 0.5)' : progress.status === 'pending' ? 'rgba(251, 191, 36, 0.5)' : 'rgba(59, 130, 246, 0.5)'}`,
+                              color: progress.status === 'filled' ? '#10b981' : progress.status === 'pending' ? '#fbbf24' : '#60a5fa',
+                              fontWeight: 500,
+                              fontSize: '0.75rem',
+                              height: 'auto',
+                              py: 0.5,
+                              '& .MuiChip-label': { px: 1 },
+                            }}
+                          />
+                        );
+                      })}
+                    </Box>
+                    {Object.keys(autoLoopProgress).length > 0 && (
+                      <Box sx={{ mt: 1.5, display: 'flex', gap: 2 }}>
+                        <Typography variant="caption" sx={{ color: 'rgba(16, 185, 129, 0.9)' }}>
+                          ✅ Filled: {Object.values(autoLoopProgress).filter(p => p.status === 'filled').length}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(251, 191, 36, 0.9)' }}>
+                          ⏳ Pending: {Object.values(autoLoopProgress).filter(p => p.status === 'pending').length}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(59, 130, 246, 0.9)' }}>
+                          📤 Placing: {Object.values(autoLoopProgress).filter(p => p.status === 'placing').length}
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 </Box>
               )}
 
-              {/* Auto-Loop Error Display */}
+              {/* Auto-Loop Error/Completion Display */}
               {autoLoopError && (
                 <Box sx={{ mt: 2 }}>
                   <Alert 
-                    severity="error" 
+                    severity={autoLoopError.includes('Stopped by user') || autoLoopError.includes('completed') ? 'warning' : 'error'}
                     onClose={() => setAutoLoopError(null)}
-                    sx={{ fontSize: '0.875rem' }}
+                    sx={{ 
+                      fontSize: '0.875rem',
+                      '& .MuiAlert-message': { fontWeight: 500 },
+                    }}
                   >
                     {autoLoopError}
                   </Alert>
+                </Box>
+              )}
+
+              {/* Auto-Loop Info Panel - Show when enabled but not running */}
+              {autoLoopEnabled && !autoLoopRunning && calculateBatchOrders().length > 0 && (
+                <Box sx={{ 
+                  mt: 2, 
+                  p: 2, 
+                  bgcolor: 'rgba(251, 191, 36, 0.08)', 
+                  borderRadius: '10px',
+                  border: '1px dashed rgba(251, 191, 36, 0.4)',
+                }}>
+                  <Typography variant="subtitle2" sx={{ color: '#fbbf24', fontWeight: 'bold', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    📋 Auto-Loop Execution Plan
+                  </Typography>
+                  
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mb: 2 }}>
+                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Per Round</Typography>
+                      <Typography variant="h6" sx={{ color: '#e2e8f0', fontWeight: 'bold' }}>
+                        {calculateBatchOrders().length} orders
+                      </Typography>
+                    </Box>
+                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Total Rounds</Typography>
+                      <Typography variant="h6" sx={{ color: '#fbbf24', fontWeight: 'bold' }}>
+                        {autoLoopRounds} rounds
+                      </Typography>
+                    </Box>
+                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Total Orders</Typography>
+                      <Typography variant="h6" sx={{ color: '#10b981', fontWeight: 'bold' }}>
+                        {calculateBatchOrders().length * autoLoopRounds} orders
+                      </Typography>
+                    </Box>
+                    <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+                      <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block' }}>Execution</Typography>
+                      <Typography variant="body2" sx={{ color: '#60a5fa', fontWeight: 'bold' }}>
+                        {executionMode === 'immediate' ? '🚀 Market (Instant)' : '🧠 Smart (Limit @ Mid)'}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ 
+                    p: 1.5, 
+                    bgcolor: 'rgba(59, 130, 246, 0.1)', 
+                    borderRadius: '8px',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                  }}>
+                    <Typography variant="caption" sx={{ color: '#60a5fa', fontWeight: 500 }}>
+                      🔄 How it works:
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.9)', display: 'block', mt: 0.5, lineHeight: 1.6 }}>
+                      1️⃣ Place all {calculateBatchOrders().length} orders at mid-price (limit orders)<br/>
+                      2️⃣ Wait indefinitely until ALL orders are filled<br/>
+                      3️⃣ Once all filled → automatically place next batch<br/>
+                      4️⃣ Repeat until all {autoLoopRounds} rounds complete<br/>
+                      ⚠️ Press STOP anytime to halt the loop
+                    </Typography>
+                  </Box>
+
+                  {/* Order breakdown */}
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.7)', display: 'block', mb: 1 }}>
+                      📊 Orders per round breakdown:
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                      {calculateBatchOrders().map((order, idx) => {
+                        const strikeInfo = order.symbol.split('-');
+                        const strike = strikeInfo[2] || order.symbol;
+                        return (
+                          <Chip
+                            key={idx}
+                            size="small"
+                            label={`${order.side === 'buy' ? '🟢' : '🔴'} ${order.optionType === 'Call' ? 'C' : 'P'}${strike} ×${order.size}`}
+                            sx={{
+                              bgcolor: order.side === 'buy' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              border: `1px solid ${order.side === 'buy' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                              color: order.side === 'buy' ? '#10b981' : '#ef4444',
+                              fontWeight: 600,
+                              fontSize: '0.7rem',
+                            }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  </Box>
                 </Box>
               )}
 
