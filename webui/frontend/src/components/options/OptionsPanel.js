@@ -453,6 +453,20 @@ const OptionsPanel = () => {
     market_only: { label: 'Market Only (Fastest)', description: 'Immediate fill, higher fees' },
   };
 
+  // Helper function to check if an order execution type means the order was actually filled
+  // This is critical: we only show trade confirmation visuals when orders are EXECUTED, not just PLACED
+  const isOrderFilled = (executionType) => {
+    const filledTypes = [
+      'market',                    // Market order (immediately filled)
+      'market_fallback_no_quotes', // Market order when no quotes (immediately filled)
+      'market_fallback',           // Market order after limit order cancelled (filled)
+      'market_fallback_error',     // Market order as error fallback (filled)
+      'limit_filled',              // Limit order filled
+      'limit_filled_late',         // Limit order filled during cancellation attempt
+    ];
+    return filledTypes.includes(executionType);
+  };
+
   // Save skipConfirmStrikes to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('options_skip_confirm_strikes', JSON.stringify(skipConfirmStrikes));
@@ -1617,16 +1631,22 @@ const OptionsPanel = () => {
 
         console.log(`📦 Saved closed position: ${position.product_symbol} with realized PnL: $${closedPosData.realized_pnl.toFixed(4)}`);
 
-        // Play calming sound when position is closed
-        soundManager.playTradeFilled();
+        // Check if order was actually filled (not just placed)
+        const execType = data.execution_type || 'market'; // Close orders default to market
+        const wasFilled = isOrderFilled(execType);
+
+        // Only play sound and show notification when order is EXECUTED (filled)
+        if (wasFilled) {
+          soundManager.playTradeFilled();
+          // Show visual notification only for filled orders
+          setTradeNotification({
+            symbol: position.product_symbol,
+            side: 'close',
+            size: Math.abs(position.size),
+            price: data.fill_price,
+          });
+        }
         setOrderResult({ type: 'success', message: `Closed ${position.product_symbol}` });
-        // Show visual notification
-        setTradeNotification({
-          symbol: position.product_symbol,
-          side: 'close',
-          size: Math.abs(position.size),
-          price: data.fill_price,
-        });
         fetchPositions();
       } else {
         setOrderResult({ type: 'error', message: data?.error || 'Failed to close position' });
@@ -1658,18 +1678,24 @@ const OptionsPanel = () => {
       if (data?.success) {
         const execType = data.execution_type || 'unknown';
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
-        // Play calming sound for quick order fills
-        soundManager.playTradeFilled();
+        const wasFilled = isOrderFilled(execType);
+
+        // Only play sound and show notification when order is EXECUTED (filled)
+        if (wasFilled) {
+          soundManager.playTradeFilled();
+          // Show visual notification only for filled orders
+          setTradeNotification({
+            symbol: symbol,
+            side: side,
+            size: size,
+            price: data.fill_price,
+          });
+        }
         setOrderResult({
-          type: 'success',
-          message: `⚡ ${side.toUpperCase()} ${size} ${symbol} ${fillPrice} (${execType})`,
-        });
-        // Show visual notification
-        setTradeNotification({
-          symbol: symbol,
-          side: side,
-          size: size,
-          price: data.fill_price,
+          type: wasFilled ? 'success' : 'info',
+          message: wasFilled
+            ? `⚡ ${side.toUpperCase()} ${size} ${symbol} ${fillPrice} (${execType})`
+            : `📋 Order placed: ${side.toUpperCase()} ${size} ${symbol} (${execType})`,
         });
         fetchPositions();
       } else {
@@ -1798,18 +1824,24 @@ const OptionsPanel = () => {
       if (data?.success) {
         const execType = data.execution_type || 'unknown';
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
-        // Play calming sound when order is filled
-        soundManager.playTradeFilled();
+        const wasFilled = isOrderFilled(execType);
+
+        // Only play sound and show notification when order is EXECUTED (filled)
+        if (wasFilled) {
+          soundManager.playTradeFilled();
+          // Show visual notification only for filled orders
+          setTradeNotification({
+            symbol: position.product_symbol,
+            side: side,
+            size: size,
+            price: data.fill_price,
+          });
+        }
         setOrderResult({
-          type: 'success',
-          message: `${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`,
-        });
-        // Show visual notification
-        setTradeNotification({
-          symbol: position.product_symbol,
-          side: side,
-          size: size,
-          price: data.fill_price,
+          type: wasFilled ? 'success' : 'info',
+          message: wasFilled
+            ? `${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`
+            : `📋 Order placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (${execType})`,
         });
         fetchPositions();
       } else {
@@ -2040,20 +2072,17 @@ const OptionsPanel = () => {
 
         setBatchOrderResults(uiResults);
 
-        // Play sound for successful batch
-        if (successful > 0) {
+        // Play sound and show notification only for filled orders
+        // Find first order that was actually EXECUTED (filled), not just placed
+        const firstFilled = results.find(r => r.success && isOrderFilled(r.execution_type));
+        if (firstFilled) {
           soundManager.playTradeFilled();
-
-          // Show notification for first successful order
-          const firstSuccess = results.find(r => r.success);
-          if (firstSuccess) {
-            setTradeNotification({
-              symbol: firstSuccess.symbol,
-              side: firstSuccess.side,
-              size: firstSuccess.size,
-              price: firstSuccess.fill_price,
-            });
-          }
+          setTradeNotification({
+            symbol: firstFilled.symbol,
+            side: firstFilled.side,
+            size: firstFilled.size,
+            price: firstFilled.fill_price,
+          });
         }
 
         // Show summary
