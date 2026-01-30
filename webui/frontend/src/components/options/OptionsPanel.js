@@ -411,6 +411,15 @@ const OptionsPanel = () => {
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
 
+  // Auto-loop execution state
+  const [autoLoopEnabled, setAutoLoopEnabled] = useState(false);
+  const [autoLoopRounds, setAutoLoopRounds] = useState(10); // Default 10 rounds
+  const [autoLoopRunning, setAutoLoopRunning] = useState(false);
+  const [autoLoopCurrentRound, setAutoLoopCurrentRound] = useState(0);
+  const [autoLoopProgress, setAutoLoopProgress] = useState({}); // { symbol: { filled: bool, orderId: string } }
+  const [autoLoopError, setAutoLoopError] = useState(null);
+  const autoLoopStopRef = useRef(false); // Flag to stop the loop
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -2157,6 +2166,188 @@ const OptionsPanel = () => {
     setPendingBatchOrders(null);
   };
 
+  // Auto-loop execution: Execute batch orders multiple times with fill polling
+  const executeAutoLoop = async () => {
+    if (autoLoopRunning) {
+      console.log('⚠️ Auto-loop already running');
+      return;
+    }
+
+    const orders = calculateBatchOrders();
+    if (orders.length === 0) {
+      setAutoLoopError('No orders to execute. Enter quantities in Batch Qty column.');
+      return;
+    }
+
+    if (!autoLoopRounds || autoLoopRounds < 1) {
+      setAutoLoopError('Please set number of rounds (must be >= 1)');
+      return;
+    }
+
+    // Reset state
+    setAutoLoopRunning(true);
+    setAutoLoopCurrentRound(0);
+    setAutoLoopError(null);
+    setAutoLoopProgress({});
+    autoLoopStopRef.current = false;
+
+    console.log(`[AUTO-LOOP] Starting ${autoLoopRounds} rounds with ${orders.length} orders per round`);
+
+    const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
+
+    try {
+      for (let round = 1; round <= autoLoopRounds; round++) {
+        // Check if user stopped the loop
+        if (autoLoopStopRef.current) {
+          console.log('[AUTO-LOOP] Stopped by user');
+          setAutoLoopError(`Stopped by user at round ${round - 1}/${autoLoopRounds}`);
+          break;
+        }
+
+        setAutoLoopCurrentRound(round);
+        console.log(`[AUTO-LOOP] Starting round ${round}/${autoLoopRounds}`);
+
+        // Reset progress for this round
+        const roundProgress = {};
+        orders.forEach(order => {
+          roundProgress[order.symbol] = { filled: false, orderId: null, size: order.size };
+        });
+        setAutoLoopProgress(roundProgress);
+
+        // Step 1: Place all orders in this round
+        console.log(`[AUTO-LOOP] Placing ${orders.length} orders...`);
+        const response = await api.post('/api/options/batch_add', {
+          orders: orders.map(o => ({
+            symbol: o.symbol,
+            side: o.side,
+            size: o.size,
+            order_type: orderPreference,
+          })),
+        });
+
+        if (!response.data.success) {
+          throw new Error(response.data.error || 'Batch order placement failed');
+        }
+
+        const placedOrders = response.data.results || [];
+        console.log(`[AUTO-LOOP] Placed ${placedOrders.length} orders:`, placedOrders);
+
+        // Update progress with order IDs
+        const updatedProgress = { ...roundProgress };
+        placedOrders.forEach(result => {
+          if (result.success && result.order_id) {
+            updatedProgress[result.symbol] = {
+              filled: false,
+              orderId: result.order_id,
+              size: result.size,
+            };
+          }
+        });
+        setAutoLoopProgress(updatedProgress);
+
+        // Check if any orders failed to place
+        const failedPlacements = placedOrders.filter(r => !r.success);
+        if (failedPlacements.length > 0) {
+          const errorMsg = `Round ${round}: Failed to place ${failedPlacements.length} order(s): ${failedPlacements.map(f => `${f.symbol} - ${f.message}`).join(', ')}`;
+          throw new Error(errorMsg);
+        }
+
+        // Step 2: Poll for fills - wait indefinitely until all orders are filled
+        console.log(`[AUTO-LOOP] Waiting for all ${placedOrders.length} orders to fill...`);
+        
+        const orderIds = placedOrders.map(r => r.order_id);
+        let allFilled = false;
+        let pollCount = 0;
+
+        while (!allFilled && !autoLoopStopRef.current) {
+          pollCount++;
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+
+          // Fetch order status
+          const statusResponse = await api.post('/api/options/batch_order_status', {
+            order_ids: orderIds,
+          });
+
+          if (!statusResponse.data.success) {
+            console.warn('[AUTO-LOOP] Failed to fetch order status, retrying...');
+            continue;
+          }
+
+          const orderStatuses = statusResponse.data.orders || [];
+          
+          // Update progress
+          const progressUpdate = { ...updatedProgress };
+          orderStatuses.forEach(status => {
+            const matchingOrder = placedOrders.find(o => o.order_id === status.order_id);
+            if (matchingOrder) {
+              const isFilled = status.state === 'filled';
+              progressUpdate[matchingOrder.symbol] = {
+                filled: isFilled,
+                orderId: status.order_id,
+                size: status.size,
+                fillPrice: status.fill_price,
+              };
+            }
+          });
+          setAutoLoopProgress(progressUpdate);
+
+          // Check if all orders are filled
+          const filledCount = Object.values(progressUpdate).filter(p => p.filled).length;
+          allFilled = filledCount === orders.length;
+
+          console.log(`[AUTO-LOOP] Round ${round} - Poll ${pollCount}: ${filledCount}/${orders.length} filled`);
+
+          if (allFilled) {
+            console.log(`[AUTO-LOOP] Round ${round} complete - all orders filled`);
+            
+            // Play sound for round completion
+            soundManager.playTradeFilled();
+            
+            // Small delay before next round
+            if (round < autoLoopRounds) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+
+        // Check if stopped during polling
+        if (autoLoopStopRef.current) {
+          console.log('[AUTO-LOOP] Stopped during polling');
+          setAutoLoopError(`Stopped by user at round ${round}/${autoLoopRounds}`);
+          break;
+        }
+      }
+
+      // All rounds completed successfully
+      if (!autoLoopStopRef.current) {
+        console.log('[AUTO-LOOP] All rounds completed successfully');
+        setOrderResult({
+          type: 'success',
+          message: `✅ Auto-loop completed: ${autoLoopRounds} rounds executed successfully`,
+        });
+        setTimeout(() => setOrderResult(null), 5000);
+      }
+
+    } catch (error) {
+      const errorMsg = error.message || 'Auto-loop execution failed';
+      console.error('[AUTO-LOOP] Error:', error);
+      setAutoLoopError(errorMsg);
+      setOrderResult({
+        type: 'error',
+        message: `❌ Auto-loop error: ${errorMsg}`,
+      });
+      setTimeout(() => setOrderResult(null), 5000);
+    } finally {
+      setAutoLoopRunning(false);
+      autoLoopStopRef.current = false;
+    }
+  };
+
+  // Stop auto-loop
+  const stopAutoLoop = () => {
+    autoLoopStopRef.current = true;
+    console.log('[AUTO-LOOP] Stop requested');
+  };
 
 
 
@@ -3936,32 +4127,139 @@ const OptionsPanel = () => {
                   </Tooltip>
                 </Box>
 
-                {/* Right: Execute Button */}
+                {/* Right: Execute Button and Auto-Loop Controls */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Button
-                    variant="contained"
-                    color={orderQuantity > 0 ? 'success' : 'error'}
-                    startIcon={
-                      batchExecuting ? (
-                        <CircularProgress size={16} color="inherit" />
-                      ) : (
-                        <PlayArrowIcon />
-                      )
-                    }
-                    onClick={executeBatchOrders}
-                    disabled={
-                      batchExecuting ||
-                      calculateBatchOrders().length === 0 ||
-                      !status?.trading_allowed
-                    }
-                    sx={{ minWidth: 150 }}
-                  >
-                    {batchExecuting
-                      ? 'Executing...'
-                      : `Execute ${calculateBatchOrders().length} Orders`}
-                  </Button>
+                  {/* Auto-Loop Toggle and Rounds Input */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Tooltip title="Enable auto-loop to execute batch orders multiple times. Bot will wait for all orders to fill before placing the next batch.">
+                      <Checkbox
+                        checked={autoLoopEnabled}
+                        onChange={(e) => setAutoLoopEnabled(e.target.checked)}
+                        size="small"
+                        disabled={autoLoopRunning}
+                        sx={{
+                          color: 'rgba(251, 191, 36, 0.8)',
+                          '&.Mui-checked': { color: 'rgba(251, 191, 36, 1)' },
+                        }}
+                      />
+                    </Tooltip>
+                    {autoLoopEnabled && (
+                      <>
+                        <TextField
+                          type="number"
+                          value={autoLoopRounds}
+                          onChange={(e) => setAutoLoopRounds(Math.max(1, parseInt(e.target.value) || 1))}
+                          size="small"
+                          disabled={autoLoopRunning}
+                          inputProps={{ min: 1, max: 1000 }}
+                          sx={{
+                            width: 80,
+                            '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem' },
+                          }}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                          rounds
+                        </Typography>
+                      </>
+                    )}
+                  </Box>
+
+                  {/* Execute or Auto-Loop Button */}
+                  {autoLoopRunning ? (
+                    <Button
+                      variant="contained"
+                      color="error"
+                      startIcon={<BlockIcon />}
+                      onClick={stopAutoLoop}
+                      sx={{ minWidth: 150 }}
+                    >
+                      STOP Auto-Loop
+                    </Button>
+                  ) : autoLoopEnabled ? (
+                    <Button
+                      variant="contained"
+                      color="warning"
+                      startIcon={<PlayArrowIcon />}
+                      onClick={executeAutoLoop}
+                      disabled={
+                        calculateBatchOrders().length === 0 ||
+                        !status?.trading_allowed ||
+                        !autoLoopRounds ||
+                        autoLoopRounds < 1
+                      }
+                      sx={{ minWidth: 150 }}
+                    >
+                      Auto-Loop {autoLoopRounds}x
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="contained"
+                      color={orderQuantity > 0 ? 'success' : 'error'}
+                      startIcon={
+                        batchExecuting ? (
+                          <CircularProgress size={16} color="inherit" />
+                        ) : (
+                          <PlayArrowIcon />
+                        )
+                      }
+                      onClick={executeBatchOrders}
+                      disabled={
+                        batchExecuting ||
+                        calculateBatchOrders().length === 0 ||
+                        !status?.trading_allowed
+                      }
+                      sx={{ minWidth: 150 }}
+                    >
+                      {batchExecuting
+                        ? 'Executing...'
+                        : `Execute ${calculateBatchOrders().length} Orders`}
+                    </Button>
+                  )}
                 </Box>
               </Box>
+
+              {/* Auto-Loop Progress Display */}
+              {autoLoopRunning && (
+                <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                    <CircularProgress size={20} sx={{ color: 'rgba(251, 191, 36, 1)' }} />
+                    <Typography variant="body2" fontWeight="bold" color="warning.main">
+                      Auto-Loop Running: Round {autoLoopCurrentRound}/{autoLoopRounds}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                    {Object.entries(autoLoopProgress).map(([symbol, progress]) => (
+                      <Chip
+                        key={symbol}
+                        size="small"
+                        icon={progress.filled ? <CheckCircleIcon /> : <CircularProgress size={12} />}
+                        label={`${symbol.split('-')[2]} ${progress.filled ? '✅ Filled' : '⏳ Waiting'}`}
+                        sx={{
+                          bgcolor: progress.filled
+                            ? 'rgba(16, 185, 129, 0.2)'
+                            : 'rgba(251, 191, 36, 0.2)',
+                          color: progress.filled ? '#10b981' : '#fbbf24',
+                          fontWeight: 'bold',
+                          fontSize: '0.7rem',
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              )}
+
+              {/* Auto-Loop Error Display */}
+              {autoLoopError && (
+                <Box sx={{ mt: 2 }}>
+                  <Alert 
+                    severity="error" 
+                    onClose={() => setAutoLoopError(null)}
+                    sx={{ fontSize: '0.875rem' }}
+                  >
+                    {autoLoopError}
+                  </Alert>
+                </Box>
+              )}
 
               {/* Preview of orders */}
               {Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length > 0 && (

@@ -216,3 +216,114 @@ def create_batch_add_route(options_bp, get_unified_client, check_guardian_signal
             }), 500
     
     return batch_add_to_options
+
+
+def create_batch_order_status_route(options_bp, get_api_client):
+    """
+    Create batch order status endpoint for checking multiple order statuses at once.
+    Used by auto-loop functionality to wait for order fills.
+    
+    Args:
+        options_bp: Flask blueprint for options routes
+        get_api_client: Function to get UnifiedAPIClient instance
+        
+    Returns:
+        Flask route function
+    """
+    
+    @options_bp.route('/batch_order_status', methods=['POST'])
+    def batch_order_status():
+        """
+        Check status of multiple orders by their IDs.
+        
+        Request body:
+        {
+            "order_ids": ["order1", "order2", ...]
+        }
+        
+        Response:
+        {
+            "success": true,
+            "orders": [
+                {
+                    "order_id": "...",
+                    "symbol": "...",
+                    "size": 1,
+                    "side": "buy",
+                    "state": "filled",
+                    "fill_price": 100.0,
+                    "created_at": "...",
+                    "updated_at": "..."
+                },
+                ...
+            ]
+        }
+        """
+        try:
+            data = request.get_json()
+            order_ids = data.get('order_ids', [])
+            
+            if not order_ids:
+                return jsonify({
+                    'success': False,
+                    'error': 'No order IDs provided'
+                }), 400
+            
+            if len(order_ids) > 100:
+                return jsonify({
+                    'success': False,
+                    'error': 'Maximum 100 order IDs per request'
+                }), 400
+            
+            client = get_api_client()
+            
+            # Fetch order status for each order ID
+            orders_data = []
+            for order_id in order_ids:
+                try:
+                    # Get order status from Delta Exchange
+                    order_response = client.get_order(order_id)
+                    
+                    if order_response and order_response.get('success'):
+                        order_info = order_response.get('result', {})
+                        
+                        orders_data.append({
+                            'order_id': order_id,
+                            'symbol': order_info.get('product_symbol'),
+                            'size': order_info.get('size'),
+                            'side': order_info.get('side'),
+                            'state': order_info.get('state'),
+                            'fill_price': order_info.get('fill_price'),
+                            'unfilled_size': order_info.get('unfilled_size'),
+                            'created_at': order_info.get('created_at'),
+                            'updated_at': order_info.get('updated_at'),
+                        })
+                    else:
+                        # Order not found or error
+                        orders_data.append({
+                            'order_id': order_id,
+                            'state': 'not_found',
+                            'error': order_response.get('error', 'Order not found')
+                        })
+                        
+                except Exception as e:
+                    log.error(f"Error fetching order {order_id}: {e}")
+                    orders_data.append({
+                        'order_id': order_id,
+                        'state': 'error',
+                        'error': str(e)
+                    })
+            
+            return jsonify({
+                'success': True,
+                'orders': orders_data
+            })
+            
+        except Exception as e:
+            log.error(f"Batch order status check failed: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+    
+    return batch_order_status

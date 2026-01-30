@@ -1791,7 +1791,7 @@ def execute_close_order(symbol: str, order_preference: str = 'market_only') -> d
 # Execute multiple orders concurrently to minimize time and market risk
 # ================================================================
 
-from .batch_add_endpoint import create_batch_add_route
+from .batch_add_endpoint import create_batch_add_route, create_batch_order_status_route
 
 # Register batch_add route with all required dependencies
 create_batch_add_route(
@@ -1802,4 +1802,7 @@ create_batch_add_route(
     VALID_ORDER_TYPES=VALID_ORDER_TYPES
 )
 
-
+# Register batch_order_status route for auto-loop functionality
+create_batch_order_status_route(
+    options_bp=options_bp,
+    get_api_client=get_unified_client
