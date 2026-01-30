@@ -392,8 +392,13 @@ const OptionsPanel = () => {
   const [customOrder, setCustomOrder] = useState(() => {
     try {
       const saved = localStorage.getItem('options_custom_order');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
+      const order = saved ? JSON.parse(saved) : [];
+      if (order.length > 0) {
+        console.log('[OptionsPanel] Loaded custom order from localStorage:', order);
+      }
+      return order;
+    } catch (error) {
+      console.error('[OptionsPanel] Failed to load custom order:', error);
       return [];
     }
   });
@@ -489,7 +494,7 @@ const OptionsPanel = () => {
     localStorage.setItem('options_custom_order', JSON.stringify(customOrder));
   }, [customOrder]);
 
-  // Handle drag end
+  // Handle drag end - save the custom order to persist across page refreshes
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
@@ -498,7 +503,14 @@ const OptionsPanel = () => {
       const newIndex = sortedPositions.findIndex((p) => p.product_symbol === over.id);
 
       const reordered = arrayMove(sortedPositions, oldIndex, newIndex);
-      setCustomOrder(reordered.map((p) => p.product_symbol));
+      const newOrder = reordered.map((p) => p.product_symbol);
+      
+      // Update state and save to localStorage immediately
+      setCustomOrder(newOrder);
+      localStorage.setItem('options_custom_order', JSON.stringify(newOrder));
+      
+      // Log for debugging
+      console.log('[OptionsPanel] Position order updated:', newOrder);
     }
   };
 
@@ -1676,7 +1688,8 @@ const OptionsPanel = () => {
       });
 
       if (data?.success) {
-        const execType = data.execution_type || 'unknown';
+        const execTypeRaw = data.execution_type || 'unknown';
+        const execType = execTypeRaw.toLowerCase();
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
         const wasFilled = isOrderFilled(execType);
 
@@ -1689,13 +1702,16 @@ const OptionsPanel = () => {
             side: side,
             size: size,
             price: data.fill_price,
+            execType: execType,
           });
         }
+
+        // Show clearer feedback for pending limit orders vs filled orders
         setOrderResult({
           type: wasFilled ? 'success' : 'info',
           message: wasFilled
             ? `⚡ ${side.toUpperCase()} ${size} ${symbol} ${fillPrice} (${execType})`
-            : `📋 Order placed: ${side.toUpperCase()} ${size} ${symbol} (${execType})`,
+            : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${symbol} (Pending: ${execType})`,
         });
         fetchPositions();
       } else {
@@ -1822,7 +1838,8 @@ const OptionsPanel = () => {
       const { data } = await api.post('/api/options/add', requestData);
 
       if (data?.success) {
-        const execType = data.execution_type || 'unknown';
+        const execTypeRaw = data.execution_type || 'unknown';
+        const execType = execTypeRaw.toLowerCase();
         const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
         const wasFilled = isOrderFilled(execType);
 
@@ -1835,13 +1852,16 @@ const OptionsPanel = () => {
             side: side,
             size: size,
             price: data.fill_price,
+            execType: execType,
           });
         }
+
+        // Show clearer feedback for pending limit orders vs filled orders
         setOrderResult({
           type: wasFilled ? 'success' : 'info',
           message: wasFilled
-            ? `${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`
-            : `📋 Order placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (${execType})`,
+            ? `⚡ ${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`
+            : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (Pending: ${execType})`,
         });
         fetchPositions();
       } else {
@@ -2245,6 +2265,19 @@ const OptionsPanel = () => {
               )}
 
               <Chip label={`${positions.length} positions`} size="small" variant="outlined" />
+              
+              {/* Custom order active indicator - prominent visual feedback */}
+              {customOrder.length > 0 && (
+                <Chip 
+                  icon={<DragIcon />}
+                  label="Custom Order Active"
+                  size="small"
+                  color="primary"
+                  variant="filled"
+                  sx={{ fontWeight: 'bold' }}
+                />
+              )}
+              
               {/* Reset custom order button */}
               {customOrder.length > 0 && (
                 <Tooltip title="Reset to default sort order (by expiry)">
@@ -3162,7 +3195,7 @@ const OptionsPanel = () => {
                                   </Box>
                                 </TableCell>
 
-                                {/* Drag Handle */}
+                                {/* Drag Handle - with tooltip to explain persistence */}
                                 <TableCell
                                   sx={{
                                     backgroundColor: `${rowBgColor} !important`,
@@ -3173,7 +3206,9 @@ const OptionsPanel = () => {
                                   {...attributes}
                                   {...listeners}
                                 >
-                                  <DragIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                                  <Tooltip title="Drag to reorder positions. Your custom order will be saved and persist across page refreshes.">
+                                    <DragIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                                  </Tooltip>
                                 </TableCell>
 
                                 {/* Symbol */}
@@ -4217,7 +4252,7 @@ const OptionsPanel = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Add to Position Dialog */}
+      {/* Add to Position Dialog - Premium Redesign */}
       <Dialog
         open={addDialog.open}
         onClose={() =>
@@ -4233,189 +4268,456 @@ const OptionsPanel = () => {
         maxWidth="sm"
         fullWidth
         disableRestoreFocus
+        PaperProps={{
+          sx: {
+            background: 'linear-gradient(180deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)',
+            borderRadius: '16px',
+            border: '1px solid rgba(148, 163, 184, 0.15)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(20px)',
+          }
+        }}
       >
-        <DialogTitle>Add to Position</DialogTitle>
-        <DialogContent>
+        {/* Premium Header with Symbol Info */}
+        <Box sx={{
+          px: 3,
+          pt: 2.5,
+          pb: 2,
+          borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+          background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, transparent 100%)',
+        }}>
+          <Typography variant="caption" sx={{
+            color: 'rgba(148, 163, 184, 0.8)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            fontSize: '0.65rem',
+          }}>
+            Trade Position
+          </Typography>
+
+          {/* Symbol breakdown */}
+          {addDialog.position && (() => {
+            const parts = (addDialog.position.product_symbol || '').split('-');
+            const optType = parts[0] === 'C' ? 'CALL' : 'PUT';
+            const underlying = parts[1] || '???';
+            const strike = parts[2] || '???';
+            const expiry = parts[3] ? `${parts[3].slice(0, 2)}/${parts[3].slice(2, 4)}` : '??/??';
+            const isCall = parts[0] === 'C';
+
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1 }}>
+                <Box sx={{
+                  px: 1.5,
+                  py: 0.5,
+                  borderRadius: '8px',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                }}>
+                  <Typography sx={{ color: '#60a5fa', fontWeight: 700, fontSize: '1rem' }}>
+                    {underlying}
+                  </Typography>
+                </Box>
+                <Box sx={{
+                  px: 1.5,
+                  py: 0.5,
+                  borderRadius: '8px',
+                  background: isCall ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  border: `1px solid ${isCall ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                }}>
+                  <Typography sx={{
+                    color: isCall ? '#10b981' : '#ef4444',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}>
+                    {optType}
+                  </Typography>
+                </Box>
+                <Typography sx={{ color: '#e2e8f0', fontWeight: 600, fontSize: '1.1rem' }}>
+                  ${Number(strike).toLocaleString()}
+                </Typography>
+                <Typography sx={{ color: 'rgba(148, 163, 184, 0.7)', fontSize: '0.85rem' }}>
+                  {expiry}
+                </Typography>
+              </Box>
+            );
+          })()}
+
+          {/* Current position summary */}
+          {addDialog.position && (
+            <Box sx={{
+              display: 'flex',
+              gap: 3,
+              mt: 1.5,
+              py: 1,
+              px: 1.5,
+              borderRadius: '8px',
+              background: 'rgba(0, 0, 0, 0.2)',
+            }}>
+              <Box>
+                <Typography sx={{ color: 'rgba(148, 163, 184, 0.6)', fontSize: '0.7rem', textTransform: 'uppercase' }}>
+                  Current Size
+                </Typography>
+                <Typography sx={{
+                  color: addDialog.position.size > 0 ? '#10b981' : addDialog.position.size < 0 ? '#ef4444' : '#94a3b8',
+                  fontWeight: 600
+                }}>
+                  {addDialog.position.size > 0 ? '+' : ''}{addDialog.position.size}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ color: 'rgba(148, 163, 184, 0.6)', fontSize: '0.7rem', textTransform: 'uppercase' }}>
+                  Entry
+                </Typography>
+                <Typography sx={{ color: '#e2e8f0', fontWeight: 600 }}>
+                  ${parseFloat(addDialog.position.entry_price || 0).toFixed(2)}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ color: 'rgba(148, 163, 184, 0.6)', fontSize: '0.7rem', textTransform: 'uppercase' }}>
+                  P&L
+                </Typography>
+                <Typography sx={{
+                  color: (addDialog.position.unrealized_pnl || 0) >= 0 ? '#10b981' : '#ef4444',
+                  fontWeight: 600
+                }}>
+                  {(addDialog.position.unrealized_pnl || 0) >= 0 ? '+' : ''}
+                  ${parseFloat(addDialog.position.unrealized_pnl || 0).toFixed(2)}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </Box>
+
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
           {/* Smart Scaling Recommendation */}
           {addDialog.recommendation && addDialog.recommendation.action !== 'hold' && (
-            <Alert
-              severity={
-                addDialog.recommendation.action === 'scale' &&
-                  addDialog.recommendation.riskLevel === 'low'
-                  ? 'success'
-                  : addDialog.recommendation.action === 'scale' &&
-                    addDialog.recommendation.riskLevel === 'medium'
-                    ? 'info'
-                    : addDialog.recommendation.action === 'reduce'
-                      ? 'error'
-                      : 'warning'
-              }
-              sx={{ mb: 2 }}
-            >
-              <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                {addDialog.recommendation.action === 'scale'
-                  ? '✅ Recommended: Scale In'
-                  : '⚠️ Recommended: Reduce'}
+            <Box sx={{
+              mb: 2.5,
+              p: 2,
+              borderRadius: '12px',
+              background: addDialog.recommendation.action === 'scale'
+                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)'
+                : 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)',
+              border: `1px solid ${addDialog.recommendation.action === 'scale' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <Typography sx={{ fontSize: '1.1rem' }}>
+                  {addDialog.recommendation.action === 'scale' ? '🎯' : '⚠️'}
+                </Typography>
+                <Typography sx={{
+                  color: addDialog.recommendation.action === 'scale' ? '#10b981' : '#ef4444',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                }}>
+                  AI Recommendation: {addDialog.recommendation.action === 'scale' ? 'Scale In' : 'Reduce'}
+                </Typography>
+              </Box>
+              <Typography sx={{ color: 'rgba(148, 163, 184, 0.9)', fontSize: '0.8rem', mb: 0.5 }}>
+                Suggested size: <strong style={{ color: '#e2e8f0' }}>{addDialog.recommendation.size} contracts</strong>
               </Typography>
-              <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-                Size: {addDialog.recommendation.size} contracts
-              </Typography>
-              <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>
+              <Typography sx={{ color: 'rgba(148, 163, 184, 0.7)', fontSize: '0.75rem' }}>
                 {addDialog.recommendation.reason}
               </Typography>
-              <Typography variant="caption" sx={{ display: 'block', fontStyle: 'italic' }}>
-                Strategy: {scalingStrategy.replace('_', ' ').toUpperCase()} | Risk:{' '}
-                {addDialog.recommendation.riskLevel.toUpperCase()} | Confidence:{' '}
-                {addDialog.recommendation.confidence.toUpperCase()}
-              </Typography>
-            </Alert>
+            </Box>
           )}
 
-          <Typography sx={{ mb: 2 }}>
-            Add to your position in <strong>{addDialog.position?.product_symbol}</strong>
-          </Typography>
-
-          {/* Quick Size Presets */}
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            Quick Sizes:
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-            {QUICK_SIZES.map((size) => (
+          {/* Buy/Sell Toggle - Primary Action */}
+          <Box sx={{ mb: 3 }}>
+            <Typography sx={{
+              color: 'rgba(148, 163, 184, 0.8)',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              mb: 1.5,
+            }}>
+              Direction
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
               <Button
-                key={size}
-                variant={addDialog.size === size.toString() ? 'contained' : 'outlined'}
-                size="small"
-                onClick={() => setAddDialog({ ...addDialog, size: size.toString() })}
-                sx={{ minWidth: 50 }}
+                onClick={() => setAddDialog({ ...addDialog, side: 'buy' })}
+                fullWidth
+                sx={{
+                  py: 2,
+                  borderRadius: '12px',
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  background: addDialog.side === 'buy'
+                    ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                    : 'rgba(16, 185, 129, 0.1)',
+                  border: addDialog.side === 'buy'
+                    ? '2px solid #10b981'
+                    : '1px solid rgba(16, 185, 129, 0.3)',
+                  color: addDialog.side === 'buy' ? '#ffffff' : '#10b981',
+                  boxShadow: addDialog.side === 'buy' ? '0 4px 15px rgba(16, 185, 129, 0.3)' : 'none',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    background: addDialog.side === 'buy'
+                      ? 'linear-gradient(135deg, #047857 0%, #059669 100%)'
+                      : 'rgba(16, 185, 129, 0.2)',
+                    transform: 'translateY(-1px)',
+                  },
+                }}
               >
-                {size}
+                <TrendingUp sx={{ mr: 1 }} /> BUY
               </Button>
-            ))}
+              <Button
+                onClick={() => setAddDialog({ ...addDialog, side: 'sell' })}
+                fullWidth
+                sx={{
+                  py: 2,
+                  borderRadius: '12px',
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  background: addDialog.side === 'sell'
+                    ? 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)'
+                    : 'rgba(239, 68, 68, 0.1)',
+                  border: addDialog.side === 'sell'
+                    ? '2px solid #ef4444'
+                    : '1px solid rgba(239, 68, 68, 0.3)',
+                  color: addDialog.side === 'sell' ? '#ffffff' : '#ef4444',
+                  boxShadow: addDialog.side === 'sell' ? '0 4px 15px rgba(239, 68, 68, 0.3)' : 'none',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    background: addDialog.side === 'sell'
+                      ? 'linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)'
+                      : 'rgba(239, 68, 68, 0.2)',
+                    transform: 'translateY(-1px)',
+                  },
+                }}
+              >
+                <TrendingDown sx={{ mr: 1 }} /> SELL
+              </Button>
+            </Box>
           </Box>
 
-          {/* Percentage-based adjustments */}
-          {addDialog.position?.size && Math.abs(addDialog.position.size) > 0 && (
-            <>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                % of Current Position ({Math.abs(addDialog.position.size)} contracts):
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+          {/* Quantity Section */}
+          <Box sx={{ mb: 3 }}>
+            <Typography sx={{
+              color: 'rgba(148, 163, 184, 0.8)',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              mb: 1.5,
+            }}>
+              Quantity
+            </Typography>
+
+            {/* Quick size buttons */}
+            <Box sx={{ display: 'flex', gap: 0.75, mb: 2, flexWrap: 'wrap' }}>
+              {QUICK_SIZES.map((size) => (
+                <Button
+                  key={size}
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setAddDialog({ ...addDialog, size: size.toString() })}
+                  sx={{
+                    minWidth: 48,
+                    py: 0.75,
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    background: addDialog.size === size.toString()
+                      ? 'rgba(59, 130, 246, 0.2)'
+                      : 'rgba(30, 41, 59, 0.5)',
+                    borderColor: addDialog.size === size.toString()
+                      ? '#3b82f6'
+                      : 'rgba(148, 163, 184, 0.2)',
+                    color: addDialog.size === size.toString() ? '#60a5fa' : '#94a3b8',
+                    '&:hover': {
+                      background: 'rgba(59, 130, 246, 0.15)',
+                      borderColor: '#3b82f6',
+                    },
+                  }}
+                >
+                  {size}
+                </Button>
+              ))}
+            </Box>
+
+            {/* Size input */}
+            <TextField
+              type="number"
+              value={addDialog.size}
+              onChange={(e) => setAddDialog({ ...addDialog, size: e.target.value })}
+              fullWidth
+              variant="outlined"
+              placeholder="Enter quantity..."
+              inputProps={{ min: 1 }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '10px',
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  fontSize: '1.2rem',
+                  fontWeight: 600,
+                  '& fieldset': {
+                    borderColor: 'rgba(148, 163, 184, 0.2)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(148, 163, 184, 0.4)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#3b82f6',
+                  },
+                },
+                '& input': {
+                  color: '#e2e8f0',
+                  textAlign: 'center',
+                  py: 1.5,
+                },
+              }}
+            />
+
+            {/* Percentage shortcuts */}
+            {addDialog.position?.size && Math.abs(addDialog.position.size) > 0 && (
+              <Box sx={{ display: 'flex', gap: 0.75, mt: 1.5 }}>
                 {[25, 50, 100, 200].map((pct) => {
-                  const adjustedSize = Math.max(
-                    1,
-                    Math.round(Math.abs(addDialog.position.size) * (pct / 100))
-                  );
+                  const adjustedSize = Math.max(1, Math.round(Math.abs(addDialog.position.size) * (pct / 100)));
                   return (
                     <Button
                       key={pct}
-                      variant="outlined"
                       size="small"
-                      color="secondary"
                       onClick={() => setAddDialog({ ...addDialog, size: adjustedSize.toString() })}
+                      sx={{
+                        flex: 1,
+                        py: 0.5,
+                        borderRadius: '6px',
+                        fontSize: '0.7rem',
+                        background: 'rgba(148, 163, 184, 0.1)',
+                        color: '#94a3b8',
+                        '&:hover': {
+                          background: 'rgba(148, 163, 184, 0.2)',
+                        },
+                      }}
                     >
                       {pct}% ({adjustedSize})
                     </Button>
                   );
                 })}
               </Box>
-            </>
-          )}
-
-          <TextField
-            label="Size to Add"
-            type="number"
-            value={addDialog.size}
-            onChange={(e) => setAddDialog({ ...addDialog, size: e.target.value })}
-            fullWidth
-            sx={{ mb: 2 }}
-            inputProps={{ min: 1 }}
-          />
-
-          {/* Buy/Sell Selection */}
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            Side:
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-            <Button
-              variant={addDialog.side === 'buy' ? 'contained' : 'outlined'}
-              color="success"
-              onClick={() => setAddDialog({ ...addDialog, side: 'buy' })}
-              fullWidth
-            >
-              Buy (B)
-            </Button>
-            <Button
-              variant={addDialog.side === 'sell' ? 'contained' : 'outlined'}
-              color="error"
-              onClick={() => setAddDialog({ ...addDialog, side: 'sell' })}
-              fullWidth
-            >
-              Sell (S)
-            </Button>
+            )}
           </Box>
 
-          {/* Order Type Selection */}
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            Order Type:
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-            {Object.entries(ORDER_TYPES).map(([key, value]) => (
-              <Tooltip key={key} title={value.description}>
-                <Button
-                  variant={addDialog.orderType === key ? 'contained' : 'outlined'}
-                  size="small"
-                  color="primary"
-                  onClick={() => setAddDialog({ ...addDialog, orderType: key })}
-                  sx={{ fontSize: '0.75rem' }}
-                >
-                  {key === 'maker_first' ? 'Smart' : key === 'maker_only' ? 'Limit' : 'Market'}
-                </Button>
-              </Tooltip>
-            ))}
+          {/* Order Type Section */}
+          <Box sx={{ mb: 2 }}>
+            <Typography sx={{
+              color: 'rgba(148, 163, 184, 0.8)',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              mb: 1.5,
+            }}>
+              Execution
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {[
+                { key: 'market_only', label: '⚡ Market', desc: 'Instant fill' },
+                { key: 'maker_first', label: '🎯 Smart', desc: 'Try limit first' },
+                { key: 'maker_only', label: '💰 Limit', desc: 'Best price' },
+              ].map((opt) => (
+                <Tooltip key={opt.key} title={ORDER_TYPES[opt.key]?.description || ''}>
+                  <Button
+                    onClick={() => setAddDialog({ ...addDialog, orderType: opt.key })}
+                    sx={{
+                      flex: 1,
+                      py: 1,
+                      borderRadius: '10px',
+                      flexDirection: 'column',
+                      textTransform: 'none',
+                      background: addDialog.orderType === opt.key
+                        ? 'rgba(59, 130, 246, 0.2)'
+                        : 'rgba(30, 41, 59, 0.5)',
+                      border: addDialog.orderType === opt.key
+                        ? '1px solid #3b82f6'
+                        : '1px solid rgba(148, 163, 184, 0.15)',
+                      '&:hover': {
+                        background: 'rgba(59, 130, 246, 0.15)',
+                      },
+                    }}
+                  >
+                    <Typography sx={{
+                      color: addDialog.orderType === opt.key ? '#60a5fa' : '#e2e8f0',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                    }}>
+                      {opt.label}
+                    </Typography>
+                    <Typography sx={{
+                      color: 'rgba(148, 163, 184, 0.6)',
+                      fontSize: '0.65rem',
+                    }}>
+                      {opt.desc}
+                    </Typography>
+                  </Button>
+                </Tooltip>
+              ))}
+            </Box>
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-            {ORDER_TYPES[addDialog.orderType]?.description}
-          </Typography>
 
           {/* Limit Price Input (only for maker_only) */}
           {addDialog.orderType === 'maker_only' && (
-            <>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                Limit Price:
+            <Box sx={{
+              mb: 2,
+              p: 2,
+              borderRadius: '10px',
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.2)',
+            }}>
+              <Typography sx={{
+                color: '#fbbf24',
+                fontSize: '0.75rem',
+                mb: 1,
+                fontWeight: 600,
+              }}>
+                💰 Limit Price (optional)
               </Typography>
               <TextField
-                label="Limit Price (Optional)"
                 type="number"
                 value={addDialog.limitPrice}
                 onChange={(e) => setAddDialog({ ...addDialog, limitPrice: e.target.value })}
                 fullWidth
-                sx={{ mb: 2 }}
+                variant="outlined"
                 placeholder="Leave empty for mid-price"
-                helperText="If empty, order will be placed at mid-price"
                 inputProps={{ step: 0.01, min: 0 }}
+                size="small"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '8px',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    '& fieldset': { borderColor: 'rgba(251, 191, 36, 0.3)' },
+                    '&:hover fieldset': { borderColor: 'rgba(251, 191, 36, 0.5)' },
+                    '&.Mui-focused fieldset': { borderColor: '#fbbf24' },
+                  },
+                  '& input': { color: '#e2e8f0' },
+                }}
               />
-            </>
+            </Box>
           )}
 
+          {/* Warnings */}
           {!addDialog.position?.is_liquid && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              Warning: This option has a wide spread (
-              {(Number(addDialog.position?.spread_pct) || 0).toFixed(1)}%).
+            <Alert
+              severity="warning"
+              sx={{
+                borderRadius: '10px',
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                '& .MuiAlert-icon': { color: '#fbbf24' },
+              }}
+            >
+              <Typography sx={{ fontSize: '0.8rem' }}>
+                Wide spread ({(Number(addDialog.position?.spread_pct) || 0).toFixed(1)}%) - Consider using limit order
+              </Typography>
             </Alert>
           )}
-
-          {/* Skip confirmation hint */}
-          {addDialog.position &&
-            !skipConfirmStrikes[addDialog.position.product_symbol]?.enabled && (
-              <Alert severity="info" sx={{ mt: 2 }} icon={false}>
-                <Typography variant="caption">
-                  💡 Click "Don't Ask Again" to instantly execute {addDialog.size || DEFAULT_SIZE}{' '}
-                  lots on future clicks for this strike.
-                </Typography>
-              </Alert>
-            )}
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
+
+        <DialogActions sx={{
+          px: 3,
+          pb: 2.5,
+          pt: 1.5,
+          borderTop: '1px solid rgba(148, 163, 184, 0.1)',
+          gap: 1.5,
+        }}>
           <Button
             onClick={() =>
               setAddDialog({
@@ -4427,30 +4729,70 @@ const OptionsPanel = () => {
                 limitPrice: '',
               })
             }
+            sx={{
+              color: '#94a3b8',
+              '&:hover': { background: 'rgba(148, 163, 184, 0.1)' },
+            }}
           >
-            Cancel (Esc)
+            Cancel
           </Button>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              onClick={() => confirmAddWithSkip(true)}
-              color="warning"
-              variant="outlined"
-              disabled={submittingOrder || !addDialog.size || parseFloat(addDialog.size) <= 0}
-              title="Execute now and skip this dialog for future orders on this strike"
-            >
-              Don't Ask Again
-            </Button>
-            <Button
-              onClick={() => confirmAddWithSkip(false)}
-              color={addDialog.side === 'buy' ? 'success' : 'error'}
-              variant="contained"
-              disabled={submittingOrder || !addDialog.size || parseFloat(addDialog.size) <= 0}
-            >
-              {submittingOrder
-                ? 'Submitting...'
-                : `${addDialog.side === 'buy' ? 'Buy' : 'Sell'} ${addDialog.size || 0}`}
-            </Button>
-          </Box>
+          <Box sx={{ flex: 1 }} />
+
+          {/* Quick Mode Button */}
+          {addDialog.position && !skipConfirmStrikes[addDialog.position.product_symbol]?.enabled && (
+            <Tooltip title="Execute now and skip this dialog for future orders on this strike">
+              <Button
+                onClick={() => confirmAddWithSkip(true)}
+                disabled={submittingOrder || !addDialog.size || parseFloat(addDialog.size) <= 0}
+                sx={{
+                  px: 2,
+                  borderRadius: '10px',
+                  color: '#fbbf24',
+                  border: '1px solid rgba(251, 191, 36, 0.3)',
+                  '&:hover': {
+                    background: 'rgba(251, 191, 36, 0.1)',
+                    border: '1px solid rgba(251, 191, 36, 0.5)',
+                  },
+                }}
+              >
+                ⚡ Quick Mode
+              </Button>
+            </Tooltip>
+          )}
+
+          {/* Main Execute Button */}
+          <Button
+            onClick={() => confirmAddWithSkip(false)}
+            disabled={submittingOrder || !addDialog.size || parseFloat(addDialog.size) <= 0}
+            sx={{
+              px: 4,
+              py: 1.25,
+              borderRadius: '10px',
+              fontSize: '1rem',
+              fontWeight: 700,
+              background: addDialog.side === 'buy'
+                ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                : 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
+              color: '#ffffff',
+              boxShadow: addDialog.side === 'buy'
+                ? '0 4px 15px rgba(16, 185, 129, 0.3)'
+                : '0 4px 15px rgba(239, 68, 68, 0.3)',
+              '&:hover': {
+                background: addDialog.side === 'buy'
+                  ? 'linear-gradient(135deg, #047857 0%, #059669 100%)'
+                  : 'linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)',
+                transform: 'translateY(-1px)',
+              },
+              '&.Mui-disabled': {
+                background: 'rgba(148, 163, 184, 0.2)',
+                color: 'rgba(148, 163, 184, 0.5)',
+              },
+            }}
+          >
+            {submittingOrder
+              ? '⏳ Submitting...'
+              : `${addDialog.side === 'buy' ? '📈 BUY' : '📉 SELL'} ${addDialog.size || 0}`}
+          </Button>
         </DialogActions>
       </Dialog>
 
