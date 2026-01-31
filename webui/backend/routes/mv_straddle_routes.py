@@ -645,7 +645,9 @@ def place_ssr_order():
         
         order = result.get('order', {})
         # Order ID can be in order.id or order.result.id depending on response format
-        order_id = order.get('id') or (order.get('result', {}).get('id'))
+        order_result = order.get('result', order)
+        order_id = order_result.get('id')
+        product_id = order_result.get('product_id')
         
         # Start SSR monitoring thread
         if order_id:
@@ -661,6 +663,7 @@ def place_ssr_order():
                 'margin': margin_override or margin_pct,
                 'initial_price': ssr_price,
                 'current_price': ssr_price,
+                'product_id': product_id,
                 'started_at': datetime.now().isoformat(),
                 'status': 'active',
                 'adjustments': 0
@@ -669,11 +672,11 @@ def place_ssr_order():
             # Start monitoring in background thread
             thread = threading.Thread(
                 target=_run_mv_ssr_monitoring_loop,
-                args=(creds, symbol, quantity, side, order_id, ssr_mode, tick_size),
+                args=(creds, symbol, quantity, side, order_id, ssr_mode, tick_size, product_id),
                 daemon=True
             )
             thread.start()
-            logger.info(f"🏎️ Started SSR monitoring thread for order {order_id}")
+            logger.info(f"🏎️ Started SSR monitoring thread for order {order_id} (product_id={product_id})")
         
         return jsonify({
             "success": True,
@@ -723,7 +726,7 @@ def _calculate_aggressive_margin(premium: float, override: float = None) -> floa
 
 
 def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
-                                 order_id: int, ssr_mode: str, tick_size: float):
+                                 order_id: int, ssr_mode: str, tick_size: float, product_id: int):
     """
     Background thread function to monitor and adjust MV Straddle SSR orders.
     Similar to options SSR but adapted for MV Straddle products.
@@ -731,7 +734,7 @@ def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str
     import time
     import asyncio
     
-    print(f"[MV-SSR THREAD] Started monitoring for order {order_id}")
+    print(f"[MV-SSR THREAD] Started monitoring for order {order_id} (product_id={product_id})")
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -765,12 +768,12 @@ def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str
                         break
                     
                     # Get order status
-                    order_status = await client.get_order_status(order_id)
+                    order_status = await client.get_order(str(order_id))
                     if not order_status:
                         await asyncio.sleep(2)
                         continue
                     
-                    state = order_status.get('state', '')
+                    state = order_status.get('state', '') if isinstance(order_status, dict) else ''
                     
                     if state == 'filled':
                         print(f"[MV-SSR THREAD] ✅ Order {order_id} FILLED!")
@@ -782,7 +785,7 @@ def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str
                         break
                     
                     # Get current orderbook
-                    orderbook = await client.get_l2_orderbook(symbol)
+                    orderbook = await client.get_orderbook(symbol)
                     if not orderbook:
                         await asyncio.sleep(2)
                         continue
@@ -810,8 +813,9 @@ def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str
                     if abs(new_price - current_price) >= tick_size:
                         print(f"[MV-SSR THREAD] Adjusting order {order_id}: ${current_price:.2f} -> ${new_price:.2f}")
                         
-                        amend_result = await client.amend_order(order_id, new_price)
-                        if amend_result:
+                        # Use edit_order with product_id
+                        edit_result = await client.edit_order(str(order_id), product_id, str(new_price))
+                        if edit_result:
                             current_price = new_price
                             adjustments += 1
                             

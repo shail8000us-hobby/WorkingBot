@@ -896,15 +896,16 @@ const MVStraddlePanel = () => {
           soundManager.play('orderFailed');
         }
       } else {
-        // Regular order
+        // Regular order (market, limit, or smart)
         const orderData = {
           symbol,
           side,
           quantity: 1,
-          orderType: orderType === 'limit' ? 'limit_order' : 'market_order'
+          orderType: (orderType === 'limit' || orderType === 'smart') ? 'limit_order' : 'market_order'
         };
         
-        if (orderType === 'limit' && limitPrice) {
+        // Add limit price for limit orders AND smart orders
+        if ((orderType === 'limit' || orderType === 'smart') && limitPrice) {
           orderData.limitPrice = parseFloat(limitPrice);
         }
         
