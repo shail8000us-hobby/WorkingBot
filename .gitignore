@@ -106,3 +106,4 @@ data/user_todos.json
 # Event audit logs (too large for git)
 bot/audit/*.jsonl
 data/audit/*.jsonl
+webui/backend/metrics.db
