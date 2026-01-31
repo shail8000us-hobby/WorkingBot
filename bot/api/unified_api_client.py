@@ -444,15 +444,21 @@ class UnifiedAPIClient:
             self.circuit_breaker.record_failure()
             raise
     
-    async def cancel_order(self, order_id: str, **kwargs) -> Dict:
-        """Cancel order"""
+    async def cancel_order(self, order_id: str, product_id: int = None, **kwargs) -> Dict:
+        """Cancel order
+        
+        Args:
+            order_id: Order ID to cancel
+            product_id: Product ID for the order (required by Delta API)
+            **kwargs: Additional parameters
+        """
         await self.rate_limiter.acquire()
         
         if not self.circuit_breaker.can_attempt():
             raise Exception("Circuit breaker open")
         
         try:
-            result = await self.rest_client.cancel_order(order_id, **kwargs)
+            result = await self.rest_client.cancel_order(order_id, product_id)
             self.circuit_breaker.record_success()
             return result
         except Exception as e:

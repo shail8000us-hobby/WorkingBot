@@ -860,16 +860,32 @@ def get_ssr_order_status(order_id):
 def cancel_ssr_order(order_id):
     """Cancel an SSR order and stop monitoring"""
     try:
+        handler = get_mv_straddle_handler()
+        
+        # Get product_id from tracking or by looking up the symbol
+        product_id = None
         if order_id in _mv_active_ssr_orders:
             _mv_active_ssr_orders[order_id]['status'] = 'cancelled'
+            # Get product info from symbol
+            symbol = _mv_active_ssr_orders[order_id].get('symbol')
+            if symbol:
+                product = handler.get_mv_straddle_by_symbol(symbol)
+                product_id = product.get('id') if product else None
         
-        # Also cancel the order on exchange
-        handler = get_mv_straddle_handler()
-        result = asyncio.run(handler.api_client.cancel_order(order_id))
+        if not product_id:
+            # Fallback: try to get from open orders
+            return jsonify({
+                "success": False,
+                "error": f"Cannot cancel: product_id not found for order {order_id}"
+            }), 400
+        
+        # Cancel the order on exchange
+        result = asyncio.run(handler.api_client.cancel_order(str(order_id), product_id=product_id))
         
         return jsonify({
             "success": True,
-            "message": f"SSR order {order_id} cancelled"
+            "message": f"SSR order {order_id} cancelled",
+            "result": result
         })
         
     except Exception as e:
