@@ -31,22 +31,6 @@ ticker_bp = Blueprint('ticker', __name__)
 _ticker_cache = {}
 _cache_ttl = 5.0
 
-# Price alert monitor hook
-_price_alert_monitor = None
-
-def set_price_alert_monitor(monitor):
-    """Set the price alert monitor to receive price updates."""
-    global _price_alert_monitor
-    _price_alert_monitor = monitor
-
-def _update_price_monitor(price: float):
-    """Update price alert monitor with latest price."""
-    if _price_alert_monitor and price:
-        try:
-            _price_alert_monitor.update_price(price)
-        except Exception as e:
-            log.debug(f"Failed to update price monitor: {e}")
-
 
 @ticker_bp.route('/api/ticker/<symbol>', methods=['GET'])
 def get_ticker(symbol):
@@ -154,10 +138,6 @@ def get_ticker(symbol):
         
         # Cache the result
         _ticker_cache[cache_key] = (time.time(), ticker_data)
-        
-        # Update price alert monitor with spot price (for BTC symbols)
-        if ticker_data.get('spot_price') and 'BTC' in symbol.upper():
-            _update_price_monitor(float(ticker_data['spot_price']))
         
         return jsonify(ticker_data)
         
@@ -273,10 +253,6 @@ def get_batch_tickers():
                 
                 _ticker_cache[cache_key] = (time.time(), ticker_data)
                 results[symbol] = ticker_data
-                
-                # Update price alert monitor with spot price (for BTC symbols)
-                if ticker_data.get('spot_price') and 'BTC' in symbol.upper():
-                    _update_price_monitor(float(ticker_data['spot_price']))
                 
             except Exception as e:
                 log.error(f"Error fetching {symbol}: {e}")

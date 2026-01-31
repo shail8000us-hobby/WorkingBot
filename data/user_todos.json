@@ -152,5 +152,33 @@
     "completed": false,
     "createdAt": "2026-01-19T18:53:03.567099",
     "updatedAt": "2026-01-19T18:53:03.567117"
+  },
+  {
+    "id": "1769805048844",
+    "text": "# Real-time monitoring (updates every few seconds)\ntail -f ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"Monitor loop|\ud83d\udd04|\ud83d\udcca|\ud83c\udfaf|DEBUG Position|Matching symbols|MAX LOSS\"\n\n# Last 50 monitoring cycles\ntail -500 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"Monitor loop|Limits found|Matching symbols\"\n\n# Check if monitoring is active\ncurl -s http://localhost:5555/api/health | python3 -m json.tool",
+    "completed": false,
+    "createdAt": "2026-01-31T02:00:48.844097",
+    "updatedAt": "2026-01-31T02:00:48.844104"
+  },
+  {
+    "id": "1769805059581",
+    "text": "# Real-time SSR logs (if SSR was running)\ntail -f ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"SSR|Stealth|monitoring_loop|\ud83c\udfce\ufe0f|\ud83d\udd04\"\n\n# Check all SSR activity in last hour\ngrep -i \"SSR\" ~/Projects/WorkingBot/logs/launchagent_webui.log | tail -50\n\n# Check if SSR threads exist\nps aux | grep python | grep -v grep",
+    "completed": false,
+    "createdAt": "2026-01-31T02:00:59.581404",
+    "updatedAt": "2026-01-31T02:00:59.581417"
+  },
+  {
+    "id": "1769805070416",
+    "text": "# Watch both systems simultaneously\nwatch -n 2 'echo \"=== MAX LOSS MONITORING ===\" && tail -100 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"Monitor loop|Limits found\" | tail -5 && echo \"\" && echo \"=== SSR MONITORING ===\" && grep \"SSR\" ~/Projects/WorkingBot/logs/launchagent_webui.log | tail -5'",
+    "completed": false,
+    "createdAt": "2026-01-31T02:01:10.416596",
+    "updatedAt": "2026-01-31T02:01:10.416611"
+  },
+  {
+    "id": "1769805081307",
+    "text": "# One-liner to see current state\necho \"Backend Running:\" && lsof -i :5555 | grep LISTEN && echo \"Max Loss: ACTIVE\" && echo \"SSR Threads:\" && grep -c \"SSR THREAD\" ~/Projects/WorkingBot/logs/launchagent_webui.log || echo \"0\"",
+    "completed": false,
+    "createdAt": "2026-01-31T02:01:21.307590",
+    "updatedAt": "2026-01-31T02:01:21.307602"
   }
 ]

@@ -448,3 +448,13 @@ python app.py
 You now have Renaissance Technologies-level position sizing. 🎂
 
 Trade smart, not random.
+Let me think of institutional bot features:
+
+Dynamic position sizing based on volatility - this is doable!
+Portfolio heat management - tracking total risk exposure
+Greeks-based position limits - needs more market data
+Adaptive stop losses based on ATR - needs price history
+Correlation-based exposure limits - needs multi-asset data
+Kelly Criterion position sizing - this is concrete and implementable!
+Time-of-day based position limits - simple to add
+Volatility-scaled position sizing - very practical
