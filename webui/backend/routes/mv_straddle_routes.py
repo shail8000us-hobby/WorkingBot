@@ -520,3 +520,364 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "status": "operational"
     })
+
+
+# ============================================================================
+# SSR Order Support for MV Straddle
+# ============================================================================
+
+# SSR Order tracking for MV Straddle
+_mv_active_ssr_orders = {}
+
+@mv_straddle_bp.route('/order/ssr', methods=['POST'])
+def place_ssr_order():
+    """
+    Place SSR (Stealth Sniper Repricing) order for MV Straddle
+    
+    Request body:
+        {
+            "symbol": "MV-BTC-89400-250126",
+            "side": "buy" or "sell",
+            "quantity": 1,
+            "ssrMode": "standard" | "aggressive" | "conservative",
+            "marginPercent": 3.0  // Optional: override default margin
+        }
+    
+    SSR Modes:
+        - standard: 1 tick below 2nd best (default SSR behavior)
+        - aggressive: Premium-based dynamic margin (3-8% below 2nd best)
+        - conservative: 1-2% below 2nd best
+    
+    Response:
+        {
+            "success": true,
+            "order": {...},
+            "ssrTracking": {
+                "orderId": 123456,
+                "mode": "aggressive",
+                "margin": 5.0
+            }
+        }
+    """
+    import threading
+    
+    try:
+        data = request.json
+        logger.info(f"🏎️ MV Straddle SSR order request: {data}")
+        
+        symbol = data.get('symbol')
+        side = data.get('side')
+        quantity = data.get('quantity', 1)
+        ssr_mode = data.get('ssrMode', 'standard')
+        margin_override = data.get('marginPercent')
+        
+        if not symbol:
+            return jsonify({"success": False, "error": "Missing required parameter: symbol"}), 400
+        
+        if not side or side not in ['buy', 'sell']:
+            return jsonify({"success": False, "error": "Invalid side (must be buy or sell)"}), 400
+        
+        handler = get_mv_straddle_handler()
+        
+        # Get current ticker for price calculation
+        ticker = handler.get_ticker(symbol)
+        if not ticker:
+            return jsonify({"success": False, "error": f"Could not get ticker for {symbol}"}), 400
+        
+        quotes = ticker.get('quotes', {})
+        best_bid = float(quotes.get('best_bid') or ticker.get('best_bid') or 0)
+        best_ask = float(quotes.get('best_ask') or ticker.get('best_ask') or 0)
+        mark_price = float(ticker.get('mark_price') or 0)
+        
+        # Get product info for tick size
+        product = handler.get_mv_straddle_by_symbol(symbol)
+        tick_size = float(product.get('tick_size', '0.1')) if product else 0.1
+        
+        # Calculate SSR price based on mode
+        if side == 'buy':
+            # For BUYING: Start at/below best bid to get filled
+            reference_price = best_bid if best_bid > 0 else mark_price
+            
+            if ssr_mode == 'aggressive':
+                # Premium-based aggressive pricing
+                margin_pct = _calculate_aggressive_margin(mark_price, margin_override)
+                ssr_price = reference_price * (1 - margin_pct / 100)
+            elif ssr_mode == 'conservative':
+                # 1-2% below reference
+                margin_pct = margin_override if margin_override else 1.5
+                ssr_price = reference_price * (1 - margin_pct / 100)
+            else:  # standard
+                # 2 ticks below best bid
+                ssr_price = reference_price - (2 * tick_size)
+        else:
+            # For SELLING: Start at/above best ask to compete
+            reference_price = best_ask if best_ask > 0 else mark_price
+            
+            if ssr_mode == 'aggressive':
+                margin_pct = _calculate_aggressive_margin(mark_price, margin_override)
+                ssr_price = reference_price * (1 + margin_pct / 100)
+            elif ssr_mode == 'conservative':
+                margin_pct = margin_override if margin_override else 1.5
+                ssr_price = reference_price * (1 + margin_pct / 100)
+            else:  # standard
+                ssr_price = reference_price + (2 * tick_size)
+        
+        # Round to tick size
+        ssr_price = round(ssr_price / tick_size) * tick_size
+        ssr_price = max(tick_size, ssr_price)  # Ensure minimum price
+        
+        logger.info(f"🏎️ SSR Price Calculation: mode={ssr_mode}, ref=${reference_price:.2f} -> SSR=${ssr_price:.2f}")
+        
+        # Place initial limit order
+        result = asyncio.run(handler.place_order(
+            symbol=symbol,
+            side=side,
+            size=quantity,
+            order_type="limit_order",
+            limit_price=ssr_price
+        ))
+        
+        if not result.get('success'):
+            return jsonify(result), 400
+        
+        order = result.get('order', {})
+        order_id = order.get('id')
+        
+        # Start SSR monitoring thread
+        if order_id:
+            from config.loader import get_api_credentials
+            creds = get_api_credentials()
+            
+            # Store tracking info
+            _mv_active_ssr_orders[order_id] = {
+                'symbol': symbol,
+                'side': side,
+                'size': quantity,
+                'mode': ssr_mode,
+                'margin': margin_override or margin_pct if 'margin_pct' in dir() else 0,
+                'initial_price': ssr_price,
+                'current_price': ssr_price,
+                'started_at': datetime.now().isoformat(),
+                'status': 'active',
+                'adjustments': 0
+            }
+            
+            # Start monitoring in background thread
+            thread = threading.Thread(
+                target=_run_mv_ssr_monitoring_loop,
+                args=(creds, symbol, quantity, side, order_id, ssr_mode, tick_size),
+                daemon=True
+            )
+            thread.start()
+            logger.info(f"🏎️ Started SSR monitoring thread for order {order_id}")
+        
+        return jsonify({
+            "success": True,
+            "order": order,
+            "ssrTracking": {
+                "orderId": order_id,
+                "mode": ssr_mode,
+                "initialPrice": ssr_price,
+                "tickSize": tick_size
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error in SSR order: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _calculate_aggressive_margin(premium: float, override: float = None) -> float:
+    """
+    Calculate aggressive margin based on premium level.
+    
+    Premium Range     | Margin (from 2nd best)
+    --------------------------------------------------
+    $0 - $50          | 5-8% (very aggressive)
+    $50 - $200        | 3-5% (aggressive)
+    $200 - $500       | 2-3% (moderate)
+    $500+             | 1-2% (conservative)
+    
+    Args:
+        premium: Current premium/price
+        override: Optional override margin percent
+        
+    Returns:
+        Margin percentage to apply
+    """
+    if override is not None:
+        return float(override)
+    
+    if premium <= 50:
+        return 6.5  # Very aggressive
+    elif premium <= 200:
+        return 4.0  # Aggressive
+    elif premium <= 500:
+        return 2.5  # Moderate
+    else:
+        return 1.5  # Conservative
+
+
+def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
+                                 order_id: int, ssr_mode: str, tick_size: float):
+    """
+    Background thread function to monitor and adjust MV Straddle SSR orders.
+    Similar to options SSR but adapted for MV Straddle products.
+    """
+    import time
+    import asyncio
+    
+    print(f"[MV-SSR THREAD] Started monitoring for order {order_id}")
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        async def monitoring_loop():
+            global _mv_active_ssr_orders
+            from bot.api.async_delta_client import AsyncDeltaClient
+            
+            client = AsyncDeltaClient(
+                api_key=client_config['api_key'],
+                api_secret=client_config['api_secret'],
+                testnet=client_config.get('testnet', False)
+            )
+            
+            adjustments = 0
+            start_time = time.time()
+            current_price = _mv_active_ssr_orders.get(order_id, {}).get('initial_price', 0)
+            
+            while True:
+                try:
+                    elapsed = time.time() - start_time
+                    
+                    # Check if order is still active
+                    if order_id not in _mv_active_ssr_orders:
+                        print(f"[MV-SSR THREAD] Order {order_id} removed from tracking, stopping")
+                        break
+                    
+                    if _mv_active_ssr_orders[order_id].get('status') == 'cancelled':
+                        print(f"[MV-SSR THREAD] Order {order_id} cancelled, stopping")
+                        break
+                    
+                    # Get order status
+                    order_status = await client.get_order_status(order_id)
+                    if not order_status:
+                        await asyncio.sleep(2)
+                        continue
+                    
+                    state = order_status.get('state', '')
+                    
+                    if state == 'filled':
+                        print(f"[MV-SSR THREAD] ✅ Order {order_id} FILLED!")
+                        _mv_active_ssr_orders[order_id]['status'] = 'filled'
+                        break
+                    elif state in ('cancelled', 'rejected'):
+                        print(f"[MV-SSR THREAD] ❌ Order {order_id} {state}")
+                        _mv_active_ssr_orders[order_id]['status'] = state
+                        break
+                    
+                    # Get current orderbook
+                    orderbook = await client.get_l2_orderbook(symbol)
+                    if not orderbook:
+                        await asyncio.sleep(2)
+                        continue
+                    
+                    # Calculate new SSR price
+                    if side == 'buy':
+                        bids = orderbook.get('buy', [])
+                        if len(bids) >= 2:
+                            second_best_bid = float(bids[1].get('price', 0))
+                            new_price = second_best_bid - tick_size
+                        else:
+                            new_price = current_price
+                    else:
+                        asks = orderbook.get('sell', [])
+                        if len(asks) >= 2:
+                            second_best_ask = float(asks[1].get('price', 0))
+                            new_price = second_best_ask + tick_size
+                        else:
+                            new_price = current_price
+                    
+                    # Round to tick size
+                    new_price = round(new_price / tick_size) * tick_size
+                    
+                    # Only amend if price changed significantly
+                    if abs(new_price - current_price) >= tick_size:
+                        print(f"[MV-SSR THREAD] Adjusting order {order_id}: ${current_price:.2f} -> ${new_price:.2f}")
+                        
+                        amend_result = await client.amend_order(order_id, new_price)
+                        if amend_result:
+                            current_price = new_price
+                            adjustments += 1
+                            
+                            _mv_active_ssr_orders[order_id].update({
+                                'current_price': current_price,
+                                'adjustments': adjustments,
+                                'last_adjusted': datetime.now().isoformat()
+                            })
+                    
+                    # Log status periodically
+                    if int(elapsed) % 30 == 0 and int(elapsed) > 0:
+                        print(f"[MV-SSR THREAD] Order {order_id}: {elapsed:.0f}s, {adjustments} adjustments, ${current_price:.2f}")
+                    
+                    await asyncio.sleep(2)  # Check every 2 seconds
+                    
+                except Exception as e:
+                    print(f"[MV-SSR THREAD] Error in loop: {e}")
+                    await asyncio.sleep(5)
+            
+            print(f"[MV-SSR THREAD] Stopped monitoring order {order_id} after {adjustments} adjustments")
+        
+        loop.run_until_complete(monitoring_loop())
+        
+    except Exception as e:
+        print(f"[MV-SSR THREAD] Fatal error: {e}")
+    finally:
+        loop.close()
+
+
+@mv_straddle_bp.route('/order/ssr/<int:order_id>', methods=['GET'])
+def get_ssr_order_status(order_id):
+    """Get status of an SSR order"""
+    if order_id in _mv_active_ssr_orders:
+        return jsonify({
+            "success": True,
+            "order": _mv_active_ssr_orders[order_id]
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "error": f"SSR order {order_id} not found in tracking"
+        }), 404
+
+
+@mv_straddle_bp.route('/order/ssr/<int:order_id>/cancel', methods=['POST'])
+def cancel_ssr_order(order_id):
+    """Cancel an SSR order and stop monitoring"""
+    try:
+        if order_id in _mv_active_ssr_orders:
+            _mv_active_ssr_orders[order_id]['status'] = 'cancelled'
+        
+        # Also cancel the order on exchange
+        handler = get_mv_straddle_handler()
+        result = asyncio.run(handler.api_client.cancel_order(order_id))
+        
+        return jsonify({
+            "success": True,
+            "message": f"SSR order {order_id} cancelled"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error cancelling SSR order: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@mv_straddle_bp.route('/order/ssr/active', methods=['GET'])
+def get_active_ssr_orders():
+    """Get all active SSR orders for MV Straddle"""
+    return jsonify({
+        "success": True,
+        "orders": _mv_active_ssr_orders,
+        "count": len(_mv_active_ssr_orders)
+    })

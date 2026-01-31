@@ -27,7 +27,16 @@ const MVStraddlePanel = () => {
     },
     maker_only: { label: 'Limit', description: 'Post-only limit at your price' },
     market_only: { label: 'Market', description: 'Immediate fill, higher fees' },
-    ssr: { label: 'SSR Order', description: 'Competitive pricing: 2 ticks below best ask, auto-adjusts' },
+    ssr_standard: { label: 'SSR', description: 'Stealth Sniper: 2 ticks below 2nd best, auto-adjusts' },
+    ssr_aggressive: { label: 'SSR Aggro', description: 'Premium-based margin (3-8% below), faster fills' },
+    ssr_conservative: { label: 'SSR Safe', description: 'Conservative 1-2% margin, safer fills' },
+  };
+  
+  // SSR mode mapping for API
+  const SSR_MODE_MAP = {
+    ssr_standard: 'standard',
+    ssr_aggressive: 'aggressive',
+    ssr_conservative: 'conservative'
   };
 
   // State
@@ -393,6 +402,43 @@ const MVStraddlePanel = () => {
       // Map order type to backend format and calculate prices
       let orderTypeForApi = 'market_order';
       let calculatedLimitPrice = null;
+      const isSSROrder = addDialog.orderType.startsWith('ssr_');
+      
+      if (isSSROrder) {
+        // SSR order - use dedicated SSR endpoint
+        const ssrMode = SSR_MODE_MAP[addDialog.orderType] || 'standard';
+        const ssrPayload = {
+          symbol: addDialog.position.product_symbol,
+          side: addDialog.side,
+          quantity: parseInt(addDialog.size),
+          ssrMode: ssrMode
+        };
+        
+        console.log('🏎️ MV Straddle SSR Order (M+ button):', ssrPayload);
+        
+        const response = await fetch('/api/mv-straddle/order/ssr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ssrPayload)
+        });
+        
+        const data = await response.json();
+        console.log('  - SSR Response:', data);
+        
+        if (data?.success) {
+          const trackingInfo = data.ssrTracking || {};
+          setOrderResult({ type: 'success', message: `🏎️ SSR added to ${addDialog.position.product_symbol} @ $${trackingInfo.initialPrice?.toFixed(2) || 'TBD'}` });
+          soundManager.play('orderPlaced');
+          fetchPositions();
+          setAddDialog({ open: false, position: null, size: '1', side: 'sell', orderType: 'maker_first', limitPrice: '' });
+        } else {
+          setOrderResult({ type: 'error', message: data?.error || 'SSR order failed' });
+          soundManager.play('orderFailed');
+        }
+        
+        setSubmittingOrder(false);
+        return; // Early return for SSR orders
+      }
       
       if (addDialog.orderType === 'maker_first') {
         // Smart order: Calculate mid-price using robust resolver
@@ -810,34 +856,77 @@ const MVStraddlePanel = () => {
     }
   }, [activeTab, loadSLTPSettings, loadMaxLossSettings, calculatePoPForPositions]);
 
-  const handleQuickOrder = async (symbol, side, orderType, limitPrice) => {
+  const handleQuickOrder = async (symbol, side, orderType, limitPrice, ssrMode = null, marginPercent = null) => {
     try {
-      const orderData = {
-        symbol,
-        side,
-        quantity: 1,
-        orderType: orderType === 'limit' ? 'limit_order' : 'market_order'
-      };
+      // Check if this is an SSR order
+      const isSSR = orderType.startsWith('ssr_') || ssrMode;
       
-      if (orderType === 'limit' && limitPrice) {
-        orderData.limitPrice = parseFloat(limitPrice);
-      }
-      
-      const response = await fetch('/api/mv-straddle/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData)
-      });
-      
-      const data = await response.json();
-      if (data.success) {
-        setOrderResult({ success: true, message: `${side.toUpperCase()} ${orderType} order placed for ${symbol}` });
-        setTimeout(() => setOrderResult(null), 3000);
+      if (isSSR) {
+        // SSR order - use dedicated SSR endpoint
+        const ssrData = {
+          symbol,
+          side,
+          quantity: 1,
+          ssrMode: ssrMode || SSR_MODE_MAP[orderType] || 'standard'
+        };
+        
+        if (marginPercent) {
+          ssrData.marginPercent = parseFloat(marginPercent);
+        }
+        
+        console.log('🏎️ Placing MV SSR order:', ssrData);
+        
+        const response = await fetch('/api/mv-straddle/order/ssr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ssrData)
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          const trackingInfo = data.ssrTracking || {};
+          setOrderResult({ 
+            success: true, 
+            message: `🏎️ SSR ${side.toUpperCase()} placed for ${symbol} @ $${trackingInfo.initialPrice?.toFixed(2) || 'TBD'}` 
+          });
+          soundManager.play('orderPlaced');
+          setTimeout(() => setOrderResult(null), 5000);
+        } else {
+          setOrderResult({ success: false, message: data.error || 'SSR order failed' });
+          soundManager.play('orderFailed');
+        }
       } else {
-        setOrderResult({ success: false, message: data.error || 'Order failed' });
+        // Regular order
+        const orderData = {
+          symbol,
+          side,
+          quantity: 1,
+          orderType: orderType === 'limit' ? 'limit_order' : 'market_order'
+        };
+        
+        if (orderType === 'limit' && limitPrice) {
+          orderData.limitPrice = parseFloat(limitPrice);
+        }
+        
+        const response = await fetch('/api/mv-straddle/order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderData)
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          setOrderResult({ success: true, message: `${side.toUpperCase()} ${orderType} order placed for ${symbol}` });
+          soundManager.play('orderPlaced');
+          setTimeout(() => setOrderResult(null), 3000);
+        } else {
+          setOrderResult({ success: false, message: data.error || 'Order failed' });
+          soundManager.play('orderFailed');
+        }
       }
     } catch (err) {
       setOrderResult({ success: false, message: `Error: ${err.message}` });
+      soundManager.play('orderFailed');
     }
   };
 
@@ -961,23 +1050,63 @@ const MVStraddlePanel = () => {
                 
                 {/* Order Type Selector */}
                 <Paper sx={{ p: 2, mb: 2, bgcolor: 'background.default' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Typography variant="body2" color="text.secondary">Order Type:</Typography>
-                    <ToggleButtonGroup
-                      size="small"
-                      value={quickOrderType}
-                      exclusive
-                      onChange={(e, val) => val && setQuickOrderType(val)}
-                    >
-                      <ToggleButton value="market">Market</ToggleButton>
-                      <ToggleButton value="limit">Limit</ToggleButton>
-                      <ToggleButton value="smart">Smart Mid</ToggleButton>
-                    </ToggleButtonGroup>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 80 }}>Order Type:</Typography>
+                      <ToggleButtonGroup
+                        size="small"
+                        value={quickOrderType}
+                        exclusive
+                        onChange={(e, val) => val && setQuickOrderType(val)}
+                      >
+                        <ToggleButton value="market" sx={{ color: '#f44336' }}>
+                          <Tooltip title="Immediate execution at market price - highest slippage">
+                            <span>Market</span>
+                          </Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="limit" sx={{ color: '#2196f3' }}>
+                          <Tooltip title="Enter your limit price - no slippage">
+                            <span>Limit</span>
+                          </Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="smart" sx={{ color: '#9c27b0' }}>
+                          <Tooltip title="Auto mid-price between bid/ask">
+                            <span>Smart</span>
+                          </Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="ssr_standard" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                          <Tooltip title="SSR: 2 ticks below 2nd best bid, auto-adjusts every 2s">
+                            <span>🏎️ SSR</span>
+                          </Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="ssr_aggressive" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                          <Tooltip title="Aggressive SSR: 3-8% margin based on premium, faster fills">
+                            <span>🔥 SSR Aggro</span>
+                          </Tooltip>
+                        </ToggleButton>
+                        <ToggleButton value="ssr_conservative" sx={{ color: '#03a9f4' }}>
+                          <Tooltip title="Conservative SSR: 1-2% margin, safer fills">
+                            <span>🛡️ SSR Safe</span>
+                          </Tooltip>
+                        </ToggleButton>
+                      </ToggleButtonGroup>
+                    </Box>
                     <Chip 
-                      label={quickOrderType === 'market' ? 'Instant execution at market price' : quickOrderType === 'limit' ? 'Enter your price' : 'Auto mid-price between bid/ask'}
+                      label={
+                        quickOrderType === 'market' ? '⚠️ Market Order - Instant fill but HIGH SLIPPAGE!' :
+                        quickOrderType === 'limit' ? '📝 Limit Order - Enter your exact price' :
+                        quickOrderType === 'smart' ? '🧠 Smart Order - Auto mid-price (bid+ask)/2' :
+                        quickOrderType === 'ssr_standard' ? '🏎️ SSR Standard - 2 ticks below 2nd best, auto-adjusts' :
+                        quickOrderType === 'ssr_aggressive' ? '🔥 SSR Aggressive - Premium-based 3-8% margin' :
+                        '🛡️ SSR Conservative - Safe 1-2% margin'
+                      }
                       size="small"
-                      color="info"
+                      color={
+                        quickOrderType === 'market' ? 'error' :
+                        quickOrderType.startsWith('ssr_') ? 'success' : 'info'
+                      }
                       variant="outlined"
+                      sx={{ alignSelf: 'flex-start' }}
                     />
                   </Box>
                 </Paper>
@@ -1081,8 +1210,23 @@ const MVStraddlePanel = () => {
                                     sx={{ mb: 1 }}
                                   />
                                 )}
+                                {quickOrderType.startsWith('ssr_') && (
+                                  <Chip 
+                                    label={`🏎️ ${quickOrderType === 'ssr_aggressive' ? 'Aggro' : quickOrderType === 'ssr_conservative' ? 'Safe' : 'SSR'}`}
+                                    size="small"
+                                    color="success"
+                                    sx={{ mb: 1 }}
+                                  />
+                                )}
                                 <Box sx={{ display: 'flex', gap: 1 }}>
-                                  <Tooltip title={`${quickOrderType === 'market' ? 'Market Buy' : quickOrderType === 'smart' ? 'Smart Buy at Mid' : 'Limit Buy'} (1 contract)`}>
+                                  <Tooltip title={
+                                    quickOrderType === 'market' ? 'Market Buy (1 contract) - HIGH SLIPPAGE!' :
+                                    quickOrderType === 'smart' ? `Smart Buy at Mid $${midPrice.toFixed(2)}` :
+                                    quickOrderType === 'limit' ? `Limit Buy @ $${limitPrice || 'enter price'}` :
+                                    quickOrderType === 'ssr_aggressive' ? '🔥 SSR Aggro Buy - 3-8% below 2nd best' :
+                                    quickOrderType === 'ssr_conservative' ? '🛡️ SSR Safe Buy - 1-2% below 2nd best' :
+                                    '🏎️ SSR Buy - 2 ticks below 2nd best'
+                                  }>
                                     <Button
                                       size="small"
                                       variant="contained"
@@ -1090,16 +1234,29 @@ const MVStraddlePanel = () => {
                                       onClick={() => handleQuickOrder(
                                         row.symbol, 
                                         'buy', 
-                                        quickOrderType === 'smart' ? 'limit' : quickOrderType,
+                                        quickOrderType,
                                         quickOrderType === 'smart' ? midPrice.toFixed(2) : quickOrderType === 'limit' ? limitPrice : null
                                       )}
                                       disabled={quickOrderType === 'limit' && !limitPrice}
-                                      sx={{ minWidth: 60 }}
+                                      sx={{ 
+                                        minWidth: 60,
+                                        ...(quickOrderType.startsWith('ssr_') && {
+                                          background: 'linear-gradient(45deg, #4caf50 30%, #ff9800 90%)',
+                                          '&:hover': { background: 'linear-gradient(45deg, #388e3c 30%, #f57c00 90%)' }
+                                        })
+                                      }}
                                     >
-                                      Buy
+                                      {quickOrderType.startsWith('ssr_') ? '🏎️ Buy' : 'Buy'}
                                     </Button>
                                   </Tooltip>
-                                  <Tooltip title={`${quickOrderType === 'market' ? 'Market Sell' : quickOrderType === 'smart' ? 'Smart Sell at Mid' : 'Limit Sell'} (1 contract)`}>
+                                  <Tooltip title={
+                                    quickOrderType === 'market' ? 'Market Sell (1 contract) - HIGH SLIPPAGE!' :
+                                    quickOrderType === 'smart' ? `Smart Sell at Mid $${midPrice.toFixed(2)}` :
+                                    quickOrderType === 'limit' ? `Limit Sell @ $${limitPrice || 'enter price'}` :
+                                    quickOrderType === 'ssr_aggressive' ? '🔥 SSR Aggro Sell - 3-8% above 2nd best' :
+                                    quickOrderType === 'ssr_conservative' ? '🛡️ SSR Safe Sell - 1-2% above 2nd best' :
+                                    '🏎️ SSR Sell - 2 ticks above 2nd best'
+                                  }>
                                     <Button
                                       size="small"
                                       variant="contained"
@@ -1107,13 +1264,19 @@ const MVStraddlePanel = () => {
                                       onClick={() => handleQuickOrder(
                                         row.symbol, 
                                         'sell', 
-                                        quickOrderType === 'smart' ? 'limit' : quickOrderType,
+                                        quickOrderType,
                                         quickOrderType === 'smart' ? midPrice.toFixed(2) : quickOrderType === 'limit' ? limitPrice : null
                                       )}
                                       disabled={quickOrderType === 'limit' && !limitPrice}
-                                      sx={{ minWidth: 60 }}
+                                      sx={{ 
+                                        minWidth: 60,
+                                        ...(quickOrderType.startsWith('ssr_') && {
+                                          background: 'linear-gradient(45deg, #f44336 30%, #ff9800 90%)',
+                                          '&:hover': { background: 'linear-gradient(45deg, #c62828 30%, #f57c00 90%)' }
+                                        })
+                                      }}
                                     >
-                                      Sell
+                                      {quickOrderType.startsWith('ssr_') ? '🏎️ Sell' : 'Sell'}
                                     </Button>
                                   </Tooltip>
                                 </Box>
@@ -1967,11 +2130,16 @@ const MVStraddlePanel = () => {
                   <Button
                     variant={addDialog.orderType === key ? 'contained' : 'outlined'}
                     size="small"
-                    color="primary"
+                    color={key.startsWith('ssr_') ? 'success' : 'primary'}
                     onClick={() => setAddDialog({ ...addDialog, orderType: key })}
-                    sx={{ fontSize: '0.75rem' }}
+                    sx={{ 
+                      fontSize: '0.75rem',
+                      ...(key.startsWith('ssr_') && addDialog.orderType === key && {
+                        background: 'linear-gradient(45deg, #4caf50 30%, #ff9800 90%)',
+                      })
+                    }}
                   >
-                    {key === 'maker_first' ? 'Smart' : key === 'maker_only' ? 'Limit' : 'Market'}
+                    {value.label}
                   </Button>
                 </Tooltip>
               ))}
