@@ -3056,14 +3056,14 @@ const OptionsPanel = () => {
 
       
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
-        <CardContent>
+        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
           {/* Header */}
           <Box
-            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <ShowChartIcon /> Options Positions
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="subtitle1" fontWeight="600" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <ShowChartIcon fontSize="small" /> Options Positions
               </Typography>
 
               {/* Status Badge */}
@@ -3150,8 +3150,8 @@ const OptionsPanel = () => {
 
           {/* Expiry Filter Tabs - Multi-Select */}
           {uniqueExpiries.length > 1 && (
-            <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+            <Box sx={{ mb: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5, fontSize: '0.7rem' }}>
                 📅 Expiry:
               </Typography>
               <Chip
@@ -3197,15 +3197,16 @@ const OptionsPanel = () => {
           )}
 
           {/* Position Scaling Strategy */}
-          <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+          <Box sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
             <Box
-              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
             >
               <Typography
-                variant="subtitle2"
-                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                variant="caption"
+                fontWeight="600"
+                sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.8rem' }}
               >
-                <ShowChartIcon fontSize="small" />
+                <ShowChartIcon sx={{ fontSize: '1rem' }} />
                 Position Scaling Strategy
               </Typography>
 
@@ -3215,11 +3216,11 @@ const OptionsPanel = () => {
                   {indexPrices.BTC > 0 && (
                     <Box
                       sx={{
-                        px: 2.5,
-                        py: 1,
+                        px: 1.5,
+                        py: 0.5,
                         bgcolor: '#3b82f615',
-                        borderRadius: 2,
-                        border: '2px solid #3b82f6',
+                        borderRadius: 1,
+                        border: '1px solid #3b82f6',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
@@ -3230,19 +3231,19 @@ const OptionsPanel = () => {
                         sx={{
                           color: '#3b82f6',
                           fontWeight: 600,
-                          fontSize: '0.75rem',
-                          letterSpacing: 0.5,
+                          fontSize: '0.65rem',
+                          letterSpacing: 0.3,
                         }}
                       >
                         BTC SPOT
                       </Typography>
                       <Typography
-                        variant="h5"
+                        variant="h6"
                         sx={{
                           color: '#3b82f6',
                           fontWeight: 'bold',
-                          fontSize: '1.8rem',
-                          lineHeight: 1.1,
+                          fontSize: '1.1rem',
+                          lineHeight: 1,
                         }}
                       >
                         ${indexPrices.BTC.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -3252,11 +3253,11 @@ const OptionsPanel = () => {
                   {indexPrices.ETH > 0 && (
                     <Box
                       sx={{
-                        px: 2.5,
-                        py: 1,
+                        px: 1.5,
+                        py: 0.5,
                         bgcolor: '#a855f715',
-                        borderRadius: 2,
-                        border: '2px solid #a855f7',
+                        borderRadius: 1,
+                        border: '1px solid #a855f7',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
@@ -3267,19 +3268,19 @@ const OptionsPanel = () => {
                         sx={{
                           color: '#a855f7',
                           fontWeight: 600,
-                          fontSize: '0.75rem',
-                          letterSpacing: 0.5,
+                          fontSize: '0.65rem',
+                          letterSpacing: 0.3,
                         }}
                       >
                         ETH SPOT
                       </Typography>
                       <Typography
-                        variant="h5"
+                        variant="h6"
                         sx={{
                           color: '#a855f7',
                           fontWeight: 'bold',
-                          fontSize: '1.8rem',
-                          lineHeight: 1.1,
+                          fontSize: '1.1rem',
+                          lineHeight: 1,
                         }}
                       >
                         ${indexPrices.ETH.toLocaleString(undefined, { maximumFractionDigits: 0 })}

@@ -939,11 +939,11 @@ function App() {
   // Options Trading Panel (Jan 2026)
   const renderOptions = useMemo(() => (
     <Suspense fallback={<PanelSkeleton type="table" />}>
-      <div className="grid gap-6">
+      <div className="grid gap-4">
         <CollapsibleCard
           id="options-panel"
           title="📈 Options Trading"
-          subtitle="Manage options positions - Close or add to existing positions"
+          subtitle="Manage positions - Close/add existing"
           accent="violet"
           defaultOpen={true}
         >

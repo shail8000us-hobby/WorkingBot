@@ -2,7 +2,7 @@
   "files": {
     "main-0a037d97.css": "/static/css/main-0a037d97.5ffc0b30.css",
     "main-0a037d97.js": "/static/js/main-0a037d97.a66289cd.js",
-    "runtime.js": "/static/js/runtime.125d2351.js",
+    "runtime.js": "/static/js/runtime.ddfdf17e.js",
     "static/js/8651.c81c3224.chunk.js": "/static/js/8651.c81c3224.chunk.js",
     "static/js/9578.b1202568.chunk.js": "/static/js/9578.b1202568.chunk.js",
     "static/js/4513.541f8d97.chunk.js": "/static/js/4513.541f8d97.chunk.js",
@@ -55,12 +55,12 @@
     "vendors-866ab763.js": "/static/js/vendors-866ab763.9c869e34.js",
     "common-7c36387c.js": "/static/js/common-7c36387c.caacea26.chunk.js",
     "main-4f064d56.css": "/static/css/main-4f064d56.d1a1b99b.css",
-    "main-b1f74e0a.js": "/static/js/main-b1f74e0a.2d10273f.js",
+    "main-b1f74e0a.js": "/static/js/main-b1f74e0a.3237c602.js",
     "main-31743c5a.js": "/static/js/main-31743c5a.714ab4d6.js",
     "static/js/252.049ed93b.chunk.js": "/static/js/252.049ed93b.chunk.js",
     "static/js/3744.923ab6d0.chunk.js": "/static/js/3744.923ab6d0.chunk.js",
     "static/js/65.f436f696.chunk.js": "/static/js/65.f436f696.chunk.js",
-    "static/js/5727.f199c4ce.chunk.js": "/static/js/5727.f199c4ce.chunk.js",
+    "static/js/5727.14981c35.chunk.js": "/static/js/5727.14981c35.chunk.js",
     "ui-libs-15f93fc0.js": "/static/js/ui-libs-15f93fc0.85791515.js",
     "ui-libs-2b4841d6.js": "/static/js/ui-libs-2b4841d6.2228cbfb.js",
     "ui-libs-91a3b8f0.js": "/static/js/ui-libs-91a3b8f0.37071455.js",
@@ -111,7 +111,7 @@
     "index.html": "/index.html"
   },
   "entrypoints": [
-    "static/js/runtime.125d2351.js",
+    "static/js/runtime.ddfdf17e.js",
     "static/js/vendor.5ff01d96.js",
     "static/js/ui-libs-15f93fc0.85791515.js",
     "static/js/ui-libs-2b4841d6.2228cbfb.js",
@@ -152,7 +152,7 @@
     "static/js/vendors-a30a93ff.d4967e2a.js",
     "static/js/vendors-866ab763.9c869e34.js",
     "static/css/main-4f064d56.d1a1b99b.css",
-    "static/js/main-b1f74e0a.2d10273f.js",
+    "static/js/main-b1f74e0a.3237c602.js",
     "static/js/main-31743c5a.714ab4d6.js",
     "static/css/main-0a037d97.5ffc0b30.css",
     "static/js/main-0a037d97.a66289cd.js"
