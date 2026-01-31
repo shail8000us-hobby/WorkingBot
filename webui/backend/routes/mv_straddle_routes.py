@@ -593,6 +593,9 @@ def place_ssr_order():
         product = handler.get_mv_straddle_by_symbol(symbol)
         tick_size = float(product.get('tick_size', '0.1')) if product else 0.1
         
+        # Initialize margin_pct for tracking (standard mode doesn't use percentage)
+        margin_pct = 0
+        
         # Calculate SSR price based on mode
         if side == 'buy':
             # For BUYING: Start at/below best bid to get filled
@@ -641,7 +644,8 @@ def place_ssr_order():
             return jsonify(result), 400
         
         order = result.get('order', {})
-        order_id = order.get('id')
+        # Order ID can be in order.id or order.result.id depending on response format
+        order_id = order.get('id') or (order.get('result', {}).get('id'))
         
         # Start SSR monitoring thread
         if order_id:
@@ -654,7 +658,7 @@ def place_ssr_order():
                 'side': side,
                 'size': quantity,
                 'mode': ssr_mode,
-                'margin': margin_override or margin_pct if 'margin_pct' in dir() else 0,
+                'margin': margin_override or margin_pct,
                 'initial_price': ssr_price,
                 'current_price': ssr_price,
                 'started_at': datetime.now().isoformat(),
