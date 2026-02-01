@@ -84,31 +84,69 @@ const OrderDialog = ({
     }
   }, [ticker]);
 
+  // SSR mode mapping for backend
+  const SSR_MODE_MAP = {
+    ssr_standard: 'standard',
+    ssr_aggressive: 'aggressive',
+    ssr_conservative: 'conservative',
+  };
+
   const handleSubmit = async () => {
     setError(null);
     setLoading(true);
 
     try {
-      const orderParams = {
-        symbol: option.symbol,
-        side: side,
-        size: parseInt(size),
-        order_type: orderType,
-      };
+      // Check if this is an SSR order type
+      const isSSROrder = orderType?.startsWith('ssr_');
 
-      if (orderType === 'limit') {
-        orderParams.limit_price = parseFloat(limitPrice);
-      }
+      if (isSSROrder) {
+        // Route SSR orders to dedicated endpoint
+        const ssrMode = SSR_MODE_MAP[orderType] || 'standard';
+        const ssrParams = {
+          symbol: option.symbol,
+          side: side,
+          quantity: parseInt(size),
+          ssrMode: ssrMode,
+        };
 
-      const result = await optionsChainAPI.placeOrder(orderParams);
+        console.log(`🏎️ Placing SSR order: ${ssrMode}`, ssrParams);
 
-      if (result.success) {
-        onSuccess?.(result);
-        onClose();
+        const result = await optionsChainAPI.placeSSROrder(ssrParams);
+
+        if (result.success) {
+          onSuccess?.({
+            ...result,
+            message: `🏎️ SSR ${ssrMode.toUpperCase()}: Monitoring started`,
+          });
+          onClose();
+        } else {
+          const errorMsg = result.error || 'SSR order failed';
+          setError(errorMsg);
+          onError?.(errorMsg);
+        }
       } else {
-        const errorMsg = result.error || 'Order failed';
-        setError(errorMsg);
-        onError?.(errorMsg);
+        // Regular order types (market, smart, limit)
+        const orderParams = {
+          symbol: option.symbol,
+          side: side,
+          size: parseInt(size),
+          order_type: orderType,
+        };
+
+        if (orderType === 'limit') {
+          orderParams.limit_price = parseFloat(limitPrice);
+        }
+
+        const result = await optionsChainAPI.placeOrder(orderParams);
+
+        if (result.success) {
+          onSuccess?.(result);
+          onClose();
+        } else {
+          const errorMsg = result.error || 'Order failed';
+          setError(errorMsg);
+          onError?.(errorMsg);
+        }
       }
     } catch (err) {
       const errorMsg = err.message || 'Failed to place order';
@@ -248,6 +286,20 @@ const OrderDialog = ({
           <Typography variant="subtitle2" gutterBottom>
             Order Type
           </Typography>
+          {/* Row 1: Standard order types */}
+          <ToggleButtonGroup
+            value={orderType}
+            exclusive
+            onChange={(e, val) => val && setOrderType(val)}
+            fullWidth
+            size="small"
+            sx={{ mb: 1 }}
+          >
+            <ToggleButton value="market" sx={{ color: '#ef4444' }}>⚡ Market</ToggleButton>
+            <ToggleButton value="smart" sx={{ color: '#10b981' }}>🧠 Smart</ToggleButton>
+            <ToggleButton value="limit" sx={{ color: '#fbbf24' }}>💰 Limit</ToggleButton>
+          </ToggleButtonGroup>
+          {/* Row 2: SSR order types */}
           <ToggleButtonGroup
             value={orderType}
             exclusive
@@ -255,8 +307,9 @@ const OrderDialog = ({
             fullWidth
             size="small"
           >
-            <ToggleButton value="market">Market</ToggleButton>
-            <ToggleButton value="limit">Limit</ToggleButton>
+            <ToggleButton value="ssr_standard" sx={{ color: '#ff9800' }}>🏎️ SSR</ToggleButton>
+            <ToggleButton value="ssr_aggressive" sx={{ color: '#4caf50' }}>🔥 Aggro</ToggleButton>
+            <ToggleButton value="ssr_conservative" sx={{ color: '#03a9f4' }}>🛡️ Safe</ToggleButton>
           </ToggleButtonGroup>
         </Box>
 

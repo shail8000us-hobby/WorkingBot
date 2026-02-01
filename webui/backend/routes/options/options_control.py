@@ -1022,6 +1022,249 @@ async def place_ssr_order(client, symbol: str, size: float, side: str,
         return order
 
 
+async def place_ssr_order_with_margin(client, symbol: str, size: float, side: str,
+                                     margin_percent: float = 5.0,
+                                     ssr_mode: str = 'aggressive',
+                                     reduce_only: bool = False,
+                                     check_interval: float = 2.0):
+    """
+    Place SSR Order with percentage-based margin pricing (for aggressive/conservative modes).
+    
+    Unlike tick-based SSR, this uses a percentage margin from the reference price.
+    
+    Args:
+        client: UnifiedAPIClient instance
+        symbol: Options symbol (e.g., C-BTC-113000-300126)
+        size: Order size (positive number)
+        side: 'buy' or 'sell'
+        margin_percent: Percentage margin from reference price
+        ssr_mode: 'aggressive' or 'conservative' for logging
+        reduce_only: If True, only reduces position
+        check_interval: Seconds between orderbook checks (default: 2s)
+        
+    Returns:
+        dict: Order result with initial placement details (monitoring continues in background)
+    """
+    global _active_ssr_orders
+    
+    size = int(abs(float(size)))
+    
+    log.info(f"🏎️ SSR {ssr_mode.upper()} ORDER: {side} {size} {symbol} - {margin_percent}% margin pricing")
+    
+    try:
+        # Fetch fresh orderbook
+        quotes = await fetch_fresh_orderbook_quotes(client, symbol)
+        best_bid = quotes['best_bid']
+        best_ask = quotes['best_ask']
+        tick_size = quotes['tick_size']
+        
+        if best_bid == 0 or best_ask == 0:
+            log.warning(f"No quotes for {symbol}, using market order")
+            order = await place_options_order(
+                client, symbol, size, side,
+                order_type='market_order',
+                reduce_only=reduce_only,
+                post_only=False
+            )
+            order['execution_type'] = 'market_fallback_no_quotes'
+            return order
+        
+        # Calculate price based on percentage margin
+        if side == 'sell':
+            # Sell: margin% ABOVE best ask (more competitive for seller)
+            reference_price = best_ask
+            target_price = reference_price * (1 + margin_percent / 100)
+        else:  # buy
+            # Buy: margin% BELOW best bid (more competitive for buyer)
+            reference_price = best_bid
+            target_price = reference_price * (1 - margin_percent / 100)
+        
+        # Round to tick size
+        initial_price = round(target_price / tick_size) * tick_size
+        
+        # Ensure we don't cross the spread
+        if side == 'sell':
+            initial_price = max(initial_price, best_ask)
+        else:
+            initial_price = min(initial_price, best_bid)
+        
+        log.info(f"📊 SSR {ssr_mode} initial price: ${initial_price:.2f} ({margin_percent}% margin) [bid:${best_bid:.2f} ask:${best_ask:.2f}]")
+        
+        # Place initial order
+        initial_order = await place_options_order(
+            client, symbol, size, side,
+            order_type='limit_order',
+            limit_price=initial_price,
+            reduce_only=reduce_only,
+            post_only=True
+        )
+        
+        order_id = initial_order.get('id')
+        if not order_id:
+            log.error("❌ Failed to get order ID from initial SSR order")
+            return initial_order
+        
+        log.info(f"✅ SSR {ssr_mode} order placed: {order_id} at ${initial_price:.2f} - starting background monitor")
+        
+        # Track this SSR order
+        with _ssr_lock:
+            _active_ssr_orders[order_id] = {
+                'symbol': symbol,
+                'side': side,
+                'size': size,
+                'status': 'starting',
+                'current_price': initial_price,
+                'adjustments': 0,
+                'start_time': time.time(),
+                'max_duration': 'indefinite',
+                'ssr_mode': ssr_mode,
+                'margin_percent': margin_percent
+            }
+        
+        # Get client config for background thread
+        client_config = {
+            'api_key': client.api_key if hasattr(client, 'api_key') else '',
+            'api_secret': client.api_secret if hasattr(client, 'api_secret') else '',
+            'testnet': client.testnet if hasattr(client, 'testnet') else True
+        }
+        
+        # Start background monitoring thread
+        monitor_thread = threading.Thread(
+            target=_run_ssr_margin_monitoring_loop,
+            args=(client_config, symbol, size, side, order_id, initial_price, tick_size),
+            kwargs={
+                'reduce_only': reduce_only,
+                'check_interval': check_interval,
+                'margin_percent': margin_percent,
+                'ssr_mode': ssr_mode
+            },
+            daemon=True
+        )
+        monitor_thread.start()
+        log.info(f"🏎️ SSR {ssr_mode} background monitor started - will chase until filled/cancelled")
+        
+        # Return immediately with order info
+        initial_order['execution_type'] = f'ssr_{ssr_mode}_monitoring_started'
+        initial_order['limit_price'] = initial_price
+        initial_order['ssr_info'] = {
+            'order_id': order_id,
+            'initial_price': initial_price,
+            'margin_percent': margin_percent,
+            'ssr_mode': ssr_mode,
+            'check_interval': check_interval,
+            'status': f'background_monitoring_{ssr_mode}_active'
+        }
+        return initial_order
+        
+    except Exception as e:
+        log.exception(f"SSR {ssr_mode} order failed: {e}")
+        order = await place_options_order(
+            client, symbol, size, side,
+            order_type='market_order',
+            reduce_only=reduce_only
+        )
+        order['execution_type'] = 'market_fallback_error'
+        order['error'] = str(e)
+        return order
+
+
+def _run_ssr_margin_monitoring_loop(client_config, symbol: str, size: int, side: str,
+                                    order_id: int, initial_price: float, tick_size: float,
+                                    reduce_only: bool = False,
+                                    check_interval: float = 2.0,
+                                    margin_percent: float = 5.0,
+                                    ssr_mode: str = 'aggressive'):
+    """
+    Background thread function to monitor and adjust SSR orders with margin-based pricing.
+    """
+    import asyncio
+    
+    print(f"[SSR {ssr_mode.upper()} THREAD] Started for order {order_id}")
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        global _active_ssr_orders
+        
+        async def monitoring_loop():
+            from API.async_delta_client import AsyncDeltaClient
+            
+            testnet = client_config.get('testnet', True)
+            async_client = AsyncDeltaClient(testnet=testnet)
+            
+            adjustments = 0
+            current_price = initial_price
+            
+            log.info(f"🏎️ SSR {ssr_mode} MONITOR STARTED: {order_id} at ${current_price:.2f}")
+            
+            while True:
+                try:
+                    # Check if order is still active
+                    order_info = await async_client.get_order(order_id)
+                    order_state = order_info.get('state', 'unknown')
+                    
+                    if order_state in ['closed', 'cancelled', 'filled']:
+                        log.info(f"✅ SSR {ssr_mode} order {order_id} completed: {order_state}")
+                        with _ssr_lock:
+                            if order_id in _active_ssr_orders:
+                                _active_ssr_orders[order_id]['status'] = order_state
+                        break
+                    
+                    # Fetch fresh orderbook
+                    quotes = await fetch_fresh_orderbook_quotes(async_client, symbol)
+                    best_bid = quotes['best_bid']
+                    best_ask = quotes['best_ask']
+                    
+                    # Recalculate target price
+                    if side == 'sell':
+                        reference_price = best_ask
+                        new_target = reference_price * (1 + margin_percent / 100)
+                        new_target = max(new_target, best_ask)
+                    else:
+                        reference_price = best_bid
+                        new_target = reference_price * (1 - margin_percent / 100)
+                        new_target = min(new_target, best_bid)
+                    
+                    new_price = round(new_target / tick_size) * tick_size
+                    
+                    # Check if adjustment needed
+                    if abs(new_price - current_price) > tick_size:
+                        log.info(f"🔄 SSR {ssr_mode} adjusting: ${current_price:.2f} → ${new_price:.2f}")
+                        
+                        # Edit the order
+                        result = await async_client.edit_order(
+                            order_id=order_id,
+                            limit_price=new_price
+                        )
+                        
+                        if result:
+                            adjustments += 1
+                            current_price = new_price
+                            
+                            with _ssr_lock:
+                                if order_id in _active_ssr_orders:
+                                    _active_ssr_orders[order_id]['current_price'] = current_price
+                                    _active_ssr_orders[order_id]['adjustments'] = adjustments
+                                    _active_ssr_orders[order_id]['status'] = 'monitoring'
+                    
+                    await asyncio.sleep(check_interval)
+                    
+                except Exception as e:
+                    log.warning(f"SSR {ssr_mode} monitor error: {e}")
+                    await asyncio.sleep(check_interval)
+            
+            # Cleanup
+            with _ssr_lock:
+                if order_id in _active_ssr_orders:
+                    del _active_ssr_orders[order_id]
+        
+        loop.run_until_complete(monitoring_loop())
+        
+    finally:
+        loop.close()
+
+
 # Position cache to prevent repeated failures
 _positions_cache = {'data': None, 'time': 0, 'error': None}
 POSITIONS_CACHE_SECONDS = 3.0  # Cache positions for 3 seconds
@@ -1146,6 +1389,311 @@ def get_ssr_status():
         'count': len(active_orders),
         'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
     })
+
+
+@options_bp.route('/activity-log', methods=['GET'])
+def get_options_activity_log():
+    """
+    Get comprehensive options trading activity including SSR orders, positions, P&L, and max loss.
+    Uses cached positions data for efficiency.
+    
+    Returns:
+        JSON: {
+            success: bool,
+            ssrOrders: [...],           # Active SSR orders with tracking
+            recentOrders: [...],         # Last 20 orders from all sources
+            positions: [...],            # Current positions with P&L
+            maxLoss: float,              # Total max loss across all positions
+            totalPnL: float,             # Unrealized P&L
+            recentLogs: [...],           # Last 50 log entries
+            timestamp: str
+        }
+    """
+    global _active_ssr_orders, _positions_cache
+    from pathlib import Path
+    
+    try:
+        # Get active SSR orders
+        ssr_orders = []
+        with _ssr_lock:
+            for order_id, info in _active_ssr_orders.items():
+                elapsed = time.time() - info.get('start_time', time.time())
+                ssr_orders.append({
+                    'orderId': order_id,
+                    'symbol': info.get('symbol'),
+                    'side': info.get('side'),
+                    'size': info.get('size'),
+                    'currentPrice': info.get('current_price'),
+                    'adjustments': info.get('adjustments', 0),
+                    'status': info.get('status', 'unknown'),
+                    'elapsedSeconds': round(elapsed, 1),
+                    'ssrMode': info.get('ssr_mode', 'standard'),
+                    'marginPercent': info.get('margin_percent', 0)
+                })
+        
+        # Get current positions from cache or fetch fresh
+        positions_data = []
+        total_pnl = 0
+        max_loss = 0
+        position_count = 0
+        
+        try:
+            # Use cached positions if available (updated by /positions endpoint)
+            if _positions_cache['data'] is not None:
+                positions = _positions_cache['data']
+            else:
+                # Fetch positions fresh if no cache
+                import asyncio
+                client = get_unified_client()
+                
+                async def fetch_positions():
+                    all_pos = await client.get_all_positions_with_options()
+                    return all_pos.get('options', [])
+                
+                positions = asyncio.run(fetch_positions())
+                _positions_cache['data'] = positions
+                _positions_cache['time'] = time.time()
+            
+            for pos in positions:
+                size = pos.get('size', 0)
+                if size == 0:
+                    continue
+                    
+                position_count += 1
+                entry_price = pos.get('entry_price', 0)
+                mark_price = pos.get('mark_price', 0)
+                unrealized_pnl = pos.get('unrealized_pnl', 0)
+                
+                # Use pre-calculated PnL if available
+                if unrealized_pnl == 0 and entry_price and mark_price:
+                    if size > 0:  # Long position
+                        unrealized_pnl = (mark_price - entry_price) * size
+                    else:  # Short position
+                        unrealized_pnl = (entry_price - mark_price) * abs(size)
+                
+                total_pnl += unrealized_pnl
+                
+                # Max loss calculation (for long options = premium paid)
+                position_max_loss = 0
+                if size > 0:
+                    position_max_loss = entry_price * size
+                    max_loss += position_max_loss
+                
+                positions_data.append({
+                    'symbol': pos.get('product_symbol', 'N/A'),
+                    'size': size,
+                    'entryPrice': round(entry_price, 2),
+                    'markPrice': round(mark_price, 2),
+                    'unrealizedPnL': round(unrealized_pnl, 2),
+                    'maxLoss': round(position_max_loss, 2)
+                })
+        except Exception as e:
+            log.warning(f"Could not fetch positions for activity log: {e}")
+        
+        # Get recent orders from order history file if available
+        recent_orders = []
+        try:
+            order_history_file = Path('/Users/ssr/Projects/WorkingBot/data/order_history.json')
+            if order_history_file.exists():
+                import json
+                with open(order_history_file, 'r') as f:
+                    history = json.load(f)
+                    orders = history if isinstance(history, list) else history.get('orders', [])
+                    for order in orders[-20:]:
+                        recent_orders.append({
+                            'id': order.get('id', order.get('order_id')),
+                            'symbol': order.get('symbol', order.get('product_symbol', 'N/A')),
+                            'side': order.get('side'),
+                            'size': order.get('size', order.get('quantity')),
+                            'fillPrice': order.get('fill_price', order.get('price')),
+                            'state': order.get('state', order.get('status', 'filled')),
+                            'createdAt': order.get('created_at', order.get('timestamp'))
+                        })
+        except Exception as e:
+            log.debug(f"Order history not available: {e}")
+        
+        # Read recent log entries from correct log file location
+        recent_logs = []
+        try:
+            log_file = Path('/Users/ssr/Projects/WorkingBot/logs/launchagent_webui.log')
+            if log_file.exists():
+                with open(log_file, 'r', errors='ignore') as f:
+                    # Read last 50KB of file for efficiency
+                    f.seek(0, 2)  # Go to end
+                    file_size = f.tell()
+                    read_size = min(50000, file_size)
+                    f.seek(max(0, file_size - read_size))
+                    content = f.read()
+                    lines = content.split('\n')
+                    
+                    # Get lines that contain relevant keywords
+                    relevant_lines = [
+                        line.strip() for line in lines
+                        if line.strip() and any(keyword in line.lower() for keyword in 
+                            ['ssr', 'order', 'filled', 'placed', 'position', 'trade', 'max loss', 'sl/tp', 'close'])
+                    ]
+                    recent_logs = relevant_lines[-30:]  # Last 30 relevant entries
+            else:
+                recent_logs = ["📋 Log file not found - check backend logs"]
+        except Exception as e:
+            log.warning(f"Could not read log file: {e}")
+            recent_logs = [f"⚠️ Log unavailable: {str(e)}"]
+        
+        return jsonify({
+            'success': True,
+            'ssrOrders': ssr_orders,
+            'ssrCount': len(ssr_orders),
+            'recentOrders': recent_orders,
+            'positions': positions_data,
+            'positionCount': position_count,
+            'maxLoss': round(max_loss, 2),
+            'totalPnL': round(total_pnl, 2),
+            'recentLogs': recent_logs,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        })
+        
+    except Exception as e:
+        log.error(f"❌ Activity log error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'ssrOrders': [],
+            'ssrCount': 0,
+            'recentOrders': [],
+            'positions': [],
+            'positionCount': 0,
+            'maxLoss': 0,
+            'totalPnL': 0,
+            'recentLogs': [f"❌ Error: {str(e)}"],
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }), 500
+
+
+@options_bp.route('/ssr-order', methods=['POST'])
+def place_ssr_order_endpoint():
+    """
+    Place SSR (Stealth Sniper Repricing) order with different pricing strategies.
+    
+    Request body:
+        {
+            "symbol": "C-BTC-113000-300126",
+            "side": "buy" or "sell",
+            "quantity": 1,
+            "ssrMode": "standard" | "aggressive" | "conservative"
+        }
+    
+    SSR Modes:
+        - standard: 2 ticks below/above 2nd best (default SSR behavior)
+        - aggressive: Premium-based dynamic margin (3-8% below/above 2nd best)
+        - conservative: 1-2% margin below/above 2nd best
+    
+    Response:
+        {
+            "success": true,
+            "order": {...},
+            "ssrTracking": {
+                "orderId": 123456,
+                "mode": "aggressive",
+                "margin": 5.0
+            }
+        }
+    """
+    import asyncio
+    
+    try:
+        data = request.json
+        log.info(f"🏎️ Options SSR order request: {data}")
+        
+        symbol = data.get('symbol')
+        side = data.get('side')
+        quantity = data.get('quantity', 1)
+        ssr_mode = data.get('ssrMode', 'standard')
+        
+        if not symbol:
+            return jsonify({"success": False, "error": "Missing required parameter: symbol"}), 400
+        
+        if not side or side not in ['buy', 'sell']:
+            return jsonify({"success": False, "error": "Invalid side (must be buy or sell)"}), 400
+        
+        # Calculate tick offset and margin based on SSR mode
+        if ssr_mode == 'aggressive':
+            # Premium-based aggressive: 3-8% margin
+            tick_offset = None  # Use percentage-based pricing
+            margin_percent = 5.0  # 5% default for aggressive
+        elif ssr_mode == 'conservative':
+            # Conservative: 1-2% margin
+            tick_offset = None
+            margin_percent = 1.5  # 1.5% default for conservative
+        else:  # standard
+            # Standard: 2 ticks
+            tick_offset = 2
+            margin_percent = None
+        
+        # Get client and place SSR order
+        client = get_unified_client()
+        
+        if tick_offset is not None:
+            # Standard mode: use tick-based offset
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(
+                    place_ssr_order(
+                        client=client,
+                        symbol=symbol,
+                        size=quantity,
+                        side=side,
+                        tick_offset=tick_offset
+                    )
+                )
+            finally:
+                loop.close()
+        else:
+            # Percentage-based mode: use margin pricing
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(
+                    place_ssr_order_with_margin(
+                        client=client,
+                        symbol=symbol,
+                        size=quantity,
+                        side=side,
+                        margin_percent=margin_percent,
+                        ssr_mode=ssr_mode
+                    )
+                )
+            finally:
+                loop.close()
+        
+        if result and result.get('id'):
+            order_id = result.get('id')
+            return jsonify({
+                "success": True,
+                "order": result,
+                "ssrTracking": {
+                    "orderId": order_id,
+                    "mode": ssr_mode,
+                    "margin": margin_percent or 0,
+                    "tickOffset": tick_offset or 0
+                }
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Failed to place SSR order')
+            }), 400
+            
+    except Exception as e:
+        log.error(f"❌ SSR order error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @options_bp.route('/ticker/<symbol>', methods=['GET'])
@@ -2135,6 +2683,69 @@ def remove_expiry_max_loss(expiry_code):
     except Exception as e:
         log.error(f"Error removing expiry max loss: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/monitoring-activity', methods=['GET'])
+def get_monitoring_activity():
+    """
+    Get real-time monitoring activity log.
+    Shows background operations like max loss checks, warnings, and actions.
+    
+    Query params:
+        limit (int): Max events to return (default 50)
+        type (str): Filter by event type (optional)
+    
+    Returns:
+        JSON: {
+            success: bool,
+            events: [...],     # Activity events with timestamp, type, message, details
+            monitor_status: {...},  # Current monitor status
+            timestamp: str
+        }
+    """
+    try:
+        from webui.backend.options_strategy.max_loss_manager import get_activity_log, get_max_loss_monitor
+        
+        limit = request.args.get('limit', 50, type=int)
+        event_type = request.args.get('type', None)
+        
+        # Get activity events
+        events = get_activity_log(limit=limit, event_type=event_type)
+        
+        # Get monitor status
+        monitor = get_max_loss_monitor()
+        monitor_status = None
+        if monitor:
+            monitor_status = monitor.get_status()
+        
+        # Get current max loss limits for context
+        manager = get_max_loss_manager()
+        strike_limits = manager.get_all_strike_max_loss()
+        expiry_limits = manager.get_all_expiry_max_loss()
+        
+        return jsonify({
+            'success': True,
+            'events': events,
+            'eventCount': len(events),
+            'monitorStatus': monitor_status,
+            'activeLimits': {
+                'strike': len(strike_limits),
+                'expiry': len(expiry_limits),
+                'total': len(strike_limits) + len(expiry_limits)
+            },
+            'strikeLimits': strike_limits[:10],  # First 10 for display
+            'expiryLimits': expiry_limits[:10],
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        })
+        
+    except Exception as e:
+        log.error(f"Error getting monitoring activity: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'events': [],
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }), 500
 
 
 @options_bp.route('/sl-tp/all', methods=['GET'])

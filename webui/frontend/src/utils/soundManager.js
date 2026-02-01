@@ -372,6 +372,25 @@ class SoundManager {
   previewSound(soundType) {
     this._playSound(soundType);
   }
+
+  /**
+   * Generic play method for compatibility
+   * @param {string} soundName - Sound name: 'orderPlaced', 'orderFailed', 'success', 'error', etc.
+   */
+  play(soundName) {
+    const soundMap = {
+      'orderPlaced': 'chime',
+      'orderFilled': 'success',
+      'orderFailed': 'error',
+      'success': 'success',
+      'error': 'error',
+      'warning': 'gentle',
+      'buy': 'chime',
+      'sell': 'chime'
+    };
+    const soundType = soundMap[soundName] || soundName || 'chime';
+    this._playSound(soundType);
+  }
 }
 
 // Singleton instance

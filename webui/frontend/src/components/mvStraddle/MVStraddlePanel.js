@@ -306,11 +306,48 @@ const MVStraddlePanel = () => {
     try {
       setSubmittingOrder(true);
       
+      // Check if this is an SSR order
+      const isSSROrder = settings.orderType?.startsWith('ssr_');
+      
+      if (isSSROrder) {
+        // SSR order - use dedicated SSR endpoint
+        const ssrMode = SSR_MODE_MAP[settings.orderType] || 'standard';
+        const ssrPayload = {
+          symbol: position.product_symbol,
+          side: settings.side,
+          quantity: parseInt(settings.size),
+          ssrMode: ssrMode
+        };
+        
+        console.log('🏎️ Quick SSR Order:', ssrPayload);
+        
+        const response = await fetch('/api/mv-straddle/order/ssr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ssrPayload)
+        });
+        
+        const data = await response.json();
+        
+        if (data?.success) {
+          const trackingInfo = data.ssrTracking || {};
+          setOrderResult({ type: 'success', message: `🏎️ Quick SSR for ${position.product_symbol} @ $${trackingInfo.initialPrice?.toFixed(2) || 'TBD'}` });
+          soundManager.play('orderPlaced');
+          fetchPositions();
+        } else {
+          setOrderResult({ type: 'error', message: data?.error || 'SSR order failed' });
+          soundManager.play('orderFailed');
+        }
+        
+        setSubmittingOrder(false);
+        return;
+      }
+      
       let orderTypeForApi = 'market_order';
       let calculatedLimitPrice = null;
       
       // Handle different order types
-      if (settings.orderType === 'maker_first') {
+      if (settings.orderType === 'maker_first' || settings.orderType === 'smart') {
         // Smart order: Calculate mid-price using robust resolver
         const { bid, ask } = resolveBidAskFromPosition(position);
 
@@ -334,7 +371,14 @@ const MVStraddlePanel = () => {
           orderTypeForApi = 'limit_order';
           console.log('  - Using bid/ask mid-price:', calculatedLimitPrice);
         }
+      } else if (settings.orderType === 'maker_only' || settings.orderType === 'limit') {
+        orderTypeForApi = 'limit_order';
+        calculatedLimitPrice = settings.limitPrice ? parseFloat(settings.limitPrice) : null;
+      } else {
+        // market_only or market
+        orderTypeForApi = 'market_order';
       }
+      
       const payload = {
         symbol: position.product_symbol,
         side: settings.side,
@@ -357,13 +401,16 @@ const MVStraddlePanel = () => {
 
       if (data?.success) {
         setOrderResult({ type: 'success', message: `Quick order placed for ${position.product_symbol}` });
+        soundManager.play('orderPlaced');
         fetchPositions();
       } else {
         setOrderResult({ type: 'error', message: data?.error || 'Failed to place order' });
+        soundManager.play('orderFailed');
       }
     } catch (err) {
       console.error('Failed to execute quick order:', err);
       setOrderResult({ type: 'error', message: err.message || 'Failed to place order' });
+      soundManager.play('orderFailed');
     } finally {
       setSubmittingOrder(false);
     }

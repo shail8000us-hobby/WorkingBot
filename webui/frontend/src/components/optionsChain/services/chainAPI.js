@@ -206,6 +206,48 @@ class OptionsChainAPI {
       throw error;
     }
   }
+
+  /**
+   * Place an SSR (Stealth Sniper Repricing) order
+   * @param {Object} order - SSR order details
+   * @param {string} order.symbol - Option symbol (e.g., C-BTC-95000-060126)
+   * @param {string} order.side - 'buy' or 'sell'
+   * @param {number} order.quantity - Number of contracts
+   * @param {string} order.ssrMode - 'standard', 'aggressive', or 'conservative'
+   * @returns {Promise<Object>} Order result with SSR tracking info
+   */
+  async placeSSROrder({ symbol, side, quantity, ssrMode = 'standard' }) {
+    try {
+      const body = {
+        symbol,
+        side,
+        quantity: parseInt(quantity),
+        ssrMode,
+      };
+
+      console.log(`[OptionsChainAPI] Placing SSR order:`, body);
+
+      // Route to the options SSR endpoint
+      const response = await fetch('/api/options/ssr-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('[OptionsChainAPI] placeSSROrder error:', error);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

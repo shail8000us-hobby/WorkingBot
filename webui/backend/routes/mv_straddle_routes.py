@@ -905,3 +905,68 @@ def get_active_ssr_orders():
         "orders": _mv_active_ssr_orders,
         "count": len(_mv_active_ssr_orders)
     })
+
+
+@mv_straddle_bp.route('/activity-log', methods=['GET'])
+def get_activity_log():
+    """
+    Get comprehensive activity log for MV Straddle including:
+    - SSR order tracking status
+    - Recent orders placed
+    - Max loss monitoring status
+    - Order type breakdown
+    """
+    try:
+        from pathlib import Path
+        
+        # SSR Orders Status
+        ssr_orders = []
+        for order_id, tracking in _mv_active_ssr_orders.items():
+            ssr_orders.append({
+                'orderId': order_id,
+                'symbol': tracking.get('symbol', ''),
+                'side': tracking.get('side', ''),
+                'mode': tracking.get('mode', 'standard'),
+                'initialPrice': tracking.get('initial_price', 0),
+                'currentPrice': tracking.get('current_price', 0),
+                'adjustments': tracking.get('adjustments', 0),
+                'status': tracking.get('status', 'unknown'),
+                'startedAt': tracking.get('started_at', ''),
+                'lastAdjusted': tracking.get('last_adjusted', '')
+            })
+        
+        # Get recent log entries from file
+        log_file = Path(__file__).parent.parent.parent / 'logs' / 'launchagent_webui.log'
+        recent_logs = []
+        
+        if log_file.exists():
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # Get MV Straddle related logs
+                keywords = ['MV-', 'SSR', 'mv-straddle', 'move_options', 'MV Straddle']
+                for line in lines[-500:]:
+                    line_stripped = line.strip()
+                    if any(kw in line_stripped for kw in keywords):
+                        recent_logs.append({
+                            'message': line_stripped[:200],  # Truncate long lines
+                            'type': 'ssr' if 'SSR' in line_stripped else 'order' if 'order' in line_stripped.lower() else 'info'
+                        })
+                
+                recent_logs = recent_logs[-50:]  # Last 50
+            except Exception as e:
+                logger.error(f"Failed to read log file: {e}")
+        
+        return jsonify({
+            "success": True,
+            "ssrOrders": ssr_orders,
+            "ssrCount": len(ssr_orders),
+            "recentLogs": recent_logs,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting activity log: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+

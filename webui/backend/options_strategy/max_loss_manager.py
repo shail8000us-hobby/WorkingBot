@@ -43,6 +43,44 @@ except ImportError:
 _max_loss_manager = None
 _max_loss_monitor = None
 
+# Activity Log Ring Buffer - stores real-time monitoring events
+_activity_log = []
+_activity_log_lock = threading.Lock()
+_MAX_ACTIVITY_LOG_SIZE = 200  # Keep last 200 events
+
+def add_activity_event(event_type: str, message: str, details: dict = None):
+    """Add an event to the activity log ring buffer"""
+    global _activity_log
+    event = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "type": event_type,
+        "message": message,
+        "details": details or {}
+    }
+    with _activity_log_lock:
+        _activity_log.append(event)
+        # Keep only last N events
+        if len(_activity_log) > _MAX_ACTIVITY_LOG_SIZE:
+            _activity_log = _activity_log[-_MAX_ACTIVITY_LOG_SIZE:]
+
+def get_activity_log(limit: int = 50, event_type: str = None) -> list:
+    """Get recent activity log events"""
+    with _activity_log_lock:
+        events = _activity_log.copy()
+    
+    # Filter by type if specified
+    if event_type:
+        events = [e for e in events if e["type"] == event_type]
+    
+    # Return most recent first
+    return list(reversed(events[-limit:]))
+
+def clear_activity_log():
+    """Clear all activity log events"""
+    global _activity_log
+    with _activity_log_lock:
+        _activity_log = []
+
 # Import options notifier for alerts
 try:
     from bot.options.notifications.options_notifier import get_options_notifier
@@ -708,6 +746,7 @@ class MaxLossMonitor:
         """Main monitoring loop - runs continuously in background"""
         logger.info("🔄 Max loss monitor loop started")
         print("🔄 MAX LOSS MONITOR LOOP STARTED - THREAD RUNNING", flush=True)
+        add_activity_event("monitor_start", "🔄 Max Loss Monitor started", {"interval": self.check_interval})
         
         iteration = 0
         while self._running:
@@ -724,14 +763,23 @@ class MaxLossMonitor:
                 if strike_limits or expiry_limits:
                     print(f"🔍 RUNNING MAX LOSS CHECK", flush=True)
                     logger.info(f"🔍 Running max loss check (strike: {len(strike_limits)}, expiry: {len(expiry_limits)})")
+                    add_activity_event("check_start", f"🔍 Checking {len(strike_limits)} strike limits, {len(expiry_limits)} expiry limits", {
+                        "strike_count": len(strike_limits),
+                        "expiry_count": len(expiry_limits),
+                        "iteration": iteration
+                    })
                     self._check_max_loss()
                     self._check_count += 1
                 else:
                     print(f"⏭️  No limits, skipping", flush=True)
+                    # Only log this occasionally to avoid spam
+                    if iteration % 12 == 1:  # Every ~60 seconds if interval is 5s
+                        add_activity_event("idle", "⏭️ No active max loss limits configured", {"iteration": iteration})
                 
                 self._last_check = time.time()
             except Exception as e:
                 logger.error(f"Error in max loss monitor loop: {e}", exc_info=True)
+                add_activity_event("error", f"❌ Monitor error: {str(e)}", {"iteration": iteration})
             
             time.sleep(self.check_interval)
     
@@ -938,6 +986,15 @@ class MaxLossMonitor:
                         logger.info(f"📊 {symbol}: Loss ${actual_loss:.4f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)")
                         print(f"📊 {symbol}: Loss ${actual_loss:.4f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)", flush=True)
                         
+                        # Log to activity panel
+                        add_activity_event("position_check", f"📊 {symbol}: Loss ${actual_loss:.2f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)", {
+                            "symbol": symbol,
+                            "actual_loss": actual_loss,
+                            "max_loss": max_loss,
+                            "loss_pct": round(loss_percentage * 100, 1),
+                            "size": size
+                        })
+                        
                         # WARNING: Approaching max loss threshold (80%)
                         if loss_percentage >= self.warning_threshold and loss_percentage < 1.0:
                             with self._warned_symbols_lock:
@@ -945,6 +1002,12 @@ class MaxLossMonitor:
                                     logger.warning(f"⚠️ WARNING: {symbol} at {loss_percentage*100:.1f}% of max loss (${actual_loss:.4f} / ${max_loss:.2f})")
                                     self._warned_symbols.add(symbol)
                                     self._metrics["total_warnings"] += 1
+                                    add_activity_event("warning", f"⚠️ {symbol} at {loss_percentage*100:.1f}% of max loss limit!", {
+                                        "symbol": symbol,
+                                        "actual_loss": actual_loss,
+                                        "max_loss": max_loss,
+                                        "loss_pct": round(loss_percentage * 100, 1)
+                                    })
                         
                         # CRITICAL: Max loss EXCEEDED - auto close position
                         if actual_loss >= max_loss:
@@ -956,6 +1019,13 @@ class MaxLossMonitor:
                             logger.error(f"   - Max Loss: ${max_loss:.4f}")
                             logger.error(f"   - Current Size: {current_size}")
                             logger.error(f"   - Triggered Flag: {limit.get('triggered', False)}")
+                            
+                            add_activity_event("breach", f"🛑 MAX LOSS BREACH: {symbol} - Loss ${actual_loss:.2f} >= Limit ${max_loss:.2f}", {
+                                "symbol": symbol,
+                                "actual_loss": actual_loss,
+                                "max_loss": max_loss,
+                                "size": current_size
+                            })
                             
                             if current_size > 0:
                                 # Check if we recently attempted to close this position (prevent API spam)
@@ -970,6 +1040,12 @@ class MaxLossMonitor:
                                 if should_attempt:
                                     logger.error(f"🛑 MAX LOSS BREACH: {symbol} loss ${actual_loss:.4f} >= limit ${max_loss:.2f} - AUTO CLOSING")
                                     logger.error(f"🛑 ATTEMPTING TO CLOSE {symbol}")
+                                    
+                                    add_activity_event("closing", f"🔴 AUTO-CLOSING {symbol} due to max loss breach", {
+                                        "symbol": symbol,
+                                        "size": current_size,
+                                        "actual_loss": actual_loss
+                                    })
                                     
                                     # Send Telegram notification BEFORE closing
                                     if NOTIFICATIONS_ENABLED and get_options_notifier:

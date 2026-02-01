@@ -74,6 +74,7 @@ import {
   VolumeUp as VolumeIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  TuneRounded as AdjustIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -95,6 +96,7 @@ import api from '../../utils/apiShim';
 import soundManager from '../../utils/soundManager';
 import OptionsPayoffDiagram from './OptionsPayoffDiagram';
 import LogPanel from '../optionsChain/LogPanel';
+import OptionsActivityPanel from './OptionsActivityPanel';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
@@ -108,6 +110,8 @@ import FuturesPanel from '../futures/FuturesPanel';
 // JAN 23, 2026: Day 1 & 2 utilities for PoP calculation
 import { calculatePoP } from '../../utils/probabilityCalc';
 import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
+// JAN 31, 2026: Position Adjustment Panel - Sensibull-like position adjustment system
+import { PositionAdjustmentPanel } from '../positionAdjustment';
 
 // Sortable Row Component
 const SortableRow = ({ pos, children }) => {
@@ -497,6 +501,9 @@ const OptionsPanel = () => {
   // Sound settings dialog state (JAN 19, 2026 - Independent UI component)
   const [soundSettingsOpen, setSoundSettingsOpen] = useState(false);
 
+  // Position Adjustment Panel state (JAN 31, 2026 - Sensibull-like adjustment workflow)
+  const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
+
   // Trade notification state (JAN 19, 2026 - Visual feedback)
   const [tradeNotification, setTradeNotification] = useState(null);
   const [orderResult, setOrderResult] = useState(null);
@@ -515,6 +522,16 @@ const OptionsPanel = () => {
     maker_only: { label: 'Limit', description: 'Post-only limit at your price' },
     market_only: { label: 'Market', description: 'Immediate fill, higher fees' },
     ssr: { label: 'SSR Order', description: 'Competitive pricing: 2 ticks below best ask, auto-adjusts' },
+    ssr_standard: { label: 'SSR', description: 'Stealth Sniper: 2 ticks below 2nd best, auto-adjusts' },
+    ssr_aggressive: { label: 'SSR Aggro', description: 'Premium-based margin (3-8% below), faster fills' },
+    ssr_conservative: { label: 'SSR Safe', description: 'Conservative 1-2% margin, safer fills' },
+  };
+
+  // SSR mode mapping for backend
+  const SSR_MODE_MAP = {
+    ssr_standard: 'standard',
+    ssr_aggressive: 'aggressive',
+    ssr_conservative: 'conservative',
   };
 
   // Helper function to check if an order execution type means the order was actually filled
@@ -1925,50 +1942,80 @@ const OptionsPanel = () => {
     setSubmittingOrder(true); // Lock submission
 
     try {
-      const requestData = {
-        symbol: position.product_symbol,
-        size: parseFloat(size),
-        side,
-        order_preference: orderType,
-        confirm: true,
-      };
-
-      // Add limit price if using maker_only and price is specified
-      if (orderType === 'maker_only' && limitPrice) {
-        requestData.limit_price = parseFloat(limitPrice);
-      }
-
-      const { data } = await api.post('/api/options/add', requestData);
-
-      if (data?.success) {
-        const execTypeRaw = data.execution_type || 'unknown';
-        const execType = execTypeRaw.toLowerCase();
-        const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
-        const wasFilled = isOrderFilled(execType);
-
-        // Only play sound and show notification when order is EXECUTED (filled)
-        if (wasFilled) {
-          soundManager.playTradeFilled();
-          // Show visual notification only for filled orders
-          setTradeNotification({
-            symbol: position.product_symbol,
-            side: side,
-            size: size,
-            price: data.fill_price,
-            execType: execType,
+      // Check if this is an SSR order type
+      const isSSROrder = orderType?.startsWith('ssr_');
+      
+      if (isSSROrder) {
+        // Route SSR orders to dedicated endpoint
+        const ssrMode = SSR_MODE_MAP[orderType] || 'standard';
+        const ssrRequestData = {
+          symbol: position.product_symbol,
+          side: side,
+          quantity: parseFloat(size),
+          ssrMode: ssrMode,
+        };
+        
+        console.log(`🏎️ Placing SSR order: ${ssrMode}`, ssrRequestData);
+        
+        const { data } = await api.post('/api/options/ssr-order', ssrRequestData);
+        
+        if (data?.success) {
+          soundManager.play('orderPlaced');
+          setOrderResult({
+            type: 'info',
+            message: `🏎️ SSR ${ssrMode.toUpperCase()}: ${side.toUpperCase()} ${size} ${position.product_symbol} - monitoring started`,
           });
+          fetchPositions();
+        } else {
+          setOrderResult({ type: 'error', message: data?.error || 'Failed to place SSR order' });
+        }
+      } else {
+        // Regular order types
+        const requestData = {
+          symbol: position.product_symbol,
+          size: parseFloat(size),
+          side,
+          order_preference: orderType,
+          confirm: true,
+        };
+
+        // Add limit price if using maker_only and price is specified
+        if (orderType === 'maker_only' && limitPrice) {
+          requestData.limit_price = parseFloat(limitPrice);
         }
 
-        // Show clearer feedback for pending limit orders vs filled orders
-        setOrderResult({
-          type: wasFilled ? 'success' : 'info',
-          message: wasFilled
-            ? `⚡ ${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`
-            : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (Pending: ${execType})`,
-        });
-        fetchPositions();
-      } else {
-        setOrderResult({ type: 'error', message: data?.error || 'Failed to add to position' });
+        const { data } = await api.post('/api/options/add', requestData);
+
+        if (data?.success) {
+          const execTypeRaw = data.execution_type || 'unknown';
+          const execType = execTypeRaw.toLowerCase();
+          const fillPrice = data.fill_price ? `@ $${parseFloat(data.fill_price).toFixed(2)}` : '';
+          const wasFilled = isOrderFilled(execType);
+
+          // Only play sound and show notification when order is EXECUTED (filled)
+          if (wasFilled) {
+            soundManager.playTradeFilled();
+            // Show visual notification only for filled orders
+            setTradeNotification({
+              symbol: position.product_symbol,
+              side: side,
+              size: size,
+              price: data.fill_price,
+              execType: execType,
+            });
+          }
+
+          // Show clearer feedback for pending limit orders vs filled orders
+          setOrderResult({
+            type: wasFilled ? 'success' : 'info',
+            message: wasFilled
+              ? `⚡ ${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`
+              : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (Pending: ${execType})`,
+          });
+          fetchPositions();
+        } else {
+          setOrderResult({ type: 'error', message: data?.error || 'Failed to add to position' });
+        }
       }
     } catch (err) {
       setOrderResult({ type: 'error', message: err.message });
@@ -2143,17 +2190,89 @@ const OptionsPanel = () => {
   const executeBatch = async (orders) => {
     // Lock execution immediately
     console.log(`[BATCH EXECUTE] Starting batch execution with ${orders.length} orders`, orders);
-    console.log(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${executionMode === 'immediate' ? 'market_only' : 'maker_first'}`);
 
     setBatchExecuting(true);
     setBatchOrderResults([]);
 
+    // Check if this is an SSR execution mode
+    const isSSRMode = executionMode?.startsWith('ssr_');
+    
     // Determine order preference based on execution mode
-    const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
-    const executionLabel = executionMode === 'immediate' ? 'MARKET' : 'SMART';
+    let orderPreference = 'maker_first'; // default
+    let executionLabel = 'SMART';
+    
+    if (executionMode === 'immediate') {
+      orderPreference = 'market_only';
+      executionLabel = 'MARKET';
+    } else if (executionMode === 'smart') {
+      orderPreference = 'maker_first';
+      executionLabel = 'SMART';
+    } else if (isSSRMode) {
+      orderPreference = executionMode; // pass the SSR mode directly
+      executionLabel = executionMode === 'ssr_standard' ? 'SSR' : 
+                       executionMode === 'ssr_aggressive' ? 'SSR AGGRO' : 'SSR SAFE';
+    }
+
+    console.log(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${orderPreference}, Label: ${executionLabel}`);
 
     try {
-      // NEW: Use batch_add endpoint for concurrent execution
+      // Handle SSR batch orders differently - need to place sequentially for monitoring
+      if (isSSRMode) {
+        console.log(`[BATCH-SSR] Placing ${orders.length} SSR orders (mode: ${executionMode})`);
+        const ssrMode = SSR_MODE_MAP[executionMode] || 'standard';
+        const uiResults = [];
+        
+        for (const order of orders) {
+          try {
+            const { data } = await api.post('/api/options/ssr-order', {
+              symbol: order.symbol,
+              side: order.side,
+              quantity: order.size,
+              ssrMode: ssrMode,
+            });
+            
+            if (data?.success) {
+              uiResults.push({
+                symbol: order.symbol,
+                size: order.size,
+                side: order.side,
+                success: true,
+                filled: false,
+                message: `🏎️ SSR ${ssrMode.toUpperCase()}: Monitoring started`,
+              });
+            } else {
+              uiResults.push({
+                symbol: order.symbol,
+                size: order.size,
+                side: order.side,
+                success: false,
+                filled: false,
+                message: `❌ ${data?.error || 'SSR order failed'}`,
+              });
+            }
+          } catch (err) {
+            uiResults.push({
+              symbol: order.symbol,
+              size: order.size,
+              side: order.side,
+              success: false,
+              filled: false,
+              message: `❌ ${err.message}`,
+            });
+          }
+        }
+        
+        setBatchOrderResults(uiResults);
+        soundManager.play('orderPlaced');
+        setOrderResult({
+          type: 'info',
+          message: `🏎️ ${executionLabel}: ${uiResults.filter(r => r.success).length}/${orders.length} orders monitoring`,
+        });
+        fetchPositions();
+        return;
+      }
+
+      // Regular batch execution (market/smart)
       console.log(`[BATCH-API] Calling /api/options/batch_add with ${orders.length} orders`);
 
       const { data } = await api.post('/api/options/batch_add', {
@@ -3127,6 +3246,22 @@ const OptionsPanel = () => {
                   Poll: {pollInterval / 1000}s
                 </Button>
               </Tooltip>
+              
+              {/* Position Adjustment Button (JAN 31, 2026 - Sensibull-like workflow) */}
+              {positions.length > 0 && (
+                <Tooltip title="Adjust positions - Add/close with live payoff preview">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="secondary"
+                    startIcon={<AdjustIcon />}
+                    onClick={() => setAdjustmentPanelOpen(true)}
+                    sx={{ ml: 1 }}
+                  >
+                    Adjust Position
+                  </Button>
+                </Tooltip>
+              )}
             </Box>
 
             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -4689,14 +4824,15 @@ const OptionsPanel = () => {
                 </Box>
 
                 {/* Execution Mode Toggle */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Tooltip title="Market: Fill immediately at best price. Smart: Limit orders with auto-market after 5min">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                  <Tooltip title="Market: Fill immediately. Smart: Limit at mid-price. SSR: Competitive pricing with auto-adjust.">
                     <Box
                       sx={{
                         display: 'flex',
                         borderRadius: 1,
                         overflow: 'hidden',
                         border: '1px solid rgba(255,255,255,0.2)',
+                        flexWrap: 'wrap',
                       }}
                     >
                       <Button
@@ -4705,7 +4841,7 @@ const OptionsPanel = () => {
                         onClick={() => setExecutionMode('immediate')}
                         sx={{
                           borderRadius: 0,
-                          minWidth: 80,
+                          minWidth: 70,
                           bgcolor:
                             executionMode === 'immediate'
                               ? 'rgba(239, 68, 68, 0.8)'
@@ -4721,7 +4857,7 @@ const OptionsPanel = () => {
                           },
                         }}
                       >
-                        🚀 Immediate
+                        🚀 Market
                       </Button>
                       <Button
                         size="small"
@@ -4729,7 +4865,7 @@ const OptionsPanel = () => {
                         onClick={() => setExecutionMode('smart')}
                         sx={{
                           borderRadius: 0,
-                          minWidth: 80,
+                          minWidth: 70,
                           bgcolor:
                             executionMode === 'smart' ? 'rgba(16, 185, 129, 0.8)' : 'transparent',
                           color: executionMode === 'smart' ? '#fff' : 'rgba(16, 185, 129, 0.8)',
@@ -4744,6 +4880,72 @@ const OptionsPanel = () => {
                         }}
                       >
                         🧠 Smart
+                      </Button>
+                      <Button
+                        size="small"
+                        variant={executionMode === 'ssr_standard' ? 'contained' : 'outlined'}
+                        onClick={() => setExecutionMode('ssr_standard')}
+                        sx={{
+                          borderRadius: 0,
+                          minWidth: 60,
+                          bgcolor:
+                            executionMode === 'ssr_standard' ? 'rgba(255, 152, 0, 0.8)' : 'transparent',
+                          color: executionMode === 'ssr_standard' ? '#fff' : 'rgba(255, 152, 0, 0.8)',
+                          borderColor: 'transparent',
+                          '&:hover': {
+                            bgcolor:
+                              executionMode === 'ssr_standard'
+                                ? 'rgba(255, 152, 0, 1)'
+                                : 'rgba(255, 152, 0, 0.1)',
+                            borderColor: 'transparent',
+                          },
+                        }}
+                      >
+                        🏎️ SSR
+                      </Button>
+                      <Button
+                        size="small"
+                        variant={executionMode === 'ssr_aggressive' ? 'contained' : 'outlined'}
+                        onClick={() => setExecutionMode('ssr_aggressive')}
+                        sx={{
+                          borderRadius: 0,
+                          minWidth: 70,
+                          bgcolor:
+                            executionMode === 'ssr_aggressive' ? 'rgba(76, 175, 80, 0.8)' : 'transparent',
+                          color: executionMode === 'ssr_aggressive' ? '#fff' : 'rgba(76, 175, 80, 0.8)',
+                          borderColor: 'transparent',
+                          '&:hover': {
+                            bgcolor:
+                              executionMode === 'ssr_aggressive'
+                                ? 'rgba(76, 175, 80, 1)'
+                                : 'rgba(76, 175, 80, 0.1)',
+                            borderColor: 'transparent',
+                          },
+                        }}
+                      >
+                        🔥 Aggro
+                      </Button>
+                      <Button
+                        size="small"
+                        variant={executionMode === 'ssr_conservative' ? 'contained' : 'outlined'}
+                        onClick={() => setExecutionMode('ssr_conservative')}
+                        sx={{
+                          borderRadius: 0,
+                          minWidth: 60,
+                          bgcolor:
+                            executionMode === 'ssr_conservative' ? 'rgba(3, 169, 244, 0.8)' : 'transparent',
+                          color: executionMode === 'ssr_conservative' ? '#fff' : 'rgba(3, 169, 244, 0.8)',
+                          borderColor: 'transparent',
+                          '&:hover': {
+                            bgcolor:
+                              executionMode === 'ssr_conservative'
+                                ? 'rgba(3, 169, 244, 1)'
+                                : 'rgba(3, 169, 244, 0.1)',
+                            borderColor: 'transparent',
+                          },
+                        }}
+                      >
+                        🛡️ Safe
                       </Button>
                     </Box>
                   </Tooltip>
@@ -5488,9 +5690,9 @@ const OptionsPanel = () => {
         </Box>
       )}
 
-      {/* Live Execution Status */}
+      {/* Options Trading Activity Monitor */}
       <Box sx={{ mt: 2 }}>
-        <LogPanel refreshTrigger={0} />
+        <OptionsActivityPanel refreshTrigger={0} />
       </Box>
 
       {/* Close Confirmation Dialog */}
@@ -5885,12 +6087,12 @@ const OptionsPanel = () => {
             }}>
               Execution
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            {/* Row 1: Standard order types */}
+            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
               {[
                 { key: 'market_only', label: '⚡ Market', desc: 'Instant fill' },
                 { key: 'maker_first', label: '🎯 Smart', desc: 'Mid-price post-only' },
                 { key: 'maker_only', label: '💰 Limit', desc: 'Your price' },
-                { key: 'ssr', label: '🏎️ SSR Order', desc: 'Competitive pricing' },
               ].map((opt) => (
                 <Tooltip key={opt.key} title={ORDER_TYPES[opt.key]?.description || ''}>
                   <Button
@@ -5914,6 +6116,50 @@ const OptionsPanel = () => {
                   >
                     <Typography sx={{
                       color: addDialog.orderType === opt.key ? '#60a5fa' : '#e2e8f0',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                    }}>
+                      {opt.label}
+                    </Typography>
+                    <Typography sx={{
+                      color: 'rgba(148, 163, 184, 0.6)',
+                      fontSize: '0.65rem',
+                    }}>
+                      {opt.desc}
+                    </Typography>
+                  </Button>
+                </Tooltip>
+              ))}
+            </Box>
+            {/* Row 2: SSR order types */}
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {[
+                { key: 'ssr_standard', label: '🏎️ SSR', desc: '2 ticks below', color: '#ff9800' },
+                { key: 'ssr_aggressive', label: '🔥 SSR Aggro', desc: '3-8% margin', color: '#4caf50' },
+                { key: 'ssr_conservative', label: '🛡️ SSR Safe', desc: '1-2% margin', color: '#03a9f4' },
+              ].map((opt) => (
+                <Tooltip key={opt.key} title={ORDER_TYPES[opt.key]?.description || ''}>
+                  <Button
+                    onClick={() => setAddDialog({ ...addDialog, orderType: opt.key })}
+                    sx={{
+                      flex: 1,
+                      py: 1,
+                      borderRadius: '10px',
+                      flexDirection: 'column',
+                      textTransform: 'none',
+                      background: addDialog.orderType === opt.key
+                        ? `${opt.color}33`  // 20% opacity
+                        : 'rgba(30, 41, 59, 0.5)',
+                      border: addDialog.orderType === opt.key
+                        ? `1px solid ${opt.color}`
+                        : '1px solid rgba(148, 163, 184, 0.15)',
+                      '&:hover': {
+                        background: `${opt.color}22`,  // 13% opacity
+                      },
+                    }}
+                  >
+                    <Typography sx={{
+                      color: addDialog.orderType === opt.key ? opt.color : '#e2e8f0',
                       fontSize: '0.8rem',
                       fontWeight: 600,
                     }}>
@@ -6151,6 +6397,19 @@ const OptionsPanel = () => {
       <TradeNotification
         notification={tradeNotification}
         onDismiss={() => setTradeNotification(null)}
+      />
+
+      {/* Position Adjustment Panel (JAN 31, 2026 - Sensibull-like workflow) */}
+      <PositionAdjustmentPanel
+        open={adjustmentPanelOpen}
+        onClose={() => setAdjustmentPanelOpen(false)}
+        currentPositions={positions}
+        spotPrice={btcPrice || ethPrice}
+        underlying={positions[0]?.product_symbol?.split('-')[1] || 'BTC'}
+        onExecuteComplete={() => {
+          setAdjustmentPanelOpen(false);
+          handleRefresh();
+        }}
       />
     </motion.div>
   );
