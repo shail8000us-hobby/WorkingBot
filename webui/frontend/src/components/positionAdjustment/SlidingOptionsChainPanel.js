@@ -428,6 +428,7 @@ export default function SlidingOptionsChainPanel({
       anchor="left"
       open={open}
       onClose={onClose}
+      variant="temporary"
       PaperProps={{
         sx: {
           width: PANEL_WIDTH,
@@ -436,8 +437,12 @@ export default function SlidingOptionsChainPanel({
         },
       }}
       ModalProps={{
+        keepMounted: false,
         BackdropProps: {
-          sx: { bgcolor: 'rgba(0,0,0,0.3)' },
+          sx: { 
+            bgcolor: 'rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(2px)',
+          },
         },
       }}
     >
