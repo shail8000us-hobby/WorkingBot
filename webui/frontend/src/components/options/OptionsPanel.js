@@ -111,7 +111,8 @@ import FuturesPanel from '../futures/FuturesPanel';
 import { calculatePoP } from '../../utils/probabilityCalc';
 import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
 // JAN 31, 2026: Position Adjustment Panel - Sensibull-like position adjustment system
-import { PositionAdjustmentPanel } from '../positionAdjustment';
+// FEB 1, 2026: Updated to use SensibullStyleAdjustmentPage (full page layout)
+import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
 
 // Sortable Row Component
 const SortableRow = ({ pos, children }) => {
@@ -6399,8 +6400,8 @@ const OptionsPanel = () => {
         onDismiss={() => setTradeNotification(null)}
       />
 
-      {/* Position Adjustment Panel (JAN 31, 2026 - Sensibull-like workflow) */}
-      <PositionAdjustmentPanel
+      {/* Position Adjustment Page (FEB 1, 2026 - Sensibull-like full page layout) */}
+      <SensibullStyleAdjustmentPage
         open={adjustmentPanelOpen}
         onClose={() => setAdjustmentPanelOpen(false)}
         currentPositions={positions}

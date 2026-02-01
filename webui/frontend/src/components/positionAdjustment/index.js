@@ -9,9 +9,11 @@
  * - Execute via autoloop for Delta Exchange low liquidity
  * 
  * Created: January 31, 2026
+ * Updated: February 1, 2026 - Added SensibullStyleAdjustmentPage
  */
 
 export { default as PositionAdjustmentPanel } from './PositionAdjustmentPanel';
+export { default as SensibullStyleAdjustmentPage } from './SensibullStyleAdjustmentPage';
 export { default as AdjustmentChainTable } from './AdjustmentChainTable';
 export { default as AdjustmentPayoffChart } from './AdjustmentPayoffChart';
 export { default as AdjustmentMetricsPanel } from './AdjustmentMetricsPanel';
