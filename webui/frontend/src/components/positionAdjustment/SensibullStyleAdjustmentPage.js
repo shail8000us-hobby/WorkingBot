@@ -70,7 +70,7 @@ import {
   Legend,
 } from 'recharts';
 import { getContractMultiplier } from '../../utils/constants';
-import AdjustmentChainTable from './AdjustmentChainTable';
+import SlidingOptionsChainPanel from './SlidingOptionsChainPanel';
 import AdjustmentReviewDialog from './AdjustmentReviewDialog';
 import { usePayoffCalculation } from './hooks/usePayoffCalculation';
 import api from '../../utils/apiShim';
@@ -734,27 +734,6 @@ export default function SensibullStyleAdjustmentPage({
               </Collapse>
             </Box>
           </Box>
-          
-          {/* Chain Panel (for adding trades) */}
-          <Collapse in={showChainPanel}>
-            <Box sx={{ 
-              height: 350, 
-              borderTop: `1px solid ${COLORS.border}`,
-              overflow: 'hidden',
-            }}>
-              <AdjustmentChainTable
-                underlying={derivedUnderlying}
-                selectedExpiry={selectedExpiry}
-                onExpiryChange={setSelectedExpiry}
-                proposedTrades={proposedTrades}
-                onAddTrade={handleAddTrade}
-                onRemoveTrade={handleRemoveTrade}
-                onUpdateTradeQty={handleUpdateTradeQty}
-                spotPrice={spotPrice}
-                isOpen={showChainPanel}
-              />
-            </Box>
-          </Collapse>
         </Box>
         
         {/* Right Panel - Chart & Metrics */}
@@ -1014,6 +993,19 @@ export default function SensibullStyleAdjustmentPage({
           </Box>
         </Box>
       </Box>
+      
+      {/* Sliding Options Chain Panel (from left side like Sensibull) */}
+      <SlidingOptionsChainPanel
+        open={showChainPanel}
+        onClose={() => setShowChainPanel(false)}
+        underlying={derivedUnderlying}
+        spotPrice={spotPrice}
+        proposedTrades={proposedTrades}
+        onAddTrade={handleAddTrade}
+        onRemoveTrade={handleRemoveTrade}
+        selectedExpiry={selectedExpiry}
+        onExpiryChange={setSelectedExpiry}
+      />
       
       {/* Review Dialog */}
       <AdjustmentReviewDialog
