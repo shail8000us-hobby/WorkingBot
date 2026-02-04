@@ -215,6 +215,46 @@ const OptionsPanel = () => {
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
 
+  // ============================================================================
+  // PHASE 1 OPTIMIZATION: Debounced localStorage writes
+  // Prevents UI blocking from synchronous localStorage operations
+  // MUST BE DEFINED BEFORE useEffect hooks that reference it
+  // ============================================================================
+  
+  // Debounced localStorage saver (500ms delay)
+  const debouncedSave = useMemo(
+    () => {
+      const saveToStorage = (key, value) => {
+        try {
+          if (value === null || value === undefined) {
+            localStorage.removeItem(key);
+          } else if (typeof value === 'object') {
+            localStorage.setItem(key, JSON.stringify(value));
+          } else {
+            localStorage.setItem(key, String(value));
+          }
+        } catch (err) {
+          console.warn(`Failed to save ${key} to localStorage:`, err);
+        }
+      };
+      
+      // Create debounced function with 500ms delay
+      let timeouts = {};
+      return (key, value, immediate = false) => {
+        if (immediate) {
+          saveToStorage(key, value);
+          return;
+        }
+        
+        clearTimeout(timeouts[key]);
+        timeouts[key] = setTimeout(() => {
+          saveToStorage(key, value);
+        }, 500);
+      };
+    },
+    []
+  );
+
   // Save pending orders collapsed state to localStorage (debounced)
   useEffect(() => {
     debouncedSave('options_pending_orders_collapsed', pendingOrdersCollapsed);
@@ -580,45 +620,6 @@ const OptionsPanel = () => {
     ];
     return filledTypes.includes(executionType);
   };
-
-  // ============================================================================
-  // PHASE 1 OPTIMIZATION: Debounced localStorage writes
-  // Prevents UI blocking from synchronous localStorage operations
-  // ============================================================================
-  
-  // Debounced localStorage saver (500ms delay)
-  const debouncedSave = useMemo(
-    () => {
-      const saveToStorage = (key, value) => {
-        try {
-          if (value === null || value === undefined) {
-            localStorage.removeItem(key);
-          } else if (typeof value === 'object') {
-            localStorage.setItem(key, JSON.stringify(value));
-          } else {
-            localStorage.setItem(key, String(value));
-          }
-        } catch (err) {
-          console.warn(`Failed to save ${key} to localStorage:`, err);
-        }
-      };
-      
-      // Create debounced function with 500ms delay
-      let timeouts = {};
-      return (key, value, immediate = false) => {
-        if (immediate) {
-          saveToStorage(key, value);
-          return;
-        }
-        
-        clearTimeout(timeouts[key]);
-        timeouts[key] = setTimeout(() => {
-          saveToStorage(key, value);
-        }, 500);
-      };
-    },
-    []
-  );
 
   // Save skipConfirmStrikes to localStorage whenever it changes (debounced)
   useEffect(() => {
