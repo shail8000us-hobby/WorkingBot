@@ -281,6 +281,19 @@ const OptionsPanel = () => {
     }
   });
 
+  // Phase 4: Turbo Mode for expiry day ultra-fast trading
+  const [turboMode, setTurboMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_turbo_mode');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Phase 4: Keyboard trading - selected row index
+  const [selectedRowIndex, setSelectedRowIndex] = useState(0);
+
   // Expiry filter (persisted) - now supports multiple selection
   const [selectedExpiries, setSelectedExpiries] = useState(() => {
     try {
@@ -639,6 +652,11 @@ const OptionsPanel = () => {
   useEffect(() => {
     debouncedSave('options_poll_interval', pollInterval);
   }, [pollInterval, debouncedSave]);
+
+  // Phase 4: Save turbo mode to localStorage
+  useEffect(() => {
+    debouncedSave('options_turbo_mode', turboMode);
+  }, [turboMode, debouncedSave]);
   
   // Save lastUsedSize to localStorage whenever it changes (debounced)
   useEffect(() => {
@@ -1770,6 +1788,74 @@ const OptionsPanel = () => {
     sortedPositionsRef.current = sortedPositions;
     indexPricesRef.current = indexPrices;
   }, [sortedPositions, indexPrices]);
+
+  // Phase 4: Keyboard shortcuts for ultra-fast trading
+  useEffect(() => {
+    if (!turboMode) return;
+
+    const handleKeyPress = (e) => {
+      // Don't interfere with inputs or dialogs
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (closeDialog.open || addDialog.open) return;
+
+      const key = e.key.toLowerCase();
+
+      // Navigate positions with arrow keys
+      if (key === 'arrowdown') {
+        e.preventDefault();
+        setSelectedRowIndex(prev => Math.min(prev + 1, sortedPositions.length - 1));
+      } else if (key === 'arrowup') {
+        e.preventDefault();
+        setSelectedRowIndex(prev => Math.max(prev - 1, 0));
+      }
+
+      // Quick actions on selected position
+      if (sortedPositions.length === 0) return;
+      const selectedPos = sortedPositions[selectedRowIndex];
+      if (!selectedPos) return;
+
+      // C = Close position
+      if (key === 'c') {
+        e.preventDefault();
+        setCloseDialog({
+          open: true,
+          position: selectedPos,
+        });
+      }
+
+      // B = Buy more (add to position if long, or reduce if short)
+      if (key === 'b') {
+        e.preventDefault();
+        setAddDialog({
+          open: true,
+          position: selectedPos,
+          side: 'buy',
+          defaultSize: lastUsedSize,
+        });
+      }
+
+      // S = Sell (add to position if short, or reduce if long)
+      if (key === 's') {
+        e.preventDefault();
+        setAddDialog({
+          open: true,
+          position: selectedPos,
+          side: 'sell',
+          defaultSize: lastUsedSize,
+        });
+      }
+
+      // ESC = Cancel any operation
+      if (key === 'escape') {
+        e.preventDefault();
+        setCloseDialog({ open: false, position: null });
+        setAddDialog({ open: false, position: null, side: null });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [turboMode, sortedPositions, selectedRowIndex, lastUsedSize, closeDialog.open, addDialog.open]);
 
   // Day 1: Calculate Probability of Profit (PoP) for each position
   useEffect(() => {
@@ -3572,9 +3658,23 @@ const OptionsPanel = () => {
                   Poll: {pollInterval / 1000}s
                 </Button>
               </Tooltip>
+
+              {/* Phase 4: Turbo Mode Toggle */}
+              <Tooltip title={turboMode ? "Exit Turbo Mode - Show all features" : "Turbo Mode - Ultra-fast expiry day trading (minimal UI, keyboard shortcuts)"}>
+                <Button
+                  size="small"
+                  variant={turboMode ? 'contained' : 'outlined'}
+                  color={turboMode ? 'error' : 'warning'}
+                  onClick={() => setTurboMode(!turboMode)}
+                  sx={{ ml: 1, fontWeight: 'bold' }}
+                  startIcon={turboMode ? '⚡' : null}
+                >
+                  {turboMode ? '⚡ TURBO' : 'Turbo Mode'}
+                </Button>
+              </Tooltip>
               
               {/* Position Adjustment Button (JAN 31, 2026 - Sensibull-like workflow) */}
-              {positions.length > 0 && (
+              {positions.length > 0 && !turboMode && (
                 <Tooltip title="Adjust positions - Add/close with live payoff preview">
                   <Button
                     size="small"
@@ -3647,8 +3747,21 @@ const OptionsPanel = () => {
             </Box>
           )}
 
+          {/* Phase 4: Turbo Mode Keyboard Shortcuts Help */}
+          {turboMode && (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              <Typography variant="caption" fontWeight="bold">
+                ⚡ TURBO MODE ACTIVE - Keyboard Shortcuts:
+              </Typography>
+              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                <kbd>↑</kbd>/<kbd>↓</kbd> Navigate • <kbd>B</kbd> Buy • <kbd>S</kbd> Sell • 
+                <kbd>C</kbd> Close • <kbd>ESC</kbd> Cancel
+              </Typography>
+            </Alert>
+          )}
+
           {/* Per-Expiry Max Loss Settings */}
-          {positions.length > 0 && uniqueExpiries.length > 0 && (
+          {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
             <ExpiryMaxLossPanel
               uniqueExpiries={uniqueExpiries}
               expiryPnlMap={expiryPnlMap}
@@ -4446,11 +4559,17 @@ const OptionsPanel = () => {
                               ? 'rgba(239, 68, 68, 0.06)'
                               : 'action.hover';
 
+                        // Phase 4: Turbo mode selected row highlight
+                        const isSelectedInTurbo = turboMode && index === selectedRowIndex;
+                        const finalBgColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.2)' : rowBgColor;
+                        const finalHoverColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.3)' : rowHoverColor;
+
                         // Common cell style
                         const cellSx = {
-                          backgroundColor: `${rowBgColor} !important`,
-                          '&:hover': { backgroundColor: `${rowHoverColor} !important` },
+                          backgroundColor: `${finalBgColor} !important`,
+                          '&:hover': { backgroundColor: `${finalHoverColor} !important` },
                           opacity: isClosed ? 0.7 : 1, // Reduce opacity for closed positions
+                          borderLeft: isSelectedInTurbo ? '3px solid #ffc107' : undefined,
                         };
 
                         return (
@@ -6030,7 +6149,7 @@ const OptionsPanel = () => {
       </Card>
 
       {/* Payoff Diagram */}
-      {positions.length > 0 && (
+      {positions.length > 0 && !turboMode && (
         <Box sx={{ mt: 2 }}>
           <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
             <OptionsPayoffDiagram
@@ -6043,11 +6162,13 @@ const OptionsPanel = () => {
       )}
 
       {/* Options Trading Activity Monitor */}
-      <Box sx={{ mt: 2 }}>
-        <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading activity panel...</Box>}>
-          <OptionsActivityPanel refreshTrigger={0} />
-        </Suspense>
-      </Box>
+      {!turboMode && (
+        <Box sx={{ mt: 2 }}>
+          <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading activity panel...</Box>}>
+            <OptionsActivityPanel refreshTrigger={0} />
+          </Suspense>
+        </Box>
+      )}
 
       {/* Close Confirmation Dialog */}
       <Dialog
