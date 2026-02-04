@@ -216,10 +216,9 @@ def detailed_health_check():
         'circuit_breakers': circuit_breakers
     }
     
-    # Return 503 if unhealthy (for load balancers/orchestrators)
-    if not is_healthy:
-        return APIResponse.service_unavailable('System is degraded')
-    
+    # Always return 200 for the detailed endpoint (used by frontend)
+    # The status field indicates if system is healthy or degraded
+    # Use /health/ready for load balancer health checks instead
     return APIResponse.success(data)
 
 

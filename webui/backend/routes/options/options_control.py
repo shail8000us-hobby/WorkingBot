@@ -2748,6 +2748,124 @@ def get_monitoring_activity():
         }), 500
 
 
+# =============================================================================
+# TAKE PROFIT ROUTES (Per-Strike TP Management)
+# =============================================================================
+
+@options_bp.route('/take-profit/strike/all', methods=['GET'])
+def get_all_take_profit_by_strike():
+    """Get take profit settings for all strikes."""
+    try:
+        from webui.backend.options_strategy.take_profit_manager import get_take_profit_manager
+        manager = get_take_profit_manager()
+        settings = manager.get_all_strike_take_profit()
+        return jsonify({
+            'success': True,
+            'settings': settings
+        })
+    except Exception as e:
+        log.error(f"Error getting strike take profit settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/take-profit/strike/get', methods=['GET'])
+def get_strike_take_profit():
+    """Get take profit setting for a specific strike."""
+    try:
+        from webui.backend.options_strategy.take_profit_manager import get_take_profit_manager
+        symbol = request.args.get('symbol')
+        
+        if not symbol:
+            return jsonify({'success': False, 'error': 'Symbol required'}), 400
+        
+        manager = get_take_profit_manager()
+        setting = manager.get_strike_take_profit(symbol)
+        
+        return jsonify({
+            'success': True,
+            'setting': setting
+        })
+    except Exception as e:
+        log.error(f"Error getting strike take profit: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/take-profit/strike/set', methods=['POST'])
+def set_strike_take_profit():
+    """Set take profit for a specific strike."""
+    try:
+        from webui.backend.options_strategy.take_profit_manager import get_take_profit_manager
+        data = request.get_json()
+        symbol = data.get('symbol')
+        target_profit = data.get('target_profit')
+        exit_quantity = data.get('exit_quantity')
+        
+        if not symbol:
+            return jsonify({'success': False, 'error': 'Symbol required'}), 400
+        if not target_profit or target_profit <= 0:
+            return jsonify({'success': False, 'error': 'Valid target_profit required (positive number)'}), 400
+        if not exit_quantity or exit_quantity <= 0:
+            return jsonify({'success': False, 'error': 'Valid exit_quantity required (positive integer)'}), 400
+        
+        manager = get_take_profit_manager()
+        result = manager.set_strike_take_profit(symbol, float(target_profit), int(exit_quantity))
+        
+        if result.get('success'):
+            log.info(f"✅ Take profit set for {symbol}: ${target_profit} -> exit {exit_quantity} lots")
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"Error setting strike take profit: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/take-profit/strike/remove', methods=['POST'])
+def remove_strike_take_profit():
+    """Remove take profit setting for a specific strike."""
+    try:
+        from webui.backend.options_strategy.take_profit_manager import get_take_profit_manager
+        data = request.get_json()
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return jsonify({'success': False, 'error': 'Symbol required'}), 400
+        
+        manager = get_take_profit_manager()
+        result = manager.remove_strike_take_profit(symbol)
+        
+        if result.get('success'):
+            log.info(f"✅ Take profit removed for {symbol}")
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        log.error(f"Error removing strike take profit: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/take-profit/history', methods=['GET'])
+def get_take_profit_history():
+    """Get take profit trigger history."""
+    try:
+        from webui.backend.options_strategy.take_profit_manager import get_take_profit_manager
+        limit = request.args.get('limit', 50, type=int)
+        
+        manager = get_take_profit_manager()
+        history = manager.get_history(limit=limit)
+        
+        return jsonify({
+            'success': True,
+            'history': history,
+            'count': len(history)
+        })
+    except Exception as e:
+        log.error(f"Error getting take profit history: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @options_bp.route('/sl-tp/all', methods=['GET'])
 def get_all_sl_tp():
     """Get all active SL/TP settings"""
@@ -2947,3 +3065,93 @@ create_batch_order_status_route(
     options_bp=options_bp,
     get_api_client=get_unified_client
 )
+
+
+# ================================================================
+# LIMIT ORDER ENDPOINT - FEB 2, 2026
+# Place individual limit orders (used by SSR Algo for exit orders at $3)
+# ================================================================
+
+@options_bp.route('/limit_order', methods=['POST'])
+def place_limit_order():
+    """
+    Place a single limit order.
+    
+    Request body:
+        {
+            symbol: str,        # Option symbol (e.g., "C-BTC-76000-060226")
+            size: int,          # Order size (always positive)
+            side: str,          # 'buy' or 'sell'
+            price: float,       # Limit price
+        }
+    
+    Returns:
+        {success: bool, order_id: str, message: str}
+    """
+    try:
+        data = request.get_json()
+        
+        symbol = data.get('symbol')
+        size = abs(int(data.get('size', 1)))
+        side = data.get('side', 'buy').lower()
+        price = float(data.get('price', 0))
+        
+        if not symbol:
+            return jsonify({'success': False, 'error': 'Symbol is required'}), 400
+        
+        if price <= 0:
+            return jsonify({'success': False, 'error': 'Price must be positive'}), 400
+        
+        if side not in ['buy', 'sell']:
+            return jsonify({'success': False, 'error': 'Side must be buy or sell'}), 400
+        
+        # Get API client
+        api_client = get_unified_client()
+        if not api_client:
+            return jsonify({'success': False, 'error': 'API client not available'}), 503
+        
+        # Get product ID for symbol
+        try:
+            product = api_client.get_product_by_symbol(symbol)
+            if not product:
+                return jsonify({'success': False, 'error': f'Product not found: {symbol}'}), 404
+            product_id = product.get('id')
+        except Exception as e:
+            log.error(f"Failed to get product for {symbol}: {e}")
+            return jsonify({'success': False, 'error': f'Failed to resolve symbol: {e}'}), 400
+        
+        # Place limit order
+        try:
+            result = api_client.place_order(
+                product_id=product_id,
+                side=side,
+                size=size,
+                limit_price=price,
+                order_type='limit_order',
+                time_in_force='gtc'
+            )
+            
+            if result.get('success') or result.get('id'):
+                order_id = result.get('id') or result.get('order_id')
+                log.info(f"Placed limit order: {symbol} {side} {size} @ {price} -> {order_id}")
+                return jsonify({
+                    'success': True,
+                    'order_id': str(order_id),
+                    'symbol': symbol,
+                    'side': side,
+                    'size': size,
+                    'price': price,
+                    'message': f'Limit order placed: {order_id}'
+                })
+            else:
+                error = result.get('error') or result.get('message') or 'Unknown error'
+                log.error(f"Limit order failed: {error}")
+                return jsonify({'success': False, 'error': error}), 400
+                
+        except Exception as e:
+            log.exception(f"Limit order placement failed: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+        
+    except Exception as e:
+        log.exception("Limit order endpoint error")
+        return jsonify({'success': False, 'error': str(e)}), 500

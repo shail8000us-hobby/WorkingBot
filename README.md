@@ -103,6 +103,57 @@ A production-ready, strict rung GridBot designed for Delta Exchange using ccxt. 
 **Phase 1 Details:** See [PHASE1_COMPLETE_SUMMARY.md](PHASE1_COMPLETE_SUMMARY.md) for full documentation.  
 **Testing Guide:** See [PHASE1_TESTING_GUIDE.md](PHASE1_TESTING_GUIDE.md) for QA procedures.
 
+## 🦋 SSR ALGO - Automated Iron Butterfly (NEW!)
+
+A fully automated algorithmic trading engine for a **Modified Iron Butterfly with Protective Wings** strategy on BTC/ETH options.
+
+### Strategy Overview
+- **Structure:** Modified Iron Butterfly (8 legs with 1:2:1 ratio)
+- **Selection:** Percentage-based OTM strike selection (45-49% / 20-30% of ATM premium)
+- **Automation:** Auto-loop execution with configurable rounds
+- **Monitoring:** Real-time price monitoring with auto-adjustment triggers
+
+### Key Features
+| Feature | Description |
+|---------|-------------|
+| **ATM Detection** | Finds true ATM by minimizing \|CE - PE\| premium difference |
+| **OTM Selection** | Algorithmically selects OTM strikes based on premium percentages |
+| **Auto-Loop** | Executes multiple butterfly entries in configurable rounds |
+| **Dwell Trigger** | Auto-adjusts when price stays in max loss zone for 10 minutes |
+| **Payoff Chart** | Interactive visualization with max loss markers |
+| **Multi-Session** | Run BTC and ETH sessions independently |
+
+### Position Structure
+```
+Far OTM CE Sell (-1) ────► OTM CE Buy (+1) ────► ATM CE Sell (-2)
+                                                 ATM PE Sell (-2)
+Far OTM PE Sell (-1) ◄──── OTM PE Buy (+1) ◄────
+```
+
+### Quick Start
+1. Navigate to **🦋 SSR ALGO** in the sidebar
+2. Select underlying (BTC/ETH) and expiry
+3. Click **Preview** to see strike selection
+4. Click **Start SSR ALGO** to create and execute
+
+### Documentation
+- 📖 [SSR_ALGO_USER_GUIDE.md](SSR_ALGO_USER_GUIDE.md) - Complete user guide
+- 📋 [SSR_ALGO_ARCHITECTURE.md](SSR_ALGO_ARCHITECTURE.md) - Technical architecture
+- ✅ [SSR_ALGO_TASKS.md](SSR_ALGO_TASKS.md) - Implementation progress (82% complete)
+
+### Test Results
+```
+SSR ALGO Test Suite: 56/56 tests passing (100%)
+├── Storage Tests: 6/6 ✅
+├── Strike Selector Tests: 7/7 ✅
+├── Executor Tests: 5/5 ✅
+├── Payoff Calculator Tests: 8/8 ✅
+├── Dwell Tracker Tests: 6/6 ✅
+├── Price Monitor Tests: 6/6 ✅
+├── API Endpoint Tests: 4/4 ✅
+└── Integration Tests: 14/14 ✅
+```
+
 ## Production Robustness Features 🛡️
 
 ### Safety Systems

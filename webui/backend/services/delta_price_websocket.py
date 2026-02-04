@@ -32,12 +32,13 @@ class DeltaPriceWebSocket:
     BTC_INDEX = '.DEXBTUSD'
     ETH_INDEX = '.DEETHUSD'
     
-    def __init__(self, on_price_update: Optional[Callable] = None):
+    def __init__(self, on_price_update: Optional[Callable] = None, on_ticker_update: Optional[Callable] = None):
         """
         Initialize WebSocket client
         
         Args:
             on_price_update: Callback function(symbol, price) called on price updates
+            on_ticker_update: Callback function(symbol, ticker_data) called on ticker updates (bid/ask)
         """
         self.ws: Optional[websocket.WebSocketApp] = None
         self.ws_thread: Optional[threading.Thread] = None
@@ -54,8 +55,13 @@ class DeltaPriceWebSocket:
             'ETH': 0.0
         }
         
-        # Callback for price updates
+        # Options ticker subscriptions (symbol -> True)
+        self.subscribed_options: Dict[str, bool] = {}
+        self.subscribed_options_lock = threading.Lock()
+        
+        # Callbacks
         self.on_price_update = on_price_update
+        self.on_ticker_update = on_ticker_update
         
         # Reconnection settings
         self.reconnect_delay = 5  # seconds
@@ -67,7 +73,7 @@ class DeltaPriceWebSocket:
         try:
             data = json.loads(message)
             
-            # Check if it's a spot price update
+            # Handle spot price updates (BTC/ETH index)
             if data.get('type') == 'v2/spot_price':
                 symbol = data.get('s')  # Delta API uses 's' for symbol (not 'symbol')
                 price = data.get('p')   # Delta API uses 'p' for price (not 'price')
@@ -96,6 +102,28 @@ class DeltaPriceWebSocket:
                         self.on_price_update(asset, price)
                     except Exception as e:
                         log.error(f"[DeltaWS] Error in price update callback: {e}")
+            
+            # Handle v2/ticker updates (options bid/ask)
+            elif data.get('type') == 'v2/ticker':
+                symbol = data.get('symbol')
+                if not symbol:
+                    return
+                
+                # Extract ticker data
+                ticker_data = {
+                    'symbol': symbol,
+                    'best_bid': float(data.get('best_bid_price', 0) or 0),
+                    'best_ask': float(data.get('best_ask_price', 0) or 0),
+                    'mark_price': float(data.get('mark_price', 0) or 0),
+                    'timestamp': time.time()
+                }
+                
+                # Trigger ticker callback
+                if self.on_ticker_update:
+                    try:
+                        self.on_ticker_update(symbol, ticker_data)
+                    except Exception as e:
+                        log.error(f"[DeltaWS] Error in ticker update callback: {e}")
                         
         except json.JSONDecodeError as e:
             log.error(f"[DeltaWS] Error decoding message: {e}")
@@ -143,6 +171,11 @@ class DeltaPriceWebSocket:
             log.info(f"[DeltaWS] Subscribed to {self.BTC_INDEX} and {self.ETH_INDEX} spot price feeds")
         except Exception as e:
             log.error(f"[DeltaWS] Error sending subscription: {e}")
+        
+        # Re-subscribe to any options tickers
+        with self.subscribed_options_lock:
+            if self.subscribed_options:
+                self._subscribe_to_options_tickers(list(self.subscribed_options.keys()))
     
     def _connect(self):
         """Internal method to create and start WebSocket connection"""
@@ -224,8 +257,91 @@ class DeltaPriceWebSocket:
             'running': self.running,
             'prices': self.prices.copy(),
             'last_update': self.last_update.copy(),
-            'reconnect_attempts': self.reconnect_attempts
+            'reconnect_attempts': self.reconnect_attempts,
+            'subscribed_options': list(self.subscribed_options.keys())
         }
+    
+    def _subscribe_to_options_tickers(self, symbols: list):
+        """
+        Internal method to subscribe to options ticker updates
+        
+        Args:
+            symbols: List of option symbols to subscribe to (e.g., ['BTC-29MAR24-65000-C', ...])
+        """
+        if not symbols or not self.ws or not self.connected:
+            return
+        
+        subscribe_message = {
+            "type": "subscribe",
+            "payload": {
+                "channels": [
+                    {
+                        "name": "v2/ticker",
+                        "symbols": symbols
+                    }
+                ]
+            }
+        }
+        
+        try:
+            self.ws.send(json.dumps(subscribe_message))
+            log.info(f"[DeltaWS] Subscribed to {len(symbols)} options tickers")
+        except Exception as e:
+            log.error(f"[DeltaWS] Error subscribing to options tickers: {e}")
+    
+    def subscribe_options(self, symbols: list):
+        """
+        Subscribe to real-time ticker updates for options
+        
+        Args:
+            symbols: List of option symbols to subscribe to (e.g., ['BTC-29MAR24-65000-C', ...])
+        """
+        if not symbols:
+            return
+        
+        with self.subscribed_options_lock:
+            # Add to subscribed set
+            for symbol in symbols:
+                self.subscribed_options[symbol] = True
+            
+            # Subscribe if connected
+            if self.connected:
+                self._subscribe_to_options_tickers(symbols)
+            else:
+                log.warning(f"[DeltaWS] Not connected, will subscribe to {len(symbols)} options when connected")
+    
+    def unsubscribe_options(self, symbols: list):
+        """
+        Unsubscribe from options ticker updates
+        
+        Args:
+            symbols: List of option symbols to unsubscribe from
+        """
+        if not symbols or not self.ws or not self.connected:
+            return
+        
+        with self.subscribed_options_lock:
+            # Remove from subscribed set
+            for symbol in symbols:
+                self.subscribed_options.pop(symbol, None)
+        
+        unsubscribe_message = {
+            "type": "unsubscribe",
+            "payload": {
+                "channels": [
+                    {
+                        "name": "v2/ticker",
+                        "symbols": symbols
+                    }
+                ]
+            }
+        }
+        
+        try:
+            self.ws.send(json.dumps(unsubscribe_message))
+            log.info(f"[DeltaWS] Unsubscribed from {len(symbols)} options tickers")
+        except Exception as e:
+            log.error(f"[DeltaWS] Error unsubscribing from options tickers: {e}")
 
 
 # Global instance
@@ -275,7 +391,21 @@ def start_price_service(socketio_instance):
         except Exception as e:
             log.error(f"[DeltaWS] Error broadcasting price: {e}")
     
+    # Set up callback to broadcast ticker updates (bid/ask)
+    def broadcast_ticker(symbol: str, ticker_data: dict):
+        try:
+            socketio_instance.emit('options_ticker_update', {
+                'symbol': symbol,
+                'best_bid': ticker_data['best_bid'],
+                'best_ask': ticker_data['best_ask'],
+                'mark_price': ticker_data['mark_price'],
+                'timestamp': ticker_data['timestamp']
+            })
+        except Exception as e:
+            log.error(f"[DeltaWS] Error broadcasting ticker: {e}")
+    
     price_ws.on_price_update = broadcast_price
+    price_ws.on_ticker_update = broadcast_ticker
     price_ws.start()
     
     log.info("[DeltaWS] Price broadcast service started")

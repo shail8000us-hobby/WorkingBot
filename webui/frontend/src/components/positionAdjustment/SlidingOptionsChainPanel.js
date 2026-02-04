@@ -84,7 +84,7 @@ const formatExpiry = (expiry) => {
 };
 
 /**
- * Chain Row Component
+ * Chain Row Component - Sensibull Style with per-row quantity selector
  */
 const ChainRow = ({ 
   strikeData, 
@@ -94,10 +94,19 @@ const ChainRow = ({
   onTradeClick,
   showOi,
   showGreeks,
+  tradeQuantities,
+  onQuantityChange,
 }) => {
   const strike = parseFloat(strikeData.strike);
   const callData = strikeData.call || {};
   const putData = strikeData.put || {};
+  
+  // Quantity options - sequential 1 to 50
+  const qtyOptions = Array.from({ length: 50 }, (_, i) => i + 1);
+  
+  // Get current quantities for this strike
+  const callQty = tradeQuantities?.[`${strike}-call`] || 1;
+  const putQty = tradeQuantities?.[`${strike}-put`] || 1;
   
   // Check if trades are selected
   const isCallBuySelected = proposedTrades.some(t => t.strike === strike && t.type === 'call' && t.side === 'buy');
@@ -105,178 +114,277 @@ const ChainRow = ({
   const isPutBuySelected = proposedTrades.some(t => t.strike === strike && t.type === 'put' && t.side === 'buy');
   const isPutSellSelected = proposedTrades.some(t => t.strike === strike && t.type === 'put' && t.side === 'sell');
   
-  // Calculate moneyness for visual indicator
-  const isItm = spotPrice ? (strike < spotPrice ? 'call-itm' : strike > spotPrice ? 'put-itm' : 'atm') : '';
+  const isCallSelected = isCallBuySelected || isCallSellSelected;
+  const isPutSelected = isPutBuySelected || isPutSellSelected;
   
   return (
-    <TableRow 
-      sx={{ 
-        bgcolor: isAtm ? COLORS.atmBg : 'transparent',
-        borderLeft: isAtm ? `3px solid ${COLORS.atm}` : 'none',
-        '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' },
-      }}
-    >
-      {/* Delta (Call) */}
-      {showGreeks && (
-        <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-          {callData.delta ? callData.delta.toFixed(2) : '-'}
-        </TableCell>
-      )}
-      
-      {/* Call LTP */}
-      <TableCell align="right" sx={{ color: COLORS.text, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-        {(callData.mark_price || callData.ltp)?.toFixed(2) || '-'}
-      </TableCell>
-      
-      {/* Call OI */}
-      {showOi && (
-        <TableCell align="center" sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-          <Box sx={{ 
-            height: 6, 
-            bgcolor: COLORS.callOi, 
-            borderRadius: 1,
-            width: `${Math.min((callData.oi || 0) / 1000, 100)}%`,
-            minWidth: callData.oi ? 4 : 0,
-          }} />
-        </TableCell>
-      )}
-      
-      {/* B/S Buttons (Call) */}
-      <TableCell align="center" sx={{ py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
-        <ButtonGroup size="small" sx={{ minWidth: 60 }}>
-          <Button
-            onClick={() => onTradeClick(strike, 'call', 'buy', callData)}
-            sx={{
-              minWidth: 28,
-              px: 0.5,
-              py: 0.25,
-              fontSize: '0.7rem',
-              fontWeight: 'bold',
-              bgcolor: isCallBuySelected ? COLORS.buy : COLORS.buyBg,
-              color: isCallBuySelected ? '#fff' : COLORS.buy,
-              border: `1px solid ${COLORS.buy}`,
-              '&:hover': { bgcolor: COLORS.buy, color: '#fff' },
-            }}
-          >
-            B
-          </Button>
-          <Button
-            onClick={() => onTradeClick(strike, 'call', 'sell', callData)}
-            sx={{
-              minWidth: 28,
-              px: 0.5,
-              py: 0.25,
-              fontSize: '0.7rem',
-              fontWeight: 'bold',
-              bgcolor: isCallSellSelected ? COLORS.sell : COLORS.sellBg,
-              color: isCallSellSelected ? '#fff' : COLORS.sell,
-              border: `1px solid ${COLORS.sell}`,
-              '&:hover': { bgcolor: COLORS.sell, color: '#fff' },
-            }}
-          >
-            S
-          </Button>
-        </ButtonGroup>
-      </TableCell>
-      
-      {/* Strike */}
-      <TableCell 
-        align="center" 
+    <>
+      <TableRow 
         sx={{ 
-          fontWeight: 'bold',
-          fontSize: '0.85rem',
-          color: isAtm ? COLORS.atm : COLORS.text,
-          bgcolor: 'rgba(255,255,255,0.02)',
-          borderLeft: `1px solid ${COLORS.border}`,
-          borderRight: `1px solid ${COLORS.border}`,
-          borderBottom: `1px solid ${COLORS.border}`,
-          py: 0.75,
+          bgcolor: isAtm ? COLORS.atmBg : 'transparent',
+          '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' },
         }}
       >
-        {strike.toLocaleString()}
-        {isAtm && (
-          <Chip 
-            label="ATM" 
-            size="small" 
-            sx={{ 
-              ml: 0.5, 
-              height: 16, 
-              fontSize: '0.6rem',
-              bgcolor: COLORS.atmBg,
-              color: COLORS.atm,
-            }} 
-          />
+        {/* Delta (Call) */}
+        {showGreeks && (
+          <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+            {callData.delta ? callData.delta.toFixed(2) : '-'}
+          </TableCell>
         )}
-      </TableCell>
-      
-      {/* IV */}
-      <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-        {putData.iv ? `${(putData.iv * 100).toFixed(1)}` : callData.iv ? `${(callData.iv * 100).toFixed(1)}` : '-'}
-      </TableCell>
-      
-      {/* Put OI */}
-      {showOi && (
-        <TableCell align="center" sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-          <Box sx={{ 
-            height: 6, 
-            bgcolor: COLORS.putOi, 
-            borderRadius: 1,
-            width: `${Math.min((putData.oi || 0) / 1000, 100)}%`,
-            minWidth: putData.oi ? 4 : 0,
-          }} />
+        
+        {/* Call LTP */}
+        <TableCell align="right" sx={{ color: COLORS.text, fontSize: '0.85rem', py: 0.75, px: 1, borderBottom: `1px solid ${COLORS.border}` }}>
+          {(callData.mark_price || callData.ltp)?.toFixed(2) || '-'}
         </TableCell>
-      )}
-      
-      {/* B/S Buttons (Put) */}
-      <TableCell align="center" sx={{ py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
-        <ButtonGroup size="small" sx={{ minWidth: 60 }}>
-          <Button
-            onClick={() => onTradeClick(strike, 'put', 'buy', putData)}
-            sx={{
-              minWidth: 28,
-              px: 0.5,
-              py: 0.25,
-              fontSize: '0.7rem',
-              fontWeight: 'bold',
-              bgcolor: isPutBuySelected ? COLORS.buy : COLORS.buyBg,
-              color: isPutBuySelected ? '#fff' : COLORS.buy,
-              border: `1px solid ${COLORS.buy}`,
-              '&:hover': { bgcolor: COLORS.buy, color: '#fff' },
-            }}
-          >
-            B
-          </Button>
-          <Button
-            onClick={() => onTradeClick(strike, 'put', 'sell', putData)}
-            sx={{
-              minWidth: 28,
-              px: 0.5,
-              py: 0.25,
-              fontSize: '0.7rem',
-              fontWeight: 'bold',
-              bgcolor: isPutSellSelected ? COLORS.sell : COLORS.sellBg,
-              color: isPutSellSelected ? '#fff' : COLORS.sell,
-              border: `1px solid ${COLORS.sell}`,
-              '&:hover': { bgcolor: COLORS.sell, color: '#fff' },
-            }}
-          >
-            S
-          </Button>
-        </ButtonGroup>
-      </TableCell>
-      
-      {/* Put LTP */}
-      <TableCell align="left" sx={{ color: COLORS.text, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-        {(putData.mark_price || putData.ltp)?.toFixed(2) || '-'}
-      </TableCell>
-      
-      {/* Delta (Put) */}
-      {showGreeks && (
-        <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
-          {putData.delta ? putData.delta.toFixed(2) : '-'}
+        
+        {/* Call OI bar */}
+        {showOi && (
+          <TableCell align="center" sx={{ py: 0.75, px: 0.75, width: 60, borderBottom: `1px solid ${COLORS.border}` }}>
+            <Box sx={{ 
+              height: 6, 
+              bgcolor: COLORS.callOi, 
+              borderRadius: 0.5,
+              width: `${Math.min((callData.oi || 0) / 1000, 100)}%`,
+              minWidth: callData.oi ? 4 : 0,
+              ml: 'auto',
+            }} />
+          </TableCell>
+        )}
+        
+        {/* Call B/S Buttons */}
+        <TableCell align="center" sx={{ py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+          <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+            <Box
+              onClick={() => onTradeClick(strike, 'call', 'buy', callData, callQty)}
+              sx={{
+                width: 26,
+                height: 26,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                borderRadius: 0.5,
+                cursor: 'pointer',
+                bgcolor: isCallBuySelected ? COLORS.buy : 'transparent',
+                color: isCallBuySelected ? '#fff' : COLORS.buy,
+                border: `1px solid ${COLORS.buy}`,
+                '&:hover': { bgcolor: COLORS.buy, color: '#fff' },
+              }}
+            >
+              B
+            </Box>
+            <Box
+              onClick={() => onTradeClick(strike, 'call', 'sell', callData, callQty)}
+              sx={{
+                width: 26,
+                height: 26,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                borderRadius: 0.5,
+                cursor: 'pointer',
+                bgcolor: isCallSellSelected ? COLORS.sell : 'transparent',
+                color: isCallSellSelected ? '#fff' : COLORS.sell,
+                border: `1px solid ${COLORS.sell}`,
+                '&:hover': { bgcolor: COLORS.sell, color: '#fff' },
+              }}
+            >
+              S
+            </Box>
+          </Box>
         </TableCell>
+        
+        {/* Strike */}
+        <TableCell 
+          align="center" 
+          sx={{ 
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            color: isAtm ? COLORS.atm : COLORS.text,
+            bgcolor: 'rgba(255,255,255,0.03)',
+            borderLeft: `1px solid ${COLORS.border}`,
+            borderRight: `1px solid ${COLORS.border}`,
+            borderBottom: `1px solid ${COLORS.border}`,
+            py: 0.75,
+            px: 1.5,
+            position: 'relative',
+          }}
+        >
+          {strike.toLocaleString()}
+          {isAtm && (
+            <Box 
+              component="span"
+              sx={{ 
+                ml: 0.5, 
+                fontSize: '0.6rem',
+                color: COLORS.atm,
+                verticalAlign: 'super',
+              }}
+            >
+              ATM
+            </Box>
+          )}
+        </TableCell>
+        
+        {/* IV */}
+        <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+          {putData.iv ? `${(putData.iv * 100).toFixed(1)}` : callData.iv ? `${(callData.iv * 100).toFixed(1)}` : '-'}
+        </TableCell>
+        
+        {/* Put OI bar */}
+        {showOi && (
+          <TableCell align="center" sx={{ py: 0.75, px: 0.75, width: 60, borderBottom: `1px solid ${COLORS.border}` }}>
+            <Box sx={{ 
+              height: 6, 
+              bgcolor: COLORS.putOi, 
+              borderRadius: 0.5,
+              width: `${Math.min((putData.oi || 0) / 1000, 100)}%`,
+              minWidth: putData.oi ? 4 : 0,
+            }} />
+          </TableCell>
+        )}
+        
+        {/* Put B/S Buttons */}
+        <TableCell align="center" sx={{ py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+          <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+            <Box
+              onClick={() => onTradeClick(strike, 'put', 'buy', putData, putQty)}
+              sx={{
+                width: 26,
+                height: 26,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                borderRadius: 0.5,
+                cursor: 'pointer',
+                bgcolor: isPutBuySelected ? COLORS.buy : 'transparent',
+                color: isPutBuySelected ? '#fff' : COLORS.buy,
+                border: `1px solid ${COLORS.buy}`,
+                '&:hover': { bgcolor: COLORS.buy, color: '#fff' },
+              }}
+            >
+              B
+            </Box>
+            <Box
+              onClick={() => onTradeClick(strike, 'put', 'sell', putData, putQty)}
+              sx={{
+                width: 26,
+                height: 26,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                borderRadius: 0.5,
+                cursor: 'pointer',
+                bgcolor: isPutSellSelected ? COLORS.sell : 'transparent',
+                color: isPutSellSelected ? '#fff' : COLORS.sell,
+                border: `1px solid ${COLORS.sell}`,
+                '&:hover': { bgcolor: COLORS.sell, color: '#fff' },
+              }}
+            >
+              S
+            </Box>
+          </Box>
+        </TableCell>
+        
+        {/* Put LTP */}
+        <TableCell align="left" sx={{ color: COLORS.text, fontSize: '0.85rem', py: 0.75, px: 1, borderBottom: `1px solid ${COLORS.border}` }}>
+          {(putData.mark_price || putData.ltp)?.toFixed(2) || '-'}
+        </TableCell>
+        
+        {/* Delta (Put) */}
+        {showGreeks && (
+          <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+            {putData.delta ? putData.delta.toFixed(2) : '-'}
+          </TableCell>
+        )}
+      </TableRow>
+      
+      {/* Quantity selector row - appears when call or put is selected */}
+      {(isCallSelected || isPutSelected) && (
+        <TableRow sx={{ bgcolor: 'rgba(255,255,255,0.02)' }}>
+          <TableCell 
+            colSpan={showGreeks ? (showOi ? 10 : 8) : (showOi ? 8 : 6)} 
+            sx={{ py: 0.5, px: 1, borderBottom: `1px solid ${COLORS.border}` }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {/* Call Quantity Selector */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, justifyContent: 'flex-end', pr: 2 }}>
+                {isCallSelected && (
+                  <>
+                    <Typography sx={{ fontSize: '0.7rem', color: COLORS.textSecondary }}>Qty</Typography>
+                    <select
+                      value={callQty}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        onQuantityChange(strike, 'call', parseInt(e.target.value));
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        height: 24,
+                        minWidth: 50,
+                        fontSize: '0.75rem',
+                        color: COLORS.text,
+                        backgroundColor: COLORS.cardBg,
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: 4,
+                        padding: '2px 4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {qtyOptions.map(q => (
+                        <option key={q} value={q} style={{ backgroundColor: COLORS.cardBg, color: COLORS.text }}>{q}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </Box>
+              
+              {/* Strike spacer */}
+              <Box sx={{ width: 70 }} />
+              
+              {/* Put Quantity Selector */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, pl: 2 }}>
+                {isPutSelected && (
+                  <>
+                    <select
+                      value={putQty}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        onQuantityChange(strike, 'put', parseInt(e.target.value));
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        height: 24,
+                        minWidth: 50,
+                        fontSize: '0.75rem',
+                        color: COLORS.text,
+                        backgroundColor: COLORS.cardBg,
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: 4,
+                        padding: '2px 4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {qtyOptions.map(q => (
+                        <option key={q} value={q} style={{ backgroundColor: COLORS.cardBg, color: COLORS.text }}>{q}</option>
+                      ))}
+                    </select>
+                    <Typography sx={{ fontSize: '0.7rem', color: COLORS.textSecondary }}>Qty</Typography>
+                  </>
+                )}
+              </Box>
+            </Box>
+          </TableCell>
+        </TableRow>
       )}
-    </TableRow>
+    </>
   );
 };
 
@@ -293,6 +401,7 @@ export default function SlidingOptionsChainPanel({
   onRemoveTrade,
   selectedExpiry,
   onExpiryChange,
+  inline = false,  // NEW: Render inline without Drawer wrapper
 }) {
   // State
   const [expirations, setExpirations] = useState([]);
@@ -303,6 +412,21 @@ export default function SlidingOptionsChainPanel({
   const [showOi, setShowOi] = useState(false);
   const [showGreeks, setShowGreeks] = useState(false);
   const [displayMode, setDisplayMode] = useState('ltp'); // 'ltp', 'oi', 'greeks'
+  const [tradeQuantities, setTradeQuantities] = useState({}); // Per-strike quantities: { "78200-call": 30, "78200-put": 10 }
+  
+  // Convert expiry from DDMMYY to DDMMYYYY for API
+  const convertExpiryToAPI = useCallback((expiry) => {
+    if (!expiry) return expiry;
+    // If already 8 digits, it's DDMMYYYY format
+    if (expiry.length === 8) return expiry;
+    // If 6 digits (DDMMYY), convert to DDMMYYYY
+    if (expiry.length === 6) {
+      const year = expiry.slice(4, 6);
+      const fullYear = parseInt(year) > 50 ? `19${year}` : `20${year}`;
+      return expiry.slice(0, 4) + fullYear;
+    }
+    return expiry;
+  }, []);
   
   // Fetch expirations when panel opens
   useEffect(() => {
@@ -315,7 +439,7 @@ export default function SlidingOptionsChainPanel({
         const result = await optionsChainAPI.getExpirations(underlying);
         setExpirations(result || []);
         
-        // Auto-select first expiry if none
+        // Auto-select first expiry if none selected
         if (!selectedExpiry && result?.length > 0) {
           onExpiryChange?.(result[0]);
         }
@@ -337,9 +461,12 @@ export default function SlidingOptionsChainPanel({
       try {
         setLoading(true);
         setError(null);
-        const result = await optionsChainAPI.getChainData(underlying, selectedExpiry);
+        // Convert expiry format for API (DDMMYY -> DDMMYYYY)
+        const apiExpiry = convertExpiryToAPI(selectedExpiry);
+        const result = await optionsChainAPI.getChainData(underlying, apiExpiry);
         setChainData(result);
       } catch (err) {
+        console.error('[SlidingOptionsChainPanel] fetchChain error:', err);
         setError('Failed to load options chain');
         setChainData(null);
       } finally {
@@ -348,7 +475,7 @@ export default function SlidingOptionsChainPanel({
     };
     
     fetchChain();
-  }, [open, underlying, selectedExpiry]);
+  }, [open, underlying, selectedExpiry, convertExpiryToAPI]);
   
   // Find ATM strike
   const atmStrike = useMemo(() => {
@@ -364,8 +491,25 @@ export default function SlidingOptionsChainPanel({
     );
   }, [spotPrice, chainData]);
   
-  // Handle trade click
-  const handleTradeClick = useCallback((strike, type, side, optionData) => {
+  // Handle quantity change for a specific strike/type
+  const handleQuantityChange = useCallback((strike, type, quantity) => {
+    const key = `${strike}-${type}`;
+    setTradeQuantities(prev => ({ ...prev, [key]: quantity }));
+    
+    // Update existing trade if it exists
+    const existingTrade = proposedTrades.find(t => t.strike === strike && t.type === type);
+    if (existingTrade) {
+      // Remove old trade and add with new quantity
+      onRemoveTrade?.(existingTrade);
+      onAddTrade?.({
+        ...existingTrade,
+        quantity,
+      });
+    }
+  }, [proposedTrades, onAddTrade, onRemoveTrade]);
+  
+  // Handle trade click - now accepts quantity from row
+  const handleTradeClick = useCallback((strike, type, side, optionData, quantity = 1) => {
     const existingTrade = proposedTrades.find(t => 
       t.strike === strike && t.type === type && t.side === side
     );
@@ -382,31 +526,38 @@ export default function SlidingOptionsChainPanel({
         onRemoveTrade?.(oppositeTrade);
       }
       
-      // Convert expiry format (DDMMYYYY -> DDMMYY)
-      const expiryShort = selectedExpiry?.length === 8 
-        ? selectedExpiry.slice(0, 4) + selectedExpiry.slice(6, 8)
+      // Use the converted expiry format for API
+      const apiExpiry = convertExpiryToAPI(selectedExpiry);
+      
+      // Convert expiry format (DDMMYYYY -> DDMMYY for symbol)
+      const expiryShort = apiExpiry?.length === 8 
+        ? apiExpiry.slice(0, 4) + apiExpiry.slice(6, 8)
         : selectedExpiry;
       
       const symbol = `${type === 'call' ? 'C' : 'P'}-${underlying}-${strike}-${expiryShort}`;
       const price = optionData?.mark_price || optionData?.ltp || 0;
+      
+      // Get quantity from tradeQuantities or use passed quantity
+      const key = `${strike}-${type}`;
+      const tradeQty = tradeQuantities[key] || quantity;
       
       onAddTrade?.({
         symbol,
         strike,
         type,
         side,
-        quantity: 1,
+        quantity: tradeQty,
         ltp: price,
         premium: price,
         iv: optionData?.iv || 0,
         delta: optionData?.delta || 0,
         theta: optionData?.theta || 0,
         vega: optionData?.vega || 0,
-        expiry: selectedExpiry,
+        expiry: apiExpiry,
         spotPrice: chainData?.spot_price || spotPrice,
       });
     }
-  }, [proposedTrades, underlying, selectedExpiry, spotPrice, chainData, onAddTrade, onRemoveTrade]);
+  }, [proposedTrades, underlying, selectedExpiry, spotPrice, chainData, tradeQuantities, onAddTrade, onRemoveTrade, convertExpiryToAPI]);
   
   // Clear all trades
   const handleClearAll = useCallback(() => {
@@ -423,29 +574,14 @@ export default function SlidingOptionsChainPanel({
     setDisplayMode(mode);
   };
 
-  return (
-    <Drawer
-      anchor="left"
-      open={open}
-      onClose={onClose}
-      variant="temporary"
-      PaperProps={{
-        sx: {
-          width: PANEL_WIDTH,
-          bgcolor: COLORS.background,
-          borderRight: `1px solid ${COLORS.border}`,
-        },
-      }}
-      ModalProps={{
-        keepMounted: false,
-        BackdropProps: {
-          sx: { 
-            bgcolor: 'rgba(0, 0, 0, 0.5)',
-            backdropFilter: 'blur(2px)',
-          },
-        },
-      }}
-    >
+  // Inner content to be rendered in both modes
+  const panelContent = (
+    <Box sx={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+      bgcolor: COLORS.background,
+    }}>
       {/* Header */}
       <Box sx={{ 
         display: 'flex', 
@@ -507,7 +643,7 @@ export default function SlidingOptionsChainPanel({
         </Tabs>
       </Box>
       
-      {/* Filters Row */}
+      {/* Expiry Selector, Quantity Selector and Display Mode */}
       <Box sx={{ 
         display: 'flex', 
         alignItems: 'center', 
@@ -515,26 +651,31 @@ export default function SlidingOptionsChainPanel({
         p: 1,
         borderBottom: `1px solid ${COLORS.border}`,
       }}>
-        {/* Expiry Selector */}
-        <FormControl size="small" sx={{ minWidth: 80 }}>
-          <Select
-            value={selectedExpiry || ''}
-            onChange={(e) => onExpiryChange?.(e.target.value)}
-            sx={{ 
-              color: COLORS.text,
-              bgcolor: COLORS.primary,
-              borderRadius: 1,
-              '& .MuiSelect-select': { py: 0.5, px: 1.5, fontSize: '0.8rem' },
-              '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
-            }}
-          >
-            {expirations.map(exp => (
-              <MenuItem key={exp} value={exp}>{formatExpiry(exp)}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <FormControl size="small" sx={{ minWidth: 80 }}>
+            <Select
+              value={selectedExpiry || ''}
+              onChange={(e) => onExpiryChange?.(e.target.value)}
+              displayEmpty
+              sx={{ 
+                color: COLORS.text,
+                bgcolor: COLORS.primary,
+                borderRadius: 1,
+                '& .MuiSelect-icon': { color: COLORS.text },
+                '& fieldset': { border: 'none' },
+                fontSize: '0.8rem',
+                height: 28,
+              }}
+            >
+              {expirations.map((exp) => (
+                <MenuItem key={exp} value={exp} sx={{ fontSize: '0.8rem' }}>
+                  {formatExpiry(exp)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
         
-        {/* Display Mode Toggles */}
         <Box sx={{ display: 'flex', gap: 0.5 }}>
           <Chip 
             label="LTP" 
@@ -594,40 +735,40 @@ export default function SlidingOptionsChainPanel({
               <TableHead>
                 <TableRow>
                   {showGreeks && (
-                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.textSecondary, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                       Delta
                     </TableCell>
                   )}
-                  <TableCell align="right" sx={{ bgcolor: COLORS.cardBg, color: COLORS.buy, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <TableCell align="right" sx={{ bgcolor: COLORS.cardBg, color: COLORS.buy, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                     Call LTP
                   </TableCell>
                   {showOi && (
-                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.callOi, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.callOi, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                       Call OI
                     </TableCell>
                   )}
-                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.buy, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.buy, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                     Call
                   </TableCell>
-                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.text, fontSize: '0.75rem', fontWeight: 'bold', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.text, fontSize: '0.85rem', fontWeight: 'bold', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                     Strike
                   </TableCell>
-                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.textSecondary, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                     IV
                   </TableCell>
                   {showOi && (
-                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.putOi, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.putOi, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                       Put OI
                     </TableCell>
                   )}
-                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.sell, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.sell, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                     Put
                   </TableCell>
-                  <TableCell align="left" sx={{ bgcolor: COLORS.cardBg, color: COLORS.sell, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                  <TableCell align="left" sx={{ bgcolor: COLORS.cardBg, color: COLORS.sell, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                     Put LTP
                   </TableCell>
                   {showGreeks && (
-                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.textSecondary, fontSize: '0.7rem', py: 0.5, borderBottom: `1px solid ${COLORS.border}` }}>
+                    <TableCell align="center" sx={{ bgcolor: COLORS.cardBg, color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
                       Delta
                     </TableCell>
                   )}
@@ -648,6 +789,8 @@ export default function SlidingOptionsChainPanel({
                       onTradeClick={handleTradeClick}
                       showOi={showOi}
                       showGreeks={showGreeks}
+                      tradeQuantities={tradeQuantities}
+                      onQuantityChange={handleQuantityChange}
                     />
                   );
                 })}
@@ -709,6 +852,44 @@ export default function SlidingOptionsChainPanel({
           </Button>
         </Box>
       </Box>
+    </Box>
+  );
+
+  // If inline mode, render without Drawer wrapper
+  if (inline) {
+    return panelContent;
+  }
+
+  // Standard Drawer mode
+  return (
+    <Drawer
+      anchor="left"
+      open={open}
+      onClose={onClose}
+      variant="persistent"
+      hideBackdrop={true}
+      PaperProps={{
+        sx: {
+          width: PANEL_WIDTH,
+          bgcolor: COLORS.background,
+          borderRight: `1px solid ${COLORS.border}`,
+          boxShadow: '4px 0 12px rgba(0, 0, 0, 0.5)',
+          position: 'fixed',
+          zIndex: 1300,
+          height: '100%',
+        },
+      }}
+      ModalProps={{
+        keepMounted: false,
+        disablePortal: false,
+        hideBackdrop: true,
+        style: { position: 'absolute' },
+      }}
+      SlideProps={{
+        timeout: 300,
+      }}
+    >
+      {panelContent}
       
       {/* Collapse/Expand Handle */}
       <Box 

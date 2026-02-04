@@ -54,11 +54,15 @@ import { useTradingData } from './hooks/useTradingData';
 import { MobileOptimizationProvider } from './context/MobileOptimizationContext';
 import { SymbolProvider } from './context/SymbolContext';
 import { InstanceProvider } from './context/InstanceContext';
+import { AutoloopProvider } from './context/AutoloopContext';
+import AutoloopStatusBar from './components/positionAdjustment/AutoloopStatusBar';
 import IdleIndicator from './components/IdleIndicator';
 import SafetyWarningBanner from './components/SafetyWarningBanner';
 import OfflineIndicator from './components/OfflineIndicator';
 import SymbolContextBar from './components/layout/SymbolContextBar';
 import InstanceContextBar from './components/layout/InstanceContextBar';
+// SSRAlgoErrorBoundary imported directly (class component can't be lazy loaded)
+import { SSRAlgoErrorBoundary } from './components/ssrAlgo';
 // Mobile indicators removed for cleaner UI
 // import MobileBatteryIndicator from './components/MobileBatteryIndicator';
 // import TailscaleMobileOptimizer from './components/TailscaleMobileOptimizer';
@@ -129,10 +133,14 @@ const MonitoringRecoveryPanel = React.lazy(
 const RSIPanel = React.lazy(() => import('./components/RSIPanel'));
 const SymbolPortfolio = React.lazy(() => import('./components/SymbolPortfolio'));
 const RiskSafetyDashboard = React.lazy(() => import('./components/RiskSafetyDashboard'));
+const TradingViewSignals = React.lazy(() => import('./components/TradingViewSignals'));
 const ZeroDTEDashboard = React.lazy(() => import('./components/zero_dte/ZeroDTEDashboard'));
 const MVStraddlePanel = React.lazy(() => import('./components/mvStraddle/MVStraddlePanel'));
 const ExperimentalPanel = React.lazy(() => import('./components/ExperimentalPanel'));
 const AdvancedFeaturesPanel = React.lazy(() => import('./components/AdvancedFeaturesPanel'));
+const SSRAlgoDashboard = React.lazy(() =>
+  import('./components/ssrAlgo').then((m) => ({ default: m.SSRAlgoDashboard }))
+);
 
 // Preload function to eagerly load all lazy components
 const preloadAllComponents = () => {
@@ -179,6 +187,8 @@ const preloadAllComponents = () => {
   RiskSafetyDashboard.preload = () => import('./components/RiskSafetyDashboard');
   ZeroDTEDashboard.preload = () => import('./components/zero_dte/ZeroDTEDashboard');
   MVStraddlePanel.preload = () => import('./components/mvStraddle/MVStraddlePanel');
+  SSRAlgoDashboard.preload = () => import('./components/ssrAlgo');
+  TradingViewSignals.preload = () => import('./components/TradingViewSignals');
 };
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
@@ -532,6 +542,12 @@ function App() {
         description: 'Risk analytics and protection systems',
       },
       {
+        id: 'tradingview',
+        label: '📊 TradingView',
+        icon: RadioTower,
+        description: 'TradingView webhook signals - buy/sell alerts from Pine Script',
+      },
+      {
         id: 'rsi',
         label: 'RSI',
         icon: BarChart3,
@@ -567,6 +583,12 @@ function App() {
         label: '📊 MV Straddle',
         icon: TrendingUp,
         description: 'Market View Straddle - volatility-driven directional neutral strategy',
+      },
+      {
+        id: 'ssr_algo',
+        label: '🦋 SSR ALGO',
+        icon: Zap,
+        description: 'Modified Iron Butterfly - automated percentage-based strike selection',
       },
       // Week 3: Guardian Dashboard (feature flag controlled)
       ...(guardianEnabled
@@ -1485,7 +1507,19 @@ function App() {
         <MVStraddlePanel />
       </Suspense>
     ), // Jan 2026: MV Straddle Panel
+    ssr_algo: (
+      <SSRAlgoErrorBoundary>
+        <Suspense fallback={<PanelSkeleton type="default" />}>
+          <SSRAlgoDashboard />
+        </Suspense>
+      </SSRAlgoErrorBoundary>
+    ), // SSR ALGO: Modified Iron Butterfly with Protective Wings
     risk: renderRisk,
+    tradingview: (
+      <Suspense fallback={<PanelSkeleton type="default" />}>
+        <TradingViewSignals />
+      </Suspense>
+    ),
     rsi: renderRSI,
     config: renderConfig,
     ml_trading: renderMLTrading, // Jan 2026: ML Trading Panel
@@ -1530,17 +1564,20 @@ function App() {
   return (
     <InstanceProvider>
       <SymbolProvider>
-        <MobileOptimizationProvider>
-          <div className="relative min-h-screen bg-surface text-slate-100">
-            {/* V6.0: Instance Context Bar - REMOVED: Confusing, instance selection should be in BotManagement only */}
-            {/* <InstanceContextBar 
+        <AutoloopProvider>
+          <MobileOptimizationProvider>
+            <div className="relative min-h-screen bg-surface text-slate-100">
+              {/* V6.0: Instance Context Bar - REMOVED: Confusing, instance selection should be in BotManagement only */}
+              {/* <InstanceContextBar 
             status={{ running: botIsRunning }}
             pnl={{ total: totalPnl }}
           /> */}
-            <TopBar
-              mode={mode}
-              onToggleTheme={toggleMode}
-              onRefresh={handleHardRefresh}
+              {/* Autoloop Status Bar - Shows running background autoloops */}
+              <AutoloopStatusBar />
+              <TopBar
+                mode={mode}
+                onToggleTheme={toggleMode}
+                onRefresh={handleHardRefresh}
               onEnsureFresh={ensureFresh}
               isMobile={isMobile}
               isOnline={connectionState === 'connected'}
@@ -1637,6 +1674,7 @@ function App() {
             </Suspense>
           </div>
         </MobileOptimizationProvider>
+        </AutoloopProvider>
       </SymbolProvider>
     </InstanceProvider>
   );

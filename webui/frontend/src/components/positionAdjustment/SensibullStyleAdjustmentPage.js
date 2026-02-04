@@ -53,6 +53,8 @@ import {
   TableChart as TableChartIcon,
   Settings as SettingsIcon,
   ZoomOut as ZoomOutIcon,
+  ZoomIn as ZoomInIcon,
+  CenterFocusStrong as ResetZoomIcon,
 } from '@mui/icons-material';
 import {
   ResponsiveContainer,
@@ -68,6 +70,8 @@ import {
   Bar,
   BarChart,
   Legend,
+  Brush,
+  ReferenceArea,
 } from 'recharts';
 import { getContractMultiplier } from '../../utils/constants';
 import SlidingOptionsChainPanel from './SlidingOptionsChainPanel';
@@ -292,13 +296,17 @@ const PositionMetricsCard = ({ metrics, hasProposedTrades }) => {
 };
 
 /**
- * Payoff Chart Component
+ * Payoff Chart Component - Enhanced with colored profit/loss zones and zoom functionality
  */
-const PayoffChart = ({ chartData, spotPrice, hasProposedTrades, breakevens = [] }) => {
+const PayoffChart = ({ chartData, spotPrice, hasProposedTrades, breakevens = [], zoomDomain, onZoomChange }) => {
+  const [refAreaLeft, setRefAreaLeft] = useState(null);
+  const [refAreaRight, setRefAreaRight] = useState(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  
   if (!chartData || chartData.length === 0) {
     return (
       <Box sx={{ 
-        height: 280, 
+        height: 320, 
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center',
@@ -310,91 +318,219 @@ const PayoffChart = ({ chartData, spotPrice, hasProposedTrades, breakevens = [] 
     );
   }
   
-  // Find min/max for Y axis
-  const allValues = chartData.flatMap(d => [d.current, d.combined].filter(v => v != null));
+  // Filter data to zoom domain if set
+  const filteredData = zoomDomain 
+    ? chartData.filter(d => d.price >= zoomDomain[0] && d.price <= zoomDomain[1])
+    : chartData;
+  
+  // Find min/max for Y axis - include combined values when we have proposed trades
+  const allValues = filteredData.flatMap(d => [d.current, d.combined].filter(v => v != null));
   const minY = Math.min(...allValues);
   const maxY = Math.max(...allValues);
-  const padding = Math.abs(maxY - minY) * 0.15 || 100;
+  const padding = Math.abs(maxY - minY) * 0.2 || 100;
+  
+  // Use combined payoff when there are proposed trades, otherwise current
+  // This shows the expected P&L after executing proposed trades
+  const enhancedData = filteredData.map(d => {
+    const displayPnl = hasProposedTrades ? (d.combined ?? d.current) : d.current;
+    return {
+      ...d,
+      profit: displayPnl > 0 ? displayPnl : 0,
+      loss: displayPnl < 0 ? displayPnl : 0,
+      // Add combined profit/loss zones for visual comparison
+      combinedProfit: hasProposedTrades && d.combined > 0 ? d.combined : 0,
+      combinedLoss: hasProposedTrades && d.combined < 0 ? d.combined : 0,
+    };
+  });
+  
+  // Find ATM strike (closest to spot)
+  const atmPrice = spotPrice;
+  
+  // Find projected profit at current spot - use combined if proposed trades exist
+  const spotDataPoint = chartData.find(d => Math.abs(d.price - spotPrice) < (spotPrice * 0.005));
+  const projectedProfit = hasProposedTrades 
+    ? (spotDataPoint?.combined ?? spotDataPoint?.current ?? 0)
+    : (spotDataPoint?.current ?? 0);
+  
+  // Zoom handlers
+  const handleMouseDown = (e) => {
+    if (e && e.activeLabel) {
+      setRefAreaLeft(e.activeLabel);
+      setIsSelecting(true);
+    }
+  };
+  
+  const handleMouseMove = (e) => {
+    if (isSelecting && e && e.activeLabel) {
+      setRefAreaRight(e.activeLabel);
+    }
+  };
+  
+  const handleMouseUp = () => {
+    if (refAreaLeft && refAreaRight && refAreaLeft !== refAreaRight) {
+      const left = Math.min(refAreaLeft, refAreaRight);
+      const right = Math.max(refAreaLeft, refAreaRight);
+      onZoomChange?.([left, right]);
+    }
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+    setIsSelecting(false);
+  };
   
   return (
-    <Box sx={{ height: 280, position: 'relative' }}>
+    <Box sx={{ height: 320, position: 'relative', cursor: isSelecting ? 'crosshair' : 'default' }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+        <ComposedChart 
+          data={enhancedData} 
+          margin={{ top: 20, right: 30, left: 10, bottom: 10 }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
           <defs>
-            <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS.profit} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={COLORS.profit} stopOpacity={0} />
+            {/* Profit area gradient */}
+            <linearGradient id="profitAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
             </linearGradient>
-            <linearGradient id="lossGrad" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0%" stopColor={COLORS.loss} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={COLORS.loss} stopOpacity={0} />
+            {/* Loss area gradient */}
+            <linearGradient id="lossAreaGrad" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.05} />
             </linearGradient>
           </defs>
           
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
           
           <XAxis 
             dataKey="price" 
-            tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}K` : v}
-            stroke={COLORS.textSecondary}
-            tick={{ fontSize: 11, fill: COLORS.textSecondary }}
+            tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}K` : v.toFixed(0)}
+            stroke="rgba(148, 163, 184, 0.6)"
+            tick={{ fontSize: 11, fill: '#94a3b8' }}
+            axisLine={{ stroke: 'rgba(148, 163, 184, 0.3)' }}
+            allowDataOverflow
           />
           
           <YAxis 
             domain={[minY - padding, maxY + padding]}
-            tickFormatter={(v) => v >= 1000 || v <= -1000 ? `${(v/1000).toFixed(1)}K` : v}
-            stroke={COLORS.textSecondary}
-            tick={{ fontSize: 11, fill: COLORS.textSecondary }}
+            tickFormatter={(v) => {
+              if (Math.abs(v) >= 1000) return `$${(v/1000).toFixed(1)}K`;
+              return `$${v.toFixed(0)}`;
+            }}
+            stroke="rgba(148, 163, 184, 0.6)"
+            tick={{ fontSize: 11, fill: '#94a3b8' }}
+            axisLine={{ stroke: 'rgba(148, 163, 184, 0.3)' }}
+            label={{ 
+              value: 'Profit / Loss', 
+              angle: -90, 
+              position: 'insideLeft',
+              style: { fill: '#94a3b8', fontSize: 11 }
+            }}
           />
           
           <ChartTooltip 
             contentStyle={{ 
-              backgroundColor: COLORS.cardBg, 
-              border: `1px solid ${COLORS.border}`,
+              backgroundColor: 'rgba(30, 41, 59, 0.95)', 
+              border: '1px solid rgba(71, 85, 105, 0.5)',
               borderRadius: 8,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             }}
-            labelStyle={{ color: COLORS.text }}
+            labelStyle={{ color: '#e2e8f0', fontWeight: 'bold' }}
+            formatter={(value, name) => {
+              const color = value >= 0 ? '#10b981' : '#ef4444';
+              const label = name === 'current' ? 'On Expiry' : name === 'combined' ? 'On Target' : name;
+              return [<span style={{ color }}>${value?.toFixed(2)}</span>, label];
+            }}
+            labelFormatter={(label) => `Price: $${label?.toLocaleString()}`}
           />
           
-          {/* Zero line */}
-          <ReferenceLine y={0} stroke="rgba(255,255,255,0.3)" strokeWidth={1} />
+          {/* Zero reference line */}
+          <ReferenceLine 
+            y={0} 
+            stroke="rgba(255,255,255,0.4)" 
+            strokeWidth={1.5}
+          />
           
-          {/* Current spot line */}
+          {/* ATM/Current spot line */}
           {spotPrice && (
             <ReferenceLine 
               x={spotPrice} 
-              stroke={COLORS.atm} 
+              stroke="#fbbf24" 
               strokeWidth={2}
-              strokeDasharray="5 5"
+              strokeDasharray="8 4"
               label={{ 
-                value: 'Current Position', 
+                value: 'ATM', 
                 position: 'top', 
-                fill: COLORS.atm, 
-                fontSize: 10 
+                fill: '#fbbf24', 
+                fontSize: 12,
+                fontWeight: 'bold',
               }}
             />
           )}
           
-          {/* Current position line */}
+          {/* Breakeven lines */}
+          {breakevens?.map((be, idx) => (
+            <ReferenceLine 
+              key={idx}
+              x={be} 
+              stroke="#8b5cf6" 
+              strokeWidth={1}
+              strokeDasharray="4 4"
+            />
+          ))}
+          
+          {/* Profit area fill */}
+          <Area 
+            type="monotone" 
+            dataKey="profit" 
+            stroke="none"
+            fill="url(#profitAreaGrad)"
+            baseLine={0}
+          />
+          
+          {/* Loss area fill */}
+          <Area 
+            type="monotone" 
+            dataKey="loss" 
+            stroke="none"
+            fill="url(#lossAreaGrad)"
+            baseLine={0}
+          />
+          
+          {/* Main expiry line - colored by P&L */}
           <Line 
             type="monotone" 
             dataKey="current" 
             name="On Expiry"
-            stroke={COLORS.profit}
-            strokeWidth={2}
+            stroke="#10b981"
+            strokeWidth={2.5}
             dot={false}
+            activeDot={{ r: 4, fill: '#10b981' }}
           />
           
-          {/* Combined line (if proposed trades exist) */}
+          {/* Combined/Target line (if proposed trades exist) */}
           {hasProposedTrades && (
             <Line 
               type="monotone" 
               dataKey="combined" 
-              name="On Target Date"
-              stroke={COLORS.primary}
+              name="On Target"
+              stroke="#3b82f6"
               strokeWidth={2}
               strokeDasharray="6 3"
               dot={false}
+              activeDot={{ r: 4, fill: '#3b82f6' }}
+            />
+          )}
+          
+          {/* Zoom selection area */}
+          {refAreaLeft && refAreaRight && (
+            <ReferenceArea
+              x1={refAreaLeft}
+              x2={refAreaRight}
+              strokeOpacity={0.3}
+              fill="#3b82f6"
+              fillOpacity={0.3}
             />
           )}
         </ComposedChart>
@@ -404,23 +540,27 @@ const PayoffChart = ({ chartData, spotPrice, hasProposedTrades, breakevens = [] 
       <Box sx={{ 
         display: 'flex', 
         justifyContent: 'center', 
-        gap: 3, 
-        mt: 1,
+        gap: 4, 
+        mt: 1.5,
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Box sx={{ width: 16, height: 3, bgcolor: COLORS.profit, borderRadius: 1 }} />
-          <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>On Expiry</Typography>
+          <Box sx={{ 
+            width: 20, 
+            height: 3, 
+            background: 'linear-gradient(90deg, #ef4444 0%, #ef4444 50%, #10b981 50%, #10b981 100%)',
+            borderRadius: 1 
+          }} />
+          <Typography variant="caption" sx={{ color: '#94a3b8' }}>On Expiry</Typography>
         </Box>
         {hasProposedTrades && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{ 
-              width: 16, 
+              width: 20, 
               height: 3, 
-              bgcolor: COLORS.primary, 
+              bgcolor: '#3b82f6', 
               borderRadius: 1,
-              background: `repeating-linear-gradient(90deg, transparent, transparent 2px, ${COLORS.primary} 2px, ${COLORS.primary} 4px)`,
             }} />
-            <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>On Target Date</Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>On Target Date</Typography>
           </Box>
         )}
       </Box>
@@ -451,10 +591,103 @@ export default function SensibullStyleAdjustmentPage({
   const [selectedExpiry, setSelectedExpiry] = useState('');
   const [targetPrice, setTargetPrice] = useState(spotPrice || 0);
   
-  // Calculate payoff
+  // Zoom state for payoff chart
+  const [zoomDomain, setZoomDomain] = useState(null);
+  
+  // Multiplier state - like Sensibull
+  const [multiplier, setMultiplier] = useState(1);
+  const [multiplierMode, setMultiplierMode] = useState('normal'); // 'normal' or 'gcd'
+  
+  // Helper: Calculate GCD (Greatest Common Divisor) for ratio calculation
+  const calculateGCD = (a, b) => {
+    a = Math.abs(a);
+    b = Math.abs(b);
+    while (b !== 0) {
+      const temp = b;
+      b = a % b;
+      a = temp;
+    }
+    return a;
+  };
+  
+  // Calculate GCD of all proposed trades quantities
+  const getTradesGCD = useCallback((trades) => {
+    if (trades.length === 0) return 1;
+    if (trades.length === 1) return Math.abs(trades[0].quantity || 1);
+    
+    let gcd = Math.abs(trades[0].quantity || 1);
+    for (let i = 1; i < trades.length; i++) {
+      gcd = calculateGCD(gcd, Math.abs(trades[i].quantity || 1));
+    }
+    return gcd === 0 ? 1 : gcd;
+  }, []);
+  
+  // Get the GCD of current proposed trades
+  const tradesGCD = useMemo(() => {
+    return getTradesGCD(proposedTrades);
+  }, [proposedTrades, getTradesGCD]);
+  
+  // Calculate multiplied trades for execution
+  const getMultipliedTrades = useCallback(() => {
+    return proposedTrades.map(trade => {
+      const baseQty = trade.quantity || 1;
+      let finalQty;
+      
+      if (multiplierMode === 'gcd') {
+        // GCD mode: Scale based on ratio (qty / GCD * multiplier)
+        finalQty = (baseQty / tradesGCD) * multiplier;
+      } else {
+        // Normal mode: Simple multiplication
+        finalQty = baseQty * multiplier;
+      }
+      
+      return {
+        ...trade,
+        quantity: Math.round(finalQty),
+        originalQuantity: baseQty,
+      };
+    });
+  }, [proposedTrades, multiplier, multiplierMode, tradesGCD]);
+  
+  // Get total order count for display
+  const totalOrderCount = useMemo(() => {
+    const multipliedTrades = getMultipliedTrades();
+    return multipliedTrades.reduce((sum, t) => sum + (t.quantity || 1), 0);
+  }, [getMultipliedTrades]);
+  
+  // Get ratio display for GCD mode
+  const ratioDisplay = useMemo(() => {
+    if (proposedTrades.length === 0) return '';
+    const ratios = proposedTrades.map(t => (t.quantity || 1) / tradesGCD);
+    return ratios.join(':');
+  }, [proposedTrades, tradesGCD]);
+  
+  // Memoized multiplied trades for payoff calculation
+  const multipliedTradesForPayoff = useMemo(() => {
+    return proposedTrades.map(trade => {
+      const baseQty = trade.quantity || 1;
+      let finalQty;
+      
+      if (multiplierMode === 'gcd') {
+        // GCD mode: Scale based on ratio (qty / GCD * multiplier)
+        finalQty = Math.round((baseQty / tradesGCD) * multiplier);
+      } else {
+        // Normal mode: Simple multiplication
+        finalQty = baseQty * multiplier;
+      }
+      
+      return {
+        ...trade,
+        quantity: finalQty,
+        originalQuantity: baseQty,
+      };
+    });
+  }, [proposedTrades, multiplier, multiplierMode, tradesGCD]);
+  
+  // Calculate payoff - now uses multiplied trades
   const payoffData = usePayoffCalculation(
     currentPositions,
-    proposedTrades,
+    multipliedTradesForPayoff,
     spotPrice,
     { enabled: open }
   );
@@ -489,6 +722,55 @@ export default function SensibullStyleAdjustmentPage({
     };
   }, [currentPositions]);
   
+  // Get available expiries from positions
+  const availableExpiries = useMemo(() => {
+    const expiries = new Set();
+    currentPositions.forEach(pos => {
+      const parsed = parseSymbol(pos.product_symbol);
+      if (parsed.expiry) {
+        expiries.add(parsed.expiry);
+      }
+    });
+    return Array.from(expiries).sort();
+  }, [currentPositions]);
+  
+  // Auto-select first expiry if none selected
+  React.useEffect(() => {
+    if (availableExpiries.length > 0 && !selectedExpiry) {
+      setSelectedExpiry(availableExpiries[0]);
+    }
+  }, [availableExpiries, selectedExpiry]);
+  
+  // Filter positions by selected expiry
+  const filteredPositions = useMemo(() => {
+    if (!selectedExpiry) return currentPositions;
+    return currentPositions.filter(pos => {
+      const parsed = parseSymbol(pos.product_symbol);
+      return parsed.expiry === selectedExpiry;
+    });
+  }, [currentPositions, selectedExpiry]);
+  
+  // Calculate totals for filtered positions only
+  const filteredTotals = useMemo(() => {
+    let booked = 0;
+    let unbooked = 0;
+    
+    filteredPositions.forEach(pos => {
+      const size = pos.size || 0;
+      const entryPrice = Math.abs(pos.entry_price || 0);
+      const markPrice = pos.mark_price || entryPrice;
+      const multiplier = getContractMultiplier(pos.product_symbol);
+      const pnl = (markPrice - entryPrice) * size * multiplier;
+      unbooked += pnl;
+    });
+    
+    return {
+      booked,
+      unbooked,
+      total: booked + unbooked,
+    };
+  }, [filteredPositions]);
+  
   // Handle position selection
   const handleSelectPosition = useCallback((position, selected) => {
     if (selected) {
@@ -522,6 +804,31 @@ export default function SensibullStyleAdjustmentPage({
     );
   }, []);
   
+  // Handle update trade strike (for +/- buttons)
+  const handleUpdateTradeStrike = useCallback((oldStrike, type, side, newStrike) => {
+    setProposedTrades(prev =>
+      prev.map(t => {
+        if (t.strike === oldStrike && t.type === type && t.side === side) {
+          // Update symbol with new strike
+          const typePrefix = t.type === 'call' ? 'C' : 'P';
+          const underlying = derivedUnderlying || 'BTC';
+          const expiry = t.expiry || selectedExpiry;
+          const expiryShort = expiry?.length === 8 
+            ? expiry.slice(0, 4) + expiry.slice(6, 8)
+            : expiry;
+          const newSymbol = `${typePrefix}-${underlying}-${newStrike}-${expiryShort}`;
+          
+          return { 
+            ...t, 
+            strike: newStrike,
+            symbol: newSymbol,
+          };
+        }
+        return t;
+      })
+    );
+  }, [derivedUnderlying, selectedExpiry]);
+  
   // Handle clear all
   const handleClearAll = useCallback(() => {
     setProposedTrades([]);
@@ -543,60 +850,156 @@ export default function SensibullStyleAdjustmentPage({
       flexDirection: 'column',
       overflow: 'hidden',
     }}>
-      {/* Header */}
+      {/* Header Bar - Like Sensibull with Asset + Tabs + Metrics */}
       <Box sx={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        px: 3,
-        py: 1.5,
-        bgcolor: 'rgba(15, 23, 42, 0.95)',
+        px: 2,
+        py: 0.75,
+        bgcolor: 'rgba(15, 23, 42, 0.98)',
         borderBottom: `1px solid ${COLORS.border}`,
+        gap: 2,
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <ChartIcon sx={{ color: COLORS.primary }} />
-          <Typography variant="h6" sx={{ color: COLORS.text, fontWeight: 600 }}>
+        {/* Left: Asset Info */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ChartIcon sx={{ color: COLORS.primary, fontSize: 18 }} />
+          <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600 }}>
             Position Adjustment
           </Typography>
           <Chip 
             label={derivedUnderlying} 
             size="small" 
-            sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: COLORS.primary }}
+            sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: COLORS.primary, height: 20, fontSize: '0.7rem' }}
           />
         </Box>
         
-        <IconButton onClick={onClose} sx={{ color: COLORS.textSecondary }}>
-          <CloseIcon />
-        </IconButton>
+        {/* Price + Change */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600 }}>
+            {derivedUnderlying} ${spotPrice?.toLocaleString() || '-'}
+          </Typography>
+          <Chip 
+            label="0.14%" 
+            size="small" 
+            sx={{ 
+              bgcolor: 'rgba(34, 197, 94, 0.15)', 
+              color: COLORS.profit, 
+              height: 18,
+              fontSize: '0.65rem',
+            }}
+          />
+        </Box>
+        
+        {/* Info & Settings buttons */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Button size="small" variant="outlined" sx={{ 
+            borderColor: COLORS.border, 
+            color: COLORS.textSecondary,
+            minWidth: 40,
+            fontSize: '0.7rem',
+            py: 0.25,
+          }}>
+            Info
+          </Button>
+          <IconButton size="small" sx={{ color: COLORS.textSecondary }}>
+            <SettingsIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+          <IconButton size="small" onClick={onClose} sx={{ color: COLORS.textSecondary }}>
+            <CloseIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Box>
+        
+        {/* Spacer */}
+        <Box sx={{ flex: 1 }} />
+        
+        {/* Key Metrics - Right Side */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.6rem', display: 'block' }}>Profit left</Typography>
+            <Typography variant="body2" sx={{ color: COLORS.profit, fontWeight: 600, fontSize: '0.8rem' }}>
+              {payoffData.formattedMetrics?.current?.maxProfit || '$0'}
+            </Typography>
+          </Box>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.6rem', display: 'block' }}>Loss left</Typography>
+            <Typography variant="body2" sx={{ color: COLORS.loss, fontWeight: 600, fontSize: '0.8rem' }}>
+              {payoffData.formattedMetrics?.current?.maxLoss || '$0'}
+            </Typography>
+          </Box>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.6rem', display: 'block' }}>Reward/Risk</Typography>
+            <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, fontSize: '0.8rem' }}>
+              {payoffData.formattedMetrics?.current?.riskReward || '0'}
+            </Typography>
+          </Box>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.6rem', display: 'block' }}>POP</Typography>
+            <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, fontSize: '0.8rem' }}>
+              {payoffData.formattedMetrics?.current?.pop || '0%'}
+            </Typography>
+          </Box>
+        </Box>
       </Box>
       
-      {/* Main Content */}
+      {/* Main Content - 3 column layout like Sensibull */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Left Panel - Positions */}
-        <Box sx={{ 
-          width: 420, 
-          flexShrink: 0, 
-          display: 'flex', 
-          flexDirection: 'column',
-          borderRight: `1px solid ${COLORS.border}`,
-          bgcolor: 'rgba(15, 23, 42, 0.5)',
-        }}>
-          {/* Positions Header */}
-          <Box sx={{ p: 2, borderBottom: `1px solid ${COLORS.border}` }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-              <Typography variant="subtitle1" sx={{ color: COLORS.text, fontWeight: 600 }}>
+        {/* LEFT PANEL - Options Chain (when open) OR Positions */}
+        {showChainPanel ? (
+          <Box sx={{ 
+            width: '33%', 
+            minWidth: 450,
+            maxWidth: 550,
+            flexShrink: 0, 
+            display: 'flex', 
+            flexDirection: 'column',
+            borderRight: `1px solid ${COLORS.border}`,
+            bgcolor: COLORS.background,
+          }}>
+            <SlidingOptionsChainPanel
+              open={true}
+              onClose={() => setShowChainPanel(false)}
+              underlying={derivedUnderlying}
+              spotPrice={spotPrice}
+              proposedTrades={proposedTrades}
+              onAddTrade={handleAddTrade}
+              onRemoveTrade={handleRemoveTrade}
+              selectedExpiry={selectedExpiry}
+              onExpiryChange={setSelectedExpiry}
+              inline={true}
+            />
+          </Box>
+        ) : (
+          /* Positions Panel - Wider like Sensibull */
+          <Box sx={{ 
+            width: 380, 
+            flexShrink: 0, 
+            display: 'flex', 
+            flexDirection: 'column',
+            borderRight: `1px solid ${COLORS.border}`,
+            bgcolor: 'rgba(15, 23, 42, 0.6)',
+          }}>
+            {/* Header */}
+            <Box sx={{ 
+              px: 1.5, 
+              py: 1,
+              borderBottom: `1px solid ${COLORS.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600 }}>
                 {derivedUnderlying} Positions
               </Typography>
-              <Button 
-                size="small" 
-                sx={{ color: COLORS.textSecondary }}
+              <Typography 
+                variant="caption" 
+                sx={{ color: COLORS.primary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
               >
                 Clear Positions
-              </Button>
+              </Typography>
             </Box>
             
-            {/* Action Buttons */}
-            <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+            {/* Action Buttons Row */}
+            <Box sx={{ display: 'flex', gap: 1, p: 1, borderBottom: `1px solid ${COLORS.border}` }}>
               <Button 
                 variant="outlined" 
                 size="small"
@@ -604,267 +1007,338 @@ export default function SensibullStyleAdjustmentPage({
                 sx={{ 
                   borderColor: COLORS.loss, 
                   color: COLORS.loss,
+                  fontSize: '0.75rem',
+                  px: 2,
                   '&:hover': { borderColor: COLORS.loss, bgcolor: 'rgba(239, 68, 68, 0.1)' },
                 }}
               >
                 Exit Positions ({selectedPositions.length})
               </Button>
               <Button 
-                variant="outlined" 
+                variant="contained" 
                 size="small"
-                onClick={() => setShowChainPanel(!showChainPanel)}
+                onClick={() => setShowChainPanel(true)}
                 sx={{ 
-                  borderColor: COLORS.primary, 
-                  color: COLORS.primary,
-                  '&:hover': { borderColor: COLORS.primary, bgcolor: 'rgba(59, 130, 246, 0.1)' },
+                  bgcolor: COLORS.primary, 
+                  color: '#fff',
+                  fontSize: '0.75rem',
+                  px: 2,
+                  '&:hover': { bgcolor: '#2563eb' },
                 }}
               >
                 Add New Trade
               </Button>
             </Box>
             
-            {/* P&L Summary */}
-            <Box sx={{ display: 'flex', gap: 3 }}>
-              <Box>
+            {/* Filter Pills - Expiry Selector */}
+            <Box sx={{ display: 'flex', gap: 0.5, p: 1, borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' }}>
+              {availableExpiries.map((expiry) => (
+                <Chip 
+                  key={expiry}
+                  label={formatExpiryShort(expiry)}
+                  size="small" 
+                  onClick={() => setSelectedExpiry(expiry)}
+                  sx={{ 
+                    bgcolor: selectedExpiry === expiry ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                    color: selectedExpiry === expiry ? COLORS.primary : COLORS.textSecondary,
+                    border: `1px solid ${selectedExpiry === expiry ? COLORS.primary : COLORS.border}`,
+                    height: 24,
+                    fontSize: '0.7rem',
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.1)' },
+                  }}
+                />
+              ))}
+              {availableExpiries.length === 0 && (
+                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>No expiries</Typography>
+              )}
+            </Box>
+            
+            {/* P&L Summary Row */}
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: 2,
+              px: 1.5, 
+              py: 1, 
+              borderBottom: `1px solid ${COLORS.border}`,
+              bgcolor: 'rgba(0,0,0,0.2)',
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>Booked</Typography>
-                <Typography variant="body2" sx={{ color: totals.booked >= 0 ? COLORS.profit : COLORS.loss, fontWeight: 600 }}>
-                  {totals.booked >= 0 ? '+' : ''}{totals.booked.toFixed(0)}
+                <Typography variant="caption" sx={{ color: filteredTotals.booked >= 0 ? COLORS.profit : COLORS.loss, fontWeight: 600 }}>
+                  {filteredTotals.booked >= 0 ? '+' : ''}{filteredTotals.booked.toFixed(0)}
                 </Typography>
               </Box>
-              <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>Unbooked</Typography>
-                <Typography variant="body2" sx={{ color: totals.unbooked >= 0 ? COLORS.profit : COLORS.loss, fontWeight: 600 }}>
-                  {totals.unbooked >= 0 ? '+' : ''}{totals.unbooked.toFixed(0)}
+                <Typography variant="caption" sx={{ color: filteredTotals.unbooked >= 0 ? COLORS.profit : COLORS.loss, fontWeight: 600 }}>
+                  {filteredTotals.unbooked >= 0 ? '+' : ''}{filteredTotals.unbooked.toFixed(0)}
                 </Typography>
               </Box>
-              <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>Total P&L</Typography>
-                <Typography variant="body2" sx={{ color: totals.total >= 0 ? COLORS.profit : COLORS.loss, fontWeight: 600 }}>
-                  {totals.total >= 0 ? '+' : ''}{totals.total.toFixed(0)}
+                <Typography variant="caption" sx={{ color: filteredTotals.total >= 0 ? COLORS.profit : COLORS.loss, fontWeight: 600 }}>
+                  {filteredTotals.total >= 0 ? '+' : ''}{filteredTotals.total.toFixed(0)}
                 </Typography>
               </Box>
             </Box>
-          </Box>
-          
-          {/* Positions Table */}
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
-            {/* Open Positions */}
-            <Box sx={{ p: 1.5, borderBottom: `1px solid ${COLORS.border}` }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Checkbox 
-                  size="small"
-                  checked={selectedPositions.length === currentPositions.length}
-                  indeterminate={selectedPositions.length > 0 && selectedPositions.length < currentPositions.length}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedPositions([...currentPositions]);
-                    } else {
-                      setSelectedPositions([]);
-                    }
-                  }}
-                  sx={{ color: COLORS.textSecondary }}
-                />
-                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
-                  Instrument
-                </Typography>
-              </Box>
-              
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell padding="checkbox" sx={{ color: COLORS.textSecondary, borderBottom: 'none' }}></TableCell>
-                      <TableCell sx={{ color: COLORS.textSecondary, borderBottom: 'none', fontSize: '0.75rem' }}>Instrument</TableCell>
-                      <TableCell align="center" sx={{ color: COLORS.textSecondary, borderBottom: 'none', fontSize: '0.75rem' }}>Qty</TableCell>
-                      <TableCell align="right" sx={{ color: COLORS.textSecondary, borderBottom: 'none', fontSize: '0.75rem' }}>Avg</TableCell>
-                      <TableCell align="right" sx={{ color: COLORS.textSecondary, borderBottom: 'none', fontSize: '0.75rem' }}>LTP</TableCell>
-                      <TableCell align="right" sx={{ color: COLORS.textSecondary, borderBottom: 'none', fontSize: '0.75rem' }}>P&L</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {currentPositions.map((pos, idx) => (
-                      <PositionRow 
-                        key={pos.product_symbol || idx}
-                        position={pos}
-                        isSelected={selectedPositions.some(p => p.product_symbol === pos.product_symbol)}
-                        onSelect={handleSelectPosition}
-                        spotPrice={spotPrice}
+            
+            {/* Column Headers */}
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              px: 1, 
+              py: 0.5, 
+              borderBottom: `1px solid ${COLORS.border}`,
+              bgcolor: 'rgba(0,0,0,0.15)',
+            }}>
+              <Checkbox 
+                size="small"
+                checked={selectedPositions.length === filteredPositions.length && filteredPositions.length > 0}
+                indeterminate={selectedPositions.length > 0 && selectedPositions.length < filteredPositions.length}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedPositions([...filteredPositions]);
+                  } else {
+                    setSelectedPositions([]);
+                  }
+                }}
+                sx={{ color: COLORS.textSecondary, p: 0.25 }}
+              />
+              <Typography variant="caption" sx={{ color: COLORS.textSecondary, flex: 1, fontSize: '0.7rem', ml: 0.5 }}>
+                Instrument
+              </Typography>
+              <Typography variant="caption" sx={{ color: COLORS.textSecondary, width: 45, textAlign: 'center', fontSize: '0.7rem' }}>
+                Qty
+              </Typography>
+              <Typography variant="caption" sx={{ color: COLORS.textSecondary, width: 60, textAlign: 'right', fontSize: '0.7rem' }}>
+                Avg
+              </Typography>
+              <Typography variant="caption" sx={{ color: COLORS.textSecondary, width: 60, textAlign: 'right', fontSize: '0.7rem' }}>
+                LTP
+              </Typography>
+            </Box>
+            
+            {/* Positions List */}
+            <Box sx={{ flex: 1, overflow: 'auto' }}>
+              {filteredPositions.map((pos, idx) => {
+                const parsed = parseSymbol(pos.product_symbol);
+                const isSelected = selectedPositions.some(p => p.product_symbol === pos.product_symbol);
+                const size = pos.size || 0;
+                const isBuy = size > 0;
+                const entryPrice = Math.abs(pos.entry_price || 0);
+                const markPrice = pos.mark_price || entryPrice;
+                
+                return (
+                  <Box 
+                    key={pos.product_symbol || idx}
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      px: 1, 
+                      py: 0.75,
+                      borderBottom: `1px solid ${COLORS.border}`,
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' },
+                    }}
+                  >
+                    <Checkbox 
+                      size="small"
+                      checked={isSelected}
+                      onChange={(e) => handleSelectPosition(pos, e.target.checked)}
+                      sx={{ color: COLORS.textSecondary, p: 0.25 }}
+                    />
+                    <Box sx={{ flex: 1, ml: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Chip 
+                        label={isBuy ? 'B' : 'S'} 
+                        size="small" 
+                        sx={{ 
+                          bgcolor: isBuy ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: isBuy ? COLORS.buy : COLORS.sell,
+                          fontWeight: 'bold',
+                          fontSize: '0.6rem',
+                          height: 18,
+                          minWidth: 20,
+                        }} 
                       />
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                      <Chip 
+                        label="NRML" 
+                        size="small" 
+                        sx={{ 
+                          bgcolor: 'rgba(100, 116, 139, 0.3)',
+                          color: COLORS.textSecondary,
+                          fontSize: '0.55rem',
+                          height: 16,
+                        }} 
+                      />
+                      <Typography variant="caption" sx={{ color: COLORS.text, fontSize: '0.75rem' }}>
+                        {formatExpiryShort(parsed.expiry)} {parsed.strike.toLocaleString()} {parsed.type}
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ width: 45, textAlign: 'center', color: COLORS.text, fontWeight: 500, fontSize: '0.75rem' }}>
+                      {Math.abs(size)}
+                    </Typography>
+                    <Typography variant="caption" sx={{ width: 60, textAlign: 'right', color: COLORS.textSecondary, fontSize: '0.75rem' }}>
+                      {entryPrice.toFixed(2)}
+                    </Typography>
+                    <Typography variant="caption" sx={{ width: 60, textAlign: 'right', color: COLORS.text, fontSize: '0.75rem' }}>
+                      {markPrice.toFixed(2)}
+                    </Typography>
+                  </Box>
+                );
+              })}
               
-              {currentPositions.length === 0 && (
+              {filteredPositions.length === 0 && (
                 <Box sx={{ p: 3, textAlign: 'center' }}>
                   <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
-                    No open positions
+                    No positions for selected expiry
                   </Typography>
                 </Box>
               )}
             </Box>
-            
-            {/* Closed Positions (Collapsible) */}
-            <Box>
-              <Box 
-                sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  p: 1.5,
-                  cursor: 'pointer',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' },
-                }}
-                onClick={() => setShowClosedPositions(!showClosedPositions)}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Checkbox size="small" sx={{ color: COLORS.textSecondary }} disabled />
-                  <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
-                    Closed Positions (0)
-                  </Typography>
-                </Box>
-                {showClosedPositions ? <ExpandLessIcon sx={{ color: COLORS.textSecondary }} /> : <ExpandMoreIcon sx={{ color: COLORS.textSecondary }} />}
-              </Box>
-              <Collapse in={showClosedPositions}>
-                <Box sx={{ p: 2, textAlign: 'center' }}>
-                  <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
-                    No closed positions
-                  </Typography>
-                </Box>
-              </Collapse>
-            </Box>
           </Box>
-        </Box>
+        )}
         
-        {/* Right Panel - Chart & Metrics */}
+        {/* RIGHT PANEL - Chart & Metrics */}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Top Metrics Bar */}
+          {/* Tabs Row - Single instance */}
           <Box sx={{ 
             display: 'flex', 
-            alignItems: 'center', 
+            alignItems: 'center',
             justifyContent: 'space-between',
-            px: 3, 
-            py: 1.5,
+            px: 2, 
+            py: 0.5,
             borderBottom: `1px solid ${COLORS.border}`,
-            bgcolor: 'rgba(15, 23, 42, 0.3)',
+            bgcolor: 'rgba(15, 23, 42, 0.4)',
           }}>
-            <Box sx={{ display: 'flex', gap: 4 }}>
-              <Box>
-                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>Profit left</Typography>
-                <Typography variant="body2" sx={{ color: COLORS.profit, fontWeight: 600 }}>
-                  {payoffData.formattedMetrics?.current?.maxProfit || '-'}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>Loss left</Typography>
-                <Typography variant="body2" sx={{ color: COLORS.loss, fontWeight: 600 }}>
-                  {payoffData.formattedMetrics?.current?.maxLoss === 'Unlimited' ? 'Unlimited' : payoffData.formattedMetrics?.current?.maxLoss || '-'}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>Reward / Risk</Typography>
-                <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600 }}>
-                  {payoffData.formattedMetrics?.current?.riskReward || '-'}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>POP</Typography>
-                <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600 }}>
-                  {payoffData.formattedMetrics?.current?.pop || '-'}
-                </Typography>
-              </Box>
-            </Box>
-            
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <IconButton size="small" sx={{ color: COLORS.textSecondary }}>
-                <SettingsIcon fontSize="small" />
-              </IconButton>
-            </Box>
+            <Tabs 
+              value={activeTab} 
+              onChange={(e, v) => setActiveTab(v)}
+              sx={{
+                minHeight: 32,
+                '& .MuiTab-root': { 
+                  color: COLORS.textSecondary, 
+                  textTransform: 'none',
+                  minWidth: 90,
+                  minHeight: 32,
+                  fontSize: '0.8rem',
+                  py: 0.25,
+                },
+                '& .Mui-selected': { color: COLORS.primary },
+                '& .MuiTabs-indicator': { bgcolor: COLORS.primary, height: 2 },
+              }}
+            >
+              <Tab label="Payoff Graph" />
+              <Tab label="P&L Table" />
+              <Tab label="Greeks" />
+              <Tab label="Strategy Chart" />
+            </Tabs>
           </Box>
           
           {/* Chart Area */}
-          <Box sx={{ flex: 1, p: 2, overflow: 'auto' }}>
-            {/* Tabs */}
-            <Box sx={{ mb: 2 }}>
-              <Tabs 
-                value={activeTab} 
-                onChange={(e, v) => setActiveTab(v)}
-                sx={{
-                  '& .MuiTab-root': { 
-                    color: COLORS.textSecondary, 
-                    textTransform: 'none',
-                    minWidth: 100,
-                  },
-                  '& .Mui-selected': { color: COLORS.primary },
-                  '& .MuiTabs-indicator': { bgcolor: COLORS.primary },
-                }}
-              >
-                <Tab label="Payoff Graph" />
-                <Tab label="P&L Table" />
-                <Tab label="Greeks" />
-                <Tab label="Strategy Chart" />
-              </Tabs>
-            </Box>
+          <Box sx={{ flex: 1, p: 1.5, overflow: 'auto' }}>
             
             {/* Payoff Graph Tab */}
             {activeTab === 0 && (
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                {/* Chart */}
-                <Box sx={{ flex: 1 }}>
-                  <Paper sx={{ 
-                    p: 2, 
-                    bgcolor: COLORS.cardBg, 
-                    border: `1px solid ${COLORS.border}`,
-                    borderRadius: 2,
-                  }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Chip label="Payoff Graph" size="small" sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: COLORS.primary }} />
-                        <Chip label="Payoff Table" size="small" variant="outlined" sx={{ borderColor: COLORS.border, color: COLORS.textSecondary }} />
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip label="SD Dynamic" size="small" variant="outlined" sx={{ borderColor: COLORS.border, color: COLORS.textSecondary }} />
-                        <Chip label="Open Interest" size="small" variant="outlined" sx={{ borderColor: COLORS.border, color: COLORS.textSecondary }} />
-                      </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {/* Chart Section - Full width now */}
+                <Paper sx={{ 
+                  p: 2, 
+                  bgcolor: COLORS.cardBg, 
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: 2,
+                }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Chip label="Payoff Graph" size="small" sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: COLORS.primary }} />
+                      <Chip label="Payoff Table" size="small" variant="outlined" sx={{ borderColor: COLORS.border, color: COLORS.textSecondary }} />
                     </Box>
-                    
-                    {/* Current price indicator */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
-                        Current price: ${spotPrice?.toLocaleString() || '-'}
-                      </Typography>
-                      <Button size="small" startIcon={<ZoomOutIcon />} sx={{ color: COLORS.textSecondary }}>
-                        Zoom Out
-                      </Button>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip label="SD Dynamic" size="small" variant="outlined" sx={{ borderColor: COLORS.border, color: COLORS.textSecondary }} />
+                      <Chip label="Open Interest" size="small" variant="outlined" sx={{ borderColor: COLORS.border, color: COLORS.textSecondary }} />
                     </Box>
-                    
-                    <PayoffChart 
-                      chartData={payoffData.chartData}
-                      spotPrice={spotPrice}
-                      hasProposedTrades={proposedTrades.length > 0}
-                      breakevens={payoffData.currentMetrics?.breakevens}
-                    />
-                    
-                    {/* Projected profit */}
-                    <Box sx={{ 
-                      mt: 2, 
-                      p: 1.5, 
-                      bgcolor: 'rgba(34, 197, 94, 0.1)', 
-                      borderRadius: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                    }}>
-                      <Typography variant="body2" sx={{ color: COLORS.profit }}>
-                        Projected profit: {payoffData.formattedMetrics?.current?.maxProfit || '-'}
-                      </Typography>
-                    </Box>
-                  </Paper>
+                  </Box>
                   
-                  {/* Target Price Selector */}
-                  <Paper sx={{ 
+                  {/* Current price indicator */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                    <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                      Current price: ${spotPrice?.toLocaleString() || '-'}
+                    </Typography>
+                    {zoomDomain && (
+                      <>
+                        <Button 
+                          size="small" 
+                          startIcon={<ZoomOutIcon />} 
+                          onClick={() => {
+                            // Zoom out by 25%
+                            const range = zoomDomain[1] - zoomDomain[0];
+                            const center = (zoomDomain[0] + zoomDomain[1]) / 2;
+                            const newRange = range * 1.5;
+                            setZoomDomain([center - newRange/2, center + newRange/2]);
+                          }}
+                          sx={{ color: COLORS.textSecondary }}
+                        >
+                          Zoom Out
+                        </Button>
+                        <Button 
+                          size="small" 
+                          startIcon={<ResetZoomIcon />} 
+                          onClick={() => setZoomDomain(null)}
+                          sx={{ color: COLORS.primary }}
+                        >
+                          Reset Zoom
+                        </Button>
+                      </>
+                    )}
+                    {!zoomDomain && (
+                      <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontStyle: 'italic' }}>
+                        Drag on chart to zoom
+                      </Typography>
+                    )}
+                  </Box>
+                  
+                  <PayoffChart 
+                    chartData={payoffData.chartData}
+                    spotPrice={spotPrice}
+                    hasProposedTrades={proposedTrades.length > 0}
+                    breakevens={proposedTrades.length > 0 
+                      ? payoffData.combinedMetrics?.breakevens 
+                      : payoffData.currentMetrics?.breakevens}
+                    zoomDomain={zoomDomain}
+                    onZoomChange={setZoomDomain}
+                  />
+                  
+                  {/* Projected profit - shows combined when proposed trades exist */}
+                  <Box sx={{ 
                     mt: 2, 
-                    p: 2, 
+                    p: 1.5, 
+                    bgcolor: proposedTrades.length > 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(34, 197, 94, 0.1)', 
+                    borderRadius: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 1,
+                  }}>
+                    <Typography variant="body2" sx={{ color: proposedTrades.length > 0 ? COLORS.primary : COLORS.profit }}>
+                      {proposedTrades.length > 0 ? 'After Adjustment' : 'Projected profit'}: {
+                        proposedTrades.length > 0 
+                          ? payoffData.formattedMetrics?.combined?.maxProfit 
+                          : payoffData.formattedMetrics?.current?.maxProfit
+                      } max profit
+                    </Typography>
+                    {proposedTrades.length > 0 && (
+                      <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                        Current: {payoffData.formattedMetrics?.current?.maxProfit || '-'}
+                      </Typography>
+                    )}
+                  </Box>
+                </Paper>
+                
+                {/* Bottom Section: Target Price, then Metrics + Proposed Trades below */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {/* Target Price Row */}
+                  <Paper sx={{ 
+                    p: 1.5, 
                     bgcolor: COLORS.cardBg, 
                     border: `1px solid ${COLORS.border}`,
                     borderRadius: 2,
@@ -881,8 +1355,8 @@ export default function SensibullStyleAdjustmentPage({
                           value={targetPrice || spotPrice || ''}
                           onChange={(e) => setTargetPrice(parseFloat(e.target.value) || 0)}
                           sx={{ 
-                            width: 120,
-                            '& input': { color: COLORS.text, textAlign: 'center' },
+                            width: 100,
+                            '& input': { color: COLORS.text, textAlign: 'center', py: 0.5 },
                             '& .MuiOutlinedInput-root': { 
                               '& fieldset': { borderColor: COLORS.border },
                             },
@@ -893,73 +1367,393 @@ export default function SensibullStyleAdjustmentPage({
                       <Button size="small" sx={{ color: COLORS.primary }}>Reset</Button>
                     </Box>
                   </Paper>
-                </Box>
-                
-                {/* Metrics Sidebar */}
-                <Box sx={{ width: 280, flexShrink: 0 }}>
-                  <PositionMetricsCard 
-                    metrics={payoffData.formattedMetrics}
-                    hasProposedTrades={proposedTrades.length > 0}
-                  />
                   
-                  {/* Proposed Trades */}
+                  {/* Metrics + Proposed Trades Row */}
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {/* Position Metrics - Compact horizontal layout */}
+                  <Paper sx={{ 
+                    p: 1.5, 
+                    bgcolor: COLORS.cardBg, 
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: 2,
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontWeight: 600 }}>
+                        Position Metrics {proposedTrades.length > 0 && '(After Adjustment)'}
+                      </Typography>
+                      {proposedTrades.length > 0 && (
+                        <Chip 
+                          label="Combined" 
+                          size="small" 
+                          sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: COLORS.primary, height: 18, fontSize: '0.65rem' }}
+                        />
+                      )}
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Max Profit</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.profit, fontWeight: 600, fontSize: '0.8rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.maxProfit 
+                            : payoffData.formattedMetrics?.current?.maxProfit || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Max Loss</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.loss, fontWeight: 600, fontSize: '0.8rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.maxLoss 
+                            : payoffData.formattedMetrics?.current?.maxLoss || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Risk/Reward</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, fontSize: '0.8rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.riskReward 
+                            : payoffData.formattedMetrics?.current?.riskReward || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>PoP</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, fontSize: '0.8rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.pop 
+                            : payoffData.formattedMetrics?.current?.pop || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Breakeven</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.primary, fontWeight: 600, fontSize: '0.8rem' }}>
+                          {proposedTrades.length > 0 
+                            ? (payoffData.formattedMetrics?.combined?.breakevens?.[0] || '-')
+                            : (payoffData.formattedMetrics?.current?.breakevens?.[0] || '-')}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    {/* Greeks Row */}
+                    <Box sx={{ display: 'flex', gap: 2, mt: 1, pt: 1, borderTop: `1px solid ${COLORS.border}` }}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Net Delta</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.text, fontSize: '0.75rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.netDelta 
+                            : payoffData.formattedMetrics?.current?.netDelta || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Net Theta</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.text, fontSize: '0.75rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.netTheta 
+                            : payoffData.formattedMetrics?.current?.netTheta || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Net Vega</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.text, fontSize: '0.75rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.netVega 
+                            : payoffData.formattedMetrics?.current?.netVega || '-'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem' }}>Net Premium</Typography>
+                        <Typography variant="body2" sx={{ color: COLORS.text, fontSize: '0.75rem' }}>
+                          {proposedTrades.length > 0 
+                            ? payoffData.formattedMetrics?.combined?.netPremium 
+                            : payoffData.formattedMetrics?.current?.netPremium || '-'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+                  
+                  {/* Proposed Trades Panel - Sensibull Style with Multiplier */}
                   {proposedTrades.length > 0 && (
                     <Paper sx={{ 
-                      mt: 2, 
                       p: 2, 
                       bgcolor: COLORS.cardBg, 
                       border: `1px solid ${COLORS.border}`,
                       borderRadius: 2,
                     }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                        <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary, fontWeight: 600 }}>
-                          Proposed Trades ({proposedTrades.length})
-                        </Typography>
-                        <Button size="small" color="error" onClick={handleClearAll}>
-                          Clear
-                        </Button>
+                      {/* Header Row */}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Typography variant="subtitle2" sx={{ color: COLORS.text, fontWeight: 600 }}>
+                            New Strategy
+                          </Typography>
+                          <Chip 
+                            label={`${proposedTrades.length} selected`} 
+                            size="small" 
+                            sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: COLORS.primary, height: 22 }}
+                          />
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button 
+                            size="small" 
+                            color="error" 
+                            onClick={handleClearAll} 
+                            sx={{ fontSize: '0.75rem' }}
+                          >
+                            Clear New Trades
+                          </Button>
+                        </Box>
                       </Box>
                       
-                      {proposedTrades.map((trade, idx) => (
-                        <Box key={idx} sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between',
-                          py: 0.5,
-                          borderBottom: idx < proposedTrades.length - 1 ? `1px solid ${COLORS.border}` : 'none',
-                        }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {/* Trades Table - Sensibull Style */}
+                      <TableContainer sx={{ mb: 2, maxHeight: 180, overflow: 'auto' }}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ color: COLORS.textSecondary, fontWeight: 600, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>B/S</TableCell>
+                              <TableCell sx={{ color: COLORS.textSecondary, fontWeight: 600, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>Expiry</TableCell>
+                              <TableCell sx={{ color: COLORS.textSecondary, fontWeight: 600, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>Strike</TableCell>
+                              <TableCell sx={{ color: COLORS.textSecondary, fontWeight: 600, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>Type</TableCell>
+                              <TableCell align="center" sx={{ color: COLORS.textSecondary, fontWeight: 600, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>Qty</TableCell>
+                              <TableCell align="right" sx={{ color: COLORS.textSecondary, fontWeight: 600, fontSize: '0.75rem', py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>Price</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {proposedTrades.map((trade, idx) => {
+                              // Calculate final quantity based on multiplier mode
+                              const baseQty = trade.quantity || 1;
+                              const finalQty = multiplierMode === 'gcd' 
+                                ? Math.round((baseQty / tradesGCD) * multiplier)
+                                : baseQty * multiplier;
+                              
+                              return (
+                                <TableRow key={idx} hover>
+                                  <TableCell sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+                                    <Chip 
+                                      label={trade.side === 'buy' ? 'B' : 'S'} 
+                                      size="small" 
+                                      sx={{ 
+                                        bgcolor: trade.side === 'buy' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                        color: trade.side === 'buy' ? COLORS.buy : COLORS.sell,
+                                        fontWeight: 'bold',
+                                        fontSize: '0.7rem',
+                                        height: 22,
+                                        minWidth: 28,
+                                      }} 
+                                    />
+                                  </TableCell>
+                                  <TableCell sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+                                    <Typography variant="caption" sx={{ color: COLORS.text, fontSize: '0.8rem' }}>
+                                      {formatExpiryShort(trade.expiry || selectedExpiry)}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ p: 0.25, color: COLORS.textSecondary }}
+                                        onClick={() => {
+                                          // Decrease strike by 100 (or appropriate step)
+                                          const step = derivedUnderlying === 'ETH' ? 25 : 100;
+                                          const newStrike = trade.strike - step;
+                                          handleUpdateTradeStrike(trade.strike, trade.type, trade.side, newStrike);
+                                        }}
+                                      >
+                                        <RemoveIcon sx={{ fontSize: 14 }} />
+                                      </IconButton>
+                                      <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 500, minWidth: 50, textAlign: 'center' }}>
+                                        {trade.strike?.toLocaleString()}
+                                      </Typography>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ p: 0.25, color: COLORS.textSecondary }}
+                                        onClick={() => {
+                                          // Increase strike by 100 (or appropriate step)
+                                          const step = derivedUnderlying === 'ETH' ? 25 : 100;
+                                          const newStrike = trade.strike + step;
+                                          handleUpdateTradeStrike(trade.strike, trade.type, trade.side, newStrike);
+                                        }}
+                                      >
+                                        <AddIcon sx={{ fontSize: 14 }} />
+                                      </IconButton>
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+                                    <Chip 
+                                      label={trade.type === 'call' ? 'CE' : 'PE'} 
+                                      size="small" 
+                                      sx={{ 
+                                        bgcolor: trade.type === 'call' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                        color: trade.type === 'call' ? '#60a5fa' : '#f87171',
+                                        fontSize: '0.7rem',
+                                        height: 22,
+                                      }} 
+                                    />
+                                  </TableCell>
+                                  <TableCell align="center" sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ p: 0.25, color: COLORS.textSecondary }}
+                                        onClick={() => handleUpdateTradeQty(trade.strike, trade.type, trade.side, Math.max(1, (trade.quantity || 1) - 1))}
+                                      >
+                                        <RemoveIcon sx={{ fontSize: 14 }} />
+                                      </IconButton>
+                                      <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, minWidth: 24, textAlign: 'center' }}>
+                                        {finalQty}
+                                      </Typography>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ p: 0.25, color: COLORS.textSecondary }}
+                                        onClick={() => handleUpdateTradeQty(trade.strike, trade.type, trade.side, (trade.quantity || 1) + 1)}
+                                      >
+                                        <AddIcon sx={{ fontSize: 14 }} />
+                                      </IconButton>
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ py: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
+                                    <Typography variant="body2" sx={{ color: COLORS.text }}>
+                                      {(trade.premium || trade.ltp || 0).toFixed(1)}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                      
+                      {/* Multiplier Controls - Sensibull Style */}
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between',
+                        pt: 2,
+                        borderTop: `1px solid ${COLORS.border}`,
+                      }}>
+                        {/* Left: Multiplier Mode Toggle + Value */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+                            Multiplier
+                          </Typography>
+                          
+                          {/* Mode Toggle */}
+                          <Box sx={{ display: 'flex', borderRadius: 1, overflow: 'hidden', border: `1px solid ${COLORS.border}` }}>
+                            <Button
+                              size="small"
+                              onClick={() => setMultiplierMode('normal')}
+                              sx={{
+                                px: 1.5,
+                                py: 0.5,
+                                minWidth: 70,
+                                borderRadius: 0,
+                                bgcolor: multiplierMode === 'normal' ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                                color: multiplierMode === 'normal' ? COLORS.primary : COLORS.textSecondary,
+                                fontSize: '0.75rem',
+                                '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.1)' },
+                              }}
+                            >
+                              Normal
+                            </Button>
+                            <Button
+                              size="small"
+                              onClick={() => setMultiplierMode('gcd')}
+                              sx={{
+                                px: 1.5,
+                                py: 0.5,
+                                minWidth: 70,
+                                borderRadius: 0,
+                                borderLeft: `1px solid ${COLORS.border}`,
+                                bgcolor: multiplierMode === 'gcd' ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                                color: multiplierMode === 'gcd' ? '#a78bfa' : COLORS.textSecondary,
+                                fontSize: '0.75rem',
+                                '&:hover': { bgcolor: 'rgba(139, 92, 246, 0.1)' },
+                              }}
+                            >
+                              GCD Ratio
+                            </Button>
+                          </Box>
+                          
+                          {/* Multiplier Value */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <IconButton 
+                              size="small" 
+                              onClick={() => setMultiplier(m => Math.max(1, m - 1))}
+                              sx={{ 
+                                color: COLORS.textSecondary, 
+                                bgcolor: 'rgba(255,255,255,0.05)',
+                                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+                              }}
+                            >
+                              <RemoveIcon fontSize="small" />
+                            </IconButton>
+                            <TextField
+                              size="small"
+                              type="number"
+                              value={multiplier}
+                              onChange={(e) => setMultiplier(Math.max(1, parseInt(e.target.value) || 1))}
+                              inputProps={{ min: 1, max: 100 }}
+                              sx={{
+                                width: 60,
+                                '& input': { color: COLORS.text, textAlign: 'center', py: 0.5, fontWeight: 600 },
+                                '& .MuiOutlinedInput-root': {
+                                  '& fieldset': { borderColor: COLORS.border },
+                                },
+                              }}
+                            />
+                            <IconButton 
+                              size="small" 
+                              onClick={() => setMultiplier(m => Math.min(100, m + 1))}
+                              sx={{ 
+                                color: COLORS.textSecondary, 
+                                bgcolor: 'rgba(255,255,255,0.05)',
+                                '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+                              }}
+                            >
+                              <AddIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                          
+                          {/* GCD Ratio Display */}
+                          {multiplierMode === 'gcd' && tradesGCD > 1 && (
                             <Chip 
-                              label={trade.side === 'buy' ? 'B' : 'S'} 
+                              label={`Ratio ${ratioDisplay}`} 
                               size="small" 
                               sx={{ 
-                                bgcolor: trade.side === 'buy' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                                color: trade.side === 'buy' ? COLORS.buy : COLORS.sell,
-                                fontSize: '0.6rem',
-                                height: 18,
+                                bgcolor: 'rgba(139, 92, 246, 0.15)', 
+                                color: '#a78bfa',
+                                fontSize: '0.7rem',
                               }} 
                             />
-                            <Typography variant="caption" sx={{ color: COLORS.text }}>
-                              {trade.strike} {trade.type === 'call' ? 'C' : 'P'}
+                          )}
+                        </Box>
+                        
+                        {/* Right: Total Orders + Execute Button */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem', display: 'block' }}>
+                              Total Orders
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600 }}>
+                              {totalOrderCount} lots
                             </Typography>
                           </Box>
-                          <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
-                            x{trade.quantity}
-                          </Typography>
+                          
+                          <Button 
+                            variant="contained" 
+                            color="primary"
+                            size="medium"
+                            sx={{ 
+                              px: 4, 
+                              py: 1,
+                              fontSize: '0.9rem',
+                              fontWeight: 600,
+                              borderRadius: 2,
+                            }}
+                            onClick={() => setReviewDialogOpen(true)}
+                          >
+                            Review & Execute
+                          </Button>
                         </Box>
-                      ))}
-                      
-                      <Button 
-                        fullWidth 
-                        variant="contained" 
-                        color="primary"
-                        sx={{ mt: 2 }}
-                        onClick={() => setReviewDialogOpen(true)}
-                      >
-                        Review & Execute
-                      </Button>
+                      </Box>
                     </Paper>
                   )}
+                  </Box>
                 </Box>
               </Box>
             )}
@@ -994,25 +1788,18 @@ export default function SensibullStyleAdjustmentPage({
         </Box>
       </Box>
       
-      {/* Sliding Options Chain Panel (from left side like Sensibull) */}
-      <SlidingOptionsChainPanel
-        open={showChainPanel}
-        onClose={() => setShowChainPanel(false)}
-        underlying={derivedUnderlying}
-        spotPrice={spotPrice}
-        proposedTrades={proposedTrades}
-        onAddTrade={handleAddTrade}
-        onRemoveTrade={handleRemoveTrade}
-        selectedExpiry={selectedExpiry}
-        onExpiryChange={setSelectedExpiry}
-      />
-      
       {/* Review Dialog */}
       <AdjustmentReviewDialog
         open={reviewDialogOpen}
         onClose={() => setReviewDialogOpen(false)}
-        trades={proposedTrades}
+        trades={getMultipliedTrades()}
         formattedMetrics={payoffData.formattedMetrics}
+        multiplierInfo={{
+          mode: multiplierMode,
+          value: multiplier,
+          gcd: tradesGCD,
+          ratio: ratioDisplay,
+        }}
         onExecute={(params) => {
           setReviewDialogOpen(false);
           onExecuteComplete?.();

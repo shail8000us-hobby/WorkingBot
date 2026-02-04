@@ -11,6 +11,7 @@ const sectionChunkMap = {
   'options-chain': 'optionsChain',
   'strategy-builder': 'strategyBuilder',
   'mv-straddle': 'mvStraddle',
+  'ssr_algo': 'ssrAlgo',
   config: 'configPanel',
   logs: 'logsPanel',
   guardian: 'guardianDashboard',

@@ -98,6 +98,7 @@ try:
     from .routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from .routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
     from .routes.market import market_bp  # JAN 2026: Market data (spot price)
+    from .routes.tradingview_webhook import tradingview_bp  # FEB 2026: TradingView webhook integration
     from .routes.ticker import ticker_bp  # JAN 2026: Ticker API (Greeks data)
     # JAN 2026: WebUI v3 API endpoints
     from .routes.trades import trades_bp
@@ -129,6 +130,7 @@ except ImportError:
     from routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
     from routes.market import market_bp  # JAN 2026: Market data (spot price)
+    from routes.tradingview_webhook import tradingview_bp  # FEB 2026: TradingView webhook integration
     from routes.ticker import ticker_bp  # JAN 2026: Ticker API (Greeks data)
     # JAN 2026: WebUI v3 API endpoints
     from routes.trades import trades_bp
@@ -201,6 +203,7 @@ blueprints = [
     unified_safety_bp,  # DEC 27: Unified Risk & Safety Dashboard
     market_bp,  # JAN 2026: Market data API (spot price)
     ticker_bp,  # JAN 2026: Ticker API (Greeks data)
+    tradingview_bp,  # FEB 2026: TradingView webhook integration
     # JAN 2026: WebUI v3 endpoints
     trades_bp, analytics_bp, performance_bp, chart_bp, backtest_bp, strategies_bp
 ]
@@ -435,6 +438,20 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register alerts blueprint: {e}")
     log.warning(f"Price alerts routes not available: {e}")
+
+# Register SSR ALGO blueprint (FEB 2, 2026: Automated butterfly adjustment algorithm)
+try:
+    from webui.backend.routes.ssr_algo import ssr_algo_bp, init_ssr_algo
+    app.register_blueprint(ssr_algo_bp)
+    print(f"✅ Registered ssr_algo blueprint (automated butterfly adjustment algorithm)")
+    
+    # Initialize SSR Algo and restore any active monitors
+    # This ensures algo continues running after backend restarts
+    init_ssr_algo()
+    print(f"✅ SSR Algo initialized and monitors restored")
+except Exception as e:
+    print(f"⚠️ Could not register ssr_algo blueprint: {e}")
+    log.warning(f"SSR Algo routes not available: {e}")
 
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
@@ -688,6 +705,46 @@ def handle_ping(data):
         })
     except Exception as e:
         print(f"Error handling ping: {e}")
+
+
+@socketio.on('subscribe_options_tickers')
+def handle_subscribe_options_tickers(data):
+    """Subscribe to real-time bid/ask updates for options"""
+    try:
+        symbols = data.get('symbols', [])
+        if not symbols:
+            emit('options_subscription_error', {'error': 'No symbols provided'})
+            return
+        
+        from services.delta_price_websocket import get_price_websocket
+        price_ws = get_price_websocket()
+        price_ws.subscribe_options(symbols)
+        
+        emit('options_subscribed', {
+            'symbols': symbols,
+            'count': len(symbols)
+        })
+        log.info(f"[WebSocket] Client subscribed to {len(symbols)} options tickers")
+    except Exception as e:
+        log.error(f"Error subscribing to options tickers: {e}")
+        emit('options_subscription_error', {'error': str(e)})
+
+
+@socketio.on('unsubscribe_options_tickers')
+def handle_unsubscribe_options_tickers(data):
+    """Unsubscribe from options ticker updates"""
+    try:
+        symbols = data.get('symbols', [])
+        if not symbols:
+            return
+        
+        from services.delta_price_websocket import get_price_websocket
+        price_ws = get_price_websocket()
+        price_ws.unsubscribe_options(symbols)
+        
+        log.info(f"[WebSocket] Client unsubscribed from {len(symbols)} options tickers")
+    except Exception as e:
+        log.error(f"Error unsubscribing from options tickers: {e}")
 
 
 @socketio.on('get_halt_status')
@@ -1170,6 +1227,25 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         print("   Per-strike/expiry max loss will NOT be enforced!\n")
+    
+    # ============================================================================
+    # Initialize and Start Take Profit Monitor (Options Trading)
+    # ============================================================================
+    try:
+        print("\n🎯 Starting Take Profit Monitor...")
+        from webui.backend.options_strategy.take_profit_manager import init_take_profit_monitoring, get_take_profit_manager
+        # Use the same api_client as above
+        take_profit_manager = get_take_profit_manager()
+        take_profit_monitor = init_take_profit_monitoring(api_client, take_profit_manager, auto_start=True)
+        if take_profit_monitor and getattr(take_profit_monitor, 'start', None):
+            print("✅ Take Profit Monitor started (per-strike profit targets enforced)\n")
+        else:
+            print("⚠️  Take Profit Monitor failed to start\n")
+    except Exception as e:
+        print(f"⚠️  Failed to start Take Profit Monitor: {e}")
+        import traceback
+        traceback.print_exc()
+        print("   Per-strike take profit will NOT be enforced!\n")
     
     # ============================================================================
     # Initialize Delta Exchange Price WebSocket

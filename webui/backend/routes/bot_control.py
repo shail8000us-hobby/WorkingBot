@@ -104,31 +104,47 @@ def bot_status():
         
         # Check if PM2 is enabled
         if should_use_pm2():
-            # Get status from PM2
-            pm2_status = pm2.get_bot_status('live')
+            # v6.0: Check for ANY running gridbot instance
+            all_bots_status = pm2.get_all_bots_status()
             
-            if pm2_status:
+            # Filter for gridbot processes only
+            running_gridbots = [b for b in all_bots_status if b['name'].startswith('gridbot-') and b['status'] == 'online']
+            
+            if running_gridbots:
+                # At least one gridbot is running
+                # Use the first one for stats (or the one matching requested_symbol if provided)
+                selected_bot = running_gridbots[0]
+                
+                if requested_symbol:
+                    # Try to find bot matching the requested symbol
+                    for bot in running_gridbots:
+                        if requested_symbol in bot['name']:
+                            selected_bot = bot
+                            break
+                
                 response = {
-                    'running': pm2_status['status'] == 'online',
-                    'pid': pm2_status.get('pid'),
+                    'running': True,
+                    'pid': selected_bot.get('pid'),
                     'pm2_managed': True,
-                    'pm2_status': pm2_status['status'],
-                    'restarts': pm2_status.get('restarts', 0),
-                    'cpu': pm2_status.get('cpu', 0),
-                    'memory_mb': round(pm2_status.get('memory', 0), 1),
-                    # v5.0 multi-symbol fields
+                    'pm2_status': selected_bot['status'],
+                    'restarts': selected_bot.get('restarts', 0),
+                    'cpu': selected_bot.get('cpu', 0),
+                    'memory_mb': round(selected_bot.get('memory', 0), 1),
+                    # v6.0 multi-instance fields
                     'symbol': requested_symbol,
-                    'single_process_mode': True,
-                    'note': 'Bot runs as single process. Per-symbol processes planned for v5.1'
+                    'active_instances': len(running_gridbots),
+                    'instance_names': [b['name'] for b in running_gridbots],
+                    'note': f'{len(running_gridbots)} bot instance(s) running'
                 }
                 return jsonify(response), 200
             else:
-                # Not running in PM2
+                # No gridbots running in PM2
                 return jsonify({
                     'running': False,
                     'pm2_managed': True,
                     'symbol': requested_symbol,
-                    'single_process_mode': True
+                    'active_instances': 0,
+                    'note': 'No bot instances running'
                 }), 200
         
         # Fallback to traditional PID file check OR process detection

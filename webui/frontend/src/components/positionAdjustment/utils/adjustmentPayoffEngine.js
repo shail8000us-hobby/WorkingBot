@@ -68,10 +68,29 @@ export function parsePositionSymbol(symbol) {
  * @returns {Object} Position-like object for calculation
  */
 export function formatProposedAsPosition(trade) {
+  // Handle symbol format - might be C-BTC-82000-010226 or just need to build it
+  let symbol = trade.symbol;
+  
+  // If no symbol, build it from trade properties
+  if (!symbol && trade.strike && trade.type) {
+    const typePrefix = trade.type === 'call' ? 'C' : 'P';
+    const underlying = trade.underlying || 'BTC';
+    const expiry = trade.expiry || '';
+    symbol = `${typePrefix}-${underlying}-${trade.strike}-${expiry}`;
+  }
+  
+  // Quantity handling - support both quantity and size fields
+  const qty = Math.abs(trade.quantity || trade.size || 1);
+  const size = trade.side === 'buy' ? qty : -qty;
+  
+  // Premium handling - support multiple field names
+  const premium = trade.premium || trade.ltp || trade.price || trade.entry_price || 0;
+  
   return {
-    product_symbol: trade.symbol,
-    size: trade.side === 'buy' ? trade.quantity : -trade.quantity,
-    entry_price: trade.premium || trade.ltp || 0,
+    product_symbol: symbol,
+    size: size,
+    entry_price: Math.abs(premium),
+    mark_price: Math.abs(premium),
     greeks: {
       delta: trade.delta || 0,
       gamma: trade.gamma || 0,
@@ -79,8 +98,11 @@ export function formatProposedAsPosition(trade) {
       vega: trade.vega || 0,
       spot: trade.spotPrice || 0,
     },
+    // Include original trade type info
+    _tradeType: trade.type,
+    _tradeSide: trade.side,
     // Parsed details
-    ...parsePositionSymbol(trade.symbol),
+    ...parsePositionSymbol(symbol),
   };
 }
 

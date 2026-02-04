@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { io } from 'socket.io-client';
 import {
   Box,
   Card,
@@ -101,6 +102,8 @@ import { AutomationButton, automationMonitor, notificationService } from './auto
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
 import MaxLossIndicator from './MaxLossIndicator';
+import TakeProfitIndicator from './TakeProfitIndicator';
+import TakeProfitDialog from './TakeProfitDialog';
 import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
 import useMarketPrices from '../../hooks/useMarketPrices';
 import SoundSettingsPanel from '../SoundSettingsPanel';
@@ -240,6 +243,11 @@ const OptionsPanel = () => {
   const [maxLossSettings, setMaxLossSettings] = useState({}); // Map of symbol -> settings
   const [expiryMaxLossSettings, setExpiryMaxLossSettings] = useState({}); // Map of expiry_code -> settings
 
+  // Take Profit Dialog state
+  const [tpDialogOpen, setTpDialogOpen] = useState(false);
+  const [selectedPositionForTP, setSelectedPositionForTP] = useState(null);
+  const [tpSettings, setTpSettings] = useState({}); // Map of symbol -> TP settings
+
   // Column visibility state (persisted)
   const [columnMenuAnchor, setColumnMenuAnchor] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -261,6 +269,7 @@ const OptionsPanel = () => {
         ask: true,
         sltp: true,
         maxLoss: true,
+        takeProfit: true,
         iv: true,
         pop: true,  // Day 1 & 2: Always show PoP by default
         pnl: true,
@@ -305,6 +314,7 @@ const OptionsPanel = () => {
     { key: 'ask', label: 'Ask' },
     { key: 'sltp', label: 'SL/TP' },
     { key: 'maxLoss', label: 'Max Loss' },
+    { key: 'takeProfit', label: 'TP' },
     { key: 'iv', label: 'IV' },
     { key: 'pop', label: 'PoP' },
     { key: 'pnl', label: 'PnL' },
@@ -1427,6 +1437,34 @@ const OptionsPanel = () => {
     });
   }, []);
 
+  // Load Take Profit settings for all positions
+  const loadTakeProfitSettings = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/options/take-profit/strike/all');
+      if (data?.success && data.settings) {
+        const settingsMap = {};
+        data.settings.forEach((s) => {
+          settingsMap[s.symbol] = s;
+        });
+        setTpSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Failed to load take profit settings:', err);
+    }
+  }, []);
+
+  // Handle take profit setting update from child component
+  const handleTakeProfitUpdate = useCallback((symbol, settings) => {
+    setTpSettings((prev) => {
+      if (settings === null) {
+        const next = { ...prev };
+        delete next[symbol];
+        return next;
+      }
+      return { ...prev, [symbol]: settings };
+    });
+  }, []);
+
   // Fetch pending orders from Delta Exchange
   const fetchPendingOrders = useCallback(async () => {
     try {
@@ -1473,13 +1511,14 @@ const OptionsPanel = () => {
         fetchPositions(),
         loadSLTPSettings(),
         loadMaxLossSettings(),
+        loadTakeProfitSettings(),
         fetchPendingOrders(),
         fetchFuturesPositions(),
       ]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, fetchPendingOrders, fetchFuturesPositions]);
+  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, fetchPendingOrders, fetchFuturesPositions]);
 
   // Auto-refresh every pollInterval ms
   useEffect(() => {
@@ -1492,6 +1531,96 @@ const OptionsPanel = () => {
     }, pollInterval);
     return () => clearInterval(interval);
   }, [fetchPositions, fetchStatus, fetchPendingOrders, fetchFuturesPositions, loadMaxLossSettings, pollInterval]);
+
+  // WebSocket subscription for real-time bid/ask updates
+  useEffect(() => {
+    // Initialize Socket.IO connection
+    const socket = io({
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10,
+    });
+
+    // Handle connection
+    socket.on('connect', () => {
+      console.log('[OptionsPanel] WebSocket connected for ticker updates');
+      
+      // Subscribe to all position symbols
+      if (positions.length > 0) {
+        const symbols = positions.map(p => p.product_symbol);
+        socket.emit('subscribe_options_tickers', { symbols });
+      }
+    });
+
+    // Handle ticker updates (bid/ask)
+    socket.on('options_ticker_update', (data) => {
+      const { symbol, best_bid, best_ask, mark_price, timestamp } = data;
+      
+      // Update positions with new bid/ask data
+      setPositions(prevPositions => 
+        prevPositions.map(pos => {
+          if (pos.product_symbol === symbol) {
+            return {
+              ...pos,
+              best_bid,
+              best_ask,
+              mark_price,
+              ws_updated: timestamp
+            };
+          }
+          return pos;
+        })
+      );
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[OptionsPanel] WebSocket disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('[OptionsPanel] WebSocket connection error:', error);
+    });
+
+    // Cleanup
+    return () => {
+      if (positions.length > 0) {
+        const symbols = positions.map(p => p.product_symbol);
+        socket.emit('unsubscribe_options_tickers', { symbols });
+      }
+      socket.disconnect();
+    };
+  }, []); // Only run once on mount
+
+  // Update WebSocket subscriptions when positions change
+  useEffect(() => {
+    // Skip if no positions
+    if (positions.length === 0) return;
+
+    // Get socket instance
+    const socket = io({
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+    });
+
+    // Wait for connection then subscribe
+    socket.on('connect', () => {
+      const symbols = positions.map(p => p.product_symbol);
+      socket.emit('subscribe_options_tickers', { symbols });
+      console.log(`[OptionsPanel] Subscribed to ${symbols.length} options tickers via WebSocket`);
+    });
+
+    // If already connected, subscribe immediately
+    if (socket.connected) {
+      const symbols = positions.map(p => p.product_symbol);
+      socket.emit('subscribe_options_tickers', { symbols });
+    }
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [positions.map(p => p.product_symbol).join(',')]); // Re-subscribe when positions change
 
   // Cleanup active batch polling intervals on unmount
   useEffect(() => {
@@ -3051,6 +3180,34 @@ const OptionsPanel = () => {
     return { type: '?', underlying: '?', strike: 0, expiry: '?' };
   };
 
+  // FEB 2, 2026: Filter positions for adjustment panel based on user selection
+  // Respects selectedExpiries (expiry filter dropdown) and selectedStrikes (checkbox selection)
+  const filteredPositionsForAdjustment = useMemo(() => {
+    let filtered = [...positions];
+
+    // Filter by selected expiries (if any)
+    if (selectedExpiries && selectedExpiries.length > 0) {
+      filtered = filtered.filter(pos => {
+        const posExpiry = getExpiryCode(pos.product_symbol);
+        return posExpiry && selectedExpiries.includes(posExpiry);
+      });
+    }
+
+    // Filter by selected strikes (if any checkboxes checked)
+    if (
+      selectedStrikes &&
+      typeof selectedStrikes === 'object' &&
+      Object.values(selectedStrikes).some(val => val === true)
+    ) {
+      const selectedSymbols = Object.keys(selectedStrikes).filter(sym => selectedStrikes[sym] === true);
+      filtered = filtered.filter(pos => selectedSymbols.includes(pos.product_symbol));
+    }
+
+    // Fallback: if filtering results in empty array, return original positions
+    // This prevents showing blank payoff graph
+    return filtered.length > 0 ? filtered : positions;
+  }, [positions, selectedExpiries, selectedStrikes]);
+
   // Render loading state
   if (loading) {
     return (
@@ -4053,6 +4210,13 @@ const OptionsPanel = () => {
                         </Tooltip>
                       </TableCell>
                     )}
+                    {visibleColumns.takeProfit && (
+                      <TableCell align="center" sx={{ minWidth: 60 }}>
+                        <Tooltip title="Take Profit - auto partial exit when profit target reached">
+                          <Box>TP</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
                     {visibleColumns.iv && (
                       <TableCell align="right" sx={{ minWidth: 50 }}>
                         <Tooltip title="Implied Volatility">
@@ -4401,6 +4565,23 @@ const OptionsPanel = () => {
                                       currentPnl={pos.unrealized_pnl || 0}
                                       settings={maxLossSettings[pos.product_symbol]}
                                       onUpdate={handleMaxLossUpdate}
+                                    />
+                                  </TableCell>
+                                )}
+
+                                {/* Take Profit Indicator */}
+                                {visibleColumns.takeProfit && (
+                                  <TableCell align="center" sx={cellSx}>
+                                    <TakeProfitIndicator
+                                      symbol={pos.product_symbol}
+                                      currentPnl={pos.unrealized_pnl || 0}
+                                      currentSize={Math.abs(pos.size || 0)}
+                                      settings={tpSettings[pos.product_symbol]}
+                                      onEdit={() => {
+                                        setSelectedPositionForTP(pos);
+                                        setTpDialogOpen(true);
+                                      }}
+                                      onUpdate={handleTakeProfitUpdate}
                                     />
                                   </TableCell>
                                 )}
@@ -6388,6 +6569,18 @@ const OptionsPanel = () => {
         }}
       />
 
+      {/* Take Profit Configuration Dialog */}
+      <TakeProfitDialog
+        open={tpDialogOpen}
+        onClose={() => {
+          setTpDialogOpen(false);
+          setSelectedPositionForTP(null);
+        }}
+        position={selectedPositionForTP}
+        settings={selectedPositionForTP ? tpSettings[selectedPositionForTP.product_symbol] : null}
+        onUpdate={handleTakeProfitUpdate}
+      />
+
       {/* Sound Settings Panel (JAN 19, 2026 - Independent UI component) */}
       <SoundSettingsPanel
         open={soundSettingsOpen}
@@ -6401,12 +6594,13 @@ const OptionsPanel = () => {
       />
 
       {/* Position Adjustment Page (FEB 1, 2026 - Sensibull-like full page layout) */}
+      {/* FEB 2, 2026: Now uses filteredPositionsForAdjustment based on expiry/strike selection */}
       <SensibullStyleAdjustmentPage
         open={adjustmentPanelOpen}
         onClose={() => setAdjustmentPanelOpen(false)}
-        currentPositions={positions}
+        currentPositions={filteredPositionsForAdjustment}
         spotPrice={btcPrice || ethPrice}
-        underlying={positions[0]?.product_symbol?.split('-')[1] || 'BTC'}
+        underlying={filteredPositionsForAdjustment[0]?.product_symbol?.split('-')[1] || positions[0]?.product_symbol?.split('-')[1] || 'BTC'}
         onExecuteComplete={() => {
           setAdjustmentPanelOpen(false);
           handleRefresh();
