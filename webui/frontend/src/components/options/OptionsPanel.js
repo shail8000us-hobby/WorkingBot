@@ -291,8 +291,8 @@ const OptionsPanel = () => {
     }
   });
 
-  // Phase 4: Keyboard trading - selected row index
-  const [selectedRowIndex, setSelectedRowIndex] = useState(0);
+  // Phase 4: Keyboard trading - selected row index (-1 = no selection until arrow keys used)
+  const [selectedRowIndex, setSelectedRowIndex] = useState(-1);
 
   // Expiry filter (persisted) - now supports multiple selection
   const [selectedExpiries, setSelectedExpiries] = useState(() => {
@@ -1803,14 +1803,22 @@ const OptionsPanel = () => {
       // Navigate positions with arrow keys
       if (key === 'arrowdown') {
         e.preventDefault();
-        setSelectedRowIndex(prev => Math.min(prev + 1, sortedPositions.length - 1));
+        setSelectedRowIndex(prev => {
+          // First arrow press activates selection at index 0
+          if (prev === -1) return 0;
+          return Math.min(prev + 1, sortedPositions.length - 1);
+        });
       } else if (key === 'arrowup') {
         e.preventDefault();
-        setSelectedRowIndex(prev => Math.max(prev - 1, 0));
+        setSelectedRowIndex(prev => {
+          // First arrow press activates selection at index 0
+          if (prev === -1) return 0;
+          return Math.max(prev - 1, 0);
+        });
       }
 
       // Quick actions on selected position
-      if (sortedPositions.length === 0) return;
+      if (sortedPositions.length === 0 || selectedRowIndex === -1) return;
       const selectedPos = sortedPositions[selectedRowIndex];
       if (!selectedPos) return;
 
@@ -4559,8 +4567,8 @@ const OptionsPanel = () => {
                               ? 'rgba(239, 68, 68, 0.06)'
                               : 'action.hover';
 
-                        // Phase 4: Turbo mode selected row highlight
-                        const isSelectedInTurbo = turboMode && index === selectedRowIndex;
+                        // Phase 4: Turbo mode selected row highlight (only if actively selected)
+                        const isSelectedInTurbo = turboMode && selectedRowIndex >= 0 && index === selectedRowIndex;
                         const finalBgColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.2)' : rowBgColor;
                         const finalHoverColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.3)' : rowHoverColor;
 
