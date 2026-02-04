@@ -11,7 +11,7 @@
  * This component only manages options positions.
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io } from 'socket.io-client';
 import {
@@ -95,9 +95,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import api from '../../utils/apiShim';
 import soundManager from '../../utils/soundManager';
-import OptionsPayoffDiagram from './OptionsPayoffDiagram';
 import LogPanel from '../optionsChain/LogPanel';
-import OptionsActivityPanel from './OptionsActivityPanel';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
@@ -116,6 +114,10 @@ import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
 // JAN 31, 2026: Position Adjustment Panel - Sensibull-like position adjustment system
 // FEB 1, 2026: Updated to use SensibullStyleAdjustmentPage (full page layout)
 import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
+
+// Phase 3: Lazy load heavy components
+const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
+const OptionsActivityPanel = lazy(() => import('./OptionsActivityPanel'));
 
 // ============================================================================
 // PHASE 1 OPTIMIZATION: React.memo for SortableRow
@@ -545,6 +547,8 @@ const OptionsPanel = () => {
   const expiryStopRefs = useRef({});
   // Phase 2: Persistent WebSocket connection ref
   const socketRef = useRef(null);
+  // Phase 3: Change detection - track last modified timestamp
+  const lastModifiedRef = useRef(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1203,6 +1207,13 @@ const OptionsPanel = () => {
       const { data } = await api.get('/api/options/dashboard');
       
       if (data?.success) {
+        // Phase 3: Change detection - skip update if data unchanged
+        if (data.last_modified && data.last_modified === lastModifiedRef.current) {
+          console.log('⚡ Dashboard unchanged - skipping update (Phase 3 optimization)');
+          return true;
+        }
+        lastModifiedRef.current = data.last_modified;
+        
         // Update all state from single response
         const dashPositions = data.positions || [];
         const dashStatus = data.status || {};
@@ -6021,17 +6032,21 @@ const OptionsPanel = () => {
       {/* Payoff Diagram */}
       {positions.length > 0 && (
         <Box sx={{ mt: 2 }}>
-          <OptionsPayoffDiagram
-            positions={sortedPositions}
-            selectedPositions={selectedPositionsForPayoff}
-            futuresPositions={visibleFuturesPositions}
-          />
+          <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
+            <OptionsPayoffDiagram
+              positions={sortedPositions}
+              selectedPositions={selectedPositionsForPayoff}
+              futuresPositions={visibleFuturesPositions}
+            />
+          </Suspense>
         </Box>
       )}
 
       {/* Options Trading Activity Monitor */}
       <Box sx={{ mt: 2 }}>
-        <OptionsActivityPanel refreshTrigger={0} />
+        <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading activity panel...</Box>}>
+          <OptionsActivityPanel refreshTrigger={0} />
+        </Suspense>
       </Box>
 
       {/* Close Confirmation Dialog */}

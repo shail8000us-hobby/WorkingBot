@@ -27,6 +27,7 @@
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",
     "react-scripts": "5.0.1",
+    "react-window": "^2.2.6",
     "reactflow": "^11.11.4",
     "recharts": "^2.9.0",
     "remark-gfm": "^4.0.1",
