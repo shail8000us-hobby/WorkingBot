@@ -120,16 +120,21 @@ def get_dashboard():
         from ..futures.futures_api import get_futures_positions
         
         # Call the existing route handlers directly (avoids HTTP overhead)
+        # These functions return (response, status_code) tuples
         positions_response = get_options_positions()
+        positions_response = positions_response[0] if isinstance(positions_response, tuple) else positions_response
         positions_data = positions_response.get_json() if hasattr(positions_response, 'get_json') else positions_response
         
         pending_response = get_pending_orders()
+        pending_response = pending_response[0] if isinstance(pending_response, tuple) else pending_response
         pending_data = pending_response.get_json() if hasattr(pending_response, 'get_json') else pending_response
         
         futures_response = get_futures_positions()
+        futures_response = futures_response[0] if isinstance(futures_response, tuple) else futures_response
         futures_data = futures_response.get_json() if hasattr(futures_response, 'get_json') else futures_response
         
         status_response = get_options_status()
+        status_response = status_response[0] if isinstance(status_response, tuple) else status_response
         status_data = status_response.get_json() if hasattr(status_response, 'get_json') else status_response
         
         # Extract positions for Greeks calculation
