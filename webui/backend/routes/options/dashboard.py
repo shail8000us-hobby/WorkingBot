@@ -114,21 +114,19 @@ def get_dashboard():
     start_time = time.time()
     
     try:
-        # Import here to avoid circular dependencies
-        from .options_control import get_positions as get_options_positions
-        from .pending_orders import get_pending_orders as get_pending
-        from ..futures.futures_control import get_futures_positions as get_futures
-        from .options_control import get_status as get_options_status
+        # Reuse existing route functions - no circular deps since we call them as functions, not through routes
+        from .options_control import get_options_positions, get_options_status
+        from ..positions import get_pending_orders
+        from ..futures.futures_api import get_futures_positions
         
-        # Fetch all data in parallel (though Python GIL limits true parallelism)
-        # Still better than 4 sequential HTTP requests
+        # Call the existing route handlers directly (avoids HTTP overhead)
         positions_response = get_options_positions()
         positions_data = positions_response.get_json() if hasattr(positions_response, 'get_json') else positions_response
         
-        pending_response = get_pending()
+        pending_response = get_pending_orders()
         pending_data = pending_response.get_json() if hasattr(pending_response, 'get_json') else pending_response
         
-        futures_response = get_futures()
+        futures_response = get_futures_positions()
         futures_data = futures_response.get_json() if hasattr(futures_response, 'get_json') else futures_response
         
         status_response = get_options_status()
