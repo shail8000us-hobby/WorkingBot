@@ -104,7 +104,8 @@ class DeltaExchangeAPI {
           size: orderParams.quantity,
           limit_price: orderParams.limitPrice,
           time_in_force: orderParams.timeInForce || 'gtc',
-          post_only: orderParams.postOnly || false,
+          // MAKER-ONLY: For limit orders, default to post_only=true to ensure order adds liquidity
+          post_only: orderParams.postOnly !== undefined ? orderParams.postOnly : (orderParams.orderType === 'limit_order'),
         },
         {
           headers: {

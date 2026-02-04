@@ -22,6 +22,15 @@ logger = logging.getLogger(__name__)
 
 tradingview_bp = Blueprint('tradingview', __name__, url_prefix='/api/tradingview')
 
+# SocketIO instance will be set via init_tradingview_socketio()
+_socketio = None
+
+def init_tradingview_socketio(socketio):
+    """Initialize SocketIO for TradingView signal broadcasting."""
+    global _socketio
+    _socketio = socketio
+    logger.info("✅ TradingView WebSocket broadcasting enabled")
+
 # Initialize database on module load
 init_tradingview_signals_db()
 
@@ -125,6 +134,23 @@ def receive_webhook():
         )
         
         logger.info(f"📊 TradingView {action.upper()} signal received: {symbol} @ ${price:,.2f} ({strategy}/{timeframe})")
+        
+        # Broadcast signal via WebSocket for real-time UI updates
+        if _socketio:
+            try:
+                _socketio.emit('tradingview_signal', {
+                    'id': signal['id'],
+                    'symbol': signal['symbol'],
+                    'action': signal['action'],
+                    'price': signal['price'],
+                    'strategy': signal['strategy'],
+                    'timeframe': signal['timeframe'],
+                    'message': signal['message'],
+                    'created_at': signal['created_at']
+                })
+                logger.info(f"✅ Signal broadcasted via WebSocket")
+            except Exception as e:
+                logger.error(f"Failed to broadcast signal via WebSocket: {e}")
         
         # Return success response
         return jsonify({

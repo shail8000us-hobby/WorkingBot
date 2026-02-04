@@ -341,13 +341,16 @@ class MVStraddleNative:
             logger.info(f"Placing MV Straddle order: {side} {size} {symbol} (product_id={product_id}) @ {limit_price}")
             
             # Use api_client's place_order method - expects product_id (int), not symbol
+            # MAKER-ONLY: For limit orders, use post_only=True to ensure order only adds liquidity
+            # Market orders don't use post_only parameter
+            use_post_only = (order_type == "limit_order")
             order = await self.api_client.place_order(
                 product_id=product_id,
                 size=size,
                 side=side,
                 order_type=order_type,
                 price=limit_price if order_type == "limit_order" else None,
-                post_only=False  # MV Straddle orders can be taker
+                post_only=use_post_only
             )
             
             if order:

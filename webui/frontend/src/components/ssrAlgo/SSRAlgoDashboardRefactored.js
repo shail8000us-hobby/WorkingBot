@@ -100,7 +100,7 @@ const SSRAlgoDashboardRefactored = () => {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [healthStatus, setHealthStatus] = useState(null);
+  const [healthStatus, setHealthStatus] = useState('checking');
   const [selectedSession, setSelectedSession] = useState(null);
   const [selectedPayoff, setSelectedPayoff] = useState(null);
   const [selectedMonitorStatus, setSelectedMonitorStatus] = useState(null);
@@ -287,9 +287,9 @@ const SSRAlgoDashboardRefactored = () => {
           </Typography>
           <Chip
             size="small"
-            icon={healthStatus === 'healthy' ? <HealthyIcon /> : <ErrorIcon />}
-            label={healthStatus === 'healthy' ? 'Connected' : 'Error'}
-            color={healthStatus === 'healthy' ? 'success' : 'error'}
+            icon={healthStatus === 'healthy' ? <HealthyIcon /> : healthStatus === 'checking' ? <RefreshIcon /> : <ErrorIcon />}
+            label={healthStatus === 'healthy' ? 'Connected' : healthStatus === 'checking' ? 'Checking...' : 'Error'}
+            color={healthStatus === 'healthy' ? 'success' : healthStatus === 'checking' ? 'default' : 'error'}
             sx={{ fontWeight: 600, height: 22, fontSize: '0.7rem' }}
           />
         </Box>

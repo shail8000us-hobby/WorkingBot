@@ -73,7 +73,7 @@ class OptionsChainOrderService:
             if limit_price:
                 data["limit_price"] = str(limit_price)
             data["time_in_force"] = "gtc"
-            data["post_only"] = "false"
+            data["post_only"] = "true"  # MAKER-ONLY: Ensures order only adds liquidity
         
         try:
             # Place order via REST API

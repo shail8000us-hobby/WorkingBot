@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import {
   Box,
   Card,
@@ -27,6 +28,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Badge,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -37,6 +39,8 @@ import {
   FilterList,
   CheckCircle,
   ContentCopy,
+  Wifi,
+  WifiOff,
 } from '@mui/icons-material';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5555';
@@ -48,6 +52,7 @@ const TradingViewSignals = () => {
   const [error, setError] = useState(null);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [webhookConfig, setWebhookConfig] = useState(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [filter, setFilter] = useState({
     action: '',
     symbol: '',
@@ -135,13 +140,56 @@ const TradingViewSignals = () => {
     fetchStats();
     fetchWebhookConfig();
 
-    // Auto-refresh every 30 seconds
+    // Setup WebSocket connection for real-time updates
+    const socket = io(API_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ TradingView WebSocket connected');
+      setSocketConnected(true);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ TradingView WebSocket disconnected');
+      setSocketConnected(false);
+    });
+
+    // Listen for new signals
+    socket.on('tradingview_signal', (signal) => {
+      console.log('📊 New signal received:', signal);
+      
+      // Add signal to the beginning of the list
+      setSignals(prev => [signal, ...prev]);
+      
+      // Update stats
+      fetchStats();
+      
+      // Show notification for sell signals (more important)
+      if (signal.action === 'sell') {
+        // Optional: Add browser notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('🔻 SELL Signal', {
+            body: `${signal.symbol} @ $${signal.price.toLocaleString()}`,
+            icon: '/favicon.ico'
+          });
+        }
+      }
+    });
+
+    // Auto-refresh every 30 seconds (backup in case WebSocket fails)
     const interval = setInterval(() => {
       fetchSignals();
       fetchStats();
     }, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      socket.disconnect();
+      clearInterval(interval);
+    };
   }, [filter]);
 
   // Format timestamp
@@ -161,9 +209,16 @@ const TradingViewSignals = () => {
       <Card>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h5" component="div" sx={{ fontWeight: 'bold' }}>
-              📊 TradingView Signals
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant="h5" component="div" sx={{ fontWeight: 'bold' }}>
+                📊 TradingView Signals
+              </Typography>
+              <Tooltip title={socketConnected ? 'WebSocket Connected - Real-time updates active' : 'WebSocket Disconnected'}>
+                <IconButton size="small" color={socketConnected ? 'success' : 'error'}>
+                  {socketConnected ? <Wifi /> : <WifiOff />}
+                </IconButton>
+              </Tooltip>
+            </Box>
             <Box>
               <Button
                 variant="outlined"

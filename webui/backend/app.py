@@ -267,6 +267,17 @@ print(f"✅ Registered settings blueprint")
 app.register_blueprint(symbols_bp)
 print(f"✅ Registered symbols blueprint (v5.0 multi-symbol)")
 
+# Initialize TradingView SocketIO broadcasting (FEB 2026)
+try:
+    from routes.tradingview_webhook import init_tradingview_socketio
+    init_tradingview_socketio(socketio)
+except ImportError:
+    try:
+        from .routes.tradingview_webhook import init_tradingview_socketio
+        init_tradingview_socketio(socketio)
+    except:
+        log.warning("Could not initialize TradingView SocketIO broadcasting")
+
 # Unified safety blueprint is now part of blueprints list (registered above)
 
 # Register Options Control blueprint (JAN 2026: Options trading module)

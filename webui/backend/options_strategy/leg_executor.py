@@ -498,7 +498,7 @@ class LegExecutor:
                 data["limit_price"] = str(round(leg.current_price, 2))
                 # Use GTC (Good Till Cancel) instead of IOC for better fill chance
                 data["time_in_force"] = "gtc"
-                data["post_only"] = "false"
+                data["post_only"] = "true"  # MAKER-ONLY: Ensures order only adds liquidity
                 log.info(f"  Attempt {attempt + 1}: Using limit order at ${leg.current_price}")
             
             log.info(f"  Order data: {data}")
