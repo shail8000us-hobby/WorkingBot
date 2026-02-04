@@ -503,6 +503,8 @@ const OptionsPanel = () => {
   const autoLoopStopRef = useRef(false); // Flag to stop the loop
   // Per-expiry stop refs (managed as regular object, updated via expiryLoopState)
   const expiryStopRefs = useRef({});
+  // Phase 2: Persistent WebSocket connection ref
+  const socketRef = useRef(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1664,9 +1666,6 @@ const OptionsPanel = () => {
   // PHASE 2 OPTIMIZATION: Persistent WebSocket Connection
   // Single connection reused across component lifecycle, smart subscription updates
   // ============================================================================
-  
-  // Persistent socket reference (Phase 2 optimization)
-  const socketRef = useRef(null);
   
   // Initialize persistent WebSocket connection once
   useEffect(() => {
