@@ -117,8 +117,13 @@ import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
 // FEB 1, 2026: Updated to use SensibullStyleAdjustmentPage (full page layout)
 import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
 
-// Sortable Row Component
-const SortableRow = ({ pos, children }) => {
+// ============================================================================
+// PHASE 1 OPTIMIZATION: React.memo for SortableRow
+// Prevents unnecessary re-renders when position data hasn't changed
+// ============================================================================
+
+// Sortable Row Component - Memoized for performance
+const SortableRow = React.memo(({ pos, children }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: pos.product_symbol,
   });
@@ -142,7 +147,20 @@ const SortableRow = ({ pos, children }) => {
       {children(attributes, listeners)}
     </TableRow>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison: Only re-render if critical data changed
+  const prev = prevProps.pos;
+  const next = nextProps.pos;
+  
+  return (
+    prev.product_symbol === next.product_symbol &&
+    prev.best_bid === next.best_bid &&
+    prev.best_ask === next.best_ask &&
+    prev.unrealized_pnl === next.unrealized_pnl &&
+    prev.size === next.size &&
+    prev.mark_price === next.mark_price
+  );
+});
 
 const OptionsPanel = () => {
   // State
@@ -197,18 +215,20 @@ const OptionsPanel = () => {
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
 
-  // Save pending orders collapsed state to localStorage
+  // Save pending orders collapsed state to localStorage (debounced)
   useEffect(() => {
-    localStorage.setItem('options_pending_orders_collapsed', JSON.stringify(pendingOrdersCollapsed));
-  }, [pendingOrdersCollapsed]);
-  // Save hiddenPositions to localStorage whenever it changes
+    debouncedSave('options_pending_orders_collapsed', pendingOrdersCollapsed);
+  }, [pendingOrdersCollapsed, debouncedSave]);
+  
+  // Save hiddenPositions to localStorage whenever it changes (debounced)
   useEffect(() => {
-    localStorage.setItem('options_hidden_positions', JSON.stringify(hiddenPositions));
-  }, [hiddenPositions]);
-  // Save closedPositions to localStorage whenever it changes
+    debouncedSave('options_hidden_positions', hiddenPositions);
+  }, [hiddenPositions, debouncedSave]);
+  
+  // Save closedPositions to localStorage whenever it changes (debounced)
   useEffect(() => {
-    localStorage.setItem('options_closed_positions', JSON.stringify(closedPositions));
-  }, [closedPositions]);
+    debouncedSave('options_closed_positions', closedPositions);
+  }, [closedPositions, debouncedSave]);
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = useState(() => {
     try {
@@ -321,11 +341,11 @@ const OptionsPanel = () => {
     { key: 'actions', label: 'Actions' },
   ];
 
-  // Toggle column visibility
+  // Toggle column visibility - debounced save
   const toggleColumn = (columnKey) => {
     setVisibleColumns((prev) => {
       const updated = { ...prev, [columnKey]: !prev[columnKey] };
-      localStorage.setItem('options_visible_columns', JSON.stringify(updated));
+      debouncedSave('options_visible_columns', updated);
       return updated;
     });
   };
@@ -559,52 +579,94 @@ const OptionsPanel = () => {
     return filledTypes.includes(executionType);
   };
 
-  // Save skipConfirmStrikes to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('options_skip_confirm_strikes', JSON.stringify(skipConfirmStrikes));
-  }, [skipConfirmStrikes]);
-  // Save selected positions to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('options_selected_positions_payoff', JSON.stringify(selectedPositionsForPayoff));
-  }, [selectedPositionsForPayoff]);
-  // Save pollInterval to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('options_poll_interval', pollInterval);
-  }, [pollInterval]);
-  // Save lastUsedSize to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('options_last_used_size', lastUsedSize);
-  }, [lastUsedSize]);
+  // ============================================================================
+  // PHASE 1 OPTIMIZATION: Debounced localStorage writes
+  // Prevents UI blocking from synchronous localStorage operations
+  // ============================================================================
+  
+  // Debounced localStorage saver (500ms delay)
+  const debouncedSave = useMemo(
+    () => {
+      const saveToStorage = (key, value) => {
+        try {
+          if (value === null || value === undefined) {
+            localStorage.removeItem(key);
+          } else if (typeof value === 'object') {
+            localStorage.setItem(key, JSON.stringify(value));
+          } else {
+            localStorage.setItem(key, String(value));
+          }
+        } catch (err) {
+          console.warn(`Failed to save ${key} to localStorage:`, err);
+        }
+      };
+      
+      // Create debounced function with 500ms delay
+      let timeouts = {};
+      return (key, value, immediate = false) => {
+        if (immediate) {
+          saveToStorage(key, value);
+          return;
+        }
+        
+        clearTimeout(timeouts[key]);
+        timeouts[key] = setTimeout(() => {
+          saveToStorage(key, value);
+        }, 500);
+      };
+    },
+    []
+  );
 
-  // Save customOrder to localStorage whenever it changes
+  // Save skipConfirmStrikes to localStorage whenever it changes (debounced)
   useEffect(() => {
-    localStorage.setItem('options_custom_order', JSON.stringify(customOrder));
-  }, [customOrder]);
+    debouncedSave('options_skip_confirm_strikes', skipConfirmStrikes);
+  }, [skipConfirmStrikes, debouncedSave]);
+  
+  // Save selected positions to localStorage whenever it changes (debounced)
+  useEffect(() => {
+    debouncedSave('options_selected_positions_payoff', selectedPositionsForPayoff);
+  }, [selectedPositionsForPayoff, debouncedSave]);
+  
+  // Save pollInterval to localStorage whenever it changes (debounced)
+  useEffect(() => {
+    debouncedSave('options_poll_interval', pollInterval);
+  }, [pollInterval, debouncedSave]);
+  
+  // Save lastUsedSize to localStorage whenever it changes (debounced)
+  useEffect(() => {
+    debouncedSave('options_last_used_size', lastUsedSize);
+  }, [lastUsedSize, debouncedSave]);
 
-  // Save auto-loop settings to localStorage
+  // Save customOrder to localStorage whenever it changes (debounced)
   useEffect(() => {
-    localStorage.setItem('autoLoopEnabled', JSON.stringify(autoLoopEnabled));
-  }, [autoLoopEnabled]);
+    debouncedSave('options_custom_order', customOrder);
+  }, [customOrder, debouncedSave]);
+
+  // Save auto-loop settings to localStorage (debounced)
+  useEffect(() => {
+    debouncedSave('autoLoopEnabled', autoLoopEnabled);
+  }, [autoLoopEnabled, debouncedSave]);
   
   useEffect(() => {
-    localStorage.setItem('autoLoopRounds', autoLoopRounds.toString());
-  }, [autoLoopRounds]);
+    debouncedSave('autoLoopRounds', autoLoopRounds);
+  }, [autoLoopRounds, debouncedSave]);
 
-  // Save per-expiry loop state to localStorage for recovery
+  // Save per-expiry loop state to localStorage for recovery (debounced)
   useEffect(() => {
     if (Object.keys(expiryLoopState).length > 0) {
-      localStorage.setItem('expiryLoopState', JSON.stringify(expiryLoopState));
+      debouncedSave('expiryLoopState', expiryLoopState);
     }
-  }, [expiryLoopState]);
+  }, [expiryLoopState, debouncedSave]);
 
-  // Save auto-loop run state for recovery
+  // Save auto-loop run state for recovery (immediate - critical for recovery)
   useEffect(() => {
     if (autoLoopLastRun) {
-      localStorage.setItem('autoLoopLastRun', JSON.stringify(autoLoopLastRun));
+      debouncedSave('autoLoopLastRun', autoLoopLastRun, true); // immediate
     } else {
-      localStorage.removeItem('autoLoopLastRun');
+      debouncedSave('autoLoopLastRun', null, true); // immediate
     }
-  }, [autoLoopLastRun]);
+  }, [autoLoopLastRun, debouncedSave]);
 
   // Check for interrupted auto-loop on mount
   useEffect(() => {
@@ -625,7 +687,7 @@ const OptionsPanel = () => {
     }
   }, []);
 
-  // Handle drag end - save the custom order to persist across page refreshes
+  // Handle drag end - save the custom order to persist across page refreshes (immediate save for UX)
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
@@ -636,19 +698,19 @@ const OptionsPanel = () => {
       const reordered = arrayMove(sortedPositions, oldIndex, newIndex);
       const newOrder = reordered.map((p) => p.product_symbol);
       
-      // Update state and save to localStorage immediately
+      // Update state and save immediately (drag operations need instant persistence)
       setCustomOrder(newOrder);
-      localStorage.setItem('options_custom_order', JSON.stringify(newOrder));
+      debouncedSave('options_custom_order', newOrder, true); // immediate save
       
       // Log for debugging
       console.log('[OptionsPanel] Position order updated:', newOrder);
     }
   };
 
-  // Reset custom order
+  // Reset custom order (immediate save)
   const resetOrder = () => {
     setCustomOrder([]);
-    localStorage.removeItem('options_custom_order');
+    debouncedSave('options_custom_order', null, true); // immediate save
   };
 
   // Toggle symbol sort (CE/PE grouping)
@@ -786,21 +848,21 @@ const OptionsPanel = () => {
     });
   }, []);
 
-  // Toggle expiry selection (multi-select)
+  // Toggle expiry selection (multi-select) - debounced save
   const toggleExpirySelection = (expiry) => {
     setSelectedExpiries((prev) => {
       const newSelection = prev.includes(expiry)
         ? prev.filter((e) => e !== expiry) // Remove if already selected
         : [...prev, expiry]; // Add if not selected
-      localStorage.setItem('options_selected_expiries', JSON.stringify(newSelection));
+      debouncedSave('options_selected_expiries', newSelection);
       return newSelection;
     });
   };
 
-  // Clear all expiry selections (show all)
+  // Clear all expiry selections (show all) - debounced save
   const clearExpirySelection = () => {
     setSelectedExpiries([]);
-    localStorage.setItem('options_selected_expiries', JSON.stringify([]));
+    debouncedSave('options_selected_expiries', []);
   };
 
   // Sort positions by custom order or default (days to expiration)
@@ -1846,11 +1908,41 @@ const OptionsPanel = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [sortedPositions, closeDialog.open, addDialog.open, lastUsedSize]);
 
-  // Manual refresh
+  // ============================================================================
+  // PHASE 1 OPTIMIZATION: Performance monitoring
+  // Track render times and warn about slow operations
+  // ============================================================================
+  useEffect(() => {
+    const renderStart = performance.now();
+    return () => {
+      const renderTime = performance.now() - renderStart;
+      if (renderTime > 50) {
+        console.warn(
+          `⚠️ Slow render detected: ${renderTime.toFixed(2)}ms (target: <50ms)`,
+          { positionCount: positions.length, visibleCount: sortedPositions.length }
+        );
+      }
+    };
+  });
+
+  // Manual refresh - Already optimized with Promise.all() ✅
   const handleRefresh = async () => {
+    const refreshStart = performance.now();
     setRefreshing(true);
-    await Promise.all([fetchStatus(), fetchPositions(), fetchPendingOrders(), fetchFuturesPositions()]);
+    
+    await Promise.all([
+      fetchStatus(),
+      fetchPositions(),
+      fetchPendingOrders(),
+      fetchFuturesPositions()
+    ]);
+    
     setRefreshing(false);
+    const refreshTime = performance.now() - refreshStart;
+    
+    if (refreshTime > 200) {
+      console.warn(`⚠️ Slow refresh: ${refreshTime.toFixed(2)}ms (target: <200ms)`);
+    }
   };
 
   // Close position
