@@ -1189,6 +1189,56 @@ const OptionsPanel = () => {
     [scalingStrategy, scalingParams, aggregatedGreeks]
   );
 
+  // ============================================================================
+  // PHASE 2 OPTIMIZATION: Unified Dashboard Data Fetching
+  // Single API call instead of 4 separate calls
+  // ============================================================================
+  
+  // Unified dashboard fetch (Phase 2 optimization)
+  const fetchDashboard = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/options/dashboard');
+      
+      if (data?.success) {
+        // Update all state from single response
+        const dashPositions = data.positions || [];
+        const dashStatus = data.status || {};
+        const dashPendingOrders = data.pending_orders || [];
+        const dashFuturesPositions = data.futures_positions || [];
+        
+        // Enrich positions with IV data (still needed client-side for now)
+        const positionsWithIV = await enrichPositionsWithIV(dashPositions);
+        
+        setPositions(positionsWithIV);
+        setStatus(dashStatus);
+        setPendingOrders(dashPendingOrders);
+        setFuturesPositions(dashFuturesPositions);
+        
+        hasPositionsRef.current = positionsWithIV.length > 0;
+        setError(null);
+        
+        // Log performance metrics
+        if (data.response_time_ms) {
+          console.log(`⚡ Dashboard loaded in ${data.response_time_ms}ms (Phase 2 unified endpoint)`);
+        }
+        
+        return true;
+      } else {
+        throw new Error(data?.error || 'Dashboard fetch failed');
+      }
+    } catch (err) {
+      console.error('Unified dashboard fetch error:', err);
+      // Keep existing data on error
+      if (hasPositionsRef.current) {
+        setError(`⚠️ Dashboard refresh failed: ${err.message}`);
+      } else {
+        setError(`Connection error: ${err.message}`);
+      }
+      return false;
+    }
+  }, []);
+  
+  // Legacy individual fetch functions (kept for fallback compatibility)
   // Fetch options status
   const fetchStatus = useCallback(async () => {
     try {
@@ -1564,124 +1614,131 @@ const OptionsPanel = () => {
     }
   }, [fetchPendingOrders]);
 
-  // Initial load
+  // ============================================================================
+  // PHASE 2 OPTIMIZATION: Use unified dashboard endpoint for initial load and polling
+  // ============================================================================
+  
+  // Initial load - use unified endpoint (Phase 2)
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      
+      // Try unified endpoint first (Phase 2 optimization)
+      const dashSuccess = await fetchDashboard();
+      
+      // Load auxiliary data not in unified endpoint
       await Promise.all([
-        fetchStatus(),
-        fetchPositions(),
         loadSLTPSettings(),
         loadMaxLossSettings(),
         loadTakeProfitSettings(),
-        fetchPendingOrders(),
-        fetchFuturesPositions(),
       ]);
+      
       setLoading(false);
+      
+      // Fallback to individual calls if unified fails
+      if (!dashSuccess) {
+        console.warn('⚠️ Unified dashboard endpoint failed, using legacy individual calls');
+        await Promise.all([
+          fetchStatus(),
+          fetchPositions(),
+          fetchPendingOrders(),
+          fetchFuturesPositions(),
+        ]);
+      }
     };
     loadData();
-  }, [fetchStatus, fetchPositions, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, fetchPendingOrders, fetchFuturesPositions]);
+  }, [fetchDashboard, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, fetchStatus, fetchPositions, fetchPendingOrders, fetchFuturesPositions]);
 
-  // Auto-refresh every pollInterval ms
+  // Auto-refresh every pollInterval ms - use unified endpoint (Phase 2)
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchPositions();
-      fetchStatus();
-      fetchPendingOrders();
-      fetchFuturesPositions();
-      loadMaxLossSettings(); // Refresh max loss settings too
+    const interval = setInterval(async () => {
+      // Use unified endpoint for faster polling
+      await fetchDashboard();
+      // Refresh auxiliary data
+      loadMaxLossSettings();
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchPositions, fetchStatus, fetchPendingOrders, fetchFuturesPositions, loadMaxLossSettings, pollInterval]);
+  }, [fetchDashboard, loadMaxLossSettings, pollInterval]);
 
-  // WebSocket subscription for real-time bid/ask updates
+  // ============================================================================
+  // PHASE 2 OPTIMIZATION: Persistent WebSocket Connection
+  // Single connection reused across component lifecycle, smart subscription updates
+  // ============================================================================
+  
+  // Persistent socket reference (Phase 2 optimization)
+  const socketRef = useRef(null);
+  
+  // Initialize persistent WebSocket connection once
   useEffect(() => {
-    // Initialize Socket.IO connection
-    const socket = io({
-      path: '/socket.io',
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 10,
-    });
-
-    // Handle connection
-    socket.on('connect', () => {
-      console.log('[OptionsPanel] WebSocket connected for ticker updates');
+    if (!socketRef.current) {
+      socketRef.current = io({
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 10,
+      });
       
-      // Subscribe to all position symbols
-      if (positions.length > 0) {
-        const symbols = positions.map(p => p.product_symbol);
-        socket.emit('subscribe_options_tickers', { symbols });
-      }
-    });
-
-    // Handle ticker updates (bid/ask)
-    socket.on('options_ticker_update', (data) => {
-      const { symbol, best_bid, best_ask, mark_price, timestamp } = data;
+      socketRef.current.on('connect', () => {
+        console.log('[OptionsPanel] ⚡ Phase 2: Persistent WebSocket connected');
+      });
       
-      // Update positions with new bid/ask data
-      setPositions(prevPositions => 
-        prevPositions.map(pos => {
-          if (pos.product_symbol === symbol) {
-            return {
-              ...pos,
-              best_bid,
-              best_ask,
-              mark_price,
-              ws_updated: timestamp
-            };
-          }
-          return pos;
-        })
-      );
-    });
-
-    socket.on('disconnect', () => {
-      console.log('[OptionsPanel] WebSocket disconnected');
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('[OptionsPanel] WebSocket connection error:', error);
-    });
-
-    // Cleanup
-    return () => {
-      if (positions.length > 0) {
-        const symbols = positions.map(p => p.product_symbol);
-        socket.emit('unsubscribe_options_tickers', { symbols });
-      }
-      socket.disconnect();
-    };
-  }, []); // Only run once on mount
-
-  // Update WebSocket subscriptions when positions change
-  useEffect(() => {
-    // Skip if no positions
-    if (positions.length === 0) return;
-
-    // Get socket instance
-    const socket = io({
-      path: '/socket.io',
-      transports: ['websocket', 'polling'],
-    });
-
-    // Wait for connection then subscribe
-    socket.on('connect', () => {
-      const symbols = positions.map(p => p.product_symbol);
-      socket.emit('subscribe_options_tickers', { symbols });
-      console.log(`[OptionsPanel] Subscribed to ${symbols.length} options tickers via WebSocket`);
-    });
-
-    // If already connected, subscribe immediately
-    if (socket.connected) {
-      const symbols = positions.map(p => p.product_symbol);
-      socket.emit('subscribe_options_tickers', { symbols });
+      socketRef.current.on('options_ticker_update', (data) => {
+        const { symbol, best_bid, best_ask, mark_price, timestamp } = data;
+        
+        // Update positions with new bid/ask data
+        setPositions(prevPositions => 
+          prevPositions.map(pos => {
+            if (pos.product_symbol === symbol) {
+              return {
+                ...pos,
+                best_bid,
+                best_ask,
+                mark_price,
+                ws_updated: timestamp
+              };
+            }
+            return pos;
+          })
+        );
+      });
+      
+      socketRef.current.on('disconnect', () => {
+        console.log('[OptionsPanel] WebSocket disconnected (will auto-reconnect)');
+      });
+      
+      socketRef.current.on('connect_error', (error) => {
+        console.error('[OptionsPanel] WebSocket connection error:', error);
+      });
     }
-
+    
+    // Cleanup only on unmount (not on every positions change)
     return () => {
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
+  }, []); // Empty deps - run once on mount
+  
+  // Update subscriptions when positions change (without reconnecting)
+  useEffect(() => {
+    if (!socketRef.current || positions.length === 0) return;
+    
+    const symbols = positions.map(p => p.product_symbol);
+    
+    // Update subscriptions without reconnecting
+    if (socketRef.current.connected) {
+      socketRef.current.emit('subscribe_options_tickers', { symbols });
+      console.log(`[OptionsPanel] ⚡ Updated ${symbols.length} subscriptions (Phase 2: no reconnect)`);
+    } else {
+      // If not connected yet, subscribe on next connect event
+      const onConnect = () => {
+        socketRef.current.emit('subscribe_options_tickers', { symbols });
+        socketRef.current.off('connect', onConnect);
+      };
+      socketRef.current.on('connect', onConnect);
+    }
   }, [positions.map(p => p.product_symbol).join(',')]); // Re-subscribe when positions change
 
   // Cleanup active batch polling intervals on unmount
@@ -1925,23 +1982,31 @@ const OptionsPanel = () => {
     };
   });
 
-  // Manual refresh - Already optimized with Promise.all() ✅
+  // Manual refresh - Phase 2: Use unified dashboard endpoint ⚡
   const handleRefresh = async () => {
     const refreshStart = performance.now();
     setRefreshing(true);
     
-    await Promise.all([
-      fetchStatus(),
-      fetchPositions(),
-      fetchPendingOrders(),
-      fetchFuturesPositions()
-    ]);
+    // Phase 2: Single unified API call
+    const success = await fetchDashboard();
+    
+    // Fallback to individual calls if needed
+    if (!success) {
+      await Promise.all([
+        fetchStatus(),
+        fetchPositions(),
+        fetchPendingOrders(),
+        fetchFuturesPositions()
+      ]);
+    }
     
     setRefreshing(false);
     const refreshTime = performance.now() - refreshStart;
     
     if (refreshTime > 200) {
       console.warn(`⚠️ Slow refresh: ${refreshTime.toFixed(2)}ms (target: <200ms)`);
+    } else {
+      console.log(`⚡ Fast refresh: ${refreshTime.toFixed(2)}ms (Phase 2 unified endpoint)`);
     }
   };
 

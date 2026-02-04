@@ -289,6 +289,15 @@ except Exception as e:
     print(f"⚠️ Could not register options blueprint: {e}")
     log.warning(f"Options routes not available: {e}")
 
+# Register Options Dashboard blueprint (FEB 2026: Phase 2 - Unified dashboard endpoint)
+try:
+    from webui.backend.routes.options.dashboard import dashboard_bp
+    app.register_blueprint(dashboard_bp)
+    print(f"✅ Registered options dashboard blueprint (Phase 2: unified data endpoint)")
+except Exception as e:
+    print(f"⚠️ Could not register options dashboard blueprint: {e}")
+    log.warning(f"Options dashboard routes not available: {e}")
+
 # Register Kelly Criterion Position Sizer (JAN 2026: Institutional position sizing)
 try:
     from webui.backend.routes.kelly import kelly_bp
