@@ -8,10 +8,11 @@
  * Created: February 2, 2026
  * Updated: February 3, 2026 - Added hooks, utils, and shared components
  * Updated: February 3, 2026 - Added V2 Dashboard with professional Tailwind design
+ * Updated: February 4, 2026 - Added Refactored Dashboard with proper layout architecture
  */
 
-// Main Dashboard Components
-export { default as SSRAlgoDashboard } from './SSRAlgoDashboard';
+// Main Dashboard (Refactored with no-overlap layout)
+export { default as SSRAlgoDashboard } from './SSRAlgoDashboardRefactored';
 export { default as SSRAlgoConfigPanel } from './SSRAlgoConfigPanel';
 
 // V2 Dashboard (Professional Trading UI with Tailwind)
