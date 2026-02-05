@@ -178,6 +178,66 @@ This section explains the internal computations, decision flow, and safeguards u
 
 This detailed mechanics section is intended to make behavior explicit for maintainers, QA, and users who want to audit or extend the system.
 
+---
+
+## Worked Examples — Step-by-Step
+
+### Example A — Loss Limit Recovery Flow (detailed)
+**Scenario**: Position = 100 lots of P-BTC-72000-050226, Current P&L = -$100. Target P&L = `-$50`, Exit Quantity = `30` lots.
+
+1. Monitor pass (T0): reads `target_profit=-50`, `exit_quantity=30`, `current_pnl=-100` → `current_pnl >= target_profit`? NO → no action.
+2. Market improves, new P&L (T1): `current_pnl=-49`.
+3. Monitor pass (T1): reads values → `current_pnl >= target_profit`? YES → begin trigger flow:
+   - Mark `strike_take_profit.triggered = true` and set `triggered_at` tentatively (checkpointed after order submit).
+   - Build order: side = sell (position long), quantity = 30 (verify against current position size), limit price = best bid (maker-friendly) or slight improvement if configured.
+   - Client order id = `tp:<strike_id>:<timestamp>` for traceability.
+4. Submit limit order via rate-limited exchange client. If submission succeeds:
+   - Write `take_profit_history` entry: `target_profit=-50`, `actual_profit=-49`, `exit_quantity=30`, `timestamp`.
+   - Update `strike_take_profit.triggered=true`, set `triggered_at` timestamp.
+   - Start cooldown tracking (60s) to prevent duplicate submissions.
+5. If order partially fills (e.g., 20 of 30):
+   - Record executed quantity in history row and remaining quantity in `strike_take_profit` (or policy-specific partial state).
+   - If remaining quantity > 0, the system will either:
+     - Adjust and attempt another close after cooldown OR
+     - Mark as partial and require operator decision (depending on configuration)
+6. If order submission fails transiently (rate-limit/network): retry up to 3 times (backoff 1s, 2s, 4s). On permanent failure (insufficient margin), mark target failed and notify operator.
+
+**Result**: 30 lots closed when loss improved to `-$50` (or partial close recorded); remaining 70 lots remain open.
+
+---
+
+### Example B — Profit Target Execution (detailed)
+**Scenario**: Position = 50 lots, Current P&L = $45, Target P&L = `$50`, Exit Quantity = `25` lots.
+
+1. Monitor pass: `current_pnl=45` < `50` → nothing happens.
+2. Market moves up, `current_pnl=51`.
+3. Monitor sees `current_pnl >= target_profit` → build limit order to sell 25 at best bid (maker-first).
+4. Submit order; on fill, record `actual_profit=51` in `take_profit_history` and set `strike_take_profit.triggered`.
+5. If rate-limited or transient error occurs, use exponential backoff and retry; on permanent error mark as failed.
+
+**Result**: 25 lots closed at profit target, remaining 25 lots remain open.
+
+---
+
+### Example C — Retry, Backoff & Rate-Limit Example
+**Scenario**: Order submission fails due to temporary rate-limit (HTTP 429).
+
+1. First attempt → 429 returned. Monitor logs the failure and waits 1s.
+2. Second attempt → still 429. Wait 2s.
+3. Third attempt → success or final failure. If success, proceed with history update; if final failure, mark target failed and log.
+
+**Note**: Rate limiting is enforced client-side (token-bucket 8 req/s) to reduce probability of 429s.
+
+---
+
+### Example D — Quantity Adjustment on Concurrency
+**Scenario**: Target was set to exit 30 but concurrent fills/market actions reduced position to 20 before order arrives.
+
+1. Before submitting an order the monitor re-reads current position size.
+2. If available quantity (20) < requested (30) → order quantity adjusted to 20 and submitted.
+3. History records actual executed amount and `strike_take_profit` is updated accordingly.
+
+---
 
 ## Usage Examples
 
