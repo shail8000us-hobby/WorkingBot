@@ -37,16 +37,28 @@ export default function TakeProfitIndicator({
     setLocalSettings(settings);
   }, [settings]);
 
-  const hasTP = localSettings && localSettings.target_profit > 0 && localSettings.enabled;
+  const hasTP = localSettings && localSettings.target_profit !== 0 && localSettings.target_profit !== undefined && localSettings.enabled;
   const targetProfit = localSettings?.target_profit || 0;
   const exitQuantity = localSettings?.exit_quantity || 0;
   const triggered = localSettings?.triggered || false;
 
-  // Calculate progress towards target
-  const profitAmount = currentPnl > 0 ? currentPnl : 0;
-  const profitPercentage = hasTP && targetProfit > 0 ? (profitAmount / targetProfit) * 100 : 0;
-  const isNearTarget = profitPercentage >= 70;
-  const isVeryNearTarget = profitPercentage >= 90;
+  // Determine if it's a profit target or loss limit
+  const isLossLimit = targetProfit < 0;
+  
+  // Calculate progress towards target (works for both profit and loss)
+  const currentValue = currentPnl;
+  let progressPercentage = 0;
+  if (hasTP && targetProfit !== 0) {
+    if (isLossLimit) {
+      // For loss limits: show how close we are to the negative threshold
+      progressPercentage = targetProfit !== 0 ? (currentValue / targetProfit) * 100 : 0;
+    } else {
+      // For profit targets: show how close we are to the positive target
+      progressPercentage = (currentValue / targetProfit) * 100;
+    }
+  }
+  const isNearTarget = progressPercentage >= 70;
+  const isVeryNearTarget = progressPercentage >= 90;
 
   const handleRemove = async () => {
     setSaving(true);
@@ -99,10 +111,11 @@ export default function TakeProfitIndicator({
 
   // Has take profit set
   if (hasTP) {
+    const targetType = isLossLimit ? 'Loss Limit' : 'Profit Target';
     const tooltipContent = (
       <Box>
         <Typography variant="caption" display="block">
-          <strong>Take Profit Target: ${targetProfit.toFixed(0)}</strong>
+          <strong>{targetType}: ${targetProfit.toFixed(0)}</strong>
         </Typography>
         <Typography variant="caption" display="block">
           Exit Quantity: {exitQuantity} lots
@@ -113,23 +126,23 @@ export default function TakeProfitIndicator({
           </Typography>
         ) : (
           <>
-            {profitAmount > 0 && (
+            {currentValue !== 0 && (
               <>
                 <Typography variant="caption" display="block">
-                  Current Profit: ${profitAmount.toFixed(2)} ({profitPercentage.toFixed(0)}%)
+                  Current P&L: ${currentValue.toFixed(2)} ({Math.abs(progressPercentage).toFixed(0)}%)
                 </Typography>
                 <Typography variant="caption" display="block">
-                  Remaining: ${(targetProfit - profitAmount).toFixed(2)}
+                  Remaining: ${(targetProfit - currentValue).toFixed(2)}
                 </Typography>
               </>
             )}
-            <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'success.light' }}>
+            <Typography variant="caption" display="block" sx={{ mt: 0.5, color: isLossLimit ? 'error.light' : 'success.light' }}>
               🎯 Auto partial exit when target reached
             </Typography>
           </>
         )}
         <Typography variant="caption" display="block" sx={{ fontSize: '0.65rem', color: 'text.secondary' }}>
-          {triggered ? 'TP order executed' : 'Click to edit • Right-click to remove'}
+          {triggered ? 'Target executed' : 'Click to edit • Right-click to remove'}
         </Typography>
       </Box>
     );
@@ -141,8 +154,8 @@ export default function TakeProfitIndicator({
             icon={triggered ? <CheckCircle sx={{ fontSize: 12 }} /> : <TrendingUp sx={{ fontSize: 12 }} />}
             label={triggered ? `✓ $${targetProfit}` : `$${targetProfit} / ${exitQuantity}L`}
             size="small"
-            color={triggered ? 'success' : isVeryNearTarget ? 'success' : isNearTarget ? 'warning' : 'default'}
-            variant={triggered ? 'filled' : profitPercentage > 0 ? 'filled' : 'outlined'}
+            color={triggered ? 'success' : isLossLimit ? 'error' : isVeryNearTarget ? 'success' : isNearTarget ? 'warning' : 'default'}
+            variant={triggered ? 'filled' : Math.abs(progressPercentage) > 0 ? 'filled' : 'outlined'}
             onClick={triggered ? undefined : onEdit}
             onContextMenu={triggered ? undefined : (e) => {
               e.preventDefault();
@@ -161,16 +174,16 @@ export default function TakeProfitIndicator({
             }}
           />
         </Tooltip>
-        {!triggered && profitPercentage > 0 && (
+        {!triggered && Math.abs(progressPercentage) > 0 && (
           <Typography
             variant="caption"
             sx={{
               fontSize: '0.65rem',
-              color: isNearTarget ? 'success.main' : 'text.secondary',
+              color: isNearTarget ? (isLossLimit ? 'error.main' : 'success.main') : 'text.secondary',
               fontWeight: isNearTarget ? 'bold' : 'normal',
             }}
           >
-            {profitPercentage.toFixed(0)}%
+            {Math.abs(progressPercentage).toFixed(0)}%
           </Typography>
         )}
       </Box>
@@ -179,7 +192,7 @@ export default function TakeProfitIndicator({
 
   // No take profit set - show add button
   return (
-    <Tooltip title="Click to set take profit target">
+    <Tooltip title="Click to set target (profit or loss limit)">
       <IconButton size="small" onClick={onEdit} sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}>
         <TrendingUp sx={{ fontSize: 16, color: 'success.main' }} />
       </IconButton>
