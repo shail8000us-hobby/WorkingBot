@@ -82,6 +82,60 @@ Example: Target = -$50, Current P&L = -$30 → TRIGGER ✅ (loss improved past t
 
 ---
 
+## Detailed Mechanics — How It Works Internally
+
+This section explains the internal computations, decision flow, and safeguards used by the Target P&L system so developers and auditors can understand and reproduce behavior.
+
+### P&L Calculation
+- P&L is computed per-strike using the exchange-provided mark or mid price for the underlying and the position's average entry price. The monitor uses the most recent per-position P&L snapshot from the positions cache.
+- P&L currency is the account quote currency (e.g., USD). All comparisons to targets use the same currency and numeric scale.
+
+### Trigger Evaluation
+- For each active target the monitor evaluates:
+   - Read target_profit (float) and exit_quantity (int) from `strike_take_profit`.
+   - Read current_pnl (float) for the symbol from positions cache.
+   - If target_profit > 0 (profit target): trigger when current_pnl >= target_profit.
+   - If target_profit < 0 (loss limit): trigger when current_pnl >= target_profit (i.e., loss has improved to target or better).
+- The monitor runs these checks every configured interval (default 3s). Targets are only evaluated for symbols with an active position greater than zero.
+
+### Order Construction and Placement
+- When a target is reached the monitor builds a limit order to close `exit_quantity`:
+   1. Determine side: if position is long → sell; if short → buy to cover.
+   2. Determine limit price: prefer maker-friendly price using top-of-book (best bid for sells, best ask for buys) and possible slight improvement step to increase fill likelihood.
+   3. Set client order id and metadata linking to the `strike_take_profit` row for traceability.
+- The order is submitted via the exchange client using rate-limited calls. If the order would exceed position size due to concurrent fills/changes, the order is adjusted or canceled.
+
+### Idempotency, Cooldown, and Duplicate Prevention
+- Each target has a `triggered` flag and `triggered_at` timestamp. When an order is placed the system marks the target as triggered to prevent immediate re-triggers.
+- A short cooldown window (default 60s) is tracked in-memory to avoid duplicate submissions caused by monitor restarts or race conditions.
+- Orders include unique client IDs tied to the target row so re-submissions are detectable by the backend.
+
+### Retry & Backoff
+- If order submission fails due to transient network or rate-limit errors, monitor retries up to the configured attempts (default 3) with exponential backoff (1s, 2s, 4s).
+- Permanent errors (invalid params, insufficient margin) will log and mark the target as failed; operator intervention is required.
+
+### Rate Limiting
+- The manager uses a token-bucket style limiter (configured for 8 calls/sec by default) to keep within exchange rate limits. All API calls for order submission and status checks pass through the limiter.
+
+### Database State Changes
+- On successful order submission the system writes an entry to `take_profit_history` with actual_profit, exit_quantity, and timestamp.
+- The `strike_take_profit` row is updated: `triggered` set to true and `triggered_at` saved. The target remains in the DB for audit and can be re-enabled or removed via API.
+
+### Concurrency & Position Changes
+- Before placing an order the monitor re-reads current position size; if the requested `exit_quantity` is larger than the current size, it adjusts the order quantity down to the available amount.
+- If the position is zero (closed) the monitor clears the target or marks it failed depending on config.
+
+### Edge Cases & Failure Modes
+- Rapid price moves may cause limit orders to never fill; these are visible in activity logs and require manual follow-up or reconfiguration to a more aggressive price.
+- Partial fills: the system records actual executed quantity and, if a partial fill leaves a remaining target, the `strike_take_profit` row is updated to the remaining exit quantity or marked completed depending on policy.
+
+### Testing & Verification
+- Unit tests cover trigger evaluation for positive and negative targets, P&L boundary conditions, and the idempotency logic.
+- Integration tests simulate the monitor loop, rate limiter, and order submission with a mocked exchange client to validate retry/backoff and database state transitions.
+
+This detailed mechanics section is intended to make behavior explicit for maintainers, QA, and users who want to audit or extend the system.
+
+
 ## Usage Examples
 
 ### Example 1: Profit Taking
@@ -186,7 +240,7 @@ if target_profit > 0:
 
 # For loss limits (negative)  
 else:
-    target_reached = pnl <= target_profit
+    target_reached = pnl >= target_profit
 ```
 
 ### Database Schema
@@ -337,10 +391,29 @@ else:
 4. ✅ Updated UI text and examples to clarify dual functionality
 5. ✅ Changed dialog title from "Take Profit Settings" to "Target P&L Settings"
 6. ✅ Added color-coding (green for profit, red for loss)
+7. ✅ Corrected backend logic to trigger loss limits only when loss improves to the target level
 
 **Backward Compatibility**: ✅ Fully compatible with existing profit targets
 
 ---
+
+### February 5, 2026 - Deployment & Hotfixes
+
+**What Happened**:
+- Frontend was not reflecting recent UI/logic changes due to a caching issue; rebuilt frontend assets and cleared caches.
+- Fixed `TakeProfitIndicator` so negative (loss limit) values display correctly in the UI and tooltips.
+- Restarted backend daemon to ensure monitor logic and cooldown state were reloaded.
+- Committed and pushed fixes to the `SSR` branch and redeployed the frontend.
+
+**Why It Matters**:
+- Ensures UI accurately reflects the new negative-target behavior so users can see and configure loss limits.
+- Removes stale assets that caused confusion during manual testing.
+- Guarantees the corrected backend logic is active in production, preventing incorrect triggers for loss limits.
+
+**Verification**:
+- Frontend rebuilt and deployed; backend restarted. Activity logs show monitor running and recent trigger events.
+- Updated unit/integration checks and documentation to reflect corrected behavior.
+
 
 ## Summary
 
