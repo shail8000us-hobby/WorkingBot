@@ -459,7 +459,7 @@
       },
       "dwell_time_minutes": 10,
       "price_tolerance": 100,
-      "status": "MONITORING",
+      "status": "STOPPED",
       "trigger_count": 1,
       "rounds_completed": 2,
       "rounds_placed": 2,
@@ -827,7 +827,7 @@
         }
       ],
       "created_at": "2026-02-04T04:14:16.521574",
-      "updated_at": "2026-02-04T04:15:30.965986",
+      "updated_at": "2026-02-04T15:46:12.020472",
       "max_loss_value": -0.18413800513000006,
       "max_profit_value": 0.1338619948700039,
       "breakevens": [
@@ -836,12 +836,12 @@
         76933.86,
         77466.14
       ],
-      "net_premium": 0.13386199486999997
+      "net_premium": 0.13386199486999997,
+      "stopped_at": "2026-02-04T15:46:12.019659",
+      "stop_reason": "End time reached (auto-stop)"
     }
   },
-  "active_session_ids": [
-    "ssr_005_04022026_btc_8605"
-  ],
+  "active_session_ids": [],
   "version": 1,
   "created_at": "2026-02-02T08:52:11.839148"
 }
