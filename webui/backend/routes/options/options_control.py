@@ -2802,8 +2802,8 @@ def set_strike_take_profit():
         
         if not symbol:
             return jsonify({'success': False, 'error': 'Symbol required'}), 400
-        if not target_profit or target_profit <= 0:
-            return jsonify({'success': False, 'error': 'Valid target_profit required (positive number)'}), 400
+        if not target_profit or target_profit == 0:
+            return jsonify({'success': False, 'error': 'Valid target_profit required (non-zero number, positive for profit, negative for loss)'}), 400
         if not exit_quantity or exit_quantity <= 0:
             return jsonify({'success': False, 'error': 'Valid exit_quantity required (positive integer)'}), 400
         

@@ -58,8 +58,8 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
     const profit = parseFloat(targetProfit);
     const quantity = parseInt(exitQuantity);
 
-    if (isNaN(profit) || profit <= 0) {
-      setError('Target profit must be a positive number');
+    if (isNaN(profit) || profit === 0) {
+      setError('Target must be a non-zero number (positive for profit, negative for loss)');
       return;
     }
 
@@ -126,7 +126,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
       <DialogTitle>
         <Box display="flex" alignItems="center" gap={1}>
           <TrendingUp color="success" />
-          <Typography variant="h6">Take Profit Settings</Typography>
+          <Typography variant="h6">Target P&L Settings</Typography>
         </Box>
       </DialogTitle>
 
@@ -163,25 +163,26 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
         {/* Help Text */}
         <Alert severity="info" sx={{ mb: 2 }}>
           <Typography variant="caption">
-            Set a profit target and specify how many lots to exit when that profit is reached. The
+            Set a P&L target (profit or loss) and specify how many lots to exit when that target is reached.
+            <strong> Use positive values for profit targets, negative values for loss limits.</strong> The
             system will automatically place a limit order to close the specified quantity when your
-            total position profit reaches the target.
+            total position P&L reaches the target.
           </Typography>
         </Alert>
 
         {/* Input Fields */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
-            label="Target Profit"
+            label="Target P&L"
             type="number"
             value={targetProfit}
             onChange={(e) => setTargetProfit(e.target.value)}
-            placeholder="e.g., 20"
+            placeholder="e.g., 20 or -10"
             fullWidth
             InputProps={{
               startAdornment: <InputAdornment position="start">$</InputAdornment>,
             }}
-            helperText="Exit when total position profit reaches this amount (USD)"
+            helperText="Exit when position P&L reaches this (positive for profit, negative for loss)"
           />
 
           <TextField
@@ -201,19 +202,19 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
 
         {/* Example Calculation */}
         {targetProfit && exitQuantity && (
-          <Box sx={{ mt: 2, p: 2, bgcolor: 'success.dark', borderRadius: 1, opacity: 0.8 }}>
+          <Box sx={{ mt: 2, p: 2, bgcolor: parseFloat(targetProfit) > 0 ? 'success.dark' : 'error.dark', borderRadius: 1, opacity: 0.8 }}>
             <Typography variant="caption" display="block" gutterBottom>
               <strong>Example:</strong>
             </Typography>
             <Typography variant="caption" display="block">
-              When your <strong>{symbol}</strong> position reaches a profit of{' '}
+              When your <strong>{symbol}</strong> position reaches a {parseFloat(targetProfit) > 0 ? 'profit' : 'loss'} of{' '}
               <strong>${targetProfit}</strong>, the system will automatically place a limit order
               to close <strong>{exitQuantity} lots</strong>.
             </Typography>
             {parseInt(exitQuantity) < currentSize && (
               <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.light' }}>
                 ⚠️ Remaining {currentSize - parseInt(exitQuantity)} lots will stay open and you
-                can set a new TP for them.
+                can set a new target for them.
               </Typography>
             )}
           </Box>
@@ -248,7 +249,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
           disabled={saving || !targetProfit || !exitQuantity}
           startIcon={saving ? <CircularProgress size={16} /> : <TrendingUp />}
         >
-          {saving ? 'Saving...' : 'Set Take Profit'}
+          {saving ? 'Saving...' : 'Set Target'}
         </Button>
       </DialogActions>
     </Dialog>

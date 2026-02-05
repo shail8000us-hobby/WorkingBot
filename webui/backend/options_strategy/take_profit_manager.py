@@ -581,96 +581,108 @@ class TakeProfitMonitor:
                     size = abs(pos.get('size', 0))
                     print(f"🎯 DEBUG: {symbol} | PnL: ${pnl:.4f} | Size: {size} | Target: ${target_profit}", flush=True)
                     
-                    # ONLY check positions with POSITIVE PnL (profits)
-                    if pnl > 0:
-                        actual_profit = pnl
-                        profit_percentage = (actual_profit / target_profit) if target_profit > 0 else 0
-                        print(f"🎯 DEBUG: {symbol} has POSITIVE PnL! Actual: ${actual_profit:.4f}, Target: ${target_profit}, Progress: {profit_percentage*100:.1f}%", flush=True)
-                        logger.info(f"📊 {symbol}: Profit ${actual_profit:.4f} / ${target_profit:.2f} ({profit_percentage*100:.1f}%)")
-                        print(f"📊 {symbol}: Profit ${actual_profit:.4f} / ${target_profit:.2f} ({profit_percentage*100:.1f}%)", flush=True)
+                    # Check if target is reached (works for both profit and loss targets)
+                    # For positive targets (profit): pnl >= target_profit
+                    # For negative targets (loss limit): pnl <= target_profit (both negative)
+                    target_reached = False
+                    if target_profit > 0:
+                        # Profit target: check if we've reached or exceeded the profit
+                        target_reached = pnl >= target_profit
+                    else:
+                        # Loss limit: check if loss has reached or exceeded the limit
+                        target_reached = pnl <= target_profit
+                    
+                    if target_reached:
+                        actual_pnl = pnl
+                        pnl_percentage = (actual_pnl / abs(target_profit)) * 100 if target_profit != 0 else 0
+                        target_type = "PROFIT" if target_profit > 0 else "LOSS LIMIT"
+                        print(f"🎯 DEBUG: {symbol} {target_type} REACHED! Actual: ${actual_pnl:.4f}, Target: ${target_profit}, Progress: {pnl_percentage:.1f}%", flush=True)
+                        logger.info(f"📊 {symbol}: P&L ${actual_pnl:.4f} / ${target_profit:.2f} ({pnl_percentage:.1f}%) - {target_type}")
+                        print(f"📊 {symbol}: P&L ${actual_pnl:.4f} / ${target_profit:.2f} ({pnl_percentage:.1f}%) - {target_type}", flush=True)
                         
-                        add_activity_event("position_check", f"📊 {symbol}: Profit ${actual_profit:.2f} / ${target_profit:.2f} ({profit_percentage*100:.1f}%)", {
+                        add_activity_event("position_check", f"📊 {symbol}: P&L ${actual_pnl:.2f} / ${target_profit:.2f} ({pnl_percentage:.1f}%) - {target_type}", {
                             "symbol": symbol,
-                            "actual_profit": actual_profit,
+                            "actual_pnl": actual_pnl,
                             "target_profit": target_profit,
-                            "profit_pct": round(profit_percentage * 100, 1),
-                            "size": size
+                            "pnl_pct": round(pnl_percentage, 1),
+                            "size": size,
+                            "target_type": target_type
                         })
                         
-                        # CRITICAL: Target profit REACHED - auto close partial position
-                        print(f"🎯 DEBUG: Checking if {actual_profit} >= {target_profit}: {actual_profit >= target_profit}", flush=True)
-                        if actual_profit >= target_profit:
-                            print(f"🎯 DEBUG: ENTERING TARGET REACHED BLOCK!", flush=True)
-                            # Check if position has enough size
-                            current_size = abs(pos.get("size", 0))
-                            print(f"🎯 DEBUG: current_size = {current_size}", flush=True)
+                        # CRITICAL: Target REACHED - auto close partial position
+                        print(f"🎯 DEBUG: ENTERING TARGET REACHED BLOCK!", flush=True)
+                        # Check if position has enough size
+                        current_size = abs(pos.get("size", 0))
+                        print(f"🎯 DEBUG: current_size = {current_size}", flush=True)
+                        
+                        if current_size == 0:
+                            print(f"🎯 DEBUG: Size is ZERO, skipping!", flush=True)
+                            logger.warning(f"⚠️ {symbol} target reached but position already closed (size=0)")
+                            continue
+                        
+                        print(f"🎯 DEBUG: Checking if {current_size} < {exit_quantity}", flush=True)
+                        if current_size < exit_quantity:
+                            logger.warning(f"⚠️ {symbol} target reached but size {current_size} < exit qty {exit_quantity}")
+                            print(f"🎯 DEBUG: Size too small, adjusting exit_quantity to {current_size}", flush=True)
+                            # Exit available quantity instead
+                            exit_quantity = current_size
+                        
+                        print(f"🎯 DEBUG: About to log TARGET REACHED...", flush=True)
+                        logger.error(f"🎯 DEBUG: TARGET REACHED!")
+                        logger.error(f"   - Symbol: {symbol}")
+                        logger.error(f"   - Actual P&L: ${actual_pnl:.4f}")
+                        logger.error(f"   - Target P&L: ${target_profit:.4f}")
+                        logger.error(f"   - Target Type: {target_type}")
+                        logger.error(f"   - Current Size: {current_size}")
+                        logger.error(f"   - Exit Quantity: {exit_quantity}")
+                        logger.error(f"   - Triggered Flag: {limit.get('triggered', False)}")
+                        print(f"🎯 DEBUG: Logged all TARGET details", flush=True)
+                        
+                        print(f"🎯 DEBUG: Calling add_activity_event...", flush=True)
+                        add_activity_event("reached", f"🎯 TARGET REACHED: {symbol} - P&L ${actual_pnl:.2f} {'>=>' if target_profit > 0 else '<='} Target ${target_profit:.2f} ({target_type})", {
+                            "symbol": symbol,
+                            "actual_pnl": actual_pnl,
+                            "target_profit": target_profit,
+                            "target_type": target_type,
+                            "size": current_size,
+                            "exit_quantity": exit_quantity
+                        })
+                        print(f"🎯 DEBUG: add_activity_event called", flush=True)
+                        
+                        print(f"🎯 DEBUG: Checking if current_size ({current_size}) > 0", flush=True)
+                        if current_size > 0:
+                            print(f"🎯 DEBUG: YES, current_size > 0!", flush=True)
+                            # Check if we recently attempted to close this position (prevent API spam)
+                            now = time.time()
+                            print(f"🎯 DEBUG: Checking recently_closed dict...", flush=True)
+                            if symbol in self._recently_closed:
+                                last_close_time = self._recently_closed[symbol]
+                                if now - last_close_time < self._close_cooldown:
+                                    logger.warning(f"⏸️ Skipping {symbol} - recently attempted close (cooldown: {self._close_cooldown}s)")
+                                    print(f"🎯 DEBUG: Skipping due to cooldown", flush=True)
+                                    continue
                             
-                            if current_size == 0:
-                                print(f"🎯 DEBUG: Size is ZERO, skipping!", flush=True)
-                                logger.warning(f"⚠️ {symbol} target reached but position already closed (size=0)")
-                                continue
+                            print(f"🎯 DEBUG: Marking as recently closed...", flush=True)
+                            # Mark as recently closed BEFORE attempting the close
+                            self._recently_closed[symbol] = now
                             
-                            print(f"🎯 DEBUG: Checking if {current_size} < {exit_quantity}", flush=True)
-                            if current_size < exit_quantity:
-                                logger.warning(f"⚠️ {symbol} target reached but size {current_size} < exit qty {exit_quantity}")
-                                print(f"🎯 DEBUG: Size too small, adjusting exit_quantity to {current_size}", flush=True)
-                                # Exit available quantity instead
-                                exit_quantity = current_size
+                            print(f"🎯 DEBUG: About to call _close_position_with_retry...", flush=True)
+                            # Execute partial exit with retry
+                            success = self._close_position_with_retry(symbol, actual_pnl, exit_quantity, target_profit)
+                            print(f"🎯 DEBUG: _close_position_with_retry returned: {success}", flush=True)
                             
-                            print(f"🎯 DEBUG: About to log TAKE PROFIT REACHED...", flush=True)
-                            logger.error(f"🎯 DEBUG: TAKE PROFIT REACHED!")
-                            logger.error(f"   - Symbol: {symbol}")
-                            logger.error(f"   - Actual Profit: ${actual_profit:.4f}")
-                            logger.error(f"   - Target Profit: ${target_profit:.4f}")
-                            logger.error(f"   - Current Size: {current_size}")
-                            logger.error(f"   - Exit Quantity: {exit_quantity}")
-                            logger.error(f"   - Triggered Flag: {limit.get('triggered', False)}")
-                            print(f"🎯 DEBUG: Logged all TAKE PROFIT details", flush=True)
-                            
-                            print(f"🎯 DEBUG: Calling add_activity_event...", flush=True)
-                            add_activity_event("reached", f"🎯 TARGET REACHED: {symbol} - Profit ${actual_profit:.2f} >= Target ${target_profit:.2f}", {
-                                "symbol": symbol,
-                                "actual_profit": actual_profit,
-                                "target_profit": target_profit,
-                                "size": current_size,
-                                "exit_quantity": exit_quantity
-                            })
-                            print(f"🎯 DEBUG: add_activity_event called", flush=True)
-                            
-                            print(f"🎯 DEBUG: Checking if current_size ({current_size}) > 0", flush=True)
-                            if current_size > 0:
-                                print(f"🎯 DEBUG: YES, current_size > 0!", flush=True)
-                                # Check if we recently attempted to close this position (prevent API spam)
-                                now = time.time()
-                                print(f"🎯 DEBUG: Checking recently_closed dict...", flush=True)
-                                if symbol in self._recently_closed:
-                                    last_close_time = self._recently_closed[symbol]
-                                    if now - last_close_time < self._close_cooldown:
-                                        logger.warning(f"⏸️ Skipping {symbol} - recently attempted close (cooldown: {self._close_cooldown}s)")
-                                        print(f"🎯 DEBUG: Skipping due to cooldown", flush=True)
-                                        continue
-                                
-                                print(f"🎯 DEBUG: Marking as recently closed...", flush=True)
-                                # Mark as recently closed BEFORE attempting the close
-                                self._recently_closed[symbol] = now
-                                
-                                print(f"🎯 DEBUG: About to call _close_position_with_retry...", flush=True)
-                                # Execute partial exit with retry
-                                success = self._close_position_with_retry(symbol, actual_profit, exit_quantity, target_profit)
-                                print(f"🎯 DEBUG: _close_position_with_retry returned: {success}", flush=True)
-                                
-                                if success:
-                                    print(f"🎯 DEBUG: Success! Marking as triggered...", flush=True)
-                                    # Mark as triggered in database
-                                    self.manager.mark_strike_triggered(symbol, actual_profit, exit_quantity)
-                                    self._metrics["total_triggers"] += 1
-                                else:
-                                    print(f"🎯 DEBUG: Failed! Removing from recently_closed", flush=True)
-                                    # Remove from recently closed if failed
-                                    self._recently_closed.pop(symbol, None)
+                            if success:
+                                print(f"🎯 DEBUG: Success! Marking as triggered...", flush=True)
+                                # Mark as triggered in database
+                                self.manager.mark_strike_triggered(symbol, actual_pnl, exit_quantity)
+                                self._metrics["total_triggers"] += 1
                             else:
-                                print(f"🎯 DEBUG: NO, current_size is 0!", flush=True)
-                                logger.warning(f"⚠️ {symbol} position already closed (size=0)")
+                                print(f"🎯 DEBUG: Failed! Removing from recently_closed", flush=True)
+                                # Remove from recently closed if failed
+                                self._recently_closed.pop(symbol, None)
+                        else:
+                            print(f"🎯 DEBUG: NO, current_size is 0!", flush=True)
+                            logger.warning(f"⚠️ {symbol} position already closed (size=0)")
                                 
         except Exception as e:
             logger.error(f"Error checking take profit: {e}", exc_info=True)
@@ -698,8 +710,8 @@ class TakeProfitMonitor:
                     print(f"🎯 DEBUG: All retries exhausted", flush=True)
                     return False
     
-    def _close_position(self, symbol: str, actual_profit: float, exit_quantity: int, target_profit: float):
-        """Close partial position due to take profit - Delta Exchange API"""
+    def _close_position(self, symbol: str, actual_pnl: float, exit_quantity: int, target_profit: float):
+        """Close partial position due to take profit/loss limit - Delta Exchange API"""
         should_close_loop = False
         loop = None
         try:
@@ -751,8 +763,9 @@ class TakeProfitMonitor:
             close_side = 'sell' if size > 0 else 'buy'
             close_size = min(abs(exit_quantity), abs(size))  # Don't close more than we have
             
-            logger.info(f"🎯 Closing {close_size} lots of {symbol} ({close_side}) due to take profit")
-            logger.info(f"   Target: ${target_profit:.2f} | Actual: ${actual_profit:.2f}")
+            target_type = "profit target" if target_profit > 0 else "loss limit"
+            logger.info(f"🎯 Closing {close_size} lots of {symbol} ({close_side}) due to {target_type}")
+            logger.info(f"   Target: ${target_profit:.2f} | Actual P&L: ${actual_pnl:.2f}")
             print(f"🎯 DEBUG: About to place order - symbol={symbol}, size={close_size}, side={close_side}", flush=True)
             
             # Place LIMIT order to close partial position using async API
