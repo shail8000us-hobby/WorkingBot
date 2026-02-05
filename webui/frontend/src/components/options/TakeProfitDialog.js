@@ -163,10 +163,11 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
         {/* Help Text */}
         <Alert severity="info" sx={{ mb: 2 }}>
           <Typography variant="caption">
-            Set a P&L target (profit or loss) and specify how many lots to exit when that target is reached.
-            <strong> Use positive values for profit targets, negative values for loss limits.</strong> The
-            system will automatically place a limit order to close the specified quantity when your
-            total position P&L reaches the target.
+            <strong>Profit Target (positive):</strong> Exit when profit REACHES the target (e.g., $20 = exit when profit is $20 or more).
+            <br />
+            <strong>Loss Limit (negative):</strong> Exit when loss IMPROVES to the target (e.g., -$50 = exit when loss improves from -$100 to -$50 or better).
+            <br />
+            The system will automatically place a limit order to close the specified quantity when your P&L reaches the target.
           </Typography>
         </Alert>
 
@@ -206,11 +207,21 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
             <Typography variant="caption" display="block" gutterBottom>
               <strong>Example:</strong>
             </Typography>
-            <Typography variant="caption" display="block">
-              When your <strong>{symbol}</strong> position reaches a {parseFloat(targetProfit) > 0 ? 'profit' : 'loss'} of{' '}
-              <strong>${targetProfit}</strong>, the system will automatically place a limit order
-              to close <strong>{exitQuantity} lots</strong>.
-            </Typography>
+            {parseFloat(targetProfit) > 0 ? (
+              <Typography variant="caption" display="block">
+                When your <strong>{symbol}</strong> position profit reaches{' '}
+                <strong>${targetProfit}</strong> or more, the system will place a limit order
+                to close <strong>{exitQuantity} lots</strong>.
+              </Typography>
+            ) : (
+              <Typography variant="caption" display="block">
+                When your <strong>{symbol}</strong> position loss improves to{' '}
+                <strong>${targetProfit}</strong> or better (less negative), the system will place a limit order
+                to close <strong>{exitQuantity} lots</strong>.
+                <br />
+                <em>Example: Current loss -$100 → Triggers when loss improves to ${targetProfit} or better (like -${Math.abs(parseFloat(targetProfit)) - 10}).</em>
+              </Typography>
+            )}
             {parseInt(exitQuantity) < currentSize && (
               <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.light' }}>
                 ⚠️ Remaining {currentSize - parseInt(exitQuantity)} lots will stay open and you

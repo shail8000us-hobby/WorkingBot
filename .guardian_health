@@ -1,6 +1,6 @@
 {
   "guardian_version": "2.1-SQL-MULTISYMBOL",
-  "last_check": "2026-02-05T14:28:02.101701",
+  "last_check": "2026-02-05T14:39:15.038429",
   "signal": "STOP",
   "reason": "High volatility detected",
   "check_interval": 10,
@@ -8,8 +8,8 @@
   "pid": 52242,
   "positions": {
     "count": 42,
-    "current_price": 71169.5,
-    "total_pnl_inr": -12603.913337859296
+    "current_price": 71621.5,
+    "total_pnl_inr": -9708.482865642236
   },
   "liquidation": {
     "distance": 100.0,
@@ -18,7 +18,7 @@
     "details_count": 0,
     "bankruptcy_distance": 100.0
   },
-  "timestamp": 1770281882.4472451,
-  "uptime_seconds": 43046,
-  "cycle_count": 3381
+  "timestamp": 1770282555.4693189,
+  "uptime_seconds": 43719,
+  "cycle_count": 3434
 }

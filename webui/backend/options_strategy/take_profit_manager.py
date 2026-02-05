@@ -584,15 +584,12 @@ class TakeProfitMonitor:
                     print(f"🎯 DEBUG: {symbol} | PnL: ${pnl:.4f} | Size: {size} | Target: ${target_profit}", flush=True)
                     
                     # Check if target is reached (works for both profit and loss targets)
-                    # For positive targets (profit): pnl >= target_profit
-                    # For negative targets (loss limit): pnl <= target_profit (both negative)
-                    target_reached = False
-                    if target_profit > 0:
-                        # Profit target: check if we've reached or exceeded the profit
-                        target_reached = pnl >= target_profit
-                    else:
-                        # Loss limit: check if loss has reached or exceeded the limit
-                        target_reached = pnl <= target_profit
+                    # For BOTH cases: trigger when current P&L >= target
+                    # 
+                    # Profit Example: Current $20 >= Target $15 → TRUE (profit reached!)
+                    # Loss Example: Current -$50 >= Target -$100 → TRUE (loss improved to better than -$100!)
+                    #               Current -$150 >= Target -$100 → FALSE (loss still worse than target)
+                    target_reached = pnl >= target_profit
                     
                     if target_reached:
                         actual_pnl = pnl

@@ -67,13 +67,18 @@ The background monitor:
 ```
 IF current_pnl >= target_profit THEN trigger
 Example: Target = $20, Current P&L = $21 → TRIGGER ✅
+Example: Target = $20, Current P&L = $15 → Wait (not reached yet)
 ```
 
 **For Loss Limits (negative):**
 ```
-IF current_pnl <= target_profit THEN trigger
-Example: Target = -$10, Current P&L = -$11 → TRIGGER ✅
+IF current_pnl >= target_profit THEN trigger
+Example: Target = -$50, Current P&L = -$100 → Wait (loss still too bad)
+Example: Target = -$50, Current P&L = -$49 → TRIGGER ✅ (loss improved to target!)
+Example: Target = -$50, Current P&L = -$30 → TRIGGER ✅ (loss improved past target!)
 ```
+
+**Key Insight**: For negative targets, the system triggers when the **loss IMPROVES** to the target level or better, not when it gets worse. This allows you to exit partial positions as losses recover, or take partial profits at specific levels.
 
 ---
 
@@ -91,17 +96,37 @@ Example: Target = -$10, Current P&L = -$11 → TRIGGER ✅
 ---
 
 ### Example 2: Loss Limiting
-**Scenario**: You have 71 lots of P-BTC-72000-050226 with current P&L of -$56.53
+**Scenario**: You have 71 lots of P-BTC-72000-050226 with current P&L of -$100 (significant loss)
 
 **Action**:
-- Set Target P&L: `-$10` (to reduce exposure if loss worsens)
+- Set Target P&L: `-$50` (to exit when loss improves to -$50)
 - Set Quantity: `35` lots
 
-**Result**: When position P&L reaches -$10 or worse, system automatically places limit order to close 35 lots. Remaining 36 lots stay open.
+**Result**: When position P&L **improves** to -$50 or better (like -$49, -$30, etc.), system automatically places limit order to close 35 lots. Remaining 36 lots stay open.
+
+**Important**: Target will NOT trigger if loss gets worse (e.g., goes to -$120). It only triggers when loss improves to the target level.
 
 ---
 
-### Example 3: Sequential Scaling Out
+### Example 3: Averaging Down Recovery
+**Scenario**: You have a losing position that you're averaging down on
+
+**Starting Point**: 
+- Position: 100 lots
+- Current P&L: -$200 (bad situation)
+
+**Strategy - Set Multiple Recovery Targets**:
+1. First Recovery Target: `-$150` → Exit 30 lots when loss improves to -$150
+2. After first trigger (now 70 lots remaining, P&L at -$150):
+   - Set Second Target: `-$100` → Exit 30 lots when loss improves to -$100
+3. After second trigger (40 lots remaining, P&L at -$100):
+   - Set Third Target: `-$50` → Exit remaining 40 lots when loss improves to -$50
+
+**Result**: Systematic position reduction as losses recover, managing risk while giving the position room to improve.
+
+---
+
+### Example 4: Sequential Scaling Out
 **Scenario**: You have 100 lots with profit building
 
 **Strategy**:
