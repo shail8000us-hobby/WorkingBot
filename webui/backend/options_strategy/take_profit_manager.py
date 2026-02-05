@@ -154,11 +154,13 @@ class TakeProfitManager:
     
     def set_strike_take_profit(self, symbol: str, target_profit: float, exit_quantity: int) -> Dict:
         """
-        Set take profit for a specific strike.
+        Set take profit/loss limit for a specific strike.
         
         Args:
             symbol: Option symbol (e.g., C-BTC-95000-170126)
-            target_profit: Target profit in USD (e.g., 20.0 means exit when profit reaches $20)
+            target_profit: Target P&L in USD (positive for profit, negative for loss)
+                          e.g., 20.0 = exit when profit reaches $20
+                          e.g., -10.0 = exit when loss reaches -$10
             exit_quantity: Number of contracts to exit when target is reached
         
         Returns:
@@ -168,8 +170,8 @@ class TakeProfitManager:
             if not self._is_valid_option_symbol(symbol):
                 return {'success': False, 'error': 'Invalid option symbol format'}
             
-            if target_profit <= 0:
-                return {'success': False, 'error': 'Target profit must be positive'}
+            if target_profit == 0:
+                return {'success': False, 'error': 'Target P&L must be non-zero (positive for profit, negative for loss)'}
             
             if exit_quantity <= 0:
                 return {'success': False, 'error': 'Exit quantity must be positive'}
