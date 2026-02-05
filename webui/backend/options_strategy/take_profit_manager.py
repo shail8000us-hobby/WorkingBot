@@ -593,7 +593,9 @@ class TakeProfitMonitor:
                     
                     if target_reached:
                         actual_pnl = pnl
-                        pnl_percentage = (actual_pnl / abs(target_profit)) * 100 if target_profit != 0 else 0
+                        # Compute progress towards target as a percentage. For profit targets (>0) and loss limits (<0) this
+# calculation uses the target sign so that improvement yields a positive percentage (e.g., -25/-50 = 50%).
+pnl_percentage = (actual_pnl / target_profit) * 100 if target_profit != 0 else 0
                         target_type = "PROFIT" if target_profit > 0 else "LOSS LIMIT"
                         print(f"🎯 DEBUG: {symbol} {target_type} REACHED! Actual: ${actual_pnl:.4f}, Target: ${target_profit}, Progress: {pnl_percentage:.1f}%", flush=True)
                         logger.info(f"📊 {symbol}: P&L ${actual_pnl:.4f} / ${target_profit:.2f} ({pnl_percentage:.1f}%) - {target_type}")
@@ -638,7 +640,7 @@ class TakeProfitMonitor:
                         print(f"🎯 DEBUG: Logged all TARGET details", flush=True)
                         
                         print(f"🎯 DEBUG: Calling add_activity_event...", flush=True)
-                        add_activity_event("reached", f"🎯 TARGET REACHED: {symbol} - P&L ${actual_pnl:.2f} {'>=>' if target_profit > 0 else '<='} Target ${target_profit:.2f} ({target_type})", {
+                        add_activity_event("reached", f"🎯 TARGET REACHED: {symbol} - P&L ${actual_pnl:.2f} >= Target ${target_profit:.2f} ({target_type})", {
                             "symbol": symbol,
                             "actual_pnl": actual_pnl,
                             "target_profit": target_profit,
@@ -719,7 +721,8 @@ class TakeProfitMonitor:
             if not self._check_rate_limit():
                 logger.warning(f"⚠️ Rate limit reached - delaying {symbol} close")
                 time.sleep(1)
-                return
+                # Treat rate limit as a transient failure so caller can retry with backoff
+                raise Exception("Rate limit reached - try again")
             
             print(f"🎯 DEBUG: Getting positions for order placement...", flush=True)
             # Get position details using async API
