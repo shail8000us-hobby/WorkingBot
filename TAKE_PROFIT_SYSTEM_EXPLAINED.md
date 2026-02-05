@@ -495,6 +495,10 @@ else:
 5. ✅ Changed dialog title from "Take Profit Settings" to "Target P&L Settings"
 6. ✅ Added color-coding (green for profit, red for loss)
 7. ✅ Corrected backend logic to trigger loss limits only when loss improves to the target level
+8. ✅ Fixed logging & monitoring edge-cases:
+   - Corrected progress percentage computation so it is sign-aware (positive % when a loss improves towards a negative target)
+   - Updated activity messages to consistently use `>=` (avoids misleading `<=` display for loss limits)
+   - Treat rate-limit delays as transient failures (raise and retry) so targets are not incorrectly marked as triggered without an order being placed
 
 **Backward Compatibility**: ✅ Fully compatible with existing profit targets
 
