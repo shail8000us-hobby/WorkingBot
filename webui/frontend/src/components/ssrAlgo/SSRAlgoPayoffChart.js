@@ -167,9 +167,14 @@ const SSRAlgoPayoffChart = ({
           <XAxis 
             dataKey="price" 
             domain={xDomain}
-            tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
-            tick={{ fontSize: 11, fill: 'rgba(148, 163, 184, 0.8)' }}
+            tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`}
+            tick={{ fontSize: 10, fill: 'rgba(148, 163, 184, 0.8)' }}
             stroke="rgba(148, 163, 184, 0.3)"
+            interval={'preserveStartEnd'}
+            tickCount={8}
+            angle={-35}
+            textAnchor="end"
+            height={45}
           />
           
           <YAxis 

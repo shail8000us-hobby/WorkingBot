@@ -1,13 +1,13 @@
 {
   "sessions": {
-    "ssr_007_03022026_btc_16ca": {
-      "session_id": "ssr_007_03022026_btc_16ca",
+    "ssr_001_12022026_btc_d626": {
+      "session_id": "ssr_001_12022026_btc_d626",
       "underlying": "BTC",
-      "expiry": "03022026",
+      "expiry": "12022026",
       "auto_loop_rounds": 2,
       "order_type": "ssr",
-      "start_time": "15:00",
-      "end_time": "21:00",
+      "start_time": "00:00",
+      "end_time": "23:59",
       "strike_config": {
         "otm_buy_percent_min": 45,
         "otm_buy_percent_max": 49,
@@ -29,819 +29,852 @@
       },
       "dwell_time_minutes": 10,
       "price_tolerance": 100,
-      "status": "STOPPED",
-      "trigger_count": 1,
-      "daily_adjustments": 0,
-      "daily_pnl_usd": 0.0,
-      "last_adjustment_time": null,
-      "circuit_breaker_triggered": false,
-      "circuit_breaker_reason": null,
-      "started_at": "2026-02-02T14:38:17.871379",
-      "positions": [
-        {
-          "trigger_id": 0,
-          "atm_strike": 78600.0,
-          "atm_ce_premium": 1038.28590428,
-          "atm_pe_premium": 987.356533,
-          "atm_ce": {
-            "symbol": "C-BTC-78600-030226",
-            "size": -1,
-            "filled": true,
-            "entry_price": 1038.28590428
-          },
-          "atm_pe": {
-            "symbol": "P-BTC-78600-030226",
-            "size": -1,
-            "filled": true,
-            "entry_price": 987.356533
-          },
-          "otm_ce_buy": {
-            "symbol": "C-BTC-79800-030226",
-            "size": 2,
-            "filled": true,
-            "selected_premium": 517.66580222,
-            "entry_price": 517.66580222
-          },
-          "otm_pe_buy": {
-            "symbol": "P-BTC-77000-030226",
-            "size": 2,
-            "filled": true,
-            "selected_premium": 482.90075052,
-            "entry_price": 482.90075052
-          },
-          "far_otm_ce": {
-            "symbol": "C-BTC-80600-030226",
-            "size": -1,
-            "filled": true,
-            "selected_premium": 304.94196146,
-            "entry_price": 304.94196146
-          },
-          "far_otm_pe": {
-            "symbol": "P-BTC-75600-030226",
-            "size": -1,
-            "filled": true,
-            "selected_premium": 275.88952418,
-            "entry_price": 275.88952418
-          },
-          "executed_at": "2026-02-02T14:39:28.519138"
-        }
-      ],
-      "closed_positions": [],
-      "max_loss_upper": null,
-      "max_loss_lower": null,
-      "zone_entry_time": null,
-      "created_at": "2026-02-02T14:38:16.636963",
-      "updated_at": "2026-02-02T15:31:03.160167",
-      "stopped_at": "2026-02-02T15:31:03.159994",
-      "stop_reason": "End time reached (auto-stop)"
-    },
-    "ssr_002_05022026_btc_5d95": {
-      "session_id": "ssr_002_05022026_btc_5d95",
-      "underlying": "BTC",
-      "expiry": "05022026",
-      "auto_loop_rounds": 2,
-      "order_type": "ssr",
-      "start_time": "15:00",
-      "end_time": "21:00",
-      "strike_config": {
-        "otm_buy_percent_min": 45,
-        "otm_buy_percent_max": 49,
-        "far_otm_percent_min": 20,
-        "far_otm_percent_max": 30
-      },
-      "circuit_breaker_config": {
-        "enabled": true,
-        "max_adjustments_per_day": 10,
-        "max_adjustments_per_session": 20,
-        "max_daily_loss_usd": 5000,
-        "cooldown_minutes": 5
-      },
-      "greeks_limits": {
-        "max_delta_exposure": 5.0,
-        "max_gamma_exposure": 2.0,
-        "max_vega_exposure": 1000,
-        "enabled": false
-      },
-      "dwell_time_minutes": 10,
-      "price_tolerance": 100,
-      "status": "STOPPED",
-      "trigger_count": 1,
-      "rounds_completed": 2,
-      "daily_adjustments": 0,
-      "daily_pnl_usd": 0.0,
-      "last_adjustment_time": null,
-      "circuit_breaker_triggered": false,
-      "circuit_breaker_reason": null,
-      "started_at": "2026-02-03T07:16:25.308579",
-      "positions": [
-        {
-          "trigger_id": 0,
-          "atm_strike": 78800.0,
-          "atm_ce_premium": 1188.74771494,
-          "atm_pe_premium": 1221.53666672,
-          "atm_ce": {
-            "symbol": "C-BTC-78800-050226",
-            "size": -1,
-            "filled": true,
-            "entry_price": 1188.74771494
-          },
-          "atm_pe": {
-            "symbol": "P-BTC-78800-050226",
-            "size": -1,
-            "filled": true,
-            "entry_price": 1221.53666672
-          },
-          "otm_ce_buy": {
-            "symbol": "C-BTC-80400-050226",
-            "size": 2,
-            "filled": true,
-            "selected_premium": 523.12169726,
-            "entry_price": 523.12169726
-          },
-          "otm_pe_buy": {
-            "symbol": "P-BTC-77000-050226",
-            "size": 2,
-            "filled": true,
-            "selected_premium": 593.71652012,
-            "entry_price": 593.71652012
-          },
-          "far_otm_ce": {
-            "symbol": "C-BTC-81200-050226",
-            "size": -1,
-            "filled": true,
-            "selected_premium": 331.97158983,
-            "entry_price": 331.97158983
-          },
-          "far_otm_pe": {
-            "symbol": "P-BTC-75600-050226",
-            "size": -1,
-            "filled": true,
-            "selected_premium": 342.56613988,
-            "entry_price": 342.56613988
-          },
-          "executed_at": "2026-02-03T07:17:38.497585"
-        }
-      ],
-      "closed_positions": [],
-      "max_loss_upper": null,
-      "max_loss_lower": null,
-      "zone_entry_time": null,
-      "logs": [
-        {
-          "timestamp": "2026-02-03T07:16:25.310408",
-          "message": "Session started. Executing 2 auto-loop rounds",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-03T07:16:25.311003",
-          "message": "ATM Strike: 78800.0",
-          "level": "info",
-          "data": {
-            "atm_ce": "C-BTC-78800-050226",
-            "atm_pe": "P-BTC-78800-050226"
-          }
-        },
-        {
-          "timestamp": "2026-02-03T07:16:28.039027",
-          "message": "Round 1/2 executed",
-          "level": "success"
-        },
-        {
-          "timestamp": "2026-02-03T07:17:38.493473",
-          "message": "Round 2/2 executed",
-          "level": "success"
-        },
-        {
-          "timestamp": "2026-02-03T07:17:38.544295",
-          "message": "Placed limit exit orders at $3 for sell legs",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-03T07:17:38.558178",
-          "message": "All 2 rounds completed. Now monitoring price.",
-          "level": "success"
-        },
-        {
-          "timestamp": "2026-02-03T07:17:38.558589",
-          "message": "Adjustment triggers: Lower=75600.0 | Upper=81200.0",
-          "level": "info"
-        }
-      ],
-      "created_at": "2026-02-03T07:16:25.225803",
-      "updated_at": "2026-02-03T15:31:00.267264",
-      "stopped_at": "2026-02-03T15:31:00.267007",
-      "stop_reason": "End time reached (auto-stop)"
-    },
-    "ssr_003_050226_btc_cfd0": {
-      "session_id": "ssr_003_050226_btc_cfd0",
-      "underlying": "BTC",
-      "expiry": "050226",
-      "auto_loop_rounds": 2,
-      "order_type": "ssr",
-      "start_time": "15:00",
-      "end_time": "21:00",
-      "strike_config": {
-        "otm_buy_percent_min": 45,
-        "otm_buy_percent_max": 49,
-        "far_otm_percent_min": 20,
-        "far_otm_percent_max": 30
-      },
-      "circuit_breaker_config": {
-        "max_adjustments_per_day": 10,
-        "max_adjustments_per_session": 20,
-        "max_daily_loss_usd": 5000,
-        "cooldown_minutes": 5,
-        "enabled": true
-      },
-      "greeks_limits": {
-        "max_delta_exposure": 5.0,
-        "max_gamma_exposure": 2.0,
-        "max_vega_exposure": 1000,
-        "enabled": false
-      },
-      "dwell_time_minutes": 10,
-      "price_tolerance": 100,
-      "status": "IDLE",
-      "trigger_count": 0,
-      "rounds_completed": 0,
-      "rounds_placed": 0,
-      "pending_orders": [],
-      "filled_orders": [],
-      "daily_adjustments": 0,
-      "daily_pnl_usd": 0.0,
-      "last_adjustment_time": null,
-      "circuit_breaker_triggered": false,
-      "circuit_breaker_reason": null,
-      "started_at": null,
-      "positions": [],
-      "closed_positions": [],
-      "max_loss_upper": null,
-      "max_loss_lower": null,
-      "zone_entry_time": null,
-      "logs": [
-        {
-          "timestamp": "2026-02-03T07:56:22.511478Z",
-          "message": "\ud83d\ude80 SSR Algo session starting for BTC",
-          "level": "info",
-          "data": {
-            "underlying": "BTC",
-            "expiry": "050226",
-            "rounds": 2
-          }
-        },
-        {
-          "timestamp": "2026-02-03T07:56:22.512367Z",
-          "message": "\ud83d\udd0d Scanning option chain for optimal strikes...",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:23.581649Z",
-          "message": "\u274c Strike selection failed: time data '050226' does not match format '%d%m%Y'",
-          "level": "error"
-        }
-      ],
-      "created_at": "2026-02-03T07:56:16.973786",
-      "updated_at": "2026-02-03T07:56:23.582637"
-    },
-    "ssr_004_05022026_btc_8ac4": {
-      "session_id": "ssr_004_05022026_btc_8ac4",
-      "underlying": "BTC",
-      "expiry": "05022026",
-      "auto_loop_rounds": 2,
-      "order_type": "ssr",
-      "start_time": "15:00",
-      "end_time": "21:00",
-      "strike_config": {
-        "otm_buy_percent_min": 45,
-        "otm_buy_percent_max": 49,
-        "far_otm_percent_min": 20,
-        "far_otm_percent_max": 30
-      },
-      "circuit_breaker_config": {
-        "max_adjustments_per_day": 10,
-        "max_adjustments_per_session": 20,
-        "max_daily_loss_usd": 5000,
-        "cooldown_minutes": 5,
-        "enabled": true
-      },
-      "greeks_limits": {
-        "max_delta_exposure": 5.0,
-        "max_gamma_exposure": 2.0,
-        "max_vega_exposure": 1000,
-        "enabled": false
-      },
-      "dwell_time_minutes": 10,
-      "price_tolerance": 100,
-      "status": "STOPPED",
-      "trigger_count": 0,
-      "rounds_completed": 0,
-      "rounds_placed": 0,
-      "pending_orders": [],
-      "filled_orders": [],
-      "daily_adjustments": 0,
-      "daily_pnl_usd": 0.0,
-      "last_adjustment_time": null,
-      "circuit_breaker_triggered": false,
-      "circuit_breaker_reason": null,
-      "started_at": "2026-02-03T07:56:51.237163",
-      "positions": [],
-      "closed_positions": [],
-      "max_loss_upper": null,
-      "max_loss_lower": null,
-      "zone_entry_time": null,
-      "logs": [
-        {
-          "timestamp": "2026-02-03T07:56:51.238236Z",
-          "message": "\ud83d\ude80 SSR Algo session starting for BTC",
-          "level": "info",
-          "data": {
-            "underlying": "BTC",
-            "expiry": "05022026",
-            "rounds": 2
-          }
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.238930Z",
-          "message": "\ud83d\udd0d Scanning option chain for optimal strikes...",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.240309Z",
-          "message": "\u2705 ATM Strike selected: $78,800",
-          "level": "success",
-          "data": {
-            "atm_strike": 78800.0,
-            "atm_ce": "C-BTC-78800-050226",
-            "atm_pe": "P-BTC-78800-050226"
-          }
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.241401Z",
-          "message": "\ud83d\udcca SELL ATM CE: C-BTC-78800-050226 @ $1171.11",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.242005Z",
-          "message": "\ud83d\udcca SELL ATM PE: P-BTC-78800-050226 @ $1234.29",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.245230Z",
-          "message": "\ud83d\udcc8 BUY OTM CE: C-BTC-80400-050226 @ $509.61 (x2)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.245851Z",
-          "message": "\ud83d\udcc8 BUY OTM PE: P-BTC-77000-050226 @ $591.33 (x2)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.246660Z",
-          "message": "\ud83d\udcca SELL Far OTM CE: C-BTC-81200-050226 @ $324.92",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.247318Z",
-          "message": "\ud83d\udcca SELL Far OTM PE: P-BTC-75600-050226 @ $343.17",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.247958Z",
-          "message": "\ud83d\udcb0 Net Premium: $871.61 (credit)",
-          "level": "success"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.248978Z",
-          "message": "\u26a1 Starting 2 auto-loop rounds (Lot: 1)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:51.249924Z",
-          "message": "\ud83d\udcdd Order type: SSR",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-03T07:56:53.952713Z",
-          "message": "\u2501\u2501\u2501\u2501\u2501 Round 1/2 \u2501\u2501\u2501\u2501\u2501",
-          "level": "info"
-        }
-      ],
-      "created_at": "2026-02-03T07:56:45.890763",
-      "updated_at": "2026-02-03T07:56:53.969189",
-      "error": "'int' object is not subscriptable"
-    },
-    "ssr_005_04022026_btc_8605": {
-      "session_id": "ssr_005_04022026_btc_8605",
-      "underlying": "BTC",
-      "expiry": "04022026",
-      "auto_loop_rounds": 2,
-      "order_type": "ssr",
-      "start_time": "15:00",
-      "end_time": "21:00",
-      "strike_config": {
-        "otm_buy_percent_min": 45,
-        "otm_buy_percent_max": 49,
-        "far_otm_percent_min": 20,
-        "far_otm_percent_max": 30
-      },
-      "circuit_breaker_config": {
-        "enabled": true,
-        "max_adjustments_per_day": 10,
-        "max_adjustments_per_session": 20,
-        "max_daily_loss_usd": 5000,
-        "cooldown_minutes": 5
-      },
-      "greeks_limits": {
-        "max_delta_exposure": 5.0,
-        "max_gamma_exposure": 2.0,
-        "max_vega_exposure": 1000,
-        "enabled": false
-      },
-      "dwell_time_minutes": 10,
-      "price_tolerance": 100,
-      "status": "STOPPED",
-      "trigger_count": 1,
+      "status": "MONITORING",
+      "trigger_count": 2,
       "rounds_completed": 2,
       "rounds_placed": 2,
-      "pending_orders": [
+      "pending_orders": [],
+      "filled_orders": [
         {
-          "order_id": "1154986839",
-          "symbol": "C-BTC-76800-040226",
+          "order_id": "1169021280",
+          "symbol": "C-BTC-68800-120226",
           "side": "sell",
           "size": 1.0,
           "round": 1,
-          "placed_at": "2026-02-04T04:14:21.452126",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:30:32.598052",
+          "status": "filled",
+          "fill_price": 1195.17928357,
+          "filled_at": "2026-02-10T13:43:27.650886"
         },
         {
-          "order_id": "1154986795",
-          "symbol": "P-BTC-76800-040226",
+          "order_id": "1169021268",
+          "symbol": "P-BTC-68800-120226",
           "side": "sell",
           "size": 1.0,
           "round": 1,
-          "placed_at": "2026-02-04T04:14:21.452129",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:30:32.598056",
+          "status": "filled",
+          "fill_price": 1194.96960429,
+          "filled_at": "2026-02-10T13:43:27.653075"
         },
         {
-          "order_id": "1154986781",
-          "symbol": "C-BTC-77200-040226",
+          "order_id": "1169021262",
+          "symbol": "C-BTC-70200-120226",
           "side": "buy",
           "size": 2.0,
           "round": 1,
-          "placed_at": "2026-02-04T04:14:21.452130",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:30:32.598058",
+          "status": "filled",
+          "fill_price": 580.00960945,
+          "filled_at": "2026-02-10T13:43:27.654622"
         },
         {
-          "order_id": "1154986776",
-          "symbol": "P-BTC-76400-040226",
+          "order_id": "1169021275",
+          "symbol": "P-BTC-66800-120226",
           "side": "buy",
           "size": 2.0,
           "round": 1,
-          "placed_at": "2026-02-04T04:14:21.452131",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:30:32.598059",
+          "status": "filled",
+          "fill_price": 542.75287343,
+          "filled_at": "2026-02-10T13:43:27.656687"
         },
         {
-          "order_id": "1154986801",
-          "symbol": "C-BTC-77600-040226",
+          "order_id": "1169021271",
+          "symbol": "C-BTC-71200-120226",
           "side": "sell",
           "size": 1.0,
           "round": 1,
-          "placed_at": "2026-02-04T04:14:21.452132",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:30:32.598060",
+          "status": "filled",
+          "fill_price": 321.71486859,
+          "filled_at": "2026-02-10T13:43:27.658104"
         },
         {
-          "order_id": "1154986833",
-          "symbol": "P-BTC-76000-040226",
+          "order_id": "1169021277",
+          "symbol": "P-BTC-65600-120226",
           "side": "sell",
           "size": 1.0,
           "round": 1,
-          "placed_at": "2026-02-04T04:14:21.452134",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:30:32.598062",
+          "status": "filled",
+          "fill_price": 332.36475514,
+          "filled_at": "2026-02-10T13:43:27.660555"
         },
         {
-          "order_id": "1154987745",
-          "symbol": "C-BTC-76800-040226",
+          "order_id": "1169022816",
+          "symbol": "C-BTC-68800-120226",
           "side": "sell",
           "size": 1.0,
           "round": 2,
-          "placed_at": "2026-02-04T04:15:30.914990",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:31:39.362382",
+          "status": "filled",
+          "fill_price": 1195.17928357,
+          "filled_at": "2026-02-10T13:43:27.664667"
         },
         {
-          "order_id": "1154987787",
-          "symbol": "P-BTC-76800-040226",
+          "order_id": "1169022793",
+          "symbol": "P-BTC-68800-120226",
           "side": "sell",
           "size": 1.0,
           "round": 2,
-          "placed_at": "2026-02-04T04:15:30.914993",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:31:39.362384",
+          "status": "filled",
+          "fill_price": 1194.96960429,
+          "filled_at": "2026-02-10T13:43:27.665955"
         },
         {
-          "order_id": "1154987751",
-          "symbol": "C-BTC-77200-040226",
+          "order_id": "1169022809",
+          "symbol": "C-BTC-70200-120226",
           "side": "buy",
           "size": 2.0,
           "round": 2,
-          "placed_at": "2026-02-04T04:15:30.914994",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:31:39.362385",
+          "status": "filled",
+          "fill_price": 580.00960945,
+          "filled_at": "2026-02-10T13:43:27.667248"
         },
         {
-          "order_id": "1154987754",
-          "symbol": "P-BTC-76400-040226",
+          "order_id": "1169022806",
+          "symbol": "P-BTC-66800-120226",
           "side": "buy",
           "size": 2.0,
           "round": 2,
-          "placed_at": "2026-02-04T04:15:30.914996",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:31:39.362385",
+          "status": "filled",
+          "fill_price": 542.75287343,
+          "filled_at": "2026-02-10T13:43:27.668262"
         },
         {
-          "order_id": "1154987740",
-          "symbol": "C-BTC-77600-040226",
+          "order_id": "1169022811",
+          "symbol": "C-BTC-71200-120226",
           "side": "sell",
           "size": 1.0,
           "round": 2,
-          "placed_at": "2026-02-04T04:15:30.914997",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:31:39.362386",
+          "status": "filled",
+          "fill_price": 321.71486859,
+          "filled_at": "2026-02-10T13:43:27.669547"
         },
         {
-          "order_id": "1154987735",
-          "symbol": "P-BTC-76000-040226",
+          "order_id": "1169022820",
+          "symbol": "P-BTC-65600-120226",
           "side": "sell",
           "size": 1.0,
           "round": 2,
-          "placed_at": "2026-02-04T04:15:30.914998",
-          "status": "pending"
+          "placed_at": "2026-02-10T12:31:39.362386",
+          "status": "filled",
+          "fill_price": 332.36475514,
+          "filled_at": "2026-02-10T13:43:27.670806"
         }
       ],
-      "filled_orders": [],
-      "daily_adjustments": 0,
+      "daily_adjustments": 2,
       "daily_pnl_usd": 0.0,
-      "last_adjustment_time": null,
+      "last_adjustment_time": "2026-02-11T12:56:21.396424",
       "circuit_breaker_triggered": false,
       "circuit_breaker_reason": null,
-      "started_at": "2026-02-04T04:14:16.549620",
+      "started_at": "2026-02-10T12:30:30.839381",
       "positions": [
         {
           "trigger_id": 0,
-          "atm_strike": 76800.0,
-          "atm_ce_premium": 312.52659095,
-          "atm_pe_premium": 368.91043725,
+          "atm_strike": 68800.0,
+          "atm_ce_premium": 1195.17928357,
+          "atm_pe_premium": 1194.96960429,
+          "rounds_executed": 2,
           "atm_ce": {
-            "symbol": "C-BTC-76800-040226",
+            "symbol": "C-BTC-68800-120226",
             "size": -2,
             "filled": true,
-            "entry_price": 312.52659095
+            "entry_price": 1195.17928357
           },
           "atm_pe": {
-            "symbol": "P-BTC-76800-040226",
+            "symbol": "P-BTC-68800-120226",
             "size": -2,
             "filled": true,
-            "entry_price": 368.91043725
+            "entry_price": 1194.96960429
           },
           "otm_ce_buy": {
-            "symbol": "C-BTC-77200-040226",
+            "symbol": "C-BTC-70200-120226",
             "size": 4,
             "filled": true,
-            "selected_premium": 161.47042823,
-            "entry_price": 161.47042823
+            "selected_premium": 580.00960945,
+            "entry_price": 580.00960945
           },
           "otm_pe_buy": {
-            "symbol": "P-BTC-76400-040226",
+            "symbol": "P-BTC-66800-120226",
             "size": 4,
             "filled": true,
-            "selected_premium": 198.58135996,
-            "entry_price": 198.58135996
+            "selected_premium": 542.75287343,
+            "entry_price": 542.75287343
           },
           "far_otm_ce": {
-            "symbol": "C-BTC-77600-040226",
+            "symbol": "C-BTC-71200-120226",
             "size": -2,
             "filled": true,
-            "selected_premium": 75.62533247,
-            "entry_price": 75.62533247
+            "selected_premium": 321.71486859,
+            "entry_price": 321.71486859
           },
           "far_otm_pe": {
-            "symbol": "P-BTC-76000-040226",
+            "symbol": "P-BTC-65600-120226",
             "size": -2,
             "filled": true,
-            "selected_premium": 96.90321058,
-            "entry_price": 96.90321058
+            "selected_premium": 332.36475514,
+            "entry_price": 332.36475514
           },
-          "executed_at": "2026-02-04T04:15:30.920103",
-          "rounds_executed": 2
+          "executed_at": "2026-02-10T12:31:39.363527"
+        },
+        {
+          "trigger_id": 1,
+          "trigger_zone": "lower",
+          "trigger_price": 66823.8,
+          "atm_strike": 66800.0,
+          "atm_ce_premium": 1079.11670668,
+          "atm_pe_premium": 1040.3843653,
+          "rounds_executed": 2,
+          "atm_ce": {
+            "symbol": "C-BTC-66800-120226",
+            "size": -2,
+            "filled": false,
+            "entry_price": 1079.11670668
+          },
+          "atm_pe": {
+            "symbol": "P-BTC-66800-120226",
+            "size": -2,
+            "filled": false,
+            "entry_price": 1040.3843653
+          },
+          "otm_ce_buy": {
+            "symbol": "C-BTC-68000-120226",
+            "size": 4,
+            "filled": false,
+            "selected_premium": 502.60578263,
+            "entry_price": 502.60578263
+          },
+          "otm_pe_buy": {
+            "symbol": "P-BTC-65200-120226",
+            "size": 4,
+            "filled": false,
+            "selected_premium": 538.89842463,
+            "entry_price": 538.89842463
+          },
+          "far_otm_ce": {
+            "symbol": "C-BTC-68600-120226",
+            "size": -2,
+            "filled": false,
+            "selected_premium": 321.50998057,
+            "entry_price": 321.50998057
+          },
+          "far_otm_pe": {
+            "symbol": "P-BTC-64000-120226",
+            "size": -2,
+            "filled": false,
+            "selected_premium": 332.40398087,
+            "entry_price": 332.40398087
+          },
+          "executed_at": "2026-02-11T07:05:13.181904"
+        },
+        {
+          "trigger_id": 2,
+          "trigger_zone": "lower",
+          "trigger_price": 66829.0,
+          "atm_strike": 66800.0,
+          "atm_ce_premium": 1063.2995231,
+          "atm_pe_premium": 1022.65045881,
+          "rounds_executed": 2,
+          "atm_ce": {
+            "symbol": "C-BTC-66800-120226",
+            "size": -2,
+            "filled": false,
+            "entry_price": 1063.2995231
+          },
+          "atm_pe": {
+            "symbol": "P-BTC-66800-120226",
+            "size": -2,
+            "filled": false,
+            "entry_price": 1022.65045881
+          },
+          "otm_ce_buy": {
+            "symbol": "C-BTC-68000-120226",
+            "size": 4,
+            "filled": false,
+            "selected_premium": 488.91560313,
+            "entry_price": 488.91560313
+          },
+          "otm_pe_buy": {
+            "symbol": "P-BTC-65200-120226",
+            "size": 4,
+            "filled": false,
+            "selected_premium": 515.35780313,
+            "entry_price": 515.35780313
+          },
+          "far_otm_ce": {
+            "symbol": "C-BTC-68600-120226",
+            "size": -2,
+            "filled": false,
+            "selected_premium": 311.47242861,
+            "entry_price": 311.47242861
+          },
+          "far_otm_pe": {
+            "symbol": "P-BTC-64000-120226",
+            "size": -2,
+            "filled": false,
+            "selected_premium": 316.68078951,
+            "entry_price": 316.68078951
+          },
+          "executed_at": "2026-02-11T07:26:21.347039"
         }
       ],
       "closed_positions": [],
-      "max_loss_upper": 77600.0,
-      "max_loss_lower": 76000.0,
+      "max_loss_upper": 71200.0,
+      "max_loss_lower": 65600.0,
       "zone_entry_time": null,
       "logs": [
         {
-          "timestamp": "2026-02-04T04:14:16.551392Z",
-          "message": "\ud83d\ude80 SSR Algo session starting for BTC",
-          "level": "info",
-          "data": {
-            "underlying": "BTC",
-            "expiry": "04022026",
-            "rounds": 2
-          }
-        },
-        {
-          "timestamp": "2026-02-04T04:14:16.552622Z",
-          "message": "\ud83d\udd0d Scanning option chain for optimal strikes...",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:16.554565Z",
-          "message": "\u2705 ATM Strike selected: $76,800",
-          "level": "success",
-          "data": {
-            "atm_strike": 76800.0,
-            "atm_ce": "C-BTC-76800-040226",
-            "atm_pe": "P-BTC-76800-040226"
-          }
-        },
-        {
-          "timestamp": "2026-02-04T04:14:16.556033Z",
-          "message": "\ud83d\udcca SELL ATM CE: C-BTC-76800-040226 @ $312.53",
+          "timestamp": "2026-02-10T12:30:32.592513Z",
+          "message": "  \ud83d\udd34 SELL C-BTC-68800-120226 x1.0 (#11690212)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:14:16.557594Z",
-          "message": "\ud83d\udcca SELL ATM PE: P-BTC-76800-040226 @ $368.91",
+          "timestamp": "2026-02-10T12:30:32.593016Z",
+          "message": "  \ud83d\udd34 SELL P-BTC-68800-120226 x1.0 (#11690212)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:14:16.558860Z",
-          "message": "\ud83d\udcc8 BUY OTM CE: C-BTC-77200-040226 @ $161.47 (x2)",
+          "timestamp": "2026-02-10T12:30:32.594538Z",
+          "message": "  \ud83d\udfe2 BUY C-BTC-70200-120226 x2.0 (#11690212)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:14:16.560083Z",
-          "message": "\ud83d\udcc8 BUY OTM PE: P-BTC-76400-040226 @ $198.58 (x2)",
+          "timestamp": "2026-02-10T12:30:32.595848Z",
+          "message": "  \ud83d\udfe2 BUY P-BTC-66800-120226 x2.0 (#11690212)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:14:16.560806Z",
-          "message": "\ud83d\udcca SELL Far OTM CE: C-BTC-77600-040226 @ $75.63",
+          "timestamp": "2026-02-10T12:30:32.596844Z",
+          "message": "  \ud83d\udd34 SELL C-BTC-71200-120226 x1.0 (#11690212)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:14:16.562014Z",
-          "message": "\ud83d\udcca SELL Far OTM PE: P-BTC-76000-040226 @ $96.90",
+          "timestamp": "2026-02-10T12:30:32.597517Z",
+          "message": "  \ud83d\udd34 SELL P-BTC-65600-120226 x1.0 (#11690212)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:14:16.563093Z",
-          "message": "\ud83d\udcb0 Net Premium: $133.86 (credit)",
-          "level": "success"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:16.564347Z",
-          "message": "\u26a1 Starting 2 auto-loop rounds (Lot: 1)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:16.565065Z",
-          "message": "\ud83d\udcdd Order type: SSR",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.440090Z",
-          "message": "\u2501\u2501\u2501\u2501\u2501 Round 1/2 \u2501\u2501\u2501\u2501\u2501",
-          "level": "info"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.441643Z",
-          "message": "  \ud83d\udd34 SELL C-BTC-76800-040226 x1.0 (#11549868)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.442976Z",
-          "message": "  \ud83d\udd34 SELL P-BTC-76800-040226 x1.0 (#11549867)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.445133Z",
-          "message": "  \ud83d\udfe2 BUY C-BTC-77200-040226 x2.0 (#11549867)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.446673Z",
-          "message": "  \ud83d\udfe2 BUY P-BTC-76400-040226 x2.0 (#11549867)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.448811Z",
-          "message": "  \ud83d\udd34 SELL C-BTC-77600-040226 x1.0 (#11549868)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.450517Z",
-          "message": "  \ud83d\udd34 SELL P-BTC-76000-040226 x1.0 (#11549868)",
-          "level": "order"
-        },
-        {
-          "timestamp": "2026-02-04T04:14:21.453754Z",
+          "timestamp": "2026-02-10T12:30:32.598638Z",
           "message": "\u23f3 6 orders pending confirmation...",
           "level": "info"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.899845Z",
+          "timestamp": "2026-02-10T12:31:39.360077Z",
           "message": "\u2501\u2501\u2501\u2501\u2501 Round 2/2 \u2501\u2501\u2501\u2501\u2501",
           "level": "info"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.902919Z",
-          "message": "  \ud83d\udd34 SELL C-BTC-76800-040226 x1.0 (#11549877)",
+          "timestamp": "2026-02-10T12:31:39.360482Z",
+          "message": "  \ud83d\udd34 SELL C-BTC-68800-120226 x1.0 (#11690228)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.905131Z",
-          "message": "  \ud83d\udd34 SELL P-BTC-76800-040226 x1.0 (#11549877)",
+          "timestamp": "2026-02-10T12:31:39.360782Z",
+          "message": "  \ud83d\udd34 SELL P-BTC-68800-120226 x1.0 (#11690227)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.907786Z",
-          "message": "  \ud83d\udfe2 BUY C-BTC-77200-040226 x2.0 (#11549877)",
+          "timestamp": "2026-02-10T12:31:39.361070Z",
+          "message": "  \ud83d\udfe2 BUY C-BTC-70200-120226 x2.0 (#11690228)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.910040Z",
-          "message": "  \ud83d\udfe2 BUY P-BTC-76400-040226 x2.0 (#11549877)",
+          "timestamp": "2026-02-10T12:31:39.361348Z",
+          "message": "  \ud83d\udfe2 BUY P-BTC-66800-120226 x2.0 (#11690228)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.911881Z",
-          "message": "  \ud83d\udd34 SELL C-BTC-77600-040226 x1.0 (#11549877)",
+          "timestamp": "2026-02-10T12:31:39.361634Z",
+          "message": "  \ud83d\udd34 SELL C-BTC-71200-120226 x1.0 (#11690228)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.913461Z",
-          "message": "  \ud83d\udd34 SELL P-BTC-76000-040226 x1.0 (#11549877)",
+          "timestamp": "2026-02-10T12:31:39.361965Z",
+          "message": "  \ud83d\udd34 SELL P-BTC-65600-120226 x1.0 (#11690228)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.917672Z",
+          "timestamp": "2026-02-10T12:31:39.362770Z",
           "message": "\u23f3 6 orders pending confirmation...",
           "level": "info"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.922368Z",
+          "timestamp": "2026-02-10T12:31:39.364208Z",
           "message": "\ud83d\udcca Position group recorded",
           "level": "success"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.926295Z",
-          "message": "\ud83d\udcc8 Max loss zones calculated: \u2b07\ufe0f $76,000 | \u2b06\ufe0f $77,600",
+          "timestamp": "2026-02-10T12:31:39.366498Z",
+          "message": "\ud83d\udcc8 Max loss zones calculated: \u2b07\ufe0f $65,600 | \u2b06\ufe0f $71,200",
           "level": "info"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.927033Z",
-          "message": "\ud83d\udcca Max Loss: $0.18 | Max Profit: $0.13",
+          "timestamp": "2026-02-10T12:31:39.369075Z",
+          "message": "\ud83d\udcca Max Loss: $2.38 | Max Profit: $1.43",
           "level": "info"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.960372Z",
-          "message": "\ud83c\udfaf Placed limit exit orders at $3 for sell legs",
+          "timestamp": "2026-02-10T12:31:39.457119Z",
+          "message": "\ud83c\udfaf Placed limit exit orders at $3 for 8 sell legs (2 rounds)",
           "level": "order"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.963014Z",
+          "timestamp": "2026-02-10T12:31:39.458108Z",
           "message": "\ud83d\udfe2 All 2 rounds completed successfully!",
           "level": "success"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.963778Z",
+          "timestamp": "2026-02-10T12:31:39.458548Z",
           "message": "\ud83d\udc41\ufe0f Now monitoring price for max loss zones",
           "level": "info"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.964523Z",
-          "message": "\ud83d\udccd Trigger zones: \u2b07\ufe0f $76,000 | \u2b06\ufe0f $77,600",
+          "timestamp": "2026-02-10T12:31:39.458997Z",
+          "message": "\ud83d\udccd Trigger zones: \u2b07\ufe0f $65,600 | \u2b06\ufe0f $71,200",
           "level": "trigger"
         },
         {
-          "timestamp": "2026-02-04T04:15:30.965883Z",
+          "timestamp": "2026-02-10T12:31:39.459746Z",
           "message": "\ud83d\udd04 Price monitor started (checking every 5 seconds)",
           "level": "info"
+        },
+        {
+          "timestamp": "2026-02-11T06:14:11.266282Z",
+          "message": "\u26a0\ufe0f Price $66,884 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:14:11.288221Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:14:16.357142Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:14:57.166878Z",
+          "message": "\u26a0\ufe0f Price $66,897 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:14:57.168914Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:15:07.387156Z",
+          "message": "\u26a0\ufe0f Price $66,881 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:15:07.388398Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:15:27.723931Z",
+          "message": "\u26a0\ufe0f Price $66,837 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:15:27.726237Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:15:32.851964Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:16:24.195675Z",
+          "message": "\u26a0\ufe0f Price $66,874 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:16:24.198351Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:16:29.274259Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:18:41.480030Z",
+          "message": "\u26a0\ufe0f Price $66,856 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:18:41.487178Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:19:32.162929Z",
+          "message": "\u26a0\ufe0f Price $66,890 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:19:32.164614Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:19:42.293151Z",
+          "message": "\u26a0\ufe0f Price $66,847 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:19:42.302673Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:19:47.337084Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:20:12.637806Z",
+          "message": "\u26a0\ufe0f Price $66,897 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:20:12.639634Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:20:17.661048Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:44:14.709340Z",
+          "message": "\u26a0\ufe0f Price $66,883 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:44:14.711894Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:44:19.802813Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:46:16.411446Z",
+          "message": "\u23f1\ufe0f In lower zone for 2.0 min (8.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:48:17.949542Z",
+          "message": "\u23f1\ufe0f In lower zone for 4.1 min (5.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:50:19.694390Z",
+          "message": "\u23f1\ufe0f In lower zone for 6.1 min (3.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:52:15.967453Z",
+          "message": "\u23f1\ufe0f In lower zone for 8.0 min (2.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:54:28.798529Z",
+          "message": "\u26a0\ufe0f Price $66,717 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T06:54:28.801004Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:54:33.850576Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:56:31.556458Z",
+          "message": "\u23f1\ufe0f In lower zone for 2.0 min (8.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:58:29.558253Z",
+          "message": "\u23f1\ufe0f In lower zone for 4.0 min (6.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T06:58:34.656249Z",
+          "message": "\u23f1\ufe0f In lower zone for 4.1 min (5.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:00:32.672068Z",
+          "message": "\u23f1\ufe0f In lower zone for 6.1 min (3.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:02:29.824427Z",
+          "message": "\u23f1\ufe0f In lower zone for 8.0 min (2.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:04:32.047824Z",
+          "message": "\ud83d\udea8 ADJUSTMENT TRIGGERED! Price $66,824 in lower zone for 10+ minutes",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:04:32.050106Z",
+          "message": "\ud83d\udd04 Starting adjustment #1...",
+          "level": "order"
+        },
+        {
+          "timestamp": "2026-02-11T07:04:32.054805Z",
+          "message": "Looking for new ATM at $66,824",
+          "level": "info"
+        },
+        {
+          "timestamp": "2026-02-11T07:04:33.094606Z",
+          "message": "\u2705 New ATM: 66800.0 (CE@$1079.12 | PE@$1040.38)",
+          "level": "success"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:13.184670Z",
+          "message": "\ud83d\udcca New position group #1 recorded (2 rounds)",
+          "level": "success"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:13.228984Z",
+          "message": "\ud83c\udfaf Placed limit exit orders at $3 for 8 new sell legs",
+          "level": "order"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:13.230379Z",
+          "message": "\ud83d\udfe2 Adjustment #1 completed! New ATM: 66800.0",
+          "level": "success"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:13.231068Z",
+          "message": "\ud83d\udc41\ufe0f Resuming price monitoring...",
+          "level": "info"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:13.231771Z",
+          "message": "\ud83d\udccd New trigger zones: \u2b07\ufe0f $64000.0 | \u2b06\ufe0f $68600.0",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:18.304660Z",
+          "message": "\u26a0\ufe0f Price $66,795 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:18.307335Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:05:23.326715Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:06:54.089108Z",
+          "message": "\u26a0\ufe0f Price $66,898 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:06:54.090789Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:06:59.169820Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:07:39.447287Z",
+          "message": "\u26a0\ufe0f Price $66,885 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:07:39.450530Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:07:44.533578Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:09:41.227114Z",
+          "message": "\u23f1\ufe0f In lower zone for 2.0 min (8.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:12:33.478121Z",
+          "message": "\u26a0\ufe0f Price $66,716 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:12:33.481019Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:12:38.569194Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:14:34.942953Z",
+          "message": "\u23f1\ufe0f In lower zone for 2.0 min (8.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:15:35.514460Z",
+          "message": "\u26a0\ufe0f Price $66,724 entered LOWER max loss zone",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:15:35.515321Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.0 min (10.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:15:40.607351Z",
+          "message": "\u23f1\ufe0f In lower zone for 0.1 min (9.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:17:37.293917Z",
+          "message": "\u23f1\ufe0f In lower zone for 2.0 min (8.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:19:40.253509Z",
+          "message": "\u23f1\ufe0f In lower zone for 4.1 min (5.9 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:21:36.905497Z",
+          "message": "\u23f1\ufe0f In lower zone for 6.0 min (4.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:23:38.265565Z",
+          "message": "\u23f1\ufe0f In lower zone for 8.0 min (2.0 min until trigger)",
+          "level": "warn"
+        },
+        {
+          "timestamp": "2026-02-11T07:25:40.027119Z",
+          "message": "\ud83d\udea8 ADJUSTMENT TRIGGERED! Price $66,829 in lower zone for 10+ minutes",
+          "level": "trigger"
+        },
+        {
+          "timestamp": "2026-02-11T07:25:40.029392Z",
+          "message": "\ud83d\udd04 Starting adjustment #2...",
+          "level": "order"
+        },
+        {
+          "timestamp": "2026-02-11T07:25:40.034051Z",
+          "message": "Looking for new ATM at $66,829",
+          "level": "info"
+        },
+        {
+          "timestamp": "2026-02-11T07:25:41.544720Z",
+          "message": "\u2705 New ATM: 66800.0 (CE@$1063.30 | PE@$1022.65)",
+          "level": "success"
+        },
+        {
+          "timestamp": "2026-02-11T07:26:21.349345Z",
+          "message": "\ud83d\udcca New position group #2 recorded (2 rounds)",
+          "level": "success"
+        },
+        {
+          "timestamp": "2026-02-11T07:26:21.395560Z",
+          "message": "\ud83c\udfaf Placed limit exit orders at $3 for 8 new sell legs",
+          "level": "order"
+        },
+        {
+          "timestamp": "2026-02-11T07:26:21.397711Z",
+          "message": "\ud83d\udfe2 Adjustment #2 completed! New ATM: 66800.0",
+          "level": "success"
+        },
+        {
+          "timestamp": "2026-02-11T07:26:21.402215Z",
+          "message": "\ud83d\udc41\ufe0f Resuming price monitoring...",
+          "level": "info"
+        },
+        {
+          "timestamp": "2026-02-11T07:26:21.404736Z",
+          "message": "\ud83d\udccd New trigger zones: \u2b07\ufe0f $64000.0 | \u2b06\ufe0f $68600.0",
+          "level": "trigger"
         }
       ],
-      "created_at": "2026-02-04T04:14:16.521574",
-      "updated_at": "2026-02-04T15:46:12.020472",
-      "max_loss_value": -0.18413800513000006,
-      "max_profit_value": 0.1338619948700039,
+      "created_at": "2026-02-10T12:30:30.323681",
+      "updated_at": "2026-02-11T07:26:21.404860",
+      "max_loss_value": -2.37859290834,
+      "max_profit_value": 1.4254070916600003,
       "breakevens": [
-        76133.86,
-        76666.14,
-        76933.86,
-        77466.14
+        68001.3,
+        69598.7,
+        70801.3
       ],
-      "net_premium": 0.13386199486999997,
-      "stopped_at": "2026-02-04T15:46:12.019659",
-      "stop_reason": "End time reached (auto-stop)"
+      "net_premium": 1.59740709166,
+      "current_adjustment": 2,
+      "adjustments": [
+        {
+          "adjustment_number": 1,
+          "timestamp": "2026-02-11T12:35:13.229646",
+          "zone": "lower",
+          "trigger_price": 66823.8,
+          "new_atm_strike": 66800.0,
+          "rounds_executed": 2,
+          "status": "SUCCESS"
+        },
+        {
+          "adjustment_number": 2,
+          "timestamp": "2026-02-11T12:56:21.396419",
+          "zone": "lower",
+          "trigger_price": 66829.0,
+          "new_atm_strike": 66800.0,
+          "rounds_executed": 2,
+          "status": "SUCCESS"
+        }
+      ],
+      "last_adjustment": {
+        "adjustment_number": 2,
+        "timestamp": "2026-02-11T12:56:21.396419",
+        "zone": "lower",
+        "trigger_price": 66829.0,
+        "new_atm_strike": 66800.0,
+        "rounds_executed": 2,
+        "status": "SUCCESS"
+      }
     }
   },
-  "active_session_ids": [],
+  "active_session_ids": [
+    "ssr_001_12022026_btc_d626"
+  ],
   "version": 1,
   "created_at": "2026-02-02T08:52:11.839148"
 }

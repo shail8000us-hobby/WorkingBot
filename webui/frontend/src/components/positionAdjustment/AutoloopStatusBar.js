@@ -307,7 +307,7 @@ export default function AutoloopStatusBar() {
           : '1px solid rgba(71, 85, 105, 0.5)',
         borderRadius: 2,
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        zIndex: 1300,
+        zIndex: 9999,
       }}
     >
       {/* Header */}

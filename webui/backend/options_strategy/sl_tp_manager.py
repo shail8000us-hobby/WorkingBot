@@ -36,6 +36,7 @@ class SLTPManager:
                 stop_loss_pct REAL,
                 take_profit_price REAL,
                 take_profit_pct REAL,
+                take_profit_quantity INTEGER,
                 trailing_stop_enabled INTEGER DEFAULT 0,
                 trailing_stop_pct REAL,
                 trailing_stop_highest_price REAL,
@@ -64,6 +65,14 @@ class SLTPManager:
             )
         """)
         
+        # Migration: Add take_profit_quantity column if it doesn't exist
+        cursor.execute("PRAGMA table_info(sl_tp_settings)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'take_profit_quantity' not in columns:
+            logger.info("Adding missing take_profit_quantity column to sl_tp_settings table")
+            cursor.execute("ALTER TABLE sl_tp_settings ADD COLUMN take_profit_quantity INTEGER")
+            logger.info("Migration complete: take_profit_quantity column added")
+        
         conn.commit()
         conn.close()
         logger.info(f"SL/TP database initialized at {self.db_path}")
@@ -81,6 +90,7 @@ class SLTPManager:
         stop_loss_pct: Optional[float] = None,
         take_profit_price: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
+        take_profit_quantity: Optional[int] = None,
         trailing_stop_enabled: bool = False,
         trailing_stop_pct: Optional[float] = None,
         auto_execute: bool = True,
@@ -95,6 +105,7 @@ class SLTPManager:
             stop_loss_pct: Percentage loss to trigger stop-loss (negative number)
             take_profit_price: Absolute price for take-profit
             take_profit_pct: Percentage profit to trigger take-profit (positive number)
+            take_profit_quantity: Number of contracts to exit (None = full position)
             trailing_stop_enabled: Enable trailing stop-loss
             trailing_stop_pct: Trailing stop percentage from highest price
             auto_execute: Automatically execute orders when triggered
@@ -120,6 +131,7 @@ class SLTPManager:
                         stop_loss_pct = ?,
                         take_profit_price = ?,
                         take_profit_pct = ?,
+                        take_profit_quantity = ?,
                         trailing_stop_enabled = ?,
                         trailing_stop_pct = ?,
                         auto_execute = ?,
@@ -129,6 +141,7 @@ class SLTPManager:
                     WHERE symbol = ?
                 """, (
                     stop_loss_price, stop_loss_pct, take_profit_price, take_profit_pct,
+                    take_profit_quantity,
                     1 if trailing_stop_enabled else 0, trailing_stop_pct,
                     1 if auto_execute else 0, 1 if alert_only else 0,
                     now, symbol
@@ -139,11 +152,12 @@ class SLTPManager:
                 cursor.execute("""
                     INSERT INTO sl_tp_settings (
                         symbol, stop_loss_price, stop_loss_pct, take_profit_price, take_profit_pct,
-                        trailing_stop_enabled, trailing_stop_pct, auto_execute, alert_only,
+                        take_profit_quantity, trailing_stop_enabled, trailing_stop_pct, auto_execute, alert_only,
                         created_at, updated_at, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
                 """, (
                     symbol, stop_loss_price, stop_loss_pct, take_profit_price, take_profit_pct,
+                    take_profit_quantity,
                     1 if trailing_stop_enabled else 0, trailing_stop_pct,
                     1 if auto_execute else 0, 1 if alert_only else 0,
                     now, now
@@ -161,6 +175,7 @@ class SLTPManager:
                     "stop_loss_pct": stop_loss_pct,
                     "take_profit_price": take_profit_price,
                     "take_profit_pct": take_profit_pct,
+                    "take_profit_quantity": take_profit_quantity,
                     "trailing_stop_enabled": trailing_stop_enabled,
                     "trailing_stop_pct": trailing_stop_pct,
                     "auto_execute": auto_execute,

@@ -86,6 +86,7 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
   const [expiryOptions, setExpiryOptions] = useState([]);
   const [autoLoopRounds, setAutoLoopRounds] = useState(2);
   const [orderType, setOrderType] = useState('ssr');
+  const [run24Hours, setRun24Hours] = useState(false);
   const [startTime, setStartTime] = useState('15:00');
   const [endTime, setEndTime] = useState('21:00');
   const [strikeConfig, setStrikeConfig] = useState(DEFAULT_STRIKE_CONFIG);
@@ -182,8 +183,8 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
         expiry,
         auto_loop_rounds: autoLoopRounds,
         order_type: orderType,
-        start_time: startTime,
-        end_time: endTime,
+        start_time: run24Hours ? '00:00' : startTime,
+        end_time: run24Hours ? '23:59' : endTime,
         strike_config: strikeConfig,
         circuit_breaker_config: circuitBreaker,
         dwell_time_minutes: monitorConfig.dwell_time_minutes,
@@ -387,34 +388,63 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
         </Grid>
 
         {/* Time Window Row */}
-        <Grid container spacing={1.5} sx={{ mt: 1 }}>
-          <Grid item xs={6} sm={4} md={3}>
-            <Tooltip title="Start time (UTC) for monitoring" arrow>
-              <TextField
-                label="Start Time"
-                type="time"
+        <Box sx={{ mt: 1 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={run24Hours}
+                onChange={(e) => setRun24Hours(e.target.checked)}
                 size="small"
-                fullWidth
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                InputLabelProps={{ shrink: true }}
+                color="primary"
               />
-            </Tooltip>
+            }
+            label={
+              <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                Run 24 Hours (All Day)
+                {run24Hours && (
+                  <Chip 
+                    size="small" 
+                    label="00:00 - 23:59" 
+                    sx={{ height: 16, fontSize: '0.65rem', bgcolor: 'rgba(129, 140, 248, 0.2)' }}
+                  />
+                )}
+              </Typography>
+            }
+            sx={{ mb: 1 }}
+          />
+          <Grid container spacing={1.5}>
+            <Grid item xs={6} sm={4} md={3}>
+              <Tooltip title={run24Hours ? "Disabled when running 24 hours" : "Start time (UTC) for monitoring"} arrow>
+                <TextField
+                  label="Start Time"
+                  type="time"
+                  size="small"
+                  fullWidth
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  disabled={run24Hours}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ opacity: run24Hours ? 0.5 : 1 }}
+                />
+              </Tooltip>
+            </Grid>
+            <Grid item xs={6} sm={4} md={3}>
+              <Tooltip title={run24Hours ? "Disabled when running 24 hours" : "End time (UTC) for monitoring"} arrow>
+                <TextField
+                  label="End Time"
+                  type="time"
+                  size="small"
+                  fullWidth
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  disabled={run24Hours}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ opacity: run24Hours ? 0.5 : 1 }}
+                />
+              </Tooltip>
+            </Grid>
           </Grid>
-          <Grid item xs={6} sm={4} md={3}>
-            <Tooltip title="End time (UTC) for monitoring" arrow>
-              <TextField
-                label="End Time"
-                type="time"
-                size="small"
-                fullWidth
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-              />
-            </Tooltip>
-          </Grid>
-        </Grid>
+        </Box>
 
         {/* Advanced Settings Toggle */}
         <Box sx={{ mt: 1.5, display: 'flex', gap: 1.5 }}>

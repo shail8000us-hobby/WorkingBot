@@ -62,6 +62,22 @@ All strike selections are **relative to ATM premium**, not hardcoded values:
 
 ## 3. Algorithm Rules
 
+### 3.0 Expiry Filtering
+
+**Automatic Expired Contract Filtering:**
+- Contracts that expire at **5:30 PM IST** are automatically filtered from the expiry dropdown
+- When current time reaches 5:30 PM IST on expiry day, that contract is removed from selection
+- This prevents accidental selection of expired or about-to-expire contracts
+- Filter applies to all expiry selection interfaces (SSR Algo, Options Chain, etc.)
+
+**Implementation Details:**
+- Backend checks current time in IST timezone
+- For each expiry date:
+  - If expiry date is in the past → filtered out
+  - If expiry date == today && current time >= 5:30 PM IST → filtered out
+  - Otherwise → shown in dropdown
+- Cache TTL reduced to ensure fresh expiry lists
+
 ### 3.1 Strike Selection Logic
 
 ```
@@ -431,70 +447,41 @@ Add to sidebar sections in `App.js`:
 
 ### 8.2 Dashboard Layout
 
+**Improved Layout with Resizable Panels:**
+
+The dashboard now features a **draggable vertical divider** between the payoff chart and configuration sections, allowing users to resize panels based on their preference.
+
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  🎯 SSR ALGO Dashboard                                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  + Create New Session                                            │    │
-│  │  ┌──────────────┐ ┌───────────────┐ ┌─────────────────────────┐ │    │
-│  │  │ Underlying   │ │ Expiry        │ │ Auto-Loop Rounds: [2]   │ │    │
-│  │  │ [BTC ▼]     │ │ [06-Feb-26 ▼]│ │                         │ │    │
-│  │  └──────────────┘ └───────────────┘ └─────────────────────────┘ │    │
-│  │  ┌──────────────┐ ┌───────────────┐                             │    │
-│  │  │ Order Type   │ │ Time Window   │                             │    │
-│  │  │ [SSR ▼]     │ │ [15:00-21:00] │                             │    │
-│  │  └──────────────┘ └───────────────┘                             │    │
-│  │                                                                  │    │
-│  │  Strike Selection (% of ATM Premium)                            │    │
-│  │  ┌────────────────────────────┐ ┌────────────────────────────┐ │    │
-│  │  │ OTM Buy Range              │ │ Far OTM Sell Range         │ │    │
-│  │  │ Min: [45]%  Max: [49]%    │ │ Min: [20]%  Max: [30]%     │ │    │
-│  │  └────────────────────────────┘ └────────────────────────────┘ │    │
-│  │                                                                  │    │
-│  │  [Preview Strikes] [Start Session]                              │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  Strike Preview (based on current market)                        │    │
-│  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │    │
-│  │  ATM Reference: CE @520 | PE @480                                │    │
-│  │  ┌────────────────────────────────────────────────────────────┐ │    │
-│  │  │ LEG          │ STRIKE │ PREMIUM │ TARGET RANGE │ MATCH?   │ │    │
-│  │  │ ATM CE Sell  │ 76000  │ 520     │ -            │ ✓        │ │    │
-│  │  │ ATM PE Sell  │ 76000  │ 480     │ -            │ ✓        │ │    │
-│  │  │ OTM CE Buy   │ 82000  │ 240     │ 234-255      │ ✓        │ │    │
-│  │  │ OTM PE Buy   │ 70000  │ 225     │ 216-235      │ ✓        │ │    │
-│  │  │ Far OTM CE   │ 85000  │ 120     │ 104-156      │ ✓        │ │    │
-│  │  │ Far OTM PE   │ 67000  │ 110     │ 96-144       │ ✓        │ │    │
-│  │  └────────────────────────────────────────────────────────────┘ │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │  Active Sessions                                                 │    │
-│  │  ┌──────────────────────────────────────────────────────────┐   │    │
-│  │  │  BTC • 06-Feb-26 • MONITORING                             │   │    │
-│  │  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │   │    │
-│  │  │  Current Price: 76,231   │ Max Loss Zones: 73,566 | 77,759│   │    │
-│  │  │  Triggers: 0  │ Positions: 8 legs │ Time Active: 2h 15m   │   │    │
-│  │  │                                                            │   │    │
-│  │  │  [Payoff Graph with Max Loss Markers]                      │   │    │
-│  │  │                                                            │   │    │
-│  │  │  ┌─────────────────────────────────────────────────────┐  │   │    │
-│  │  │  │  Positions Table                                     │  │   │    │
-│  │  │  │  ATM CE 76000 | -1 | SELL | Limit@3 pending         │  │   │    │
-│  │  │  │  ATM PE 76000 | -1 | SELL | Limit@3 pending         │  │   │    │
-│  │  │  │  OTM CE 82000 | +2 | BUY  | Holding                 │  │   │    │
-│  │  │  │  ...                                                 │  │   │    │
-│  │  │  └─────────────────────────────────────────────────────┘  │   │    │
-│  │  │                                                            │   │    │
-│  │  │  [PAUSE]  [STOP]                                          │   │    │
-│  │  └──────────────────────────────────────────────────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  🎯 SSR ALGO Dashboard                                                        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  ┌───────────────────────────────────┬─────────────────────────────────────┐ │
+│  │  Payoff Diagram & Session Info    │║  Configuration & Controls          │ │
+│  │  (Resizable)                      │║  (Resizable)                       │ │
+│  │                                   │║                                    │ │
+│  │  [Interactive Payoff Chart]       │║  + Create New Session              │ │
+│  │  - Max Loss Zones marked          │║  ┌──────────────────────────────┐ │ │
+│  │  - Current price indicator        │║  │ Underlying: [BTC ▼]          │ │ │
+│  │  - Breakeven points               │║  │ Expiry: [Auto-filtered ▼]   │ │ │
+│  │                                   │║  │ (No expired contracts)       │ │ │
+│  │  [Session Controls]               │║  └──────────────────────────────┘ │ │
+│  │  [PAUSE] [STOP]                   │║                                    │ │
+│  │                                   │║  [Preview] [Start Session]         │ │
+│  │                                   │║                                    │ │
+│  │  Drag divider ═══════════════════>│║  Strike Preview Table              │ │
+│  │  to resize panels                 │║  Advanced Settings                 │ │
+│  └───────────────────────────────────┴─────────────────────────────────────┘ │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Draggable Divider Features:**
+- Smooth drag interaction with visual feedback
+- Minimum panel widths enforced (30% each side)
+- Persists user's preferred layout in localStorage
+- Hover effect shows draggable cursor
+- Mobile-responsive (stacks vertically on small screens)
 
 ### 8.3 Status Colors
 
@@ -691,6 +678,14 @@ The following enhancements are planned to bring SSR Algo to institutional-grade 
 ✅ **Partial Execution Handling**
 - Session continues to monitoring even if some rounds fail
 - Warning logged instead of stopping
+
+✅ **CRITICAL FIX: Payoff Calculation Based on Filled Positions Only** (Feb 10, 2026)
+- Fixed bug where positions were marked "filled" immediately after auto-loop
+- Payoff graph now only includes ACTUALLY FILLED positions from exchange
+- Max loss trigger zones calculated only from filled positions
+- Prevents "fake" payoff graphs based on pending orders
+- Frontend displays warning when orders are still pending
+- Ensures accurate trigger zone detection
 
 ---
 

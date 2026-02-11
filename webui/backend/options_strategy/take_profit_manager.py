@@ -408,6 +408,12 @@ class TakeProfitMonitor:
         self._recently_closed = {}  # symbol -> timestamp
         self._close_cooldown = 60  # seconds
         
+        # Position caching (reduce API calls - match max_loss_manager)
+        self._positions_cache = None
+        self._cache_time = 0
+        self._cache_ttl = self.config.get('cache_ttl', 3.0)  # 3-second cache
+        self._cache_lock = threading.Lock()  # Thread-safe cache access
+        
         logger.info("✅ Take Profit Monitor initialized")
     
     def start(self):
@@ -454,10 +460,8 @@ class TakeProfitMonitor:
         print("🎯 DEBUG: _monitor_loop() started!", flush=True)
         logger.info("🎯 Take Profit Monitor loop started")
         
-        # IMPORTANT: Add initial delay to avoid collision with Max Loss monitor
-        print("🎯 DEBUG: Sleeping 5s to avoid monitor collision...", flush=True)
-        time.sleep(5)
-        print("🎯 DEBUG: Starting main loop...", flush=True)
+        # NOTE: Startup stagger is now handled in app.py, not here
+        # This allows the monitor to start checking immediately once initialized
         
         while not self.stop_event.is_set():
             try:
@@ -508,50 +512,66 @@ class TakeProfitMonitor:
                 for s in tp_settings:
                     print(f"🎯 DEBUG: TP Setting: {s['symbol']} | Target: ${s['target_profit']} | Exit Qty: {s['exit_quantity']}", flush=True)
                 
-                # Get current positions from API
+                # Get current positions from API (with caching to reduce API calls)
+                positions = None
                 try:
-                    print(f"🎯 DEBUG: About to call api_client.get_positions()...", flush=True)
-                    
-                    # Handle async API client
-                    try:
-                        print(f"🎯 DEBUG: Getting event loop...", flush=True)
-                        loop = asyncio.get_running_loop()
-                        should_close_loop = False
-                        print(f"🎯 DEBUG: Using existing loop", flush=True)
-                    except RuntimeError as e:
-                        # No running loop, create one
-                        print(f"🎯 DEBUG: No running loop, creating new one... ({e})", flush=True)
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        should_close_loop = True
-                        print(f"🎯 DEBUG: New loop created", flush=True)
-                    
-                    try:
-                        print(f"🎯 DEBUG: Calling loop.run_until_complete()...", flush=True)
-                        positions_data = loop.run_until_complete(
-                            self.api_client.get_all_positions_with_options()
-                        )
-                        print(f"🎯 DEBUG: API returned {type(positions_data)}", flush=True)
-                        
-                        # Extract positions from the response
-                        if isinstance(positions_data, dict):
-                            positions = positions_data.get('options', [])
-                            print(f"🎯 DEBUG: Dict response, extracted {len(positions)} options positions", flush=True)
-                        elif isinstance(positions_data, list):
-                            positions = positions_data
-                            print(f"🎯 DEBUG: List response with {len(positions)} positions", flush=True)
+                    # Check cache first (thread-safe)
+                    now = time.time()
+                    with self._cache_lock:
+                        if self._positions_cache and (now - self._cache_time) < self._cache_ttl:
+                            positions_data = self._positions_cache
+                            print(f"🎯 DEBUG: Using cached positions ({now - self._cache_time:.1f}s old)", flush=True)
                         else:
-                            logger.warning(f"Invalid positions response type: {type(positions_data)}")
-                            print(f"🎯 DEBUG: Invalid positions response type!", flush=True)
-                            return
-                    except Exception as e2:
-                        print(f"🎯 DEBUG: Exception in run_until_complete: {e2}", flush=True)
-                        raise
-                    finally:
-                        # DON'T close the loop - let it be reused or garbage collected
-                        # Closing it causes issues with other monitors
-                        pass
+                            positions_data = None
+                    
+                    # Fetch from API if cache miss or expired
+                    if positions_data is None:
+                        print(f"🎯 DEBUG: Cache miss/expired, fetching from API...", flush=True)
                         
+                        # Proper async event loop management (match max_loss_manager)
+                        try:
+                            loop = asyncio.get_running_loop()
+                            should_close_loop = False
+                            print(f"🎯 DEBUG: Using existing event loop", flush=True)
+                        except RuntimeError:
+                            # No running loop, create one
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            should_close_loop = True
+                            print(f"🎯 DEBUG: Created new event loop", flush=True)
+                        
+                        try:
+                            print(f"🎯 DEBUG: Calling loop.run_until_complete()...", flush=True)
+                            positions_data = loop.run_until_complete(
+                                self.api_client.get_all_positions_with_options()
+                            )
+                            print(f"🎯 DEBUG: API returned {type(positions_data)}", flush=True)
+                            
+                            # Update cache (thread-safe)
+                            with self._cache_lock:
+                                self._positions_cache = positions_data
+                                self._cache_time = now
+                                print(f"🎯 DEBUG: Updated cache at {now}", flush=True)
+                        finally:
+                            # Only close loop if we created it
+                            if should_close_loop:
+                                loop.close()
+                                print(f"🎯 DEBUG: Closed event loop", flush=True)
+                    
+                    # Extract positions from response (handle both dict and list formats)
+                    # Match max_loss_manager implementation for consistency
+                    if isinstance(positions_data, dict):
+                        futures_list = positions_data.get('futures', [])
+                        options_list = positions_data.get('options', [])
+                        positions = futures_list + options_list
+                        print(f"🎯 DEBUG: Dict response, extracted {len(positions)} positions ({len(futures_list)} futures, {len(options_list)} options)", flush=True)
+                    elif isinstance(positions_data, list):
+                        positions = positions_data
+                        print(f"🎯 DEBUG: List response with {len(positions)} positions", flush=True)
+                    else:
+                        logger.warning(f"Invalid positions response type: {type(positions_data)}")
+                        print(f"🎯 DEBUG: Invalid positions response type!", flush=True)
+                        return
                     if not positions:
                         print(f"🎯 DEBUG: No positions found", flush=True)
                         return
@@ -594,8 +614,8 @@ class TakeProfitMonitor:
                     if target_reached:
                         actual_pnl = pnl
                         # Compute progress towards target as a percentage. For profit targets (>0) and loss limits (<0) this
-# calculation uses the target sign so that improvement yields a positive percentage (e.g., -25/-50 = 50%).
-pnl_percentage = (actual_pnl / target_profit) * 100 if target_profit != 0 else 0
+                        # calculation uses the target sign so that improvement yields a positive percentage (e.g., -25/-50 = 50%).
+                        pnl_percentage = (actual_pnl / target_profit) * 100 if target_profit != 0 else 0
                         target_type = "PROFIT" if target_profit > 0 else "LOSS LIMIT"
                         print(f"🎯 DEBUG: {symbol} {target_type} REACHED! Actual: ${actual_pnl:.4f}, Target: ${target_profit}, Progress: {pnl_percentage:.1f}%", flush=True)
                         logger.info(f"📊 {symbol}: P&L ${actual_pnl:.4f} / ${target_profit:.2f} ({pnl_percentage:.1f}%) - {target_type}")
@@ -725,7 +745,7 @@ pnl_percentage = (actual_pnl / target_profit) * 100 if target_profit != 0 else 0
                 raise Exception("Rate limit reached - try again")
             
             print(f"🎯 DEBUG: Getting positions for order placement...", flush=True)
-            # Get position details using async API
+            # Get position details using async API - proper event loop management
             try:
                 loop = asyncio.get_running_loop()
                 should_close_loop = False
@@ -734,19 +754,22 @@ pnl_percentage = (actual_pnl / target_profit) * 100 if target_profit != 0 else 0
                 asyncio.set_event_loop(loop)
                 should_close_loop = True
             
-            positions_data = loop.run_until_complete(
-                self.api_client.get_all_positions_with_options()
-            )
-            
-            if isinstance(positions_data, dict):
-                positions = positions_data.get('options', [])
-            elif isinstance(positions_data, list):
-                positions = positions_data
-            else:
-                raise Exception(f"Invalid positions response type: {type(positions_data)}")
+            try:
+                positions_data = loop.run_until_complete(
+                    self.api_client.get_all_positions_with_options()
+                )
                 
-            if not positions:
-                raise Exception("No positions found from API")
+                # Handle both dict and list responses (match max_loss_manager)
+                if isinstance(positions_data, dict):
+                    futures_list = positions_data.get('futures', [])
+                    options_list = positions_data.get('options', [])
+                    positions = futures_list + options_list
+                elif isinstance(positions_data, list):
+                    positions = positions_data
+                else:
+                    raise Exception(f"Invalid positions response type: {type(positions_data)}")
+                if not positions:
+                    raise Exception("No positions found from API")
             
             print(f"🎯 DEBUG: Got {len(positions)} positions", flush=True)
             pos = next((p for p in positions if p.get('product_symbol') == symbol), None)
@@ -809,14 +832,15 @@ pnl_percentage = (actual_pnl / target_profit) * 100 if target_profit != 0 else 0
             else:
                 print(f"🎯 DEBUG: ORDER_EXECUTION_AVAILABLE={ORDER_EXECUTION_AVAILABLE}, place_smart_order={place_smart_order}", flush=True)
                 raise Exception("Order execution module not available")
+            finally:
+                # Only close loop if we created it
+                if should_close_loop:
+                    loop.close()
 
                 
         except Exception as e:
             logger.error(f"Error closing position {symbol}: {e}", exc_info=True)
             raise
-        finally:
-            # DON'T close the loop - let it be reused or garbage collected
-            pass
 
 
 

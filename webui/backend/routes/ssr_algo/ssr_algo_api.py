@@ -43,6 +43,48 @@ def check_guardian_signal():
         return 'GO'  # Default to GO if module not available
 
 
+def _is_within_time_window_for_start(session: dict) -> bool:
+    """Helper: check whether current time is within session's start/end window.
+
+    This matches the monitor's _is_within_time_window logic to prevent starting
+    sessions outside configured trading hours.
+    """
+    start_time_str = session.get('start_time')
+    end_time_str = session.get('end_time')
+
+    if not start_time_str or not end_time_str:
+        return True
+
+    now = datetime.now()
+    try:
+        start_parts = start_time_str.split(':')
+        end_parts = end_time_str.split(':')
+
+        start_time = now.replace(
+            hour=int(start_parts[0]),
+            minute=int(start_parts[1]),
+            second=0,
+            microsecond=0
+        )
+        end_time = now.replace(
+            hour=int(end_parts[0]),
+            minute=int(end_parts[1]),
+            second=0,
+            microsecond=0
+        )
+
+        # Handle overnight windows (e.g., 22:00 to 06:00)
+        if end_time <= start_time:
+            if now >= start_time or now <= end_time:
+                return True
+            return False
+
+        return start_time <= now <= end_time
+    except Exception as e:
+        log.error(f"Error parsing time window in start check: {e}")
+        return True
+
+
 # =============================================================================
 # Session CRUD Endpoints
 # =============================================================================
@@ -327,6 +369,13 @@ def start_session(session_id: str):
                 'success': False,
                 'error': f"Cannot start session in {session.get('status')} state"
             }), 400
+
+        # Prevent starting a session outside its configured trading window
+        if not _is_within_time_window_for_start(session):
+            return jsonify({
+                'success': False,
+                'error': 'Cannot start session outside configured time window (start_time/end_time).'
+            }), 400
         
         # Update status
         storage.update_session(session_id, {
@@ -481,6 +530,8 @@ def start_session(session_id: str):
                     
                     # Create position group with entry_price for payoff calculation
                     # Position sizes are multiplied by the number of completed rounds
+                    # CRITICAL: Do NOT mark as filled=True here - positions become "filled"
+                    # only when individual orders fill on exchange via update_order_filled()
                     position_group = {
                         'trigger_id': 0,
                         'atm_strike': strikes['atm']['strike'],
@@ -490,40 +541,40 @@ def start_session(session_id: str):
                         'atm_ce': {
                             'symbol': strikes['atm']['ce_symbol'],
                             'size': -1 * completed_rounds,  # Multiply by rounds
-                            'filled': True,
+                            'filled': False,  # Will be set to True when order fills
                             'entry_price': strikes['atm']['ce_premium']
                         },
                         'atm_pe': {
                             'symbol': strikes['atm']['pe_symbol'],
                             'size': -1 * completed_rounds,  # Multiply by rounds
-                            'filled': True,
+                            'filled': False,
                             'entry_price': strikes['atm']['pe_premium']
                         },
                         'otm_ce_buy': {
                             'symbol': strikes['otm_ce_buy']['symbol'],
                             'size': 2 * completed_rounds,  # Multiply by rounds
-                            'filled': True,
+                            'filled': False,
                             'selected_premium': strikes['otm_ce_buy']['premium'],
                             'entry_price': strikes['otm_ce_buy']['premium']
                         },
                         'otm_pe_buy': {
                             'symbol': strikes['otm_pe_buy']['symbol'],
                             'size': 2 * completed_rounds,  # Multiply by rounds
-                            'filled': True,
+                            'filled': False,
                             'selected_premium': strikes['otm_pe_buy']['premium'],
                             'entry_price': strikes['otm_pe_buy']['premium']
                         },
                         'far_otm_ce': {
                             'symbol': strikes['far_otm_ce']['symbol'],
                             'size': -1 * completed_rounds,  # Multiply by rounds
-                            'filled': True,
+                            'filled': False,
                             'selected_premium': strikes['far_otm_ce']['premium'],
                             'entry_price': strikes['far_otm_ce']['premium']
                         },
                         'far_otm_pe': {
                             'symbol': strikes['far_otm_pe']['symbol'],
                             'size': -1 * completed_rounds,  # Multiply by rounds
-                            'filled': True,
+                            'filled': False,
                             'selected_premium': strikes['far_otm_pe']['premium'],
                             'entry_price': strikes['far_otm_pe']['premium']
                         },
@@ -909,6 +960,7 @@ def get_session_payoff(session_id: str):
     Get payoff data for a session.
     
     Returns payoff curve, max loss points, breakevens, etc.
+    Also checks and updates pending orders before calculating payoff.
     """
     try:
         storage = get_storage()
@@ -919,6 +971,15 @@ def get_session_payoff(session_id: str):
                 'success': False,
                 'error': f'Session not found: {session_id}'
             }), 404
+        
+        # CRITICAL: Check and update pending orders before calculating payoff
+        # This ensures filled_orders list is up-to-date
+        from .ssr_algo_executor import get_executor
+        executor = get_executor()
+        fill_check = executor.check_and_update_pending_orders(session_id, storage)
+        
+        # Reload session after fill updates
+        session = storage.get_session(session_id)
         
         # Calculate payoff
         calc = get_payoff_calculator()
@@ -936,11 +997,15 @@ def get_session_payoff(session_id: str):
             'greeks': payoff_data.get('greeks', {}),
             'spot_price': payoff_data.get('spot_price', 0),
             'position_count': payoff_data.get('position_count', 0),
-            # New fields for adjustment triggers
+            # Adjustment triggers and far OTM strikes
             'adjustment_triggers': payoff_data.get('adjustment_triggers', {}),
             'far_otm_ce_strike': payoff_data.get('far_otm_ce_strike'),
             'far_otm_pe_strike': payoff_data.get('far_otm_pe_strike'),
-            'atm_strike': payoff_data.get('atm_strike')
+            'atm_strike': payoff_data.get('atm_strike'),
+            # Order fill status
+            'pending_orders_count': payoff_data.get('pending_orders_count', 0),
+            'warning': payoff_data.get('warning'),
+            'fill_check': fill_check.get('filled', 0) if fill_check.get('success') else 0
         })
         
     except Exception as e:

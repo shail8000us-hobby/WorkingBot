@@ -72,6 +72,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
   const [takeProfitType, setTakeProfitType] = useState('percentage');
   const [takeProfitPrice, setTakeProfitPrice] = useState('');
   const [takeProfitPct, setTakeProfitPct] = useState('');
+  const [takeProfitQuantity, setTakeProfitQuantity] = useState('');
   const [takeProfitEnabled, setTakeProfitEnabled] = useState(false);
 
   // Trailing Stop settings
@@ -135,6 +136,9 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           setTakeProfitPrice('');
           setTakeProfitPct('');
         }
+        
+        // Take-Profit Quantity
+        setTakeProfitQuantity(s.take_profit_quantity ? s.take_profit_quantity.toString() : '');
 
         // Trailing Stop
         setTrailingStopEnabled(!!s.trailing_stop_enabled);
@@ -164,6 +168,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
     setTakeProfitType('percentage');
     setTakeProfitPrice('');
     setTakeProfitPct('');
+    setTakeProfitQuantity('');
     setTrailingStopEnabled(false);
     setTrailingStopPct('');
     setAutoExecute(true);
@@ -200,6 +205,11 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           payload.take_profit_price = parseFloat(takeProfitPrice);
         } else if (takeProfitType === 'percentage' && takeProfitPct) {
           payload.take_profit_pct = parseFloat(takeProfitPct);
+        }
+        
+        // Add quantity if specified
+        if (takeProfitQuantity) {
+          payload.take_profit_quantity = parseInt(takeProfitQuantity);
         }
       }
 
@@ -536,6 +546,23 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                       Will close at <strong>${tpPreview.price}</strong> ({tpPreview.pct} from entry)
                     </Alert>
                   )}
+
+                  <Divider sx={{ my: 2 }} />
+
+                  {/* Quantity to Exit */}
+                  <TextField
+                    fullWidth
+                    label="Quantity to Exit"
+                    type="number"
+                    value={takeProfitQuantity}
+                    onChange={(e) => setTakeProfitQuantity(e.target.value)}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">lots</InputAdornment>,
+                    }}
+                    helperText={`Number of contracts to close (max: ${Math.abs(position.size)} lots, leave empty for full position)`}
+                    placeholder={`${Math.abs(position.size)}`}
+                    error={takeProfitQuantity && parseInt(takeProfitQuantity) > Math.abs(position.size)}
+                  />
                 </Box>
               )}
             </TabPanel>
@@ -614,7 +641,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                   {tpPreview && (
                     <Chip
                       icon={<TrendingUp />}
-                      label={`TP: $${tpPreview.price}`}
+                      label={`TP: $${tpPreview.price}${takeProfitQuantity ? ` (${takeProfitQuantity}L)` : ''}`}
                       color="success"
                       variant="outlined"
                       size="small"

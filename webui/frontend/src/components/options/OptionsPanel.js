@@ -124,7 +124,8 @@ const OptionsActivityPanel = lazy(() => import('./OptionsActivityPanel'));
 // Prevents unnecessary re-renders when position data hasn't changed
 // ============================================================================
 
-// Sortable Row Component - Memoized for performance
+// Sortable Row Component - Simple memo without custom comparison
+// Removed overly strict comparison that was blocking TP/SL settings updates
 const SortableRow = React.memo(({ pos, children }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: pos.product_symbol,
@@ -148,19 +149,6 @@ const SortableRow = React.memo(({ pos, children }) => {
     >
       {children(attributes, listeners)}
     </TableRow>
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison: Only re-render if critical data changed
-  const prev = prevProps.pos;
-  const next = nextProps.pos;
-  
-  return (
-    prev.product_symbol === next.product_symbol &&
-    prev.best_bid === next.best_bid &&
-    prev.best_ask === next.best_ask &&
-    prev.unrealized_pnl === next.unrealized_pnl &&
-    prev.size === next.size &&
-    prev.mark_price === next.mark_price
   );
 });
 
@@ -1686,11 +1674,13 @@ const OptionsPanel = () => {
     const interval = setInterval(async () => {
       // Use unified endpoint for faster polling
       await fetchDashboard();
-      // Refresh auxiliary data
+      // Refresh auxiliary data (SL/TP settings, Max Loss, Take Profit)
+      loadSLTPSettings();
       loadMaxLossSettings();
+      loadTakeProfitSettings();
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchDashboard, loadMaxLossSettings, pollInterval]);
+  }, [fetchDashboard, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, pollInterval]);
 
   // ============================================================================
   // PHASE 2 OPTIMIZATION: Persistent WebSocket Connection

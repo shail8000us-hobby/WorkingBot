@@ -113,7 +113,14 @@ export const KeyboardProvider = ({ children, callbacks = {} }) => {
       // Number keys 1-9 - Switch tabs
       if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[1-9]$/.test(e.key)) {
         const target = e.target;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        // More comprehensive check to prevent shortcuts when typing in inputs
+        if (
+          target.tagName === 'INPUT' || 
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('[role="dialog"]') ||
+          target.closest('.MuiDialog-root')
+        ) {
           return;
         }
         const tabIndex = parseInt(e.key) - 1;

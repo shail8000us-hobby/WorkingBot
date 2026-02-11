@@ -336,8 +336,8 @@ class SSRPayoffCalculator:
         """
         Calculate complete payoff data for an SSR Algo session.
         
-        Uses actual fill prices from exchange when available, falls back to
-        selected premiums when orders are still pending.
+        ONLY USES FILLED POSITIONS! Pending orders are excluded to prevent
+        fake payoff graphs and incorrect max loss trigger zones.
         
         Args:
             session: SSR Algo session data
@@ -350,100 +350,137 @@ class SSRPayoffCalculator:
                 'net_premium': float,
                 'greeks': Dict,
                 'spot_price': float,
-                'adjustment_triggers': Dict  # NEW: actual adjustment trigger points
+                'adjustment_triggers': Dict,
+                'pending_orders_count': int,  # Number of orders not yet filled
+                'warning': str  # Warning if payoff is based on incomplete data
             }
         """
-        # Build a map of actual fill prices from filled_orders
+        # Build a map of filled order symbols from filled_orders
+        # CRITICAL: Only these symbols will be included in payoff!
+        filled_symbols = set()
         fill_prices = {}
         for order in session.get('filled_orders', []):
             symbol = order.get('symbol', '')
             if symbol and order.get('fill_price'):
+                filled_symbols.add(symbol)
                 fill_prices[symbol] = order['fill_price']
         
-        # Build positions list from session
+        # Build positions list from session - ONLY FILLED POSITIONS
         positions = []
         
-        # Track far OTM strikes for adjustment triggers
+        # Track OTM buy strikes for adjustment triggers (protective wings)
+        # These are where max loss occurs in iron butterfly structure
+        otm_ce_buy_strike = None
+        otm_pe_buy_strike = None
         far_otm_ce_strike = None
         far_otm_pe_strike = None
         
+        # Get spot/ATM reference from first position group (even if not filled yet)
+        first_group = session.get('positions', [{}])[0]
+        atm_strike = first_group.get('atm_strike', 0)
+        spot_price = atm_strike or 0
+        
         for pos_group in session.get('positions', []):
-            # ATM CE Sell
+            # ATM CE Sell - ONLY IF FILLED
             if pos_group.get('atm_ce'):
                 atm_ce = pos_group['atm_ce']
                 symbol = atm_ce.get('symbol')
-                # Prefer actual fill price over estimated
-                entry_price = fill_prices.get(symbol) or pos_group.get('atm_ce_premium', 0) or atm_ce.get('entry_price', 0)
-                positions.append({
-                    'symbol': symbol,
-                    'size': atm_ce.get('size', -1),
-                    'entry_price': entry_price
-                })
+                # Skip if not filled
+                if symbol not in filled_symbols:
+                    continue
+                entry_price = fill_prices.get(symbol, 0)
+                if entry_price > 0:  # Only include if we have actual fill price
+                    positions.append({
+                        'symbol': symbol,
+                        'size': atm_ce.get('size', -1),
+                        'entry_price': entry_price
+                    })
             
-            # ATM PE Sell
+            # ATM PE Sell - ONLY IF FILLED
             if pos_group.get('atm_pe'):
                 atm_pe = pos_group['atm_pe']
                 symbol = atm_pe.get('symbol')
-                entry_price = fill_prices.get(symbol) or pos_group.get('atm_pe_premium', 0) or atm_pe.get('entry_price', 0)
-                positions.append({
-                    'symbol': symbol,
-                    'size': atm_pe.get('size', -1),
-                    'entry_price': entry_price
-                })
+                if symbol not in filled_symbols:
+                    continue
+                entry_price = fill_prices.get(symbol, 0)
+                if entry_price > 0:
+                    positions.append({
+                        'symbol': symbol,
+                        'size': atm_pe.get('size', -1),
+                        'entry_price': entry_price
+                    })
             
-            # OTM CE Buy
+            # OTM CE Buy - TRACK STRIKE FOR TRIGGERS (even if not filled)
             if pos_group.get('otm_ce_buy'):
                 otm_ce = pos_group['otm_ce_buy']
                 symbol = otm_ce.get('symbol')
-                entry_price = fill_prices.get(symbol) or otm_ce.get('selected_premium', 0) or otm_ce.get('entry_price', 0)
-                positions.append({
-                    'symbol': symbol,
-                    'size': otm_ce.get('size', 2),
-                    'entry_price': entry_price
-                })
+                if symbol and otm_ce_buy_strike is None:
+                    parts = symbol.split('-')
+                    if len(parts) >= 3:
+                        otm_ce_buy_strike = float(parts[2])
+                if symbol not in filled_symbols:
+                    continue
+                entry_price = fill_prices.get(symbol, 0)
+                if entry_price > 0:
+                    positions.append({
+                        'symbol': symbol,
+                        'size': otm_ce.get('size', 2),
+                        'entry_price': entry_price
+                    })
             
-            # OTM PE Buy
+            # OTM PE Buy - TRACK STRIKE FOR TRIGGERS (even if not filled)
             if pos_group.get('otm_pe_buy'):
                 otm_pe = pos_group['otm_pe_buy']
                 symbol = otm_pe.get('symbol')
-                entry_price = fill_prices.get(symbol) or otm_pe.get('selected_premium', 0) or otm_pe.get('entry_price', 0)
-                positions.append({
-                    'symbol': symbol,
-                    'size': otm_pe.get('size', 2),
-                    'entry_price': entry_price
-                })
+                if symbol and otm_pe_buy_strike is None:
+                    parts = symbol.split('-')
+                    if len(parts) >= 3:
+                        otm_pe_buy_strike = float(parts[2])
+                if symbol not in filled_symbols:
+                    continue
+                entry_price = fill_prices.get(symbol, 0)
+                if entry_price > 0:
+                    positions.append({
+                        'symbol': symbol,
+                        'size': otm_pe.get('size', 2),
+                        'entry_price': entry_price
+                    })
             
-            # Far OTM CE Sell - TRACK THE STRIKE
+            # Far OTM CE Sell - TRACK STRIKE FOR REFERENCE (even if not filled)
             if pos_group.get('far_otm_ce'):
                 far_ce = pos_group['far_otm_ce']
                 symbol = far_ce.get('symbol', '')
-                entry_price = fill_prices.get(symbol) or far_ce.get('selected_premium', 0) or far_ce.get('entry_price', 0)
-                positions.append({
-                    'symbol': symbol,
-                    'size': far_ce.get('size', -1),
-                    'entry_price': entry_price
-                })
-                # Extract strike from symbol (e.g., "C-BTC-80600-030226" -> 80600)
-                if symbol:
+                if symbol and far_otm_ce_strike is None:
                     parts = symbol.split('-')
                     if len(parts) >= 3:
                         far_otm_ce_strike = float(parts[2])
+                if symbol not in filled_symbols:
+                    continue
+                entry_price = fill_prices.get(symbol, 0)
+                if entry_price > 0:
+                    positions.append({
+                        'symbol': symbol,
+                        'size': far_ce.get('size', -1),
+                        'entry_price': entry_price
+                    })
             
-            # Far OTM PE Sell - TRACK THE STRIKE
+            # Far OTM PE Sell - TRACK STRIKE FOR REFERENCE (even if not filled)
             if pos_group.get('far_otm_pe'):
                 far_pe = pos_group['far_otm_pe']
                 symbol = far_pe.get('symbol', '')
-                entry_price = fill_prices.get(symbol) or far_pe.get('selected_premium', 0) or far_pe.get('entry_price', 0)
-                positions.append({
-                    'symbol': symbol,
-                    'size': far_pe.get('size', -1),
-                    'entry_price': entry_price
-                })
-                # Extract strike from symbol
-                if symbol:
+                if symbol and far_otm_pe_strike is None:
                     parts = symbol.split('-')
                     if len(parts) >= 3:
                         far_otm_pe_strike = float(parts[2])
+                if symbol not in filled_symbols:
+                    continue
+                entry_price = fill_prices.get(symbol, 0)
+                if entry_price > 0:
+                    positions.append({
+                        'symbol': symbol,
+                        'size': far_pe.get('size', -1),
+                        'entry_price': entry_price
+                    })
         
         # Include closed positions as phantom positions
         for closed in session.get('closed_positions', []):
@@ -452,20 +489,35 @@ class SSRPayoffCalculator:
             pass
         
         if not positions:
+            pending_count = len(session.get('pending_orders', []))
+            warning = f"⚠️ No filled positions yet ({pending_count} orders pending)" if pending_count > 0 else "⚠️ No positions"
+            price_tolerance = session.get('price_tolerance', 100)
+            adjustment_triggers = {
+                'upper_trigger': otm_ce_buy_strike,
+                'lower_trigger': otm_pe_buy_strike,
+                'tolerance': price_tolerance,
+                'dwell_time_minutes': session.get('dwell_time_minutes', 10),
+                'description': f'Triggers at OTM buy strikes (protective wings) ±{price_tolerance}, dwell {session.get("dwell_time_minutes", 10)} min'
+            }
             return {
                 'payoff_curve': [],
                 'max_loss_points': {},
                 'breakevens': [],
                 'net_premium': 0,
                 'greeks': {},
-                'spot_price': 0,
-                'adjustment_triggers': {}
+                'spot_price': spot_price,
+                'adjustment_triggers': adjustment_triggers,
+                'otm_ce_buy_strike': otm_ce_buy_strike,
+                'otm_pe_buy_strike': otm_pe_buy_strike,
+                'far_otm_ce_strike': far_otm_ce_strike,
+                'far_otm_pe_strike': far_otm_pe_strike,
+                'atm_strike': atm_strike,
+                'pending_orders_count': pending_count,
+                'warning': warning
             }
         
         # Get spot price from first position group
-        first_group = session.get('positions', [{}])[0]
-        atm_strike = first_group.get('atm_strike', 0)
-        spot_price = atm_strike or 75000  # Default fallback
+        spot_price = spot_price or 75000  # Default fallback
         
         # Generate price range
         price_range = self.generate_price_range(spot_price, range_percent=25, points=200)
@@ -486,21 +538,26 @@ class SSRPayoffCalculator:
         # Find max loss points from payoff curve
         max_loss_points = self.find_max_loss_points(payoff_curve)
         
-        # IMPORTANT: Use far OTM strikes as adjustment triggers (not payoff curve edges)
-        # These are where price hitting triggers adjustment per architecture
+        # CRITICAL FIX PER ARCHITECTURE:
+        # Use OTM BUY strikes as adjustment triggers (protective wings)
+        # These are where max loss occurs in iron butterfly structure
+        # NOT the far OTM sell strikes which are further out
         price_tolerance = session.get('price_tolerance', 100)
+        
         adjustment_triggers = {
-            'upper_trigger': far_otm_ce_strike,  # When price goes up to far OTM CE
-            'lower_trigger': far_otm_pe_strike,  # When price goes down to far OTM PE
+            'upper_trigger': otm_ce_buy_strike,  # When price reaches upper protective wing
+            'lower_trigger': otm_pe_buy_strike,  # When price reaches lower protective wing
             'tolerance': price_tolerance,
-            'description': f'Adjustment triggers at ±{price_tolerance} of far OTM strikes'
+            'dwell_time_minutes': session.get('dwell_time_minutes', 10),
+            'description': f'Triggers at OTM buy strikes (protective wings) ±{price_tolerance}, dwell {session.get("dwell_time_minutes", 10)} min'
         }
         
-        # Override max_loss_points with actual wing strikes for monitoring
-        if far_otm_ce_strike:
-            max_loss_points['max_loss_upper'] = far_otm_ce_strike
-        if far_otm_pe_strike:
-            max_loss_points['max_loss_lower'] = far_otm_pe_strike
+        # Override max_loss_points with OTM buy strikes for monitoring
+        # These are the actual trigger points per architecture
+        if otm_ce_buy_strike:
+            max_loss_points['max_loss_upper'] = otm_ce_buy_strike
+        if otm_pe_buy_strike:
+            max_loss_points['max_loss_lower'] = otm_pe_buy_strike
         
         # Find breakevens
         breakevens = self.find_breakevens(payoff_curve)
@@ -511,6 +568,17 @@ class SSRPayoffCalculator:
         # Calculate Greeks (if available)
         greeks = self.calculate_aggregated_greeks(positions)
         
+        # Count pending orders
+        pending_count = len(session.get('pending_orders', []))
+        total_expected_positions = len(session.get('positions', [])) * 6  # 6 legs per position group
+        
+        # Warning if payoff based on incomplete data
+        warning = None
+        if pending_count > 0:
+            warning = f"⚠️ {pending_count} orders still pending - payoff based only on {len(positions)} filled positions"
+        elif len(positions) == 0:
+            warning = "⚠️ No filled positions yet - payoff calculation unavailable"
+        
         return {
             'payoff_curve': payoff_curve,
             'max_loss_points': max_loss_points,
@@ -520,9 +588,13 @@ class SSRPayoffCalculator:
             'spot_price': spot_price,
             'position_count': len(positions),
             'adjustment_triggers': adjustment_triggers,
-            'far_otm_ce_strike': far_otm_ce_strike,
-            'far_otm_pe_strike': far_otm_pe_strike,
-            'atm_strike': atm_strike
+            'otm_ce_buy_strike': otm_ce_buy_strike,  # Upper protective wing
+            'otm_pe_buy_strike': otm_pe_buy_strike,  # Lower protective wing
+            'far_otm_ce_strike': far_otm_ce_strike,  # Far OTM sell (for reference)
+            'far_otm_pe_strike': far_otm_pe_strike,  # Far OTM sell (for reference)
+            'atm_strike': atm_strike,
+            'pending_orders_count': pending_count,
+            'warning': warning
         }
     
     def is_price_in_max_loss_zone(self, 

@@ -347,15 +347,28 @@ class SSRPriceMonitor:
     
     def _get_current_price(self) -> Optional[float]:
         """
-        Fetch current BTC price from backend.
+        Fetch current BTC/ETH price from backend.
+        
+        Priority:
+        1. /api/market/spot-price (uses WebSocket → cache → REST)
+        2. /api/options/chain (fallback for spot_price)
         
         Returns:
-            Current BTC price or None on error
+            Current price or None on error
         """
+        # Determine underlying from session
+        underlying = 'BTC'
         try:
-            # Try to get price from backend's real-time data
+            session = self.get_session(self.session_id)
+            if session:
+                underlying = session.get('underlying', 'BTC')
+        except Exception:
+            pass
+        
+        try:
+            # Primary: market spot-price endpoint (WebSocket → cache → REST)
             response = requests.get(
-                f"{MAIN_BACKEND_URL}/api/bteh_data",
+                f"{MAIN_BACKEND_URL}/api/market/spot-price?symbol={underlying}",
                 timeout=5
             )
             
@@ -369,7 +382,7 @@ class SSRPriceMonitor:
                 if 'index_price' in data:
                     return float(data['index_price'])
         except Exception as e:
-            log.debug(f"Failed to get price from bteh_data: {e}")
+            log.debug(f"Failed to get price from market/spot-price: {e}")
         
         try:
             # Fallback: try options chain endpoint for spot price
@@ -500,12 +513,18 @@ class SSRPriceMonitor:
                 guardian_signal = check_guardian_signal()
                 if guardian_signal != 'GO':
                     log.warning(f"Guardian signal is {guardian_signal}, pausing SSR Algo monitoring")
+                    add_session_log(self.session_id, f"⏸️ Guardian signal is {guardian_signal} — monitoring paused", 'warn')
                     time.sleep(PRICE_CHECK_INTERVAL_SECONDS)
                     continue
                 
                 # CHECK 2: End time auto-stop
                 if self._is_past_end_time(session):
                     log.warning(f"Session {self.session_id} past end time, auto-stopping")
+                    add_session_log(
+                        self.session_id,
+                        f"🕐 End time reached — session auto-stopped",
+                        'warn'
+                    )
                     self.update_session(self.session_id, {
                         'status': 'STOPPED',
                         'stopped_at': datetime.utcnow().isoformat(),
@@ -514,7 +533,6 @@ class SSRPriceMonitor:
                     # Stop the monitor
                     self._running = False
                     break
-                    continue
                 
                 # Check time window
                 if not self._is_within_time_window(session):
@@ -712,6 +730,7 @@ class SSRPriceMonitor:
                 
                 # Step 4: Create position group for this adjustment
                 # Position sizes are multiplied by the number of completed rounds
+                # CRITICAL: Do NOT mark as filled=True yet - filled only when order actually fills
                 position_group = {
                     'trigger_id': self.adjustment_count,
                     'trigger_zone': zone,
@@ -723,40 +742,40 @@ class SSRPriceMonitor:
                     'atm_ce': {
                         'symbol': strikes['atm']['ce_symbol'],
                         'size': -1 * completed_rounds,  # Multiply by rounds
-                        'filled': True,
+                        'filled': False,  # Will be set to True when order fills
                         'entry_price': strikes['atm']['ce_premium']
                     },
                     'atm_pe': {
                         'symbol': strikes['atm']['pe_symbol'],
                         'size': -1 * completed_rounds,  # Multiply by rounds
-                        'filled': True,
+                        'filled': False,
                         'entry_price': strikes['atm']['pe_premium']
                     },
                     'otm_ce_buy': {
                         'symbol': strikes['otm_ce_buy']['symbol'],
                         'size': 2 * completed_rounds,  # Multiply by rounds
-                        'filled': True,
+                        'filled': False,
                         'selected_premium': strikes['otm_ce_buy']['premium'],
                         'entry_price': strikes['otm_ce_buy']['premium']
                     },
                     'otm_pe_buy': {
                         'symbol': strikes['otm_pe_buy']['symbol'],
                         'size': 2 * completed_rounds,  # Multiply by rounds
-                        'filled': True,
+                        'filled': False,
                         'selected_premium': strikes['otm_pe_buy']['premium'],
                         'entry_price': strikes['otm_pe_buy']['premium']
                     },
                     'far_otm_ce': {
                         'symbol': strikes['far_otm_ce']['symbol'],
                         'size': -1 * completed_rounds,  # Multiply by rounds
-                        'filled': True,
+                        'filled': False,
                         'selected_premium': strikes['far_otm_ce']['premium'],
                         'entry_price': strikes['far_otm_ce']['premium']
                     },
                     'far_otm_pe': {
                         'symbol': strikes['far_otm_pe']['symbol'],
                         'size': -1 * completed_rounds,  # Multiply by rounds
-                        'filled': True,
+                        'filled': False,
                         'selected_premium': strikes['far_otm_pe']['premium'],
                         'entry_price': strikes['far_otm_pe']['premium']
                     },

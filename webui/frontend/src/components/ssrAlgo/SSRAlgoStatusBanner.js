@@ -92,9 +92,9 @@ const SSRAlgoStatusBanner = ({
   const status = session?.status || 'IDLE';
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.IDLE;
   
-  // Check if in max loss zone
+  // Check if in max loss zone (use !! to avoid undefined !== null being true)
   const dwellStatus = monitorStatus?.dwell_status || {};
-  const inMaxLossZone = dwellStatus.current_zone !== null;
+  const inMaxLossZone = !!dwellStatus.current_zone;
   const displayConfig = inMaxLossZone ? STATUS_CONFIG.IN_MAX_LOSS_ZONE : config;
   
   // Calculate dwell progress
@@ -122,10 +122,10 @@ const SSRAlgoStatusBanner = ({
   return (
     <Paper
       sx={{
-        p: 2,
-        mb: 2,
+        p: 1,
+        mb: 0,
         bgcolor: displayConfig.bgColor,
-        border: `2px solid ${displayConfig.borderColor}`,
+        border: `1px solid ${displayConfig.borderColor}`,
         borderRadius: 2,
         animation: displayConfig.flash ? 'flash 1s infinite' : 
                    displayConfig.pulse ? 'pulse 2s infinite' : 'none',
@@ -198,36 +198,39 @@ const SSRAlgoStatusBanner = ({
           )}
 
           {/* Max Loss Zones */}
-          {payoffData?.adjustment_triggers && (
+          {payoffData?.adjustment_triggers?.lower_trigger && payoffData?.adjustment_triggers?.upper_trigger && (
             <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="caption" color="text.secondary">Trigger Zones</Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Tooltip title="Lower adjustment trigger">
-                  <Chip 
-                    size="small"
-                    icon={<DownIcon sx={{ fontSize: '14px !important' }} />}
-                    label={`$${(payoffData.adjustment_triggers.lower_trigger / 1000).toFixed(1)}k`}
-                    sx={{ 
-                      bgcolor: 'rgba(239, 68, 68, 0.2)',
-                      color: '#f87171',
-                      fontWeight: 600,
-                      fontSize: '0.7rem',
-                    }}
-                  />
-                </Tooltip>
-                <Tooltip title="Upper adjustment trigger">
-                  <Chip 
-                    size="small"
-                    icon={<UpIcon sx={{ fontSize: '14px !important' }} />}
-                    label={`$${(payoffData.adjustment_triggers.upper_trigger / 1000).toFixed(1)}k`}
-                    sx={{ 
-                      bgcolor: 'rgba(239, 68, 68, 0.2)',
-                      color: '#f87171',
-                      fontWeight: 600,
-                      fontSize: '0.7rem',
-                    }}
-                  />
-                </Tooltip>
+              <Typography variant="caption" color="text.secondary">Next Trigger</Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column', alignItems: 'center' }}>
+                {price && (() => {
+                  const lowerTrigger = payoffData.adjustment_triggers.lower_trigger;
+                  const upperTrigger = payoffData.adjustment_triggers.upper_trigger;
+                  const distanceToLower = Math.abs(price - lowerTrigger);
+                  const distanceToUpper = Math.abs(price - upperTrigger);
+                  const nearestTrigger = distanceToLower < distanceToUpper ? lowerTrigger : upperTrigger;
+                  const distance = Math.min(distanceToLower, distanceToUpper);
+                  const isLower = nearestTrigger === lowerTrigger;
+                  const percentage = ((distance / price) * 100).toFixed(1);
+                  
+                  return (
+                    <>
+                      <Tooltip title={`${isLower ? 'Lower' : 'Upper'} trigger at $${nearestTrigger.toLocaleString()}`}>
+                        <Chip 
+                          size="small"
+                          icon={isLower ? <DownIcon sx={{ fontSize: '14px !important' }} /> : <UpIcon sx={{ fontSize: '14px !important' }} />}
+                          label={`$${(nearestTrigger / 1000).toFixed(1)}k ${isLower ? '↓' : '↑'}${(distance / 1000).toFixed(1)}k (${percentage}%)`}
+                          sx={{ 
+                            bgcolor: percentage < 5 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.2)',
+                            color: percentage < 5 ? '#fca5a5' : '#f87171',
+                            fontWeight: percentage < 5 ? 700 : 600,
+                            fontSize: '0.7rem',
+                            border: percentage < 5 ? '1px solid rgba(239, 68, 68, 0.5)' : 'none',
+                          }}
+                        />
+                      </Tooltip>
+                    </>
+                  );
+                })()}
               </Box>
             </Box>
           )}
@@ -247,6 +250,36 @@ const SSRAlgoStatusBanner = ({
               {(session?.rounds_completed || 0) * 6}
             </Typography>
           </Box>
+
+          {/* Expiry */}
+          {session?.expiry && (
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">Expiry</Typography>
+              <Typography variant="body1" sx={{ fontWeight: 600, fontFamily: 'monospace', color: '#fbbf24' }}>
+                {session.expiry}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Time Window */}
+          {session?.start_time && session?.end_time && (
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">Time Window</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                {session.start_time} - {session.end_time}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Adjustments Count */}
+          {(session?.trigger_count || 0) > 0 && (
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" color="text.secondary">Adjustments</Typography>
+              <Typography variant="body1" sx={{ fontWeight: 600, color: '#f59e0b' }}>
+                {session.trigger_count}
+              </Typography>
+            </Box>
+          )}
 
           {/* Active Time */}
           {getActiveTime() && (

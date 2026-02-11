@@ -17,7 +17,8 @@ import sys
 import time
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
@@ -137,9 +138,10 @@ class OptionsChainService:
     def get_expirations(self, underlying: str = 'BTC') -> List[str]:
         """
         Get list of available expiry dates for options.
+        Filters out contracts that have expired (expired at 5:30 PM IST).
         
         Returns:
-            List of expiry dates in DDMMYYYY format
+            List of expiry dates in DDMMYYYY format (only active contracts)
         """
         cache_key = f"expirations_{underlying}"
         cached = _cache.get(cache_key)
@@ -152,7 +154,11 @@ class OptionsChainService:
         # Get all products
         products = self._get_option_products(underlying)
         
-        # Extract unique expiry dates
+        # Get current time in IST
+        ist_tz = ZoneInfo('Asia/Kolkata')
+        now_ist = datetime.now(ist_tz)
+        
+        # Extract unique expiry dates and filter expired contracts
         expirations = set()
         for product in products:
             expiry = product.get('settlement_time')
@@ -160,6 +166,23 @@ class OptionsChainService:
                 # Parse expiry and convert to DDMMYYYY
                 try:
                     dt = datetime.fromisoformat(expiry.replace('Z', '+00:00'))
+                    
+                    # Convert to IST for comparison
+                    dt_ist = dt.astimezone(ist_tz)
+                    
+                    # Check if contract has expired (expires at 5:30 PM IST)
+                    # If today's date matches expiry date and current time is >= 5:30 PM IST, skip it
+                    expiry_cutoff = dt_ist.replace(hour=17, minute=30, second=0, microsecond=0)
+                    
+                    if now_ist >= expiry_cutoff and now_ist.date() == dt_ist.date():
+                        log.debug(f"Filtering expired contract: {dt.strftime('%d%m%Y')} (expired at 5:30 PM IST)")
+                        continue
+                    
+                    # Also filter if expiry date is in the past
+                    if dt_ist.date() < now_ist.date():
+                        log.debug(f"Filtering past expiry: {dt.strftime('%d%m%Y')}")
+                        continue
+                    
                     formatted = dt.strftime('%d%m%Y')
                     expirations.add(formatted)
                 except Exception as e:
@@ -170,7 +193,7 @@ class OptionsChainService:
                                     key=lambda x: datetime.strptime(x, '%d%m%Y'))
         
         _cache.set(cache_key, sorted_expirations, 'expirations')
-        log.info(f"Found {len(sorted_expirations)} expirations for {underlying}")
+        log.info(f"Found {len(sorted_expirations)} active expirations for {underlying} (filtered expired contracts)")
         
         return sorted_expirations
     

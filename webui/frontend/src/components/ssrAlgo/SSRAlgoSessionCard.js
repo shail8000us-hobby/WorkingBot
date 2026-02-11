@@ -152,13 +152,16 @@ const SSRAlgoSessionCard = ({ session, onRefresh, onDelete }) => {
     }
   }, [sessionId]);
 
-  // Auto-refresh for active sessions
+  // Fetch data for all sessions (including stopped)
   useEffect(() => {
+    // Always fetch payoff and logs on mount
+    fetchPayoffData();
+    fetchLogs();
+
+    // For active/paused sessions, also start auto-refresh
     if (!isActive && !isPaused) return;
 
     fetchMonitorStatus();
-    fetchPayoffData();
-    fetchLogs();
     syncOrders(); // Initial sync
 
     const interval = setInterval(() => {
@@ -168,7 +171,7 @@ const SSRAlgoSessionCard = ({ session, onRefresh, onDelete }) => {
     }, 5000); // Every 5 seconds
 
     return () => clearInterval(interval);
-  }, [isActive, isPaused, fetchMonitorStatus, fetchPayoffData]);
+  }, [isActive, isPaused, fetchMonitorStatus, fetchPayoffData, fetchLogs]);
 
   // Session control actions
   const handleStart = async () => {
@@ -436,7 +439,7 @@ const SSRAlgoSessionCard = ({ session, onRefresh, onDelete }) => {
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary">Current Price</Typography>
             <Typography variant="body2" sx={{ fontWeight: 600, color: '#38bdf8' }}>
-              ${monitorStatus?.last_price?.toLocaleString() || '-'}
+              ${monitorStatus?.last_price?.toLocaleString() || payoffData?.spot_price?.toLocaleString() || '-'}
             </Typography>
           </Grid>
         </Grid>

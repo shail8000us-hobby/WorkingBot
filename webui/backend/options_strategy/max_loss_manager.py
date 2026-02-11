@@ -1146,6 +1146,113 @@ class MaxLossMonitor:
                             else:
                                 logger.info(f"✅ {expiry_code} all positions closed - removing max loss limit")
                                 self.manager.remove_expiry_max_loss(expiry_code)
+            
+            # ============================================================================
+            # CLEANUP: Remove max loss limits for positions that should no longer be monitored
+            # ============================================================================
+            # This fixes the issue where monitoring continues for:
+            # 1. Contracts that expired
+            # 2. Positions closed by user  
+            # 3. Positions that no longer exist
+            
+            # Create a map of active positions for quick lookup
+            active_positions_map = {}  # symbol -> position_dict
+            for pos in positions:
+                if isinstance(pos, dict):
+                    symbol = pos.get("product_symbol")
+                    if symbol:
+                        active_positions_map[symbol] = pos
+            
+            # Check each strike max loss limit
+            strike_limits = self.manager.get_all_strike_max_loss()
+            for limit in strike_limits:
+                symbol = limit["symbol"]
+                should_remove = False
+                reason = ""
+                
+                # Check if position exists
+                pos = active_positions_map.get(symbol)
+                
+                if not pos:
+                    # Position doesn't exist anymore
+                    should_remove = True
+                    reason = "position no longer exists"
+                elif abs(pos.get("size", 0)) == 0:
+                    # Position closed (size = 0)
+                    should_remove = True
+                    reason = "position closed by user"
+                else:
+                    # Check if contract expired
+                    settlement_time = pos.get("settlement_time")
+                    if settlement_time:
+                        try:
+                            from datetime import datetime
+                            expiry = datetime.fromisoformat(settlement_time.replace('Z', '+00:00'))
+                            now = datetime.now(expiry.tzinfo)
+                            if now > expiry:
+                                should_remove = True
+                                reason = "contract expired"
+                        except Exception as e:
+                            logger.debug(f"Failed to check expiry for {symbol}: {e}")
+                
+                if should_remove:
+                    logger.info(f"✅ Removing max loss limit for {symbol} - {reason}")
+                    add_activity_event("cleanup", f"✅ Stopped monitoring {symbol}", {
+                        "symbol": symbol,
+                        "reason": reason
+                    })
+                    self.manager.remove_strike_max_loss(symbol)
+                    # Clean up tracking
+                    with self._close_attempts_lock:
+                        self._close_attempted.pop(symbol, None)
+                    with self._warned_symbols_lock:
+                        self._warned_symbols.discard(symbol)
+            
+            # Check each expiry max loss limit
+            expiry_limits = self.manager.get_all_expiry_max_loss()
+            for limit in expiry_limits:
+                expiry_code = limit["expiry_code"]
+                
+                # Find any position with this expiry that's still active
+                has_active_position = False
+                is_expired = False
+                
+                for pos in positions:
+                    if isinstance(pos, dict):
+                        symbol = pos.get("product_symbol", "")
+                        parts = symbol.split("-")
+                        if len(parts) >= 4 and parts[3] == expiry_code:
+                            size = abs(pos.get("size", 0))
+                            if size > 0:
+                                has_active_position = True
+                                # Check if expired
+                                settlement_time = pos.get("settlement_time")
+                                if settlement_time:
+                                    try:
+                                        from datetime import datetime
+                                        expiry = datetime.fromisoformat(settlement_time.replace('Z', '+00:00'))
+                                        now = datetime.now(expiry.tzinfo)
+                                        if now > expiry:
+                                            is_expired = True
+                                    except Exception as e:
+                                        logger.debug(f"Failed to check expiry: {e}")
+                                break
+                
+                # Remove limit if no active positions or expired
+                if not has_active_position:
+                    logger.info(f"✅ Removing expiry max loss limit for {expiry_code} - no active positions")
+                    add_activity_event("cleanup", f"✅ Stopped monitoring expiry {expiry_code}", {
+                        "expiry_code": expiry_code,
+                        "reason": "no active positions"
+                    })
+                    self.manager.remove_expiry_max_loss(expiry_code)
+                elif is_expired:
+                    logger.info(f"✅ Removing expiry max loss limit for {expiry_code} - contract expired")
+                    add_activity_event("cleanup", f"✅ Stopped monitoring expiry {expiry_code}", {
+                        "expiry_code": expiry_code,
+                        "reason": "contract expired"
+                    })
+                    self.manager.remove_expiry_max_loss(expiry_code)
                             
         except Exception as e:
             logger.error(f"Error checking max loss: {e}", exc_info=True)

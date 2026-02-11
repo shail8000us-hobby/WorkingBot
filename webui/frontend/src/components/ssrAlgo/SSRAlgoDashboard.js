@@ -42,6 +42,7 @@ import SSRAlgoPositionsTable from './SSRAlgoPositionsTable';
 import SSRAlgoStatusBanner from './SSRAlgoStatusBanner';
 import SSRAlgoTriggerHistory from './SSRAlgoTriggerHistory';
 import SSRAlgoLogPanel from './SSRAlgoLogPanel';
+import ResizablePanels from '../common/ResizablePanels';
 import ssrAlgoService from './ssrAlgoService';
 
 /**
@@ -115,9 +116,14 @@ const SSRAlgoDashboard = () => {
     }
   }, [sessions]);
 
-  // Auto-refresh payoff for selected session every 30 seconds
+  // Auto-refresh payoff for selected session
+  // Faster polling (5s) when pending orders exist, slower (30s) otherwise
   useEffect(() => {
     if (!selectedSession || selectedSession.status !== 'MONITORING') return;
+    
+    // Determine polling interval based on pending orders
+    const hasPendingOrders = selectedPayoff?.pending_orders_count > 0;
+    const pollInterval = hasPendingOrders ? 5000 : 30000; // 5s if pending, 30s otherwise
     
     const payoffInterval = setInterval(async () => {
       try {
@@ -128,10 +134,10 @@ const SSRAlgoDashboard = () => {
       } catch (err) {
         console.error('Failed to refresh payoff:', err);
       }
-    }, 30000);
+    }, pollInterval);
     
     return () => clearInterval(payoffInterval);
-  }, [selectedSession]);
+  }, [selectedSession, selectedPayoff?.pending_orders_count]); // Re-run when pending count changes
 
   // Auto-refresh monitor status for selected session every 5 seconds (for current price updates)
   useEffect(() => {
@@ -341,155 +347,188 @@ const SSRAlgoDashboard = () => {
         gap: 1.5,
       }}>
         
-        {/* TOP ROW: Config (40%) + Payoff (60%) */}
+        {/* TOP ROW: Config (LEFT) + Payoff (RIGHT) with Resizable Divider */}
         <Box sx={{ 
           flex: 1,
-          display: 'flex', 
-          gap: 1.5, 
           minHeight: 0,
-          flexWrap: { xs: 'wrap', lg: 'nowrap' },
         }}>
-          
-          {/* LEFT COLUMN: Config & Sessions - 40% */}
-          <Box sx={{ 
-            width: { xs: '100%', lg: '40%' }, 
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-            minHeight: 0,
-          }}>
-            {/* Configuration Panel */}
-            <Box sx={{ flex: 1, minHeight: 0 }}>
-              <SSRAlgoConfigPanel onSessionCreated={handleSessionCreated} />
-            </Box>
-          </Box>
-
-          {/* RIGHT: Payoff Chart - 60% */}
-          <Card sx={{ 
-            flex: 1,
-            width: { xs: '100%', lg: '60%' },
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
-            border: '1px solid rgba(129, 140, 248, 0.2)',
-            borderRadius: 2,
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-          }}>
-            <CardContent sx={{ p: 1.5, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexShrink: 0 }}>
-                <ChartIcon sx={{ fontSize: 18, color: '#818cf8' }} />
-                <Typography variant="subtitle2" sx={{ color: '#818cf8', fontWeight: 600 }}>
-                  Payoff Diagram
-                </Typography>
-                {selectedSession?.status === 'MONITORING' && (
-                  <Chip 
-                    size="small" 
-                    label="● LIVE" 
-                    sx={{ 
-                      height: 18, 
-                      fontSize: '0.6rem',
-                      bgcolor: 'rgba(34, 197, 94, 0.2)',
-                      color: '#22c55e',
-                      fontWeight: 700,
-                    }} 
-                  />
-                )}
-                {selectedSession && (
-                  <Typography 
-                    variant="caption" 
-                    sx={{ 
-                      ml: 'auto',
-                      fontFamily: 'monospace',
-                      fontSize: '0.65rem',
-                      color: 'rgba(148, 163, 184, 0.7)',
-                    }}
-                  >
-                    {selectedSession.session_id}
-                  </Typography>
-                )}
+          <ResizablePanels
+            defaultLeftWidth={25}
+            minLeftWidth={20}
+            minRightWidth={30}
+            storageKey="ssr-algo-panel-width"
+            leftPanel={
+              <Box sx={{ 
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                height: '100%',
+              }}>
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <SSRAlgoConfigPanel onSessionCreated={handleSessionCreated} />
+                </Box>
               </Box>
-              
-              {selectedSession ? (
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                  <Box sx={{ flex: 1, minHeight: 150 }}>
-                    <SSRAlgoPayoffChart
-                      payoffCurve={selectedPayoff?.payoff_curve || []}
-                      maxLossPoints={selectedPayoff?.max_loss_points || {}}
-                      adjustmentTriggers={selectedPayoff?.adjustment_triggers || {}}
-                      breakevens={selectedPayoff?.breakevens || []}
-                      spotPrice={selectedPayoff?.spot_price || 0}
-                      currentPrice={selectedPayoff?.spot_price || 0}
-                      height="100%"
-                      loading={!selectedPayoff}
-                    />
+            }
+            rightPanel={
+              <Card sx={{ 
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                border: '1px solid rgba(129, 140, 248, 0.2)',
+                borderRadius: 2,
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+              }}>
+                <CardContent sx={{ p: 1.5, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexShrink: 0 }}>
+                    <ChartIcon sx={{ fontSize: 18, color: '#818cf8' }} />
+                    <Typography variant="subtitle2" sx={{ color: '#818cf8', fontWeight: 600 }}>
+                      Payoff Diagram
+                    </Typography>
+                    {selectedSession?.status === 'MONITORING' && (
+                      <Chip 
+                        size="small" 
+                        label="● LIVE" 
+                        sx={{ 
+                          height: 18, 
+                          fontSize: '0.6rem',
+                          bgcolor: 'rgba(34, 197, 94, 0.2)',
+                          color: '#22c55e',
+                          fontWeight: 700,
+                        }} 
+                      />
+                    )}
+                    {selectedPayoff?.pending_orders_count > 0 && (
+                      <Tooltip title={selectedPayoff.warning || "Orders filling on exchange..."} arrow>
+                        <Chip 
+                          size="small" 
+                          label={`⚠️ ${selectedPayoff.pending_orders_count} pending`}
+                          sx={{ 
+                            height: 18, 
+                            fontSize: '0.6rem',
+                            bgcolor: 'rgba(251, 191, 36, 0.2)',
+                            color: '#fbbf24',
+                            fontWeight: 600,
+                            cursor: 'help'
+                          }} 
+                        />
+                      </Tooltip>
+                    )}
+                    {selectedPayoff?.adjustment_triggers?.upper_trigger && selectedPayoff?.adjustment_triggers?.lower_trigger && (
+                      <Tooltip 
+                        title={`Lower ${selectedPayoff.adjustment_triggers.lower_trigger} ±${selectedPayoff.adjustment_triggers.tolerance || 100} | Upper ${selectedPayoff.adjustment_triggers.upper_trigger} ±${selectedPayoff.adjustment_triggers.tolerance || 100} | Dwell ${selectedPayoff.adjustment_triggers.dwell_time_minutes || 10} min`}
+                        arrow
+                      >
+                        <Chip
+                          size="small"
+                          label={`Triggers: ${selectedPayoff.adjustment_triggers.lower_trigger} / ${selectedPayoff.adjustment_triggers.upper_trigger} (±${selectedPayoff.adjustment_triggers.tolerance || 100}, ${selectedPayoff.adjustment_triggers.dwell_time_minutes || 10}m)`}
+                          sx={{
+                            height: 18,
+                            fontSize: '0.6rem',
+                            bgcolor: 'rgba(239, 68, 68, 0.2)',
+                            color: '#f87171',
+                            fontWeight: 600,
+                            cursor: 'help'
+                          }}
+                        />
+                      </Tooltip>
+                    )}
+                    {selectedSession && (
+                      <Typography 
+                        variant="caption" 
+                        sx={{ 
+                          ml: 'auto',
+                          fontFamily: 'monospace',
+                          fontSize: '0.65rem',
+                          color: 'rgba(148, 163, 184, 0.7)',
+                        }}
+                      >
+                        {selectedSession.session_id}
+                      </Typography>
+                    )}
                   </Box>
                   
-                  {/* Payoff Stats Row - Compact */}
-                  {selectedPayoff && (
+                  {selectedSession ? (
+                    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                      <Box sx={{ flex: 1, minHeight: 150 }}>
+                        <SSRAlgoPayoffChart
+                          payoffCurve={selectedPayoff?.payoff_curve || []}
+                          maxLossPoints={selectedPayoff?.max_loss_points || {}}
+                          adjustmentTriggers={selectedPayoff?.adjustment_triggers || {}}
+                          breakevens={selectedPayoff?.breakevens || []}
+                          spotPrice={selectedPayoff?.spot_price || 0}
+                          currentPrice={selectedPayoff?.spot_price || 0}
+                          height="100%"
+                          loading={!selectedPayoff}
+                        />
+                      </Box>
+                      
+                      {/* Payoff Stats Row - Compact */}
+                      {selectedPayoff && (
+                        <Box sx={{ 
+                          mt: 1, 
+                          p: 1, 
+                          background: 'rgba(0, 0, 0, 0.2)',
+                          borderRadius: 1.5,
+                          display: 'flex',
+                          justifyContent: 'space-around',
+                          flexWrap: 'wrap',
+                          gap: 0.5,
+                          flexShrink: 0,
+                        }}>
+                          <Box sx={{ textAlign: 'center', minWidth: 70 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Net Premium</Typography>
+                            <Typography 
+                              variant="body2" 
+                              color={selectedPayoff.net_premium >= 0 ? 'success.main' : 'error.main'}
+                              sx={{ fontWeight: 700, fontSize: '0.8rem' }}
+                            >
+                              ${selectedPayoff.net_premium?.toFixed(2)}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center', minWidth: 50 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Legs</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
+                              {selectedSession?.positions?.length * 6 || selectedPayoff.position_count || 0}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center', minWidth: 70 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Max Profit</Typography>
+                            <Typography variant="body2" color="success.main" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
+                              ${selectedPayoff.max_loss_points?.max_profit_value?.toFixed(2) || '-'}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center', minWidth: 70 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Max Loss</Typography>
+                            <Typography variant="body2" color="error.main" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
+                              ${selectedPayoff.max_loss_points?.max_loss_value?.toFixed(2) || '-'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  ) : (
                     <Box sx={{ 
-                      mt: 1, 
-                      p: 1, 
-                      background: 'rgba(0, 0, 0, 0.2)',
-                      borderRadius: 1.5,
+                      flex: 1,
                       display: 'flex',
-                      justifyContent: 'space-around',
-                      flexWrap: 'wrap',
-                      gap: 0.5,
-                      flexShrink: 0,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(0, 0, 0, 0.1)',
+                      borderRadius: 2,
+                      border: '1px dashed rgba(129, 140, 248, 0.3)'
                     }}>
-                      <Box sx={{ textAlign: 'center', minWidth: 70 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Net Premium</Typography>
-                        <Typography 
-                          variant="body2" 
-                          color={selectedPayoff.net_premium >= 0 ? 'success.main' : 'error.main'}
-                          sx={{ fontWeight: 700, fontSize: '0.8rem' }}
-                        >
-                          ${selectedPayoff.net_premium?.toFixed(2)}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center', minWidth: 50 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Legs</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
-                          {selectedSession?.positions?.length * 6 || selectedPayoff.position_count || 0}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center', minWidth: 70 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Max Profit</Typography>
-                        <Typography variant="body2" color="success.main" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
-                          ${selectedPayoff.max_loss_points?.max_profit_value?.toFixed(2) || '-'}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center', minWidth: 70 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>Max Loss</Typography>
-                        <Typography variant="body2" color="error.main" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
-                          ${selectedPayoff.max_loss_points?.max_loss_value?.toFixed(2) || '-'}
+                      <Box sx={{ textAlign: 'center' }}>
+                        <ChartIcon sx={{ fontSize: 32, color: 'rgba(129, 140, 248, 0.4)', mb: 0.5 }} />
+                        <Typography color="text.secondary" variant="caption">
+                          Select a session to view payoff
                         </Typography>
                       </Box>
                     </Box>
                   )}
-                </Box>
-              ) : (
-                <Box sx={{ 
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'rgba(0, 0, 0, 0.1)',
-                  borderRadius: 2,
-                  border: '1px dashed rgba(129, 140, 248, 0.3)'
-                }}>
-                  <Box sx={{ textAlign: 'center' }}>
-                    <ChartIcon sx={{ fontSize: 32, color: 'rgba(129, 140, 248, 0.4)', mb: 0.5 }} />
-                    <Typography color="text.secondary" variant="caption">
-                      Select a session to view
-                    </Typography>
-                  </Box>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            }
+          />
         </Box>
 
         {/* MIDDLE ROW: Activity Log - Full Width */}

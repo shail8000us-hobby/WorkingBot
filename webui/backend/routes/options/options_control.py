@@ -2328,6 +2328,7 @@ def set_sl_tp():
             "stop_loss_price": 30.0,       // Or absolute price
             "take_profit_pct": 50,         // % profit to trigger
             "take_profit_price": 100.0,    // Or absolute price - PLACES IMMEDIATE ORDER
+            "take_profit_quantity": 10,    // Number of contracts to exit (optional, defaults to full position)
             "trailing_stop_enabled": false,
             "trailing_stop_pct": 10,       // Trail by this %
             "auto_execute": true,          // Auto-close when triggered
@@ -2341,8 +2342,9 @@ def set_sl_tp():
         if not symbol:
             return jsonify({"success": False, "error": "Symbol required"}), 400
         
-        # Get take profit price if specified
+        # Get take profit price and quantity if specified
         take_profit_price = data.get('take_profit_price')
+        take_profit_quantity = data.get('take_profit_quantity')  # Optional: number of contracts to exit
         
         # Store SL/TP settings in database
         manager = get_sl_tp_manager()
@@ -2352,6 +2354,7 @@ def set_sl_tp():
             stop_loss_pct=data.get('stop_loss_pct'),
             take_profit_price=take_profit_price,
             take_profit_pct=data.get('take_profit_pct'),
+            take_profit_quantity=take_profit_quantity,
             trailing_stop_enabled=data.get('trailing_stop_enabled', False),
             trailing_stop_pct=data.get('trailing_stop_pct'),
             auto_execute=data.get('auto_execute', True),
@@ -2403,7 +2406,14 @@ def set_sl_tp():
                     # For closing: if we have positive size (bought), we SELL to close
                     # If we have negative size (sold), we BUY to close
                     close_side = 'sell' if position_size > 0 else 'buy'
-                    order_size = abs(position_size)
+                    
+                    # Use specified quantity if provided, otherwise use full position
+                    if take_profit_quantity and take_profit_quantity > 0:
+                        order_size = min(take_profit_quantity, abs(position_size))
+                        log.info(f"📊 Using specified quantity: {order_size} (position size: {abs(position_size)})")
+                    else:
+                        order_size = abs(position_size)
+                        log.info(f"📊 Using full position size: {order_size}")
                     
                     # Cancel any existing TP orders for this symbol first
                     log.info(f"🔍 Checking for existing TP orders for {symbol}...")
@@ -2863,6 +2873,33 @@ def get_take_profit_history():
         })
     except Exception as e:
         log.error(f"Error getting take profit history: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/take-profit/monitor/status', methods=['GET'])
+def get_take_profit_monitor_status():
+    """Get Take Profit Monitor status"""
+    try:
+        from webui.backend.options_strategy.take_profit_manager import get_take_profit_monitor
+        monitor = get_take_profit_monitor()
+        
+        if monitor is None:
+            return jsonify({
+                'success': False,
+                'running': False,
+                'error': 'Monitor not initialized'
+            })
+        
+        is_running = monitor.is_running() if hasattr(monitor, 'is_running') else False
+        metrics = monitor.get_metrics() if hasattr(monitor, 'get_metrics') else {}
+        
+        return jsonify({
+            'success': True,
+            'running': is_running,
+            'metrics': metrics
+        })
+    except Exception as e:
+        log.error(f"Error getting monitor status: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

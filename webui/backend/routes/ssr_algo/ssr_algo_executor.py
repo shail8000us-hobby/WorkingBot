@@ -275,11 +275,17 @@ class SSRAutoLoopExecutor:
                 
                 if response.status_code == 200:
                     data = response.json()
-                    statuses = data.get('statuses', {})
+                    orders = data.get('orders', [])
+                    status_map = {str(o.get('order_id')): o for o in orders}
+                    
+                    def is_final_state(order_info: Dict) -> bool:
+                        state = (order_info or {}).get('state', '').lower()
+                        unfilled = order_info.get('unfilled_size')
+                        return state in ['filled', 'cancelled', 'rejected'] or (state == 'closed' and (unfilled in [0, 0.0, None]))
                     
                     still_pending = [
                         oid for oid in pending_order_ids
-                        if statuses.get(oid, {}).get('status') not in ['filled', 'cancelled']
+                        if not is_final_state(status_map.get(str(oid), {}))
                     ]
                     
                     if not still_pending:
@@ -396,23 +402,37 @@ class SSRAutoLoopExecutor:
                 return {'success': False, 'error': f'API error: {response.status_code}'}
             
             data = response.json()
-            statuses = data.get('statuses', {})
+            orders = data.get('orders', [])
+            status_map = {str(o.get('order_id')): o for o in orders}
+            
+            # Build fallback price map from session positions
+            fallback_prices = {}
+            for pos_group in session.get('positions', []):
+                for key in ['atm_ce', 'atm_pe', 'otm_ce_buy', 'otm_pe_buy', 'far_otm_ce', 'far_otm_pe']:
+                    leg = pos_group.get(key) or {}
+                    symbol = leg.get('symbol')
+                    entry_price = leg.get('entry_price')
+                    if symbol and entry_price:
+                        fallback_prices[symbol] = entry_price
             
             filled_count = 0
             fills = []
             
             for order_id in order_ids:
-                status_info = statuses.get(order_id, {})
-                order_status = status_info.get('status', 'unknown')
+                status_info = status_map.get(str(order_id), {})
+                state = (status_info.get('state') or '').lower()
+                unfilled = status_info.get('unfilled_size')
+                is_filled = state == 'filled' or (state == 'closed' and (unfilled in [0, 0.0, None]))
                 
-                if order_status == 'filled':
-                    fill_price = status_info.get('average_price') or status_info.get('price', 0)
+                if is_filled:
+                    symbol = status_info.get('symbol', '')
+                    fill_price = status_info.get('fill_price') or fallback_prices.get(symbol, 0)
                     storage.update_order_filled(session_id, order_id, fill_price)
                     filled_count += 1
                     fills.append({
                         'order_id': order_id,
                         'fill_price': fill_price,
-                        'symbol': status_info.get('symbol', '')
+                        'symbol': symbol
                     })
                     log.info(f"[{session_id}] Order {order_id} filled at ${fill_price:.2f}")
             

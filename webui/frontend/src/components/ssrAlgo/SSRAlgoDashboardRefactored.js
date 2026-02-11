@@ -135,12 +135,26 @@ const SSRAlgoDashboardRefactored = () => {
     try {
       const result = await ssrAlgoService.getSessions(false);
       if (result.success) {
-        setSessions(result.sessions || []);
+        const fetched = result.sessions || [];
+        setSessions(fetched);
         
-        // Auto-select first active/monitoring session
-        const activeSession = result.sessions.find(s => s.status === 'MONITORING' || s.status === 'EXECUTING_AUTO_LOOP');
-        if (activeSession && (!selectedSession || selectedSession.session_id !== activeSession.session_id)) {
-          handleSelectSession(activeSession);
+        // Auto-select: prioritize MONITORING > EXECUTING > PAUSED > IDLE > most recent
+        const priority = ['MONITORING', 'EXECUTING_AUTO_LOOP', 'SELECTING_STRIKES', 'PAUSED', 'IDLE'];
+        let best = null;
+        for (const status of priority) {
+          best = fetched.find(s => s.status === status);
+          if (best) break;
+        }
+        if (!best && fetched.length > 0) best = fetched[0];
+        
+        if (best) {
+          // Always update selectedSession with fresh data from fetch
+          if (selectedSession && selectedSession.session_id === best.session_id) {
+            setSelectedSession(best);
+          } else if (!selectedSession) {
+            // First load — auto-select and fetch payoff/monitor
+            handleSelectSession(best);
+          }
         }
       }
     } catch (err) {
@@ -153,8 +167,8 @@ const SSRAlgoDashboardRefactored = () => {
   // Check health
   const checkHealth = useCallback(async () => {
     try {
-      const result = await ssrAlgoService.checkHealth();
-      setHealthStatus(result.status);
+      const result = await ssrAlgoService.healthCheck();
+      setHealthStatus(result.status || (result.success ? 'healthy' : 'error'));
     } catch (err) {
       setHealthStatus('error');
     }
@@ -246,7 +260,8 @@ const SSRAlgoDashboardRefactored = () => {
     localStorage.setItem('ssrAlgo_logHeight', newHeight.toString());
   }, []);
 
-  const activeSessions = sessions.filter(s => ['IDLE', 'MONITORING', 'EXECUTING_AUTO_LOOP', 'SELECTING_STRIKES', 'PAUSED'].includes(s.status));
+  const activeSessions = sessions.filter(s => ['IDLE', 'MONITORING', 'EXECUTING_AUTO_LOOP', 'SELECTING_STRIKES', 'PAUSED', 'ERROR'].includes(s.status));
+  const stoppedSessions = sessions.filter(s => s.status === 'STOPPED');
 
   return (
     <Box
@@ -300,8 +315,8 @@ const SSRAlgoDashboardRefactored = () => {
         </Tooltip>
       </Box>
 
-      {/* ROW 2: Status Banner (when active) */}
-      {selectedSession && ['MONITORING', 'EXECUTING_AUTO_LOOP', 'IN_MAX_LOSS_ZONE'].includes(selectedSession.status) && (
+      {/* ROW 2: Status Banner (when session selected) */}
+      {selectedSession && (
         <Box>
           <SSRAlgoStatusBanner
             session={selectedSession}
@@ -370,11 +385,11 @@ const SSRAlgoDashboardRefactored = () => {
           }}>
             <Box sx={{ p: 1, borderBottom: '1px solid rgba(71, 85, 105, 0.2)' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#94a3b8' }}>
-                📊 Active Sessions ({activeSessions.length})
+                📊 Sessions ({sessions.length})
               </Typography>
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-              {activeSessions.map(session => (
+              {activeSessions.length > 0 && activeSessions.map(session => (
                 <Box
                   key={session.session_id}
                   onClick={() => handleSelectSession(session)}
@@ -392,6 +407,39 @@ const SSRAlgoDashboardRefactored = () => {
                   />
                 </Box>
               ))}
+              {stoppedSessions.length > 0 && (
+                <>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 1, mb: 0.5, pl: 1, fontWeight: 600 }}>
+                    STOPPED ({stoppedSessions.length})
+                  </Typography>
+                  {stoppedSessions.map(session => (
+                    <Box
+                      key={session.session_id}
+                      onClick={() => handleSelectSession(session)}
+                      sx={{
+                        cursor: 'pointer',
+                        border: selectedSession?.session_id === session.session_id ? '2px solid #818cf8' : '2px solid transparent',
+                        borderRadius: 2,
+                        mb: 0.5,
+                        opacity: 0.7,
+                      }}
+                    >
+                      <SSRAlgoSessionCard
+                        session={session}
+                        onRefresh={fetchSessions}
+                        compact={true}
+                      />
+                    </Box>
+                  ))}
+                </>
+              )}
+              {sessions.length === 0 && (
+                <Box sx={{ textAlign: 'center', py: 3 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No sessions yet. Create one using the config panel above.
+                  </Typography>
+                </Box>
+              )}
             </Box>
           </Paper>
         </Box>
@@ -425,17 +473,72 @@ const SSRAlgoDashboardRefactored = () => {
               )}
             </Box>
             <Box sx={{ flex: 1, p: 1, minHeight: 0 }}>
-              {selectedSession ? (
+              {selectedSession && selectedPayoff?.payoff_curve?.length > 0 ? (
                 <SSRAlgoPayoffChart
                   payoffCurve={selectedPayoff?.payoff_curve || []}
                   maxLossPoints={selectedPayoff?.max_loss_points || {}}
                   adjustmentTriggers={selectedPayoff?.adjustment_triggers || {}}
                   breakevens={selectedPayoff?.breakevens || []}
                   spotPrice={selectedPayoff?.spot_price || 0}
-                  currentPrice={selectedPayoff?.spot_price || 0}
+                  currentPrice={selectedMonitorStatus?.last_price || selectedPayoff?.spot_price || 0}
                   height="100%"
-                  loading={!selectedPayoff}
+                  loading={false}
                 />
+              ) : selectedSession ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 2 }}>
+                  <Typography variant="h6" sx={{ color: 'rgba(148, 163, 184, 0.5)', fontWeight: 700 }}>
+                    🦋
+                  </Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    {selectedSession.status === 'IDLE' ? 'Click "Start" to begin — payoff diagram will appear after execution' :
+                     selectedSession.status === 'SELECTING_STRIKES' ? 'Selecting strikes...' :
+                     selectedSession.status === 'EXECUTING_AUTO_LOOP' ? 'Executing orders — payoff diagram will appear shortly...' :
+                     selectedSession.status === 'STOPPED' && selectedSession.positions?.length === 0 ? 'Session stopped without positions' :
+                     selectedSession.status === 'STOPPED' ? 'Session stopped — positions data below' :
+                     selectedSession.status === 'ERROR' ? `Error: ${selectedSession.error || 'Unknown'}` :
+                     'Loading payoff data...'}
+                  </Typography>
+                  {selectedSession.status === 'IDLE' && (
+                    <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(59, 130, 246, 0.1)', borderRadius: 2, border: '1px solid rgba(59, 130, 246, 0.2)', textAlign: 'center', maxWidth: 400 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Session Config</Typography>
+                      <Typography variant="body2" sx={{ color: '#60a5fa', fontWeight: 600 }}>
+                        {selectedSession.underlying} • Expiry: {selectedSession.expiry} • {selectedSession.auto_loop_rounds} rounds • {selectedSession.order_type?.toUpperCase()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        OTM Buy: {selectedSession.strike_config?.otm_buy_percent_min}-{selectedSession.strike_config?.otm_buy_percent_max}% • Far OTM: {selectedSession.strike_config?.far_otm_percent_min}-{selectedSession.strike_config?.far_otm_percent_max}%
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Time Window: {selectedSession.start_time || '15:00'} - {selectedSession.end_time || '21:00'} • Dwell: {selectedSession.dwell_time_minutes || 10}min
+                      </Typography>
+                    </Box>
+                  )}
+                  {selectedSession.status === 'STOPPED' && selectedSession.positions?.length > 0 && (
+                    <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(239, 68, 68, 0.1)', borderRadius: 2, border: '1px solid rgba(239, 68, 68, 0.2)', textAlign: 'center', maxWidth: 400 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Session Summary</Typography>
+                      <Typography variant="body2" sx={{ color: '#fca5a5', fontWeight: 600 }}>
+                        {selectedSession.positions.length} position group(s) • {selectedSession.rounds_completed || 0} rounds
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Stopped: {selectedSession.stop_reason || 'Manual stop'}
+                      </Typography>
+                      {selectedSession.net_premium && (
+                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: selectedSession.net_premium > 0 ? '#4ade80' : '#f87171' }}>
+                          Net Premium: ${selectedSession.net_premium?.toFixed(2)}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+                  {selectedSession.status === 'ERROR' && (
+                    <Box sx={{ mt: 1, p: 1.5, bgcolor: 'rgba(239, 68, 68, 0.15)', borderRadius: 2, border: '1px solid rgba(239, 68, 68, 0.3)', textAlign: 'center', maxWidth: 400 }}>
+                      <Typography variant="body2" sx={{ color: '#fca5a5' }}>
+                        {selectedSession.error || 'Unknown error'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Click "Retry" in the session card to try again
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
               ) : (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                   <Typography color="text.secondary">Select a session</Typography>
@@ -465,7 +568,7 @@ const SSRAlgoDashboardRefactored = () => {
               </Typography>
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-              {selectedSession && (
+              {selectedSession ? (
                 <SSRAlgoLogPanel
                   sessionId={selectedSession.session_id}
                   height="100%"
@@ -473,6 +576,10 @@ const SSRAlgoDashboardRefactored = () => {
                   showHeader={false}
                   refreshInterval={2000}
                 />
+              ) : (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                  <Typography color="text.secondary" variant="caption">Select a session to view logs</Typography>
+                </Box>
               )}
             </Box>
           </Paper>
@@ -508,9 +615,24 @@ const SSRAlgoDashboardRefactored = () => {
                     showHeader={true}
                     compact={true}
                   />
+                ) : selectedSession ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 0.5 }}>
+                    <Typography color="text.secondary" variant="caption">
+                      {selectedSession?.status === 'IDLE' ? 'Positions will appear after session starts' :
+                       selectedSession?.status === 'EXECUTING_AUTO_LOOP' ? 'Placing orders...' :
+                       selectedSession?.status === 'STOPPED' ? 'No positions were opened' :
+                       selectedSession?.status === 'ERROR' ? 'Execution failed — no positions' :
+                       'No positions'}
+                    </Typography>
+                    {selectedSession?.status === 'IDLE' && (
+                      <Typography color="text.secondary" variant="caption" sx={{ opacity: 0.6, fontSize: '0.65rem' }}>
+                        Modified Iron Butterfly: Sell 1 ATM CE + Sell 1 ATM PE + Buy 2 OTM (CE+PE) + Sell 1 Far OTM (CE+PE)
+                      </Typography>
+                    )}
+                  </Box>
                 ) : (
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                    <Typography color="text.secondary" variant="caption">No positions</Typography>
+                    <Typography color="text.secondary" variant="caption">Select a session</Typography>
                   </Box>
                 )}
               </Box>
@@ -532,7 +654,7 @@ const SSRAlgoDashboardRefactored = () => {
               </Box>
               <Box sx={{ flex: 1, overflow: 'auto', p: 1, minHeight: 0 }}>
                 {selectedSession ? (
-                  <SSRAlgoTriggerHistory sessionId={selectedSession.session_id} compact={true} />
+                  <SSRAlgoTriggerHistory session={selectedSession} compact={true} />
                 ) : (
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                     <Typography color="text.secondary" variant="caption">No triggers</Typography>

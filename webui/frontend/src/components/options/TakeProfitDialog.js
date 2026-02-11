@@ -178,6 +178,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
             type="number"
             value={targetProfit}
             onChange={(e) => setTargetProfit(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
             placeholder="e.g., 20 or -10"
             fullWidth
             InputProps={{
@@ -191,6 +192,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
             type="number"
             value={exitQuantity}
             onChange={(e) => setExitQuantity(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
             placeholder="e.g., 10"
             fullWidth
             InputProps={{

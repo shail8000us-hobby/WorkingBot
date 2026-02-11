@@ -1249,6 +1249,12 @@ if __name__ == '__main__':
         print("   Per-strike/expiry max loss will NOT be enforced!\n")
     
     # ============================================================================
+    # IMPORTANT: Stagger monitor startups to prevent API conflicts
+    # ============================================================================
+    print("⏱️  Staggering monitor startup (2s delay to prevent API conflicts)...")
+    time.sleep(2)
+    
+    # ============================================================================
     # Initialize and Start Take Profit Monitor (Options Trading)
     # ============================================================================
     try:
