@@ -50,10 +50,16 @@ export default function TakeProfitIndicator({
   let progressPercentage = 0;
   if (hasTP && targetProfit !== 0) {
     if (isLossLimit) {
-      // For loss limits: show how close we are to the negative threshold
-      progressPercentage = targetProfit !== 0 ? (currentValue / targetProfit) * 100 : 0;
+      // For loss limits: flip the calculation to show meaningful progress
+      // Example: target = -$50, current = -$100 → (-50/-100) * 100 = 50% (halfway to target)
+      // Example: target = -$50, current = -$50 → (-50/-50) * 100 = 100% (at target)
+      // Example: target = -$50, current = -$25 → (-50/-25) * 100 = 200% (past target)
+      if (currentValue !== 0) {
+        progressPercentage = (targetProfit / currentValue) * 100;
+      }
     } else {
       // For profit targets: show how close we are to the positive target
+      // Example: target = $50, current = $25 → (25/50) * 100 = 50%
       progressPercentage = (currentValue / targetProfit) * 100;
     }
   }
