@@ -85,6 +85,47 @@ def _is_within_time_window_for_start(session: dict) -> bool:
         return True
 
 
+def _reconcile_position_filled_status(session: dict, storage=None):
+    """
+    Reconcile position group leg `filled` flags with actual filled_orders.
+    
+    The filled flag on position legs was not being updated when orders filled.
+    This function cross-references filled_orders symbols with position leg symbols
+    and sets filled=True for any leg whose symbol appears in filled_orders.
+    
+    If a change is made and storage is provided, persists the update.
+    """
+    filled_symbols = {}
+    for order in session.get('filled_orders', []):
+        symbol = order.get('symbol')
+        fp = order.get('fill_price', 0)
+        if symbol:
+            # Keep the latest (or highest) fill price for each symbol
+            if symbol not in filled_symbols or (fp and fp > filled_symbols[symbol]):
+                filled_symbols[symbol] = fp
+    
+    if not filled_symbols:
+        return
+    
+    positions = session.get('positions', [])
+    changed = False
+    for pos_group in positions:
+        for leg_key in ['atm_ce', 'atm_pe', 'otm_ce_buy', 'otm_pe_buy', 'far_otm_ce', 'far_otm_pe']:
+            leg = pos_group.get(leg_key)
+            if leg and not leg.get('filled') and leg.get('symbol') in filled_symbols:
+                leg['filled'] = True
+                fp = filled_symbols[leg['symbol']]
+                if fp and fp > 0:
+                    leg['fill_price'] = fp
+                changed = True
+    
+    if changed and storage:
+        try:
+            storage.update_session(session.get('session_id'), {'positions': positions})
+        except Exception as e:
+            log.debug(f"Failed to persist position reconciliation: {e}")
+
+
 # =============================================================================
 # Session CRUD Endpoints
 # =============================================================================
@@ -104,6 +145,10 @@ def list_sessions():
         active_only = request.args.get('active_only', 'false').lower() == 'true'
         storage = get_storage()
         sessions = storage.list_sessions(active_only=active_only)
+        
+        # Reconcile position filled status for all sessions
+        for session in sessions:
+            _reconcile_position_filled_status(session, storage)
         
         return jsonify({
             'success': True,
@@ -136,6 +181,9 @@ def get_session(session_id: str):
                 'success': False,
                 'error': f'Session not found: {session_id}'
             }), 404
+        
+        # Reconcile position filled status
+        _reconcile_position_filled_status(session, storage)
         
         return jsonify({
             'success': True,
@@ -981,6 +1029,12 @@ def get_session_payoff(session_id: str):
         # Reload session after fill updates
         session = storage.get_session(session_id)
         
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session {session_id} was deleted during payoff calculation'
+            }), 404
+        
         # Calculate payoff
         calc = get_payoff_calculator()
         payoff_data = calc.calculate_session_payoff(session)
@@ -1146,6 +1200,12 @@ def sync_session_orders(session_id: str):
         
         # Get updated session for current counts
         updated_session = storage.get_session(session_id)
+        
+        if not updated_session:
+            return jsonify({
+                'success': False,
+                'error': f'Session {session_id} was deleted during sync'
+            }), 404
         
         return jsonify({
             'success': True,

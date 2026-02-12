@@ -156,13 +156,49 @@ Trigger Conditions (ALL must be true):
    3. Algo is in RUNNING state (not PAUSED)
    4. Current time within configured trading hours
    
+CRITICAL: Max loss zones are DYNAMICALLY RECALCULATED after each 
+adjustment from the COMBINED payoff curve of ALL open positions.
+The algo does NOT use the initial OTM buy strikes as static trigger 
+zones. After each adjustment the payoff shape changes, therefore 
+the max loss zones shift.
+   
 On Trigger:
    1. Calculate NEW ATM based on current spot
-   2. Select new strikes using same rules
+   2. Select new strikes using same premium percentage rules
    3. Fire configured number of auto-loop rounds
-   4. Place limit orders at 3 for new sell legs
-   5. Recalculate max loss points (include all positions)
-   6. Return to MONITORING state
+   4. Track adjustment orders as pending (for fill detection)
+   5. Place limit orders at 3 for new sell legs
+   6. Recalculate COMBINED payoff (all positions: initial + adjustments)
+   7. Find NEW max loss zones from combined payoff curve
+   8. Store new max_loss_upper/max_loss_lower in session
+   9. Update WebUI with new trigger zone markers
+   10. Return to MONITORING state with NEW trigger zones
+   
+NEXT adjustment can ONLY trigger at the NEW max loss zones.
+This process repeats with each successive adjustment.
+```
+
+### 3.3.1 Dynamic Max Loss Zone Lifecycle
+
+```
+INITIAL DEPLOY:
+   1. Place initial butterfly positions
+   2. Calculate payoff curve → find max loss zones A & B
+   3. Monitor: trigger zones = A & B
+
+FIRST ADJUSTMENT (e.g., price reaches zone B):
+   1. Place adjustment positions (same rules, new ATM)
+   2. COMBINED payoff = initial positions + adjustment positions
+   3. Recalculate max loss zones from combined payoff → C & D
+   4. Monitor: trigger zones = C & D (NOT A & B)
+
+SECOND ADJUSTMENT (e.g., price reaches zone C or D):
+   1. Place more adjustment positions
+   2. COMBINED payoff = all previous positions + new positions
+   3. Recalculate max loss zones → E & F
+   4. Monitor: trigger zones = E & F
+
+...and so on. Each adjustment shifts the trigger zones.
 ```
 
 ### 3.4 Sell Leg Exit at Premium ≤3
@@ -686,6 +722,32 @@ The following enhancements are planned to bring SSR Algo to institutional-grade 
 - Prevents "fake" payoff graphs based on pending orders
 - Frontend displays warning when orders are still pending
 - Ensures accurate trigger zone detection
+
+✅ **CRITICAL FIX: Dynamic Max Loss Zone Recalculation After Adjustments** (Feb 11, 2026)
+- **Bug Fixed**: Max loss zones were NEVER recalculated after adjustments
+  - `calculate_session_payoff()` only tracked FIRST position group's OTM buy strikes
+  - Used `if symbol and otm_ce_buy_strike is None:` which only captured first occurrence
+  - Hard-overrode payoff-calculated max loss zones with static initial OTM buy strikes
+  - Result: Algo kept triggering adjustments at the SAME initial zone repeatedly
+- **Bug Fixed**: Payoff graph did NOT include adjustment positions
+  - `_trigger_adjustment()` called `execute_rounds()` without `progress_callback`
+  - Adjustment orders were never added to `pending_orders` → never moved to `filled_orders`
+  - Payoff calculation only included positions matched in `filled_orders`
+  - Result: Payoff graph stayed fixed at initial positions, ignoring adjustments
+- **Fix Applied**: 
+  1. Payoff now includes ALL positions from ALL position groups (initial + adjustments)
+  2. Uses actual fill prices when available, falls back to entry prices from position groups
+  3. Max loss zones dynamically calculated from combined payoff curve using `find_max_loss_points()`
+  4. Removed hard override that forced initial OTM buy strikes as trigger zones
+  5. After each adjustment, payoff is recalculated and new max loss zones stored in session
+  6. Adjustment orders now tracked via `progress_callback` → pending → filled pipeline
+  7. WebUI trigger zone markers update to reflect new zones after each adjustment
+- **Expected Behavior After Fix**:
+  - A: Initial positions placed, payoff calculated, max loss zones identified
+  - B: Market reaches max loss zone → 10 min dwell → adjustment trades placed
+  - C: Payoff RECALCULATED with ALL positions → NEW max loss zones found
+  - D: Next adjustment can ONLY trigger at NEW zones (not old ones)
+  - E: Process repeats with each successive adjustment
 
 ---
 

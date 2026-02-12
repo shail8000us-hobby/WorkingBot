@@ -479,6 +479,9 @@ class SSRAlgoStorage:
         """
         Mark an order as filled with actual fill price.
         
+        Also updates matching position group legs to show filled status
+        and stores the actual fill price on the leg.
+        
         Args:
             session_id: Session identifier
             order_id: The order ID that was filled
@@ -495,6 +498,7 @@ class SSRAlgoStorage:
         filled = session.get('filled_orders', [])
         
         # Find and move order from pending to filled
+        filled_symbol = None
         updated_pending = []
         for order in pending:
             if order.get('order_id') == order_id:
@@ -502,8 +506,22 @@ class SSRAlgoStorage:
                 order['fill_price'] = fill_price
                 order['filled_at'] = datetime.utcnow().isoformat()
                 filled.append(order)
+                filled_symbol = order.get('symbol')
             else:
                 updated_pending.append(order)
+        
+        # Update position group legs for the filled symbol
+        # This ensures the positions table shows correct filled status
+        positions = session.get('positions', [])
+        if filled_symbol:
+            for pos_group in positions:
+                for leg_key in ['atm_ce', 'atm_pe', 'otm_ce_buy', 'otm_pe_buy', 'far_otm_ce', 'far_otm_pe']:
+                    leg = pos_group.get(leg_key)
+                    if leg and leg.get('symbol') == filled_symbol and not leg.get('filled'):
+                        leg['filled'] = True
+                        if fill_price and fill_price > 0:
+                            leg['fill_price'] = fill_price
+                        break  # Only mark one unfilled leg per fill event
         
         # Check if all orders for a round are filled
         rounds_completed = session.get('rounds_completed', 0)
@@ -514,6 +532,7 @@ class SSRAlgoStorage:
         return self.update_session(session_id, {
             'pending_orders': updated_pending,
             'filled_orders': filled,
+            'positions': positions,
             'rounds_completed': rounds_completed
         })
     

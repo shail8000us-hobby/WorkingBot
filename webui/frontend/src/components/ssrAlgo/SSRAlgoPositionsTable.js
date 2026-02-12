@@ -138,10 +138,12 @@ const SSRAlgoPositionsTable = ({ positions, showHeader = true, compact = false }
         sx={{ 
           bgcolor: 'rgba(15, 23, 42, 0.8)',
           border: '1px solid rgba(71, 85, 105, 0.3)',
-          maxHeight: compact ? 250 : 400,
+          maxHeight: compact ? 'none' : 400,
+          flex: compact ? 1 : 'unset',
           '& .MuiTableCell-root': {
             borderColor: 'rgba(71, 85, 105, 0.2)',
             py: compact ? 0.5 : 1,
+            fontSize: compact ? '0.75rem' : '0.875rem',
           }
         }}
       >

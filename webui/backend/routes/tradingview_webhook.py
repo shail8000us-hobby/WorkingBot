@@ -374,6 +374,41 @@ def receive_webhook():
         symbol = str(data.get('symbol', data.get('ticker', 'UNKNOWN'))).upper().strip()
         action = str(data.get('action', data.get('side', data.get('direction', '')))).lower().strip()
         
+        # ── Step 6.1: Handle TradingView placeholder not substituted ──
+        # If action contains {{...}}, TradingView didn't substitute the variable
+        if '{{' in action or '}}' in action:
+            logger.warning(f"TradingView placeholder NOT substituted: {action}")
+            # Try to extract from order_id, order_action, or other fields
+            order_id = str(data.get('order_id', '')).lower()
+            order_action = str(data.get('order_action', '')).lower()
+            
+            # Check order_id first (user's script uses "Buy" / "Sell" as IDs)
+            if 'buy' in order_id or order_id == 'buy':
+                action = 'buy'
+                logger.info(f"Extracted action 'buy' from order_id: {order_id}")
+            elif 'sell' in order_id or order_id == 'sell':
+                action = 'sell'
+                logger.info(f"Extracted action 'sell' from order_id: {order_id}")
+            elif 'long' in order_id:
+                action = 'long'
+                logger.info(f"Extracted action 'long' from order_id: {order_id}")
+            elif 'short' in order_id:
+                action = 'short'
+                logger.info(f"Extracted action 'short' from order_id: {order_id}")
+            # Check order_action field
+            elif order_action in VALID_ACTIONS:
+                action = order_action
+                logger.info(f"Extracted action '{action}' from order_action field")
+            else:
+                error_msg = (
+                    f'TradingView placeholder {{{{strategy.order.action}}}} not substituted. '
+                    f'Make sure alert is created from Strategy Tester (not chart alert). '
+                    f'Or use hardcoded action like "buy" or "sell" in the message.'
+                )
+                response_code = 400
+                logger.error(f"PLACEHOLDER ERROR: {error_msg}")
+                return jsonify({'success': False, 'error': error_msg, 'hint': 'Create alert from Strategy Tester panel'}), response_code
+        
         try:
             price = float(data.get('price', data.get('close', 0)))
         except (ValueError, TypeError):

@@ -770,68 +770,68 @@ class TakeProfitMonitor:
                     raise Exception(f"Invalid positions response type: {type(positions_data)}")
                 if not positions:
                     raise Exception("No positions found from API")
-            
-            print(f"🎯 DEBUG: Got {len(positions)} positions", flush=True)
-            pos = next((p for p in positions if p.get('product_symbol') == symbol), None)
-            if not pos:
-                raise Exception(f"Position {symbol} not found")
-            
-            size = pos.get('size', 0)
-            product_id = pos.get('product_id')
-            print(f"🎯 DEBUG: Found position - size={size}, product_id={product_id}", flush=True)
-            
-            if size == 0:
-                logger.warning(f"⚠️ {symbol} already closed (size=0)")
-                return
-            
-            # Determine side (opposite of current position)
-            close_side = 'sell' if size > 0 else 'buy'
-            close_size = min(abs(exit_quantity), abs(size))  # Don't close more than we have
-            
-            target_type = "profit target" if target_profit > 0 else "loss limit"
-            logger.info(f"🎯 Closing {close_size} lots of {symbol} ({close_side}) due to {target_type}")
-            logger.info(f"   Target: ${target_profit:.2f} | Actual P&L: ${actual_pnl:.2f}")
-            print(f"🎯 DEBUG: About to place order - symbol={symbol}, size={close_size}, side={close_side}", flush=True)
-            
-            # Place LIMIT order to close partial position using async API
-            if ORDER_EXECUTION_AVAILABLE and place_smart_order:
-                print(f"🎯 DEBUG: Calling place_smart_order...", flush=True)
-                try:
-                    # Call async function
-                    order_result = loop.run_until_complete(
-                        place_smart_order(
-                            client=self.api_client,
-                            symbol=symbol,
-                            size=close_size,
-                            side=close_side,
-                            order_preference="smart",  # Use smart order with limit
-                            reduce_only=True
+                
+                print(f"🎯 DEBUG: Got {len(positions)} positions", flush=True)
+                pos = next((p for p in positions if p.get('product_symbol') == symbol), None)
+                if not pos:
+                    raise Exception(f"Position {symbol} not found")
+                
+                size = pos.get('size', 0)
+                product_id = pos.get('product_id')
+                print(f"🎯 DEBUG: Found position - size={size}, product_id={product_id}", flush=True)
+                
+                if size == 0:
+                    logger.warning(f"⚠️ {symbol} already closed (size=0)")
+                    return
+                
+                # Determine side (opposite of current position)
+                close_side = 'sell' if size > 0 else 'buy'
+                close_size = min(abs(exit_quantity), abs(size))  # Don't close more than we have
+                
+                target_type = "profit target" if target_profit > 0 else "loss limit"
+                logger.info(f"🎯 Closing {close_size} lots of {symbol} ({close_side}) due to {target_type}")
+                logger.info(f"   Target: ${target_profit:.2f} | Actual P&L: ${actual_pnl:.2f}")
+                print(f"🎯 DEBUG: About to place order - symbol={symbol}, size={close_size}, side={close_side}", flush=True)
+                
+                # Place LIMIT order to close partial position using async API
+                if ORDER_EXECUTION_AVAILABLE and place_smart_order:
+                    print(f"🎯 DEBUG: Calling place_smart_order...", flush=True)
+                    try:
+                        # Call async function
+                        order_result = loop.run_until_complete(
+                            place_smart_order(
+                                client=self.api_client,
+                                symbol=symbol,
+                                size=close_size,
+                                side=close_side,
+                                order_preference="smart",  # Use smart order with limit
+                                reduce_only=True
+                            )
                         )
-                    )
-                    print(f"🎯 DEBUG: Order result: {order_result}", flush=True)
-                    
-                    # Check if order was placed successfully (has 'id' field)
-                    if order_result and isinstance(order_result, dict) and order_result.get('id'):
-                        order_id = order_result.get('id')
-                        order_state = order_result.get('state')
-                        logger.info(f"✅ Take profit order placed for {symbol}: {close_side} {close_size} lots (Order ID: {order_id}, State: {order_state})")
-                        print(f"🎯 DEBUG: ✅ ORDER PLACED SUCCESSFULLY! ID={order_id}", flush=True)
-                        add_activity_event("order_placed", f"✅ TP ORDER: {symbol} - {close_side.upper()} {close_size} lots", {
-                            "symbol": symbol,
-                            "side": close_side,
-                            "size": close_size,
-                            "order_id": order_id
-                        })
-                    else:
-                        error_msg = "No order ID returned"
-                        print(f"🎯 DEBUG: Order failed: {error_msg}", flush=True)
-                        raise Exception(f"Order placement failed: {error_msg}")
-                except Exception as order_error:
-                    print(f"🎯 DEBUG: Exception placing order: {order_error}", flush=True)
-                    raise
-            else:
-                print(f"🎯 DEBUG: ORDER_EXECUTION_AVAILABLE={ORDER_EXECUTION_AVAILABLE}, place_smart_order={place_smart_order}", flush=True)
-                raise Exception("Order execution module not available")
+                        print(f"🎯 DEBUG: Order result: {order_result}", flush=True)
+                        
+                        # Check if order was placed successfully (has 'id' field)
+                        if order_result and isinstance(order_result, dict) and order_result.get('id'):
+                            order_id = order_result.get('id')
+                            order_state = order_result.get('state')
+                            logger.info(f"✅ Take profit order placed for {symbol}: {close_side} {close_size} lots (Order ID: {order_id}, State: {order_state})")
+                            print(f"🎯 DEBUG: ✅ ORDER PLACED SUCCESSFULLY! ID={order_id}", flush=True)
+                            add_activity_event("order_placed", f"✅ TP ORDER: {symbol} - {close_side.upper()} {close_size} lots", {
+                                "symbol": symbol,
+                                "side": close_side,
+                                "size": close_size,
+                                "order_id": order_id
+                            })
+                        else:
+                            error_msg = "No order ID returned"
+                            print(f"🎯 DEBUG: Order failed: {error_msg}", flush=True)
+                            raise Exception(f"Order placement failed: {error_msg}")
+                    except Exception as order_error:
+                        print(f"🎯 DEBUG: Exception placing order: {order_error}", flush=True)
+                        raise
+                else:
+                    print(f"🎯 DEBUG: ORDER_EXECUTION_AVAILABLE={ORDER_EXECUTION_AVAILABLE}, place_smart_order={place_smart_order}", flush=True)
+                    raise Exception("Order execution module not available")
             finally:
                 # Only close loop if we created it
                 if should_close_loop:

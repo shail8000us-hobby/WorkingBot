@@ -411,13 +411,13 @@ const TradingViewSignals = () => {
                             <TableCell sx={{ border: 0, py: 0.5, fontWeight: 500 }}>{label}</TableCell>
                             <TableCell sx={{ border: 0, py: 0.5 }}>
                               <Chip label={value} size="small" sx={{
-                                bgcolor: color === 'green' ? '#e8f5e9' : color === 'red' ? '#ffebee' : '#f5f5f5',
-                                color: color === 'green' ? '#2e7d32' : color === 'red' ? '#c62828' : '#666',
+                                bgcolor: color === 'green' ? 'rgba(76, 175, 80, 0.15)' : color === 'red' ? 'rgba(244, 67, 54, 0.15)' : 'rgba(158, 158, 158, 0.1)',
+                                color: color === 'green' ? '#81c784' : color === 'red' ? '#e57373' : '#bdbdbd',
                                 fontWeight: 500,
                               }} />
                             </TableCell>
                           </TableRow>
-                        ))}
+                        ))}  
                       </TableBody>
                     </Table>
                   </Paper>
@@ -498,8 +498,8 @@ const TradingViewSignals = () => {
                       <TableBody>
                         {webhookLogs.map((log) => (
                           <TableRow key={log.id} sx={{
-                            bgcolor: log.parsed_ok ? 'inherit' : '#fff3e0',
-                          }}>
+                            bgcolor: log.parsed_ok ? 'inherit' : 'rgba(255, 152, 0, 0.1)',
+                          }}>  
                             <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                               {formatTime(log.received_at)}
                             </TableCell>
@@ -541,13 +541,13 @@ const TradingViewSignals = () => {
       {stats && (
         <Grid container spacing={1.5} sx={{ mb: 2 }}>
           {[
-            { label: 'Total', value: stats.total_signals, color: '#f5f5f5', textColor: '#333' },
-            { label: 'Buy', value: stats.by_action?.buy || 0, color: '#e8f5e9', textColor: '#2e7d32' },
-            { label: 'Sell', value: stats.by_action?.sell || 0, color: '#ffebee', textColor: '#c62828' },
-            { label: '24h', value: stats.last_24h, color: '#e3f2fd', textColor: '#1565c0' },
+            { label: 'Total', value: stats.total_signals, color: 'rgba(158, 158, 158, 0.08)', textColor: '#bdbdbd' },
+            { label: 'Buy', value: stats.by_action?.buy || 0, color: 'rgba(76, 175, 80, 0.12)', textColor: '#81c784' },
+            { label: 'Sell', value: stats.by_action?.sell || 0, color: 'rgba(244, 67, 54, 0.12)', textColor: '#e57373' },
+            { label: '24h', value: stats.last_24h, color: 'rgba(33, 150, 243, 0.12)', textColor: '#64b5f6' },
           ].map(({ label, value, color, textColor }) => (
             <Grid item xs={6} md={3} key={label}>
-              <Paper sx={{ p: 1.5, bgcolor: color, textAlign: 'center' }}>
+              <Paper sx={{ p: 1.5, bgcolor: color, textAlign: 'center' }}>  
                 <Typography variant="caption" color="textSecondary">{label}</Typography>
                 <Typography variant="h5" sx={{ fontWeight: 700, color: textColor }}>{value}</Typography>
               </Paper>
@@ -604,8 +604,8 @@ const TradingViewSignals = () => {
             <TableContainer sx={{ maxHeight: 500 }}>
               <Table size="small" stickyHeader>
                 <TableHead>
-                  <TableRow sx={{ '& th': { bgcolor: '#fafafa', fontWeight: 700, fontSize: '0.8rem' } }}>
-                    <TableCell>Time</TableCell>
+                  <TableRow sx={{ '& th': { bgcolor: 'rgba(0, 0, 0, 0.3)', fontWeight: 700, fontSize: '0.8rem' } }}>
+                    <TableCell>Time</TableCell>  
                     <TableCell>Symbol</TableCell>
                     <TableCell>Action</TableCell>
                     <TableCell align="right">Price</TableCell>
@@ -624,11 +624,11 @@ const TradingViewSignals = () => {
                       <TableRow
                         key={signal.id || idx}
                         sx={{
-                          '&:hover': { bgcolor: '#f5f5f5' },
-                          bgcolor: isTest ? '#f3e5f5' : signal.processed ? '#f0f0f0' : 'inherit',
+                          '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.05)' },
+                          bgcolor: isTest ? 'rgba(156, 39, 176, 0.08)' : signal.processed ? 'rgba(158, 158, 158, 0.06)' : 'inherit',
                           transition: 'background-color 0.3s',
                         }}
-                      >
+                      >  
                         <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                           {formatTime(signal.created_at)}
                         </TableCell>
@@ -651,8 +651,8 @@ const TradingViewSignals = () => {
                         <TableCell sx={{ fontSize: '0.8rem' }}>{signal.timeframe || '—'}</TableCell>
                         <TableCell>
                           {isTest ? (
-                            <Chip label="TEST" size="small" sx={{ bgcolor: '#e1bee7', fontSize: '0.7rem' }} />
-                          ) : isTvIp ? (
+                            <Chip label="TEST" size="small" sx={{ bgcolor: 'rgba(156, 39, 176, 0.2)', color: '#ce93d8', fontSize: '0.7rem' }} />
+                          ) : isTvIp ? (  
                             <Chip label="TV" size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
                           ) : (
                             <Chip label={signal.source_ip === '127.0.0.1' ? 'Local' : 'Ext'} size="small"
@@ -709,7 +709,7 @@ const TradingViewSignals = () => {
 
               {/* Setup steps */}
               <Typography variant="subtitle2" gutterBottom>Quick Setup Steps:</Typography>
-              <Paper sx={{ p: 2, mb: 3, bgcolor: '#f9f9f9' }}>
+              <Paper sx={{ p: 2, mb: 3, bgcolor: 'rgba(255, 255, 255, 0.03)' }}>
                 {(webhookConfig.setup_steps || []).map((step, i) => (
                   <Typography key={i} variant="body2" sx={{ mb: 0.5, fontFamily: 'monospace', fontSize: '0.8rem' }}>
                     {step}
@@ -719,7 +719,7 @@ const TradingViewSignals = () => {
 
               {/* Payload formats */}
               <Typography variant="subtitle2" gutterBottom>Accepted Payload Formats:</Typography>
-              <Paper sx={{ p: 2, mb: 3, bgcolor: '#f5f5f5' }}>
+              <Paper sx={{ p: 2, mb: 3, bgcolor: 'rgba(255, 255, 255, 0.03)' }}>
                 {(webhookConfig.alternative_formats || []).map((fmt, i) => (
                   <Box key={i} sx={{ display: 'flex', gap: 1, mb: 0.5, alignItems: 'center' }}>
                     <Chip label={`Format ${i + 1}`} size="small" variant="outlined" sx={{ minWidth: 75 }} />

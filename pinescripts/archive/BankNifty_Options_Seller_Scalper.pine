@@ -1,0 +1,390 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// INSTITUTIONAL OPTIONS SELLER - Multi-Timeframe Premium Scalper
+// ═══════════════════════════════════════════════════════════════════════════
+// Works on: ANY TIMEFRAME (auto-adjusts to your chart)
+// Market: BankNifty Options (CE/PE charts) or underlying
+// Logic: Institutional-grade mean reversion with market structure awareness
+//
+// CORE PRINCIPLES:
+// 1. Sell ONLY at key supply/demand zones with confluence
+// 2. Require multiple timeframe confirmation
+// 3. Respect market structure (don't fight strong trends)
+// 4. Volatility regime awareness (sell when IV elevated)
+// 5. Clean exits with dynamic profit-taking
+// ═══════════════════════════════════════════════════════════════════════════
+//@version=5
+strategy("Institutional Options Seller", shorttitle="IOS", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, initial_capital=500000, commission_type=strategy.commission.percent, commission_value=0.05, slippage=1, calc_on_every_tick=false, max_bars_back=500)
+
+// ══════════════ INPUTS ══════════════
+// --- Signal Quality (MOST IMPORTANT) ---
+minQuality     = input.string("High", "Signal Quality", options=["Ultra", "High", "Medium"], group="🎯 Strategy Core", tooltip="Ultra = rare institutional setups, High = balanced, Medium = more signals")
+rrRatio        = input.float(2.5, "Min Risk:Reward Ratio", minval=1.5, maxval=5.0, step=0.1, group="🎯 Strategy Core")
+
+// --- Market Structure ---
+swingLen       = input.int(10, "Swing Strength", minval=5, maxval=30, group="📊 Market Structure", tooltip="Higher = stronger S/R zones")
+atrLen         = input.int(14, "ATR Length", minval=7, maxval=30, group="📊 Market Structure")
+atrMultiplier  = input.float(1.5, "ATR Stop Multiplier", minval=1.0, maxval=4.0, step=0.1, group="📊 Market Structure")
+
+// --- Mean Reversion Core ---
+rsiLen         = input.int(14, "RSI Length", minval=7, maxval=21, group="🔄 Mean Reversion")
+rsiExtreme     = input.int(80, "RSI Extreme", minval=70, maxval=90, group="🔄 Mean Reversion", tooltip="RSI must hit this for sell setup")
+bbLen          = input.int(20, "Bollinger Period", minval=15, maxval=50, group="🔄 Mean Reversion")
+bbStd          = input.float(2.5, "BB Std Dev", minval=2.0, maxval=4.0, step=0.1, group="🔄 Mean Reversion", tooltip="Higher = only trade extreme stretches")
+
+// --- Trend Filter ---
+trendEma       = input.int(200, "Trend EMA", minval=50, maxval=400, group="📈 Trend Filter")
+respectTrend   = input.bool(true, "Respect Higher TF Trend", group="📈 Trend Filter", tooltip="Don't sell into strong uptrends")
+
+// --- Volatility Regime ---
+volWindow      = input.int(20, "Volatility Window", minval=10, maxval=50, group="📉 Volatility")
+volThreshold   = input.float(1.3, "High Vol Threshold", minval=1.1, maxval=2.0, step=0.1, group="📉 Volatility", tooltip="Sell only when volatility is elevated")
+
+// --- Risk Management ---
+useTrailing    = input.bool(false, "Use Trailing Stop", group="💰 Risk/Reward", tooltip="For options: better to use fixed targets. Enable only if you understand.")
+trailActivate  = input.float(80.0, "Trail Activate %", minval=50, maxval=100, step=10, group="💰 Risk/Reward", tooltip="Lock profits after this % of target reached")
+targetMethod   = input.string("Premium Decay %", "Target Method", options=["Premium Decay %", "ATR Multiple"], group="💰 Risk/Reward", tooltip="Options = use % decay, Futures/Spot = use ATR")
+decayTarget    = input.float(40.0, "Premium Decay Target %", minval=20, maxval=70, step=5, group="💰 Risk/Reward", tooltip="Exit when option premium drops by this %")
+stopMethod     = input.string("Premium Rise %", "Stop Method", options=["Premium Rise %", "ATR Multiple"], group="💰 Risk/Reward")
+stopRise       = input.float(25.0, "Premium Rise Stop %", minval=15, maxval=50, step=5, group="💰 Risk/Reward", tooltip="SL when option premium rises against you by this %")
+
+// --- Session Filter (NSE) ---
+useSession     = input.bool(true, "NSE Session Filter", group="🕐 Session")
+avoidOpen      = input.bool(true, "Skip First 15 Min", group="🕐 Session")
+avoidLunch     = input.bool(true, "Skip 12:30-1:00 PM", group="🕐 Session", tooltip="Low liquidity period")
+forceCloseTime = input.int(1510, "Force Exit Time (HHMM)", group="🕐 Session")
+
+// --- Visuals ---
+showZones      = input.bool(true, "Show S/R Zones", group="🎨 Display")
+showMTF        = input.bool(true, "Show HTF Trend", group="🎨 Display")
+showStats      = input.bool(true, "Show Dashboard", group="🎨 Display")
+
+// ══════════════ CALCULATIONS ══════════════
+
+// ──── ATR for Volatility & Risk ────
+atr = ta.atr(atrLen)
+atrSma = ta.sma(atr, 20)
+
+// ──── Multi-Timeframe Context ────
+// Get higher timeframe trend (auto-adapt to current chart)
+htfTimeframe = timeframe.isintraday ? (timeframe.multiplier < 15 ? "60" : "1D") : "1W"
+htfClose = request.security(syminfo.tickerid, htfTimeframe, close, lookahead=barmerge.lookahead_off)
+htfEma = request.security(syminfo.tickerid, htfTimeframe, ta.ema(close, trendEma), lookahead=barmerge.lookahead_off)
+htfBullish = htfClose > htfEma
+htfBearish = htfClose < htfEma
+
+// ──── Market Structure: Swing Highs/Lows (Supply/Demand Zones) ────
+swingHigh = ta.pivothigh(high, swingLen, swingLen)
+swingLow  = ta.pivotlow(low, swingLen, swingLen)
+
+var float resistanceZone = na
+var float supportZone = na
+var int resBarsSince = 999
+var int supBarsSince = 999
+
+if not na(swingHigh)
+    resistanceZone := high[swingLen]
+    resBarsSince := 0
+else
+    resBarsSince += 1
+
+if not na(swingLow)
+    supportZone := low[swingLen]
+    supBarsSince := 0
+else
+    supBarsSince += 1
+
+// Only use recent zones (within 100 bars)
+validResistance = resBarsSince < 100 and not na(resistanceZone)
+validSupport    = supBarsSince < 100 and not na(supportZone)
+
+// Price near zone (within 0.3% tolerance)
+tolerance = close * 0.003
+nearResistance = validResistance and high >= resistanceZone - tolerance and high <= resistanceZone + tolerance
+nearSupport    = validSupport and low <= supportZone + tolerance and low >= supportZone - tolerance
+
+// ──── Mean Reversion Core ────
+rsi = ta.rsi(close, rsiLen)
+[bbUpper, bbMid, bbLower] = ta.bb(close, bbLen, bbStd)
+
+// Extreme conditions (stretched away from mean)
+rsiOverbought  = rsi > rsiExtreme
+rsiOversold    = rsi < (100 - rsiExtreme)
+priceBeyondBBUpper = close > bbUpper
+priceBeyondBBLower = close < bbLower
+
+// RSI Divergence (institutional edge)
+// Bearish div: price makes higher high but RSI makes lower high
+priceHH = ta.valuewhen(swingHigh, high[swingLen], 1) < high[swingLen] and not na(swingHigh)
+rsiAtPrevHigh = ta.valuewhen(swingHigh, rsi[swingLen], 1)
+rsiAtCurrHigh = ta.valuewhen(swingHigh, rsi[swingLen], 0)
+bearishDiv = priceHH and rsiAtCurrHigh < rsiAtPrevHigh and not na(rsiAtPrevHigh) and not na(swingHigh)
+
+// Bullish div: price makes lower low but RSI makes higher low
+priceLL = ta.valuewhen(swingLow, low[swingLen], 1) > low[swingLen] and not na(swingLow)
+rsiAtPrevLow = ta.valuewhen(swingLow, rsi[swingLen], 1)
+rsiAtCurrLow = ta.valuewhen(swingLow, rsi[swingLen], 0)
+bullishDiv = priceLL and rsiAtCurrLow > rsiAtPrevLow and not na(rsiAtPrevLow) and not na(swingLow)
+
+// ──── Volatility Regime ────
+// Sell options when volatility is HIGH (premium is expensive)
+volatility = ta.stdev(close, volWindow) / ta.sma(close, volWindow) * 100
+avgVol = ta.sma(volatility, volWindow)
+highVolatility = volatility > avgVol * volThreshold
+lowVolatility  = volatility < avgVol * 0.8
+
+// ──── VWAP (institutional fair value) ────
+vwapVal = ta.vwap(hlc3)
+aboveVWAP = close > vwapVal
+belowVWAP = close < vwapVal
+
+// ──── Volume Confirmation ────
+vol20 = ta.sma(volume, 20)
+volumeSpike = volume > vol20 * 1.5
+lowVolume = volume < vol20 * 0.7
+
+// ──── Candle Patterns (Institutional reversal signals) ────
+// Bearish engulfing at resistance
+bearEngulf = close < open and close[1] > open[1] and close < open[1] and open > close[1] and close < close[1]
+// Bullish engulfing at support  
+bullEngulf = close > open and close[1] < open[1] and close > open[1] and open < close[1] and close > close[1]
+// Rejection wicks (pin bars)
+bodySize = math.abs(close - open)
+candleRange = high - low
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+rejectionAtTop = upperWick > bodySize * 2 and candleRange > atr * 0.8
+rejectionAtBottom = lowerWick > bodySize * 2 and candleRange > atr * 0.8
+
+// ──── Session Filters ────
+currentTime = hour * 100 + minute
+inSession = not useSession or (currentTime >= 920 and currentTime <= 1500)
+pastOpen  = not avoidOpen or currentTime >= 930
+lunchTime = currentTime >= 1230 and currentTime <= 1300
+avoidNow  = (avoidLunch and lunchTime) or not pastOpen
+forceClose = currentTime >= forceCloseTime
+
+// ══════════════════════════════════════════════════════════════
+// INSTITUTIONAL SIGNAL LOGIC
+// ══════════════════════════════════════════════════════════════
+// Philosophy: QUALITY over quantity
+// Only trade setups that institutions would take
+// Confluence = multiple factors confirming same direction
+// ══════════════════════════════════════════════════════════════
+
+// ──── Signal Quality Levels ────
+var int qualityScore = minQuality == "Ultra" ? 6 : minQuality == "High" ? 4 : 3
+
+// ──── SELL PREMIUM Setup (SHORT on options chart) ────
+// Looking for: Price at resistance + overbought + high vol + reversal pattern
+var int sellConfluence = 0
+sellConfluence := 0
+
+// Core: Mean reversion at extreme
+if rsiOverbought and priceBeyondBBUpper
+    sellConfluence += 2  // Double weight - this is critical
+
+// Market structure: Price at supply zone
+if nearResistance
+    sellConfluence += 2  // Double weight
+
+// Reversal confirmation
+if bearEngulf or rejectionAtTop
+    sellConfluence += 1
+
+// RSI bearish divergence (institutional edge)
+if bearishDiv
+    sellConfluence += 2
+
+// Volatility regime: Premium is expensive
+if highVolatility
+    sellConfluence += 1
+
+// Higher timeframe: Don't fight strong uptrend
+if respectTrend and not htfBullish
+    sellConfluence += 1
+else if respectTrend and htfBullish
+    sellConfluence -= 3  // Penalty for fighting trend
+
+// Volume: Exhaustion
+if volumeSpike and close < open  // Sellers stepping in
+    sellConfluence += 1
+
+// VWAP: Price extended above fair value
+if aboveVWAP and (close - vwapVal) / vwapVal > 0.005  // >0.5% above VWAP
+    sellConfluence += 1
+
+// ──── BUY-BACK Setup (EXIT short) ────
+// Looking for: Mean reversion complete OR danger signals
+var int exitConfluence = 0
+exitConfluence := 0
+
+// Mean reversion achieved
+if rsiOversold and priceBeyondBBLower
+    exitConfluence += 2
+
+// Price reached support
+if nearSupport
+    exitConfluence += 2
+
+// Reversal pattern (danger for our short)
+if bullEngulf or rejectionAtBottom
+    exitConfluence += 2
+
+// Bullish divergence (danger!)
+if bullishDiv
+    exitConfluence += 3  // High priority exit signal
+
+// Volatility collapsed (premium decay done)
+if lowVolatility
+    exitConfluence += 1
+
+// Price back to fair value
+if belowVWAP
+    exitConfluence += 1
+
+// Higher TF trend turning bullish (danger)
+if htfBullish and htfBullish[1] == false  // Just turned bullish
+    exitConfluence += 2
+
+// Volume spike on up candle (buyers taking control)
+if volumeSpike and close > open
+    exitConfluence += 2
+
+// ──── Final Signals ────
+sellSignal = sellConfluence >= qualityScore and inSession and not avoidNow and strategy.position_size == 0
+exitSignal = exitConfluence >= 3 and strategy.position_size < 0  // Lower bar for exits (protect capital)
+
+// ══════════════ STRATEGY EXECUTION ══════════════
+
+// ──── Entry: Sell Premium ────
+if sellSignal
+    // Calculate stops based on premium % or ATR
+    var float slPrice = 0.0
+    var float tpPrice = 0.0
+    
+    if targetMethod == "Premium Decay %"
+        // OPTIONS METHOD: % decay of premium
+        tpPrice := close * (1 - decayTarget / 100)  // Premium drops by X%
+        slPrice := close * (1 + stopRise / 100)     // Premium rises by X%
+    else
+        // FUTURES/SPOT METHOD: ATR-based
+        slDistance = atr * atrMultiplier
+        tpDistance = slDistance * rrRatio
+        slPrice := close + slDistance
+        tpPrice := close - tpDistance
+    
+    strategy.entry("Sell", strategy.short, comment="C:" + str.tostring(sellConfluence))
+    
+    if useTrailing
+        // Calculate trail distance
+        trailDist = targetMethod == "Premium Decay %" ? close * 0.15 : atr * 0.8
+        trailPoints = trailDist / syminfo.mintick
+        trailActivatePrice = close - (close - tpPrice) * trailActivate / 100
+        
+        strategy.exit("Exit", "Sell", stop=slPrice, limit=tpPrice, trail_price=trailActivatePrice, trail_offset=trailPoints, comment="Trail")
+    else
+        strategy.exit("Exit", "Sell", stop=slPrice, limit=tpPrice, comment="Target")
+
+// ──── Exit: Confluence-based OR Force Close ────
+// Only exit on STRONG reversal signals (don't cut profits early)
+strongReversal = exitConfluence >= 5  // Require stronger confluence for early exit
+
+if strongReversal and strategy.position_size < 0
+    strategy.close("Sell", comment="Rev:" + str.tostring(exitConfluence))
+
+if forceClose and strategy.position_size != 0
+    strategy.close_all(comment="EOD")
+
+// ══════════════ CLEAN VISUAL PLOTS ══════════════
+
+// ──── Support/Resistance Zones ────
+plot(showZones and validResistance ? resistanceZone : na, "Resistance", color=color.new(color.red, 40), linewidth=2, style=plot.style_circles)
+plot(showZones and validSupport ? supportZone : na, "Support", color=color.new(color.green, 40), linewidth=2, style=plot.style_circles)
+
+// ──── VWAP (Fair Value) ────
+plot(vwapVal, "VWAP", color=color.new(color.orange, 30), linewidth=2, style=plot.style_cross)
+
+// ──── Higher Timeframe Trend ────
+htfColor = htfBullish ? color.new(color.green, 85) : color.new(color.red, 85)
+bgcolor(showMTF ? htfColor : na, title="HTF Trend")
+
+// ──── Key Signals Only ────
+plotshape(sellSignal, "SELL SETUP", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal, text="SELL")
+plotshape(exitSignal and strategy.position_size < 0, "EXIT", shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.small, text="EXIT")
+
+// Divergence warnings (institutional edge)
+plotshape(bearishDiv, "🔻 Bear Div", shape.labeldown, location.abovebar, color.new(color.fuchsia, 0), size=size.tiny, text="DIV")
+plotshape(bullishDiv and strategy.position_size < 0, "⚠ Bull Div", shape.labelup, location.belowbar, color.new(color.yellow, 0), size=size.tiny, text="⚠DIV")
+
+// Zone highlights
+sellZone = sellConfluence >= qualityScore and strategy.position_size == 0
+exitZone = exitConfluence >= 3 and strategy.position_size < 0
+bgcolor(sellZone ? color.new(color.red, 92) : na, title="Sell Zone")
+bgcolor(exitZone ? color.new(color.green, 92) : na, title="Exit Zone")
+
+// ══════════════ INSTITUTIONAL DASHBOARD ══════════════
+var table dash = table.new(position.top_right, 2, 11, bgcolor=color.new(color.black, 85), border_width=1, border_color=color.new(color.gray, 50))
+
+if showStats and barstate.islast
+    // Performance metrics
+    totalTrades = strategy.closedtrades
+    wins = strategy.wintrades
+    losses = strategy.losstrades
+    winRate = totalTrades > 0 ? wins / totalTrades * 100 : 0.0
+    
+    avgWin = wins > 0 ? strategy.grossprofit / wins : 0.0
+    avgLoss = losses > 0 ? math.abs(strategy.grossloss) / losses : 0.0
+    actualRR = avgLoss != 0 ? avgWin / avgLoss : 0.0
+    
+    pf = strategy.grossloss != 0 ? strategy.grossprofit / math.abs(strategy.grossloss) : 0.0
+    
+    // Header
+    table.cell(dash, 0, 0, "INSTITUTIONAL", text_color=color.yellow, text_size=size.normal)
+    table.cell(dash, 1, 0, "SELLER", text_color=color.yellow, text_size=size.normal)
+    
+    // Stats
+    table.cell(dash, 0, 1, "Quality", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 1, minQuality, text_color=color.aqua, text_size=size.small)
+    
+    table.cell(dash, 0, 2, "Trades", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 2, str.tostring(totalTrades), text_color=color.white, text_size=size.small)
+    
+    table.cell(dash, 0, 3, "Win Rate", text_color=color.white, text_size=size.small)
+    winColor = winRate >= 65 ? color.lime : winRate >= 55 ? color.yellow : color.red
+    table.cell(dash, 1, 3, str.tostring(winRate, "#.#") + "%", text_color=winColor, text_size=size.small)
+    
+    table.cell(dash, 0, 4, "Actual R:R", text_color=color.white, text_size=size.small)
+    rrColor = actualRR >= 2.0 ? color.lime : actualRR >= 1.3 ? color.yellow : color.red
+    table.cell(dash, 1, 4, str.tostring(actualRR, "#.##"), text_color=rrColor, text_size=size.small)
+    
+    table.cell(dash, 0, 5, "Profit Factor", text_color=color.white, text_size=size.small)
+    pfColor = pf >= 2.0 ? color.lime : pf >= 1.5 ? color.yellow : color.red
+    table.cell(dash, 1, 5, str.tostring(pf, "#.##"), text_color=pfColor, text_size=size.small)
+    
+    table.cell(dash, 0, 6, "Net P&L", text_color=color.white, text_size=size.small)
+    pnlStr = strategy.netprofit >= 1000 ? "₹" + str.tostring(strategy.netprofit / 1000, "#.#") + "K" : "₹" + str.tostring(strategy.netprofit, "#")
+    table.cell(dash, 1, 6, pnlStr, text_color=strategy.netprofit > 0 ? color.lime : color.red, text_size=size.small)
+    
+    // Settings display
+    table.cell(dash, 0, 7, "Target", text_color=color.white, text_size=size.small)
+    targetStr = targetMethod == "Premium Decay %" ? str.tostring(decayTarget, "#") + "%" : str.tostring(rrRatio) + "R"
+    table.cell(dash, 1, 7, targetStr, text_color=color.aqua, text_size=size.small)
+    
+    table.cell(dash, 0, 8, "Stop", text_color=color.white, text_size=size.small)
+    stopStr = stopMethod == "Premium Rise %" ? str.tostring(stopRise, "#") + "%" : str.tostring(atrMultiplier) + "xATR"
+    table.cell(dash, 1, 8, stopStr, text_color=color.orange, text_size=size.small)
+    
+    // Live conditions
+    table.cell(dash, 0, 9, "Sell Score", text_color=color.white, text_size=size.small)
+    sellColor = sellConfluence >= qualityScore ? color.red : color.gray
+    table.cell(dash, 1, 9, str.tostring(sellConfluence) + "/" + str.tostring(qualityScore), text_color=sellColor, text_size=size.small)
+    
+    table.cell(dash, 0, 10, "HTF Trend", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 10, htfBullish ? "🔼 Bull" : "🔽 Bear", text_color=htfBullish ? color.green : color.red, text_size=size.small)
+
+// ══════════════ WEBHOOK ALERTS ══════════════
+if sellSignal
+    alert('{"symbol": "' + syminfo.ticker + '", "action": "sell", "price": ' + str.tostring(close) + ', "strategy": "Institutional_Seller", "timeframe": "' + timeframe.period + '", "confluence": ' + str.tostring(sellConfluence) + ', "htf_trend": "' + (htfBullish ? "bullish" : "bearish") + '", "rsi": ' + str.tostring(rsi, "#.#") + '}', alert.freq_once_per_bar)
+
+if exitSignal and strategy.position_size < 0
+    alert('{"symbol": "' + syminfo.ticker + '", "action": "buy", "price": ' + str.tostring(close) + ', "strategy": "Institutional_Seller_Exit", "timeframe": "' + timeframe.period + '", "confluence": ' + str.tostring(exitConfluence) + '}', alert.freq_once_per_bar)

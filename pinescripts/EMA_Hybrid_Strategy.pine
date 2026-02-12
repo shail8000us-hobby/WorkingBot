@@ -1,0 +1,157 @@
+// ═══════════════════════════════════════════════════════════════
+// EMA HYBRID STRATEGY - Your Signals + Institutional Risk Mgmt
+// ═══════════════════════════════════════════════════════════════
+//@version=5
+strategy("EMA Hybrid Pro", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.04, slippage=2)
+
+// ══════════════ SIGNAL GENERATION (Your EMA Logic) ══════════════
+ema7  = ta.ema(close, 7)
+ema13 = ta.ema(close, 13)
+ema30 = ta.ema(close, 30)
+
+// Core crossover signals (YOUR logic - untouched)
+bullCross = ta.crossover(ema7, ema13)
+bearCross = ta.crossunder(ema7, ema13)
+
+// ══════════════ OPTIONAL FILTERS (All OFF by default) ══════════════
+useTrendFilter   = input.bool(false, "📊 ADX Trend Filter", group="Optional Filters", tooltip="Only trade when trend is strong (ADX > threshold)")
+adxLen           = input.int(14, "ADX Length", minval=1, group="Optional Filters")
+adxThreshold     = input.int(20, "ADX Threshold", minval=5, maxval=60, group="Optional Filters")
+
+useVolumeFilter  = input.bool(false, "📈 Volume Filter", group="Optional Filters", tooltip="Only trade when volume is above average")
+volMultiplier    = input.float(1.2, "Volume Multiplier", minval=0.5, maxval=5.0, step=0.1, group="Optional Filters")
+
+useMomentumFilter = input.bool(false, "🚀 Momentum (RSI) Filter", group="Optional Filters", tooltip="Avoid overbought buys and oversold sells")
+rsiLen           = input.int(14, "RSI Length", minval=2, group="Optional Filters")
+rsiOB            = input.int(75, "RSI Overbought", minval=50, maxval=95, group="Optional Filters")
+rsiOS            = input.int(25, "RSI Oversold", minval=5, maxval=50, group="Optional Filters")
+
+useEma30Filter   = input.bool(false, "📉 EMA30 Direction Filter", group="Optional Filters", tooltip="Only BUY above EMA30, only SELL below EMA30")
+
+// ══════════════ RISK MANAGEMENT ══════════════
+stopType         = input.string("ATR", "Stop Loss Type", options=["ATR", "Fixed %"], group="Risk Management")
+atrLen           = input.int(14, "ATR Length", minval=1, group="Risk Management")
+atrMultSL        = input.float(1.5, "ATR Multiplier (SL)", minval=0.5, maxval=5.0, step=0.1, group="Risk Management")
+atrMultTP        = input.float(3.0, "ATR Multiplier (TP)", minval=1.0, maxval=10.0, step=0.1, group="Risk Management")
+fixedSL          = input.float(2.0, "Fixed SL %", minval=0.1, maxval=20.0, step=0.1, group="Risk Management")
+fixedTP          = input.float(4.0, "Fixed TP %", minval=0.1, maxval=40.0, step=0.1, group="Risk Management")
+
+useTrailing      = input.bool(false, "🔄 Trailing Stop", group="Risk Management")
+trailAtrMult     = input.float(2.0, "Trail ATR Multiplier", minval=0.5, maxval=5.0, step=0.1, group="Risk Management")
+
+useDailyLoss     = input.bool(false, "🛑 Daily Loss Limit", group="Risk Management")
+maxDailyLossPct  = input.float(3.0, "Max Daily Loss %", minval=0.5, maxval=20.0, step=0.5, group="Risk Management")
+
+// ══════════════ CALCULATIONS ══════════════
+// ADX - MUST be calculated before use in filters and labels
+[diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
+adxOK = not useTrendFilter or adx > adxThreshold
+
+// Volume
+vol20  = ta.sma(volume, 20)
+volOK  = not useVolumeFilter or volume > vol20 * volMultiplier
+
+// RSI / Momentum
+rsi    = ta.rsi(close, rsiLen)
+rsiOKBuy  = not useMomentumFilter or rsi < rsiOB
+rsiOKSell = not useMomentumFilter or rsi > rsiOS
+
+// EMA30 direction
+ema30Up   = close > ema30
+ema30Down = close < ema30
+ema30OKBuy  = not useEma30Filter or ema30Up
+ema30OKSell = not useEma30Filter or ema30Down
+
+// ATR for stops
+atr = ta.atr(atrLen)
+
+// ══════════════ ENTRY CONDITIONS ══════════════
+buySignal  = bullCross and adxOK and volOK and rsiOKBuy and ema30OKBuy
+sellSignal = bearCross and adxOK and volOK and rsiOKSell and ema30OKSell
+
+// ══════════════ DAILY LOSS PROTECTION ══════════════
+var float dailyPnL = 0.0
+var int   lastDay  = 0
+currentDay = dayofmonth
+if currentDay != lastDay
+    dailyPnL := 0.0
+    lastDay  := currentDay
+
+if strategy.closedtrades > 0
+    lastTradePnL = strategy.closedtrades.profit(strategy.closedtrades - 1)
+    dailyPnL    += lastTradePnL
+
+dailyLossOK = not useDailyLoss or dailyPnL > -(strategy.equity * maxDailyLossPct / 100)
+
+// ══════════════ EXECUTE TRADES ══════════════
+if buySignal and dailyLossOK
+    slPrice = stopType == "ATR" ? close - atr * atrMultSL : close * (1 - fixedSL / 100)
+    tpPrice = stopType == "ATR" ? close + atr * atrMultTP : close * (1 + fixedTP / 100)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=slPrice, limit=tpPrice, trail_points=useTrailing ? atr * trailAtrMult / syminfo.mintick : na, trail_offset=useTrailing ? atr * trailAtrMult / syminfo.mintick : na)
+
+if sellSignal and dailyLossOK
+    slPrice = stopType == "ATR" ? close + atr * atrMultSL : close * (1 + fixedSL / 100)
+    tpPrice = stopType == "ATR" ? close - atr * atrMultTP : close * (1 - fixedTP / 100)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=slPrice, limit=tpPrice, trail_points=useTrailing ? atr * trailAtrMult / syminfo.mintick : na, trail_offset=useTrailing ? atr * trailAtrMult / syminfo.mintick : na)
+
+// ══════════════ PLOTS ══════════════
+plot(ema7, "EMA 7", color=color.new(color.blue, 0), linewidth=2)
+plot(ema13, "EMA 13", color=color.new(color.orange, 0), linewidth=2)
+plot(ema30, "EMA 30", color=color.new(color.white, 0), linewidth=1)
+
+// Signal markers
+plotshape(buySignal and dailyLossOK, "BUY", shape.labelup, location.belowbar, color.new(color.green, 0), size=size.small, text="BUY")
+plotshape(sellSignal and dailyLossOK, "SELL", shape.labeldown, location.abovebar, color.new(color.red, 0), size=size.small, text="SELL")
+
+// ══════════════ INFO LABELS ON SIGNALS ══════════════
+if buySignal and dailyLossOK
+    labelText = "BUY @ " + str.tostring(close, "#.##")
+    if useTrendFilter
+        labelText := labelText + "\nADX: " + str.tostring(adx, "#")
+    if useMomentumFilter
+        labelText := labelText + "\nRSI: " + str.tostring(rsi, "#")
+    label.new(bar_index, low, labelText, color=color.new(color.green, 0), style=label.style_label_up, textcolor=color.white, size=size.small)
+
+if sellSignal and dailyLossOK
+    labelText = "SELL @ " + str.tostring(close, "#.##")
+    if useTrendFilter
+        labelText := labelText + "\nADX: " + str.tostring(adx, "#")
+    if useMomentumFilter
+        labelText := labelText + "\nRSI: " + str.tostring(rsi, "#")
+    label.new(bar_index, high, labelText, color=color.new(color.red, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
+
+// ══════════════ ALERTS FOR WEBHOOK ══════════════
+if buySignal and dailyLossOK
+    alert('{"symbol": "' + syminfo.ticker + '", "action": "buy", "price": ' + str.tostring(close) + ', "strategy": "EMA_Hybrid", "timeframe": "' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if sellSignal and dailyLossOK
+    alert('{"symbol": "' + syminfo.ticker + '", "action": "sell", "price": ' + str.tostring(close) + ', "strategy": "EMA_Hybrid", "timeframe": "' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+// ══════════════ PERFORMANCE TABLE ══════════════
+var table perfTable = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.gray)
+if barstate.islastconfirmedhistory
+    wins = strategy.wintrades
+    losses = strategy.losstrades
+    total = wins + losses
+    winRate = total > 0 ? wins / total * 100 : 0.0
+    pf = strategy.grossloss != 0 ? strategy.grossprofit / math.abs(strategy.grossloss) : 0.0
+    
+    table.cell(perfTable, 0, 0, "EMA HYBRID PRO", text_color=color.yellow, text_size=size.small)
+    table.cell(perfTable, 1, 0, "━━━━━━━", text_color=color.gray, text_size=size.small)
+    table.cell(perfTable, 0, 1, "Total Trades", text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 1, 1, str.tostring(total), text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 0, 2, "Win Rate", text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 1, 2, str.tostring(winRate, "#.#") + "%", text_color=winRate > 50 ? color.green : color.red, text_size=size.small)
+    table.cell(perfTable, 0, 3, "Profit Factor", text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 1, 3, str.tostring(pf, "#.##"), text_color=pf > 1.5 ? color.green : color.red, text_size=size.small)
+    table.cell(perfTable, 0, 4, "Net Profit", text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 1, 4, str.tostring(strategy.netprofit, "#.##"), text_color=strategy.netprofit > 0 ? color.green : color.red, text_size=size.small)
+    table.cell(perfTable, 0, 5, "Max DD", text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 1, 5, str.tostring(strategy.max_drawdown, "#.##"), text_color=color.orange, text_size=size.small)
+    table.cell(perfTable, 0, 6, "ADX Now", text_color=color.white, text_size=size.small)
+    table.cell(perfTable, 1, 6, str.tostring(adx, "#.#"), text_color=adx > adxThreshold ? color.green : color.gray, text_size=size.small)
+    table.cell(perfTable, 0, 7, "Filters", text_color=color.white, text_size=size.small)
+    filterStr = (useTrendFilter ? "ADX " : "") + (useVolumeFilter ? "VOL " : "") + (useMomentumFilter ? "RSI " : "") + (useEma30Filter ? "E30" : "")
+    table.cell(perfTable, 1, 7, filterStr == "" ? "NONE" : filterStr, text_color=color.aqua, text_size=size.small)

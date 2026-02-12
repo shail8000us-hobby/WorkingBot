@@ -169,8 +169,8 @@ class StrikeSelector:
             # Fallback: closest to spot
             closest = min(chain_data, 
                          key=lambda x: abs(x.get('strike', 0) - spot_price))
-            ce = closest.get('call', {})
-            pe = closest.get('put', {})
+            ce = closest.get('call') or {}
+            pe = closest.get('put') or {}
             best_atm = {
                 'strike': closest.get('strike'),
                 'ce_premium': ce.get('mark_price') or ce.get('close') or 0,
@@ -273,7 +273,7 @@ class StrikeSelector:
         
         # First pass: exact match
         for strike_data in candidates:
-            option = strike_data.get(option_key, {})
+            option = strike_data.get(option_key) or {}
             premium = option.get('mark_price') or option.get('close') or 0
             
             if premium >= min_premium and premium <= max_premium:
@@ -292,7 +292,7 @@ class StrikeSelector:
                    f"expanding range to {expanded_min:.2f}-{expanded_max:.2f}")
         
         for strike_data in candidates:
-            option = strike_data.get(option_key, {})
+            option = strike_data.get(option_key) or {}
             premium = option.get('mark_price') or option.get('close') or 0
             
             if premium >= expanded_min and premium <= expanded_max:
@@ -345,7 +345,7 @@ class StrikeSelector:
         
         # First pass: exact match
         for strike_data in candidates:
-            option = strike_data.get(option_key, {})
+            option = strike_data.get(option_key) or {}
             premium = option.get('mark_price') or option.get('close') or 0
             
             if premium >= min_premium and premium <= max_premium:
@@ -364,7 +364,7 @@ class StrikeSelector:
                    f"expanding range to {expanded_min:.2f}-{expanded_max:.2f}")
         
         for strike_data in candidates:
-            option = strike_data.get(option_key, {})
+            option = strike_data.get(option_key) or {}
             premium = option.get('mark_price') or option.get('close') or 0
             
             if premium >= expanded_min and premium <= expanded_max:
@@ -520,9 +520,9 @@ class StrikeSelector:
             # Try to find actual symbols from chain
             for strike_data in chain_data:
                 if strike_data.get('strike') == atm['strike']:
-                    if strike_data.get('call', {}).get('symbol'):
+                    if (strike_data.get('call') or {}).get('symbol'):
                         atm_ce_symbol = strike_data['call']['symbol']
-                    if strike_data.get('put', {}).get('symbol'):
+                    if (strike_data.get('put') or {}).get('symbol'):
                         atm_pe_symbol = strike_data['put']['symbol']
                     break
             

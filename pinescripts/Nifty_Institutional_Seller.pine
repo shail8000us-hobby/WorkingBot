@@ -1,0 +1,440 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  NIFTY INSTITUTIONAL OPTIONS SELLER
+//  ─────────────────────────────────────────────────────────────────────────────
+//  SPLIT-SCREEN: Upper = Options chart with signals │ Lower = Nifty50 Index
+//  Works on ANY timeframe.  Apply on a Nifty OPTION (CE/PE) chart.
+//  Requires TradingView Premium (multi-security requests).
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=5
+indicator("NIFTY INSTITUTIONAL SELLER", shorttitle="NF-IOS", overlay=false,
+     max_bars_back=500, max_labels_count=50, max_lines_count=100)
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  INPUTS                                                                  │
+// └──────────────────────────────────────────────────────────────────────────┘
+// ── Index ──
+indexSymbol    = input.symbol("NSE:NIFTY", "Index Symbol", group="🏛️ Index")
+
+// ── Signal Quality ──
+quality        = input.string("High", "Signal Quality",
+                 options=["Ultra","High","Medium"], group="🎯 Strategy",
+                 tooltip="Ultra=2-4/wk  High=5-10/wk  Medium=15+/wk")
+
+// ── Mean Reversion ──
+rsiLen         = input.int(14,   "RSI Length",    minval=7,  group="🔄 Signals")
+rsiExtreme     = input.int(78,   "RSI Extreme",   minval=65, maxval=90, group="🔄 Signals")
+bbLen          = input.int(20,   "BB Period",     minval=10, group="🔄 Signals")
+bbStd          = input.float(2.5,"BB Std Dev",    minval=1.5,maxval=4.0,step=0.1,group="🔄 Signals")
+
+// ── Market Structure ──
+swingLen       = input.int(8,    "Swing Length",  minval=3,  maxval=20, group="📊 Structure")
+atrLen         = input.int(14,   "ATR Length",    minval=7,  group="📊 Structure")
+
+// ── Risk ──
+targetPct      = input.float(30.0,"Target % (premium decay)",minval=10,maxval=60,step=5,group="💰 Risk",
+                 tooltip="Nifty options decay slower than BankNifty, use slightly lower target")
+stopPct        = input.float(20.0,"Stop % (premium rise)",   minval=10,maxval=50,step=5,group="💰 Risk")
+
+// ── Session (NSE) ──
+useSession     = input.bool(true, "NSE Hours Only",    group="🕐 Session")
+skipOpen       = input.bool(true, "Skip First 15 Min", group="🕐 Session")
+skipLunch      = input.bool(true, "Skip 12:30-1:00",   group="🕐 Session")
+eodTime        = input.int(1510,  "Force Exit HHMM",   group="🕐 Session")
+
+// ── Index Display ──
+showEmas       = input.bool(true, "Index EMAs",         group="📈 Index Chart")
+showIdxVwap    = input.bool(true, "Index VWAP",         group="📈 Index Chart")
+showPDHL       = input.bool(true, "Prev Day H/L",       group="📈 Index Chart")
+showCPR        = input.bool(true, "CPR Levels",          group="📈 Index Chart")
+showOR         = input.bool(true, "Opening Range",       group="📈 Index Chart")
+
+// ── Options Display ──
+showBB         = input.bool(true, "BB on Options",       group="🎨 Options Chart")
+showOptVwap    = input.bool(true, "VWAP on Options",     group="🎨 Options Chart")
+showSR         = input.bool(true, "S/R Zones on Options",group="🎨 Options Chart")
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  INDEX DATA  (plotted in this pane = lower half of screen)               │
+// └──────────────────────────────────────────────────────────────────────────┘
+tf = timeframe.period
+[idxO, idxH, idxL, idxC] = request.security(indexSymbol, tf, [open, high, low, close], lookahead=barmerge.lookahead_off)
+[idxE9, idxE21, idxE50, idxE200] = request.security(indexSymbol, tf, [ta.ema(close,9), ta.ema(close,21), ta.ema(close,50), ta.ema(close,200)])
+idxVwap = request.security(indexSymbol, tf, ta.vwap(hlc3))
+idxRsi  = request.security(indexSymbol, tf, ta.rsi(close, 14))
+[pdH, pdL, pdC] = request.security(indexSymbol, "1D", [high[1], low[1], close[1]], lookahead=barmerge.lookahead_on)
+
+// CPR
+pivot  = (pdH + pdL + pdC) / 3.0
+bc     = (pdH + pdL) / 2.0
+tc     = pivot + (pivot - bc)
+
+// Opening Range (09:15-09:30 IST)
+var float orH = na, var float orL = na, var bool orDone = false
+if ta.change(time("1D"))
+    orH    := na
+    orL    := na
+    orDone := false
+inOR = hour == 9 and minute >= 15 and minute < 30
+if inOR and not orDone
+    orH := na(orH) ? idxH : math.max(orH, idxH)
+    orL := na(orL) ? idxL : math.min(orL, idxL)
+if hour == 9 and minute >= 30 and not orDone
+    orDone := true
+
+// Index trend
+idxUp   = idxC > idxE21 and idxE21 > idxE50
+idxDn   = idxC < idxE21 and idxE21 < idxE50
+idxFlat = not idxUp and not idxDn
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  OPTIONS CHART CALCULATIONS                                              │
+// └──────────────────────────────────────────────────────────────────────────┘
+atr    = ta.atr(atrLen)
+rsi    = ta.rsi(close, rsiLen)
+[bbUp, bbMid, bbLo] = ta.bb(close, bbLen, bbStd)
+vwap   = ta.vwap(hlc3)
+vol20  = ta.sma(volume, 20)
+volSpk = volume > vol20 * 1.5
+volDry = volume < vol20 * 0.6
+
+// Swing S/R
+swHi = ta.pivothigh(high, swingLen, swingLen)
+swLo = ta.pivotlow(low, swingLen, swingLen)
+var float res = na, var float sup = na
+var int resBars = 999, var int supBars = 999
+if not na(swHi)
+    res     := high[swingLen]
+    resBars := 0
+else
+    resBars += 1
+if not na(swLo)
+    sup     := low[swingLen]
+    supBars := 0
+else
+    supBars += 1
+vRes = resBars < 80 and not na(res)
+vSup = supBars < 80 and not na(sup)
+tol  = close * 0.004
+nearRes = vRes and high >= res - tol and high <= res + tol
+nearSup = vSup and low  <= sup + tol and low  >= sup - tol
+
+// Candle Patterns
+body   = math.abs(close - open)
+rng    = high - low
+upWick = high - math.max(close, open)
+dnWick = math.min(close, open) - low
+bearEng   = close < open and close[1] > open[1] and close < open[1] and open > close[1]
+bullEng   = close > open and close[1] < open[1] and close > open[1] and open < close[1]
+topReject = upWick > body * 2 and rng > atr * 0.5
+botReject = dnWick > body * 2 and rng > atr * 0.5
+
+// Fair Value Gap (institutional imbalance)
+bearFVG = high < low[2] and rng[1] > atr * 1.2
+bullFVG = low  > high[2] and rng[1] > atr * 1.2
+
+// Volatility Regime
+hv     = ta.stdev(close, 20) / ta.sma(close, 20) * 100
+avgHV  = ta.sma(hv, 20)
+hiVol  = hv > avgHV * 1.3
+loVol  = hv < avgHV * 0.8
+
+// Overbought / Oversold
+rsiOB = rsi > rsiExtreme
+rsiOS = rsi < (100 - rsiExtreme)
+
+// Session
+ct      = hour * 100 + minute
+inSess  = not useSession or (ct >= 920 and ct <= 1500)
+pastOp  = not skipOpen  or ct >= 930
+lunch   = ct >= 1230 and ct <= 1300
+avoid   = (skipLunch and lunch) or not pastOp
+eodExit = ct >= eodTime
+
+// Theta acceleration (afternoon) & expiry day
+thetaZone = ct >= 1330
+isExpiry  = dayofweek == dayofweek.thursday  // Nifty weekly expiry
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  CONFLUENCE SCORING                                                      │
+// └──────────────────────────────────────────────────────────────────────────┘
+qualReq = quality == "Ultra" ? 6 : quality == "High" ? 4 : 3
+
+// ── Sell Score ──
+var int sScore = 0
+sScore := 0
+if rsiOB and close > bbUp
+    sScore += 2
+if nearRes
+    sScore += 2
+if bearEng or topReject
+    sScore += 1
+if bearFVG
+    sScore += 1
+if hiVol
+    sScore += 1
+if idxFlat
+    sScore += 1
+if idxDn
+    sScore += 1
+if idxUp
+    sScore -= 2
+if volSpk and close < open
+    sScore += 1
+if thetaZone
+    sScore += 1
+if isExpiry
+    sScore += 1
+if close > vwap and (close - vwap) / vwap > 0.005
+    sScore += 1
+
+// ── Exit Score ──
+var int xScore = 0
+xScore := 0
+if rsiOS and close < bbLo
+    xScore += 2
+if nearSup
+    xScore += 2
+if bullEng or botReject
+    xScore += 2
+if bullFVG
+    xScore += 1
+if loVol
+    xScore += 1
+if volSpk and close > open
+    xScore += 2
+if idxUp and not idxUp[1]
+    xScore += 2
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  TRADE SIMULATION  (indicator-based performance tracking)                │
+// └──────────────────────────────────────────────────────────────────────────┘
+var bool  inPos       = false
+var float entry       = 0.0
+var float tpLvl       = 0.0
+var float slLvl       = 0.0
+var int   lastExitBar = -1
+var int   nTrades     = 0
+var int   nWins       = 0
+var int   nLoss       = 0
+var float sumWin      = 0.0
+var float sumLoss     = 0.0
+var float runPnL      = 0.0
+var float peakPnL     = 0.0
+var float maxDD       = 0.0
+
+sellReady = sScore >= qualReq and inSess and not avoid and not eodExit
+
+hitTP  = inPos and low  <= tpLvl
+hitSL  = inPos and high >= slLvl
+revExt = inPos and xScore >= 5
+eodExt = inPos and eodExit
+
+var bool didEnter = false
+var bool didTP    = false
+var bool didSL    = false
+var bool didRev   = false
+didEnter := false
+didTP    := false
+didSL    := false
+didRev   := false
+
+// ── Exits first ──
+if hitTP
+    pnl     = entry - tpLvl
+    sumWin += pnl
+    nWins  += 1
+    runPnL += pnl
+    inPos  := false
+    didTP  := true
+    lastExitBar := bar_index
+else if hitSL
+    pnl      = entry - slLvl
+    sumLoss += math.abs(pnl)
+    nLoss   += 1
+    runPnL  += pnl
+    inPos   := false
+    didSL   := true
+    lastExitBar := bar_index
+else if revExt or eodExt
+    pnl = entry - close
+    if pnl > 0
+        sumWin += pnl
+        nWins  += 1
+    else
+        sumLoss += math.abs(pnl)
+        nLoss   += 1
+    runPnL += pnl
+    inPos  := false
+    didRev := true
+    lastExitBar := bar_index
+
+// ── Entry ──
+if sellReady and not inPos and bar_index != lastExitBar
+    inPos   := true
+    entry   := close
+    tpLvl   := close * (1 - targetPct / 100)
+    slLvl   := close * (1 + stopPct  / 100)
+    nTrades += 1
+    didEnter := true
+
+peakPnL := math.max(peakPnL, runPnL)
+maxDD   := math.max(maxDD, peakPnL - runPnL)
+
+winRate  = nTrades > 0 ? nWins * 100.0 / nTrades : 0.0
+avgW     = nWins  > 0 ? sumWin  / nWins  : 0.0
+avgL     = nLoss  > 0 ? sumLoss / nLoss  : 0.0
+actRR    = avgL   > 0 ? avgW    / avgL   : 0.0
+pf       = sumLoss> 0 ? sumWin  / sumLoss: 0.0
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  INDEX PANE PLOTS  (lower half of screen)                                │
+// └──────────────────────────────────────────────────────────────────────────┘
+bullC = idxC >= idxO
+cCol  = bullC ? #26a69a : #ef5350
+plotcandle(idxO, idxH, idxL, idxC, "Nifty50", color=cCol, wickcolor=cCol, bordercolor=cCol)
+
+pE21 = plot(showEmas ? idxE21 : na, "EMA 21", #ff9800, 1)
+pE50 = plot(showEmas ? idxE50 : na, "EMA 50", #9c27b0, 1)
+fill(pE21, pE50, color=idxE21 > idxE50 ? color.new(#00e676,90) : color.new(#ff5252,90), title="Trend Cloud")
+plot(showEmas ? idxE9   : na, "EMA 9",   #2196f3, 1)
+plot(showEmas ? idxE200 : na, "EMA 200", #ffffff, 2)
+
+plot(showIdxVwap ? idxVwap : na, "VWAP", #ffeb3b, 2, plot.style_cross)
+
+plot(showPDHL ? pdH : na, "PDH", color.new(#f44336,30), 1, plot.style_linebr)
+plot(showPDHL ? pdL : na, "PDL", color.new(#4caf50,30), 1, plot.style_linebr)
+
+plot(showCPR ? pivot : na, "Pivot", #ff9800, 1, plot.style_circles)
+plot(showCPR ? tc    : na, "TC",    color.new(#ff5722,40), 1)
+plot(showCPR ? bc    : na, "BC",    color.new(#2196f3,40), 1)
+
+plot(showOR and orDone ? orH : na, "OR Hi", color.new(#ff9800,50), 1, plot.style_linebr)
+plot(showOR and orDone ? orL : na, "OR Lo", color.new(#ff9800,50), 1, plot.style_linebr)
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  OPTIONS CHART OVERLAYS  (upper half — force_overlay)                    │
+// └──────────────────────────────────────────────────────────────────────────┘
+plot(showSR and vRes ? res : na, "Resistance", color.new(#ff5252,20), 2, plot.style_circles, force_overlay=true)
+plot(showSR and vSup ? sup : na, "Support",    color.new(#00e676,20), 2, plot.style_circles, force_overlay=true)
+
+plot(showOptVwap ? vwap : na, "Opt VWAP", color.new(#ffeb3b,50), 1, plot.style_cross, force_overlay=true)
+plot(showBB ? bbUp : na, "BB Up",  color.new(#f44336,70), 1, force_overlay=true)
+plot(showBB ? bbLo : na, "BB Lo",  color.new(#4caf50,70), 1, force_overlay=true)
+
+plotshape(didEnter, "SELL PREMIUM", shape.triangledown, location.abovebar,
+     #f44336, size=size.normal, text="SELL", force_overlay=true)
+plotshape(didTP,    "TARGET HIT",   shape.circle, location.belowbar,
+     #00e676, size=size.small,  text="TP ✓", force_overlay=true)
+plotshape(didSL,    "STOP HIT",     shape.xcross, location.abovebar,
+     #ff5252, size=size.small,  text="SL ✗", force_overlay=true)
+plotshape(didRev,   "REVERSAL EXIT",shape.triangleup, location.belowbar,
+     #ff9800, size=size.small,  text="EXIT", force_overlay=true)
+
+bgcolor(didEnter ? color.new(#ff5252,92) : na, title="Sell Bar")
+bgcolor(eodExit  ? color.new(#ff9800,95) : na, title="EOD Zone")
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  DASHBOARD  (large, clearly visible, top-right of index pane)            │
+// └──────────────────────────────────────────────────────────────────────────┘
+var table d = table.new(position.top_right, 3, 16,
+     bgcolor      = color.new(#0d1117, 30),
+     border_width = 1,
+     border_color = color.new(#30363d, 0),
+     frame_width  = 2,
+     frame_color  = color.new(#ffd700, 50))
+
+if barstate.islast
+    table.cell(d, 0,0, "  NIFTY OPT  ", bgcolor=color.new(#ffd700,75), text_color=#ffd700, text_size=size.normal)
+    table.cell(d, 1,0, "SELLER", bgcolor=color.new(#ffd700,75), text_color=#ffd700, text_size=size.normal)
+    table.cell(d, 2,0, quality, bgcolor=color.new(#ffd700,75), text_color=#00e5ff, text_size=size.normal)
+
+    table.cell(d, 0,1, "── PERFORMANCE", text_color=#ffd700, text_size=size.small)
+    table.cell(d, 1,1, "──────",          text_color=#30363d, text_size=size.small)
+    table.cell(d, 2,1, "──────",          text_color=#30363d, text_size=size.small)
+
+    table.cell(d, 0,2, "Trades",  text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,2, str.tostring(nWins)+"W "+str.tostring(nLoss)+"L", text_color=#ffffff, text_size=size.small)
+    table.cell(d, 2,2, str.tostring(nTrades), text_color=#ffffff, text_size=size.normal)
+
+    wrC = winRate >= 65 ? #00e676 : winRate >= 55 ? #ffeb3b : #ff5252
+    table.cell(d, 0,3, "Win Rate", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,3, str.tostring(winRate,"#.#")+"%",  text_color=wrC, text_size=size.normal)
+    table.cell(d, 2,3, winRate>=65?"●●●":winRate>=55?"●●○":"●○○", text_color=wrC, text_size=size.small)
+
+    rrC = actRR >= 2.0 ? #00e676 : actRR >= 1.3 ? #ffeb3b : #ff5252
+    table.cell(d, 0,4, "Avg R:R", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,4, str.tostring(actRR,"#.##"), text_color=rrC, text_size=size.normal)
+    table.cell(d, 2,4, actRR>=2.0?"●●●":actRR>=1.3?"●●○":"●○○", text_color=rrC, text_size=size.small)
+
+    pfC = pf >= 2.0 ? #00e676 : pf >= 1.5 ? #ffeb3b : #ff5252
+    table.cell(d, 0,5, "P.Factor", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,5, str.tostring(pf,"#.##"), text_color=pfC, text_size=size.normal)
+    table.cell(d, 2,5, "", text_size=size.small)
+
+    pnC = runPnL > 0 ? #00e676 : #ff5252
+    pnS = math.abs(runPnL)>=1000 ? (runPnL>=0?"+":"-")+"₹"+str.tostring(math.abs(runPnL)/1000,"#.#")+"K" : (runPnL>=0?"+":"")+"₹"+str.tostring(runPnL,"#")
+    table.cell(d, 0,6, "Net P&L", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,6, pnS, text_color=pnC, text_size=size.normal)
+    ddS = maxDD >= 1000 ? "₹"+str.tostring(maxDD/1000,"#.#")+"K" : "₹"+str.tostring(maxDD,"#")
+    table.cell(d, 2,6, "DD:"+ddS, text_color=#ff9800, text_size=size.small)
+
+    table.cell(d, 0,7, "Target/Stop", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,7, str.tostring(targetPct,"#")+"%↓", text_color=#00e676, text_size=size.small)
+    table.cell(d, 2,7, str.tostring(stopPct,"#")+"%↑",   text_color=#ff5252, text_size=size.small)
+
+    table.cell(d, 0,8, "── NIFTY50", text_color=#ffd700, text_size=size.small)
+    table.cell(d, 1,8, "──────",      text_color=#30363d, text_size=size.small)
+    table.cell(d, 2,8, "──────",      text_color=#30363d, text_size=size.small)
+
+    iChg = idxC - idxC[1]
+    iCC  = iChg >= 0 ? #00e676 : #ff5252
+    table.cell(d, 0,9, "Index",  text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,9, str.tostring(idxC,"#.#"), text_color=iCC, text_size=size.normal)
+    table.cell(d, 2,9, (iChg>=0?"+":"")+str.tostring(iChg,"#.#"), text_color=iCC, text_size=size.small)
+
+    tC = idxUp ? #00e676 : idxDn ? #ff5252 : #ffeb3b
+    tT = idxUp ? "▲ BULL" : idxDn ? "▼ BEAR" : "◼ RANGE"
+    rT = idxFlat ? "SELL✓" : "CAUTION"
+    table.cell(d, 0,10,"Trend", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,10,tT,     text_color=tC, text_size=size.normal)
+    table.cell(d, 2,10,rT,     text_color=idxFlat?#00e676:#ff9800, text_size=size.small)
+
+    table.cell(d, 0,11,"Idx RSI", text_color=#8b949e, text_size=size.small)
+    irC = idxRsi > 70 ? #ff5252 : idxRsi < 30 ? #00e676 : #8b949e
+    table.cell(d, 1,11,str.tostring(idxRsi,"#.#"), text_color=irC, text_size=size.small)
+    table.cell(d, 2,11,idxRsi>70?"OB":idxRsi<30?"OS":"OK", text_color=irC, text_size=size.small)
+
+    table.cell(d, 0,12,"── LIVE",  text_color=#ffd700, text_size=size.small)
+    table.cell(d, 1,12,"──────",   text_color=#30363d, text_size=size.small)
+    table.cell(d, 2,12,"──────",   text_color=#30363d, text_size=size.small)
+
+    sCC = sScore >= qualReq ? #ff5252 : #616161
+    table.cell(d, 0,13,"Sell Score", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,13,str.tostring(sScore)+"/"+str.tostring(qualReq), text_color=sCC, text_size=size.normal)
+    table.cell(d, 2,13,sScore>=qualReq?"🔴 READY":"", text_color=#ff5252, text_size=size.small)
+
+    rCC = rsiOB ? #ff5252 : rsiOS ? #00e676 : #8b949e
+    table.cell(d, 0,14,"Opt RSI", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,14,str.tostring(rsi,"#.#"), text_color=rCC, text_size=size.small)
+    table.cell(d, 2,14,rsiOB?"EXTREME":rsiOS?"OVERSOLD":"NORMAL", text_color=rCC, text_size=size.small)
+
+    seC = eodExit?#ff9800 : inSess and not avoid ? #00e676 : #ff5252
+    seT = eodExit?"EOD EXIT" : inSess and not avoid ? "ACTIVE" : "PAUSED"
+    table.cell(d, 0,15,"Session", text_color=#8b949e, text_size=size.small)
+    table.cell(d, 1,15,seT, text_color=seC, text_size=size.small)
+    thT = thetaZone ? "θ ACCEL" : isExpiry ? "EXPIRY!" : ""
+    thC = isExpiry ? #ff9800 : #ffd700
+    table.cell(d, 2,15,thT, text_color=thC, text_size=size.small)
+
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  ALERTS  (for WebUI webhook integration)                                 │
+// └──────────────────────────────────────────────────────────────────────────┘
+alertcondition(didEnter, "SELL Premium", "NF: SELL setup detected")
+alertcondition(didTP or didSL or didRev, "EXIT Trade", "NF: EXIT signal")
+
+if didEnter
+    alert('{"symbol":"'+syminfo.ticker+'","action":"sell","price":'+str.tostring(close)+',"strategy":"NF_Institutional","timeframe":"'+tf+'","confluence":'+str.tostring(sScore)+',"index":'+str.tostring(idxC,"#.#")+',"rsi":'+str.tostring(rsi,"#.#")+'}', alert.freq_once_per_bar)
+
+if didTP or didSL or didRev
+    exitType = didTP ? "target" : didSL ? "stoploss" : "reversal"
+    alert('{"symbol":"'+syminfo.ticker+'","action":"buy","price":'+str.tostring(close)+',"strategy":"NF_Institutional_Exit","timeframe":"'+tf+'","exit_type":"'+exitType+'"}', alert.freq_once_per_bar)

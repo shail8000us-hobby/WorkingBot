@@ -711,17 +711,66 @@ class SSRPriceMonitor:
                 session['expiry']
             )
             
-            # Step 3: Execute auto-loop rounds
+            # Step 3: Execute auto-loop rounds with progress tracking
             rounds = session.get('auto_loop_rounds', 2)
             order_type = session.get('order_type', 'ssr')
             
             log.info(f"[{self.session_id}] Executing {rounds} auto-loop rounds for adjustment")
             
+            # Progress callback to track adjustment orders as pending
+            # This is CRITICAL: without it, adjustment orders are never tracked
+            # and never move to filled_orders, so payoff excludes them
+            def adjustment_progress_callback(round_num, total, round_result):
+                try:
+                    if round_result.get('success'):
+                        order_results = round_result.get('results', [])
+                        if not isinstance(order_results, list):
+                            order_results = []
+                        
+                        add_session_log(self.session_id, f"━━━━━ Adjustment Round {round_num}/{total} ━━━━━", 'info')
+                        
+                        pending_orders = []
+                        for r in order_results:
+                            if not isinstance(r, dict):
+                                continue
+                            
+                            symbol = r.get('symbol', 'Unknown')
+                            side = r.get('side', '?')
+                            size = r.get('size', 0)
+                            order_id = r.get('order_id') or ''
+                            if not isinstance(order_id, str):
+                                order_id = str(order_id) if order_id else ''
+                            
+                            emoji = '🟢' if str(side).upper() == 'BUY' else '🔴'
+                            order_id_display = order_id[:8] if order_id else 'N/A'
+                            add_session_log(self.session_id, f"  {emoji} {str(side).upper()} {symbol} x{abs(size) if isinstance(size, (int, float)) else size} (#{order_id_display})", 'order')
+                            
+                            if order_id:
+                                pending_orders.append({
+                                    'order_id': order_id,
+                                    'symbol': r.get('symbol', ''),
+                                    'side': r.get('side', ''),
+                                    'size': r.get('size', 0),
+                                    'round': round_num,
+                                    'placed_at': datetime.now().isoformat(),
+                                    'adjustment': self.adjustment_count
+                                })
+                        
+                        if pending_orders:
+                            storage.add_pending_orders(self.session_id, pending_orders)
+                            add_session_log(self.session_id, f"⏳ {len(pending_orders)} adjustment orders pending confirmation...", 'info')
+                    else:
+                        error_msg = round_result.get('error', 'Unknown error')
+                        add_session_log(self.session_id, f"⚠️ Adjustment round {round_num}/{total} had issues: {error_msg}", 'warn')
+                except Exception as e:
+                    log.exception(f"[{self.session_id}] Error in adjustment progress callback: {e}")
+            
             result = executor.execute_rounds(
                 session_id=self.session_id,
                 orders=orders,
                 rounds=rounds,
-                order_type=order_type
+                order_type=order_type,
+                progress_callback=adjustment_progress_callback
             )
             
             if result.get('success'):
@@ -822,18 +871,47 @@ class SSRPriceMonitor:
                     'last_adjustment': adjustment_record
                 })
                 
+                # Step 7: RECALCULATE MAX LOSS ZONES from combined payoff
+                # After adding new positions, the combined payoff shape changes
+                # The new max loss zones may be different from the initial ones
+                # This is CRITICAL to prevent re-triggering at the same old zones
+                try:
+                    updated_session = self.get_session(self.session_id)
+                    if updated_session:
+                        payoff_data = self.payoff_calc.calculate_session_payoff(updated_session)
+                        new_max_loss = payoff_data.get('max_loss_points', {})
+                        new_triggers = payoff_data.get('adjustment_triggers', {})
+                        
+                        new_upper = new_max_loss.get('max_loss_upper')
+                        new_lower = new_max_loss.get('max_loss_lower')
+                        
+                        # Store new max loss zones in session for reference
+                        self.update_session(self.session_id, {
+                            'max_loss_upper': new_upper,
+                            'max_loss_lower': new_lower
+                        })
+                        
+                        log.info(f"[{self.session_id}] Recalculated max loss zones: "
+                                f"Upper={new_upper}, Lower={new_lower}")
+                        
+                        add_session_log(
+                            self.session_id,
+                            f"📍 NEW trigger zones (recalculated from combined payoff): "
+                            f"⬇️ ${new_lower:,.0f} | ⬆️ ${new_upper:,.0f}" if new_lower and new_upper
+                            else f"📍 Trigger zones recalculated: Upper={new_upper}, Lower={new_lower}",
+                            'trigger'
+                        )
+                except Exception as recalc_err:
+                    log.error(f"[{self.session_id}] Error recalculating max loss zones: {recalc_err}")
+                    add_session_log(self.session_id, f"⚠️ Could not recalculate trigger zones: {recalc_err}", 'warn')
+                
                 log.info(f"[{self.session_id}] Adjustment #{self.adjustment_count} completed successfully")
                 add_session_log(
                     self.session_id,
                     f"🟢 Adjustment #{self.adjustment_count} completed! New ATM: {strikes['atm']['strike']}",
                     'success'
                 )
-                add_session_log(self.session_id, f"👁️ Resuming price monitoring...", 'info')
-                add_session_log(
-                    self.session_id,
-                    f"📍 New trigger zones: ⬇️ ${strikes['far_otm_pe']['strike']} | ⬆️ ${strikes['far_otm_ce']['strike']}",
-                    'trigger'
-                )
+                add_session_log(self.session_id, f"👁️ Resuming price monitoring with NEW trigger zones...", 'info')
                 
             else:
                 # Execution failed
