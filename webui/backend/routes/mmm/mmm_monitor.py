@@ -32,7 +32,6 @@ from .mmm_engine import get_engine
 from .mmm_reversal import (
     detect_reversal, is_cooldown_active, activate_cooldown,
     should_skip_reversal_adjustment, record_reversal,
-    handle_reversal_skip_transition,
 )
 from .mmm_strike_shift import (
     check_shift_needed, freeze_current_positions,
@@ -50,7 +49,6 @@ from .mmm_websocket import (
     emit_heartbeat, emit_adjustment, emit_reversal,
     emit_strike_shift, emit_close_at_5, emit_both_sides_alert,
     emit_safety, emit_pnl_update, emit_status_change,
-    emit_price_tick,
 )
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC
@@ -256,36 +254,14 @@ class MMMMonitor:
                     self.session['error_count'] = (
                         self.session.get('error_count', 0) + 1
                     )
-                    # Persist error state so reload doesn't wipe error_count
-                    _save_session(self.session)
 
                     # If too many consecutive errors, stop
                     if self.session.get('error_count', 0) >= 5:
                         self.stop('Too many consecutive errors')
                         break
 
-                # Wait for next interval, BUT tick prices every 5s in between
-                PRICE_TICK_INTERVAL = 5  # seconds
-                elapsed = 0
-                while elapsed < interval and not self._stop_event.is_set():
-                    wait_time = min(PRICE_TICK_INTERVAL, interval - elapsed)
-                    self._stop_event.wait(timeout=wait_time)
-                    elapsed += wait_time
-
-                    if self._stop_event.is_set():
-                        break
-
-                    # Fetch and emit live prices between heartbeats
-                    try:
-                        import sys
-                        print(f"[MMM PRICE TICK] elapsed={elapsed:.0f}s — fetching now", flush=True, file=sys.stderr)
-                        log.info(f"[{self.session_id}] Price tick: fetching live prices (elapsed={elapsed:.0f}s)")
-                        self._emit_price_tick()
-                    except Exception as e:
-                        import traceback
-                        print(f"[MMM PRICE TICK ERROR] {e}", flush=True, file=sys.stderr)
-                        traceback.print_exc(file=sys.stderr)
-                        log.warning(f"[{self.session_id}] Price tick error: {e}", exc_info=True)
+                # Wait for next interval
+                self._stop_event.wait(timeout=interval)
 
         except Exception as e:
             log.exception(f"Monitor loop crashed for {self.session_id}: {e}")
@@ -306,10 +282,6 @@ class MMMMonitor:
         sid = self.session_id
 
         session['last_heartbeat'] = datetime.utcnow().isoformat()
-        
-        # Step 0: Sanitize state (Fix for stuck reversal sessions)
-        sanitize_session_state(session)
-
         # NOTE: error_count is reset at the END of a successful heartbeat,
         # not here at the start. This ensures consecutive errors accumulate.
 
@@ -320,10 +292,25 @@ class MMMMonitor:
                     sid, 'info')
         session['_heartbeat_counter'] = session.get('_heartbeat_counter', 0) + 1
 
-        # Recommendation #2: Cap reversal_count growth.
-        # If reversal_count >> adjustment_count, something is looping.
-        # Force-transition to standard mode to break the cycle.
-        _check_reversal_count_health(session, sid)
+        # Generate entry walkthrough on first heartbeat
+        if session['_heartbeat_counter'] == 1:
+            try:
+                from .mmm_walkthrough import generate_entry_walkthrough
+                entry_wt = generate_entry_walkthrough(session)
+                session.setdefault('_walkthrough_log', []).append(entry_wt)
+            except Exception as e:
+                log.warning(f'Entry walkthrough generation failed: {e}')
+
+        # Initialize walkthrough tracking for this heartbeat
+        self._hb_wt = {
+            'outcome': 'none',
+            'adjustment': None,
+            'reversal': None,
+            'shift': None,
+            'close_at_5': [],
+            'safety_events': [],
+            'pnl': None,
+        }
 
         # Step 0: Reconcile with exchange positions (§14.5 — exchange reality check)
         await self._reconcile_exchange_positions()
@@ -347,17 +334,6 @@ class MMMMonitor:
 
         # Populate premium cache for sync engine calls (_make_fetch_fn)
         await self._prefetch_all_premiums(ce_now, pe_now)
-
-        # §CRITICAL: Persist premium_map into session so the REST API can serve
-        # current prices on page load (before WebSocket heartbeat reaches frontend).
-        # Without this, the frontend falls back to trigger_snapshot which is the
-        # trigger reference level, NOT the current market price.
-        cache = getattr(self, '_premium_cache', {})
-        session['_premium_map'] = {
-            f"{int(strike)}:{opt_type}": round(price, 2)
-            for (strike, opt_type), price in cache.items()
-        }
-        session['_premium_map_ts'] = datetime.utcnow().isoformat()
 
         # Step 2: Close-at-5 scan (§11)
         await self._process_close_at_5(ce_now, pe_now)
@@ -390,6 +366,9 @@ class MMMMonitor:
                 sid, event['type'], event['level'], event['message'],
                 event.get('details')
             )
+
+        # Track safety events for walkthrough
+        self._hb_wt['safety_events'] = safety_events
 
         # Handle safety actions
         block, reason = should_block_adjustment(safety_events)
@@ -462,7 +441,7 @@ class MMMMonitor:
             # §8: Both sides up — pause and alert user
             log_activity('warning',
                         f'⚠️ BOTH SIDES UP! CE and PE both triggered - Pausing for manual decision',
-                        sid, 'warning',
+                        sid, 'error',
                         {
                             'ce_premium': ce_now,
                             'pe_premium': pe_now,
@@ -480,6 +459,7 @@ class MMMMonitor:
             )
 
         elif outcome in (OUTCOME_CE, OUTCOME_PE):
+            self._hb_wt['outcome'] = 'ce_triggered' if outcome == OUTCOME_CE else 'pe_triggered'
             aggressor = 'ce' if outcome == OUTCOME_CE else 'pe'
             hedge = 'pe' if aggressor == 'ce' else 'ce'
             premium_now = ce_now if aggressor == 'ce' else pe_now
@@ -507,6 +487,9 @@ class MMMMonitor:
         )
         session['unrealized_pnl'] = pnl['unrealized']
         update_peak_pnl(session, pnl['net_pnl'])
+
+        # Track P&L for walkthrough
+        self._hb_wt['pnl'] = pnl
 
         # Log P&L summary
         log_activity('info',
@@ -549,8 +532,35 @@ class MMMMonitor:
                 session, self._make_fetch_fn()
             )
 
-        # Recommendation #3: Trigger staleness detection
-        _check_trigger_staleness(session, ce_now, pe_now, sid)
+        # Step 9: Generate walkthrough entry and store in session
+        try:
+            from .mmm_walkthrough import generate_heartbeat_walkthrough
+            wt_entry = generate_heartbeat_walkthrough(
+                session,
+                heartbeat_num=session.get('_heartbeat_counter', 0),
+                ce_now=ce_now,
+                pe_now=pe_now,
+                outcome=self._hb_wt.get('outcome', 'none'),
+                adjustment_info=self._hb_wt.get('adjustment'),
+                reversal_info=self._hb_wt.get('reversal'),
+                shift_info=self._hb_wt.get('shift'),
+                close_at_5_info=self._hb_wt.get('close_at_5'),
+                safety_events=self._hb_wt.get('safety_events'),
+                pnl_info=self._hb_wt.get('pnl'),
+            )
+            session.setdefault('_walkthrough_log', []).append(wt_entry)
+            # Keep walkthrough manageable (last 200 entries)
+            if len(session['_walkthrough_log']) > 200:
+                session['_walkthrough_log'] = session['_walkthrough_log'][-200:]
+
+            # Emit walkthrough via WebSocket
+            from .mmm_websocket import _emit
+            _emit('mmm_walkthrough', {
+                'session_id': sid,
+                'entry': wt_entry,
+            })
+        except Exception as e:
+            log.warning(f'Walkthrough generation failed: {e}')
 
         # Save state
         _save_session(session)
@@ -603,35 +613,32 @@ class MMMMonitor:
             skip, skip_reason = should_skip_reversal_adjustment(session, adj_pnl)
             if skip:
                 log.info(f"[{sid}] {skip_reason}")
-
-                from .mmm_activity import log_activity
-                log_activity('reversal_skip',
-                    f'Reversal {session.get("last_aggressor", "NONE")}→{aggressor.upper()} '
-                    f'skipped: adj P&L ${adj_pnl:.2f} (profitable). '
-                    f'Transitioning to standard mode.',
-                    sid, 'info',
-                    {'adj_pnl': round(adj_pnl, 2), 'aggressor': aggressor.upper()})
-
                 emit_reversal(
                     sid, session.get('last_aggressor', ''),
                     aggressor.upper(), adj_pnl, 'skip_profitable',
                 )
 
-                # §9: "After first reversal → standard mode."
-                # When the reversal is SKIPPED (profitable), the same transition
-                # applies. The market HAS reversed. Update last_aggressor and
-                # triggers so subsequent intervals use standard formula (Case A)
-                # instead of re-detecting the same reversal forever.
-                handle_reversal_skip_transition(
-                    session, aggressor, ce_now, pe_now,
-                )
+                # Track reversal skip for walkthrough
+                self._hb_wt['reversal'] = {
+                    'detected': True, 'skipped': True,
+                    'prev_aggressor': session.get('last_aggressor', ''),
+                    'new_aggressor': aggressor,
+                    'adj_pnl': adj_pnl,
+                    'reason': skip_reason,
+                }
+                self._hb_wt['outcome'] = 'reversal_skip'
 
-                # §14.3: Activate cooldown ONCE for the reversal direction
-                # change. activate_cooldown() is idempotent — it won't
-                # re-activate if already in cooldown.
+                # Do NOT update last_aggressor when skipping — the original
+                # aggressor direction is still the dominant one until an
+                # actual adjustment is executed
+
+                # Activate cooldown if configured
                 params = session.get('params', {})
                 if params.get('cooldown_on_reversal', True):
                     activate_cooldown(session)
+                    emit_reversal(
+                        sid, '', aggressor.upper(), adj_pnl, 'cooldown',
+                    )
 
                 return
 
@@ -640,6 +647,15 @@ class MMMMonitor:
                 sid, session.get('last_aggressor', ''),
                 aggressor.upper(), adj_pnl, 'hedge',
             )
+
+            # Track reversal execution for walkthrough
+            self._hb_wt['reversal'] = {
+                'detected': True, 'skipped': False,
+                'prev_aggressor': session.get('last_aggressor', ''),
+                'new_aggressor': aggressor,
+                'adj_pnl': adj_pnl,
+                'loss_to_cover': loss,
+            }
 
             # Cooldown after reversal
             params = session.get('params', {})
@@ -657,6 +673,12 @@ class MMMMonitor:
 
         # §10: Check if strike shift needed on hedge side
         if check_shift_needed(session, hedge, hedge_premium):
+            self._hb_wt['shift'] = {
+                'side': hedge,
+                'reason': 'hedge_premium_too_low',
+                'hedge_premium': hedge_premium,
+                'loss': loss,
+            }
             await self._process_strike_shift(
                 hedge, loss, ce_now, pe_now,
             )
@@ -684,6 +706,20 @@ class MMMMonitor:
         if result.get('success'):
             from .mmm_activity import log_activity
             fill_price = result['fill_price']
+
+            # Track adjustment for walkthrough
+            self._hb_wt['adjustment'] = {
+                'side': hedge,
+                'strike': hedge_strike,
+                'lots': lots,
+                'fill_price': fill_price,
+                'loss': loss,
+                'adj_type': adj_type,
+                'constraint_msg': constraint_msg,
+                'hedge_premium': hedge_premium,
+                'adjustment_number': session.get('adjustment_count', 0),
+            }
+
             log_activity('adjustment_complete',
                         f'✓ Adjustment Complete: SELL {lots} lots {hedge.upper()} @ {hedge_strike} '
                         f'for ${fill_price:.2f} (Type: {adj_type})',
@@ -816,6 +852,14 @@ class MMMMonitor:
                     result['lots_closed'], result['realized_pnl'],
                     result['close_premium'],
                 )
+                # Track for walkthrough
+                self._hb_wt['close_at_5'].append({
+                    'side': pos['side'],
+                    'strike': pos['strike'],
+                    'lots_closed': result['lots_closed'],
+                    'realized_pnl': result['realized_pnl'],
+                    'close_premium': result['close_premium'],
+                })
 
                 # Check if side fully closed → auto-find new strike
                 if check_side_fully_closed(session, pos['side']):
@@ -863,19 +907,8 @@ class MMMMonitor:
                     )
                     if result.get('success'):
                         close_price = result.get('fill_price', 0)
-                        # Compute P&L per-fill (not just original_premium)
-                        pnl = 0.0
-                        # Original lots
-                        orig_lots = side_state.get('original_lots', 0)
-                        orig_prem = side_state.get('original_premium', 0)
-                        if orig_lots > 0:
-                            pnl += (orig_prem - close_price) * orig_lots * LOT_SIZE_BTC
-                        # Adjustment fills at active strike
-                        for fill in side_state.get('adjustment_fills', []):
-                            f_lots = fill.get('lots', 0)
-                            f_prem = fill.get('premium', 0)
-                            if f_lots > 0:
-                                pnl += (f_prem - close_price) * f_lots * LOT_SIZE_BTC
+                        avg_entry = side_state.get('original_premium', 0)
+                        pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
                         session['realized_pnl'] = (
                             session.get('realized_pnl', 0) + pnl
                         )
@@ -1166,38 +1199,22 @@ class MMMMonitor:
             cache[(float(pe_state['active_strike']), 'put')] = pe_now
 
         # Fetch any remaining strikes not yet in cache
-        # Use a fresh client context to avoid 'Event loop is closed' issues
-        from bot.api.async_delta_client import AsyncDeltaClient
-        from config.loader import get_api_credentials
-        creds = get_api_credentials()
-        
-        rest = AsyncDeltaClient(
-            api_key=creds.get('api_key', ''),
-            api_secret=creds.get('api_secret', ''),
-            testnet=creds.get('testnet', False) or False,
-        )
-        try:
-            for strike, opt in strike_pairs:
-                if (strike, opt) in cache:
-                    continue
-                try:
-                    symbol = self.initializer.build_symbol(
-                        opt, 'BTC', strike, expiry,
-                    )
-                    # Use direct request to avoid any session state issues
-                    resp = await rest._request_with_retry(
-                        method="GET", path=f"/v2/tickers/{symbol}",
-                    )
-                    data = resp.get('result', resp) if hasattr(resp, 'get') else resp
-                    cache[(strike, opt)] = float(data.get('mark_price', 0))
-                except Exception as e:
-                    log.warning(f"Prefetch failed for {opt}@{strike}: {e}")
-                    # Do NOT default to 0. Leave it out of cache so fetch_fn raises error.
-        except Exception as e:
-            log.error(f"Global prefetch loop error: {e}")
-        finally:
-            # Ensure we close the temporary session
-            await rest.close()
+        rest = getattr(self, '_heartbeat_rest', None) or self._create_heartbeat_rest_client()
+        for strike, opt in strike_pairs:
+            if (strike, opt) in cache:
+                continue
+            try:
+                symbol = self.initializer.build_symbol(
+                    opt, 'BTC', strike, expiry,
+                )
+                resp = await rest._request_with_retry(
+                    method="GET", path=f"/v2/tickers/{symbol}",
+                )
+                data = resp.get('result', resp)
+                cache[(strike, opt)] = float(data.get('mark_price', 0))
+            except Exception as e:
+                log.warning(f"Prefetch failed for {opt}@{strike}: {e}")
+                cache[(strike, opt)] = 0
 
         self._premium_cache = cache
 
@@ -1221,18 +1238,53 @@ class MMMMonitor:
             key = (float(strike), option_type)
             if key in cache:
                 return cache[key]
-            
-            # Cache miss - likely failed to fetch. Raise error rather than returning 0.
-            # Returning 0 for a short position signals infinite profit, which is dangerous.
-            raise ValueError(f"Premium data unavailable for {option_type}@{strike}")
-            
+            # Cache miss — attempt a synchronous fetch via a disposable loop
+            try:
+                expiry = self.session.get('params', {}).get('expiry', '')
+                symbol = self.initializer.build_symbol(
+                    option_type, 'BTC', strike, expiry,
+                )
+                loop = asyncio.new_event_loop()
+                try:
+                    # Create fresh client bound to this disposable loop
+                    from bot.api.async_delta_client import AsyncDeltaClient
+                    from config.loader import get_api_credentials
+                    creds = get_api_credentials()
+                    rest = AsyncDeltaClient(
+                        api_key=creds.get('api_key', ''),
+                        api_secret=creds.get('api_secret', ''),
+                        testnet=creds.get('testnet', False) or False,
+                    )
+                    resp = loop.run_until_complete(
+                        rest._request_with_retry(
+                            method="GET", path=f"/v2/tickers/{symbol}",
+                        )
+                    )
+                    data = resp.get('result', resp)
+                    mark = float(data.get('mark_price', 0))
+                    cache[key] = mark
+                    return mark
+                finally:
+                    loop.close()
+            except Exception:
+                return 0
         return fetch
 
     def _get_minutes_to_expiry(self) -> Optional[float]:
-        """Calculate minutes remaining until expiry."""
+        """Calculate minutes remaining until expiry (5:30 PM IST = 12:00 UTC)."""
         expiry_time = self.session.get('expiry_time')
         if not expiry_time:
-            return None
+            # Fallback: compute from DDMMYYYY expiry date if expiry_time not set
+            expiry_date = self.session.get('expiry') or self.session.get('params', {}).get('expiry', '')
+            if expiry_date:
+                try:
+                    from .mmm_initializer import expiry_to_utc_datetime
+                    expiry_time = expiry_to_utc_datetime(expiry_date)
+                    self.session['expiry_time'] = expiry_time  # cache for future beats
+                except (ValueError, TypeError):
+                    return None
+            else:
+                return None
         try:
             exp = datetime.fromisoformat(expiry_time)
             now = datetime.utcnow()
@@ -1242,7 +1294,7 @@ class MMMMonitor:
             return None
 
     def _emit_heartbeat_data(self, ce_now: float, pe_now: float):
-        """Emit heartbeat WebSocket event."""
+        """Emit heartbeat WebSocket event with premium_map for live prices."""
         session = self.session
         ce_trigger = session.get('ce', {}).get('trigger_snapshot', {}).get(
             str(int(session.get('ce', {}).get('active_strike', 0))), 0
@@ -1254,13 +1306,24 @@ class MMMMonitor:
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
 
-        # Build premium_map from the pre-fetched cache for ALL strikes
-        # Format: {"strike:option_type": mark_price}
+        # Build premium_map from _premium_cache for frontend position pricing
+        # Format: {"70600:call": 95.5, "66400:put": 107.5, ...}
         premium_map = {}
         cache = getattr(self, '_premium_cache', {})
-        for (strike, opt_type), mark_price in cache.items():
+        for (strike, opt_type), price in cache.items():
             key = f"{int(strike)}:{opt_type}"
-            premium_map[key] = mark_price
+            premium_map[key] = price
+
+        # Also ensure active strikes are in the map from this heartbeat's fetch
+        ce_active = session.get('ce', {}).get('active_strike')
+        pe_active = session.get('pe', {}).get('active_strike')
+        if ce_active and ce_now:
+            premium_map[f"{int(ce_active)}:call"] = ce_now
+        if pe_active and pe_now:
+            premium_map[f"{int(pe_active)}:put"] = pe_now
+
+        # Persist premium_map in session for page-reload resilience
+        session['_premium_map'] = premium_map
 
         emit_heartbeat(
             self.session_id, ce_now, pe_now,
@@ -1270,87 +1333,6 @@ class MMMMonitor:
             premium_map=premium_map,
         )
 
-    def _emit_price_tick(self):
-        """Fetch live mark prices for ALL strikes and emit a price-only tick.
-
-        Runs every 5 seconds between heartbeats for real-time UI price updates.
-        Does NOT run any adjustment logic — just price fetch + emit.
-        
-        Uses synchronous httpx.get() instead of the AsyncDeltaClient to avoid
-        event loop lifecycle issues between heartbeats.
-        """
-        import httpx
-        import sys
-
-        session = self.session
-        expiry = session.get('params', {}).get('expiry', '')
-        underlying = session.get('underlying', 'BTC')
-
-        # Collect all (strike, option_type) pairs from session
-        strike_pairs = set()
-        for side_key in ['ce', 'pe']:
-            side = session.get(side_key, {})
-            opt = 'call' if side_key == 'ce' else 'put'
-            active = side.get('active_strike', 0)
-            if active:
-                strike_pairs.add((float(active), opt))
-            for fill in side.get('adjustment_fills', []):
-                s = fill.get('strike', active)
-                if s:
-                    strike_pairs.add((float(s), opt))
-            for frozen in side.get('frozen_positions', []):
-                s = frozen.get('strike', 0)
-                if s:
-                    strike_pairs.add((float(s), opt))
-
-        if not strike_pairs:
-            print(f"[MMM PRICE TICK] No strike pairs found!", flush=True, file=sys.stderr)
-            return
-
-        print(f"[MMM PRICE TICK] {len(strike_pairs)} strikes to fetch", flush=True, file=sys.stderr)
-
-        # Determine API base URL
-        from config.loader import get_api_credentials
-        creds = get_api_credentials()
-        testnet = creds.get('testnet', False) or False
-        base_url = (
-            'https://cdn-testnet.delta.exchange'
-            if testnet
-            else 'https://api.india.delta.exchange'
-        )
-
-        premium_map = {}
-        for strike, opt_type in strike_pairs:
-            try:
-                symbol = self.initializer.build_symbol(
-                    opt_type, underlying, strike, expiry,
-                )
-                resp = httpx.get(
-                    f"{base_url}/v2/tickers/{symbol}",
-                    timeout=5.0,
-                )
-                if resp.status_code == 200:
-                    data = resp.json().get('result', {})
-                    mark = float(data.get('mark_price', 0))
-                    key = f"{int(strike)}:{opt_type}"
-                    premium_map[key] = mark
-                else:
-                    print(f"[MMM PRICE TICK] HTTP {resp.status_code} for {symbol}", flush=True, file=sys.stderr)
-            except Exception as e:
-                print(f"[MMM PRICE TICK] Fetch error {opt_type}@{strike}: {e}", flush=True, file=sys.stderr)
-
-        print(f"[MMM PRICE TICK] Fetched {len(premium_map)} prices: {premium_map}", flush=True, file=sys.stderr)
-
-        if premium_map:
-            # Update session premium_map so REST API also serves fresh prices
-            session['_premium_map'] = {
-                k: round(v, 2) for k, v in premium_map.items()
-            }
-            session['_premium_map_ts'] = datetime.utcnow().isoformat()
-
-            # Emit to frontend via WebSocket
-            emit_price_tick(self.session_id, premium_map)
-            print(f"[MMM PRICE TICK] Emitted to WebSocket", flush=True, file=sys.stderr)
 
 # =============================================================================
 # Monitor Registry — track all active monitors
@@ -1410,184 +1392,3 @@ def _save_session(session: Dict):
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")
-
-
-def sanitize_session_state(session: Dict):
-    """Fix known state inconsistencies.
-    
-    Runs once per session (sets _sanitized flag to avoid duplicate runs).
-    Fixes:
-    1. Shifted positions misclassified as original_lots
-    2. original_premium not matching entry_fill_price
-    """
-    # Only run once per session lifetime
-    if session.get('_sanitized', False):
-        return
-
-    sanitized_anything = False
-
-    # Fix 1: Shifted positions misclassified as original_lots
-    if session.get('shift_count', 0) > 0:
-        for side_key in ['ce', 'pe']:
-            side = session.get(side_key, {})
-            # If we have original lots at a shifted strike (different from original),
-            # move to adjustment
-            if (side.get('original_lots', 0) > 0
-                    and side.get('active_strike', 0) != side.get('original_strike', 0)):
-                log.warning(
-                    f"Sanitizing {side_key}: Moving {side['original_lots']} "
-                    f"original_lots to adjustments (active strike shifted)"
-                )
-                
-                # Use entry_fill_price if available, fall back to original_premium
-                prem = side.get('entry_fill_price', 0) or side.get('original_premium', 0)
-                strike = side.get('active_strike', 0)
-                lots = side.get('original_lots')
-                
-                side.setdefault('adjustment_fills', []).append({
-                    'lots': lots,
-                    'premium': prem,
-                    'strike': strike,
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'type': 'strike_shift_sanitized'
-                })
-                
-                side['original_lots'] = 0
-                side['original_premium'] = 0.0
-                
-                from .mmm_state import recompute_side_lots
-                recompute_side_lots(side)
-                session[side_key] = side
-                sanitized_anything = True
-
-    # Fix 2: original_premium should match entry_fill_price
-    for side_key in ['ce', 'pe']:
-        side = session.get(side_key, {})
-        fill_price = side.get('entry_fill_price')
-        orig_prem = side.get('original_premium', 0)
-        if fill_price and orig_prem > 0 and abs(fill_price - orig_prem) > 0.01:
-            log.warning(
-                f"Sanitizing {side_key}: original_premium {orig_prem} != "
-                f"entry_fill_price {fill_price}, correcting"
-            )
-            side['original_premium'] = fill_price
-            # Also update trigger_snapshot at original strike if it used the wrong premium
-            orig_strike_key = str(int(side.get('original_strike', 0)))
-            if orig_strike_key in side.get('trigger_snapshot', {}):
-                old_trigger = side['trigger_snapshot'][orig_strike_key]
-                if abs(old_trigger - orig_prem) < 0.01:
-                    side['trigger_snapshot'][orig_strike_key] = fill_price
-            session[side_key] = side
-            sanitized_anything = True
-
-    if sanitized_anything:
-        log.info("Session sanitization complete, setting _sanitized flag")
-
-    session['_sanitized'] = True
-
-
-def _check_reversal_count_health(session: Dict, sid: str):
-    """
-    Recommendation #2: Detect runaway reversal detection loops.
-
-    If reversal_count > adjustment_count × 3 (and > 5 absolute),
-    something is wrong — force-transition to standard mode.
-
-    This catches infinite reversal loops that the explicit skip-transition
-    fix should prevent, as a defense-in-depth measure.
-    """
-    rev_count = session.get('reversal_count', 0)
-    adj_count = session.get('adjustment_count', 0)
-
-    # Only flag if there are enough reversals to matter
-    if rev_count <= 5:
-        return
-
-    max_expected = max(adj_count * 3, 6)
-    if rev_count > max_expected:
-        from .mmm_activity import log_activity
-        log.error(
-            f"[{sid}] REVERSAL LOOP DETECTED: reversal_count={rev_count} >> "
-            f"adjustment_count={adj_count}. Force-resetting reversal state."
-        )
-        log_activity('safety_warning',
-            f'⚠️ Reversal loop detected: {rev_count} reversals vs {adj_count} adjustments. '
-            f'Force-resetting to prevent infinite loop.',
-            sid, 'error',
-            {'reversal_count': rev_count, 'adjustment_count': adj_count})
-
-        # Force-reset: update last_aggressor to break the loop
-        # The current trigger evaluation will determine the next aggressor
-        # and standard formula will be used.
-        session['_reversal_loop_detected'] = True
-        session['_reversal_loop_reset_at'] = datetime.utcnow().isoformat()
-        # Don't change last_aggressor here — let the next trigger+adjustment
-        # cycle set it naturally. Instead, cap the count and log.
-        session['reversal_count'] = adj_count + 1  # Reset to sane value
-
-
-def _check_trigger_staleness(
-    session: Dict,
-    ce_now: float,
-    pe_now: float,
-    sid: str,
-):
-    """
-    Recommendation #3: Detect stale triggers.
-
-    If a trigger snapshot at the active strike hasn't been updated for N
-    heartbeats AND the current premium has moved significantly from the
-    trigger level, something may be wrong (e.g. skipped adjustments
-    without trigger updates).
-
-    Tracks the last trigger update heartbeat counter and flags staleness.
-    """
-    hb_counter = session.get('_heartbeat_counter', 0)
-
-    for side_key, premium_now in [('ce', ce_now), ('pe', pe_now)]:
-        side_state = session.get(side_key, {})
-        active_strike = str(int(side_state.get('active_strike', 0)))
-        trigger_val = side_state.get('trigger_snapshot', {}).get(active_strike, 0)
-
-        if trigger_val <= 0 or premium_now <= 0:
-            continue
-
-        # Track when trigger was last changed
-        last_key = f'_trigger_last_updated_hb_{side_key}'
-        stored_trigger_key = f'_trigger_last_value_{side_key}'
-
-        stored_val = session.get(stored_trigger_key, 0)
-        if abs(stored_val - trigger_val) > 0.01:
-            # Trigger WAS updated — record the heartbeat when it changed
-            session[last_key] = hb_counter
-            session[stored_trigger_key] = trigger_val
-        else:
-            # Trigger hasn't changed — check staleness
-            last_updated_hb = session.get(last_key, hb_counter)
-            hb_since_update = hb_counter - last_updated_hb
-
-            # If trigger hasn't changed in 10+ heartbeats and premium has moved
-            # more than 50% from trigger, flag staleness
-            if hb_since_update >= 10:
-                move_pct = abs(premium_now - trigger_val) / trigger_val * 100
-                if move_pct > 50:
-                    from .mmm_activity import log_activity
-                    log.warning(
-                        f"[{sid}] STALE TRIGGER: {side_key.upper()} trigger at "
-                        f"{active_strike}={trigger_val:.2f} hasn't changed in "
-                        f"{hb_since_update} heartbeats, but premium is now "
-                        f"{premium_now:.2f} ({move_pct:.0f}% away)"
-                    )
-                    log_activity('trigger_stale',
-                        f'⚠️ Stale {side_key.upper()} trigger: unchanged for '
-                        f'{hb_since_update} heartbeats. Trigger={trigger_val:.2f}, '
-                        f'Premium={premium_now:.2f} ({move_pct:.0f}% drift)',
-                        sid, 'warning',
-                        {
-                            'side': side_key.upper(),
-                            'trigger': trigger_val,
-                            'premium': premium_now,
-                            'drift_pct': round(move_pct, 1),
-                            'stale_heartbeats': hb_since_update,
-                        })
-

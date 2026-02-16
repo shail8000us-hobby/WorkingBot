@@ -91,3 +91,5 @@ CE position collected premium = 100*10 + 90*2 + 80*5 + 70*3 = 1580 + 210 = 1790
 PE position collected premium = 100*10 + 80*3 + 70*2 + 60*2 = 1500
 now the algo will keep monitoring the CE and PE prices for next 5 minutes and if after 5 minutes the CE price is below 70 and PE price is below 130, so the algo will not trigger any adjustment because the loss in PE position is already covered by the premium collected from selling CE options.
 This process will keep on going on and on until the expiry or until the user stops it.
+now we have following postions:
+- Sold 10 lots of X strike CE at 100 premium  

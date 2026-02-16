@@ -142,9 +142,9 @@ export default function MMMPnLChart({ session, pnlData }) {
           onChange={(_, v) => v && setView(v)}
           size="small"
         >
-          <ToggleButton value="all" sx={{ fontSize: '0.65rem', py: 0.25 }}>All</ToggleButton>
-          <ToggleButton value="pnl" sx={{ fontSize: '0.65rem', py: 0.25 }}>P&L</ToggleButton>
-          <ToggleButton value="premiums" sx={{ fontSize: '0.65rem', py: 0.25 }}>Premiums</ToggleButton>
+          <ToggleButton value="all" sx={{ fontSize: '0.78rem', py: 0.25 }}>All</ToggleButton>
+          <ToggleButton value="pnl" sx={{ fontSize: '0.78rem', py: 0.25 }}>P&L</ToggleButton>
+          <ToggleButton value="premiums" sx={{ fontSize: '0.78rem', py: 0.25 }}>Premiums</ToggleButton>
         </ToggleButtonGroup>
       </Box>
 

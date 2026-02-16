@@ -348,7 +348,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 variant="outlined"
                 color="primary"
                 onClick={() => onBothSidesAction?.('adjust_ce')}
-                sx={{ fontSize: '0.7rem', py: 0.5 }}
+                sx={{ fontSize: '0.82rem', py: 0.5 }}
               >
                 Hedge CE → Sell PE
               </Button>
@@ -359,7 +359,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 variant="outlined"
                 color="primary"
                 onClick={() => onBothSidesAction?.('adjust_pe')}
-                sx={{ fontSize: '0.7rem', py: 0.5 }}
+                sx={{ fontSize: '0.82rem', py: 0.5 }}
               >
                 Hedge PE → Sell CE
               </Button>
@@ -371,7 +371,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 color="success"
                 startIcon={<ResumeIcon sx={{ fontSize: 14 }} />}
                 onClick={() => onBothSidesAction?.('skip')}
-                sx={{ fontSize: '0.7rem', py: 0.5 }}
+                sx={{ fontSize: '0.82rem', py: 0.5 }}
               >
                 Resume (Update Triggers)
               </Button>

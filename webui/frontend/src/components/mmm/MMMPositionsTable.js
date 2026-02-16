@@ -238,7 +238,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
   return (
     <Box>
       {/* Section explainer */}
-      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.5, mb: 1, fontStyle: 'italic', fontSize: '0.7rem', opacity: 0.75 }}>
+      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.5, mb: 1, fontStyle: 'italic', fontSize: '0.82rem', opacity: 0.75 }}>
         💡 Three position types: <strong>Original</strong> = initial CE+PE sold at entry (naturally offset each other). <strong>Adjustment</strong> = extra lots sold to cover losses (naked risk). <strong>Frozen</strong> = old positions at previous strikes after a shift (tracked for close-at-5).
       </Typography>
       {/* Premium data warning */}
@@ -262,7 +262,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
       <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
         <Table size="small">
           <TableHead>
-            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.75rem' } }}>
+            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.85rem' } }}>
               <Tooltip title="CE (Call) = profits when BTC drops. PE (Put) = profits when BTC drops. You sold both to collect premium." arrow>
                 <TableCell sx={{ cursor: 'help' }}>Side</TableCell>
               </Tooltip>
@@ -318,7 +318,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
                     {isFrozen ? (
                       <Tooltip
                         title={
-                          <Box sx={{ whiteSpace: 'pre-line', fontSize: '0.75rem', p: 0.5 }}>
+                          <Box sx={{ whiteSpace: 'pre-line', fontSize: '0.85rem', p: 0.5 }}>
                             <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, fontSize: '0.8rem' }}>
                               ❄️ Frozen Position
                             </Typography>
@@ -336,7 +336,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
                           sx={{
                             color: typeCfg.color,
                             borderColor: typeCfg.color,
-                            fontSize: '0.7rem',
+                            fontSize: '0.82rem',
                             cursor: 'help',
                             '& .MuiChip-icon': { color: '#90caf9' },
                           }}
@@ -347,7 +347,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
                         label={row.typeLabel || typeCfg.label}
                         size="small"
                         variant="outlined"
-                        sx={{ color: typeCfg.color, borderColor: typeCfg.color, fontSize: '0.7rem' }}
+                        sx={{ color: typeCfg.color, borderColor: typeCfg.color, fontSize: '0.82rem' }}
                       />
                     )}
                   </TableCell>

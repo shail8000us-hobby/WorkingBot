@@ -407,6 +407,21 @@ const mmmService = {
     const { data } = await api.get(`${BASE_URL}/activities`, { params });
     return data;
   },
+
+  // =========================================================================
+  // Algo Walkthrough
+  // =========================================================================
+
+  /**
+   * Get the algo-calculation walkthrough log for a session
+   * @param {string} sessionId
+   */
+  async getWalkthrough(sessionId) {
+    const { data } = await api.get(
+      `${BASE_URL}/session/${sessionId}/walkthrough`
+    );
+    return data;
+  },
 };
 
 export default mmmService;

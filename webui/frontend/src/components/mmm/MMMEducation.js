@@ -208,7 +208,7 @@ export function StrategyExplainer() {
                                     label={term}
                                     size="small"
                                     variant="outlined"
-                                    sx={{ height: 20, fontSize: '0.65rem', cursor: 'help', borderColor: 'rgba(33,150,243,0.3)', color: 'text.secondary' }}
+                                    sx={{ height: 20, fontSize: '0.78rem', cursor: 'help', borderColor: 'rgba(33,150,243,0.3)', color: 'text.secondary' }}
                                 />
                             </Tooltip>
                         ))}
@@ -217,7 +217,7 @@ export function StrategyExplainer() {
                     <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary', display: 'block', mb: 0.5 }}>
                         The Decision Loop (Every Heartbeat):
                     </Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.6, display: 'block', fontFamily: 'monospace', fontSize: '0.65rem', whiteSpace: 'pre-line' }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.6, display: 'block', fontFamily: 'monospace', fontSize: '0.78rem', whiteSpace: 'pre-line' }}>
                         1. Fetch current CE and PE premiums{'\n'}
                         2. Run safety checks (max loss, position cap, near expiry){'\n'}
                         3. Close any position at ≤5 premium (lock profit){'\n'}

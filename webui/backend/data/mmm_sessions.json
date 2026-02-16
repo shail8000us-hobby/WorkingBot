@@ -1,761 +1,148 @@
 {
   "sessions": {
-    "mmm_d8b725": {
-      "session_id": "mmm_d8b725",
+    "mmm_5eb1bc": {
+      "session_id": "mmm_5eb1bc",
       "mode": "fresh",
-      "created_at": "2026-02-16T04:24:35.045999",
-      "updated_at": "2026-02-16T09:26:30.707855",
-      "ce": {
-        "side": "CE",
-        "original_lots": 0,
-        "original_premium": 0.0,
-        "original_strike": 69600.0,
-        "active_strike": 68400.0,
-        "adjustment_fills": [
-          {
-            "lots": 1,
-            "premium": 303.5,
-            "strike": 68400.0,
-            "timestamp": "2026-02-16T09:23:57.526537",
-            "type": "strike_shift_sanitized"
-          }
-        ],
-        "adjustment_total_lots": 1,
-        "adjustment_avg": 303.5,
-        "frozen_positions": [
-          {
-            "strike": 69600.0,
-            "lots": 1,
-            "entry_premium": 92.0,
-            "type": "original",
-            "frozen_at": "2026-02-16T06:00:45.717317"
-          },
-          {
-            "strike": 69600.0,
-            "lots": 1,
-            "entry_premium": 78.5,
-            "type": "adjustment",
-            "frozen_at": "2026-02-16T06:00:45.717322"
-          },
-          {
-            "strike": 69600.0,
-            "lots": 1,
-            "entry_premium": 63.5,
-            "type": "adjustment",
-            "frozen_at": "2026-02-16T06:00:45.717323"
-          }
-        ],
-        "frozen_total_lots": 3,
-        "active_lots": 1,
-        "total_lots": 4,
-        "trigger_snapshot": {
-          "69600": 72.85502988,
-          "68400": 26.18777947
-        },
-        "symbol": "C-BTC-69600-160226",
-        "entry_fill_price": 92.0,
-        "entry_order_id": "1179347721"
-      },
-      "pe": {
-        "side": "PE",
-        "original_lots": 0,
-        "original_premium": 0.0,
-        "original_strike": 68000.0,
-        "active_strike": 68000.0,
-        "adjustment_fills": [
-          {
-            "lots": 1,
-            "premium": 74.0,
-            "strike": 68000.0,
-            "timestamp": "2026-02-16T04:52:24.563311",
-            "type": "first_reversal"
-          },
-          {
-            "lots": 1,
-            "premium": 96.5,
-            "strike": 68000.0,
-            "timestamp": "2026-02-16T09:23:57.526630",
-            "type": "strike_shift_sanitized"
-          }
-        ],
-        "adjustment_total_lots": 2,
-        "adjustment_avg": 85.25,
-        "frozen_positions": [],
-        "frozen_total_lots": 0,
-        "active_lots": 2,
-        "total_lots": 2,
-        "trigger_snapshot": {
-          "68000": 168.16966879
-        },
-        "symbol": "P-BTC-68000-160226",
-        "entry_fill_price": 96.5,
-        "entry_order_id": "1179347718"
-      },
-      "last_aggressor": "PE",
-      "adjustment_count": 3,
-      "adjustment_history": [
-        {
-          "side": "CE",
-          "aggressor": "PE",
-          "lots_sold": 1,
-          "premium": 78.5,
-          "strike": 69600.0,
-          "timestamp": "2026-02-16T04:37:05.158307",
-          "type": "standard",
-          "premium_collected": 0.0785,
-          "adjustment_number": 1
-        },
-        {
-          "side": "PE",
-          "aggressor": "CE",
-          "lots_sold": 1,
-          "premium": 74.0,
-          "strike": 68000.0,
-          "timestamp": "2026-02-16T04:52:24.563352",
-          "type": "first_reversal",
-          "premium_collected": 0.074,
-          "adjustment_number": 2
-        },
-        {
-          "side": "CE",
-          "aggressor": "PE",
-          "lots_sold": 1,
-          "premium": 63.5,
-          "strike": 69600.0,
-          "timestamp": "2026-02-16T05:04:48.493295",
-          "type": "first_reversal",
-          "premium_collected": 0.0635,
-          "adjustment_number": 3
-        },
-        {
-          "type": "both_sides_decision",
-          "decision": "skip",
-          "timestamp": "2026-02-16T07:17:43.226231"
-        }
-      ],
-      "realized_pnl": 0.0,
-      "total_premium_collected": 0.4045,
-      "total_fees": 0.0,
-      "strategy_status": "STOPPED",
-      "unrealized_pnl": 0.21,
-      "peak_pnl": 0.29,
-      "reversal_count": 26,
-      "cooldown_active": true,
-      "cooldown_until": "2026-02-16T08:44:58.650492",
-      "shift_count": 1,
-      "close_at_5_count": 0,
-      "entry_time": "2026-02-16T04:26:11.856813",
-      "last_heartbeat": "2026-02-16T09:23:57.526306",
-      "next_heartbeat": "2026-02-16T09:28:57.526220",
-      "expiry_time": null,
-      "params": {
-        "desired_ce_premium": 100.0,
-        "desired_pe_premium": 100.0,
-        "initial_lots": 1,
-        "expiry": "16022026",
-        "adjustment_interval": 300,
-        "min_trigger_move": 10.0,
-        "shift_threshold": 50.0,
-        "close_at_threshold": 5.0,
-        "premium_buffer_pct": 0.05,
-        "max_lots_per_side": 100,
-        "max_adjustments": 30,
-        "max_loss_amount": 50000.0,
-        "stop_adjustment_mins": 15,
-        "auto_close_mins": 5,
-        "cooldown_on_reversal": true,
-        "whipsaw_limit": 15,
-        "trailing_stop_pct": 0.5,
-        "theta_acceleration_window": 120
-      },
-      "pnl_history": [
-        {
-          "timestamp": "2026-02-16T04:26:12.412951",
-          "total_pnl": -0.0,
-          "realized": 0.0,
-          "unrealized": -0.0,
-          "ce_premium": 92.56026743,
-          "pe_premium": 97.76474959
-        },
-        {
-          "timestamp": "2026-02-16T04:31:12.960312",
-          "total_pnl": 0.0,
-          "realized": 0.0,
-          "unrealized": 0.0,
-          "ce_premium": 93.17139486,
-          "pe_premium": 90.75704525
-        },
-        {
-          "timestamp": "2026-02-16T04:37:05.158423",
-          "total_pnl": 0.0,
-          "realized": 0.0,
-          "unrealized": 0.0,
-          "ce_premium": 79.08848543,
-          "pe_premium": 107.44601041
-        },
-        {
-          "timestamp": "2026-02-16T04:42:05.638707",
-          "total_pnl": 0.01,
-          "realized": 0.0,
-          "unrealized": 0.01,
-          "ce_premium": 79.12406075,
-          "pe_premium": 103.01265742
-        },
-        {
-          "timestamp": "2026-02-16T04:47:06.376761",
-          "total_pnl": 0.01,
-          "realized": 0.0,
-          "unrealized": 0.01,
-          "ce_premium": 78.55888379,
-          "pe_premium": 99.40720092
-        },
-        {
-          "timestamp": "2026-02-16T04:52:24.563408",
-          "total_pnl": -0.01,
-          "realized": 0.0,
-          "unrealized": -0.01,
-          "ce_premium": 102.04095132,
-          "pe_premium": 73.77772522
-        },
-        {
-          "timestamp": "2026-02-16T04:57:24.913680",
-          "total_pnl": 0.0,
-          "realized": 0.0,
-          "unrealized": 0.0,
-          "ce_premium": 97.84252416,
-          "pe_premium": 71.88175191
-        },
-        {
-          "timestamp": "2026-02-16T04:58:39.598307",
-          "total_pnl": -0.0,
-          "realized": 0.0,
-          "unrealized": -0.0,
-          "ce_premium": 101.18397397,
-          "pe_premium": 69.98893292
-        },
-        {
-          "timestamp": "2026-02-16T05:04:48.493357",
-          "total_pnl": -0.01,
-          "realized": 0.0,
-          "unrealized": -0.01,
-          "ce_premium": 72.85502988,
-          "pe_premium": 97.62218022
-        },
-        {
-          "timestamp": "2026-02-16T06:01:03.960807",
-          "total_pnl": 0.29,
-          "realized": 0.0,
-          "unrealized": 0.29,
-          "ce_premium": 26.18777947,
-          "pe_premium": 168.16966879
-        },
-        {
-          "timestamp": "2026-02-16T06:06:04.679605",
-          "total_pnl": -0.01,
-          "realized": 0.0,
-          "unrealized": -0.01,
-          "ce_premium": 326.23107755,
-          "pe_premium": 150.41511347
-        },
-        {
-          "timestamp": "2026-02-16T06:17:22.187863",
-          "total_pnl": 0.02,
-          "realized": 0.0,
-          "unrealized": 0.02,
-          "ce_premium": 297.02774402,
-          "pe_premium": 159.99840986
-        },
-        {
-          "timestamp": "2026-02-16T06:22:32.562838",
-          "total_pnl": 0.01,
-          "realized": 0.0,
-          "unrealized": 0.01,
-          "ce_premium": 227.08372153,
-          "pe_premium": 211.98846289
-        },
-        {
-          "timestamp": "2026-02-16T06:41:08.681929",
-          "total_pnl": 0.05,
-          "realized": 0.0,
-          "unrealized": 0.05,
-          "ce_premium": 333.23958327,
-          "pe_premium": 121.50609197
-        },
-        {
-          "timestamp": "2026-02-16T06:46:09.495291",
-          "total_pnl": 0.06,
-          "realized": 0.0,
-          "unrealized": 0.06,
-          "ce_premium": 325.87450777,
-          "pe_premium": 123.31653023
-        },
-        {
-          "timestamp": "2026-02-16T06:51:10.707088",
-          "total_pnl": 0.08,
-          "realized": 0.0,
-          "unrealized": 0.08,
-          "ce_premium": 289.72938884,
-          "pe_premium": 137.92547066
-        },
-        {
-          "timestamp": "2026-02-16T06:56:11.926458",
-          "total_pnl": 0.09,
-          "realized": 0.0,
-          "unrealized": 0.09,
-          "ce_premium": 309.12365722,
-          "pe_premium": 121.36791589
-        },
-        {
-          "timestamp": "2026-02-16T07:01:13.035432",
-          "total_pnl": 0.11,
-          "realized": 0.0,
-          "unrealized": 0.11,
-          "ce_premium": 300.36432211,
-          "pe_premium": 122.28505739
-        },
-        {
-          "timestamp": "2026-02-16T07:06:30.658853",
-          "total_pnl": 0.11,
-          "realized": 0.0,
-          "unrealized": 0.11,
-          "ce_premium": 322.42499271,
-          "pe_premium": 104.4923353
-        },
-        {
-          "timestamp": "2026-02-16T07:11:32.012669",
-          "total_pnl": 0.11,
-          "realized": 0.0,
-          "unrealized": 0.11,
-          "ce_premium": 331.10085641,
-          "pe_premium": 100.66745579
-        },
-        {
-          "timestamp": "2026-02-16T07:16:32.770451",
-          "total_pnl": 0.09,
-          "realized": 0.0,
-          "unrealized": 0.09,
-          "ce_premium": 380.0359131,
-          "pe_premium": 78.33681019
-        },
-        {
-          "timestamp": "2026-02-16T07:24:11.102446",
-          "total_pnl": 0.12,
-          "realized": 0.0,
-          "unrealized": 0.12,
-          "ce_premium": 369.26296778,
-          "pe_premium": 75.27767505
-        },
-        {
-          "timestamp": "2026-02-16T07:29:11.825488",
-          "total_pnl": 0.12,
-          "realized": 0.0,
-          "unrealized": 0.12,
-          "ce_premium": 381.68357491,
-          "pe_premium": 68.69680277
-        },
-        {
-          "timestamp": "2026-02-16T07:34:12.837654",
-          "total_pnl": 0.13,
-          "realized": 0.0,
-          "unrealized": 0.13,
-          "ce_premium": 376.8410039,
-          "pe_premium": 67.16718036
-        },
-        {
-          "timestamp": "2026-02-16T07:39:13.678064",
-          "total_pnl": 0.13,
-          "realized": 0.0,
-          "unrealized": 0.13,
-          "ce_premium": 389.86349533,
-          "pe_premium": 59.49474801
-        },
-        {
-          "timestamp": "2026-02-16T07:46:44.058363",
-          "total_pnl": 0.18,
-          "realized": 0.0,
-          "unrealized": 0.18,
-          "ce_premium": 329.77394865,
-          "pe_premium": 74.9917829
-        },
-        {
-          "timestamp": "2026-02-16T07:51:45.088705",
-          "total_pnl": 0.17,
-          "realized": 0.0,
-          "unrealized": 0.17,
-          "ce_premium": 361.06959606,
-          "pe_premium": 61.41758209
-        },
-        {
-          "timestamp": "2026-02-16T07:56:45.556771",
-          "total_pnl": 0.2,
-          "realized": 0.0,
-          "unrealized": 0.2,
-          "ce_premium": 328.36344363,
-          "pe_premium": 69.39490825
-        },
-        {
-          "timestamp": "2026-02-16T08:03:50.045764",
-          "total_pnl": 0.18,
-          "realized": 0.0,
-          "unrealized": 0.18,
-          "ce_premium": 372.2395006,
-          "pe_premium": 51.90054358
-        },
-        {
-          "timestamp": "2026-02-16T08:08:51.216795",
-          "total_pnl": 0.19,
-          "realized": 0.0,
-          "unrealized": 0.19,
-          "ce_premium": 372.0671759,
-          "pe_premium": 48.9489684
-        },
-        {
-          "timestamp": "2026-02-16T08:13:52.249936",
-          "total_pnl": 0.22,
-          "realized": 0.0,
-          "unrealized": 0.22,
-          "ce_premium": 331.45274761,
-          "pe_premium": 57.33396858
-        },
-        {
-          "timestamp": "2026-02-16T08:18:52.692793",
-          "total_pnl": 0.21,
-          "realized": 0.0,
-          "unrealized": 0.21,
-          "ce_premium": 369.78431033,
-          "pe_premium": 43.14304138
-        },
-        {
-          "timestamp": "2026-02-16T08:25:02.771240",
-          "total_pnl": 0.18,
-          "realized": 0.0,
-          "unrealized": 0.18,
-          "ce_premium": 419.96045104,
-          "pe_premium": 27.76954175
-        },
-        {
-          "timestamp": "2026-02-16T08:30:31.938090",
-          "total_pnl": 0.19,
-          "realized": 0.0,
-          "unrealized": 0.19,
-          "ce_premium": 417.05395335,
-          "pe_premium": 24.95533551
-        },
-        {
-          "timestamp": "2026-02-16T08:39:58.660099",
-          "total_pnl": 0.21,
-          "realized": 0.0,
-          "unrealized": 0.21,
-          "ce_premium": 420.51897884,
-          "pe_premium": 18.53135003
-        }
-      ],
-      "last_error": "'AsyncDeltaClient' object has no attribute 'close_session'",
-      "error_count": 1,
-      "entry_mode": "fresh",
-      "expiry": "16022026",
-      "initial_total_premium": 0.19083,
-      "lots": 1,
-      "mmm_order_ids": [
-        "1179347721",
-        "1179347718"
-      ],
-      "actual_total_premium": 0.1885,
-      "execution_timestamp": "2026-02-16T04:26:11.856806",
-      "_recon_counter": 62,
-      "reversal_history": [
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T04:52:07.108347",
-          "adjustment_count_at": 1
-        },
-        {
-          "from": "CE",
-          "to": "PE",
-          "timestamp": "2026-02-16T05:03:40.489559",
-          "adjustment_count_at": 2
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T06:06:04.679567",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T06:17:22.187766",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T06:41:08.681865",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T06:46:09.495187",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T06:51:10.704364",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T06:56:11.926368",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:01:13.035330",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:06:30.656647",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:11:32.012603",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:16:32.770403",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:24:11.099109",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:29:11.825343",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:34:12.837583",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:39:13.677889",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:46:44.055222",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:51:45.088572",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T07:56:45.556722",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:03:50.038832",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:08:51.216694",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:13:52.249827",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:18:52.692745",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:25:02.770991",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:30:31.937962",
-          "adjustment_count_at": 3
-        },
-        {
-          "from": "PE",
-          "to": "CE",
-          "timestamp": "2026-02-16T08:39:58.650374",
-          "adjustment_count_at": 3
-        }
-      ],
-      "_heartbeat_counter": 40,
-      "both_sides_decision": "skip",
-      "both_sides_decided_at": "2026-02-16T07:17:43.226209",
-      "_premium_map": {
-        "68000:put": 9.06,
-        "69600:call": 11.33,
-        "68400:call": 542.47
-      },
-      "_premium_map_ts": "2026-02-16T09:26:29.000677"
-    },
-    "mmm_94ca09": {
-      "session_id": "mmm_94ca09",
-      "mode": "fresh",
-      "created_at": "2026-02-16T09:27:23.261523",
-      "updated_at": "2026-02-16T09:59:45.216950",
+      "created_at": "2026-02-16T11:33:37.253093",
+      "updated_at": "2026-02-16T12:27:26.989390",
       "ce": {
         "side": "CE",
         "original_lots": 10,
-        "original_premium": 124.5,
-        "original_strike": 69000.0,
-        "active_strike": 69000.0,
+        "original_premium": 95.5,
+        "original_strike": 70600.0,
+        "active_strike": 70600.0,
         "adjustment_fills": [
           {
             "lots": 2,
-            "premium": 125.0,
-            "strike": 69000.0,
-            "timestamp": "2026-02-16T09:47:49.682120",
-            "type": "first_reversal"
+            "premium": 80.5,
+            "strike": 70600.0,
+            "timestamp": "2026-02-16T11:45:05.922419",
+            "type": "standard"
           }
         ],
         "adjustment_total_lots": 2,
-        "adjustment_avg": 125.0,
+        "adjustment_avg": 80.5,
         "frozen_positions": [],
         "frozen_total_lots": 0,
         "active_lots": 12,
         "total_lots": 12,
         "trigger_snapshot": {
-          "69000": 138.3308635
+          "70600": 132.81834199
         },
-        "symbol": "C-BTC-69000-160226",
-        "entry_fill_price": 124.5,
-        "entry_order_id": "1179646987"
+        "symbol": "C-BTC-70600-170226",
+        "entry_fill_price": 95.5,
+        "entry_order_id": "1179846398"
       },
       "pe": {
         "side": "PE",
         "original_lots": 10,
-        "original_premium": 108.6,
-        "original_strike": 68800.0,
-        "active_strike": 68800.0,
+        "original_premium": 107.5,
+        "original_strike": 66400.0,
+        "active_strike": 66400.0,
         "adjustment_fills": [
           {
-            "lots": 8,
-            "premium": 63.5,
-            "strike": 68800.0,
-            "timestamp": "2026-02-16T09:41:54.036818",
+            "lots": 1,
+            "premium": 98.5,
+            "strike": 66400.0,
+            "timestamp": "2026-02-16T11:53:18.498555",
+            "type": "first_reversal"
+          },
+          {
+            "lots": 4,
+            "premium": 85.0,
+            "strike": 66400.0,
+            "timestamp": "2026-02-16T11:56:13.035330",
             "type": "standard"
           },
           {
-            "lots": 1,
-            "premium": 69.0,
-            "strike": 68800.0,
-            "timestamp": "2026-02-16T09:53:53.913040",
-            "type": "first_reversal"
+            "lots": 5,
+            "premium": 45.0,
+            "strike": 66400.0,
+            "timestamp": "2026-02-16T12:27:26.988795",
+            "type": "standard"
           }
         ],
-        "adjustment_total_lots": 9,
-        "adjustment_avg": 64.11111111111111,
+        "adjustment_total_lots": 10,
+        "adjustment_avg": 66.35,
         "frozen_positions": [],
         "frozen_total_lots": 0,
-        "active_lots": 19,
-        "total_lots": 19,
+        "active_lots": 20,
+        "total_lots": 20,
         "trigger_snapshot": {
-          "68800": 68.8795118
+          "66400": 59.72674229
         },
-        "symbol": "P-BTC-68800-160226",
-        "entry_fill_price": 108.6,
-        "entry_order_id": "1179646986"
+        "symbol": "P-BTC-66400-170226",
+        "entry_fill_price": 107.5,
+        "entry_order_id": "1179846395"
       },
       "last_aggressor": "CE",
-      "adjustment_count": 3,
+      "adjustment_count": 4,
       "adjustment_history": [
-        {
-          "side": "PE",
-          "aggressor": "CE",
-          "lots_sold": 8,
-          "premium": 63.5,
-          "strike": 68800.0,
-          "timestamp": "2026-02-16T09:41:54.036872",
-          "type": "standard",
-          "premium_collected": 0.508,
-          "adjustment_number": 1
-        },
         {
           "side": "CE",
           "aggressor": "PE",
           "lots_sold": 2,
-          "premium": 125.0,
-          "strike": 69000.0,
-          "timestamp": "2026-02-16T09:47:49.682160",
-          "type": "first_reversal",
-          "premium_collected": 0.25,
-          "adjustment_number": 2
+          "premium": 80.5,
+          "strike": 70600.0,
+          "timestamp": "2026-02-16T11:45:05.922449",
+          "type": "standard",
+          "premium_collected": 0.161,
+          "adjustment_number": 1
         },
         {
           "side": "PE",
           "aggressor": "CE",
           "lots_sold": 1,
-          "premium": 69.0,
-          "strike": 68800.0,
-          "timestamp": "2026-02-16T09:53:53.913066",
+          "premium": 98.5,
+          "strike": 66400.0,
+          "timestamp": "2026-02-16T11:53:18.498600",
           "type": "first_reversal",
-          "premium_collected": 0.069,
+          "premium_collected": 0.0985,
+          "adjustment_number": 2
+        },
+        {
+          "side": "PE",
+          "aggressor": "CE",
+          "lots_sold": 4,
+          "premium": 85.0,
+          "strike": 66400.0,
+          "timestamp": "2026-02-16T11:56:13.035346",
+          "type": "standard",
+          "premium_collected": 0.34,
           "adjustment_number": 3
+        },
+        {
+          "side": "PE",
+          "aggressor": "CE",
+          "lots_sold": 5,
+          "premium": 45.0,
+          "strike": 66400.0,
+          "timestamp": "2026-02-16T12:27:26.988826",
+          "type": "standard",
+          "premium_collected": 0.225,
+          "adjustment_number": 4
         }
       ],
       "realized_pnl": 0.0,
-      "total_premium_collected": 3.158,
+      "total_premium_collected": 2.8545000000000003,
       "total_fees": 0.0,
       "strategy_status": "RUNNING",
-      "unrealized_pnl": 0.33,
-      "peak_pnl": 0.33,
-      "reversal_count": 2,
+      "unrealized_pnl": 0.07,
+      "peak_pnl": 0.26,
+      "reversal_count": 1,
       "cooldown_active": false,
       "cooldown_until": null,
       "shift_count": 0,
       "close_at_5_count": 0,
-      "entry_time": "2026-02-16T09:28:43.012045",
-      "last_heartbeat": "2026-02-16T09:59:45.073899",
-      "next_heartbeat": "2026-02-16T10:04:45.073735",
-      "expiry_time": null,
+      "entry_time": "2026-02-16T11:34:55.933304",
+      "last_heartbeat": "2026-02-16T12:26:16.365792",
+      "next_heartbeat": "2026-02-16T12:31:16.365682",
+      "expiry_time": "2026-02-17T12:00:00",
       "params": {
         "desired_ce_premium": 100.0,
         "desired_pe_premium": 100.0,
         "initial_lots": 1,
-        "expiry": "16022026",
+        "expiry": "17022026",
         "adjustment_interval": 300,
         "min_trigger_move": 3.0,
         "shift_threshold": 50.0,
@@ -763,90 +150,793 @@
         "premium_buffer_pct": 0.05,
         "max_lots_per_side": 100,
         "max_adjustments": 30,
-        "max_loss_amount": 50000.0,
+        "max_loss_amount": 50.0,
         "stop_adjustment_mins": 15,
         "auto_close_mins": 5,
         "cooldown_on_reversal": true,
-        "whipsaw_limit": 11,
+        "whipsaw_limit": 30,
         "trailing_stop_pct": 0.5,
         "theta_acceleration_window": 120
       },
       "pnl_history": [
         {
-          "timestamp": "2026-02-16T09:41:54.044988",
-          "total_pnl": -0.01,
+          "timestamp": "2026-02-16T11:34:56.297843",
+          "total_pnl": 0.0,
           "realized": 0.0,
-          "unrealized": -0.01,
-          "ce_premium": 168.82993538,
-          "pe_premium": 64.29322117
+          "unrealized": 0.0,
+          "ce_premium": 94.31868724,
+          "pe_premium": 108.28767507
         },
         {
-          "timestamp": "2026-02-16T09:47:49.682648",
-          "total_pnl": 0.04,
+          "timestamp": "2026-02-16T11:39:56.559597",
+          "total_pnl": 0.03,
           "realized": 0.0,
-          "unrealized": 0.04,
-          "ce_premium": 123.44563487,
-          "pe_premium": 87.21065867
+          "unrealized": 0.03,
+          "ce_premium": 91.38402536,
+          "pe_premium": 109.10670211
         },
         {
-          "timestamp": "2026-02-16T09:53:53.913355",
-          "total_pnl": 0.19,
+          "timestamp": "2026-02-16T11:45:05.922736",
+          "total_pnl": 0.05,
           "realized": 0.0,
-          "unrealized": 0.19,
-          "ce_premium": 138.3308635,
-          "pe_premium": 68.8795118
+          "unrealized": 0.05,
+          "ce_premium": 80.96479145,
+          "pe_premium": 116.82104223
         },
         {
-          "timestamp": "2026-02-16T09:59:45.216848",
-          "total_pnl": 0.33,
+          "timestamp": "2026-02-16T11:53:18.499100",
+          "total_pnl": 0.03,
           "realized": 0.0,
-          "unrealized": 0.33,
-          "ce_premium": 136.34906863,
-          "pe_premium": 62.56126403
+          "unrealized": 0.03,
+          "ce_premium": 85.30241576,
+          "pe_premium": 112.41453887
+        },
+        {
+          "timestamp": "2026-02-16T11:56:13.045264",
+          "total_pnl": -0.0,
+          "realized": 0.0,
+          "unrealized": -0.0,
+          "ce_premium": 109.24009526,
+          "pe_premium": 88.0753176
+        },
+        {
+          "timestamp": "2026-02-16T12:01:13.319633",
+          "total_pnl": 0.08,
+          "realized": 0.0,
+          "unrealized": 0.08,
+          "ce_premium": 102.57631739,
+          "pe_premium": 87.5918048
+        },
+        {
+          "timestamp": "2026-02-16T12:06:13.538261",
+          "total_pnl": 0.09,
+          "realized": 0.0,
+          "unrealized": 0.09,
+          "ce_premium": 107.31903775,
+          "pe_premium": 83.28216494
+        },
+        {
+          "timestamp": "2026-02-16T12:11:13.873360",
+          "total_pnl": 0.13,
+          "realized": 0.0,
+          "unrealized": 0.13,
+          "ce_premium": 110.87551859,
+          "pe_premium": 78.00480204
+        },
+        {
+          "timestamp": "2026-02-16T12:16:14.783792",
+          "total_pnl": 0.18,
+          "realized": 0.0,
+          "unrealized": 0.18,
+          "ce_premium": 101.45604455,
+          "pe_premium": 81.89090756
+        },
+        {
+          "timestamp": "2026-02-16T12:21:16.286430",
+          "total_pnl": 0.26,
+          "realized": 0.0,
+          "unrealized": 0.26,
+          "ce_premium": 90.85344014,
+          "pe_premium": 85.40950894
+        },
+        {
+          "timestamp": "2026-02-16T12:27:26.989080",
+          "total_pnl": 0.07,
+          "realized": 0.0,
+          "unrealized": 0.07,
+          "ce_premium": 132.81834199,
+          "pe_premium": 59.72674229
         }
       ],
       "last_error": null,
       "error_count": 0,
       "entry_mode": "fresh",
-      "expiry": "16022026",
-      "initial_total_premium": 2.3634,
+      "expiry": "17022026",
+      "initial_total_premium": 2.0349,
       "lots": 10,
       "mmm_order_ids": [
-        "1179646987",
-        "1179646986"
+        "1179846398",
+        "1179846395"
       ],
-      "actual_total_premium": 2.331,
-      "execution_timestamp": "2026-02-16T09:28:43.012040",
-      "_sanitized": true,
-      "_heartbeat_counter": 4,
-      "_recon_counter": 4,
-      "_premium_map": {
-        "69000:call": 136.35,
-        "68800:put": 62.56
-      },
-      "_premium_map_ts": "2026-02-16T09:59:45.211348",
-      "_trigger_last_updated_hb_ce": 3,
-      "_trigger_last_value_ce": 138.3308635,
-      "_trigger_last_updated_hb_pe": 3,
-      "_trigger_last_value_pe": 68.8795118,
-      "reversal_history": [
+      "actual_total_premium": 2.0300000000000002,
+      "execution_timestamp": "2026-02-16T11:34:55.933299",
+      "_heartbeat_counter": 12,
+      "_walkthrough_log": [
         {
-          "from": "CE",
-          "to": "PE",
-          "timestamp": "2026-02-16T09:47:38.670991",
-          "adjustment_count_at": 1
+          "heartbeat": 0,
+          "timestamp": "2026-02-16T11:34:55.933304",
+          "timestamp_ist": "16-Feb-2026 05:04:55 PM IST",
+          "label": "ENTRY",
+          "type": "entry",
+          "summary": "Sell 10 CE @ 70,600 ($95.50) + Sell 10 PE @ 66,400 ($107.50)",
+          "calculation": "",
+          "details": [
+            "Sell 10 CE @ strike 70,600, premium $95.50",
+            "Sell 10 PE @ strike 66,400, premium $107.50",
+            "",
+            "CE: active_strike=70,600, active_lots=10, trigger_snapshot={70,600: 95.50}",
+            "PE: active_strike=66,400, active_lots=10, trigger_snapshot={66,400: 107.50}",
+            "last_aggressor = \"NONE\"",
+            "Total premium = 2.0300 BTC ($95.50\u00d710\u00d70.001 + $107.50\u00d710\u00d70.001)"
+          ],
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 10,
+            "ce_trigger": {
+              "70600": 95.5
+            },
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 10,
+            "pe_trigger": {
+              "66400": 107.5
+            },
+            "last_aggressor": "NONE",
+            "adjustment_count": 0,
+            "total_premium_btc": 2.03
+          }
         },
+        {
+          "heartbeat": 1,
+          "timestamp": "2026-02-16T11:34:56.297955",
+          "timestamp_ist": "16-Feb-2026 05:04:56 PM IST",
+          "label": "Heartbeat #1",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$94.32, PE=$108.29 | No triggers fired",
+          "calculation": "CE($94.32) vs trigger($95.50) + min_move(3.0): excess=-1.18 \u2192 NO\nPE($108.29) vs trigger($107.50) + min_move(3.0): excess=+0.79 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=10 (10 orig + 0 adj)",
+            "    trigger_snapshot={70,600: 95.50}",
+            "PE: active_strike=66,400, active_lots=10 (10 orig + 0 adj)",
+            "    trigger_snapshot={66,400: 107.50}",
+            "last_aggressor = \"NONE\"",
+            "adjustment_count = 0",
+            "total_premium = 2.0300 BTC",
+            "P&L: Net=$0.00, Realized=$0.00, Unrealized=$0.00"
+          ],
+          "premiums": {
+            "ce": 94.32,
+            "pe": 108.29,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 95.5,
+            "pe_trigger": 107.5,
+            "ce_excess": -1.18,
+            "pe_excess": 0.79,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 10,
+            "ce_total_lots": 10,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 10,
+            "pe_total_lots": 10,
+            "last_aggressor": "NONE",
+            "adjustment_count": 0,
+            "total_premium_btc": 2.03,
+            "net_pnl": 0.0,
+            "realized": 0.0,
+            "unrealized": 0.0
+          }
+        },
+        {
+          "heartbeat": 2,
+          "timestamp": "2026-02-16T11:39:56.559749",
+          "timestamp_ist": "16-Feb-2026 05:09:56 PM IST",
+          "label": "Heartbeat #2",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$91.38, PE=$109.11 | No triggers fired",
+          "calculation": "CE($91.38) vs trigger($95.50) + min_move(3.0): excess=-4.12 \u2192 NO\nPE($109.11) vs trigger($107.50) + min_move(3.0): excess=+1.61 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=10 (10 orig + 0 adj)",
+            "    trigger_snapshot={70,600: 95.50}",
+            "PE: active_strike=66,400, active_lots=10 (10 orig + 0 adj)",
+            "    trigger_snapshot={66,400: 107.50}",
+            "last_aggressor = \"NONE\"",
+            "adjustment_count = 0",
+            "total_premium = 2.0300 BTC",
+            "P&L: Net=$0.03, Realized=$0.00, Unrealized=$0.03"
+          ],
+          "premiums": {
+            "ce": 91.38,
+            "pe": 109.11,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 95.5,
+            "pe_trigger": 107.5,
+            "ce_excess": -4.12,
+            "pe_excess": 1.61,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 10,
+            "ce_total_lots": 10,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 10,
+            "pe_total_lots": 10,
+            "last_aggressor": "NONE",
+            "adjustment_count": 0,
+            "total_premium_btc": 2.03,
+            "net_pnl": 0.03,
+            "realized": 0.0,
+            "unrealized": 0.03
+          }
+        },
+        {
+          "heartbeat": 3,
+          "timestamp": "2026-02-16T11:45:05.922882",
+          "timestamp_ist": "16-Feb-2026 05:15:05 PM IST",
+          "label": "Heartbeat #3",
+          "type": "standard",
+          "interval": 300,
+          "summary": "CE=$80.96, PE=$116.82 | PE triggered \u2192 SELL 2 CE @ 70,600 ($80.50)",
+          "calculation": "CE($80.96) vs trigger($80.96) + min_move(3.0): excess=+0.00 \u2192 NO\nPE($116.82) vs trigger($116.82) + min_move(3.0): excess=+0.00 \u2192 NO",
+          "details": [
+            "Result: PE_TRIGGERED \u2014 PE is aggressor",
+            "",
+            "Standard Loss = ($116.82 - trigger) \u00d7 active_lots \u00d7 0.001",
+            "Loss to cover = $0.0932 BTC",
+            "CE at 70,600 = $80.96 \u2265 shift_threshold($50) \u2192 sell at active strike \u2713",
+            "",
+            "Lots = \u2308 $0.0932 / ($80.50 \u00d7 0.001) \u00d7 (1 + 5%) \u2309 = \u23081.22\u2309 = 2",
+            "Execute: SELL 2 CE @ 70,600 at $80.50",
+            "Premium collected = 2 \u00d7 $80.50 \u00d7 0.001 = 0.1610 BTC",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 80.96}",
+            "PE: active_strike=66,400, active_lots=10 (10 orig + 0 adj)",
+            "    trigger_snapshot={66,400: 116.82}",
+            "last_aggressor = \"PE\"",
+            "adjustment_count = 1",
+            "total_premium = 2.1910 BTC",
+            "P&L: Net=$0.05, Realized=$0.00, Unrealized=$0.05"
+          ],
+          "premiums": {
+            "ce": 80.96,
+            "pe": 116.82,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 80.96,
+            "pe_trigger": 116.82,
+            "ce_excess": 0.0,
+            "pe_excess": 0.0,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "pe_triggered",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 10,
+            "pe_total_lots": 10,
+            "last_aggressor": "PE",
+            "adjustment_count": 1,
+            "total_premium_btc": 2.191,
+            "net_pnl": 0.05,
+            "realized": 0.0,
+            "unrealized": 0.05
+          }
+        },
+        {
+          "heartbeat": 4,
+          "timestamp": "2026-02-16T11:53:18.499344",
+          "timestamp_ist": "16-Feb-2026 05:23:18 PM IST",
+          "label": "Heartbeat #4",
+          "type": "first_reversal",
+          "interval": 300,
+          "summary": "CE=$85.30, PE=$112.41 | CE triggered \u2192 SELL 1 PE @ 66,400 ($98.50)",
+          "calculation": "CE($85.30) vs trigger($85.30) + min_move(3.0): excess=+0.00 \u2192 NO\nPE($112.41) vs trigger($112.41) + min_move(3.0): excess=+0.00 \u2192 NO",
+          "details": [
+            "Result: CE_TRIGGERED \u2014 CE is aggressor",
+            "",
+            "Reversal? last_aggressor=\"PE\", now \"CE\" \u2192 YES, reversal!",
+            "",
+            "Compute CE adjustment P&L (all fills):",
+            "  CE 2@$80.50 at strike 70,600",
+            "Total adjustment P&L = $-0.0096 BTC",
+            "",
+            "adjustment_pnl < 0 \u2192 TRIGGERED. loss_to_cover = $0.0096 BTC",
+            "",
+            "Standard Loss = ($85.30 - trigger) \u00d7 active_lots \u00d7 0.001",
+            "Loss to cover = $0.0096 BTC",
+            "PE at 66,400 = $112.41 \u2265 shift_threshold($50) \u2192 sell at active strike \u2713",
+            "",
+            "Lots = \u2308 $0.0096 / ($98.50 \u00d7 0.001) \u00d7 (1 + 5%) \u2309 = \u23080.10\u2309 = 1",
+            "Execute: SELL 1 PE @ 66,400 at $98.50",
+            "Premium collected = 1 \u00d7 $98.50 \u00d7 0.001 = 0.0985 BTC",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 85.30}",
+            "PE: active_strike=66,400, active_lots=11 (10 orig + 1 adj)",
+            "    trigger_snapshot={66,400: 112.41}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 2",
+            "total_premium = 2.2895 BTC",
+            "P&L: Net=$0.03, Realized=$0.00, Unrealized=$0.03"
+          ],
+          "premiums": {
+            "ce": 85.3,
+            "pe": 112.41,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 85.3,
+            "pe_trigger": 112.41,
+            "ce_excess": 0.0,
+            "pe_excess": 0.0,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "ce_triggered",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 11,
+            "pe_total_lots": 11,
+            "last_aggressor": "CE",
+            "adjustment_count": 2,
+            "total_premium_btc": 2.2895,
+            "net_pnl": 0.03,
+            "realized": 0.0,
+            "unrealized": 0.03
+          }
+        },
+        {
+          "heartbeat": 6,
+          "timestamp": "2026-02-16T11:56:13.048491",
+          "timestamp_ist": "16-Feb-2026 05:26:13 PM IST",
+          "label": "Heartbeat #6",
+          "type": "standard",
+          "interval": 300,
+          "summary": "CE=$109.24, PE=$88.08 | CE triggered \u2192 SELL 4 PE @ 66,400 ($85.00)",
+          "calculation": "CE($109.24) vs trigger($109.24) + min_move(3.0): excess=+0.00 \u2192 NO\nPE($88.08) vs trigger($88.08) + min_move(3.0): excess=+0.00 \u2192 NO",
+          "details": [
+            "Result: CE_TRIGGERED \u2014 CE is aggressor",
+            "",
+            "Standard Loss = ($109.24 - trigger) \u00d7 active_lots \u00d7 0.001",
+            "Loss to cover = $0.2873 BTC",
+            "PE at 66,400 = $88.08 \u2265 shift_threshold($50) \u2192 sell at active strike \u2713",
+            "",
+            "Lots = \u2308 $0.2873 / ($85.00 \u00d7 0.001) \u00d7 (1 + 5%) \u2309 = \u23083.55\u2309 = 4",
+            "Execute: SELL 4 PE @ 66,400 at $85.00",
+            "Premium collected = 4 \u00d7 $85.00 \u00d7 0.001 = 0.3400 BTC",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 109.24}",
+            "PE: active_strike=66,400, active_lots=15 (10 orig + 5 adj)",
+            "    trigger_snapshot={66,400: 88.08}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 3",
+            "total_premium = 2.6295 BTC",
+            "P&L: Net=$-0.00, Realized=$0.00, Unrealized=$-0.00"
+          ],
+          "premiums": {
+            "ce": 109.24,
+            "pe": 88.08,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 109.24,
+            "pe_trigger": 88.08,
+            "ce_excess": 0.0,
+            "pe_excess": 0.0,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "ce_triggered",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 15,
+            "pe_total_lots": 15,
+            "last_aggressor": "CE",
+            "adjustment_count": 3,
+            "total_premium_btc": 2.6295,
+            "net_pnl": -0.0,
+            "realized": 0.0,
+            "unrealized": -0.0
+          }
+        },
+        {
+          "heartbeat": 7,
+          "timestamp": "2026-02-16T12:01:13.319686",
+          "timestamp_ist": "16-Feb-2026 05:31:13 PM IST",
+          "label": "Heartbeat #7",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$102.58, PE=$87.59 | No triggers fired",
+          "calculation": "CE($102.58) vs trigger($109.24) + min_move(3.0): excess=-6.66 \u2192 NO\nPE($87.59) vs trigger($88.08) + min_move(3.0): excess=-0.48 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "--- Safety Checks (\u00a713-14) ---",
+            "trailing_stop: Trailing stop: P&L dropped to $0.00 (peak: $0.05, floor: $0.03)",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 109.24}",
+            "PE: active_strike=66,400, active_lots=15 (10 orig + 5 adj)",
+            "    trigger_snapshot={66,400: 88.08}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 3",
+            "total_premium = 2.6295 BTC",
+            "P&L: Net=$0.08, Realized=$0.00, Unrealized=$0.08"
+          ],
+          "premiums": {
+            "ce": 102.58,
+            "pe": 87.59,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 109.24,
+            "pe_trigger": 88.08,
+            "ce_excess": -6.66,
+            "pe_excess": -0.48,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 15,
+            "pe_total_lots": 15,
+            "last_aggressor": "CE",
+            "adjustment_count": 3,
+            "total_premium_btc": 2.6295,
+            "net_pnl": 0.08,
+            "realized": 0.0,
+            "unrealized": 0.08
+          }
+        },
+        {
+          "heartbeat": 8,
+          "timestamp": "2026-02-16T12:06:13.538313",
+          "timestamp_ist": "16-Feb-2026 05:36:13 PM IST",
+          "label": "Heartbeat #8",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$107.32, PE=$83.28 | No triggers fired",
+          "calculation": "CE($107.32) vs trigger($109.24) + min_move(3.0): excess=-1.92 \u2192 NO\nPE($83.28) vs trigger($88.08) + min_move(3.0): excess=-4.79 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 109.24}",
+            "PE: active_strike=66,400, active_lots=15 (10 orig + 5 adj)",
+            "    trigger_snapshot={66,400: 88.08}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 3",
+            "total_premium = 2.6295 BTC",
+            "P&L: Net=$0.09, Realized=$0.00, Unrealized=$0.09"
+          ],
+          "premiums": {
+            "ce": 107.32,
+            "pe": 83.28,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 109.24,
+            "pe_trigger": 88.08,
+            "ce_excess": -1.92,
+            "pe_excess": -4.79,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 15,
+            "pe_total_lots": 15,
+            "last_aggressor": "CE",
+            "adjustment_count": 3,
+            "total_premium_btc": 2.6295,
+            "net_pnl": 0.09,
+            "realized": 0.0,
+            "unrealized": 0.09
+          }
+        },
+        {
+          "heartbeat": 9,
+          "timestamp": "2026-02-16T12:11:13.873412",
+          "timestamp_ist": "16-Feb-2026 05:41:13 PM IST",
+          "label": "Heartbeat #9",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$110.88, PE=$78.00 | No triggers fired",
+          "calculation": "CE($110.88) vs trigger($109.24) + min_move(3.0): excess=+1.64 \u2192 NO\nPE($78.00) vs trigger($88.08) + min_move(3.0): excess=-10.07 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 109.24}",
+            "PE: active_strike=66,400, active_lots=15 (10 orig + 5 adj)",
+            "    trigger_snapshot={66,400: 88.08}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 3",
+            "total_premium = 2.6295 BTC",
+            "P&L: Net=$0.13, Realized=$0.00, Unrealized=$0.13"
+          ],
+          "premiums": {
+            "ce": 110.88,
+            "pe": 78.0,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 109.24,
+            "pe_trigger": 88.08,
+            "ce_excess": 1.64,
+            "pe_excess": -10.07,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 15,
+            "pe_total_lots": 15,
+            "last_aggressor": "CE",
+            "adjustment_count": 3,
+            "total_premium_btc": 2.6295,
+            "net_pnl": 0.13,
+            "realized": 0.0,
+            "unrealized": 0.13
+          }
+        },
+        {
+          "heartbeat": 10,
+          "timestamp": "2026-02-16T12:16:14.783841",
+          "timestamp_ist": "16-Feb-2026 05:46:14 PM IST",
+          "label": "Heartbeat #10",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$101.46, PE=$81.89 | No triggers fired",
+          "calculation": "CE($101.46) vs trigger($109.24) + min_move(3.0): excess=-7.78 \u2192 NO\nPE($81.89) vs trigger($88.08) + min_move(3.0): excess=-6.18 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 109.24}",
+            "PE: active_strike=66,400, active_lots=15 (10 orig + 5 adj)",
+            "    trigger_snapshot={66,400: 88.08}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 3",
+            "total_premium = 2.6295 BTC",
+            "P&L: Net=$0.18, Realized=$0.00, Unrealized=$0.18"
+          ],
+          "premiums": {
+            "ce": 101.46,
+            "pe": 81.89,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 109.24,
+            "pe_trigger": 88.08,
+            "ce_excess": -7.78,
+            "pe_excess": -6.18,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 15,
+            "pe_total_lots": 15,
+            "last_aggressor": "CE",
+            "adjustment_count": 3,
+            "total_premium_btc": 2.6295,
+            "net_pnl": 0.18,
+            "realized": 0.0,
+            "unrealized": 0.18
+          }
+        },
+        {
+          "heartbeat": 11,
+          "timestamp": "2026-02-16T12:21:16.286613",
+          "timestamp_ist": "16-Feb-2026 05:51:16 PM IST",
+          "label": "Heartbeat #11",
+          "type": "none",
+          "interval": 300,
+          "summary": "CE=$90.85, PE=$85.41 | No triggers fired",
+          "calculation": "CE($90.85) vs trigger($109.24) + min_move(3.0): excess=-18.39 \u2192 NO\nPE($85.41) vs trigger($88.08) + min_move(3.0): excess=-2.67 \u2192 NO",
+          "details": [
+            "Result: NONE \u2014 both sides within safe zone \u2713",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 109.24}",
+            "PE: active_strike=66,400, active_lots=15 (10 orig + 5 adj)",
+            "    trigger_snapshot={66,400: 88.08}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 3",
+            "total_premium = 2.6295 BTC",
+            "P&L: Net=$0.26, Realized=$0.00, Unrealized=$0.26"
+          ],
+          "premiums": {
+            "ce": 90.85,
+            "pe": 85.41,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 109.24,
+            "pe_trigger": 88.08,
+            "ce_excess": -18.39,
+            "pe_excess": -2.67,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "none",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 15,
+            "pe_total_lots": 15,
+            "last_aggressor": "CE",
+            "adjustment_count": 3,
+            "total_premium_btc": 2.6295,
+            "net_pnl": 0.26,
+            "realized": 0.0,
+            "unrealized": 0.26
+          }
+        },
+        {
+          "heartbeat": 12,
+          "timestamp": "2026-02-16T12:27:26.989179",
+          "timestamp_ist": "16-Feb-2026 05:57:26 PM IST",
+          "label": "Heartbeat #12",
+          "type": "standard",
+          "interval": 300,
+          "summary": "CE=$132.82, PE=$59.73 | CE triggered \u2192 SELL 5 PE @ 66,400 ($45.00)",
+          "calculation": "CE($132.82) vs trigger($132.82) + min_move(3.0): excess=+0.00 \u2192 NO\nPE($59.73) vs trigger($59.73) + min_move(3.0): excess=+0.00 \u2192 NO",
+          "details": [
+            "Result: CE_TRIGGERED \u2014 CE is aggressor",
+            "",
+            "Standard Loss = ($132.82 - trigger) \u00d7 active_lots \u00d7 0.001",
+            "Loss to cover = $0.2829 BTC",
+            "PE at 66,400 = $59.73 \u2265 shift_threshold($50) \u2192 sell at active strike \u2713",
+            "",
+            "Lots = \u2308 $0.2829 / ($45.00 \u00d7 0.001) \u00d7 (1 + 5%) \u2309 = \u23086.60\u2309 = 5",
+            "Execute: SELL 5 PE @ 66,400 at $45.00",
+            "Premium collected = 5 \u00d7 $45.00 \u00d7 0.001 = 0.2250 BTC",
+            "",
+            "Safety Checks: All clear \u2713",
+            "",
+            "--- State After This Heartbeat ---",
+            "CE: active_strike=70,600, active_lots=12 (10 orig + 2 adj)",
+            "    trigger_snapshot={70,600: 132.82}",
+            "PE: active_strike=66,400, active_lots=20 (10 orig + 10 adj)",
+            "    trigger_snapshot={66,400: 59.73}",
+            "last_aggressor = \"CE\"",
+            "adjustment_count = 4",
+            "total_premium = 2.8545 BTC",
+            "P&L: Net=$0.07, Realized=$0.00, Unrealized=$0.07"
+          ],
+          "premiums": {
+            "ce": 132.82,
+            "pe": 59.73,
+            "ce_strike": 70600.0,
+            "pe_strike": 66400.0
+          },
+          "triggers": {
+            "ce_trigger": 132.82,
+            "pe_trigger": 59.73,
+            "ce_excess": 0.0,
+            "pe_excess": 0.0,
+            "min_trigger_move": 3.0
+          },
+          "outcome": "ce_triggered",
+          "state": {
+            "ce_active_strike": 70600.0,
+            "ce_active_lots": 12,
+            "ce_total_lots": 12,
+            "pe_active_strike": 66400.0,
+            "pe_active_lots": 20,
+            "pe_total_lots": 20,
+            "last_aggressor": "CE",
+            "adjustment_count": 4,
+            "total_premium_btc": 2.8545,
+            "net_pnl": 0.07,
+            "realized": 0.0,
+            "unrealized": 0.07
+          }
+        }
+      ],
+      "_recon_counter": 12,
+      "reversal_history": [
         {
           "from": "PE",
           "to": "CE",
-          "timestamp": "2026-02-16T09:53:42.233761",
-          "adjustment_count_at": 2
+          "timestamp": "2026-02-16T11:50:06.542389",
+          "adjustment_count_at": 1
         }
-      ]
+      ],
+      "_premium_map": {
+        "70600:call": 132.81834199,
+        "66400:put": 59.72674229
+      }
     }
   },
   "active_session_ids": [
-    "mmm_94ca09"
+    "mmm_5eb1bc"
   ],
   "version": 1,
   "created_at": "2026-02-15T14:34:56.701667"

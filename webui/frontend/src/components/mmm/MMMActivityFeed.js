@@ -152,7 +152,7 @@ const ActivityItem = React.memo(({ activity }) => {
               sx={{
                 color: 'rgba(255,255,255,0.35)',
                 fontFamily: 'monospace',
-                fontSize: '0.7rem',
+                fontSize: '0.82rem',
               }}
             >
               {activity.session_id}
@@ -177,7 +177,7 @@ const ActivityItem = React.memo(({ activity }) => {
               variant="caption"
               sx={{
                 color: 'rgba(255,255,255,0.3)',
-                fontSize: '0.7rem',
+                fontSize: '0.82rem',
                 cursor: 'help',
               }}
             >
@@ -326,7 +326,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
               label={`${progressCount} pending`}
               sx={{
                 height: 20,
-                fontSize: '0.7rem',
+                fontSize: '0.82rem',
                 bgcolor: 'rgba(156,39,176,0.15)',
                 color: '#ce93d8',
                 '& .MuiChip-icon': { ml: 0.5 },
@@ -341,7 +341,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
               label={`${warningCount} warning${warningCount > 1 ? 's' : ''}`}
               sx={{
                 height: 20,
-                fontSize: '0.7rem',
+                fontSize: '0.82rem',
                 bgcolor: 'rgba(255,152,0,0.15)',
                 color: '#ffcc80',
               }}
@@ -355,7 +355,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
               label={`${errorCount} error${errorCount > 1 ? 's' : ''}`}
               sx={{
                 height: 20,
-                fontSize: '0.7rem',
+                fontSize: '0.82rem',
                 bgcolor: 'rgba(244,67,54,0.15)',
                 color: '#ef9a9a',
               }}

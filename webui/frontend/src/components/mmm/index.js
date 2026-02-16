@@ -21,6 +21,7 @@ export { default as MMMTriggerGauge } from './MMMTriggerGauge';
 export { default as MMMAdjustmentLog } from './MMMAdjustmentLog';
 export { default as MMMSessionCard } from './MMMSessionCard';
 export { default as MMMStrikeMap } from './MMMStrikeMap';
+export { default as MMMAlgoCalculations } from './MMMAlgoCalculations';
 export { default as MMMPnLChart } from './MMMPnLChart';
 export { default as MMMBothSidesAlert } from './MMMBothSidesAlert';
 export { default as MMMSafetyPanel } from './MMMSafetyPanel';

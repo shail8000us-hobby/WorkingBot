@@ -66,6 +66,7 @@ import MMMPositionsTable from './MMMPositionsTable';
 import MMMTriggerGauge from './MMMTriggerGauge';
 import MMMAdjustmentLog from './MMMAdjustmentLog';
 import MMMStrikeMap from './MMMStrikeMap';
+import MMMAlgoCalculations from './MMMAlgoCalculations';
 import MMMPnLChart from './MMMPnLChart';
 import MMMBothSidesAlert from './MMMBothSidesAlert';
 import MMMSafetyPanel from './MMMSafetyPanel';
@@ -675,6 +676,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <Tab label="P&L" />
         <Tab label="Safety" />
         <Tab label="Strike Map" />
+        <Tab label="Algo Calculations" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -767,7 +769,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                   <HelpTooltip topic={help}>
                     <Typography
                       variant="caption"
-                      sx={{ color: 'text.secondary', display: 'block', mb: 0.5, fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5 }}
+                      sx={{ color: 'text.secondary', display: 'block', mb: 0.5, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: 0.5 }}
                     >
                       {label}
                     </Typography>
@@ -823,7 +825,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                   <Grid container spacing={0.5}>
                     <Grid item xs={6}>
                       <Box sx={{ mb: 1 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Strike</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem' }}>Strike</Typography>
                         <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
                           {data.active_strike ? data.active_strike.toLocaleString() : '—'}
                         </Typography>
@@ -831,7 +833,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ mb: 1 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Entry Premium</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem' }}>Entry Premium</Typography>
                         <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
                           ${(data.entry_fill_price || data.original_premium)?.toFixed(2) || '—'}
                         </Typography>
@@ -840,7 +842,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                     <Grid item xs={4}>
                       <Box>
                         <HelpTooltip topic="original_lots">
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Original</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem' }}>Original</Typography>
                         </HelpTooltip>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{data.original_lots || 0}</Typography>
                       </Box>
@@ -848,7 +850,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                     <Grid item xs={4}>
                       <Box>
                         <HelpTooltip topic="adjustment_lots">
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Adj Lots</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem' }}>Adj Lots</Typography>
                         </HelpTooltip>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{data.adjustment_total_lots || 0}</Typography>
                       </Box>
@@ -856,7 +858,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                     <Grid item xs={4}>
                       <Box>
                         <HelpTooltip topic="frozen_lots">
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Frozen</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.78rem' }}>Frozen</Typography>
                         </HelpTooltip>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{data.frozen_total_lots || 0}</Typography>
                       </Box>
@@ -900,7 +902,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                 <Grid item xs={4} sm={2} key={label}>
                   <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.03)' }}>
                     <HelpTooltip topic={help}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', textTransform: 'uppercase' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>
                         {icon} {label}
                       </Typography>
                     </HelpTooltip>
@@ -959,6 +961,14 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <MMMStrikeMap
           session={session}
           spotPrice={wsData.heartbeat?.spot_price}
+        />
+      )}
+
+      {/* Tab 7: Algo Calculations */}
+      {detailTab === 7 && (
+        <MMMAlgoCalculations
+          session={session}
+          wsData={wsData}
         />
       )}
     </Box>

@@ -129,7 +129,7 @@ export default function MMMSessionCard({
                 bgcolor: `${statusColor}15`,
                 color: statusColor,
                 fontWeight: 700,
-                fontSize: '0.65rem',
+                fontSize: '0.78rem',
                 '& .MuiChip-icon': { color: statusColor },
               }}
             />

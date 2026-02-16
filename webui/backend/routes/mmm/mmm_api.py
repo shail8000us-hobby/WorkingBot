@@ -33,7 +33,7 @@ from .mmm_websocket import (
     emit_session_created,
     emit_session_deleted,
 )
-from .mmm_initializer import get_initializer, normalize_expiry
+from .mmm_initializer import get_initializer, normalize_expiry, expiry_to_utc_datetime
 from .mmm_constants import LOT_SIZE_BTC
 from .mmm_monitor import (
     start_session_monitor, stop_session_monitor,
@@ -1322,6 +1322,7 @@ def init_session_fresh(session_id: str):
         session['entry_mode'] = 'fresh'
         session['expiry'] = expiry
         session['params']['expiry'] = expiry
+        session['expiry_time'] = expiry_to_utc_datetime(expiry)
         session['initial_total_premium'] = total_premium
         session['entry_time'] = datetime.utcnow().isoformat()
         session['updated_at'] = datetime.utcnow().isoformat()
@@ -1460,6 +1461,7 @@ def init_session_import(session_id: str):
         session['entry_mode'] = 'import'
         session['expiry'] = expiry
         session['params']['expiry'] = expiry
+        session['expiry_time'] = expiry_to_utc_datetime(expiry)
         session['initial_total_premium'] = total_premium
         session['entry_time'] = datetime.utcnow().isoformat()
         session['updated_at'] = datetime.utcnow().isoformat()
@@ -2077,4 +2079,32 @@ def get_safety_status(session_id: str):
 
     except Exception as e:
         log.exception(f"Failed to get safety status for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =========================================================================
+# Algo Walkthrough
+# =========================================================================
+
+@mmm_bp.route('/session/<session_id>/walkthrough', methods=['GET'])
+def get_walkthrough(session_id: str):
+    """Get the algo-calculation walkthrough log for a session."""
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        from .mmm_walkthrough import build_full_walkthrough
+        walkthrough = build_full_walkthrough(session)
+
+        return jsonify({
+            'success': True,
+            'walkthrough': walkthrough,
+            'session_id': session_id,
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get walkthrough for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500

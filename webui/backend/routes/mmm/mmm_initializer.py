@@ -24,12 +24,44 @@ import sys
 import os
 import math
 from typing import Dict, List, Optional, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # Add parent paths for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 log = logging.getLogger('mmm_initializer')
+
+# IST is UTC+5:30
+IST = timezone(timedelta(hours=5, minutes=30))
+
+# BTC options on Delta Exchange expire at 5:30 PM IST (12:00 PM UTC)
+EXPIRY_HOUR_IST = 17
+EXPIRY_MINUTE_IST = 30
+
+
+def expiry_to_utc_datetime(expiry_ddmmyyyy: str) -> str:
+    """
+    Convert DDMMYYYY expiry date to a full UTC datetime ISO string.
+
+    BTC options expire at 5:30 PM IST (17:30 IST = 12:00 UTC).
+    The algo uses this to calculate minutes_to_expiry for:
+      - Near-expiry safety (stop adjustments at 15 min, auto-close at 5 min)
+      - Theta acceleration near expiry
+
+    Returns:
+        ISO format UTC datetime string, e.g. '2026-02-16T12:00:00'
+    """
+    dt = datetime.strptime(expiry_ddmmyyyy, '%d%m%Y')
+    expiry_ist = dt.replace(
+        hour=EXPIRY_HOUR_IST,
+        minute=EXPIRY_MINUTE_IST,
+        second=0,
+        microsecond=0,
+        tzinfo=IST,
+    )
+    expiry_utc = expiry_ist.astimezone(timezone.utc)
+    # Store as naive UTC (consistent with datetime.utcnow() used elsewhere)
+    return expiry_utc.replace(tzinfo=None).isoformat()
 
 
 def normalize_expiry(expiry: str) -> str:

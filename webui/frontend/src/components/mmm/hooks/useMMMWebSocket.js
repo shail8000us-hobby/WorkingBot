@@ -47,6 +47,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   const [pnl, setPnl] = useState(null);
   const [status, setStatus] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [walkthroughEntries, setWalkthroughEntries] = useState([]);
 
   // Track the latest premium_map from price ticks (updated every 5s)
   const latestPremiumMap = useRef({});
@@ -165,6 +166,14 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     const onParams = () => { };
     socket.on('mmm_params_changed', onParams);
 
+    // Walkthrough entries (real-time algo calculation walk-through)
+    const onWalkthrough = (data) => {
+      if (!sessionId || data.session_id === sessionId) {
+        setWalkthroughEntries((prev) => [...prev.slice(-199), data.entry]);
+      }
+    };
+    socket.on('mmm_walkthrough', onWalkthrough);
+
     return () => {
       // Remove only OUR listeners — don't disconnect the shared socket
       socket.off('connect', onConnect);
@@ -180,6 +189,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
       socket.off('mmm_pnl_update', onPnl);
       socket.off('mmm_status_change', onStatus);
       socket.off('mmm_params_changed', onParams);
+      socket.off('mmm_walkthrough', onWalkthrough);
     };
   }, [sessionId, sharedSocket]);
 
@@ -205,5 +215,6 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     socket: sharedSocket,
     clearBothSidesAlert,
     clearSafetyEvents,
+    walkthroughEntries,
   };
 }

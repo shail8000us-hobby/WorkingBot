@@ -20,7 +20,7 @@ import {
   Brain,
   Database,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+// framer-motion AnimatePresence removed: replaced with CSS for instant panel switches
 
 // Week 2: Zustand store and data aggregator integration
 import { dataAggregator } from './services/dataAggregator';
@@ -147,54 +147,48 @@ const MMMDashboard = React.lazy(() =>
   import('./components/mmm').then((m) => ({ default: m.MMMDashboard }))
 );
 
-// Preload function to eagerly load all lazy components
-const preloadAllComponents = () => {
-  // Start loading all components in parallel
-  ConfigPanel.preload = () => import('./components/ConfigPanel');
-  LogsPanel.preload = () => import('./components/LogsPanel');
-  MonitoringPanel.preload = () => import('./components/MonitoringPanel');
-  MonitoringDashboard.preload = () => import('./components/MonitoringDashboard');
-  ProductionMonitoringDashboard.preload = () => import('./components/ProductionMonitoringDashboard');
-  GuardianPanel.preload = () => import('./components/GuardianPanel');
-  PM2Panel.preload = () => import('./components/PM2Panel');
-  BotManagementDashboard.preload = () => import('./components/BotManagement/BotManagementDashboard');
-  RobustnessPanel.preload = () => import('./components/RobustnessPanel');
-  CapitalProtectionPanel.preload = () => import('./components/CapitalProtectionPanel');
-  InstitutionalAIPanel.preload = () => import('./components/InstitutionalAIPanel');
-  LiquidationProtectionPanel.preload = () => import('./components/LiquidationProtectionPanel');
-  AIAdvisorWidget.preload = () => import('./components/AIAdvisorWidget');
-  MarketNewsWidget.preload = () => import('./components/MarketNewsWidget');
-  CommandKnowledgeBase.preload = () => import('./components/CommandKnowledgeBase');
-  SyncReconciliationPanel.preload = () => import('./components/SyncReconciliationPanel');
-  EmergencyControlsPanel.preload = () => import('./components/EmergencyControlsPanel');
-  ErrorIntelligencePanel.preload = () => import('./components/ErrorIntelligencePanel_simple');
-  ErrorIntelligenceLive.preload = () => import('./components/ErrorIntelligenceLive');
-  ReconciliationPanelV2.preload = () => import('./components/ReconciliationPanelV2');
-  PositionsPanel.preload = () => import('./components/PositionsPanel');
-  OptionsPanel.preload = () => import('./components/options');
-  OptionsChainPanel.preload = () => import('./components/optionsChain');
-  StrategyBuilder.preload = () => import('./components/optionsStrategy');
-  MLInsightsPanel.preload = () => import('./components/options/MLInsightsPanel');
-  MLStyleProfile.preload = () => import('./components/options/MLStyleProfile');
-  MLOpportunityScanner.preload = () => import('./components/options/MLOpportunityScanner');
-  MLDecisionCenter.preload = () => import('./components/options/MLDecisionCenter');
-  MLModelMonitor.preload = () => import('./components/options/MLModelMonitor');
-  DeltaTradeSync.preload = () => import('./components/options/DeltaTradeSync');
-  MarketSignalPanel.preload = () => import('./components/MarketSignalPanel');
-  ShutdownPanel.preload = () => import('./components/ShutdownPanel');
-  OpportunisticRecoveryPanel.preload = () => import('./components/OpportunisticRecoveryPanel');
-  TodoListPanel.preload = () => import('./components/TodoListPanel');
-  FloatingPriceWidget.preload = () => import('./components/FloatingPriceWidget');
-  SystemHealthPanel.preload = () => import('./components/SystemHealthPanel');
-  MonitoringRecoveryPanel.preload = () => import('./components/panels/MonitoringRecoveryPanel');
-  RSIPanel.preload = () => import('./components/RSIPanel');
-  SymbolPortfolio.preload = () => import('./components/SymbolPortfolio');
-  RiskSafetyDashboard.preload = () => import('./components/RiskSafetyDashboard');
-  ZeroDTEDashboard.preload = () => import('./components/zero_dte/ZeroDTEDashboard');
-  MVStraddlePanel.preload = () => import('./components/mvStraddle/MVStraddlePanel');
-  SSRAlgoDashboard.preload = () => import('./components/ssrAlgo');
-  MMMDashboard.preload = () => import('./components/mmm');
-  TradingViewSignals.preload = () => import('./components/TradingViewSignals');
+// Smart preloader: maps section IDs to their dynamic imports
+// Only loads what's needed (adjacent tabs), NOT everything at once
+const sectionImports = {
+  dashboard: [() => import('./components/MonitoringDashboard'), () => import('./components/MonitoringPanel')],
+  portfolio: [() => import('./components/SymbolPortfolio')],
+  config: [() => import('./components/ConfigPanel'), () => import('./components/SyncReconciliationPanel')],
+  risk: [() => import('./components/RiskSafetyDashboard'), () => import('./components/RobustnessPanel')],
+  tradingview: [() => import('./components/TradingViewSignals')],
+  rsi: [() => import('./components/RSIPanel')],
+  positions: [() => import('./components/PositionsPanel')],
+  options: [() => import('./components/options')],
+  options_chain: [() => import('./components/optionsChain')],
+  strategy_builder: [() => import('./components/optionsStrategy')],
+  mv_straddle: [() => import('./components/mvStraddle/MVStraddlePanel')],
+  mmm: [() => import('./components/mmm')],
+  ssr_algo: [() => import('./components/ssrAlgo')],
+  ml_trading: [() => import('./components/options/MLInsightsPanel')],
+  botmanagement: [() => import('./components/BotManagement/BotManagementDashboard'), () => import('./components/PM2Panel')],
+  intelligence: [() => import('./components/AIAdvisorWidget')],
+  system_health: [() => import('./components/SystemHealthPanel')],
+  todos: [() => import('./components/TodoListPanel')],
+  zero_dte: [() => import('./components/zero_dte/ZeroDTEDashboard')],
+  experimental: [() => import('./components/ExperimentalPanel')],
+  advanced_features: [() => import('./components/AdvancedFeaturesPanel')],
+};
+
+// Preload adjacent sections only — called when active section changes
+const preloadedSections = new Set();
+const preloadAdjacentSections = (activeSectionId, sectionsList) => {
+  const idx = sectionsList.findIndex(s => s.id === activeSectionId);
+  if (idx === -1) return;
+  // Preload prev and next sections
+  const adjacentIds = [
+    sectionsList[idx - 1]?.id,
+    sectionsList[idx + 1]?.id,
+  ].filter(Boolean);
+  adjacentIds.forEach(id => {
+    if (!preloadedSections.has(id) && sectionImports[id]) {
+      preloadedSections.add(id);
+      sectionImports[id].forEach(importFn => importFn().catch(() => { }));
+    }
+  });
 };
 
 const LoadingFallback = ({ message = 'Loading component...' }) => (
@@ -485,38 +479,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = run only once on mount
 
-  // Preload all lazy components after initial render for instant panel switches
-  useEffect(() => {
-    const preloadTimer = setTimeout(() => {
-      // Call preload initialization
-      preloadAllComponents();
-      // Trigger actual preloading
-      const preloadComponents = [
-        ConfigPanel, LogsPanel, MonitoringPanel, MonitoringDashboard,
-        ProductionMonitoringDashboard, GuardianPanel, PM2Panel,
-        BotManagementDashboard, RobustnessPanel, CapitalProtectionPanel,
-        InstitutionalAIPanel, LiquidationProtectionPanel, AIAdvisorWidget,
-        MarketNewsWidget, CommandKnowledgeBase, SyncReconciliationPanel,
-        EmergencyControlsPanel, ErrorIntelligencePanel, ErrorIntelligenceLive,
-        ReconciliationPanelV2, PositionsPanel, OptionsPanel, OptionsChainPanel,
-        StrategyBuilder, MLInsightsPanel, MLStyleProfile, MLOpportunityScanner,
-        MLDecisionCenter, MLModelMonitor, DeltaTradeSync, MarketSignalPanel,
-        ShutdownPanel, OpportunisticRecoveryPanel, TodoListPanel,
-        FloatingPriceWidget, SystemHealthPanel, MonitoringRecoveryPanel,
-        RSIPanel, SymbolPortfolio, RiskSafetyDashboard, ZeroDTEDashboard,
-        MVStraddlePanel
-      ];
-      // Execute preload functions
-      preloadComponents.forEach(component => {
-        if (component && component.preload) {
-          component.preload().catch(() => { }); // Ignore errors
-        }
-      });
-      console.log('🚀 Preloading all components for instant panel switches');
-    }, 1500); // Start preloading 1.5 seconds after initial load
-    return () => clearTimeout(preloadTimer);
-  }, []);
-
   // Week 3: Check guardian dashboard feature flag
   const { enabled: guardianEnabled } = useFeatureFlag('guardian_dashboard');
 
@@ -682,6 +644,15 @@ function App() {
       setActiveSection(sections[0].id);
     }
   }, [sections, activeSection]);
+
+  // Smart preload: only preload adjacent sections for instant switches
+  // This replaces the old approach that loaded ALL 40+ components at once
+  useEffect(() => {
+    const preloadTimer = setTimeout(() => {
+      preloadAdjacentSections(activeSection, sections);
+    }, 2000); // Start preloading adjacent tabs 2s after render
+    return () => clearTimeout(preloadTimer);
+  }, [activeSection, sections]);
 
   const socket = connectionManagerRef.current?.socket;
 
@@ -1501,54 +1472,45 @@ function App() {
     </Suspense>
   ), [isMobile, botIsRunning, logs]);
 
-  const sectionContent = {
-    todos: renderTodos,
-    system_health: renderSystemHealth,
-    dashboard: renderDashboard,
-    portfolio: (
-      <Suspense fallback={<PanelSkeleton type="list" />}>
-        <SymbolPortfolio />
-      </Suspense>
-    ),
-    positions: renderPositions,
-    options: renderOptions, // Jan 2026: Options Trading Panel
-    options_chain: renderOptionsChain, // Jan 2026: Options Chain Market Data
-    strategy_builder: renderStrategyBuilder, // Jan 2026: Options Strategy Builder
-    mv_straddle: (
-      <Suspense fallback={<PanelSkeleton type="default" />}>
-        <MVStraddlePanel />
-      </Suspense>
-    ), // Jan 2026: MV Straddle Panel
-    mmm: (
-      <MMMErrorBoundary>
-        <MMMProvider socket={socket}>
-          <Suspense fallback={<PanelSkeleton type="default" />}>
-            <MMMDashboard />
-          </Suspense>
-        </MMMProvider>
-      </MMMErrorBoundary>
-    ), // MMM: Money Mind & Method - BTC 0DTE Algorithm
-    ssr_algo: (
-      <SSRAlgoErrorBoundary>
+  // Memoize previously inline sections to prevent recreation on every render
+  const renderPortfolio = useMemo(() => (
+    <Suspense fallback={<PanelSkeleton type="list" />}>
+      <SymbolPortfolio />
+    </Suspense>
+  ), []);
+
+  const renderMVStraddle = useMemo(() => (
+    <Suspense fallback={<PanelSkeleton type="default" />}>
+      <MVStraddlePanel />
+    </Suspense>
+  ), []);
+
+  const renderMMM = useMemo(() => (
+    <MMMErrorBoundary>
+      <MMMProvider socket={socket}>
         <Suspense fallback={<PanelSkeleton type="default" />}>
-          <SSRAlgoDashboard />
+          <MMMDashboard />
         </Suspense>
-      </SSRAlgoErrorBoundary>
-    ), // SSR ALGO: Modified Iron Butterfly with Protective Wings
-    risk: renderRisk,
-    tradingview: (
+      </MMMProvider>
+    </MMMErrorBoundary>
+  ), [socket]);
+
+  const renderSSRAlgo = useMemo(() => (
+    <SSRAlgoErrorBoundary>
       <Suspense fallback={<PanelSkeleton type="default" />}>
-        <TradingViewSignals />
+        <SSRAlgoDashboard />
       </Suspense>
-    ),
-    rsi: renderRSI,
-    config: renderConfig,
-    ml_trading: renderMLTrading, // Jan 2026: ML Trading Panel
-    botmanagement: renderBotManagement,
-    emergency: renderEmergency,
-    intelligence: renderIntelligence,
-    // Week 3: Guardian Dashboard
-    guardian: guardianEnabled ? (
+    </SSRAlgoErrorBoundary>
+  ), []);
+
+  const renderTradingView = useMemo(() => (
+    <Suspense fallback={<PanelSkeleton type="default" />}>
+      <TradingViewSignals />
+    </Suspense>
+  ), []);
+
+  const renderGuardian = useMemo(() => (
+    guardianEnabled ? (
       <Suspense fallback={<PanelSkeleton type="monitoring" />}>
         <div className="grid gap-6">
           <CollapsibleCard
@@ -1566,16 +1528,48 @@ function App() {
           </CollapsibleCard>
         </div>
       </Suspense>
-    ) : null,
-    // 0DTE Autonomous Trading
-    zero_dte: renderZeroDTE,
-    // Experimental Features
-    experimental: renderExperimental,
-    // Advanced Features - Delta Data Collection
-    advanced_features: renderAdvancedFeatures,
-  };
+    ) : null
+  ), [guardianEnabled]);
 
-  const activeContent = sectionContent[activeSection] || renderDashboard();
+  // Section content lookup — only the active section's JSX is used
+  // All values are memoized references, so no JSX is recreated on re-render
+  const getSectionContent = useCallback((sectionId) => {
+    const contentMap = {
+      todos: renderTodos,
+      system_health: renderSystemHealth,
+      dashboard: renderDashboard,
+      portfolio: renderPortfolio,
+      positions: renderPositions,
+      options: renderOptions,
+      options_chain: renderOptionsChain,
+      strategy_builder: renderStrategyBuilder,
+      mv_straddle: renderMVStraddle,
+      mmm: renderMMM,
+      ssr_algo: renderSSRAlgo,
+      risk: renderRisk,
+      tradingview: renderTradingView,
+      rsi: renderRSI,
+      config: renderConfig,
+      ml_trading: renderMLTrading,
+      botmanagement: renderBotManagement,
+      emergency: renderEmergency,
+      intelligence: renderIntelligence,
+      guardian: renderGuardian,
+      zero_dte: renderZeroDTE,
+      experimental: renderExperimental,
+      advanced_features: renderAdvancedFeatures,
+    };
+    return contentMap[sectionId] || renderDashboard;
+  }, [
+    renderTodos, renderSystemHealth, renderDashboard, renderPortfolio,
+    renderPositions, renderOptions, renderOptionsChain, renderStrategyBuilder,
+    renderMVStraddle, renderMMM, renderSSRAlgo, renderRisk, renderTradingView,
+    renderRSI, renderConfig, renderMLTrading, renderBotManagement,
+    renderEmergency, renderIntelligence, renderGuardian, renderZeroDTE,
+    renderExperimental, renderAdvancedFeatures,
+  ]);
+
+  const activeContent = getSectionContent(activeSection);
 
   // Show backend down error page if backend is not responding
   if (backendDown) {
@@ -1599,102 +1593,94 @@ function App() {
                 mode={mode}
                 onToggleTheme={toggleMode}
                 onRefresh={handleHardRefresh}
-              onEnsureFresh={ensureFresh}
-              isMobile={isMobile}
-              isOnline={connectionState === 'connected'}
-              botIsRunning={botIsRunning}
-              metrics={{
-                running: botIsRunning,
-                latency: connectionLatency,
-                latencyQuality: connectionQuality,
-                unrealizedPnl: totalPnl,
-                lastUpdated,
-              }}
-              processStatus={{
-                guardianPid: botStatus?.guardian_health?.pid || null,
-                tradingBotPid: botStatus?.pid || null,
-                healthBotPid: botStatus?.heartbeat?.pid || null,
-              }}
-              warnings={globalWarnings}
-            />
+                onEnsureFresh={ensureFresh}
+                isMobile={isMobile}
+                isOnline={connectionState === 'connected'}
+                botIsRunning={botIsRunning}
+                metrics={{
+                  running: botIsRunning,
+                  latency: connectionLatency,
+                  latencyQuality: connectionQuality,
+                  unrealizedPnl: totalPnl,
+                  lastUpdated,
+                }}
+                processStatus={{
+                  guardianPid: botStatus?.guardian_health?.pid || null,
+                  tradingBotPid: botStatus?.pid || null,
+                  healthBotPid: botStatus?.heartbeat?.pid || null,
+                }}
+                warnings={globalWarnings}
+              />
 
-            {/* Phase 2: Symbol Context Bar - Always visible below TopBar */}
-            <SymbolContextBar
-              gridInfo={config?.grid}
-              status={{ running: botIsRunning }}
-              pnl={totalPnl ? { total: totalPnl } : null}
-            />
+              {/* Phase 2: Symbol Context Bar - Always visible below TopBar */}
+              <SymbolContextBar
+                gridInfo={config?.grid}
+                status={{ running: botIsRunning }}
+                pnl={totalPnl ? { total: totalPnl } : null}
+              />
 
-            <Sidebar
-              sections={sections}
-              activeSection={activeSection}
-              onSelect={handleSectionSelect}
-            />
-
-            <main
-              className="pt-60 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]"
-              style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
-            >
-              <MobileNav
+              <Sidebar
                 sections={sections}
                 activeSection={activeSection}
                 onSelect={handleSectionSelect}
               />
-              <div className="w-full">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeSection}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -12 }}
-                    transition={{ duration: 0.25, ease: 'easeInOut' }}
-                  >
-                    {activeContent}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </main>
 
-            <Snackbar
-              open={notification.open}
-              autoHideDuration={5000}
-              onClose={handleCloseNotification}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-              <Alert
-                onClose={handleCloseNotification}
-                severity={notification.severity}
-                sx={{ width: '100%' }}
+              <main
+                className="pt-60 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]"
+                style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
               >
-                {notification.message}
-              </Alert>
-            </Snackbar>
+                <MobileNav
+                  sections={sections}
+                  activeSection={activeSection}
+                  onSelect={handleSectionSelect}
+                />
+                <div className="w-full">
+                  <div key={activeSection} className="animate-fade-in" style={{ animationDuration: '150ms' }}>
+                    {activeContent}
+                  </div>
+                </div>
+              </main>
 
-            <div className="pointer-events-none fixed inset-x-0 top-16 z-10 flex justify-center lg:pl-64">
-              <span className="rounded-b-3xl border border-slate-800/40 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                Connection: {connectionState} · Quality: {connectionQuality}
-              </span>
+              <Snackbar
+                open={notification.open}
+                autoHideDuration={5000}
+                onClose={handleCloseNotification}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              >
+                <Alert
+                  onClose={handleCloseNotification}
+                  severity={notification.severity}
+                  sx={{ width: '100%' }}
+                >
+                  {notification.message}
+                </Alert>
+              </Snackbar>
+
+              <div className="pointer-events-none fixed inset-x-0 top-16 z-10 flex justify-center lg:pl-64">
+                <span className="rounded-b-3xl border border-slate-800/40 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  Connection: {connectionState} · Quality: {connectionQuality}
+                </span>
+              </div>
+
+              {/* Idle Mode Indicator */}
+              <IdleIndicator />
+
+              {/* Offline Mode Indicator */}
+              <OfflineIndicator />
+
+              {/* Safety Warning - Shows bots are still running */}
+              <SafetyWarningBanner />
+
+              {/* Mobile indicators removed for cleaner mobile UI */}
+              {/* <MobileBatteryIndicator /> */}
+              {/* <TailscaleMobileOptimizer /> */}
+
+              {/* Floating Price Widget - Real-time BTC/ETH prices */}
+              <Suspense fallback={null}>
+                <FloatingPriceWidget />
+              </Suspense>
             </div>
-
-            {/* Idle Mode Indicator */}
-            <IdleIndicator />
-
-            {/* Offline Mode Indicator */}
-            <OfflineIndicator />
-
-            {/* Safety Warning - Shows bots are still running */}
-            <SafetyWarningBanner />
-
-            {/* Mobile indicators removed for cleaner mobile UI */}
-            {/* <MobileBatteryIndicator /> */}
-            {/* <TailscaleMobileOptimizer /> */}
-
-            {/* Floating Price Widget - Real-time BTC/ETH prices */}
-            <Suspense fallback={null}>
-              <FloatingPriceWidget />
-            </Suspense>
-          </div>
-        </MobileOptimizationProvider>
+          </MobileOptimizationProvider>
         </AutoloopProvider>
       </SymbolProvider>
     </InstanceProvider>
