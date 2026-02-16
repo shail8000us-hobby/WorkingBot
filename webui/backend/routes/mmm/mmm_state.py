@@ -258,7 +258,7 @@ def initialize_side_from_entry(
         original_premium=premium,
         original_strike=strike,
     )
-    session[side_key]['trigger_snapshot'] = {str(strike): premium}
+    session[side_key]['trigger_snapshot'] = {str(int(strike)): premium}
     session[side_key] = recompute_side_lots(session[side_key])
 
     return session

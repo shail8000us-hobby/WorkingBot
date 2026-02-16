@@ -19,17 +19,17 @@ export const useSocket = () => {
       return;
     }
 
-    // Create new socket connection with polling-first strategy
+    // Create new socket connection with polling-only (simple-websocket backend can't handle upgrade)
     const newSocket = io({
       path: '/socket.io',
-      transports: ['polling', 'websocket'],  // Try polling first to avoid WebSocket frame errors
+      transports: ['polling'],  // Polling only - backend uses simple-websocket
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
       timeout: 20000,
       autoConnect: true,
-      upgrade: true,  // Allow upgrade from polling to websocket after stable connection
+      upgrade: false,  // No upgrade - prevents "Invalid frame header" errors
     });
 
     newSocket.on('connect', () => {

@@ -63,6 +63,8 @@ import SymbolContextBar from './components/layout/SymbolContextBar';
 import InstanceContextBar from './components/layout/InstanceContextBar';
 // SSRAlgoErrorBoundary imported directly (class component can't be lazy loaded)
 import { SSRAlgoErrorBoundary } from './components/ssrAlgo';
+// MMMErrorBoundary + MMMProvider imported directly (class component can't be lazy loaded)
+import { MMMErrorBoundary, MMMProvider } from './components/mmm';
 // Mobile indicators removed for cleaner UI
 // import MobileBatteryIndicator from './components/MobileBatteryIndicator';
 // import TailscaleMobileOptimizer from './components/TailscaleMobileOptimizer';
@@ -141,6 +143,9 @@ const AdvancedFeaturesPanel = React.lazy(() => import('./components/AdvancedFeat
 const SSRAlgoDashboard = React.lazy(() =>
   import('./components/ssrAlgo').then((m) => ({ default: m.SSRAlgoDashboard }))
 );
+const MMMDashboard = React.lazy(() =>
+  import('./components/mmm').then((m) => ({ default: m.MMMDashboard }))
+);
 
 // Preload function to eagerly load all lazy components
 const preloadAllComponents = () => {
@@ -188,6 +193,7 @@ const preloadAllComponents = () => {
   ZeroDTEDashboard.preload = () => import('./components/zero_dte/ZeroDTEDashboard');
   MVStraddlePanel.preload = () => import('./components/mvStraddle/MVStraddlePanel');
   SSRAlgoDashboard.preload = () => import('./components/ssrAlgo');
+  MMMDashboard.preload = () => import('./components/mmm');
   TradingViewSignals.preload = () => import('./components/TradingViewSignals');
 };
 
@@ -583,6 +589,12 @@ function App() {
         label: '📊 MV Straddle',
         icon: TrendingUp,
         description: 'Market View Straddle - volatility-driven directional neutral strategy',
+      },
+      {
+        id: 'mmm',
+        label: '💰 MMM',
+        icon: TrendingUp,
+        description: 'Money Mind & Method - BTC 0DTE options selling algorithm',
       },
       {
         id: 'ssr_algo',
@@ -1507,6 +1519,15 @@ function App() {
         <MVStraddlePanel />
       </Suspense>
     ), // Jan 2026: MV Straddle Panel
+    mmm: (
+      <MMMErrorBoundary>
+        <MMMProvider socket={socket}>
+          <Suspense fallback={<PanelSkeleton type="default" />}>
+            <MMMDashboard />
+          </Suspense>
+        </MMMProvider>
+      </MMMErrorBoundary>
+    ), // MMM: Money Mind & Method - BTC 0DTE Algorithm
     ssr_algo: (
       <SSRAlgoErrorBoundary>
         <Suspense fallback={<PanelSkeleton type="default" />}>

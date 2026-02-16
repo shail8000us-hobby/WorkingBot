@@ -1,0 +1,136 @@
+"""
+MMM Configuration — Money Mind & Method
+
+Default parameters, hot-reload support, and parameter validation.
+Maps to MONEY_POWER_CALCULATION_LOGIC.md Section 19: User Parameters.
+
+Created: February 15, 2026
+"""
+
+import logging
+from typing import Dict, Any, Tuple, Set
+
+log = logging.getLogger('mmm_config')
+
+
+# Parameter type and range validation rules
+PARAM_RULES = {
+    'desired_ce_premium':      {'type': float, 'min': 1,    'max': 10000, 'hot': False},
+    'desired_pe_premium':      {'type': float, 'min': 1,    'max': 10000, 'hot': False},
+    'initial_lots':            {'type': int,   'min': 1,    'max': 1000,  'hot': False},
+    'expiry':                  {'type': str,   'min': None, 'max': None,  'hot': False},
+    'adjustment_interval':     {'type': int,   'min': 10,   'max': 3600,  'hot': True},
+    'min_trigger_move':        {'type': float, 'min': 0.1,  'max': 500,   'hot': True},
+    'shift_threshold':         {'type': float, 'min': 1,    'max': 5000,  'hot': True},
+    'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
+    'premium_buffer_pct':      {'type': float, 'min': 0,    'max': 0.5,   'hot': True},
+    'max_lots_per_side':       {'type': int,   'min': 1,    'max': 10000, 'hot': True},
+    'max_adjustments':         {'type': int,   'min': 1,    'max': 1000,  'hot': True},
+    'max_loss_amount':         {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
+    'stop_adjustment_mins':    {'type': int,   'min': 0,    'max': 1440,  'hot': True},
+    'auto_close_mins':         {'type': int,   'min': 0,    'max': 1440,  'hot': True},
+    'cooldown_on_reversal':    {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'whipsaw_limit':           {'type': int,   'min': 2,    'max': 100,   'hot': True},
+    'trailing_stop_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
+    'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
+}
+
+
+def validate_params(params: Dict[str, Any], hot_only: bool = False) -> Tuple[Dict[str, Any], list]:
+    """
+    Validate and coerce parameter values.
+
+    Args:
+        params: Dictionary of parameter name → value
+        hot_only: If True, reject non-hot-reloadable parameters
+
+    Returns:
+        Tuple of (validated_params, errors)
+        validated_params has coerced types
+        errors is a list of error strings (empty if valid)
+    """
+    validated = {}
+    errors = []
+
+    for key, value in params.items():
+        if key not in PARAM_RULES:
+            errors.append(f"Unknown parameter: {key}")
+            continue
+
+        rule = PARAM_RULES[key]
+
+        # Check hot-reload restriction
+        if hot_only and not rule['hot']:
+            errors.append(f"Parameter '{key}' cannot be changed while running (not hot-reloadable)")
+            continue
+
+        # Type coercion
+        try:
+            if rule['type'] == bool:
+                if isinstance(value, str):
+                    validated[key] = value.lower() in ('true', '1', 'yes', 'on')
+                else:
+                    validated[key] = bool(value)
+            elif rule['type'] == int:
+                validated[key] = int(value)
+            elif rule['type'] == float:
+                validated[key] = float(value)
+            elif rule['type'] == str:
+                validated[key] = str(value)
+        except (ValueError, TypeError):
+            errors.append(f"Parameter '{key}': invalid type. Expected {rule['type'].__name__}, got {type(value).__name__}")
+            continue
+
+        # Range validation
+        if rule['min'] is not None and validated[key] < rule['min']:
+            errors.append(f"Parameter '{key}': {validated[key]} below minimum {rule['min']}")
+            continue
+        if rule['max'] is not None and validated[key] > rule['max']:
+            errors.append(f"Parameter '{key}': {validated[key]} above maximum {rule['max']}")
+            continue
+
+    return validated, errors
+
+
+def get_hot_reload_params() -> Set[str]:
+    """Return set of parameter names that support hot-reload."""
+    return {k for k, v in PARAM_RULES.items() if v.get('hot', False)}
+
+
+def get_param_info() -> Dict[str, Dict]:
+    """
+    Return parameter metadata for WebUI display.
+    Includes type, range, hot-reload status, and description.
+    """
+    descriptions = {
+        'desired_ce_premium': 'Target CE premium for auto strike selection',
+        'desired_pe_premium': 'Target PE premium for auto strike selection',
+        'initial_lots': 'Starting lots per side at entry',
+        'expiry': 'Target expiry date/time',
+        'adjustment_interval': 'Seconds between heartbeat checks',
+        'min_trigger_move': 'Minimum premium move above trigger to fire adjustment',
+        'shift_threshold': 'Minimum premium at hedge strike to avoid shift',
+        'close_at_threshold': 'Close positions at this premium or below',
+        'premium_buffer_pct': 'Extra lots percentage for slippage protection',
+        'max_lots_per_side': 'Maximum total lots allowed per side (CE or PE)',
+        'max_adjustments': 'Maximum number of adjustment events',
+        'max_loss_amount': 'Absolute dollar hard stop — close all if breached',
+        'stop_adjustment_mins': 'Stop adjusting N minutes before expiry',
+        'auto_close_mins': 'Auto-close all positions N minutes before expiry',
+        'cooldown_on_reversal': 'Skip one interval on reversal detection',
+        'whipsaw_limit': 'Max alternating adjustments before auto-pause',
+        'trailing_stop_pct': 'Protect profit at this percentage of peak P&L',
+        'theta_acceleration_window': 'Minutes before expiry to widen triggers',
+    }
+
+    info = {}
+    for key, rule in PARAM_RULES.items():
+        info[key] = {
+            'type': rule['type'].__name__,
+            'min': rule['min'],
+            'max': rule['max'],
+            'hot_reload': rule['hot'],
+            'description': descriptions.get(key, ''),
+        }
+
+    return info

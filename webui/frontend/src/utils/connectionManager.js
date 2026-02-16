@@ -51,17 +51,17 @@ class ConnectionManager {
 
     const connectionOptions = {
       path: '/socket.io',
-      // FORCE POLLING FIRST to avoid WebSocket frame header errors
-      // After stable connection, Socket.IO can upgrade to WebSocket
-      transports: ['polling', 'websocket'],  // Changed: polling first, websocket second
+      // POLLING ONLY - simple-websocket backend can't handle upgrade handshake
+      // This eliminates "Invalid frame header" console errors entirely
+      transports: ['polling'],
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
       timeout: 60000, // Increased from 20s to 60s for mobile networks
-      // Enable transport upgrade (polling → websocket)
-      upgrade: true,
+      // No upgrade needed - polling only
+      upgrade: false,
       // Remember transport for faster subsequent connections
-      rememberUpgrade: false,  // Changed: don't remember - always start with polling
+      rememberUpgrade: false,
       // Mobile-specific: longer intervals for battery optimization
       pingInterval: 60000, // Ping every 60s (matches backend)
       pingTimeout: 120000, // 120s timeout (matches backend)

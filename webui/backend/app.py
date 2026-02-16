@@ -473,6 +473,23 @@ except Exception as e:
     print(f"⚠️ Could not register ssr_algo blueprint: {e}")
     log.warning(f"SSR Algo routes not available: {e}")
 
+# Register MMM blueprint (Money Mind & Method — BTC 0DTE options selling algorithm)
+try:
+    from webui.backend.routes.mmm import mmm_bp, init_mmm, init_websocket as init_mmm_websocket
+    app.register_blueprint(mmm_bp)
+    print(f"✅ Registered mmm blueprint (Money Mind & Method — BTC 0DTE algorithm)")
+
+    # Initialize MMM WebSocket for real-time events (heartbeats, price ticks, etc.)
+    init_mmm_websocket(socketio)
+    print(f"✅ MMM WebSocket initialized")
+
+    # Initialize MMM and restore any active sessions
+    init_mmm()
+    print(f"✅ MMM initialized and sessions restored")
+except Exception as e:
+    print(f"⚠️ Could not register mmm blueprint: {e}")
+    log.warning(f"MMM routes not available: {e}")
+
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
 

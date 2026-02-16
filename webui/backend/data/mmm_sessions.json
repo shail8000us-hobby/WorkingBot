@@ -1,0 +1,853 @@
+{
+  "sessions": {
+    "mmm_d8b725": {
+      "session_id": "mmm_d8b725",
+      "mode": "fresh",
+      "created_at": "2026-02-16T04:24:35.045999",
+      "updated_at": "2026-02-16T09:26:30.707855",
+      "ce": {
+        "side": "CE",
+        "original_lots": 0,
+        "original_premium": 0.0,
+        "original_strike": 69600.0,
+        "active_strike": 68400.0,
+        "adjustment_fills": [
+          {
+            "lots": 1,
+            "premium": 303.5,
+            "strike": 68400.0,
+            "timestamp": "2026-02-16T09:23:57.526537",
+            "type": "strike_shift_sanitized"
+          }
+        ],
+        "adjustment_total_lots": 1,
+        "adjustment_avg": 303.5,
+        "frozen_positions": [
+          {
+            "strike": 69600.0,
+            "lots": 1,
+            "entry_premium": 92.0,
+            "type": "original",
+            "frozen_at": "2026-02-16T06:00:45.717317"
+          },
+          {
+            "strike": 69600.0,
+            "lots": 1,
+            "entry_premium": 78.5,
+            "type": "adjustment",
+            "frozen_at": "2026-02-16T06:00:45.717322"
+          },
+          {
+            "strike": 69600.0,
+            "lots": 1,
+            "entry_premium": 63.5,
+            "type": "adjustment",
+            "frozen_at": "2026-02-16T06:00:45.717323"
+          }
+        ],
+        "frozen_total_lots": 3,
+        "active_lots": 1,
+        "total_lots": 4,
+        "trigger_snapshot": {
+          "69600": 72.85502988,
+          "68400": 26.18777947
+        },
+        "symbol": "C-BTC-69600-160226",
+        "entry_fill_price": 92.0,
+        "entry_order_id": "1179347721"
+      },
+      "pe": {
+        "side": "PE",
+        "original_lots": 0,
+        "original_premium": 0.0,
+        "original_strike": 68000.0,
+        "active_strike": 68000.0,
+        "adjustment_fills": [
+          {
+            "lots": 1,
+            "premium": 74.0,
+            "strike": 68000.0,
+            "timestamp": "2026-02-16T04:52:24.563311",
+            "type": "first_reversal"
+          },
+          {
+            "lots": 1,
+            "premium": 96.5,
+            "strike": 68000.0,
+            "timestamp": "2026-02-16T09:23:57.526630",
+            "type": "strike_shift_sanitized"
+          }
+        ],
+        "adjustment_total_lots": 2,
+        "adjustment_avg": 85.25,
+        "frozen_positions": [],
+        "frozen_total_lots": 0,
+        "active_lots": 2,
+        "total_lots": 2,
+        "trigger_snapshot": {
+          "68000": 168.16966879
+        },
+        "symbol": "P-BTC-68000-160226",
+        "entry_fill_price": 96.5,
+        "entry_order_id": "1179347718"
+      },
+      "last_aggressor": "PE",
+      "adjustment_count": 3,
+      "adjustment_history": [
+        {
+          "side": "CE",
+          "aggressor": "PE",
+          "lots_sold": 1,
+          "premium": 78.5,
+          "strike": 69600.0,
+          "timestamp": "2026-02-16T04:37:05.158307",
+          "type": "standard",
+          "premium_collected": 0.0785,
+          "adjustment_number": 1
+        },
+        {
+          "side": "PE",
+          "aggressor": "CE",
+          "lots_sold": 1,
+          "premium": 74.0,
+          "strike": 68000.0,
+          "timestamp": "2026-02-16T04:52:24.563352",
+          "type": "first_reversal",
+          "premium_collected": 0.074,
+          "adjustment_number": 2
+        },
+        {
+          "side": "CE",
+          "aggressor": "PE",
+          "lots_sold": 1,
+          "premium": 63.5,
+          "strike": 69600.0,
+          "timestamp": "2026-02-16T05:04:48.493295",
+          "type": "first_reversal",
+          "premium_collected": 0.0635,
+          "adjustment_number": 3
+        },
+        {
+          "type": "both_sides_decision",
+          "decision": "skip",
+          "timestamp": "2026-02-16T07:17:43.226231"
+        }
+      ],
+      "realized_pnl": 0.0,
+      "total_premium_collected": 0.4045,
+      "total_fees": 0.0,
+      "strategy_status": "STOPPED",
+      "unrealized_pnl": 0.21,
+      "peak_pnl": 0.29,
+      "reversal_count": 26,
+      "cooldown_active": true,
+      "cooldown_until": "2026-02-16T08:44:58.650492",
+      "shift_count": 1,
+      "close_at_5_count": 0,
+      "entry_time": "2026-02-16T04:26:11.856813",
+      "last_heartbeat": "2026-02-16T09:23:57.526306",
+      "next_heartbeat": "2026-02-16T09:28:57.526220",
+      "expiry_time": null,
+      "params": {
+        "desired_ce_premium": 100.0,
+        "desired_pe_premium": 100.0,
+        "initial_lots": 1,
+        "expiry": "16022026",
+        "adjustment_interval": 300,
+        "min_trigger_move": 10.0,
+        "shift_threshold": 50.0,
+        "close_at_threshold": 5.0,
+        "premium_buffer_pct": 0.05,
+        "max_lots_per_side": 100,
+        "max_adjustments": 30,
+        "max_loss_amount": 50000.0,
+        "stop_adjustment_mins": 15,
+        "auto_close_mins": 5,
+        "cooldown_on_reversal": true,
+        "whipsaw_limit": 15,
+        "trailing_stop_pct": 0.5,
+        "theta_acceleration_window": 120
+      },
+      "pnl_history": [
+        {
+          "timestamp": "2026-02-16T04:26:12.412951",
+          "total_pnl": -0.0,
+          "realized": 0.0,
+          "unrealized": -0.0,
+          "ce_premium": 92.56026743,
+          "pe_premium": 97.76474959
+        },
+        {
+          "timestamp": "2026-02-16T04:31:12.960312",
+          "total_pnl": 0.0,
+          "realized": 0.0,
+          "unrealized": 0.0,
+          "ce_premium": 93.17139486,
+          "pe_premium": 90.75704525
+        },
+        {
+          "timestamp": "2026-02-16T04:37:05.158423",
+          "total_pnl": 0.0,
+          "realized": 0.0,
+          "unrealized": 0.0,
+          "ce_premium": 79.08848543,
+          "pe_premium": 107.44601041
+        },
+        {
+          "timestamp": "2026-02-16T04:42:05.638707",
+          "total_pnl": 0.01,
+          "realized": 0.0,
+          "unrealized": 0.01,
+          "ce_premium": 79.12406075,
+          "pe_premium": 103.01265742
+        },
+        {
+          "timestamp": "2026-02-16T04:47:06.376761",
+          "total_pnl": 0.01,
+          "realized": 0.0,
+          "unrealized": 0.01,
+          "ce_premium": 78.55888379,
+          "pe_premium": 99.40720092
+        },
+        {
+          "timestamp": "2026-02-16T04:52:24.563408",
+          "total_pnl": -0.01,
+          "realized": 0.0,
+          "unrealized": -0.01,
+          "ce_premium": 102.04095132,
+          "pe_premium": 73.77772522
+        },
+        {
+          "timestamp": "2026-02-16T04:57:24.913680",
+          "total_pnl": 0.0,
+          "realized": 0.0,
+          "unrealized": 0.0,
+          "ce_premium": 97.84252416,
+          "pe_premium": 71.88175191
+        },
+        {
+          "timestamp": "2026-02-16T04:58:39.598307",
+          "total_pnl": -0.0,
+          "realized": 0.0,
+          "unrealized": -0.0,
+          "ce_premium": 101.18397397,
+          "pe_premium": 69.98893292
+        },
+        {
+          "timestamp": "2026-02-16T05:04:48.493357",
+          "total_pnl": -0.01,
+          "realized": 0.0,
+          "unrealized": -0.01,
+          "ce_premium": 72.85502988,
+          "pe_premium": 97.62218022
+        },
+        {
+          "timestamp": "2026-02-16T06:01:03.960807",
+          "total_pnl": 0.29,
+          "realized": 0.0,
+          "unrealized": 0.29,
+          "ce_premium": 26.18777947,
+          "pe_premium": 168.16966879
+        },
+        {
+          "timestamp": "2026-02-16T06:06:04.679605",
+          "total_pnl": -0.01,
+          "realized": 0.0,
+          "unrealized": -0.01,
+          "ce_premium": 326.23107755,
+          "pe_premium": 150.41511347
+        },
+        {
+          "timestamp": "2026-02-16T06:17:22.187863",
+          "total_pnl": 0.02,
+          "realized": 0.0,
+          "unrealized": 0.02,
+          "ce_premium": 297.02774402,
+          "pe_premium": 159.99840986
+        },
+        {
+          "timestamp": "2026-02-16T06:22:32.562838",
+          "total_pnl": 0.01,
+          "realized": 0.0,
+          "unrealized": 0.01,
+          "ce_premium": 227.08372153,
+          "pe_premium": 211.98846289
+        },
+        {
+          "timestamp": "2026-02-16T06:41:08.681929",
+          "total_pnl": 0.05,
+          "realized": 0.0,
+          "unrealized": 0.05,
+          "ce_premium": 333.23958327,
+          "pe_premium": 121.50609197
+        },
+        {
+          "timestamp": "2026-02-16T06:46:09.495291",
+          "total_pnl": 0.06,
+          "realized": 0.0,
+          "unrealized": 0.06,
+          "ce_premium": 325.87450777,
+          "pe_premium": 123.31653023
+        },
+        {
+          "timestamp": "2026-02-16T06:51:10.707088",
+          "total_pnl": 0.08,
+          "realized": 0.0,
+          "unrealized": 0.08,
+          "ce_premium": 289.72938884,
+          "pe_premium": 137.92547066
+        },
+        {
+          "timestamp": "2026-02-16T06:56:11.926458",
+          "total_pnl": 0.09,
+          "realized": 0.0,
+          "unrealized": 0.09,
+          "ce_premium": 309.12365722,
+          "pe_premium": 121.36791589
+        },
+        {
+          "timestamp": "2026-02-16T07:01:13.035432",
+          "total_pnl": 0.11,
+          "realized": 0.0,
+          "unrealized": 0.11,
+          "ce_premium": 300.36432211,
+          "pe_premium": 122.28505739
+        },
+        {
+          "timestamp": "2026-02-16T07:06:30.658853",
+          "total_pnl": 0.11,
+          "realized": 0.0,
+          "unrealized": 0.11,
+          "ce_premium": 322.42499271,
+          "pe_premium": 104.4923353
+        },
+        {
+          "timestamp": "2026-02-16T07:11:32.012669",
+          "total_pnl": 0.11,
+          "realized": 0.0,
+          "unrealized": 0.11,
+          "ce_premium": 331.10085641,
+          "pe_premium": 100.66745579
+        },
+        {
+          "timestamp": "2026-02-16T07:16:32.770451",
+          "total_pnl": 0.09,
+          "realized": 0.0,
+          "unrealized": 0.09,
+          "ce_premium": 380.0359131,
+          "pe_premium": 78.33681019
+        },
+        {
+          "timestamp": "2026-02-16T07:24:11.102446",
+          "total_pnl": 0.12,
+          "realized": 0.0,
+          "unrealized": 0.12,
+          "ce_premium": 369.26296778,
+          "pe_premium": 75.27767505
+        },
+        {
+          "timestamp": "2026-02-16T07:29:11.825488",
+          "total_pnl": 0.12,
+          "realized": 0.0,
+          "unrealized": 0.12,
+          "ce_premium": 381.68357491,
+          "pe_premium": 68.69680277
+        },
+        {
+          "timestamp": "2026-02-16T07:34:12.837654",
+          "total_pnl": 0.13,
+          "realized": 0.0,
+          "unrealized": 0.13,
+          "ce_premium": 376.8410039,
+          "pe_premium": 67.16718036
+        },
+        {
+          "timestamp": "2026-02-16T07:39:13.678064",
+          "total_pnl": 0.13,
+          "realized": 0.0,
+          "unrealized": 0.13,
+          "ce_premium": 389.86349533,
+          "pe_premium": 59.49474801
+        },
+        {
+          "timestamp": "2026-02-16T07:46:44.058363",
+          "total_pnl": 0.18,
+          "realized": 0.0,
+          "unrealized": 0.18,
+          "ce_premium": 329.77394865,
+          "pe_premium": 74.9917829
+        },
+        {
+          "timestamp": "2026-02-16T07:51:45.088705",
+          "total_pnl": 0.17,
+          "realized": 0.0,
+          "unrealized": 0.17,
+          "ce_premium": 361.06959606,
+          "pe_premium": 61.41758209
+        },
+        {
+          "timestamp": "2026-02-16T07:56:45.556771",
+          "total_pnl": 0.2,
+          "realized": 0.0,
+          "unrealized": 0.2,
+          "ce_premium": 328.36344363,
+          "pe_premium": 69.39490825
+        },
+        {
+          "timestamp": "2026-02-16T08:03:50.045764",
+          "total_pnl": 0.18,
+          "realized": 0.0,
+          "unrealized": 0.18,
+          "ce_premium": 372.2395006,
+          "pe_premium": 51.90054358
+        },
+        {
+          "timestamp": "2026-02-16T08:08:51.216795",
+          "total_pnl": 0.19,
+          "realized": 0.0,
+          "unrealized": 0.19,
+          "ce_premium": 372.0671759,
+          "pe_premium": 48.9489684
+        },
+        {
+          "timestamp": "2026-02-16T08:13:52.249936",
+          "total_pnl": 0.22,
+          "realized": 0.0,
+          "unrealized": 0.22,
+          "ce_premium": 331.45274761,
+          "pe_premium": 57.33396858
+        },
+        {
+          "timestamp": "2026-02-16T08:18:52.692793",
+          "total_pnl": 0.21,
+          "realized": 0.0,
+          "unrealized": 0.21,
+          "ce_premium": 369.78431033,
+          "pe_premium": 43.14304138
+        },
+        {
+          "timestamp": "2026-02-16T08:25:02.771240",
+          "total_pnl": 0.18,
+          "realized": 0.0,
+          "unrealized": 0.18,
+          "ce_premium": 419.96045104,
+          "pe_premium": 27.76954175
+        },
+        {
+          "timestamp": "2026-02-16T08:30:31.938090",
+          "total_pnl": 0.19,
+          "realized": 0.0,
+          "unrealized": 0.19,
+          "ce_premium": 417.05395335,
+          "pe_premium": 24.95533551
+        },
+        {
+          "timestamp": "2026-02-16T08:39:58.660099",
+          "total_pnl": 0.21,
+          "realized": 0.0,
+          "unrealized": 0.21,
+          "ce_premium": 420.51897884,
+          "pe_premium": 18.53135003
+        }
+      ],
+      "last_error": "'AsyncDeltaClient' object has no attribute 'close_session'",
+      "error_count": 1,
+      "entry_mode": "fresh",
+      "expiry": "16022026",
+      "initial_total_premium": 0.19083,
+      "lots": 1,
+      "mmm_order_ids": [
+        "1179347721",
+        "1179347718"
+      ],
+      "actual_total_premium": 0.1885,
+      "execution_timestamp": "2026-02-16T04:26:11.856806",
+      "_recon_counter": 62,
+      "reversal_history": [
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T04:52:07.108347",
+          "adjustment_count_at": 1
+        },
+        {
+          "from": "CE",
+          "to": "PE",
+          "timestamp": "2026-02-16T05:03:40.489559",
+          "adjustment_count_at": 2
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T06:06:04.679567",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T06:17:22.187766",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T06:41:08.681865",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T06:46:09.495187",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T06:51:10.704364",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T06:56:11.926368",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:01:13.035330",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:06:30.656647",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:11:32.012603",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:16:32.770403",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:24:11.099109",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:29:11.825343",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:34:12.837583",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:39:13.677889",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:46:44.055222",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:51:45.088572",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T07:56:45.556722",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:03:50.038832",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:08:51.216694",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:13:52.249827",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:18:52.692745",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:25:02.770991",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:30:31.937962",
+          "adjustment_count_at": 3
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T08:39:58.650374",
+          "adjustment_count_at": 3
+        }
+      ],
+      "_heartbeat_counter": 40,
+      "both_sides_decision": "skip",
+      "both_sides_decided_at": "2026-02-16T07:17:43.226209",
+      "_premium_map": {
+        "68000:put": 9.06,
+        "69600:call": 11.33,
+        "68400:call": 542.47
+      },
+      "_premium_map_ts": "2026-02-16T09:26:29.000677"
+    },
+    "mmm_94ca09": {
+      "session_id": "mmm_94ca09",
+      "mode": "fresh",
+      "created_at": "2026-02-16T09:27:23.261523",
+      "updated_at": "2026-02-16T09:59:45.216950",
+      "ce": {
+        "side": "CE",
+        "original_lots": 10,
+        "original_premium": 124.5,
+        "original_strike": 69000.0,
+        "active_strike": 69000.0,
+        "adjustment_fills": [
+          {
+            "lots": 2,
+            "premium": 125.0,
+            "strike": 69000.0,
+            "timestamp": "2026-02-16T09:47:49.682120",
+            "type": "first_reversal"
+          }
+        ],
+        "adjustment_total_lots": 2,
+        "adjustment_avg": 125.0,
+        "frozen_positions": [],
+        "frozen_total_lots": 0,
+        "active_lots": 12,
+        "total_lots": 12,
+        "trigger_snapshot": {
+          "69000": 138.3308635
+        },
+        "symbol": "C-BTC-69000-160226",
+        "entry_fill_price": 124.5,
+        "entry_order_id": "1179646987"
+      },
+      "pe": {
+        "side": "PE",
+        "original_lots": 10,
+        "original_premium": 108.6,
+        "original_strike": 68800.0,
+        "active_strike": 68800.0,
+        "adjustment_fills": [
+          {
+            "lots": 8,
+            "premium": 63.5,
+            "strike": 68800.0,
+            "timestamp": "2026-02-16T09:41:54.036818",
+            "type": "standard"
+          },
+          {
+            "lots": 1,
+            "premium": 69.0,
+            "strike": 68800.0,
+            "timestamp": "2026-02-16T09:53:53.913040",
+            "type": "first_reversal"
+          }
+        ],
+        "adjustment_total_lots": 9,
+        "adjustment_avg": 64.11111111111111,
+        "frozen_positions": [],
+        "frozen_total_lots": 0,
+        "active_lots": 19,
+        "total_lots": 19,
+        "trigger_snapshot": {
+          "68800": 68.8795118
+        },
+        "symbol": "P-BTC-68800-160226",
+        "entry_fill_price": 108.6,
+        "entry_order_id": "1179646986"
+      },
+      "last_aggressor": "CE",
+      "adjustment_count": 3,
+      "adjustment_history": [
+        {
+          "side": "PE",
+          "aggressor": "CE",
+          "lots_sold": 8,
+          "premium": 63.5,
+          "strike": 68800.0,
+          "timestamp": "2026-02-16T09:41:54.036872",
+          "type": "standard",
+          "premium_collected": 0.508,
+          "adjustment_number": 1
+        },
+        {
+          "side": "CE",
+          "aggressor": "PE",
+          "lots_sold": 2,
+          "premium": 125.0,
+          "strike": 69000.0,
+          "timestamp": "2026-02-16T09:47:49.682160",
+          "type": "first_reversal",
+          "premium_collected": 0.25,
+          "adjustment_number": 2
+        },
+        {
+          "side": "PE",
+          "aggressor": "CE",
+          "lots_sold": 1,
+          "premium": 69.0,
+          "strike": 68800.0,
+          "timestamp": "2026-02-16T09:53:53.913066",
+          "type": "first_reversal",
+          "premium_collected": 0.069,
+          "adjustment_number": 3
+        }
+      ],
+      "realized_pnl": 0.0,
+      "total_premium_collected": 3.158,
+      "total_fees": 0.0,
+      "strategy_status": "RUNNING",
+      "unrealized_pnl": 0.33,
+      "peak_pnl": 0.33,
+      "reversal_count": 2,
+      "cooldown_active": false,
+      "cooldown_until": null,
+      "shift_count": 0,
+      "close_at_5_count": 0,
+      "entry_time": "2026-02-16T09:28:43.012045",
+      "last_heartbeat": "2026-02-16T09:59:45.073899",
+      "next_heartbeat": "2026-02-16T10:04:45.073735",
+      "expiry_time": null,
+      "params": {
+        "desired_ce_premium": 100.0,
+        "desired_pe_premium": 100.0,
+        "initial_lots": 1,
+        "expiry": "16022026",
+        "adjustment_interval": 300,
+        "min_trigger_move": 3.0,
+        "shift_threshold": 50.0,
+        "close_at_threshold": 5.0,
+        "premium_buffer_pct": 0.05,
+        "max_lots_per_side": 100,
+        "max_adjustments": 30,
+        "max_loss_amount": 50000.0,
+        "stop_adjustment_mins": 15,
+        "auto_close_mins": 5,
+        "cooldown_on_reversal": true,
+        "whipsaw_limit": 11,
+        "trailing_stop_pct": 0.5,
+        "theta_acceleration_window": 120
+      },
+      "pnl_history": [
+        {
+          "timestamp": "2026-02-16T09:41:54.044988",
+          "total_pnl": -0.01,
+          "realized": 0.0,
+          "unrealized": -0.01,
+          "ce_premium": 168.82993538,
+          "pe_premium": 64.29322117
+        },
+        {
+          "timestamp": "2026-02-16T09:47:49.682648",
+          "total_pnl": 0.04,
+          "realized": 0.0,
+          "unrealized": 0.04,
+          "ce_premium": 123.44563487,
+          "pe_premium": 87.21065867
+        },
+        {
+          "timestamp": "2026-02-16T09:53:53.913355",
+          "total_pnl": 0.19,
+          "realized": 0.0,
+          "unrealized": 0.19,
+          "ce_premium": 138.3308635,
+          "pe_premium": 68.8795118
+        },
+        {
+          "timestamp": "2026-02-16T09:59:45.216848",
+          "total_pnl": 0.33,
+          "realized": 0.0,
+          "unrealized": 0.33,
+          "ce_premium": 136.34906863,
+          "pe_premium": 62.56126403
+        }
+      ],
+      "last_error": null,
+      "error_count": 0,
+      "entry_mode": "fresh",
+      "expiry": "16022026",
+      "initial_total_premium": 2.3634,
+      "lots": 10,
+      "mmm_order_ids": [
+        "1179646987",
+        "1179646986"
+      ],
+      "actual_total_premium": 2.331,
+      "execution_timestamp": "2026-02-16T09:28:43.012040",
+      "_sanitized": true,
+      "_heartbeat_counter": 4,
+      "_recon_counter": 4,
+      "_premium_map": {
+        "69000:call": 136.35,
+        "68800:put": 62.56
+      },
+      "_premium_map_ts": "2026-02-16T09:59:45.211348",
+      "_trigger_last_updated_hb_ce": 3,
+      "_trigger_last_value_ce": 138.3308635,
+      "_trigger_last_updated_hb_pe": 3,
+      "_trigger_last_value_pe": 68.8795118,
+      "reversal_history": [
+        {
+          "from": "CE",
+          "to": "PE",
+          "timestamp": "2026-02-16T09:47:38.670991",
+          "adjustment_count_at": 1
+        },
+        {
+          "from": "PE",
+          "to": "CE",
+          "timestamp": "2026-02-16T09:53:42.233761",
+          "adjustment_count_at": 2
+        }
+      ]
+    }
+  },
+  "active_session_ids": [
+    "mmm_94ca09"
+  ],
+  "version": 1,
+  "created_at": "2026-02-15T14:34:56.701667"
+}

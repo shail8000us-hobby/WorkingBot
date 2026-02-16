@@ -1692,7 +1692,8 @@ const OptionsPanel = () => {
     if (!socketRef.current) {
       socketRef.current = io({
         path: '/socket.io',
-        transports: ['websocket', 'polling'],
+        transports: ['polling'],
+        upgrade: false,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 10,
