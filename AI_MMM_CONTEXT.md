@@ -2,8 +2,8 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation.
 >
-> **Last Updated:** February 16, 2026
-> **Status:** All 8 phases complete. Production-ready. Updated: ALL positions (active + shifted) included in loss calculations — no position is ever excluded.
+> **Last Updated:** February 18, 2026
+> **Status:** All 8 phases complete. Production-ready. Enhanced with adaptive interval, wind-down mode, consolidated positions, Greeks & IV panels.
 
 ---
 
@@ -12,14 +12,15 @@
 MMM is a **BTC 0DTE options premium selling algorithm** with automatic adjustment. It:
 
 1. **Sells** both CE (call) and PE (put) options on BTC at OTM strikes
-2. **Monitors** premiums every N seconds (default 300s)
+2. **Monitors** premiums adaptively (60s–1200s depending on trigger proximity)
 3. **Adjusts** when one side's premium rises above its trigger — sells more of the opposite side to cover the loss
 4. **Shifts strikes** when opposing premium is too low to provide meaningful hedge
-5. **Closes positions at ≤5** premium to lock profit
+5. **Closes positions at ≤5** premium to lock profit (dynamic threshold during wind-down)
 6. **Handles reversals** by computing actual adjustment P&L before hedging
-7. **Safety mechanisms** protect against runaway losses, whipsaw, margin exhaustion
+7. **Wind-down mode** gracefully closes positions in the final hours before expiry
+8. **Safety mechanisms** protect against runaway losses, whipsaw, margin exhaustion
 
-The complete calculation logic is defined in `MONEY_POWER_CALCULATION_LOGIC.md` (21 sections, sealed). The development plan is in `MMM_DEVELOPMENT_PLAN.md` (8 phases, all complete).
+The complete calculation logic is defined in `MONEY_POWER_CALCULATION_LOGIC.md` (22 sections). The development plan is in `MMM_DEVELOPMENT_PLAN.md` (8 phases, all complete).
 
 ---
 
@@ -33,16 +34,19 @@ The complete calculation logic is defined in `MONEY_POWER_CALCULATION_LOGIC.md` 
 
 ### 2.2 Heartbeat Loop (Section 4)
 
-Every `adjustment_interval` seconds:
+Every `interval` seconds (adaptive: 60–1200s, see §2.10):
 
 ```
 1. Fetch CE premium at active_ce_strike → CE_now
 2. Fetch PE premium at active_pe_strike → PE_now
 3. Run Close-at-5 on ALL positions (active + frozen)
+   — if wind-down mode active, use elevated threshold (§2.11)
 4. Run Safety Checks
 5. If status ≠ RUNNING → skip adjustment logic
 6. Compute excess: ce_excess = CE_now - trigger_snapshot[active_ce_strike]
-7. Apply min_trigger_move filter
+7. Apply min_trigger_move filter (PERCENTAGE-BASED):
+   ce_threshold = trigger_snapshot × (min_trigger_move_pct / 100)
+   ce_triggered = ce_excess > ce_threshold
 8. Four outcomes:
    A) Neither triggered → DO NOTHING
    B) CE triggered only → CE is aggressor, sell PE (Section 5)
@@ -141,7 +145,7 @@ When BOTH CE and PE exceed triggers simultaneously:
 | `initial_lots` | User input | No |
 | `expiry` | User input | No |
 | `adjustment_interval` | 300s | **Yes** |
-| `min_trigger_move` | 3 | **Yes** |
+| `min_trigger_move_pct` | 3% | **Yes** |
 | `shift_threshold` | 50 | **Yes** |
 | `shift_target_premium` | 100 | **Yes** |
 | `close_at_threshold` | 5 | **Yes** |
@@ -154,8 +158,38 @@ When BOTH CE and PE exceed triggers simultaneously:
 | `cooldown_on_reversal` | true | **Yes** |
 | `whipsaw_limit` | 3 | **Yes** |
 | `trailing_stop_pct` | 50% | **Yes** |
+| `adaptive_interval_enabled` | true | **Yes** |
+| `adaptive_max_interval` | 1200 | **Yes** |
+| `wind_down_enabled` | true | **Yes** |
+| `wind_down_minutes` | 120 | **Yes** |
+| `wind_down_threshold_pct` | 25 | **Yes** |
+| `wind_down_floor_action` | stop_adjustments | **Yes** |
 
 "Hot Reload = Yes" means the parameter can be changed via WebUI while the algo is running and takes effect on the next heartbeat interval.
+
+### 2.10 Adaptive Heartbeat Interval (Added Feb 17, 2026)
+
+The heartbeat interval dynamically adjusts based on trigger proximity:
+
+| Condition | Interval | Rationale |
+|-----------|----------|----------|
+| ≥80% of trigger exceeded | 60s | Action imminent |
+| ≥50% exceeded | 120s | Getting close |
+| ≥30% exceeded | 180s | Moderate movement |
+| <30% exceeded | User-set interval | Normal monitoring |
+| Both premiums declining | 600–1200s | Premiums moving favorably, relax |
+
+**Implementation:** `mmm_trigger.py` → `compute_adaptive_interval()` with `ADAPTIVE_INTERVAL_TIERS`.
+
+### 2.11 Wind-Down Mode (Added Feb 17, 2026)
+
+Activates when `minutes_to_expiry ≤ wind_down_minutes` (default 120 = 2 hours):
+
+1. **Elevated close threshold**: Closes positions at premium ≤ `entry_premium × (wind_down_threshold_pct / 100)` instead of static 5
+2. **LIFO order**: Closes most recently added positions first
+3. **Floor action**: If positions can't be closed, executes `wind_down_floor_action` (stop_adjustments / close_all / alert)
+
+**Implementation:** `mmm_wind_down.py` (new module, ~270 lines) + integration in `mmm_monitor.py` and `mmm_close_at_5.py`.
 
 ---
 
@@ -283,6 +317,8 @@ React Frontend (production build served by Flask)
 | `GET` | `/api/mmm/session/<id>/pnl` | P&L breakdown |
 | `GET` | `/api/mmm/session/<id>/triggers` | Current trigger values |
 | `GET` | `/api/mmm/session/<id>/safety` | Safety status |
+| `GET` | `/api/mmm/session/<id>/greeks-iv` | Live Greeks, IV, mark price for all positions (fetches from Delta Exchange tickers) |
+| `GET` | `/api/mmm/session/<id>/walkthrough` | Algo calculation walkthrough log |
 
 ### 4.5 Parameters
 
@@ -378,8 +414,9 @@ React Frontend (production build served by Flask)
 - `get_session_summary(session)` → compact summary for WebSocket/API
 
 ### 6.2 mmm_config.py
-- `DEFAULT_PARAMS` dict with all 17 parameters
+- `PARAM_RULES` dict with all 25 parameters (including 7 new adaptive + wind-down)
 - `validate_params(user_params)` → validates types, ranges, returns (validated, errors)
+- `get_param_info()` → returns descriptions for all params for WebUI tooltips
 
 ### 6.3 mmm_storage.py
 - `MMMStorage` class — JSON file persistence with file locking
@@ -408,7 +445,8 @@ React Frontend (production build served by Flask)
 
 ### 6.7 mmm_trigger.py (~170 lines)
 - `evaluate_triggers(session, ce_now, pe_now)` → returns which sides triggered
-- `min_trigger_move` filter
+- Percentage-based `min_trigger_move_pct` filter (3% of trigger level)
+- `compute_adaptive_interval()` → dynamic interval based on trigger proximity
 - Theta acceleration: widens triggers near expiry
 
 ### 6.8 mmm_engine.py (~548 lines)
@@ -437,17 +475,28 @@ React Frontend (production build served by Flask)
 - `MMMSafety` class with all 8+ safety checks
 - Methods: `check_position_cap`, `check_max_adjustments`, `check_max_loss`, `check_whipsaw`, `check_asymmetry`, `check_near_expiry`, `check_trailing_profit`, `check_pnl_guardrail`
 
-### 6.13 mmm_monitor.py (~470 lines)
-- `MMMMonitor` class — runs heartbeat in background thread per session
+### 6.13 mmm_monitor.py (~2048 lines)
+- `MMMMonitor` class — runs heartbeat in async background thread per session
 - `start_session_monitor(session_id)`, `stop_session_monitor(session_id)`
 - `pause_session(session_id)`, `resume_session(session_id)`
-- Each heartbeat: fetch prices → close-at-5 → safety → triggers → adjust → update → emit
+- Each heartbeat: fetch prices → close-at-5 → wind-down check → safety → triggers → adjust → update → emit
+- Adaptive interval: selects next interval based on `compute_adaptive_interval()`
+- Wind-down integration: calls `_process_wind_down_buyback()` before normal adjustment logic
+- Prefetches all premiums in parallel for multi-strike sessions
 
-### 6.14 mmm_websocket.py (~191 lines)
+### 6.14 mmm_wind_down.py (~270 lines, Added Feb 17, 2026)
+- `is_wind_down_active(session, minutes_to_expiry)` → bool
+- `compute_wind_down_action(session, premiums, minutes_to_expiry)` → action dict
+- `get_lifo_close_fills(session, side)` → positions in LIFO order for closing
+- `apply_lifo_removals(session, side, fills)` → removes closed positions from state
+- `get_wind_down_close_threshold(entry_premium, params)` → elevated threshold
+
+### 6.15 mmm_websocket.py (~240 lines)
 - 11 event emitter functions: `emit_heartbeat`, `emit_adjustment`, `emit_reversal`, `emit_shift`, `emit_close_at_5`, `emit_both_sides`, `emit_safety`, `emit_pnl_update`, `emit_params_changed`, `emit_session_created`, `emit_status_change`
+- Heartbeat includes `adaptive_tier` and `wind_down_active` fields
 - Uses Flask-SocketIO (same instance as main app)
 
-### 6.15 __init__.py
+### 6.16 __init__.py
 - Exports `mmm_bp` (Blueprint) and `init_mmm()` (startup restoration)
 - `init_mmm()` checks for sessions with status=RUNNING and restores their monitors
 
@@ -458,8 +507,8 @@ React Frontend (production build served by Flask)
 ### 7.1 MMMDashboard.js (Main Container)
 - **Header:** Title, BTC 0DTE badge, health indicator, connection status, New Session + Refresh buttons
 - **Left Panel:** Session list with 3 tabs (Active/Idle/History), session cards with controls
-- **Right Panel:** Session detail with 7 tabs (Overview/Positions/Triggers/Adjustments/P&L/Safety/Strike Map)
-- **Dialogs:** CreateSessionDialog (expiry dropdown, mode selection, import fields), BothSidesAlert
+- **Right Panel:** Session detail with 10 tabs (Overview/Positions/Triggers/Adjustments/P&L/Safety/Strike Map/Algo Calculations/Consolidated/Greeks & IV)
+- **Dialogs:** CreateSessionDialog (expiry dropdown, mode selection, import fields), BothSidesAlert, MMMSettingsDialog (with rich tooltips and 6 parameter groups)
 - **State:** Uses `useMMM()` from MMMContext + `useMMMWebSocket(sessionId)` for live data
 
 ### 7.2 CreateSessionDialog (inside MMMDashboard.js)
@@ -493,6 +542,32 @@ React Frontend (production build served by Flask)
 - **Error isolation:** `MMMErrorBoundary` wraps everything, prevents MMM crashes from affecting main app
 - **Status colors:** IDLE=gray, RUNNING=green, PAUSED=orange, BOTH_SIDES_UP=red, STOPPED=dark gray
 - **Data flow:** REST API for initial load + actions, WebSocket for real-time updates
+
+### 7.6 MMMSettingsDialog.js (~448 lines, Updated Feb 17, 2026)
+- 6 parameter groups: Core, Triggers, Safety, Expiry, Adaptive, Wind-Down
+- Rich `PARAM_TOOLTIPS` map (28 entries) with `?` help icons for every parameter
+- Group blurbs explaining each category
+- `DialogContent` with `maxHeight: '75vh'` + `overflowY: 'auto'` for scrollability
+- Select input for `wind_down_floor_action` (close_all / stop_adjustments / alert)
+
+### 7.7 MMMStatusBanner.js (Updated Feb 17, 2026)
+- Adaptive tier badge (`⚡ 10-20h`) showing current heartbeat interval range
+- Wind-down badge (`🌙 Wind-Down`) when wind-down mode is active
+
+### 7.8 MMMConsolidatedPositions.js (Added Feb 18, 2026)
+- Groups scattered individual fills by (side, strike) into consolidated rows
+- Shows: Side, Strike, Total Lots, Notional BTC, Weighted Avg Entry, Current Premium, P&L
+- Fill count breakdown tooltip (original/adjustment/frozen lots per group)
+- Pure frontend aggregation — reuses `buildPositionRows()` from MMMPositionsTable
+- Dashboard Tab 8
+
+### 7.9 MMMGreeksPanel.js (Added Feb 18, 2026)
+- Fetches live Greeks (δ, γ, θ, ν) and IV (mark/bid/ask) from backend `/greeks-iv` endpoint
+- Portfolio-weighted totals row (lots × per-contract greek)
+- Color-coded Greek columns: blue δ, purple γ, green θ, orange ν, red IV
+- Auto-refreshes every 60 seconds, manual refresh button with timestamp
+- Dashboard Tab 9
+- **KNOWN ISSUE:** Greeks shown are raw option Greeks from exchange, NOT position Greeks (short sign not applied). See MONEY_POWER §22.4.
 
 ---
 

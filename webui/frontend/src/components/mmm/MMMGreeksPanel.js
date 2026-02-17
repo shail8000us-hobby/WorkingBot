@@ -140,11 +140,12 @@ export default function MMMGreeksPanel({ session }) {
   const spotPrice = data?.spot_price || 0;
 
   // Compute portfolio-level weighted Greeks
+  // Backend already returns position Greeks (negated for short positions),
+  // so we simply weight by lots here.
   const totals = positions.reduce(
     (acc, p) => {
       const lots = p.lots || 0;
       const g = p.greeks || {};
-      // Negative sign for short positions (we're sellers)
       acc.lots += lots;
       acc.delta += (g.delta || 0) * lots;
       acc.gamma += (g.gamma || 0) * lots;

@@ -2250,14 +2250,16 @@ def get_greeks_iv(session_id: str):
             else:
                 data = resp.get('result', resp)
                 mark_price = float(data.get('mark_price', 0))
-                # Greeks
+                # Greeks — raw option Greeks from ticker.
+                # MMM only holds SHORT positions, so negate to get
+                # position Greeks (matching Delta Exchange position display).
                 g = data.get('greeks', {})
                 greeks = {
-                    'delta': _safe_float(g.get('delta')),
-                    'gamma': _safe_float(g.get('gamma')),
-                    'theta': _safe_float(g.get('theta')),
-                    'vega': _safe_float(g.get('vega')),
-                    'rho': _safe_float(g.get('rho')),
+                    'delta': -_safe_float(g.get('delta')) if _safe_float(g.get('delta')) is not None else None,
+                    'gamma': -_safe_float(g.get('gamma')) if _safe_float(g.get('gamma')) is not None else None,
+                    'theta': -_safe_float(g.get('theta')) if _safe_float(g.get('theta')) is not None else None,
+                    'vega': -_safe_float(g.get('vega')) if _safe_float(g.get('vega')) is not None else None,
+                    'rho': -_safe_float(g.get('rho')) if _safe_float(g.get('rho')) is not None else None,
                 }
                 # IV
                 iv = {

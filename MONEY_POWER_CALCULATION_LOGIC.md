@@ -149,12 +149,13 @@ Total premium = 1020 + 980 = 2000
 
 ## SECTION 4: EVERY CHECK INTERVAL (The Heartbeat)
 
-Every `interval` seconds (default 300 = 5 minutes), the algo does:
+Every `interval` seconds the algo does a heartbeat. The interval is **adaptive** (see §4.1 below) — it ranges from 60s to 1200s depending on how close premiums are to their triggers.
 
 ```
 1. Fetch premium at active_ce_strike → CE_now
 2. Fetch premium at active_pe_strike → PE_now
 3. Run CLOSE-AT-5 check on ALL positions (Section 11)
+   — if wind-down mode active, use elevated threshold (Section 11.1)
 4. Run SAFETY CHECKS (Section 12)
 5. If strategy_status ≠ "RUNNING" → skip adjustment logic
 
@@ -162,9 +163,14 @@ Every `interval` seconds (default 300 = 5 minutes), the algo does:
    ce_excess = CE_now - ce_trigger_snapshot[active_ce_strike]
    pe_excess = PE_now - pe_trigger_snapshot[active_pe_strike]
 
-   Apply minimum trigger move filter:
-   ce_triggered = ce_excess > min_trigger_move
-   pe_triggered = pe_excess > min_trigger_move
+   Apply minimum trigger move filter (PERCENTAGE-BASED):
+   ce_trigger = ce_trigger_snapshot[active_ce_strike]
+   ce_threshold = ce_trigger × (min_trigger_move_pct / 100)
+   ce_triggered = ce_excess > ce_threshold
+
+   pe_trigger = pe_trigger_snapshot[active_pe_strike]
+   pe_threshold = pe_trigger × (min_trigger_move_pct / 100)
+   pe_triggered = pe_excess > pe_threshold
 
 7. FOUR OUTCOMES:
 
@@ -180,6 +186,48 @@ Every `interval` seconds (default 300 = 5 minutes), the algo does:
    D) ce_triggered AND pe_triggered
       → BOTH sides above trigger. Go to SECTION 8 (user decides).
 ```
+
+### 4.1 Adaptive Heartbeat Interval (Added Feb 17, 2026)
+
+Instead of a fixed interval, the algo dynamically adjusts the check frequency based on how close premiums are to their triggers. This saves API calls when nothing is happening, and checks more frequently when action is imminent.
+
+**Tiers:**
+
+| Proximity to Trigger | Interval | Rationale |
+|---------------------|----------|----------|
+| ≥80% of trigger exceeded | 60s | Action imminent — check every minute |
+| ≥50% of trigger exceeded | 120s | Getting close — monitor closely |
+| ≥30% of trigger exceeded | 180s | Moderate movement — reasonable pace |
+| <30% of trigger exceeded | User-set interval (default 300s) | Normal — use configured interval |
+| Both premiums declining | 600–1200s (scales with distance) | Premiums moving favorably — relax |
+
+**Formula:** The tier is determined by the maximum of `ce_excess / ce_threshold` and `pe_excess / pe_threshold`. If both premiums are below their entry triggers (i.e., decaying), the interval extends up to `adaptive_max_interval` (default 1200s = 20 minutes).
+
+**Parameters:**
+- `adaptive_interval_enabled` (default true) — master switch
+- `adaptive_max_interval` (default 1200) — maximum seconds when premiums are far from triggers
+
+### 4.2 Wind-Down Mode (Added Feb 17, 2026)
+
+In the final hours before expiry, a coordinated wind-down system activates to gracefully close positions and avoid risky adjustments near expiry:
+
+```
+IF minutes_to_expiry ≤ wind_down_minutes (default 120 = 2 hours):
+    → Wind-down mode ACTIVE
+    → Three possible actions per heartbeat:
+       1. BUYBACK: Close positions at elevated threshold (see §11.1)
+       2. SKIP: Do nothing if positions are decaying naturally
+       3. Floor action: close_all / stop_adjustments / alert (configurable)
+
+    Wind-down checks run BEFORE normal adjustment logic.
+    If wind-down buybacks close all positions → strategy COMPLETE.
+```
+
+**Parameters:**
+- `wind_down_enabled` (default true) — master switch
+- `wind_down_minutes` (default 120) — when wind-down activates
+- `wind_down_threshold_pct` (default 25.0) — close positions at premium ≤ 25% of entry (elevated from 5)
+- `wind_down_floor_action` (default 'stop_adjustments') — what to do if positions can't be closed: 'close_all', 'stop_adjustments', or 'alert'
 
 ---
 
@@ -381,13 +429,22 @@ The safe zone expands in the direction of the trend. On reversal, it resets arou
 `ce_trigger_snapshot[strike] = X` means:
 > "All CE losses at this strike up to premium X have been fully covered by premium collected from PE adjustment sells. Only losses ABOVE X are new and unhedged."
 
-### Minimum Trigger Move
+### Minimum Trigger Move (Percentage-Based)
 
-To avoid adjusting on noise, require the premium to exceed the trigger by at least `min_trigger_move`:
+To avoid adjusting on noise, require the premium to exceed the trigger by a percentage of the trigger level:
 
-$$\text{triggered} = (\text{premium\_now} - \text{trigger\_snapshot}) > \text{min\_trigger\_move}$$
+$$\text{threshold} = \text{trigger\_snapshot} \times \frac{\text{min\_trigger\_move\_pct}}{100}$$
 
-Default `min_trigger_move = 3`. This prevents micro-oscillations around the trigger from firing unnecessary adjustments.
+$$\text{triggered} = (\text{premium\_now} - \text{trigger\_snapshot}) > \text{threshold}$$
+
+Default `min_trigger_move_pct = 3` (3%). This is percentage-based rather than absolute, so the trigger sensitivity scales naturally with premium levels:
+- At trigger 100 → threshold = 3 (need 103+ to trigger)
+- At trigger 300 → threshold = 9 (need 309+ to trigger)
+- At trigger 50 → threshold = 1.5 (need 51.5+ to trigger)
+
+This prevents the problem where an absolute threshold of 3 is too sensitive at high premiums (300) and too insensitive at low premiums (20).
+
+> **History:** Originally implemented as absolute `min_trigger_move = 3`. Converted to percentage-based on Feb 17, 2026 to scale properly across all premium levels.
 
 ---
 
@@ -646,6 +703,21 @@ strategy_status = "STOPPED"
 ### Close-at-5 Threshold is Configurable
 
 The user can set this to any value (e.g., 3, 5, 10) via WebUI. Value of 5 is the default. Setting it to 0 effectively disables this feature (positions expire naturally).
+
+### 11.1 Elevated Close-at-5 During Wind-Down (Added Feb 17, 2026)
+
+When wind-down mode is active (see §4.2), the close-at-5 threshold is elevated to close positions more aggressively:
+
+```
+IF wind_down_active:
+    elevated_threshold = entry_premium × (wind_down_threshold_pct / 100)
+    → Example: entry at 100, wind_down_threshold_pct = 25%
+    → Close if premium ≤ 25 (instead of default 5)
+
+Positions are closed in LIFO order (most recently added first).
+```
+
+This allows the algo to lock in profits earlier during the final hours, when theta decay is rapid and the position has captured most of its value.
 
 ---
 
@@ -1239,7 +1311,7 @@ $$R = \frac{\max(N_{\text{CE}}, N_{\text{PE}})}{\min(N_{\text{CE}}, N_{\text{PE}
 | `initial_lots` | Starting lots per side | User input | No (entry only) |
 | `expiry` | Target expiry | User input | No (entry only) |
 | `adjustment_interval` | Seconds between checks | 300 | **Yes** |
-| `min_trigger_move` | Minimum move above trigger to fire | 3 | **Yes** |
+| `min_trigger_move_pct` | Minimum % move above trigger to fire | 3% | **Yes** |
 | `shift_threshold` | Min premium to sell at current strike | 50 | **Yes** |
 | `shift_target_premium` | Target premium when selecting new strike after shift | 100 | **Yes** |
 | `close_at_threshold` | Close positions at this premium or below | 5 | **Yes** |
@@ -1252,6 +1324,22 @@ $$R = \frac{\max(N_{\text{CE}}, N_{\text{PE}})}{\min(N_{\text{CE}}, N_{\text{PE}
 | `cooldown_on_reversal` | Skip 1 interval on reversal | true | **Yes** |
 | `whipsaw_limit` | Max alternating adjustments before pause | 3 | **Yes** |
 | `trailing_stop_pct` | Protect profit at N% of peak | 50% | **Yes** |
+
+**Adaptive Interval Parameters (Added Feb 17, 2026):**
+
+| Parameter | What It Controls | Default | Hot Reload? |
+|-----------|-----------------|---------|-------------|
+| `adaptive_interval_enabled` | Enable/disable adaptive heartbeat interval | true | **Yes** |
+| `adaptive_max_interval` | Maximum seconds between heartbeats when premiums are far | 1200 | **Yes** |
+
+**Wind-Down Parameters (Added Feb 17, 2026):**
+
+| Parameter | What It Controls | Default | Hot Reload? |
+|-----------|-----------------|---------|-------------|
+| `wind_down_enabled` | Enable/disable wind-down mode | true | **Yes** |
+| `wind_down_minutes` | Minutes before expiry to activate wind-down | 120 | **Yes** |
+| `wind_down_threshold_pct` | Close positions at ≤ N% of entry premium during wind-down | 25 | **Yes** |
+| `wind_down_floor_action` | Action when wind-down can't close: close_all / stop_adjustments / alert | stop_adjustments | **Yes** |
 
 All "Hot Reload = Yes" parameters can be changed via WebUI while the algo is running, and take effect on the next interval.
 
@@ -1338,6 +1426,67 @@ The algo's response depends on which safety mechanism fires first:
 12. **Every parameter is hot-reloadable** — user can adjust shift_threshold, interval, min_trigger_move, and all safety limits without restarting.
 
 13. **Complete walk-through verified** — Section 16 traces 7 intervals covering up-trend, strike shift, reversal (with adjustment P&L ≥0 skip), continuation, re-reversal, and close-at-5.
+
+---
+
+---
+
+## SECTION 22: WEBUI MONITORING PANELS (Added Feb 18, 2026)
+
+The WebUI provides 10 detail tabs for each session. The following are the monitoring panels relevant to the calculation logic:
+
+### 22.1 Positions Tab (Tab 1)
+
+Shows every individual fill as a separate row:
+- Original entry positions (CE + PE)
+- Each adjustment fill as its own row (Adj #1, Adj #2, etc.)
+- Frozen positions at old strikes after shifts (with ❄️ icon)
+- Per-row P&L: `(entry_premium - current_premium) × lots × LOT_SIZE_BTC`
+- Current premium resolved from heartbeat `premium_map` (4-source priority)
+
+### 22.2 Consolidated Positions Tab (Tab 8)
+
+Groups all individual fills at the same (side, strike) into a single consolidated row:
+- **Weighted average entry**: `Σ(lots_i × premium_i) / Σ(lots_i)` across original + adjustment + frozen fills
+- **Total lots**: sum of all fills at that strike
+- **Notional BTC**: total_lots × LOT_SIZE_BTC (0.001)
+- **Aggregated P&L**: sum of P&L across all fills at that strike
+- **Fill count breakdown**: tooltip showing how many original/adjustment/frozen lots
+
+This is purely a frontend aggregation — same data as Positions Tab, grouped differently.
+
+### 22.3 Greeks & IV Tab (Tab 9)
+
+Fetches live Greeks and Implied Volatility from Delta Exchange `/v2/tickers/{symbol}` for each unique (strike, option_type) in the session:
+
+| Greek | What It Means for MMM (Short Sellers) |
+|-------|--------------------------------------|
+| Delta (δ) | Premium change per $1 BTC move. Short calls: lose when BTC rises. Short puts: lose when BTC drops. |
+| Gamma (γ) | Rate of change of delta. High gamma near expiry = risk of rapid delta changes. |
+| Theta (θ) | Time decay per day. **As sellers, theta works IN YOUR FAVOR** — premiums decay toward zero. |
+| Vega (ν) | Sensitivity to IV changes. IV spike = premiums rise = bad for sellers. |
+| Mark IV | Market consensus implied volatility for the option. |
+| Bid/Ask IV | IV at best bid and ask — IV spread. |
+
+**Portfolio totals**: Position-weighted sums (lots × per-contract greek) across all positions.
+
+**Auto-refreshes** every 60 seconds via backend API.
+
+> **IMPORTANT NOTE ON SIGN CONVENTION:** The Greeks shown are raw option Greeks from the exchange. For SHORT positions (which MMM exclusively holds), the position-level exposure is the NEGATIVE of displayed values. E.g., if theta shows -332, the seller's actual theta exposure is +332 (earning $332/day of decay). See Section 22.4.
+
+### 22.4 Greek Sign Convention for Short Sellers
+
+MMM sells options. The Delta Exchange API returns Greeks as if you are LONG the option. To interpret correctly for SHORT positions:
+
+| Raw Greek | Short Position Meaning |
+|-----------|----------------------|
+| Delta +0.37 (CE) | Position delta = **-0.37** → you LOSE when BTC rises |
+| Delta -0.10 (PE) | Position delta = **+0.10** → you LOSE when BTC drops |
+| Theta -332 | Position theta = **+332** → you EARN $332/day from decay |
+| Gamma +0.0003 | Position gamma = **-0.0003** → delta moves against you on big moves |
+| Vega +11.38 | Position vega = **-11.38** → IV spike increases your loss |
+
+The portfolio total delta sign tells you the net directional bias.
 
 ---
 
