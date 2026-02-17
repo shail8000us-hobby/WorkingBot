@@ -43,7 +43,7 @@ export function useSocketConnection({
       maxReconnectDelay: 30000,
       maxRetries: 3,
       heartbeatInterval: 60000,
-      syncInterval: 30000,
+      syncInterval: 60000,
       pingTimeout: 15000,
     });
 
@@ -98,6 +98,13 @@ export function useSocketConnection({
 
     manager.on('log_entry', (data) => {
       setLogs((prev) => [...prev.slice(-199), data.message]);
+    });
+
+    // Handle batched log lines for better performance
+    manager.on('log_batch', (data) => {
+      if (data.messages && Array.isArray(data.messages)) {
+        setLogs((prev) => [...prev, ...data.messages].slice(-200));
+      }
     });
 
     // Error handling

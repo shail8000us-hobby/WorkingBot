@@ -18,8 +18,8 @@ class ConnectionManager {
       reconnectDelay: 1000,
       maxReconnectDelay: 30000,
       reconnectAttempts: Infinity,
-      heartbeatInterval: 5000,
-      syncInterval: 10000,
+      heartbeatInterval: 30000,
+      syncInterval: 60000,
       socketUrl: config.socketUrl !== undefined ? config.socketUrl : DEFAULT_SOCKET_URL,
       apiBaseUrl: config.apiBaseUrl !== undefined ? config.apiBaseUrl : DEFAULT_API_BASE_URL,
       ...config,
@@ -51,17 +51,16 @@ class ConnectionManager {
 
     const connectionOptions = {
       path: '/socket.io',
-      // POLLING ONLY - simple-websocket backend can't handle upgrade handshake
-      // This eliminates "Invalid frame header" console errors entirely
-      transports: ['polling'],
+      // Try WebSocket first, fall back to polling if it fails
+      transports: ['websocket', 'polling'],
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
       timeout: 60000, // Increased from 20s to 60s for mobile networks
-      // No upgrade needed - polling only
-      upgrade: false,
+      // Allow upgrade from polling to websocket
+      upgrade: true,
       // Remember transport for faster subsequent connections
-      rememberUpgrade: false,
+      rememberUpgrade: true,
       // Mobile-specific: longer intervals for battery optimization
       pingInterval: 60000, // Ping every 60s (matches backend)
       pingTimeout: 120000, // 120s timeout (matches backend)
@@ -132,19 +131,16 @@ class ConnectionManager {
 
     // Data sync events
     this.socket.on('config_updated', (data) => {
-      console.log('📝 Config updated from server');
       this.stateCache.config = data;
       this.emit('config_updated', data);
     });
 
     this.socket.on('bot_status', (data) => {
-      console.log('🤖 Bot status updated:', data);
       this.stateCache.botStatus = data;
       this.emit('bot_status', data);
     });
 
     this.socket.on('positions_update', (data) => {
-      console.log('💰 Positions updated');
       this.stateCache.positions = data;
       this.emit('positions_update', data);
     });
@@ -153,18 +149,20 @@ class ConnectionManager {
       this.emit('log_entry', data);
     });
 
+    this.socket.on('log_batch', (data) => {
+      this.emit('log_batch', data);
+    });
+
     this.socket.on('error', (data) => {
       console.error('⚠️ Server error:', data);
       this.emit('error', data);
     });
 
     this.socket.on('reconciliation_update', (data) => {
-      console.log('📊 Reconciliation update received');
       this.emit('reconciliation_update', data);
     });
 
     this.socket.on('orders_memory_update', (data) => {
-      console.log('🧹 Orders memory update received');
       this.stateCache.ordersMemory = data;
       this.emit('orders_memory_update', data);
     });

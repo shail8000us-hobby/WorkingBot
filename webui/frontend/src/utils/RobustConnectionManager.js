@@ -17,6 +17,7 @@ class RobustConnectionManager extends ConnectionManager {
 
     // Ping/Pong for connection health - mobile-optimized
     this.pingInterval = null;
+    this.pingTimeoutHandle = null;
     this.lastPingTime = null;
     this.lastPongTime = null;
     this.pingTimeout = options.pingTimeout || 10000; // Increased from 5s to 10s for mobile latency
@@ -126,35 +127,47 @@ class RobustConnectionManager extends ConnectionManager {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
     }
+    if (this.pingTimeoutHandle) {
+      clearTimeout(this.pingTimeoutHandle);
+      this.pingTimeoutHandle = null;
+    }
 
     this.pingInterval = setInterval(() => {
       if (this.socket?.connected) {
         this.lastPingTime = Date.now();
         this.socket.emit('ping', { timestamp: this.lastPingTime });
 
+        // Cancel any previous timeout before scheduling a new one
+        if (this.pingTimeoutHandle) {
+          clearTimeout(this.pingTimeoutHandle);
+        }
+
         // Check for pong timeout
-        setTimeout(() => {
+        this.pingTimeoutHandle = setTimeout(() => {
+          this.pingTimeoutHandle = null;
           if (this.lastPongTime < this.lastPingTime) {
             const timeSincePing = Date.now() - this.lastPingTime;
             if (timeSincePing > this.pingTimeout) {
               console.warn('⚠️  Ping timeout, connection may be dead');
               this.connectionQuality = 'poor';
               this.emit('connection_quality', { quality: 'poor', latency: timeSincePing });
-
-              // Force reconnect
-              this.socket.disconnect();
-              this.establishConnection();
+              // Don't force reconnect here — let the disconnect handler do it
+              // to avoid duplicate reconnection attempts
             }
           }
         }, this.pingTimeout);
       }
-    }, 10000); // Ping every 10 seconds
+    }, 30000); // Ping every 30 seconds (was 10s — too aggressive)
   }
 
   stopPingPong() {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
+    }
+    if (this.pingTimeoutHandle) {
+      clearTimeout(this.pingTimeoutHandle);
+      this.pingTimeoutHandle = null;
     }
   }
 
@@ -219,47 +232,52 @@ class RobustConnectionManager extends ConnectionManager {
    * Automatically reconnect when network becomes available
    */
   setupNetworkMonitoring() {
-    // Monitor online/offline events
-    window.addEventListener('online', () => {
-      console.log('📶 Network online - attempting reconnection');
+    // Store bound handlers so we can remove them later
+    this._onOnline = () => {
       this.isOnline = true;
       this.emit('network_status', { online: true });
-
-      // Force reconnect when network comes back
       if (!this.socket?.connected) {
-        this.retryAttempts = 0; // Reset retry counter
+        this.retryAttempts = 0;
         setTimeout(() => this.forceReconnect(), 1000);
       }
-    });
+    };
 
-    window.addEventListener('offline', () => {
-      console.log('📵 Network offline');
+    this._onOffline = () => {
       this.isOnline = false;
       this.emit('network_status', { online: false });
       this.connectionQuality = 'offline';
-    });
+    };
 
-    // Monitor visibility changes (mobile screen lock/unlock)
-    document.addEventListener('visibilitychange', () => {
+    this._onVisibility = () => {
       if (!document.hidden && this.isOnline && !this.socket?.connected) {
-        console.log('👁️  App became visible - checking connection');
-        // Check connection after app becomes visible (e.g., screen unlock)
         setTimeout(() => {
           if (!this.socket?.connected) {
-            console.log('🔄 Connection lost while app was hidden - reconnecting');
             this.forceReconnect();
           }
         }, 500);
       }
-    });
+    };
 
-    // Mobile-specific: resume event for iOS
-    window.addEventListener('resume', () => {
-      console.log('▶️  App resumed from background');
+    this._onResume = () => {
       if (this.isOnline && !this.socket?.connected) {
         setTimeout(() => this.forceReconnect(), 1000);
       }
-    });
+    };
+
+    window.addEventListener('online', this._onOnline);
+    window.addEventListener('offline', this._onOffline);
+    document.addEventListener('visibilitychange', this._onVisibility);
+    window.addEventListener('resume', this._onResume);
+  }
+
+  /**
+   * Cleanup network monitoring listeners
+   */
+  cleanupNetworkMonitoring() {
+    if (this._onOnline) window.removeEventListener('online', this._onOnline);
+    if (this._onOffline) window.removeEventListener('offline', this._onOffline);
+    if (this._onVisibility) document.removeEventListener('visibilitychange', this._onVisibility);
+    if (this._onResume) window.removeEventListener('resume', this._onResume);
   }
 }
 

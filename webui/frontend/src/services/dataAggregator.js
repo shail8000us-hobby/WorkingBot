@@ -21,13 +21,14 @@ class DataAggregator {
   constructor() {
     this.interval = null;
     this.isRunning = false;
-    this.pollInterval = 10000; // 10 seconds (was 5s - reduced for performance)
-    this.pollIntervalFast = 5000; // 5 seconds for active trading (was 3s)
-    this.pollIntervalSlow = 30000; // 30 seconds for idle/hidden tab (was 10s)
+    this.pollInterval = 15000; // 15 seconds default (reduced API load)
+    this.pollIntervalFast = 8000; // 8 seconds for active trading
+    this.pollIntervalSlow = 60000; // 60 seconds for idle/hidden tab
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 5;
     this.isDocumentVisible = true;
     this.hasActivePositions = false;
+    this._lastResponseHash = null; // Skip updates when data hasn't changed
   }
 
   /**
@@ -46,7 +47,7 @@ class DataAggregator {
     // Listen for visibility changes to pause polling when tab is hidden
     this._setupVisibilityListener();
 
-    console.log('📡 Data aggregator started (adaptive polling: 3-10s)');
+    console.log('📡 Data aggregator started (adaptive polling: 8-60s)');
 
     // Start polling loop with adaptive interval
     this._startPollingLoop();

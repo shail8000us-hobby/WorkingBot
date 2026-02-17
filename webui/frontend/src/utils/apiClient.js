@@ -28,6 +28,43 @@ class APIClient {
     
     // Request deduplication - prevent duplicate concurrent requests
     this.pendingRequests = new Map();
+
+    // TTL-based response cache — avoids redundant network requests for identical GET calls
+    // Key: request URL, Value: { data, expiry }
+    this._responseCache = new Map();
+    // Default cache TTL per endpoint prefix (ms)
+    this._cacheTTL = {
+      '/api/health': 5000,
+      '/api/bot/status': 3000,
+      '/api/pnl': 5000,
+      '/api/positions': 3000,
+      '/api/orders': 3000,
+      '/api/config': 10000,
+      '/api/flags': 30000,
+      '_default': 2000,
+    };
+  }
+
+  /**
+   * Get cache TTL for a given URL path
+   */
+  _getCacheTTL(url) {
+    for (const [prefix, ttl] of Object.entries(this._cacheTTL)) {
+      if (prefix !== '_default' && url.includes(prefix)) return ttl;
+    }
+    return this._cacheTTL._default;
+  }
+
+  /**
+   * Get cached response if still valid
+   */
+  _getCachedResponse(key) {
+    const entry = this._responseCache.get(key);
+    if (entry && Date.now() < entry.expiry) {
+      return entry.data;
+    }
+    if (entry) this._responseCache.delete(key);
+    return null;
   }
 
   buildFullUrl(path, params = undefined) {
@@ -86,6 +123,14 @@ class APIClient {
     if (normalizedMethod === 'GET' && !options.skipDedup) {
       const requestKey = this._getRequestKey(method, url, data);
       
+      // Check TTL cache first (avoids even creating a network request)
+      if (!options.skipCache) {
+        const cached = this._getCachedResponse(requestKey);
+        if (cached !== null) {
+          return cached;
+        }
+      }
+      
       // If there's already a pending request for this key, return the same promise
       if (this.pendingRequests.has(requestKey)) {
         return this.pendingRequests.get(requestKey);
@@ -93,7 +138,11 @@ class APIClient {
       
       // Create the request promise
       const requestPromise = apiCircuit.call(async () => {
-        return await this._requestImpl(method, url, data, options);
+        const result = await this._requestImpl(method, url, data, options);
+        // Store in TTL cache on success
+        const ttl = this._getCacheTTL(url);
+        this._responseCache.set(requestKey, { data: result, expiry: Date.now() + ttl });
+        return result;
       }).finally(() => {
         // Remove from pending after completion (success or failure)
         this.pendingRequests.delete(requestKey);
@@ -167,14 +216,13 @@ class APIClient {
           requestOptions.signal = abortController.signal;
         }
 
-        console.log(
+        console.debug(
           `📤 API ${normalizedMethod} ${finalUrl} (attempt ${attempt + 1}/${maxRetries + 1})`
         );
         const responseData = await apiRequest(finalUrl, requestOptions);
         if (timeoutId) {
           clearTimeout(timeoutId);
         }
-        console.log(`✅ API ${normalizedMethod} ${finalUrl} succeeded`);
         return responseData;
       } catch (error) {
         if (timeoutId) {

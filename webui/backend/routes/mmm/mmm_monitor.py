@@ -32,6 +32,7 @@ from .mmm_engine import get_engine
 from .mmm_reversal import (
     detect_reversal, is_cooldown_active, activate_cooldown,
     should_skip_reversal_adjustment, record_reversal,
+    handle_reversal_skip_transition,
 )
 from .mmm_strike_shift import (
     check_shift_needed, freeze_current_positions,
@@ -189,6 +190,10 @@ class MMMMonitor:
     def is_paused(self) -> bool:
         return self._paused
 
+    def _should_stop(self) -> bool:
+        """Bug #11 fix: check if stop has been requested (use in long operations)."""
+        return self._stop_event.is_set() or not self._running
+
     # =========================================================================
     # Main Loop
     # =========================================================================
@@ -232,14 +237,14 @@ class MMMMonitor:
                     )
                     if accel.get('accelerated'):
                         interval = accel['effective_interval']
-                        # Also widen the trigger move so evaluate_triggers
-                        # uses the accelerated value (§14.7)
-                        params['min_trigger_move'] = accel['effective_min_trigger_move']
+                        # Store effective trigger move in ephemeral session key
+                        # so evaluate_triggers reads it WITHOUT corrupting params.
+                        # (Bug #1 fix: never modify params['min_trigger_move'])
+                        self.session['_effective_min_trigger_move'] = accel['effective_min_trigger_move']
                         self.session['_theta_accelerated'] = True
                     elif self.session.pop('_theta_accelerated', False):
-                        # Restore original trigger move when leaving theta window
-                        # (shouldn't normally happen since theta window is at end)
-                        pass
+                        # Restore: remove ephemeral override
+                        self.session.pop('_effective_min_trigger_move', None)
 
                 # Record next heartbeat time
                 self.session['next_heartbeat'] = (
@@ -335,6 +340,45 @@ class MMMMonitor:
         # Populate premium cache for sync engine calls (_make_fetch_fn)
         await self._prefetch_all_premiums(ce_now, pe_now)
 
+        # ATM Auto-Close Check: if enabled, close all when spot ≈ active strike
+        # ATM = spot price within 0.5% of either active strike
+        params = session.get('params', {})
+        if params.get('close_at_atm', False):
+            spot_price = await self._fetch_spot_price()
+            if spot_price > 0:
+                atm_threshold_pct = 0.005  # 0.5% of spot
+                atm_threshold = spot_price * atm_threshold_pct
+                ce_active_strike = session.get('ce', {}).get('active_strike', 0)
+                pe_active_strike = session.get('pe', {}).get('active_strike', 0)
+                atm_triggered_side = None
+
+                if ce_active_strike and abs(spot_price - ce_active_strike) <= atm_threshold:
+                    atm_triggered_side = 'CE'
+                elif pe_active_strike and abs(spot_price - pe_active_strike) <= atm_threshold:
+                    atm_triggered_side = 'PE'
+
+                if atm_triggered_side:
+                    log.critical(
+                        f"[{sid}] ATM AUTO-CLOSE: Spot ${spot_price:.0f} within "
+                        f"0.5% of {atm_triggered_side} strike. CLOSING ALL."
+                    )
+                    log_activity('atm_auto_close',
+                                f'🛑 ATM AUTO-CLOSE: Spot ${spot_price:.0f} is at '
+                                f'{atm_triggered_side} active strike — closing all positions',
+                                sid, 'error',
+                                {'spot': spot_price, 'ce_strike': ce_active_strike,
+                                 'pe_strike': pe_active_strike, 'triggered_side': atm_triggered_side})
+                    emit_safety(
+                        sid, 'atm_auto_close', 'critical',
+                        f'ATM AUTO-CLOSE: Spot ${spot_price:.0f} reached {atm_triggered_side} '
+                        f'strike. Closing all positions.',
+                        {'spot': spot_price, 'triggered_side': atm_triggered_side}
+                    )
+                    await self._auto_close_all(
+                        f'ATM auto-close: Spot ${spot_price:.0f} at {atm_triggered_side} strike'
+                    )
+                    return
+
         # Step 2: Close-at-5 scan (§11)
         await self._process_close_at_5(ce_now, pe_now)
 
@@ -342,6 +386,13 @@ class MMMMonitor:
         if check_both_sides_closed(session):
             self.stop('Both sides fully closed — strategy complete!')
             return
+
+        # Bug #7 fix: compute FRESH unrealized P&L before safety checks
+        # so that check_max_loss uses current prices, not stale values.
+        fresh_unrealized = self._engine.compute_unrealized_pnl(
+            session, self._make_fetch_fn()
+        )
+        session['unrealized_pnl'] = fresh_unrealized
 
         # Step 3: Safety checks (§13-14)
         minutes_to_expiry = self._get_minutes_to_expiry()
@@ -387,14 +438,81 @@ class MMMMonitor:
                         {'reason': pause_reason, 'whipsaw_limit': session.get('params', {}).get('whipsaw_limit', 3)})
             self.pause(pause_reason)
 
-        # Step 4: If paused, emit heartbeat but skip adjustment
+        # Bug #15 fix: handle whipsaw auto-resume events
+        for event in safety_events:
+            if event.get('action') == 'resume' and self._paused:
+                log_activity('session_resumed',
+                            f'Auto-resumed: {event.get("message", "")}',
+                            sid, 'success')
+                self.resume(event.get('message', 'Whipsaw auto-resume'))
+
+        # Step 4: If paused, check for both-sides-up auto-decision (30s timeout)
         if self._paused:
-            log_activity('info',
-                        'Session PAUSED - Monitoring only, no adjustments',
-                        sid, 'warning')
-            self._emit_heartbeat_data(ce_now, pe_now)
-            _save_session(session)
-            return
+            status = session.get('strategy_status', '')
+            if status == 'BOTH_SIDES_UP':
+                both_up_at = session.get('both_sides_up_at', '')
+                if both_up_at:
+                    try:
+                        up_time = datetime.fromisoformat(both_up_at)
+                        elapsed = (datetime.utcnow() - up_time).total_seconds()
+                        if elapsed >= 30:
+                            # Auto-decide: hedge whichever side has loss
+                            decision = self._auto_decide_both_sides(
+                                session, ce_now, pe_now
+                            )
+                            log_activity('both_sides_auto_decision',
+                                        f'⏱️ Auto-decision after {elapsed:.0f}s: {decision} '
+                                        f'(no user response within 30s)',
+                                        sid, 'warning',
+                                        {'decision': decision, 'elapsed_seconds': elapsed})
+                            # Apply decision
+                            session['both_sides_decision'] = decision
+                            session['both_sides_decided_at'] = datetime.utcnow().isoformat()
+                            session['both_sides_auto'] = True
+                            adj_history = session.get('adjustment_history', [])
+                            adj_history.append({
+                                'type': 'both_sides_decision',
+                                'decision': decision,
+                                'auto': True,
+                                'timestamp': datetime.utcnow().isoformat(),
+                            })
+                            session['adjustment_history'] = adj_history
+                            # Resume
+                            self._paused = False
+                            session['strategy_status'] = 'RUNNING'
+                            emit_status_change(
+                                sid, 'BOTH_SIDES_UP', 'RUNNING',
+                                f'Auto-decision: {decision} (30s timeout)'
+                            )
+                            # Process the chosen adjustment directly
+                            # (skip trigger evaluation — it would hit BOTH again)
+                            if decision == 'adjust_pe':
+                                await self._process_adjustment(
+                                    'ce', 'pe', ce_now, pe_now, ce_now, pe_now
+                                )
+                            elif decision == 'adjust_ce':
+                                await self._process_adjustment(
+                                    'pe', 'ce', pe_now, ce_now, ce_now, pe_now
+                                )
+                            # else 'skip' — just resume, no adjustment needed
+                        else:
+                            log_activity('info',
+                                        f'BOTH SIDES UP - Waiting for user decision '
+                                        f'({30 - elapsed:.0f}s remaining)',
+                                        sid, 'warning')
+                            self._emit_heartbeat_data(ce_now, pe_now)
+                            _save_session(session)
+                            return
+                    except (ValueError, TypeError):
+                        pass
+
+            if self._paused:
+                log_activity('info',
+                            'Session PAUSED - Monitoring only, no adjustments',
+                            sid, 'warning')
+                self._emit_heartbeat_data(ce_now, pe_now)
+                _save_session(session)
+                return
 
         # Step 5: Cooldown check (§14.3)
         if is_cooldown_active(session):
@@ -450,6 +568,7 @@ class MMMMonitor:
                         })
             self.pause('Both sides triggered')
             session['strategy_status'] = 'BOTH_SIDES_UP'
+            session['both_sides_up_at'] = datetime.utcnow().isoformat()
             emit_both_sides_alert(
                 sid, ce_now, pe_now,
                 trigger_result['ce_trigger'],
@@ -524,6 +643,33 @@ class MMMMonitor:
             sid, pnl['net_pnl'], pnl['realized'],
             pnl['unrealized'], pnl['fees'], pnl['total_premium_collected'],
         )
+
+        # §13.3 POST-UPDATE MAX LOSS CHECK: Immediate enforcement
+        # Safety checks in Step 3 use previous heartbeat's P&L.
+        # This check catches max_loss breach on the SAME heartbeat.
+        max_loss_amount = session.get('params', {}).get('max_loss_amount', 5000.0)
+        current_total_pnl = pnl['net_pnl']
+        if max_loss_amount > 0 and current_total_pnl <= -max_loss_amount:
+            log.critical(
+                f"[{sid}] MAX LOSS BREACHED (post-update): "
+                f"P&L ${current_total_pnl:.2f} <= -${max_loss_amount:.2f}. "
+                f"CLOSING ALL POSITIONS IMMEDIATELY."
+            )
+            log_activity('max_loss_breach',
+                        f'🚨 MAX LOSS BREACHED: P&L ${current_total_pnl:.2f} exceeds '
+                        f'-${max_loss_amount:.2f} limit. CLOSING ALL POSITIONS.',
+                        sid, 'error',
+                        {'total_pnl': current_total_pnl, 'max_loss': max_loss_amount})
+            emit_safety(
+                sid, 'max_loss', 'critical',
+                f'MAX LOSS BREACHED: P&L ${current_total_pnl:.2f} exceeds '
+                f'-${max_loss_amount:.2f}. CLOSING ALL.',
+                {'total_pnl': current_total_pnl, 'max_loss': max_loss_amount}
+            )
+            await self._auto_close_all(
+                f'Max loss breached: P&L ${current_total_pnl:.2f} <= -${max_loss_amount:.2f}'
+            )
+            return
 
         # Periodic reconciliation (§14.5)
         adj_count = session.get('adjustment_count', 0)
@@ -632,6 +778,13 @@ class MMMMonitor:
                 # aggressor direction is still the dominant one until an
                 # actual adjustment is executed
 
+                # Bug #2 fix: Transition triggers/last_aggressor so NEXT
+                # interval uses standard formula instead of re-detecting
+                # the same reversal (infinite loop prevention).
+                handle_reversal_skip_transition(
+                    session, aggressor, ce_now, pe_now,
+                )
+
                 # Activate cooldown if configured
                 params = session.get('params', {})
                 if params.get('cooldown_on_reversal', True):
@@ -662,9 +815,10 @@ class MMMMonitor:
             if params.get('cooldown_on_reversal', True):
                 activate_cooldown(session)
         else:
-            # Standard or continuation
+            # Standard or continuation — include frozen position losses
             loss = self._engine.calculate_standard_loss(
                 session, aggressor, premium_now,
+                fetch_premium_fn=self._make_fetch_fn(),
             )
             adj_type = 'standard'
 
@@ -685,6 +839,37 @@ class MMMMonitor:
             return
 
         # §5.4: Calculate lots to sell
+        # ITM Guard: NEVER sell ITM options for adjustment.
+        # CE is ITM when strike <= spot. PE is ITM when strike >= spot.
+        hedge_strike = session.get(hedge, {}).get('active_strike', 0)
+        if hedge_strike:
+            spot_price = await self._fetch_spot_price()
+            if spot_price > 0:
+                is_itm = False
+                if hedge == 'ce' and hedge_strike <= spot_price:
+                    is_itm = True
+                elif hedge == 'pe' and hedge_strike >= spot_price:
+                    is_itm = True
+
+                if is_itm:
+                    log.warning(
+                        f"[{sid}] ITM GUARD: {hedge.upper()} strike {hedge_strike} is ITM "
+                        f"(spot=${spot_price:.0f}). Refusing to sell ITM for adjustment."
+                    )
+                    from .mmm_activity import log_activity
+                    log_activity('itm_guard_blocked',
+                                f'🚫 ITM GUARD: {hedge.upper()} @ {hedge_strike} is ITM '
+                                f'(spot ${spot_price:.0f}). Adjustment blocked — will not sell ITM.',
+                                sid, 'error',
+                                {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
+                    emit_safety(
+                        sid, 'itm_guard', 'critical',
+                        f'ITM GUARD: Cannot sell {hedge.upper()} @ {hedge_strike} — '
+                        f'strike is ITM (spot ${spot_price:.0f}). Adjustment blocked.',
+                        {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price}
+                    )
+                    return
+
         lots, constraint_msg = self._engine.calculate_lots_to_sell(
             session, hedge, loss, hedge_premium,
         )
@@ -806,6 +991,29 @@ class MMMMonitor:
             # Update triggers at new strike
             update_trigger_snapshots(session, ce_now, pe_now)
 
+            # Bug #8 fix: update tracking fields that _process_adjustment
+            # normally handles via engine._update_state_after_adjustment
+            premium_collected = fill_price * lots * LOT_SIZE_BTC
+            aggressor_side = 'pe' if side == 'ce' else 'ce'
+            session['last_aggressor'] = aggressor_side.upper()
+            session['adjustment_count'] = session.get('adjustment_count', 0) + 1
+            session['total_premium_collected'] = (
+                session.get('total_premium_collected', 0) + premium_collected
+            )
+            session.setdefault('adjustment_history', []).append({
+                'side': side.upper(),
+                'aggressor': aggressor_side.upper(),
+                'lots_sold': lots,
+                'premium': fill_price,
+                'strike': new_strike,
+                'old_strike': old_strike,
+                'timestamp': datetime.utcnow().isoformat(),
+                'type': 'strike_shift',
+                'premium_collected': premium_collected,
+                'adjustment_number': session['adjustment_count'],
+            })
+            session['updated_at'] = datetime.utcnow().isoformat()
+
             emit_strike_shift(
                 sid, side.upper(), old_strike, new_strike,
                 freeze_result['frozen_lots'], fill_price,
@@ -871,6 +1079,94 @@ class MMMMonitor:
                     # For now, just log. Full auto-re-entry needs user config.
 
     # =========================================================================
+    # §8: Both-Sides-Up Auto-Decision (30s timeout)
+    # =========================================================================
+
+    def _auto_decide_both_sides(
+        self,
+        session: Dict,
+        ce_now: float,
+        pe_now: float,
+    ) -> str:
+        """
+        Auto-decide when both sides are up and user hasn't responded in 30s.
+
+        Logic:
+        - Compute unrealized P&L for CE side and PE side (including frozen)
+        - If CE side has loss (premium rose → short is losing): hedge by selling PE → 'adjust_pe'
+        - If PE side has loss: hedge by selling CE → 'adjust_ce'
+        - If both have loss: hedge the bigger loser
+        - If neither has loss (both profitable): skip — no action needed
+        """
+        ce_state = session.get('ce', {})
+        pe_state = session.get('pe', {})
+
+        # CE P&L: sold at entry premium, current premium is ce_now
+        # If ce_now > entry → CE short is losing (negative P&L)
+        ce_active_lots = ce_state.get('active_lots', 0)
+        pe_active_lots = pe_state.get('active_lots', 0)
+
+        # Use trigger snapshot as reference (that's the "covered up to" level)
+        ce_trigger_strike = str(int(ce_state.get('active_strike', 0)))
+        pe_trigger_strike = str(int(pe_state.get('active_strike', 0)))
+        ce_trigger = ce_state.get('trigger_snapshot', {}).get(ce_trigger_strike, 0)
+        pe_trigger = pe_state.get('trigger_snapshot', {}).get(pe_trigger_strike, 0)
+
+        # Active excess = how much premium rose above the covered level
+        ce_excess = (ce_now - ce_trigger) * ce_active_lots if ce_active_lots > 0 else 0
+        pe_excess = (pe_now - pe_trigger) * pe_active_lots if pe_active_lots > 0 else 0
+
+        # Bug #10 fix: include frozen position losses in the decision
+        fetch_fn = self._make_fetch_fn()
+        for frozen in ce_state.get('frozen_positions', []):
+            f_strike = frozen.get('strike', 0)
+            f_entry = frozen.get('entry_premium', 0)
+            f_lots = frozen.get('lots', 0)
+            if f_lots > 0 and f_strike > 0:
+                try:
+                    f_current = fetch_fn(f_strike, 'call')
+                    frozen_loss = (f_current - f_entry) * f_lots
+                    if frozen_loss > 0:
+                        ce_excess += frozen_loss
+                except Exception:
+                    pass
+
+        for frozen in pe_state.get('frozen_positions', []):
+            f_strike = frozen.get('strike', 0)
+            f_entry = frozen.get('entry_premium', 0)
+            f_lots = frozen.get('lots', 0)
+            if f_lots > 0 and f_strike > 0:
+                try:
+                    f_current = fetch_fn(f_strike, 'put')
+                    frozen_loss = (f_current - f_entry) * f_lots
+                    if frozen_loss > 0:
+                        pe_excess += frozen_loss
+                except Exception:
+                    pass
+
+        log.info(
+            f"Auto-decide both-sides: CE excess={ce_excess:.2f} "
+            f"(now={ce_now:.2f}, trigger={ce_trigger:.2f}, lots={ce_active_lots}, "
+            f"incl. frozen), "
+            f"PE excess={pe_excess:.2f} "
+            f"(now={pe_now:.2f}, trigger={pe_trigger:.2f}, lots={pe_active_lots}, "
+            f"incl. frozen)"
+        )
+
+        if ce_excess <= 0 and pe_excess <= 0:
+            # Neither has uncovered loss → skip
+            return 'skip'
+        elif ce_excess > pe_excess:
+            # CE has bigger uncovered loss → CE is aggressor → sell PE to hedge
+            return 'adjust_pe'
+        elif pe_excess > ce_excess:
+            # PE has bigger uncovered loss → PE is aggressor → sell CE to hedge
+            return 'adjust_ce'
+        else:
+            # Equal → skip (don't add risk on both sides)
+            return 'skip'
+
+    # =========================================================================
     # Auto-Close All (Near Expiry)
     # =========================================================================
 
@@ -880,13 +1176,24 @@ class MMMMonitor:
         Closes each position at its own strike:
         - Active positions (original + adjustment) at active_strike
         - Each frozen position at its own frozen strike
+
+        Bug #9 fix: retry failed closes up to MAX_CLOSE_RETRIES times.
+        Bug #13 fix: clear lot counts and position arrays after closes.
         """
         session = self.session
         sid = self.session_id
+        MAX_CLOSE_RETRIES = 3
 
         log.info(f"[{sid}] Auto-closing all positions: {reason}")
 
+        failed_closes = []
+
         for side_key in ['ce', 'pe']:
+            # Bug #11 fix: check stop event between sides
+            if self._should_stop():
+                log.warning(f"[{sid}] Stop requested during auto-close, aborting remaining closes")
+                break
+
             side_state = session.get(side_key, {})
             option_type = 'call' if side_key == 'ce' else 'put'
             active_strike = side_state.get('active_strike', 0)
@@ -895,64 +1202,125 @@ class MMMMonitor:
             # Close active lots (original + adjustment) at active strike
             active_lots = side_state.get('active_lots', 0)
             if active_lots > 0 and active_strike > 0:
-                try:
-                    symbol = self.initializer.build_symbol(
-                        option_type, 'BTC', active_strike, expiry,
-                    )
-                    result = await self.executor.smart_execute(
-                        symbol=symbol,
-                        side='buy',
-                        size=active_lots,
-                        reduce_only=True,
-                    )
-                    if result.get('success'):
-                        close_price = result.get('fill_price', 0)
-                        avg_entry = side_state.get('original_premium', 0)
-                        pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
-                        session['realized_pnl'] = (
-                            session.get('realized_pnl', 0) + pnl
+                closed = False
+                for attempt in range(1, MAX_CLOSE_RETRIES + 1):
+                    try:
+                        symbol = self.initializer.build_symbol(
+                            option_type, 'BTC', active_strike, expiry,
                         )
-                        log.info(
-                            f"[{sid}] Closed {active_lots} active "
-                            f"{side_key.upper()} @ {active_strike}, P&L: {pnl:.2f}"
+                        result = await self.executor.smart_execute(
+                            symbol=symbol,
+                            side='buy',
+                            size=active_lots,
+                            reduce_only=True,
                         )
-                except Exception as e:
-                    log.error(
-                        f"Failed to auto-close active {side_key.upper()}: {e}"
-                    )
+                        if result.get('success'):
+                            close_price = result.get('fill_price', 0)
+                            # Bug #3 fix: weighted avg entry across original + adj fills
+                            orig_lots = side_state.get('original_lots', 0)
+                            orig_prem = side_state.get('original_premium', 0)
+                            weighted_sum = orig_prem * orig_lots
+                            weighted_lots = orig_lots
+                            for fill in side_state.get('adjustment_fills', []):
+                                f_lots = fill.get('lots', 0)
+                                f_prem = fill.get('premium', 0)
+                                f_strike = fill.get('strike', active_strike)
+                                if f_strike == active_strike:
+                                    weighted_sum += f_prem * f_lots
+                                    weighted_lots += f_lots
+                            avg_entry = weighted_sum / weighted_lots if weighted_lots > 0 else 0
+                            pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
+                            session['realized_pnl'] = (
+                                session.get('realized_pnl', 0) + pnl
+                            )
+                            log.info(
+                                f"[{sid}] Closed {active_lots} active "
+                                f"{side_key.upper()} @ {active_strike}, "
+                                f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
+                            )
+                            # Bug #13 fix: clear state
+                            side_state['original_lots'] = 0
+                            side_state['adjustment_fills'] = []
+                            side_state['active_lots'] = 0
+                            closed = True
+                            break
+                        else:
+                            log.warning(
+                                f"[{sid}] Auto-close active {side_key.upper()} "
+                                f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed: "
+                                f"{result.get('error', 'unknown')}"
+                            )
+                    except Exception as e:
+                        log.error(
+                            f"[{sid}] Auto-close active {side_key.upper()} "
+                            f"attempt {attempt}/{MAX_CLOSE_RETRIES} error: {e}"
+                        )
+                    if attempt < MAX_CLOSE_RETRIES:
+                        await asyncio.sleep(2)  # Brief pause before retry
+                if not closed:
+                    failed_closes.append(f"{side_key.upper()} active @ {active_strike}")
 
             # Close each frozen position at its OWN strike
-            for frozen in side_state.get('frozen_positions', []):
+            closed_frozen_indices = []
+            for fi, frozen in enumerate(side_state.get('frozen_positions', [])):
                 frozen_strike = frozen.get('strike', 0)
                 frozen_lots = frozen.get('lots', 0)
                 frozen_entry = frozen.get('entry_premium', 0)
 
                 if frozen_lots > 0 and frozen_strike > 0:
-                    try:
-                        symbol = self.initializer.build_symbol(
-                            option_type, 'BTC', frozen_strike, expiry,
-                        )
-                        result = await self.executor.smart_execute(
-                            symbol=symbol,
-                            side='buy',
-                            size=frozen_lots,
-                            reduce_only=True,
-                        )
-                        if result.get('success'):
-                            close_price = result.get('fill_price', 0)
-                            pnl = (frozen_entry - close_price) * frozen_lots * LOT_SIZE_BTC
-                            session['realized_pnl'] = (
-                                session.get('realized_pnl', 0) + pnl
+                    closed = False
+                    for attempt in range(1, MAX_CLOSE_RETRIES + 1):
+                        try:
+                            symbol = self.initializer.build_symbol(
+                                option_type, 'BTC', frozen_strike, expiry,
                             )
-                            log.info(
-                                f"[{sid}] Closed {frozen_lots} frozen "
-                                f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
+                            result = await self.executor.smart_execute(
+                                symbol=symbol,
+                                side='buy',
+                                size=frozen_lots,
+                                reduce_only=True,
                             )
-                    except Exception as e:
-                        log.error(
-                            f"Failed to auto-close frozen {side_key.upper()} "
-                            f"@ {frozen_strike}: {e}"
-                        )
+                            if result.get('success'):
+                                close_price = result.get('fill_price', 0)
+                                pnl = (frozen_entry - close_price) * frozen_lots * LOT_SIZE_BTC
+                                session['realized_pnl'] = (
+                                    session.get('realized_pnl', 0) + pnl
+                                )
+                                log.info(
+                                    f"[{sid}] Closed {frozen_lots} frozen "
+                                    f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
+                                )
+                                closed_frozen_indices.append(fi)
+                                closed = True
+                                break
+                            else:
+                                log.warning(
+                                    f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike} "
+                                    f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed"
+                                )
+                        except Exception as e:
+                            log.error(
+                                f"Failed to auto-close frozen {side_key.upper()} "
+                                f"@ {frozen_strike}, attempt {attempt}: {e}"
+                            )
+                        if attempt < MAX_CLOSE_RETRIES:
+                            await asyncio.sleep(2)
+                    if not closed:
+                        failed_closes.append(f"{side_key.upper()} frozen @ {frozen_strike}")
+
+            # Bug #13 fix: remove successfully closed frozen positions (descending)
+            for fi in sorted(closed_frozen_indices, reverse=True):
+                side_state.get('frozen_positions', []).pop(fi)
+
+            # Recompute lots after clearing
+            recompute_side_lots(side_state)
+            session[side_key] = side_state
+
+        if failed_closes:
+            log.error(
+                f"[{sid}] Auto-close completed with FAILURES: {failed_closes}. "
+                f"Manual intervention may be needed."
+            )
 
         self.stop(reason)
 
@@ -1037,38 +1405,76 @@ class MMMMonitor:
                         'unrealized_pnl': float(pos.get('unrealized_pnl', 0)),
                     }
 
-            # Compare with session state
+            # Compare with session state — per-symbol comparison
             discrepancies = []
 
             for side_key in ['ce', 'pe']:
                 side = session.get(side_key, {})
+                option_type = 'call' if side_key == 'ce' else 'put'
+                active_strike = side.get('active_strike', 0)
                 symbol = side.get('symbol', '')
-                session_lots = side.get('total_lots', side.get('original_lots', 0))
 
                 if not symbol:
                     continue
 
+                # Bug #6 fix: Compare active symbol lots (original + adj at active strike)
+                # separately from frozen position lots at their own strikes.
+                active_lots = side.get('original_lots', 0)
+                for fill in side.get('adjustment_fills', []):
+                    f_strike = fill.get('strike', active_strike)
+                    if f_strike == active_strike:
+                        active_lots += fill.get('lots', 0)
+
                 exchange_pos = exchange_positions.get(symbol, {})
                 exchange_size = exchange_pos.get('size', 0)
 
-                if session_lots > 0 and exchange_size == 0:
+                if active_lots > 0 and exchange_size == 0:
                     discrepancies.append({
                         'side': side_key.upper(),
                         'type': 'MISSING_ON_EXCHANGE',
-                        'detail': f"{side_key.upper()} session has {session_lots} lots but exchange shows 0",
+                        'detail': f"{side_key.upper()} active: session has {active_lots} lots but exchange shows 0",
                         'symbol': symbol,
-                        'session_lots': session_lots,
+                        'session_lots': active_lots,
                         'exchange_size': 0,
                     })
-                elif abs(session_lots - exchange_size) > 0.1 and session_lots > 0:
+                elif abs(active_lots - exchange_size) > 0.1 and active_lots > 0:
                     discrepancies.append({
                         'side': side_key.upper(),
                         'type': 'SIZE_MISMATCH',
-                        'detail': f"{side_key.upper()} session={session_lots} vs exchange={exchange_size}",
+                        'detail': f"{side_key.upper()} active: session={active_lots} vs exchange={exchange_size}",
                         'symbol': symbol,
-                        'session_lots': session_lots,
+                        'session_lots': active_lots,
                         'exchange_size': exchange_size,
                     })
+
+                # Check frozen positions at their own strikes
+                for frozen in side.get('frozen_positions', []):
+                    f_strike = frozen.get('strike', 0)
+                    f_lots = frozen.get('lots', 0)
+                    if f_lots <= 0 or f_strike <= 0:
+                        continue
+                    fsym = self.initializer.build_symbol(option_type, 'BTC', f_strike, expiry)
+                    f_exchange = exchange_positions.get(fsym, {})
+                    f_ex_size = f_exchange.get('size', 0)
+
+                    if f_lots > 0 and f_ex_size == 0:
+                        discrepancies.append({
+                            'side': side_key.upper(),
+                            'type': 'FROZEN_MISSING',
+                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={f_lots} but exchange=0",
+                            'symbol': fsym,
+                            'session_lots': f_lots,
+                            'exchange_size': 0,
+                        })
+                    elif abs(f_lots - f_ex_size) > 0.1:
+                        discrepancies.append({
+                            'side': side_key.upper(),
+                            'type': 'FROZEN_MISMATCH',
+                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={f_lots} vs exchange={f_ex_size}",
+                            'symbol': fsym,
+                            'session_lots': f_lots,
+                            'exchange_size': f_ex_size,
+                        })
 
             # Store last reconciliation result (only our symbols)
             session['last_reconciliation'] = {
@@ -1198,23 +1604,34 @@ class MMMMonitor:
         if pe_state.get('active_strike'):
             cache[(float(pe_state['active_strike']), 'put')] = pe_now
 
-        # Fetch any remaining strikes not yet in cache
+        # Fetch any remaining strikes not yet in cache — Bug #12 fix: parallel
         rest = getattr(self, '_heartbeat_rest', None) or self._create_heartbeat_rest_client()
-        for strike, opt in strike_pairs:
-            if (strike, opt) in cache:
-                continue
-            try:
-                symbol = self.initializer.build_symbol(
-                    opt, 'BTC', strike, expiry,
-                )
-                resp = await rest._request_with_retry(
-                    method="GET", path=f"/v2/tickers/{symbol}",
-                )
-                data = resp.get('result', resp)
-                cache[(strike, opt)] = float(data.get('mark_price', 0))
-            except Exception as e:
-                log.warning(f"Prefetch failed for {opt}@{strike}: {e}")
-                cache[(strike, opt)] = 0
+        to_fetch = [(s, o) for s, o in strike_pairs if (s, o) not in cache]
+
+        if to_fetch:
+            async def _fetch_one(strike, opt):
+                try:
+                    symbol = self.initializer.build_symbol(
+                        opt, 'BTC', strike, expiry,
+                    )
+                    resp = await rest._request_with_retry(
+                        method="GET", path=f"/v2/tickers/{symbol}",
+                    )
+                    data = resp.get('result', resp)
+                    return (strike, opt), float(data.get('mark_price', 0))
+                except Exception as e:
+                    log.warning(f"Prefetch failed for {opt}@{strike}: {e}")
+                    return (strike, opt), 0
+
+            results = await asyncio.gather(
+                *[_fetch_one(s, o) for s, o in to_fetch],
+                return_exceptions=True,
+            )
+            for r in results:
+                if isinstance(r, Exception):
+                    continue
+                key, value = r
+                cache[key] = value
 
         self._premium_cache = cache
 
@@ -1238,15 +1655,22 @@ class MMMMonitor:
             key = (float(strike), option_type)
             if key in cache:
                 return cache[key]
-            # Cache miss — attempt a synchronous fetch via a disposable loop
+            # Bug #14 fix: cache miss should be rare after Bug #12 parallel prefetch.
+            # Instead of creating a disposable event loop (which risks conflicts
+            # with the main loop), log a warning and attempt a sync fallback
+            # only once, caching the result to avoid repeat misses.
+            log.warning(
+                f"Premium cache miss for {option_type}@{strike}. "
+                f"This should not happen — check _prefetch_all_premiums coverage."
+            )
             try:
                 expiry = self.session.get('params', {}).get('expiry', '')
                 symbol = self.initializer.build_symbol(
                     option_type, 'BTC', strike, expiry,
                 )
+                # Use a fresh, isolated loop for the one-off fetch
                 loop = asyncio.new_event_loop()
                 try:
-                    # Create fresh client bound to this disposable loop
                     from bot.api.async_delta_client import AsyncDeltaClient
                     from config.loader import get_api_credentials
                     creds = get_api_credentials()
@@ -1266,7 +1690,9 @@ class MMMMonitor:
                     return mark
                 finally:
                     loop.close()
-            except Exception:
+            except Exception as e:
+                log.error(f"Cache miss fallback fetch failed for {option_type}@{strike}: {e}")
+                cache[key] = 0  # Cache the failure to prevent repeated attempts
                 return 0
         return fetch
 

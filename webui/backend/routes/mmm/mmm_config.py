@@ -22,6 +22,7 @@ PARAM_RULES = {
     'adjustment_interval':     {'type': int,   'min': 10,   'max': 3600,  'hot': True},
     'min_trigger_move':        {'type': float, 'min': 0.1,  'max': 500,   'hot': True},
     'shift_threshold':         {'type': float, 'min': 1,    'max': 5000,  'hot': True},
+    'shift_target_premium':    {'type': float, 'min': 10,   'max': 5000,  'hot': True},
     'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
     'premium_buffer_pct':      {'type': float, 'min': 0,    'max': 0.5,   'hot': True},
     'max_lots_per_side':       {'type': int,   'min': 1,    'max': 10000, 'hot': True},
@@ -33,6 +34,7 @@ PARAM_RULES = {
     'whipsaw_limit':           {'type': int,   'min': 2,    'max': 100,   'hot': True},
     'trailing_stop_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
+    'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
 }
 
 
@@ -110,6 +112,7 @@ def get_param_info() -> Dict[str, Dict]:
         'adjustment_interval': 'Seconds between heartbeat checks',
         'min_trigger_move': 'Minimum premium move above trigger to fire adjustment',
         'shift_threshold': 'Minimum premium at hedge strike to avoid shift',
+        'shift_target_premium': 'Target premium for new strike when shifting (picks strike closest to this premium)',
         'close_at_threshold': 'Close positions at this premium or below',
         'premium_buffer_pct': 'Extra lots percentage for slippage protection',
         'max_lots_per_side': 'Maximum total lots allowed per side (CE or PE)',
@@ -121,6 +124,7 @@ def get_param_info() -> Dict[str, Dict]:
         'whipsaw_limit': 'Max alternating adjustments before auto-pause',
         'trailing_stop_pct': 'Protect profit at this percentage of peak P&L',
         'theta_acceleration_window': 'Minutes before expiry to widen triggers',
+        'close_at_atm': 'Auto-close all if original strike becomes ATM (spot ≈ strike)',
     }
 
     info = {}

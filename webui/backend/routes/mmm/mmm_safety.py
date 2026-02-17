@@ -176,9 +176,9 @@ class MMMSafety:
                 'level': 'critical',
                 'message': (
                     f"MAX LOSS BREACHED: P&L ${total_pnl:.2f} exceeds "
-                    f"-${max_loss:.2f} limit. HARD STOP."
+                    f"-${max_loss:.2f} limit. CLOSING ALL POSITIONS."
                 ),
-                'action': 'stop',
+                'action': 'auto_close',
                 'details': {
                     'total_pnl': total_pnl,
                     'max_loss': max_loss,
@@ -210,10 +210,42 @@ class MMMSafety:
     def check_whipsaw(self, session: Dict) -> List[Dict]:
         """
         Detect 3 rapid alternating adjustments (CE→PE→CE or PE→CE→PE).
+        Bug #15 fix: track whipsaw_paused_at for auto-resume after 2 intervals.
         """
         events = []
         params = session.get('params', {})
         whipsaw_limit = params.get('whipsaw_limit', 3)
+
+        # Bug #15 fix: check for auto-resume
+        whipsaw_paused_at = session.get('_whipsaw_paused_at')
+        if whipsaw_paused_at:
+            try:
+                paused_time = datetime.fromisoformat(whipsaw_paused_at)
+                interval = params.get('adjustment_interval', 300)
+                resume_after = interval * 2  # Resume after 2 intervals
+                elapsed = (datetime.utcnow() - paused_time).total_seconds()
+                if elapsed >= resume_after:
+                    session.pop('_whipsaw_paused_at', None)
+                    log.info(
+                        f"Whipsaw auto-resume: {elapsed:.0f}s elapsed "
+                        f"(threshold: {resume_after}s)"
+                    )
+                    events.append({
+                        'type': 'whipsaw_resume',
+                        'level': 'info',
+                        'message': (
+                            f"Whipsaw auto-resume after {elapsed:.0f}s cooldown. "
+                            f"Adjustments re-enabled."
+                        ),
+                        'action': 'resume',
+                        'details': {
+                            'elapsed': round(elapsed),
+                            'resume_after': resume_after,
+                        },
+                    })
+                    return events  # Resume, don't re-check whipsaw
+            except (ValueError, TypeError):
+                session.pop('_whipsaw_paused_at', None)
 
         history = session.get('adjustment_history', [])
         if len(history) < whipsaw_limit:
@@ -230,13 +262,14 @@ class MMMSafety:
                 break
 
         if alternating and len(set(sides)) > 1:
+            session['_whipsaw_paused_at'] = datetime.utcnow().isoformat()
             events.append({
                 'type': 'whipsaw',
                 'level': 'alert',
                 'message': (
                     f"Whipsaw detected: {whipsaw_limit} alternating "
                     f"adjustments ({' → '.join(sides)}). "
-                    f"Consider pausing or widening triggers."
+                    f"Auto-pausing for {params.get('adjustment_interval', 300) * 2}s."
                 ),
                 'action': 'pause',
                 'details': {

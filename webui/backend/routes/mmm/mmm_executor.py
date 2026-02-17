@@ -498,6 +498,53 @@ class MMMExecutor:
                 session_id=session_id, severity='error',
                 details={'ce_result': ce_result, 'pe_result': pe_result})
 
+            # Bug #5 fix: rollback successful leg if the other failed
+            if ce_result.get('success') and not pe_result.get('success'):
+                log.warning("⚠️ Rolling back CE leg (PE failed)")
+                _log_activity('entry_rollback',
+                    f"Rolling back CE leg: buying back {lots} {ce_symbol}",
+                    session_id=session_id, severity='warning')
+                try:
+                    rollback = await self.smart_execute(
+                        ce_symbol, 'buy', lots, reduce_only=True,
+                        session_id=session_id,
+                    )
+                    if rollback.get('success'):
+                        log.info("✅ CE rollback successful")
+                        _log_activity('entry_rollback_ok',
+                            f"CE rollback OK @ ${rollback.get('fill_price', 0):.2f}",
+                            session_id=session_id, severity='success')
+                    else:
+                        log.error(f"❌ CE rollback FAILED: {rollback.get('error')}")
+                        _log_activity('entry_rollback_failed',
+                            f"CE rollback FAILED — ORPHAN POSITION: {ce_symbol}",
+                            session_id=session_id, severity='error')
+                except Exception as e:
+                    log.error(f"CE rollback exception: {e}")
+
+            elif pe_result.get('success') and not ce_result.get('success'):
+                log.warning("⚠️ Rolling back PE leg (CE failed)")
+                _log_activity('entry_rollback',
+                    f"Rolling back PE leg: buying back {lots} {pe_symbol}",
+                    session_id=session_id, severity='warning')
+                try:
+                    rollback = await self.smart_execute(
+                        pe_symbol, 'buy', lots, reduce_only=True,
+                        session_id=session_id,
+                    )
+                    if rollback.get('success'):
+                        log.info("✅ PE rollback successful")
+                        _log_activity('entry_rollback_ok',
+                            f"PE rollback OK @ ${rollback.get('fill_price', 0):.2f}",
+                            session_id=session_id, severity='success')
+                    else:
+                        log.error(f"❌ PE rollback FAILED: {rollback.get('error')}")
+                        _log_activity('entry_rollback_failed',
+                            f"PE rollback FAILED — ORPHAN POSITION: {pe_symbol}",
+                            session_id=session_id, severity='error')
+                except Exception as e:
+                    log.error(f"PE rollback exception: {e}")
+
         return {
             'success': all_success,
             'ce': ce_result,

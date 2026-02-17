@@ -201,13 +201,18 @@ def find_new_strike(
             )
             return None
 
-        # Sort: closest to spot first (closer = higher premium)
-        candidates.sort(key=lambda c: c['distance_from_spot'])
+        # §10 FIX: Sort by proximity to shift_target_premium (default 100)
+        # This ensures we pick an OTM strike with manageable premium,
+        # NOT the closest-to-spot (which can be near-ATM with 500+ premium)
+        target_premium = params.get('shift_target_premium', 100.0)
+
+        candidates.sort(key=lambda c: abs(c['premium'] - target_premium))
 
         best = candidates[0]
         log.info(
             f"Found new strike for {side.upper()}: "
-            f"{best['strike']} @ {best['premium']:.2f}"
+            f"{best['strike']} @ {best['premium']:.2f} "
+            f"(target premium: {target_premium:.2f})"
         )
         return best
 

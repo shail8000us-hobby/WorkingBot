@@ -64,31 +64,84 @@ class MMMEngine:
         session: Dict,
         aggressor_side: str,
         premium_now: float,
+        fetch_premium_fn=None,
     ) -> float:
         """
-        §5.2 Case A: loss = (premium_now - trigger_snapshot) × active_lots
+        §5.2 Case A — Updated v2: Total loss across ALL open positions.
+
+        Every open position is real risk. No position is ever excluded.
+        Loss = active_strike_loss + sum(shifted_position_losses)
+
+        See Money_power_calculation_logic_updated.md for rationale.
 
         Args:
             session: Full session dict
             aggressor_side: 'ce' or 'pe' — the side whose premium rose
-            premium_now: Current premium of the aggressor
+            premium_now: Current premium of the aggressor at active strike
+            fetch_premium_fn: callable(strike, option_type) → current premium
+                              (needed to price shifted positions at old strikes)
 
         Returns:
-            Loss amount (positive value) to cover
+            Total loss amount (positive value) across all open positions
         """
         side_state = session.get(aggressor_side, {})
         active_strike = str(int(side_state.get('active_strike', 0)))
         trigger = side_state.get('trigger_snapshot', {}).get(active_strike, 0)
         active_lots = side_state.get('active_lots', 0)
 
-        loss = (premium_now - trigger) * active_lots * LOT_SIZE_BTC
+        # 1. Active strike loss (trigger-based)
+        active_loss = (premium_now - trigger) * active_lots * LOT_SIZE_BTC
 
         log.info(
-            f"Standard loss: ({premium_now:.2f} - {trigger:.2f}) × "
-            f"{active_lots} lots × {LOT_SIZE_BTC} = ${loss:.4f}"
+            f"Standard loss (active @ {active_strike}): "
+            f"({premium_now:.2f} - {trigger:.2f}) × {active_lots} lots "
+            f"× {LOT_SIZE_BTC} = ${active_loss:.4f}"
         )
 
-        return max(loss, 0)
+        # 2. Shifted position losses — ALL positions at old strikes
+        #    Every open position contributes to total loss. No exceptions.
+        shifted_loss = 0.0
+        option_type = 'call' if aggressor_side == 'ce' else 'put'
+
+        if fetch_premium_fn:
+            for pos in side_state.get('frozen_positions', []):
+                p_strike = pos.get('strike', 0)
+                p_entry = pos.get('entry_premium', 0)
+                p_lots = pos.get('lots', 0)
+
+                if p_lots <= 0 or p_strike <= 0:
+                    continue
+
+                try:
+                    p_current = fetch_premium_fn(p_strike, option_type)
+                except Exception as e:
+                    log.warning(
+                        f"Failed to fetch shifted position premium "
+                        f"@ {p_strike}: {e}"
+                    )
+                    continue
+
+                # Loss = (current - entry) per lot
+                # Positive when premium rose past entry (seller losing)
+                pos_loss = (p_current - p_entry) * p_lots * LOT_SIZE_BTC
+                if pos_loss > 0:
+                    shifted_loss += pos_loss
+                    log.info(
+                        f"Shifted position loss @ {p_strike}: "
+                        f"({p_current:.2f} - {p_entry:.2f}) × {p_lots} lots "
+                        f"= ${pos_loss:.4f}"
+                    )
+
+        total_loss = max(active_loss, 0) + shifted_loss
+
+        if shifted_loss > 0:
+            log.info(
+                f"TOTAL standard loss (active + shifted): "
+                f"${max(active_loss, 0):.4f} + ${shifted_loss:.4f} "
+                f"= ${total_loss:.4f}"
+            )
+
+        return max(total_loss, 0)
 
     # =========================================================================
     # §5.2 Case B + §9: First-Reversal P&L

@@ -564,8 +564,9 @@ def log_request_metrics(response):
         else:
             latency_ms = 0
         
-        # Only log API routes (not static files)
-        if request.path.startswith('/api/'):
+        # Only log API routes (not static files), skip high-frequency polling endpoints
+        _skip_metrics = {'/api/health', '/api/health/detailed', '/api/bot/status', '/api/pnl/summary', '/api/positions', '/api/orders'}
+        if request.path.startswith('/api/') and request.path not in _skip_metrics:
             # Determine status
             if response.status_code < 400:
                 status = 'ok'
@@ -678,13 +679,27 @@ def tail_logs_and_emit():
             f.seek(0, 2)
             
             while _log_tailer_running:
-                line = f.readline()
-                if line:
-                    # Strip and emit to all connected clients
-                    socketio.emit('log_entry', {'message': line.strip()})
+                # Batch read: collect all available lines before emitting
+                lines = []
+                while True:
+                    line = f.readline()
+                    if not line:
+                        break
+                    stripped = line.strip()
+                    if stripped:
+                        lines.append(stripped)
+                    if len(lines) >= 50:  # Cap batch size
+                        break
+                
+                if lines:
+                    # Emit batched lines in one message (much less overhead)
+                    if len(lines) == 1:
+                        socketio.emit('log_entry', {'message': lines[0]})
+                    else:
+                        socketio.emit('log_batch', {'messages': lines})
                 else:
-                    # No new line, wait a bit
-                    time.sleep(0.1)
+                    # No new lines — sleep longer to reduce CPU usage
+                    time.sleep(0.5)
                     
     except Exception as e:
         print(f"❌ Error in log tailer: {e}")
@@ -1048,11 +1063,18 @@ def serve(path):
     else:
         response = make_response(send_from_directory(app.static_folder, 'index.html'))
     
-    # Add aggressive no-cache headers for ALL files during development
-    # This ensures hard refresh always gets the latest files
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
+    # Smart caching: hashed production assets get long-term cache,
+    # index.html always revalidates to pick up new deployments
+    if path and ('/static/' in path or path.startswith('static/')):
+        # Hashed assets (e.g., main.abc123.js) — immutable, cache for 1 year
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        response.headers.pop('Pragma', None)
+        response.headers.pop('Expires', None)
+    else:
+        # index.html and other non-hashed files — always revalidate
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     
     return response
 

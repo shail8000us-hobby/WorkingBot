@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import { persist, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 
 /**
  * Main application store - Enhanced for V1 modernization
@@ -330,17 +331,19 @@ export const useLastUpdate = () => useStore((state) => state.lastUpdate);
  * Returns all action methods (doesn't cause re-renders)
  */
 export const useStoreActions = () =>
-  useStore((state) => ({
-    updatePositions: state.updatePositions,
-    updateOrders: state.updateOrders,
-    updateHealth: state.updateHealth,
-    updateConfig: state.updateConfig,
-    updatePnL: state.updatePnL,
-    setLoading: state.setLoading,
-    setError: state.setError,
-    clearError: state.clearError,
-    reset: state.reset,
-    bulkUpdate: state.bulkUpdate,
-  }));
+  useStore(
+    useShallow((state) => ({
+      updatePositions: state.updatePositions,
+      updateOrders: state.updateOrders,
+      updateHealth: state.updateHealth,
+      updateConfig: state.updateConfig,
+      updatePnL: state.updatePnL,
+      setLoading: state.setLoading,
+      setError: state.setError,
+      clearError: state.clearError,
+      reset: state.reset,
+      bulkUpdate: state.bulkUpdate,
+    }))
+  );
 
 export default useStore;

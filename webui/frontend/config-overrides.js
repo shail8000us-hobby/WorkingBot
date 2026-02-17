@@ -91,9 +91,9 @@ module.exports = override(
                   ecma: 2015,
                   comparisons: false,
                   inline: 2,
-                  drop_console: false, // Keep console.logs for debugging - TEMPORARILY ENABLED
+                  drop_console: false, // Keep console.warn and console.error
                   drop_debugger: true,
-                  pure_funcs: [], // Don't remove any functions
+                  pure_funcs: ['console.log', 'console.debug'], // Strip verbose logs in production
                 },
                 mangle: {
                   safari10: true,
@@ -119,9 +119,9 @@ module.exports = override(
                 ecma: 2015,
                 comparisons: false,
                 inline: 2,
-                drop_console: false, // Keep console.logs for debugging - TEMPORARILY ENABLED
+                drop_console: false, // Keep console.warn and console.error
                 drop_debugger: true,
-                pure_funcs: [], // Don't remove any functions
+                pure_funcs: ['console.log', 'console.debug'], // Strip verbose logs in production
               },
               mangle: {
                 safari10: true,

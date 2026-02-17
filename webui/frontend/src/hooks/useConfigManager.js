@@ -7,7 +7,7 @@
  * - Handle config state
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import robustApiClient from '../utils/robustApiClient';
 import apiClient from '../utils/apiClient';
 import { transformFlatConfig } from '../utils/configHelpers.ts';
@@ -35,6 +35,19 @@ export function useConfigManager({
   const [configMeta, setConfigMeta] = useState({});
   const { selectedSymbol, fetchWithSymbol } = useSymbolSafe();
 
+  // Use refs for callbacks and values that change often but shouldn't re-create fetchInitialData
+  const globalWarningsRef = useRef(globalWarnings);
+  const registerWarningRef = useRef(registerWarning);
+  const clearWarningRef = useRef(clearWarning);
+  const showNotificationRef = useRef(showNotification);
+
+  useEffect(() => {
+    globalWarningsRef.current = globalWarnings;
+    registerWarningRef.current = registerWarning;
+    clearWarningRef.current = clearWarning;
+    showNotificationRef.current = showNotification;
+  }, [globalWarnings, registerWarning, clearWarning, showNotification]);
+
   const fetchInitialData = useCallback(async () => {
     const timerId = 'fetch-initial-data';
     perfMonitor.startTimer(timerId);
@@ -60,7 +73,7 @@ export function useConfigManager({
 
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 3000)
+        setTimeout(() => reject(new Error('Request timeout')), 8000)
       );
 
       const [configData, botData] = await Promise.race([criticalDataPromise, timeoutPromise]);
@@ -89,14 +102,14 @@ export function useConfigManager({
 
       // Update global status context with trading snapshot (blockers, warnings, last sync)
       if (Array.isArray(tradingData?.blockers)) {
-        globalWarnings
+        globalWarningsRef.current
           .filter((warning) => warning.id.startsWith('blocker-'))
-          .forEach((warning) => clearWarning(warning.id));
+          .forEach((warning) => clearWarningRef.current(warning.id));
 
         tradingData.blockers
           .filter((blocker) => blocker?.active)
           .forEach((blocker) => {
-            registerWarning({
+            registerWarningRef.current({
               id: `blocker-${blocker.id}`,
               type: 'bot',
               title: blocker.name || 'Trading blocked',
@@ -129,7 +142,7 @@ export function useConfigManager({
         setBackendDown(true);
         console.error('Backend server is not responding at localhost:5555');
       } else {
-        showNotification(`Error loading data: ${error.message}`, 'error');
+        showNotificationRef.current(`Error loading data: ${error.message}`, 'error');
       }
     } finally {
       setLoading(false);
@@ -146,10 +159,6 @@ export function useConfigManager({
     setLastUpdated,
     setSystemStatus,
     setLoading,
-    showNotification,
-    globalWarnings,
-    registerWarning,
-    clearWarning,
   ]);
 
   const debouncedFetchInitialData = useMemo(

@@ -2,8 +2,8 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation.
 >
-> **Last Updated:** February 15, 2026
-> **Status:** All 8 phases complete. Production-ready.
+> **Last Updated:** February 16, 2026
+> **Status:** All 8 phases complete. Production-ready. Updated: ALL positions (active + shifted) included in loss calculations — no position is ever excluded.
 
 ---
 
@@ -62,9 +62,13 @@ reversal = (last_aggressor == "PE" AND CE is now aggressor)
 **Step 2 — Loss calculation:**
 
 - **Standard (continuation/first-ever):**
-  $$L = (CE_{now} - trigger_{CE}) \times N_{active\_CE}$$
+  Compute total loss across ALL open positions on the aggressor side:
+  $$L_{\text{active}} = (CE_{now} - trigger_{CE}) \times N_{active\_CE}$$
+  $$L_{\text{shifted}} = \sum_{j} \max\bigl((P_{current,j} - P_{entry,j}) \times N_j, \; 0\bigr)$$
+  $$L = L_{\text{active}} + L_{\text{shifted}}$$
+  ALL positions at ALL strikes contribute. No position is ever excluded.
 
-- **First reversal:** Compute actual P&L of ALL CE adjustment fills (active + frozen):
+- **First reversal:** Compute actual P&L of ALL CE adjustment fills (active + shifted):
   $$L = \left|\sum_{i} (P_{entry,i} - P_{current,i}) \times N_i\right|$$
   Only triggers if sum is negative (adjustments underwater). If ≥ 0 → DO NOTHING.
 
@@ -90,10 +94,12 @@ The trigger means: "All losses up to this premium level are already covered."
 
 When opposing premium is below `shift_threshold`:
 1. Scan options chain for strikes with premium ≥ threshold
-2. Pick closest to target premium, prefer liquidity
-3. **Freeze** old positions (not closed — tracked for close-at-5)
+2. Pick strike whose premium is closest to `shift_target_premium` (default 100)
+3. Move old positions to `shifted_positions` (not closed — still fully tracked and included in ALL loss calculations)
 4. Set new `active_strike`, sell at new strike
-5. Only `active_lots` used in standard adjustment formula going forward
+5. ALL positions (active + shifted) are used in the standard adjustment formula — no position is ever excluded
+
+**CRITICAL:** The `shift_threshold` only controls WHERE to open new positions. It never makes existing positions invisible. The internal code uses the variable name `frozen_positions` for backward compatibility, but these positions are NOT frozen — they are live risk.
 
 ### 2.6 Close-at-5 (Section 11)
 
@@ -137,6 +143,7 @@ When BOTH CE and PE exceed triggers simultaneously:
 | `adjustment_interval` | 300s | **Yes** |
 | `min_trigger_move` | 3 | **Yes** |
 | `shift_threshold` | 50 | **Yes** |
+| `shift_target_premium` | 100 | **Yes** |
 | `close_at_threshold` | 5 | **Yes** |
 | `premium_buffer_pct` | 5% | **Yes** |
 | `max_lots_per_side` | 100 | **Yes** |
@@ -404,11 +411,12 @@ React Frontend (production build served by Flask)
 - `min_trigger_move` filter
 - Theta acceleration: widens triggers near expiry
 
-### 6.8 mmm_engine.py (~492 lines)
+### 6.8 mmm_engine.py (~548 lines)
 - `MMMEngine.calculate_adjustment(session, aggressor, ce_now, pe_now)` → loss, lots, strike
-- Standard loss formula (Section 5 Case A)
+- Standard loss formula: `active_loss + shifted_loss` (ALL positions included, Section 5 Case A)
 - First-reversal P&L per-fill (Section 5 Case B)
 - Lots calculation with ceiling, buffer, constraints
+- `calculate_standard_loss()` accepts optional `fetch_premium_fn` to get live premiums for shifted positions
 
 ### 6.9 mmm_reversal.py
 - `detect_reversal(session, current_aggressor)` → bool
@@ -641,9 +649,9 @@ python3 -c "from webui.backend.routes.mmm import mmm_bp, init_mmm; print('OK')"
 
 4. **Triggers update on BOTH sides:** After every adjustment, both CE and PE snapshots reset. This ensures the "safe zone" expands correctly.
 
-5. **Frozen positions tracked but excluded from standard formula:** Only active_lots at the current active strike are used. Frozen lots have different premium dynamics.
+5. **ALL positions always included in loss calculations:** Active positions AND shifted positions at old strikes are ALL evaluated at their live premiums in the standard adjustment formula. No position is ever excluded. The `shift_threshold` only controls where to open NEW positions. (Updated Feb 16, 2026 — previously positions at old strikes were excluded, causing invisible loss accumulation.)
 
-6. **Close-at-5 runs on ALL positions:** Active, adjustment, and frozen — across all strikes. Any position at ≤5 gets closed for profit.
+6. **Close-at-5 runs on ALL positions:** Active, adjustment, and shifted — across all strikes. Any position at ≤5 gets closed for profit.
 
 7. **Ceiling rounding + buffer:** Lots calculation always rounds up (ceil) and adds buffer%. Never under-hedged.
 

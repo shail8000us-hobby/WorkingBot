@@ -50,12 +50,12 @@ const PARAM_GROUPS = {
   triggers: {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
-    params: ['min_trigger_move', 'shift_threshold', 'max_adjustments', 'cooldown_on_reversal'],
+    params: ['min_trigger_move', 'shift_threshold', 'shift_target_premium', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',
     color: '#ff9800',
-    params: ['whipsaw_limit', 'max_lots_per_side', 'trailing_stop_pct', 'premium_buffer_pct'],
+    params: ['whipsaw_limit', 'max_lots_per_side', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm'],
   },
   expiry: {
     title: 'Close-at-Expiry',
@@ -106,7 +106,12 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
         const result = await mmmService.getSession(sessionId);
         if (result.success && result.session) {
           setSessionData(result.session);
-          setFormValues({ ...(result.session.params || {}) });
+          // Merge backend defaults into session params so new params
+          // (like shift_target_premium) show with default values
+          // even for sessions created before the param existed
+          const defaults = paramsInfo?.defaults || {};
+          const sessionParams = result.session.params || {};
+          setFormValues({ ...defaults, ...sessionParams });
         } else {
           setServerError('Failed to load session data');
         }

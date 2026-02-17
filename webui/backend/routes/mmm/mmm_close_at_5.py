@@ -115,10 +115,16 @@ def scan_closeable_positions(
         log.info(
             f"Found {len(closeable)} position(s) eligible for close-at-5"
         )
-        # Sort by index DESCENDING so that removal from highest index first
-        # prevents index corruption when multiple positions are closed
+        # Bug #4 fix: sort by (side, type, index) descending so that
+        # higher indices within the SAME array are popped first,
+        # preserving correctness of lower indices.
+        _type_order = {'frozen': 2, 'adjustment': 1, 'original': 0}
         closeable.sort(
-            key=lambda p: p.get('frozen_index', p.get('fill_index', -1)),
+            key=lambda p: (
+                p.get('side', ''),
+                _type_order.get(p.get('type', ''), -1),
+                p.get('frozen_index', p.get('fill_index', -1)),
+            ),
             reverse=True,
         )
 
@@ -223,13 +229,38 @@ def _remove_closed_position(
         idx = position.get('fill_index')
         fills = side_state.get('adjustment_fills', [])
         if idx is not None and 0 <= idx < len(fills):
-            fills.pop(idx)
+            # Bug #4 fix: verify the fill matches before popping
+            target = fills[idx]
+            if (target.get('lots') == position.get('lots')
+                    and abs(target.get('premium', 0) - position.get('entry_premium', 0)) < 0.01):
+                fills.pop(idx)
+            else:
+                # Index shifted — find by content match
+                log.warning(f"Fill index {idx} mismatch, searching by content")
+                for i in range(len(fills) - 1, -1, -1):
+                    f = fills[i]
+                    if (f.get('lots') == position.get('lots')
+                            and abs(f.get('premium', 0) - position.get('entry_premium', 0)) < 0.01):
+                        fills.pop(i)
+                        break
 
     elif pos_type == 'frozen':
         idx = position.get('frozen_index')
         frozen = side_state.get('frozen_positions', [])
         if idx is not None and 0 <= idx < len(frozen):
-            frozen.pop(idx)
+            # Bug #4 fix: verify frozen matches before popping
+            target = frozen[idx]
+            if (target.get('lots') == position.get('lots')
+                    and abs(target.get('entry_premium', 0) - position.get('entry_premium', 0)) < 0.01):
+                frozen.pop(idx)
+            else:
+                log.warning(f"Frozen index {idx} mismatch, searching by content")
+                for i in range(len(frozen) - 1, -1, -1):
+                    f = frozen[i]
+                    if (f.get('lots') == position.get('lots')
+                            and abs(f.get('entry_premium', 0) - position.get('entry_premium', 0)) < 0.01):
+                        frozen.pop(i)
+                        break
 
     recompute_side_lots(side_state)
     session[side] = side_state

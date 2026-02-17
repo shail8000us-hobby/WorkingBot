@@ -52,7 +52,11 @@ def evaluate_triggers(
         }
     """
     params = session.get('params', {})
-    min_trigger_move = params.get('min_trigger_move', 3.0)
+    # Bug #1 fix: prefer ephemeral theta-accelerated value over params
+    min_trigger_move = session.get(
+        '_effective_min_trigger_move',
+        params.get('min_trigger_move', 3.0),
+    )
 
     ce_side = session.get('ce', {})
     pe_side = session.get('pe', {})

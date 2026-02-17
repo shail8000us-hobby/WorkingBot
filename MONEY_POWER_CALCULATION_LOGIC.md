@@ -19,8 +19,9 @@
 | **Original positions** | The initial CE and PE lots sold at entry. These naturally offset each other. |
 | **Adjustment positions** | Extra lots sold AFTER entry to cover losses on the other side. These are naked extra risk. |
 | **Active strike** | The strike currently being monitored and used for new adjustments on a given side. Can change via strike shift. |
-| **Frozen positions** | Old positions at a previous strike after a strike shift. Still open, tracked for close-at-5. Not used in adjustment calculations. |
-| **Strike shift** | Moving to a closer-to-ATM strike when the current strike's premium is too low for effective hedging. |
+| **Shifted positions** | Positions at a previous strike after a strike shift. Still open, **fully tracked, fully included in ALL loss calculations**. They are live risk until closed (via close-at-5 or max-loss stop). The internal code still uses the variable name `frozen_positions` for backward compatibility, but semantically they are NOT frozen — they are active risk. |
+| **Strike shift** | Moving to a closer-to-ATM strike when the current strike's premium is too low for effective hedging. Old positions stay open and fully tracked. |
+| **shift_target_premium** | Target premium when selecting a new strike during a shift (default 100). Picks the strike whose premium is closest to this value. |
 | **Reversal** | When the market changes direction — the side that was declining now starts rising. |
 | **Trigger snapshot** | A record of premiums at all active strikes at the moment triggers were last updated. |
 
@@ -44,7 +45,8 @@ adjustment_total_lots  — sum of lots in adjustment_fills at active strike
 adjustment_avg         — weighted average premium of adjustment_fills at active strike
 
 frozen_positions       — list of positions at OLD strikes after shift: [{strike, lots, entry_premium}]
-frozen_total_lots      — sum of lots in frozen_positions
+                         (still called "frozen" in code for backward compat, but these are NOT excluded from calculations — they are live risk)
+frozen_total_lots      — sum of lots in frozen_positions (always included in loss calculations)
 
 active_lots            — original_lots + adjustment_total_lots (lots at active strike only)
 total_lots             — active_lots + frozen_total_lots (all lots across all strikes)
@@ -198,9 +200,26 @@ Note: if last_aggressor == "CE" and CE is again the aggressor → NOT a reversal
 
 **CASE A — Normal (continuation or first-ever):**
 
-$$\text{loss} = (\text{CE\_now} - \text{ce\_trigger\_snapshot[active\_ce\_strike]}) \times \text{ce\_active\_lots}$$
+Compute total loss across ALL open positions on the aggressor side:
 
-Use `active_lots` (only lots at the active strike). Frozen lots at old strikes are not included — their premium moves differently, and they're being wound down.
+```
+total_loss = 0
+
+# 1. Active positions at the active strike
+active_loss = (CE_now - ce_trigger_snapshot[active_ce_strike]) × ce_active_lots × LOT_SIZE_BTC
+total_loss += max(active_loss, 0)
+
+# 2. ALL shifted positions at old strikes
+for each shifted_position on CE side:
+    current_premium = fetch_live_premium(position.strike, "CE")
+    position_loss = (current_premium - position.entry_premium) × position.lots × LOT_SIZE_BTC
+    if position_loss > 0:  # only count if losing (premium rose past entry)
+        total_loss += position_loss
+
+loss_to_cover = total_loss
+```
+
+**CRITICAL:** Every open position contributes to `loss_to_cover`. The algo hedges the TOTAL exposure across ALL strikes, not just the active strike. No position is ever excluded from loss calculations.
 
 **CASE B — First reversal:**
 
@@ -453,11 +472,15 @@ loss_to_cover = abs(adjustment_pnl)
 Once the first reversal adjustment is done:
 - Triggers are updated to current prices
 - `last_aggressor` is set to the new direction
-- All subsequent adjustments use the standard formula:
+- All subsequent adjustments use the standard formula (Case A from Section 5.2):
 
-$$\text{loss} = (\text{premium\_now} - \text{trigger\_snapshot}) \times \text{active\_lots}$$
+```
+total_loss = active_loss + shifted_loss
+```
 
-**Why switch to all active_lots?** After both sides have adjustment positions, the clean original/adjustment separation breaks down. Using all active lots is conservative — it ensures complete coverage.
+Where `active_loss = (premium_now - trigger_snapshot) × active_lots` and `shifted_loss` sums all shifted positions at their live premiums.
+
+**Why include ALL positions?** After both sides have adjustment positions, the clean original/adjustment separation breaks down. Including all open positions ensures complete coverage and prevents invisible loss accumulation at old strikes.
 
 ### Cooldown After Reversal (Strength Feature)
 
@@ -492,9 +515,8 @@ A low opposing premium means:
 2. For CE shift: scan CALL strikes ABOVE current spot price
 3. For PE shift: scan PUT strikes BELOW current spot price
 4. Filter: only strikes with premium ≥ shift_threshold
-5. From those, select the strike whose premium is closest to the
-   target_shift_premium (default: same as initial desired premium, e.g., 100)
-   → If no exact match, pick the strike with premium just above shift_threshold
+5. From those, select the strike whose premium is closest to
+   shift_target_premium (default: 100, configurable via WebUI)
 6. Prefer strikes with reasonable bid-ask spread (avoid illiquid strikes)
 ```
 
@@ -518,15 +540,19 @@ PE trigger_snapshot[97500] = 130
 
 ### Key Rules for Strike Shifting
 
-1. **Old positions are NOT closed.** They stay open and are tracked as frozen. They contribute to total_lots for P&L monitoring and are subject to close-at-5.
+1. **Old positions are NOT closed.** They stay open and are fully tracked. They contribute to total_lots for P&L monitoring and are subject to close-at-5.
 
-2. **Only active_lots are used in the adjustment formula.** Frozen lots at old strikes have different premium dynamics. Including them would distort the loss calculation.
+2. **ALL positions (active + shifted) are used in the standard adjustment formula.** The standard loss calculation (Section 5.2 Case A) computes `active_loss + shifted_loss` where each shifted position's loss is evaluated at its current live premium. No position is ever excluded.
 
-3. **Frozen lots ARE included in the first-reversal P&L calculation.** When computing "are the adjustment positions underwater?", we check ALL adjustment fills including frozen ones, each at their own current premium. This is accurate because we fetch each strike's premium individually.
+3. **ALL positions are included in the first-reversal P&L calculation.** When computing "are the adjustment positions underwater?", we check ALL adjustment fills including shifted ones, each at their own current premium. This is accurate because we fetch each strike's premium individually.
 
-4. **Multiple shifts can happen.** If BTC trends strongly in one direction, you might shift 2-3 times. Each shift freezes the previous active strike's positions and starts fresh at a new strike. This prevents infinite lot accumulation at deep OTM strikes.
+4. **Multiple shifts can happen.** If BTC trends strongly in one direction, you might shift 2-3 times. Each shift moves the previous active strike's positions to `shifted_positions` and starts fresh at a new strike. ALL shifted positions at ALL old strikes remain fully tracked and included in every calculation.
 
-5. **The user can change `shift_threshold` via WebUI at any time** (hot reload). If they want more aggressive shifting (threshold = 80) or less (threshold = 30), they adjust during runtime.
+5. **The `shift_threshold` only controls WHERE to open NEW positions.** It answers: "Is this strike's premium high enough to sell at?" It does NOT affect whether existing positions are tracked or included in loss calculations.
+
+6. **The `shift_target_premium` controls WHAT premium to target** when selecting a new strike (default 100). The algo picks the strike whose premium is closest to this value.
+
+7. **The user can change `shift_threshold` and `shift_target_premium` via WebUI at any time** (hot reload).
 
 ### Example of Strike Shift
 
@@ -703,14 +729,14 @@ IF adjustment_count ≥ max_adjustments:
 Computed every interval:
 ```
 unrealized_pnl = 0
-for each open position:
+for each open position (active + shifted, across ALL strikes):
     current = fetch_premium(position.strike, position.type)
     unrealized_pnl += (position.entry_premium - current) × position.lots
 
 total_pnl = realized_pnl + unrealized_pnl
 
 IF total_pnl < -max_loss_amount:
-    → CLOSE ALL POSITIONS immediately
+    → CLOSE ALL POSITIONS immediately (buy back everything)
     → strategy_status = "STOPPED"
     → Alert user: "Max loss of {max_loss_amount} breached. All positions closed."
 ```
@@ -1031,8 +1057,10 @@ State:
 CE(110) > trigger(140)? NO
 PE active(190) > trigger(160)? YES → PE aggressor
 
-NOT first reversal (already did one at T+20). Standard formula.
-Loss = (190 - 160) × 6 = 180   ← active_lots at 98,000 only
+NOT first reversal (already did one at T+20). Standard formula (Case A).
+Active loss = (190 - 160) × 6 = 180
+Shifted loss: PE@96,000 has 15 lots, entry premiums avg ~89, current=65 → (65-89)<0 → no loss
+Total loss = 180 + 0 = 180   ← shifted positions checked but not losing here
 
 CE at 100,000 = 110 ≥ 50 → sell at active strike
 Lots = ceil(180 / 110) = ceil(1.64) = 2
@@ -1149,7 +1177,7 @@ EVERY INTERVAL:
 │     │                        │         └─ If < 0: hedge loss by selling PE
 │     │                        │         └─ If ≥ 0: do nothing
 │     │                        │
-│     │                        │   NO → Standard: loss = (CE-trigger) × active_lots
+│     │                        │   NO → Standard: loss = active_loss + shifted_loss (ALL positions)
 │     │                        │         └─ Hedge by selling PE
 │     │                        │
 │     │                        ├─ PE premium at active strike ≥ shift_threshold?
@@ -1170,7 +1198,11 @@ EVERY INTERVAL:
 ## SECTION 18: FORMULARY
 
 ### Standard Loss (Continuation or Post-First-Reversal)
-$$L = (P_{\text{now}} - P_{\text{trigger}}) \times N_{\text{active}}$$
+$$L_{\text{active}} = (P_{\text{now}} - P_{\text{trigger}}) \times N_{\text{active}}$$
+$$L_{\text{shifted}} = \sum_{j \in \text{shifted}} \max\bigl((P_{\text{current},j} - P_{\text{entry},j}) \times N_j, \; 0\bigr)$$
+$$L = L_{\text{active}} + L_{\text{shifted}}$$
+
+All positions (active + shifted at old strikes) contribute to total loss. No position is excluded.
 
 ### First-Reversal Loss (Generalized, Multi-Strike Safe)
 $$L = \left| \sum_{i \in \text{adj fills}} (P_{\text{entry},i} - P_{\text{current at strike}_i}) \times N_i \right|$$
@@ -1209,6 +1241,7 @@ $$R = \frac{\max(N_{\text{CE}}, N_{\text{PE}})}{\min(N_{\text{CE}}, N_{\text{PE}
 | `adjustment_interval` | Seconds between checks | 300 | **Yes** |
 | `min_trigger_move` | Minimum move above trigger to fire | 3 | **Yes** |
 | `shift_threshold` | Min premium to sell at current strike | 50 | **Yes** |
+| `shift_target_premium` | Target premium when selecting new strike after shift | 100 | **Yes** |
 | `close_at_threshold` | Close positions at this premium or below | 5 | **Yes** |
 | `premium_buffer_pct` | Extra lots % for slippage protection | 5% | **Yes** |
 | `max_lots_per_side` | Maximum total lots per CE or PE | 100 | **Yes** |
@@ -1233,11 +1266,11 @@ The algo does NOT assume equal entry premiums. Each side has its own trigger and
 ### 20.2 — Multiple Strike Shifts on Same Side
 
 If BTC trends strongly, PE might get shifted 2-3 times:
-- PE at 96,000 → frozen (15 lots)
-- PE at 98,000 → frozen (8 lots)
+- PE at 96,000 → shifted (15 lots, fully tracked)
+- PE at 98,000 → shifted (8 lots, fully tracked)
 - PE at 99,000 → active (3 lots)
 
-Each shift freezes the previous active. All frozen lots are subject to close-at-5. The active lots are the only ones used in standard adjustment calculations.
+Each shift moves the previous active to `shifted_positions`. ALL shifted positions at ALL old strikes remain fully tracked and are included in every loss calculation. The standard formula computes `active_loss + shifted_loss` where each shifted position is evaluated at its current live premium.
 
 ### 20.3 — No Available Strike for Shift
 
@@ -1284,11 +1317,11 @@ The algo's response depends on which safety mechanism fires first:
 
 2. **First-reversal uses actual adjustment P&L** — computes per-fill, per-strike, exact to the penny. No averaging approximations when strikes differ.
 
-3. **After first reversal → standard formula with active_lots** — simple, conservative, no complex per-fill tracking needed.
+3. **After first reversal → standard formula includes ALL positions** — active_loss + shifted_loss. Every open position at every strike is evaluated at its current live premium. No position is ever excluded from loss calculations.
 
 4. **Ceiling rounds always protect** — overcoverage is a feature, never under-hedged. Premium buffer adds explicit safety margin.
 
-5. **Strike shifting prevents lot explosion** — instead of selling 50 lots at premium 3, sell 2 lots at premium 120 at a closer strike. Same coverage, 96% fewer new lots.
+5. **Strike shifting prevents lot explosion** — instead of selling 50 lots at premium 3, sell 2 lots at premium 120 at a closer strike. Same coverage, 96% fewer new lots. Shifted positions remain fully tracked.
 
 6. **Close-at-5 locks profit and cleans state** — positions that have given 95%+ of their profit are closed. Reduces complexity and frees margin.
 

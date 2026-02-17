@@ -125,6 +125,7 @@ DEFAULT_PARAMS = {
     'adjustment_interval': 300,         # seconds between checks
     'min_trigger_move': 3.0,            # minimum premium move above trigger
     'shift_threshold': 50.0,            # min premium to sell at current strike
+    'shift_target_premium': 100.0,      # target premium for new strike on shift
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'premium_buffer_pct': 0.05,         # 5% extra lots for slippage
     'max_lots_per_side': 100,           # maximum total lots per CE or PE
@@ -141,7 +142,8 @@ DEFAULT_PARAMS = {
 # Which parameters can be changed while algo is running
 HOT_RELOAD_PARAMS = {
     'adjustment_interval', 'min_trigger_move', 'shift_threshold',
-    'close_at_threshold', 'premium_buffer_pct', 'max_lots_per_side',
+    'shift_target_premium', 'close_at_threshold',
+    'premium_buffer_pct', 'max_lots_per_side',
     'max_adjustments', 'max_loss_amount', 'stop_adjustment_mins',
     'auto_close_mins', 'cooldown_on_reversal', 'whipsaw_limit',
     'trailing_stop_pct', 'theta_acceleration_window',
