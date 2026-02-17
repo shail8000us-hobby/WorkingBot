@@ -137,12 +137,13 @@ DEFAULT_PARAMS = {
     'whipsaw_limit': 3,                 # max alternating adjustments before pause
     'trailing_stop_pct': 0.50,          # protect profit at N% of peak
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
+    'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
 }
 
 # Which parameters can be changed while algo is running
 HOT_RELOAD_PARAMS = {
     'adjustment_interval', 'min_trigger_move', 'shift_threshold',
-    'shift_target_premium', 'close_at_threshold',
+    'shift_threshold_pct', 'shift_target_premium', 'close_at_threshold',
     'premium_buffer_pct', 'max_lots_per_side',
     'max_adjustments', 'max_loss_amount', 'stop_adjustment_mins',
     'auto_close_mins', 'cooldown_on_reversal', 'whipsaw_limit',
@@ -316,4 +317,8 @@ def get_session_summary(session: Dict) -> Dict:
         'adjustment_interval': session.get('params', {}).get('adjustment_interval', 300),
         'last_heartbeat': session.get('last_heartbeat'),
         'next_heartbeat': session.get('next_heartbeat'),
+
+        # Expiry info
+        'expiry': session.get('params', {}).get('expiry', ''),   # DDMMYYYY
+        'expiry_time': session.get('expiry_time'),                # ISO UTC string
     }

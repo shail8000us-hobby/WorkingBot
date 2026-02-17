@@ -8,11 +8,12 @@
  * - Red: > trigger (exceeded, adjustment imminent)
  *
  * Shows: current premium, trigger level, active strike, lots count,
- *        excess above trigger, min_trigger_move threshold
+ *        percentage excess above trigger, min_trigger_move % threshold
  *
  * Maps to MONEY_POWER_CALCULATION_LOGIC.md §7 (Trigger System)
  *
  * Created: February 15, 2026
+ * Updated: February 17, 2026 — Percentage-based min_trigger_move
  */
 
 import React from 'react';
@@ -48,16 +49,18 @@ function TriggerSideGauge({
   sideColor,
   currentPremium = 0,
   triggerLevel = 0,
-  minTriggerMove = 3,
+  minTriggerMove = 10,
   activeStrike = 0,
   activeLots = 0,
   totalLots = 0,
   frozenLots = 0,
   excess = 0,
+  excessPct = 0,
   triggered = false,
 }) {
-  // Calculate ratio: how close to trigger + min_move
-  const triggerThreshold = triggerLevel + minTriggerMove;
+  // Calculate ratio: how close to trigger + min_move%
+  // triggerThreshold = trigger * (1 + min_move/100) — the absolute level that fires adjustment
+  const triggerThreshold = triggerLevel * (1 + minTriggerMove / 100);
   const ratio = triggerThreshold > 0 ? currentPremium / triggerThreshold : 0;
   const clampedRatio = Math.min(Math.max(ratio, 0), 1.5);
   const progressValue = Math.min(clampedRatio * 100, 100);
@@ -125,7 +128,7 @@ function TriggerSideGauge({
         />
         {/* Trigger line marker */}
         {triggerThreshold > 0 && (
-          <Tooltip title={`Trigger level: ${triggerLevel.toFixed(1)} — losses up to this level are covered. Needs +${minTriggerMove} above this (=${(triggerLevel + minTriggerMove).toFixed(1)}) to fire adjustment.`} arrow>
+          <Tooltip title={`Trigger level: ${triggerLevel.toFixed(1)} — losses up to this level are covered. Needs +${minTriggerMove}% above this (=${triggerThreshold.toFixed(1)}) to fire adjustment.`} arrow>
             <Box
               sx={{
                 position: 'absolute',
@@ -165,7 +168,7 @@ function TriggerSideGauge({
 
       {/* Excess display when triggered */}
       {excess > 0 && (
-        <Tooltip title={`Premium is +${excess.toFixed(2)} above trigger. ${triggered ? `This exceeds min move (${minTriggerMove}), so an adjustment will fire: sell opposite side lots to cover loss of ~${(excess * activeLots).toFixed(1)}.` : `Not yet over min move (${minTriggerMove}). No adjustment yet.`}`} arrow>
+        <Tooltip title={`Premium is +${excess.toFixed(2)} (+${excessPct.toFixed(1)}%) above trigger. ${triggered ? `This exceeds min move (${minTriggerMove}%), so an adjustment will fire: sell opposite side lots to cover loss of ~${(excess * activeLots).toFixed(1)}.` : `Not yet over min move (${minTriggerMove}%). No adjustment yet.`}`} arrow>
           <Typography
             variant="caption"
             sx={{
@@ -176,7 +179,7 @@ function TriggerSideGauge({
               cursor: 'help',
             }}
           >
-            Excess: +{excess.toFixed(2)} above trigger
+            Excess: +{excess.toFixed(2)} ({excessPct.toFixed(1)}%) above trigger
             {triggered && <span style={{ fontWeight: 400 }}> → adj loss: ~${(excess * activeLots).toFixed(1)}</span>}
           </Typography>
         </Tooltip>
@@ -189,7 +192,7 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
   if (!session) return null;
 
   const params = session.params || {};
-  const minTriggerMove = params.min_trigger_move || 3;
+  const minTriggerMove = params.min_trigger_move || 10;
 
   const ceState = session.ce || {};
   const peState = session.pe || {};
@@ -206,6 +209,12 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
 
   const ceExcess = triggerData?.ce_excess || (ceNow != null ? Math.max(0, ceNow - ceTrigger) : 0);
   const peExcess = triggerData?.pe_excess || (peNow != null ? Math.max(0, peNow - peTrigger) : 0);
+
+  // Calculate percentage excess for display
+  const ceBase = Math.max(ceTrigger, 1.0);
+  const peBase = Math.max(peTrigger, 1.0);
+  const ceExcessPct = triggerData?.ce_excess_pct || (ceExcess / ceBase * 100);
+  const peExcessPct = triggerData?.pe_excess_pct || (peExcess / peBase * 100);
 
   return (
     <Grid container spacing={2}>
@@ -228,7 +237,8 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
           totalLots={ceState.total_lots || 0}
           frozenLots={ceState.frozen_total_lots || 0}
           excess={ceExcess}
-          triggered={triggerData?.ce_triggered || ceExcess > minTriggerMove}
+          excessPct={ceExcessPct}
+          triggered={triggerData?.ce_triggered || ceExcessPct > minTriggerMove}
         />
       </Grid>
       <Grid item xs={12} md={6}>
@@ -243,7 +253,8 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
           totalLots={peState.total_lots || 0}
           frozenLots={peState.frozen_total_lots || 0}
           excess={peExcess}
-          triggered={triggerData?.pe_triggered || peExcess > minTriggerMove}
+          excessPct={peExcessPct}
+          triggered={triggerData?.pe_triggered || peExcessPct > minTriggerMove}
         />
       </Grid>
     </Grid>

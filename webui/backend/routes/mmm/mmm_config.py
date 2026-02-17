@@ -20,7 +20,7 @@ PARAM_RULES = {
     'initial_lots':            {'type': int,   'min': 1,    'max': 1000,  'hot': False},
     'expiry':                  {'type': str,   'min': None, 'max': None,  'hot': False},
     'adjustment_interval':     {'type': int,   'min': 10,   'max': 3600,  'hot': True},
-    'min_trigger_move':        {'type': float, 'min': 0.1,  'max': 500,   'hot': True},
+    'min_trigger_move':        {'type': float, 'min': 0.1,  'max': 100,   'hot': True},
     'shift_threshold':         {'type': float, 'min': 1,    'max': 5000,  'hot': True},
     'shift_target_premium':    {'type': float, 'min': 10,   'max': 5000,  'hot': True},
     'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
@@ -35,6 +35,7 @@ PARAM_RULES = {
     'trailing_stop_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
     'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'shift_threshold_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
 }
 
 
@@ -110,7 +111,7 @@ def get_param_info() -> Dict[str, Dict]:
         'initial_lots': 'Starting lots per side at entry',
         'expiry': 'Target expiry date/time',
         'adjustment_interval': 'Seconds between heartbeat checks',
-        'min_trigger_move': 'Minimum premium move above trigger to fire adjustment',
+        'min_trigger_move': 'Minimum % premium move above trigger to fire adjustment (e.g. 15 = 15%)',
         'shift_threshold': 'Minimum premium at hedge strike to avoid shift',
         'shift_target_premium': 'Target premium for new strike when shifting (picks strike closest to this premium)',
         'close_at_threshold': 'Close positions at this premium or below',

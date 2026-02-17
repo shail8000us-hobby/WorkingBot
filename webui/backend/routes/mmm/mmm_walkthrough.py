@@ -171,16 +171,20 @@ def generate_heartbeat_walkthrough(
     # --- Trigger check lines ---
     ce_excess = ce_now - ce_trigger_val
     pe_excess = pe_now - pe_trigger_val
-    ce_triggered = ce_excess > min_trigger
-    pe_triggered = pe_excess > min_trigger
+    ce_base = max(ce_trigger_val, 1.0)
+    pe_base = max(pe_trigger_val, 1.0)
+    ce_excess_pct = (ce_excess / ce_base) * 100
+    pe_excess_pct = (pe_excess / pe_base) * 100
+    ce_triggered = ce_excess_pct > min_trigger
+    pe_triggered = pe_excess_pct > min_trigger
 
     calc_lines.append(
-        f'CE(${ce_now:.2f}) vs trigger(${ce_trigger_val:.2f}) + min_move({min_trigger}): '
-        f'excess={ce_excess:+.2f} → {"YES ✓" if ce_triggered else "NO"}'
+        f'CE(${ce_now:.2f}) vs trigger(${ce_trigger_val:.2f}): '
+        f'excess={ce_excess:+.2f} ({ce_excess_pct:+.1f}%) vs {min_trigger}% → {"YES ✓" if ce_triggered else "NO"}'
     )
     calc_lines.append(
-        f'PE(${pe_now:.2f}) vs trigger(${pe_trigger_val:.2f}) + min_move({min_trigger}): '
-        f'excess={pe_excess:+.2f} → {"YES ✓" if pe_triggered else "NO"}'
+        f'PE(${pe_now:.2f}) vs trigger(${pe_trigger_val:.2f}): '
+        f'excess={pe_excess:+.2f} ({pe_excess_pct:+.1f}%) vs {min_trigger}% → {"YES ✓" if pe_triggered else "NO"}'
     )
 
     # --- Outcome determination ---

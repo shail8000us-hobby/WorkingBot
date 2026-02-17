@@ -50,7 +50,7 @@ const PARAM_GROUPS = {
   triggers: {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
-    params: ['min_trigger_move', 'shift_threshold', 'shift_target_premium', 'max_adjustments', 'cooldown_on_reversal'],
+    params: ['min_trigger_move', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',

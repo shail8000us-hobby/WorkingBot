@@ -100,8 +100,12 @@ class MMMEngine:
 
         # 2. Shifted position losses — ALL positions at old strikes
         #    Every open position contributes to total loss. No exceptions.
+        #    BUG FIX: Use trigger_snapshot as baseline (incremental loss since
+        #    last hedge), NOT entry_premium (lifetime loss). This prevents
+        #    double-counting losses that were already hedged.
         shifted_loss = 0.0
         option_type = 'call' if aggressor_side == 'ce' else 'put'
+        trigger_snapshot = side_state.get('trigger_snapshot', {})
 
         if fetch_premium_fn:
             for pos in side_state.get('frozen_positions', []):
@@ -121,15 +125,22 @@ class MMMEngine:
                     )
                     continue
 
-                # Loss = (current - entry) per lot
-                # Positive when premium rose past entry (seller losing)
-                pos_loss = (p_current - p_entry) * p_lots * LOT_SIZE_BTC
+                # Use trigger_snapshot for this strike as baseline if available.
+                # This gives INCREMENTAL loss (since last hedge) not LIFETIME.
+                # Falls back to entry_premium for first-ever calculation
+                # (before any trigger snapshot exists for this strike).
+                p_strike_key = str(int(p_strike))
+                p_baseline = trigger_snapshot.get(p_strike_key, p_entry)
+
+                # Loss = (current - baseline) per lot
+                # Positive when premium rose past baseline (seller losing)
+                pos_loss = (p_current - p_baseline) * p_lots * LOT_SIZE_BTC
                 if pos_loss > 0:
                     shifted_loss += pos_loss
                     log.info(
                         f"Shifted position loss @ {p_strike}: "
-                        f"({p_current:.2f} - {p_entry:.2f}) × {p_lots} lots "
-                        f"= ${pos_loss:.4f}"
+                        f"({p_current:.2f} - {p_baseline:.2f}) × {p_lots} lots "
+                        f"= ${pos_loss:.4f} [baseline from {'trigger' if p_strike_key in trigger_snapshot else 'entry'}]"
                     )
 
         total_loss = max(active_loss, 0) + shifted_loss
@@ -280,6 +291,7 @@ class MMMEngine:
         ce_now: float,
         pe_now: float,
         adj_type: str = 'standard',
+        fetch_premium_fn=None,
     ) -> Dict[str, Any]:
         """
         Execute the adjustment sell order and update session state.
@@ -292,6 +304,7 @@ class MMMEngine:
             ce_now: Current CE premium (for trigger update)
             pe_now: Current PE premium (for trigger update)
             adj_type: 'standard', 'reversal', 'first_reversal'
+            fetch_premium_fn: Optional callable for frozen position snapshot
 
         Returns:
             {success, fill_price, premium_collected, lots_sold, ...}
@@ -340,6 +353,7 @@ class MMMEngine:
                 pe_now=pe_now,
                 adj_type=adj_type,
                 premium_collected=premium_collected,
+                fetch_premium_fn=fetch_premium_fn,
             )
 
             return {
@@ -374,6 +388,7 @@ class MMMEngine:
         pe_now: float,
         adj_type: str,
         premium_collected: float,
+        fetch_premium_fn=None,
     ):
         """
         §6.1-6.4: Update session state after a successful adjustment.
@@ -391,8 +406,8 @@ class MMMEngine:
         recompute_side_lots(hedge_state)
         session[hedge_side] = hedge_state
 
-        # §6.2: Update BOTH trigger snapshots
-        update_trigger_snapshots(session, ce_now, pe_now)
+        # §6.2: Update BOTH trigger snapshots (incl. frozen positions)
+        update_trigger_snapshots(session, ce_now, pe_now, fetch_premium_fn=fetch_premium_fn)
 
         # §6.3: Update tracking
         session['last_aggressor'] = aggressor_side.upper()

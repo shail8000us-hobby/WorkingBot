@@ -249,11 +249,15 @@ class MMMMonitor:
                         # Restore: remove ephemeral override
                         self.session.pop('_effective_min_trigger_move', None)
 
+                # Store effective interval so _heartbeat() can log it
+                self._effective_interval = interval
+
                 # Record next heartbeat time
                 self.session['next_heartbeat'] = (
                     datetime.utcnow() + timedelta(seconds=interval)
                 ).isoformat()
 
+                hb_start = time.monotonic()
                 try:
                     self._loop.run_until_complete(self._heartbeat())
                 except Exception as e:
@@ -268,8 +272,16 @@ class MMMMonitor:
                         self.stop('Too many consecutive errors')
                         break
 
-                # Wait for next interval
-                self._stop_event.wait(timeout=interval)
+                # Cycle-based wait: subtract heartbeat execution time
+                # so total cycle ≈ interval, not interval + execution_time
+                elapsed = time.monotonic() - hb_start
+                remaining = max(0, interval - elapsed)
+                if elapsed > interval:
+                    log.warning(
+                        f"[{self.session_id}] Heartbeat took {elapsed:.1f}s "
+                        f"(exceeds {interval}s interval) — running next immediately"
+                    )
+                self._stop_event.wait(timeout=remaining)
 
         except Exception as e:
             log.exception(f"Monitor loop crashed for {self.session_id}: {e}")
@@ -534,20 +546,18 @@ class MMMMonitor:
 
         # Log trigger evaluation
         params = session.get('params', {})
-        min_trigger = params.get('min_trigger_move', 3.0)
-        ce_entry = session.get('ce', {}).get('entry_fill_price', 0)
-        pe_entry = session.get('pe', {}).get('entry_fill_price', 0)
-        ce_move_pct = ((ce_now - ce_entry) / ce_entry * 100) if ce_entry else 0
-        pe_move_pct = ((pe_now - pe_entry) / pe_entry * 100) if pe_entry else 0
+        min_trigger = trigger_result.get('min_trigger_move', params.get('min_trigger_move', 10.0))
+        ce_excess_pct = trigger_result.get('ce_excess_pct', 0)
+        pe_excess_pct = trigger_result.get('pe_excess_pct', 0)
         
         log_activity('info',
-                    f'Trigger Check: CE {ce_move_pct:+.1f}% (need {min_trigger:+.1f}%), '
-                    f'PE {pe_move_pct:+.1f}% (need {min_trigger:+.1f}%) - '
+                    f'Trigger Check: CE {ce_excess_pct:+.1f}% (need >{min_trigger:.1f}%), '
+                    f'PE {pe_excess_pct:+.1f}% (need >{min_trigger:.1f}%) - '
                     f'Result: {outcome.upper()}',
                     sid, 'info',
                     {
-                        'ce_move_pct': round(ce_move_pct, 2),
-                        'pe_move_pct': round(pe_move_pct, 2),
+                        'ce_excess_pct': round(ce_excess_pct, 2),
+                        'pe_excess_pct': round(pe_excess_pct, 2),
                         'min_trigger_move': min_trigger,
                         'outcome': outcome
                     })
@@ -717,13 +727,14 @@ class MMMMonitor:
         # Reset error count AFTER successful heartbeat completion
         session['error_count'] = 0
 
-        # Log heartbeat completion
+        # Log heartbeat completion with ACTUAL effective interval
+        effective_iv = getattr(self, '_effective_interval', session.get('params', {}).get('adjustment_interval', 300))
         from .mmm_activity import log_activity
         log_activity('heartbeat_complete',
                     f'✓ Heartbeat #{session.get("_heartbeat_counter", 0)} complete - '
-                    f'Next check in {session.get("params", {}).get("adjustment_interval", 300)}s',
+                    f'Next check in {effective_iv}s',
                     sid, 'success',
-                    {'next_interval': session.get('params', {}).get('adjustment_interval', 300)})
+                    {'next_interval': effective_iv})
 
     # =========================================================================
     # §5: Process Adjustment
@@ -786,6 +797,7 @@ class MMMMonitor:
                 # the same reversal (infinite loop prevention).
                 handle_reversal_skip_transition(
                     session, aggressor, ce_now, pe_now,
+                    fetch_premium_fn=self._make_fetch_fn(),
                 )
 
                 # Activate cooldown if configured
@@ -889,6 +901,7 @@ class MMMMonitor:
         result = await self._engine.execute_adjustment(
             session, hedge, hedge_strike, lots,
             ce_now, pe_now, adj_type,
+            fetch_premium_fn=self._make_fetch_fn(),
         )
 
         if result.get('success'):
@@ -992,7 +1005,8 @@ class MMMMonitor:
             )
 
             # Update triggers at new strike
-            update_trigger_snapshots(session, ce_now, pe_now)
+            update_trigger_snapshots(session, ce_now, pe_now,
+                                     fetch_premium_fn=self._make_fetch_fn())
 
             # Bug #8 fix: update tracking fields that _process_adjustment
             # normally handles via engine._update_state_after_adjustment

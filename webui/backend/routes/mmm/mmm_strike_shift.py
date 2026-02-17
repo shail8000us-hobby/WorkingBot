@@ -28,6 +28,10 @@ def check_shift_needed(
     """
     §10: Check if the hedge side's premium has dropped below shift_threshold.
 
+    Uses dynamic threshold: max(shift_threshold, hedge_entry_premium * shift_threshold_pct)
+    when shift_threshold_pct > 0. This prefers fewer lots at higher premium over
+    many lots at dying premium.
+
     Args:
         session: Full session dict
         side: 'ce' or 'pe' — the hedge side
@@ -37,12 +41,27 @@ def check_shift_needed(
         True if strike shift is needed
     """
     params = session.get('params', {})
-    threshold = params.get('shift_threshold', 50.0)
+    threshold_floor = params.get('shift_threshold', 50.0)
+    threshold_pct = params.get('shift_threshold_pct', 0.0)
 
-    if current_premium < threshold:
+    # Dynamic threshold: use hedge entry premium * pct if configured
+    effective_threshold = threshold_floor
+    if threshold_pct > 0:
+        side_state = session.get(side, {})
+        hedge_entry_premium = side_state.get('original_premium', 0)
+        # If original was shifted, use latest adjustment fill premium
+        if hedge_entry_premium == 0:
+            fills = side_state.get('adjustment_fills', [])
+            if fills:
+                hedge_entry_premium = fills[-1].get('premium', 0)
+        dynamic = hedge_entry_premium * threshold_pct
+        effective_threshold = max(threshold_floor, dynamic)
+
+    if current_premium < effective_threshold:
         log.info(
             f"Strike shift needed: {side.upper()} premium "
-            f"{current_premium:.2f} < threshold {threshold:.2f}"
+            f"{current_premium:.2f} < effective threshold {effective_threshold:.2f} "
+            f"(floor={threshold_floor:.2f}, pct={threshold_pct:.0%})"
         )
         return True
 
@@ -139,8 +158,20 @@ def find_new_strike(
         {strike, premium, symbol} or None if no suitable strike found
     """
     params = session.get('params', {})
-    threshold = params.get('shift_threshold', 50.0)
+    threshold_floor = params.get('shift_threshold', 50.0)
+    threshold_pct = params.get('shift_threshold_pct', 0.0)
     expiry = params.get('expiry', '')
+
+    # Dynamic threshold for candidate filtering
+    effective_threshold = threshold_floor
+    if threshold_pct > 0:
+        side_state = session.get(side, {})
+        hedge_entry_premium = side_state.get('original_premium', 0)
+        if hedge_entry_premium == 0:
+            fills = side_state.get('adjustment_fills', [])
+            if fills:
+                hedge_entry_premium = fills[-1].get('premium', 0)
+        effective_threshold = max(threshold_floor, hedge_entry_premium * threshold_pct)
 
     if not expiry:
         log.error("No expiry set in session params")
@@ -174,7 +205,7 @@ def find_new_strike(
             # Use bid for selling (§15.5)
             premium = bid if bid > 0 else mark
 
-            if premium < threshold:
+            if premium < effective_threshold:
                 continue
 
             # Must be OTM
@@ -197,7 +228,7 @@ def find_new_strike(
         if not candidates:
             log.warning(
                 f"No suitable strike found for {side.upper()} shift "
-                f"(threshold={threshold})"
+                f"(effective_threshold={effective_threshold})"
             )
             return None
 

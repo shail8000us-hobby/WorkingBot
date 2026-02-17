@@ -16,7 +16,7 @@
  * Updated: Phase 3-7 integration
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -117,11 +117,55 @@ const StatusChip = ({ status }) => {
 };
 
 /**
+ * Compute expiry info from an ISO UTC expiry_time.
+ * Returns { countdown: "0d:2h:46m", expiryIST: "5:30 PM IST" } or null.
+ * Delta Exchange India expires daily at 5:30 PM IST.
+ */
+const computeExpiryInfo = (expiryTimeISO) => {
+  if (!expiryTimeISO) return null;
+  try {
+    // expiry_time is naive UTC ISO string like '2026-02-17T12:00:00'
+    const expMs = new Date(expiryTimeISO + 'Z').getTime();
+    const nowMs = Date.now();
+    const diffMs = expMs - nowMs;
+
+    // Format expiry in IST (UTC+5:30)
+    const expDate = new Date(expMs);
+    const expiryIST = expDate.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      day: 'numeric',
+      month: 'short',
+    });
+
+    if (diffMs <= 0) return { countdown: 'EXPIRED', expiryIST };
+
+    const totalMin = Math.floor(diffMs / 60000);
+    const d = Math.floor(totalMin / 1440);
+    const h = Math.floor((totalMin % 1440) / 60);
+    const m = totalMin % 60;
+    return { countdown: `${d}d:${h}h:${m}m`, expiryIST };
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Session card condensed view
  */
 const SessionCard = ({ session, selected, onSelect, onControl }) => {
   const status = session.status || 'IDLE';
   const cfg = getStatusConfig(status);
+
+  // Live countdown — ticks every 30s so it stays fresh between polls
+  const [expiryInfo, setExpiryInfo] = useState(() => computeExpiryInfo(session.expiry_time));
+  useEffect(() => {
+    setExpiryInfo(computeExpiryInfo(session.expiry_time));
+    const timer = setInterval(() => setExpiryInfo(computeExpiryInfo(session.expiry_time)), 30000);
+    return () => clearInterval(timer);
+  }, [session.expiry_time]);
 
   return (
     <Card
@@ -170,6 +214,22 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
             }}
           >
             P&L: ${session.net_pnl?.toFixed(2) || '0.00'}
+          </Typography>
+        )}
+
+        {/* Time to Expiry (IST) */}
+        {expiryInfo && (
+          <Typography
+            variant="caption"
+            sx={{
+              mt: 0.5,
+              fontWeight: 600,
+              color: expiryInfo.countdown === 'EXPIRED' ? '#f44336' : '#ff9800',
+              fontFamily: 'monospace',
+              display: 'block',
+            }}
+          >
+            Expiry: {expiryInfo.expiryIST} IST &nbsp;|&nbsp; {expiryInfo.countdown}
           </Typography>
         )}
 

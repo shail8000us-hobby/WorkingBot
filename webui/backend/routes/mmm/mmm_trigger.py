@@ -2,13 +2,20 @@
 MMM Trigger System — Money Mind & Method
 
 Evaluates whether CE or PE premiums have exceeded their trigger snapshots
-by more than min_trigger_move, determining if an adjustment is needed.
+by more than min_trigger_move (percentage-based), determining if an
+adjustment is needed.
+
+min_trigger_move is a PERCENTAGE: e.g. 15 means premium must rise 15%
+above the trigger snapshot to fire. This ensures symmetric sensitivity
+across CE/PE regardless of premium level, and auto-scales as premiums
+decay near expiry.
 
 Maps to MONEY_POWER_CALCULATION_LOGIC.md:
   §7: The Trigger System
   §4: Heartbeat outcomes (A/B/C/D)
 
 Created: February 15, 2026
+Updated: February 17, 2026 — Converted min_trigger_move from absolute to percentage
 """
 
 import logging
@@ -16,6 +23,9 @@ from typing import Dict, Any, Tuple, Optional
 
 log = logging.getLogger('mmm_trigger')
 
+# Minimum trigger snapshot value for percentage calculation.
+# Prevents division-by-zero and wild percentages when snapshot is near-zero.
+TRIGGER_PCT_FLOOR = 1.0
 
 # Trigger outcomes (maps to §4.7)
 OUTCOME_NONE = 'none'           # A: Neither triggered
@@ -32,7 +42,12 @@ def evaluate_triggers(
     """
     Evaluate whether CE and/or PE premiums have exceeded their triggers.
 
-    §7: triggered = (premium_now - trigger_snapshot) > min_trigger_move
+    §7: triggered = ((premium_now - trigger_snapshot) / trigger_snapshot * 100) > min_trigger_move
+
+    min_trigger_move is a PERCENTAGE (e.g. 15 = 15%).
+    This ensures symmetric sensitivity: a 15% threshold means CE@$200
+    needs $30 absolute move, while PE@$80 needs only $12 — both equally
+    meaningful in proportion to their premium level.
 
     Args:
         session: Full session dictionary
@@ -42,20 +57,22 @@ def evaluate_triggers(
     Returns:
         {
             outcome: 'none'|'ce_triggered'|'pe_triggered'|'both_triggered',
-            ce_excess: float,       # How far CE is above trigger
-            pe_excess: float,       # How far PE is above trigger
+            ce_excess: float,       # Absolute excess above trigger
+            pe_excess: float,       # Absolute excess above trigger
+            ce_excess_pct: float,   # Percentage excess above trigger
+            pe_excess_pct: float,   # Percentage excess above trigger
             ce_triggered: bool,
             pe_triggered: bool,
             ce_trigger: float,      # The trigger level
             pe_trigger: float,
-            min_trigger_move: float,
+            min_trigger_move: float, # The percentage threshold used
         }
     """
     params = session.get('params', {})
     # Bug #1 fix: prefer ephemeral theta-accelerated value over params
     min_trigger_move = session.get(
         '_effective_min_trigger_move',
-        params.get('min_trigger_move', 3.0),
+        params.get('min_trigger_move', 10.0),
     )
 
     ce_side = session.get('ce', {})
@@ -68,13 +85,19 @@ def evaluate_triggers(
     ce_trigger = ce_side.get('trigger_snapshot', {}).get(ce_active_strike, 0)
     pe_trigger = pe_side.get('trigger_snapshot', {}).get(pe_active_strike, 0)
 
-    # Calculate excess above trigger
+    # Calculate absolute excess above trigger
     ce_excess = ce_now - ce_trigger
     pe_excess = pe_now - pe_trigger
 
-    # Apply minimum trigger move filter
-    ce_triggered = ce_excess > min_trigger_move
-    pe_triggered = pe_excess > min_trigger_move
+    # Calculate percentage excess (using floor to prevent div-by-zero)
+    ce_base = max(ce_trigger, TRIGGER_PCT_FLOOR)
+    pe_base = max(pe_trigger, TRIGGER_PCT_FLOOR)
+    ce_excess_pct = (ce_excess / ce_base) * 100
+    pe_excess_pct = (pe_excess / pe_base) * 100
+
+    # Apply percentage-based minimum trigger move filter
+    ce_triggered = ce_excess_pct > min_trigger_move
+    pe_triggered = pe_excess_pct > min_trigger_move
 
     # Determine outcome (§4.7)
     if ce_triggered and pe_triggered:
@@ -90,6 +113,8 @@ def evaluate_triggers(
         'outcome': outcome,
         'ce_excess': round(ce_excess, 2),
         'pe_excess': round(pe_excess, 2),
+        'ce_excess_pct': round(ce_excess_pct, 2),
+        'pe_excess_pct': round(pe_excess_pct, 2),
         'ce_triggered': ce_triggered,
         'pe_triggered': pe_triggered,
         'ce_trigger': ce_trigger,
@@ -104,20 +129,27 @@ def update_trigger_snapshots(
     session: Dict,
     ce_now: float,
     pe_now: float,
+    fetch_premium_fn=None,
 ) -> Dict:
     """
     Update BOTH sides' trigger snapshots after an adjustment.
 
     §6.2 CRITICAL RULE: Both sides update regardless of which was aggressor.
+    Also snapshots ALL strikes with open frozen positions so that frozen
+    position loss calculation is INCREMENTAL (since last hedge) not LIFETIME
+    (since entry). This prevents double-counting already-hedged losses.
 
     Why:
       - Aggressor side: trigger ratchets up → only NEW loss above this level triggers
       - Hedge side: trigger set to current price → detects future erosion
+      - Frozen positions: trigger ratchets up → prevents re-hedging same loss
 
     Args:
         session: Full session dict (mutated in place)
         ce_now: Current CE premium
         pe_now: Current PE premium
+        fetch_premium_fn: Optional callable(strike, option_type) → current_premium
+                          Used to snapshot frozen positions at old strikes.
 
     Returns:
         Updated session
@@ -137,6 +169,33 @@ def update_trigger_snapshots(
     ce_side['trigger_snapshot'][ce_active] = ce_now
     pe_side['trigger_snapshot'][pe_active] = pe_now
 
+    # §6.2: Also snapshot ALL strikes with open frozen positions.
+    # This makes frozen position loss INCREMENTAL (since last hedge)
+    # instead of lifetime (since entry), preventing double-counting.
+    if fetch_premium_fn:
+        for side_key, side_state, option_type in [
+            ('ce', ce_side, 'call'),
+            ('pe', pe_side, 'put'),
+        ]:
+            for frozen_pos in side_state.get('frozen_positions', []):
+                f_strike = frozen_pos.get('strike', 0)
+                if f_strike <= 0 or frozen_pos.get('lots', 0) <= 0:
+                    continue
+                f_strike_key = str(int(f_strike))
+                try:
+                    f_current = fetch_premium_fn(f_strike, option_type)
+                    old_snap = side_state['trigger_snapshot'].get(f_strike_key)
+                    side_state['trigger_snapshot'][f_strike_key] = f_current
+                    if old_snap is not None:
+                        log.debug(
+                            f"Frozen trigger updated: {side_key.upper()}[{f_strike_key}] "
+                            f"{old_snap:.2f} → {f_current:.2f}"
+                        )
+                except Exception as e:
+                    log.warning(
+                        f"Failed to snapshot frozen {side_key.upper()}@{f_strike_key}: {e}"
+                    )
+
     session['ce'] = ce_side
     session['pe'] = pe_side
 
@@ -153,14 +212,25 @@ def apply_theta_acceleration(
     minutes_to_expiry: float,
 ) -> Dict[str, Any]:
     """
-    §14.7: In the last N minutes before expiry, widen triggers to let theta work.
+    §14.7: Near expiry, widen triggers to let theta work AND speed up heartbeats.
+
+    Trigger widening: doubles min_trigger_move percentage so algo doesn't
+    fight theta decay (e.g. 15% → 30%).
+    Interval reduction: FASTER heartbeats as expiry nears so decisions aren't delayed.
+
+    Tiered schedule (minutes to 5:30 PM IST expiry):
+        > theta_window  : no acceleration (use base interval)
+        30-window min   : base / 2  (min 30s)
+        15-30 min       : 20s
+        5-15 min        : 10s
+        0-5 min         : 5s
 
     Returns:
         { accelerated: bool, effective_min_trigger_move: float, effective_interval: int }
     """
     params = session.get('params', {})
     theta_window = params.get('theta_acceleration_window', 120)
-    base_trigger_move = params.get('min_trigger_move', 3.0)
+    base_trigger_move = params.get('min_trigger_move', 10.0)
     base_interval = params.get('adjustment_interval', 300)
 
     if minutes_to_expiry <= 0 or minutes_to_expiry > theta_window:
@@ -170,9 +240,19 @@ def apply_theta_acceleration(
             'effective_interval': base_interval,
         }
 
-    # Double both trigger move and interval in the theta window
+    # Tiered interval: faster as expiry approaches
+    if minutes_to_expiry <= 5:
+        effective_interval = 5
+    elif minutes_to_expiry <= 15:
+        effective_interval = 10
+    elif minutes_to_expiry <= 30:
+        effective_interval = 20
+    else:
+        # Within theta window but > 30 min: halve the base (min 30s)
+        effective_interval = max(30, base_interval // 2)
+
     return {
         'accelerated': True,
         'effective_min_trigger_move': base_trigger_move * 2,
-        'effective_interval': base_interval * 2,
+        'effective_interval': effective_interval,
     }

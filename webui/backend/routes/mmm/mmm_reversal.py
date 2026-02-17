@@ -167,6 +167,7 @@ def handle_reversal_skip_transition(
     aggressor: str,
     ce_now: float,
     pe_now: float,
+    fetch_premium_fn=None,
 ):
     """
     §9 / §6.2: After a reversal is detected but SKIPPED (adj P&L ≥ 0),
@@ -203,7 +204,8 @@ def handle_reversal_skip_transition(
     # §6.2: Update BOTH trigger snapshots to current premiums.
     # This resets the baseline so the trigger system works correctly
     # from the new direction.
-    update_trigger_snapshots(session, ce_now, pe_now)
+    update_trigger_snapshots(session, ce_now, pe_now,
+                             fetch_premium_fn=fetch_premium_fn)
 
     log.info(
         f"Reversal skip transition: last_aggressor {old_aggressor} → "

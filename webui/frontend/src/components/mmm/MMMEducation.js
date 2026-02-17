@@ -61,7 +61,7 @@ export const HELP = {
     trigger_safe: 'Premium is below the trigger — all losses at this level are already covered. No action needed.',
     trigger_approaching: 'Premium is between 80-100% of the trigger threshold. Getting close — an adjustment may fire on the next check.',
     trigger_exceeded: 'Premium has exceeded the trigger + minimum move. An adjustment is imminent or has already happened.',
-    min_trigger_move: 'Minimum amount premium must exceed the trigger before adjusting. Prevents micro-adjustments on tiny price wiggles. Default: 3.',
+    min_trigger_move: 'Minimum % the premium must exceed the trigger before adjusting. Percentage-based so it scales with premium level — cheap premiums need less absolute move, expensive premiums need more. Example: 15% means a $100 trigger needs $15 absolute move, but a $50 trigger only needs $7.50.',
 
     // ---------- Adjustments ----------
     adjustment: 'An adjustment = selling more of the OPPOSITE side to collect enough premium to cover the loss on the aggressor side. Example: if CE premium rose by $30 × 10 lots = $300 loss, sell PE lots worth $300+ premium.',
@@ -75,6 +75,7 @@ export const HELP = {
     // ---------- Strike Shifting ----------
     strike_shift: 'When the opposing side\'s premium is too low (below shift_threshold), selling lots at that strike generates too little premium to cover the loss. The algo finds a CLOSER-TO-ATM strike with higher premium and shifts there.',
     shift_threshold: 'Minimum premium required to sell at the current strike. If premium is below this, a strike shift triggers. Default: 50. You can change this while the algo runs.',
+    shift_threshold_pct: 'Dynamic shift threshold multiplier. When > 0, shift threshold becomes max(shift_threshold, hedge_entry_premium × this %). Example: 0.30 means the threshold is at least 30% of the entry premium — so if you entered at 200, shift triggers below 60 instead of 50. Set to 0 to disable (use flat threshold only).',
     frozen_positions: 'After a strike shift, the old positions are "frozen" — still open, still tracked for close-at-5 profit locking, but no longer used in adjustment calculations.',
 
     // ---------- Close-at-5 ----------
