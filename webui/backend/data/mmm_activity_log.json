@@ -1,1038 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_175629_200",
-      "timestamp": "2026-02-17T17:56:29.473269",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -0.6% (need >5.0%), PE -4.9% (need >5.0%) - Result: NONE",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -0.64,
-        "pe_excess_pct": -4.86,
-        "min_trigger_move": 5.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_175629_200",
-      "timestamp": "2026-02-17T17:56:29.473302",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_175629_200",
-      "timestamp": "2026-02-17T17:56:29.473352",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.57 (Realized: $0.00, Unrealized: $1.57, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.57,
-        "realized": 0.0,
-        "unrealized": 1.57,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_175629_200",
-      "timestamp": "2026-02-17T17:56:29.489447",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #241 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_175858_200",
-      "timestamp": "2026-02-17T17:58:58.921880",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #242: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_175859_200",
-      "timestamp": "2026-02-17T17:58:59.615856",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $154.44, PE 65800.0 = $180.31",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 154.44140376,
-        "pe_premium": 180.311078,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_175900_200",
-      "timestamp": "2026-02-17T17:59:00.548694",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_175900_200",
-      "timestamp": "2026-02-17T17:59:00.549148",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE +15.3% (need >5.0%), PE -18.0% (need >5.0%) - Result: CE_TRIGGERED",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": 15.31,
-        "pe_excess_pct": -18.01,
-        "min_trigger_move": 5.0,
-        "outcome": "ce_triggered"
-      }
-    },
-    {
-      "id": "act_175900_200",
-      "timestamp": "2026-02-17T17:59:00.549338",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($154.44), hedging with PE ($180.31)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "aggressor": "CE",
-        "aggressor_premium": 154.44140376,
-        "hedge": "PE",
-        "hedge_premium": 180.311078
-      }
-    },
-    {
-      "id": "act_175900_200",
-      "timestamp": "2026-02-17T17:59:00.557107",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "message": "SELL 3 lot(s) P-BTC-65800-180226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "P-BTC-65800-180226",
-        "side": "sell",
-        "size": 3
-      }
-    },
-    {
-      "id": "act_175907_200",
-      "timestamp": "2026-02-17T17:59:07.341178",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "message": "SELL 3 P-BTC-65800-180226 @ $185.00 (bid=$182.00, ask=$188.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1182316569",
-        "mid_price": 185.0,
-        "bid": 182.0,
-        "ask": 188.0
-      }
-    },
-    {
-      "id": "act_180008_200",
-      "timestamp": "2026-02-17T18:00:08.015957",
-      "type": "order_repricing",
-      "type_label": "Repricing Order",
-      "message": "Order 1182316569 not filled after 60s, repricing (attempt 1/10)",
-      "session_id": null,
-      "severity": "warning",
-      "details": {
-        "order_id": "1182316569",
-        "attempt": 1
-      }
-    },
-    {
-      "id": "act_180010_200",
-      "timestamp": "2026-02-17T18:00:10.380221",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "message": "\u2713 Adjustment Complete: SELL 3 lots PE @ 65800.0 for $185.00 (Type: standard)",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "side": "PE",
-        "strike": 65800.0,
-        "lots": 3,
-        "fill_price": 185.0,
-        "type": "standard",
-        "adjustment_number": 22
-      }
-    },
-    {
-      "id": "act_180010_200",
-      "timestamp": "2026-02-17T18:00:10.380444",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.57 (Realized: $0.00, Unrealized: $1.57, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.57,
-        "realized": 0.0,
-        "unrealized": 1.57,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_180010_200",
-      "timestamp": "2026-02-17T18:00:10.409353",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #242 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_180129_200",
-      "timestamp": "2026-02-17T18:01:29.017218",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #243: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_180129_200",
-      "timestamp": "2026-02-17T18:01:29.544276",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $147.44, PE 65800.0 = $184.70",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 147.44448721,
-        "pe_premium": 184.69790788,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_180130_200",
-      "timestamp": "2026-02-17T18:01:30.477332",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_180130_200",
-      "timestamp": "2026-02-17T18:01:30.477691",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -4.5% (need >5.0%), PE +2.4% (need >5.0%) - Result: NONE",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -4.53,
-        "pe_excess_pct": 2.43,
-        "min_trigger_move": 5.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_180130_200",
-      "timestamp": "2026-02-17T18:01:30.485967",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_180130_200",
-      "timestamp": "2026-02-17T18:01:30.486334",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.66 (Realized: $0.00, Unrealized: $1.66, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.66,
-        "realized": 0.0,
-        "unrealized": 1.66,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_180130_200",
-      "timestamp": "2026-02-17T18:01:30.505993",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #243 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.141585",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #244: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.410492",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $145.14, PE 65800.0 = $184.69",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 145.13720763,
-        "pe_premium": 184.69065449,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.521143",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.521282",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -6.0% (need >5.0%), PE +2.4% (need >5.0%) - Result: NONE",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -6.02,
-        "pe_excess_pct": 2.43,
-        "min_trigger_move": 5.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.521313",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.521353",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.70 (Realized: $0.00, Unrealized: $1.70, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.7,
-        "realized": 0.0,
-        "unrealized": 1.7,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_180359_200",
-      "timestamp": "2026-02-17T18:03:59.532877",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #244 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_180629_200",
-      "timestamp": "2026-02-17T18:06:29.168910",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #245: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_180629_200",
-      "timestamp": "2026-02-17T18:06:29.834259",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $134.49, PE 65800.0 = $195.90",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 134.48915187,
-        "pe_premium": 195.89618291,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_180630_200",
-      "timestamp": "2026-02-17T18:06:30.164107",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_180630_200",
-      "timestamp": "2026-02-17T18:06:30.164429",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -12.9% (need >5.0%), PE +8.6% (need >5.0%) - Result: PE_TRIGGERED",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -12.92,
-        "pe_excess_pct": 8.64,
-        "min_trigger_move": 5.0,
-        "outcome": "pe_triggered"
-      }
-    },
-    {
-      "id": "act_180630_200",
-      "timestamp": "2026-02-17T18:06:30.164669",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($195.90), hedging with CE ($134.49)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 195.89618291,
-        "hedge": "CE",
-        "hedge_premium": 134.48915187
-      }
-    },
-    {
-      "id": "act_180630_200",
-      "timestamp": "2026-02-17T18:06:30.171861",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "message": "SELL 3 lot(s) C-BTC-68400-180226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-68400-180226",
-        "side": "sell",
-        "size": 3
-      }
-    },
-    {
-      "id": "act_180631_200",
-      "timestamp": "2026-02-17T18:06:31.478032",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "message": "SELL 3 C-BTC-68400-180226 @ $135.50 (bid=$134.00, ask=$137.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1182325975",
-        "mid_price": 135.5,
-        "bid": 134.0,
-        "ask": 137.0
-      }
-    },
-    {
-      "id": "act_180654_200",
-      "timestamp": "2026-02-17T18:06:54.505602",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "message": "\u2705 SELL C-BTC-68400-180226 FILLED @ $135.50 in 24.3s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1182325975",
-        "fill_price": 135.5,
-        "elapsed": 24.3,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_180654_200",
-      "timestamp": "2026-02-17T18:06:54.506057",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "message": "\u2713 Adjustment Complete: SELL 3 lots CE @ 68400.0 for $135.50 (Type: first_reversal)",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "side": "CE",
-        "strike": 68400.0,
-        "lots": 3,
-        "fill_price": 135.5,
-        "type": "first_reversal",
-        "adjustment_number": 23
-      }
-    },
-    {
-      "id": "act_180654_200",
-      "timestamp": "2026-02-17T18:06:54.506424",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.72 (Realized: $0.00, Unrealized: $1.72, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.72,
-        "realized": 0.0,
-        "unrealized": 1.72,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_180654_200",
-      "timestamp": "2026-02-17T18:06:54.531309",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #245 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_180859_200",
-      "timestamp": "2026-02-17T18:08:59.336679",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #246: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_180900_200",
-      "timestamp": "2026-02-17T18:09:00.316206",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $140.81, PE 65800.0 = $188.29",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 140.80505249,
-        "pe_premium": 188.28606258,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_180901_200",
-      "timestamp": "2026-02-17T18:09:01.249129",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_180901_200",
-      "timestamp": "2026-02-17T18:09:01.249205",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-17T18:11:30",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-17T18:11:30.165073"
-      }
-    },
-    {
-      "id": "act_181129_200",
-      "timestamp": "2026-02-17T18:11:29.460635",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #247: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_181130_200",
-      "timestamp": "2026-02-17T18:11:30.098976",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $162.13, PE 65800.0 = $167.70",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 162.12832222,
-        "pe_premium": 167.70337661,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_181130_200",
-      "timestamp": "2026-02-17T18:11:30.227241",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_181130_200",
-      "timestamp": "2026-02-17T18:11:30.227444",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE +20.6% (need >5.0%), PE -14.4% (need >5.0%) - Result: CE_TRIGGERED",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": 20.55,
-        "pe_excess_pct": -14.39,
-        "min_trigger_move": 5.0,
-        "outcome": "ce_triggered"
-      }
-    },
-    {
-      "id": "act_181130_200",
-      "timestamp": "2026-02-17T18:11:30.227518",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($162.13), hedging with PE ($167.70)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "aggressor": "CE",
-        "aggressor_premium": 162.12832222,
-        "hedge": "PE",
-        "hedge_premium": 167.70337661
-      }
-    },
-    {
-      "id": "act_181130_200",
-      "timestamp": "2026-02-17T18:11:30.236640",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.57 (Realized: $0.00, Unrealized: $1.57, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.57,
-        "realized": 0.0,
-        "unrealized": 1.57,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_181130_200",
-      "timestamp": "2026-02-17T18:11:30.257427",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #247 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_181359_200",
-      "timestamp": "2026-02-17T18:13:59.443622",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #248: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_181359_200",
-      "timestamp": "2026-02-17T18:13:59.851872",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $177.68, PE 65800.0 = $153.27",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 177.67952743,
-        "pe_premium": 153.26707333,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_181400_200",
-      "timestamp": "2026-02-17T18:14:00.550943",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_181400_200",
-      "timestamp": "2026-02-17T18:14:00.557467",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-17T18:16:30",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-17T18:16:30.227693"
-      }
-    },
-    {
-      "id": "act_181629_200",
-      "timestamp": "2026-02-17T18:16:29.473550",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #249: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_181630_200",
-      "timestamp": "2026-02-17T18:16:30.004308",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $174.45, PE 65800.0 = $147.86",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 174.44603758,
-        "pe_premium": 147.86248858,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_181630_200",
-      "timestamp": "2026-02-17T18:16:30.567445",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Safety Checks: All clear \u2713",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_181630_200",
-      "timestamp": "2026-02-17T18:16:30.567850",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE +7.6% (need >5.0%), PE -11.8% (need >5.0%) - Result: CE_TRIGGERED",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": 7.6,
-        "pe_excess_pct": -11.83,
-        "min_trigger_move": 5.0,
-        "outcome": "ce_triggered"
-      }
-    },
-    {
-      "id": "act_181630_200",
-      "timestamp": "2026-02-17T18:16:30.577195",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($174.45), hedging with PE ($147.86)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "aggressor": "CE",
-        "aggressor_premium": 174.44603758,
-        "hedge": "PE",
-        "hedge_premium": 147.86248858
-      }
-    },
-    {
-      "id": "act_181630_200",
-      "timestamp": "2026-02-17T18:16:30.578154",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "message": "SELL 3 lot(s) P-BTC-65800-180226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "P-BTC-65800-180226",
-        "side": "sell",
-        "size": 3
-      }
-    },
-    {
-      "id": "act_181643_200",
-      "timestamp": "2026-02-17T18:16:43.205084",
-      "type": "order_retrying",
-      "type_label": "order_retrying",
-      "message": "SELL P-BTC-65800-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
-      "session_id": null,
-      "severity": "warning",
-      "details": {
-        "symbol": "P-BTC-65800-180226",
-        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
-        "attempt": 1
-      }
-    },
-    {
-      "id": "act_181645_200",
-      "timestamp": "2026-02-17T18:16:45.938466",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "message": "SELL 3 P-BTC-65800-180226 @ $155.00 (bid=$153.00, ask=$157.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1182338341",
-        "mid_price": 155.0,
-        "bid": 153.0,
-        "ask": 157.0
-      }
-    },
-    {
-      "id": "act_181649_200",
-      "timestamp": "2026-02-17T18:16:49.793866",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "message": "\u2705 SELL P-BTC-65800-180226 FILLED @ $155.00 in 19.2s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1182338341",
-        "fill_price": 155.0,
-        "elapsed": 19.2,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_181649_200",
-      "timestamp": "2026-02-17T18:16:49.801929",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "message": "\u2713 Adjustment Complete: SELL 3 lots PE @ 65800.0 for $155.00 (Type: standard)",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "side": "PE",
-        "strike": 65800.0,
-        "lots": 3,
-        "fill_price": 155.0,
-        "type": "standard",
-        "adjustment_number": 24
-      }
-    },
-    {
-      "id": "act_181649_200",
-      "timestamp": "2026-02-17T18:16:49.802242",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.68 (Realized: $0.00, Unrealized: $1.68, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.68,
-        "realized": 0.0,
-        "unrealized": 1.68,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_181649_200",
-      "timestamp": "2026-02-17T18:16:49.817802",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #249 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_181859_200",
-      "timestamp": "2026-02-17T18:18:59.508442",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #250: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_181859_200",
-      "timestamp": "2026-02-17T18:18:59.842202",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $154.54, PE 65800.0 = $163.27",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 154.53562389,
-        "pe_premium": 163.27252875,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_181900_200",
-      "timestamp": "2026-02-17T18:19:00.480938",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - max_adjustments (warning)",
-      "session_id": "mmm_f48816",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "max_adjustments"
-        ]
-      }
-    },
-    {
-      "id": "act_181900_200",
-      "timestamp": "2026-02-17T18:19:00.481192",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -11.4% (need >5.0%), PE +10.4% (need >5.0%) - Result: PE_TRIGGERED",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -11.41,
-        "pe_excess_pct": 10.42,
-        "min_trigger_move": 5.0,
-        "outcome": "pe_triggered"
-      }
-    },
-    {
-      "id": "act_181900_200",
-      "timestamp": "2026-02-17T18:19:00.481272",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($163.27), hedging with CE ($154.54)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 163.27252875,
-        "hedge": "CE",
-        "hedge_premium": 154.53562389
-      }
-    },
-    {
-      "id": "act_181900_200",
-      "timestamp": "2026-02-17T18:19:00.481585",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $1.88 (Realized: $0.00, Unrealized: $1.88, Fees: $0.00)",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "net_pnl": 1.88,
-        "realized": 0.0,
-        "unrealized": 1.88,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_181900_200",
-      "timestamp": "2026-02-17T18:19:00.502099",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #250 complete - Next check in 150s",
-      "session_id": "mmm_f48816",
-      "severity": "success",
-      "details": {
-        "next_interval": 150
-      }
-    },
-    {
-      "id": "act_182129_200",
-      "timestamp": "2026-02-17T18:21:29.610354",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #251: Checking market conditions",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_182130_200",
-      "timestamp": "2026-02-17T18:21:30.181112",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 68400.0 = $214.84, PE 65800.0 = $115.88",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "ce_premium": 214.84184794,
-        "pe_premium": 115.88471543,
-        "ce_strike": 68400.0,
-        "pe_strike": 65800.0
-      }
-    },
-    {
-      "id": "act_182130_200",
-      "timestamp": "2026-02-17T18:21:30.800146",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - max_adjustments (warning)",
-      "session_id": "mmm_f48816",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "max_adjustments"
-        ]
-      }
-    },
-    {
-      "id": "act_182130_200",
-      "timestamp": "2026-02-17T18:21:30.800452",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-17T18:24:00",
-      "session_id": "mmm_f48816",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-17T18:24:00.481474"
-      }
-    },
-    {
       "id": "act_182359_200",
       "timestamp": "2026-02-17T18:23:59.792100",
       "type": "heartbeat_start",
@@ -2743,7 +1711,7 @@
     },
     {
       "id": "act_190102_200",
-      "timestamp": "2026-02-17T19:01:02.485717",
+      "timestamp": "2026-02-17T19:01:02.497424",
       "type": "adjustment_triggered",
       "type_label": "Adjustment Triggered",
       "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($352.32), hedging with PE ($70.00)",
@@ -2755,7 +1723,1063 @@
         "hedge": "PE",
         "hedge_premium": 69.99555326
       }
+    },
+    {
+      "id": "act_190102_200",
+      "timestamp": "2026-02-17T19:01:02.497776",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $-0.93 (Realized: $0.00, Unrealized: $-0.93, Fees: $0.00)",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {
+        "net_pnl": -0.93,
+        "realized": 0.0,
+        "unrealized": -0.93,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_190102_200",
+      "timestamp": "2026-02-17T19:01:02.518545",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #265 complete - Next check in 150s",
+      "session_id": "mmm_f48816",
+      "severity": "success",
+      "details": {
+        "next_interval": 150
+      }
+    },
+    {
+      "id": "act_190331_200",
+      "timestamp": "2026-02-17T19:03:31.495070",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #266: Checking market conditions",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_190331_200",
+      "timestamp": "2026-02-17T19:03:31.999519",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68400.0 = $350.49, PE 65800.0 = $69.74",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {
+        "ce_premium": 350.49299418,
+        "pe_premium": 69.73648724,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0
+      }
+    },
+    {
+      "id": "act_190332_200",
+      "timestamp": "2026-02-17T19:03:32.546868",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "message": "Safety Checks: 3 event(s) - position_cap (alert), max_adjustments (warning), trailing_stop (alert)",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "max_adjustments",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_190332_200",
+      "timestamp": "2026-02-17T19:03:32.547594",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_190601_200",
+      "timestamp": "2026-02-17T19:06:01.510952",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #267: Checking market conditions",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_190602_200",
+      "timestamp": "2026-02-17T19:06:02.259135",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68400.0 = $342.38, PE 65800.0 = $68.89",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {
+        "ce_premium": 342.37584723,
+        "pe_premium": 68.89160222,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0
+      }
+    },
+    {
+      "id": "act_190602_200",
+      "timestamp": "2026-02-17T19:06:02.775845",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "message": "Safety Checks: 3 event(s) - position_cap (alert), max_adjustments (warning), trailing_stop (alert)",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "max_adjustments",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_190602_200",
+      "timestamp": "2026-02-17T19:06:02.785486",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_190831_200",
+      "timestamp": "2026-02-17T19:08:31.590006",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #268: Checking market conditions",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_190831_200",
+      "timestamp": "2026-02-17T19:08:31.845056",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68400.0 = $329.27, PE 65800.0 = $66.99",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {
+        "ce_premium": 329.27201486,
+        "pe_premium": 66.99198807,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0
+      }
+    },
+    {
+      "id": "act_190832_200",
+      "timestamp": "2026-02-17T19:08:32.770442",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "message": "Safety Checks: 3 event(s) - position_cap (alert), max_adjustments (warning), trailing_stop (alert)",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "max_adjustments",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_190832_200",
+      "timestamp": "2026-02-17T19:08:32.771050",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_191101_200",
+      "timestamp": "2026-02-17T19:11:01.615975",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #269: Checking market conditions",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_191102_200",
+      "timestamp": "2026-02-17T19:11:02.421912",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68400.0 = $332.32, PE 65800.0 = $65.61",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {
+        "ce_premium": 332.3190427,
+        "pe_premium": 65.60819962,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0
+      }
+    },
+    {
+      "id": "act_191102_200",
+      "timestamp": "2026-02-17T19:11:02.718411",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "message": "Safety Checks: 3 event(s) - position_cap (alert), max_adjustments (warning), trailing_stop (alert)",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "max_adjustments",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_191102_200",
+      "timestamp": "2026-02-17T19:11:02.718875",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_191331_200",
+      "timestamp": "2026-02-17T19:13:31.666511",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #270: Checking market conditions",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_191331_200",
+      "timestamp": "2026-02-17T19:13:31.948395",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68400.0 = $341.38, PE 65800.0 = $60.56",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {
+        "ce_premium": 341.38473994,
+        "pe_premium": 60.55895001,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0
+      }
+    },
+    {
+      "id": "act_191332_200",
+      "timestamp": "2026-02-17T19:13:32.485177",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "message": "Safety Checks: 3 event(s) - position_cap (alert), max_adjustments (warning), trailing_stop (alert)",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "max_adjustments",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_191332_200",
+      "timestamp": "2026-02-17T19:13:32.485594",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "session_id": "mmm_f48816",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_191601_200",
+      "timestamp": "2026-02-17T19:16:01.686567",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #271: Checking market conditions",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_191602_200",
+      "timestamp": "2026-02-17T19:16:02.385361",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68400.0 = $382.91, PE 65800.0 = $54.29",
+      "session_id": "mmm_f48816",
+      "severity": "info",
+      "details": {
+        "ce_premium": 382.91118389,
+        "pe_premium": 54.28980521,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0
+      }
+    },
+    {
+      "id": "act_191602_200",
+      "timestamp": "2026-02-17T19:16:02.918040",
+      "type": "atm_auto_close",
+      "type_label": "atm_auto_close",
+      "message": "\ud83d\uded1 ATM AUTO-CLOSE: Spot $68149 is at CE active strike \u2014 closing all positions",
+      "session_id": "mmm_f48816",
+      "severity": "error",
+      "details": {
+        "spot": 68148.78432039,
+        "ce_strike": 68400.0,
+        "pe_strike": 65800.0,
+        "triggered_side": "CE"
+      }
+    },
+    {
+      "id": "act_191602_200",
+      "timestamp": "2026-02-17T19:16:02.919541",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 16 lot(s) C-BTC-68400-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "side": "buy",
+        "size": 16
+      }
+    },
+    {
+      "id": "act_191614_200",
+      "timestamp": "2026-02-17T19:16:14.494820",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-68400-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_191627_200",
+      "timestamp": "2026-02-17T19:16:27.469931",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-68400-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_191639_200",
+      "timestamp": "2026-02-17T19:16:39.821010",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-68400-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_191641_200",
+      "timestamp": "2026-02-17T19:16:41.828581",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 16 lot(s) C-BTC-68400-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "side": "buy",
+        "size": 16
+      }
+    },
+    {
+      "id": "act_191653_200",
+      "timestamp": "2026-02-17T19:16:53.052732",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-68400-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_191706_200",
+      "timestamp": "2026-02-17T19:17:06.060159",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-68400-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_191718_200",
+      "timestamp": "2026-02-17T19:17:18.150913",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-68400-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_191720_200",
+      "timestamp": "2026-02-17T19:17:20.154407",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 16 lot(s) C-BTC-68400-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "side": "buy",
+        "size": 16
+      }
+    },
+    {
+      "id": "act_191731_200",
+      "timestamp": "2026-02-17T19:17:31.571415",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-68400-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_191744_200",
+      "timestamp": "2026-02-17T19:17:44.514320",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-68400-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_191757_200",
+      "timestamp": "2026-02-17T19:17:57.440643",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-68400-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-68400-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_191757_200",
+      "timestamp": "2026-02-17T19:17:57.441863",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 2 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_191809_200",
+      "timestamp": "2026-02-17T19:18:09.055744",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_191822_200",
+      "timestamp": "2026-02-17T19:18:22.362642",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_191835_200",
+      "timestamp": "2026-02-17T19:18:35.139495",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_191837_200",
+      "timestamp": "2026-02-17T19:18:37.142360",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 2 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_191848_200",
+      "timestamp": "2026-02-17T19:18:48.444473",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_191901_200",
+      "timestamp": "2026-02-17T19:19:01.657664",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_191914_200",
+      "timestamp": "2026-02-17T19:19:14.342196",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_191916_200",
+      "timestamp": "2026-02-17T19:19:16.344470",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 2 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_191927_200",
+      "timestamp": "2026-02-17T19:19:27.882786",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_191940_200",
+      "timestamp": "2026-02-17T19:19:40.565743",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_191953_200",
+      "timestamp": "2026-02-17T19:19:53.534642",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_191953_200",
+      "timestamp": "2026-02-17T19:19:53.544486",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 1 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_192004_200",
+      "timestamp": "2026-02-17T19:20:04.854801",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192018_200",
+      "timestamp": "2026-02-17T19:20:18.188688",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192030_200",
+      "timestamp": "2026-02-17T19:20:30.951621",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192032_200",
+      "timestamp": "2026-02-17T19:20:32.953966",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 1 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_192044_200",
+      "timestamp": "2026-02-17T19:20:44.215860",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192056_200",
+      "timestamp": "2026-02-17T19:20:56.969588",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192109_200",
+      "timestamp": "2026-02-17T19:21:09.827148",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192111_200",
+      "timestamp": "2026-02-17T19:21:11.828456",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 1 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_192123_200",
+      "timestamp": "2026-02-17T19:21:23.408968",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192136_200",
+      "timestamp": "2026-02-17T19:21:36.179774",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192149_200",
+      "timestamp": "2026-02-17T19:21:49.176375",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192149_200",
+      "timestamp": "2026-02-17T19:21:49.178110",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 3 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_192200_200",
+      "timestamp": "2026-02-17T19:22:00.788317",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192213_200",
+      "timestamp": "2026-02-17T19:22:13.672137",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192226_200",
+      "timestamp": "2026-02-17T19:22:26.940057",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192228_200",
+      "timestamp": "2026-02-17T19:22:28.942314",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 3 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_192240_200",
+      "timestamp": "2026-02-17T19:22:40.238644",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192253_200",
+      "timestamp": "2026-02-17T19:22:53.285388",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192306_200",
+      "timestamp": "2026-02-17T19:23:06.051608",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192308_200",
+      "timestamp": "2026-02-17T19:23:08.054572",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 3 lot(s) C-BTC-70200-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_192319_200",
+      "timestamp": "2026-02-17T19:23:19.566383",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192332_200",
+      "timestamp": "2026-02-17T19:23:32.809813",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-70200-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192345_200",
+      "timestamp": "2026-02-17T19:23:45.745222",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-70200-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-70200-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192345_200",
+      "timestamp": "2026-02-17T19:23:45.746633",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 3 lot(s) C-BTC-69000-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-69000-180226",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_192356_200",
+      "timestamp": "2026-02-17T19:23:56.673725",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-69000-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-69000-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_192409_200",
+      "timestamp": "2026-02-17T19:24:09.751483",
+      "type": "order_retrying",
+      "type_label": "order_retrying",
+      "message": "BUY C-BTC-69000-180226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (2/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-69000-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 2
+      }
+    },
+    {
+      "id": "act_192422_200",
+      "timestamp": "2026-02-17T19:24:22.734641",
+      "type": "order_failed",
+      "type_label": "Order Failed",
+      "message": "BUY C-BTC-69000-180226: All 3 placement attempts failed \u2014 Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "session_id": null,
+      "severity": "error",
+      "details": {
+        "symbol": "C-BTC-69000-180226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+      }
+    },
+    {
+      "id": "act_192424_200",
+      "timestamp": "2026-02-17T19:24:24.737168",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "BUY 3 lot(s) C-BTC-69000-180226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-69000-180226",
+        "side": "buy",
+        "size": 3
+      }
     }
   ],
-  "updated_at": "2026-02-17T19:01:02.493110"
+  "updated_at": "2026-02-17T19:24:24.737597"
 }

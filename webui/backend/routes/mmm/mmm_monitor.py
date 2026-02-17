@@ -377,44 +377,63 @@ class MMMMonitor:
         # Populate premium cache for sync engine calls (_make_fetch_fn)
         await self._prefetch_all_premiums(ce_now, pe_now)
 
-        # ATM Auto-Close Check: if enabled, close all when spot ≈ active strike
-        # ATM = spot price within 0.5% of either active strike
+        # ATM Auto-Close Check: if enabled, close all when spot ≈ ORIGINAL strike
+        # CRITICAL: Must use original_strike (entry strike), NOT active_strike.
+        # active_strike changes on shifts/reversals — using it would falsely
+        # trigger when the algo has shifted closer to spot (normal operation).
+        # The purpose of close_at_atm is to protect when spot reaches the
+        # ORIGINAL entry strike — real danger territory.
         params = session.get('params', {})
         if params.get('close_at_atm', False):
-            spot_price = await self._fetch_spot_price()
-            if spot_price > 0:
-                atm_threshold_pct = 0.005  # 0.5% of spot
-                atm_threshold = spot_price * atm_threshold_pct
-                ce_active_strike = session.get('ce', {}).get('active_strike', 0)
-                pe_active_strike = session.get('pe', {}).get('active_strike', 0)
-                atm_triggered_side = None
+            # Guard: skip if already triggered this session (prevent repeat fires)
+            if session.get('_atm_close_triggered'):
+                log.debug(f"[{sid}] ATM auto-close already triggered, skipping")
+            else:
+                spot_price = await self._fetch_spot_price()
+                if spot_price > 0:
+                    atm_threshold_pct = 0.005  # 0.5% of spot
+                    atm_threshold = spot_price * atm_threshold_pct
+                    # Use ORIGINAL strike (entry strike), not active_strike
+                    ce_original_strike = session.get('ce', {}).get('original_strike', 0)
+                    pe_original_strike = session.get('pe', {}).get('original_strike', 0)
+                    atm_triggered_side = None
 
-                if ce_active_strike and abs(spot_price - ce_active_strike) <= atm_threshold:
-                    atm_triggered_side = 'CE'
-                elif pe_active_strike and abs(spot_price - pe_active_strike) <= atm_threshold:
-                    atm_triggered_side = 'PE'
+                    if ce_original_strike and abs(spot_price - ce_original_strike) <= atm_threshold:
+                        atm_triggered_side = 'CE'
+                    elif pe_original_strike and abs(spot_price - pe_original_strike) <= atm_threshold:
+                        atm_triggered_side = 'PE'
 
-                if atm_triggered_side:
-                    log.critical(
-                        f"[{sid}] ATM AUTO-CLOSE: Spot ${spot_price:.0f} within "
-                        f"0.5% of {atm_triggered_side} strike. CLOSING ALL."
-                    )
-                    log_activity('atm_auto_close',
-                                f'🛑 ATM AUTO-CLOSE: Spot ${spot_price:.0f} is at '
-                                f'{atm_triggered_side} active strike — closing all positions',
-                                sid, 'error',
-                                {'spot': spot_price, 'ce_strike': ce_active_strike,
-                                 'pe_strike': pe_active_strike, 'triggered_side': atm_triggered_side})
-                    emit_safety(
-                        sid, 'atm_auto_close', 'critical',
-                        f'ATM AUTO-CLOSE: Spot ${spot_price:.0f} reached {atm_triggered_side} '
-                        f'strike. Closing all positions.',
-                        {'spot': spot_price, 'triggered_side': atm_triggered_side}
-                    )
-                    await self._auto_close_all(
-                        f'ATM auto-close: Spot ${spot_price:.0f} at {atm_triggered_side} strike'
-                    )
-                    return
+                    if atm_triggered_side:
+                        triggered_strike = ce_original_strike if atm_triggered_side == 'CE' else pe_original_strike
+                        # Set guard flag BEFORE close to prevent re-entry
+                        session['_atm_close_triggered'] = True
+                        log.critical(
+                            f"[{sid}] ATM AUTO-CLOSE: Spot ${spot_price:.0f} within "
+                            f"0.5% of {atm_triggered_side} ORIGINAL strike "
+                            f"${triggered_strike:.0f}. CLOSING ALL."
+                        )
+                        log_activity('atm_auto_close',
+                                    f'🛑 ATM AUTO-CLOSE: Spot ${spot_price:.0f} is at '
+                                    f'{atm_triggered_side} ORIGINAL strike ${triggered_strike:.0f} '
+                                    f'— closing all positions',
+                                    sid, 'error',
+                                    {'spot': spot_price,
+                                     'ce_original_strike': ce_original_strike,
+                                     'pe_original_strike': pe_original_strike,
+                                     'triggered_side': atm_triggered_side,
+                                     'triggered_strike': triggered_strike})
+                        emit_safety(
+                            sid, 'atm_auto_close', 'critical',
+                            f'ATM AUTO-CLOSE: Spot ${spot_price:.0f} reached {atm_triggered_side} '
+                            f'ORIGINAL strike ${triggered_strike:.0f}. Closing all positions.',
+                            {'spot': spot_price, 'triggered_side': atm_triggered_side,
+                             'triggered_strike': triggered_strike}
+                        )
+                        await self._auto_close_all(
+                            f'ATM auto-close: Spot ${spot_price:.0f} at {atm_triggered_side} '
+                            f'original strike ${triggered_strike:.0f}'
+                        )
+                        return
 
         # Step 2: Close-at-5 scan (§11)
         await self._process_close_at_5(ce_now, pe_now)
@@ -1392,6 +1411,7 @@ class MMMMonitor:
 
         Bug #9 fix: retry failed closes up to MAX_CLOSE_RETRIES times.
         Bug #13 fix: clear lot counts and position arrays after closes.
+        Bug #16 fix: always call self.stop() even if exceptions occur.
         """
         session = self.session
         sid = self.session_id
@@ -1401,141 +1421,147 @@ class MMMMonitor:
 
         failed_closes = []
 
-        for side_key in ['ce', 'pe']:
-            # Bug #11 fix: check stop event between sides
-            if self._should_stop():
-                log.warning(f"[{sid}] Stop requested during auto-close, aborting remaining closes")
-                break
+        try:
 
-            side_state = session.get(side_key, {})
-            option_type = 'call' if side_key == 'ce' else 'put'
-            active_strike = side_state.get('active_strike', 0)
-            expiry = session.get('params', {}).get('expiry', '')
+            for side_key in ['ce', 'pe']:
+                # Bug #11 fix: check stop event between sides
+                if self._should_stop():
+                    log.warning(f"[{sid}] Stop requested during auto-close, aborting remaining closes")
+                    break
 
-            # Close active lots (original + adjustment) at active strike
-            active_lots = side_state.get('active_lots', 0)
-            if active_lots > 0 and active_strike > 0:
-                closed = False
-                for attempt in range(1, MAX_CLOSE_RETRIES + 1):
-                    try:
-                        symbol = self.initializer.build_symbol(
-                            option_type, 'BTC', active_strike, expiry,
-                        )
-                        result = await self.executor.smart_execute(
-                            symbol=symbol,
-                            side='buy',
-                            size=active_lots,
-                            reduce_only=True,
-                        )
-                        if result.get('success'):
-                            close_price = result.get('fill_price', 0)
-                            # Bug #3 fix: weighted avg entry across original + adj fills
-                            orig_lots = side_state.get('original_lots', 0)
-                            orig_prem = side_state.get('original_premium', 0)
-                            weighted_sum = orig_prem * orig_lots
-                            weighted_lots = orig_lots
-                            for fill in side_state.get('adjustment_fills', []):
-                                f_lots = fill.get('lots', 0)
-                                f_prem = fill.get('premium', 0)
-                                f_strike = fill.get('strike', active_strike)
-                                if f_strike == active_strike:
-                                    weighted_sum += f_prem * f_lots
-                                    weighted_lots += f_lots
-                            avg_entry = weighted_sum / weighted_lots if weighted_lots > 0 else 0
-                            pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
-                            session['realized_pnl'] = (
-                                session.get('realized_pnl', 0) + pnl
-                            )
-                            log.info(
-                                f"[{sid}] Closed {active_lots} active "
-                                f"{side_key.upper()} @ {active_strike}, "
-                                f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
-                            )
-                            # Bug #13 fix: clear state
-                            side_state['original_lots'] = 0
-                            side_state['adjustment_fills'] = []
-                            side_state['active_lots'] = 0
-                            closed = True
-                            break
-                        else:
-                            log.warning(
-                                f"[{sid}] Auto-close active {side_key.upper()} "
-                                f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed: "
-                                f"{result.get('error', 'unknown')}"
-                            )
-                    except Exception as e:
-                        log.error(
-                            f"[{sid}] Auto-close active {side_key.upper()} "
-                            f"attempt {attempt}/{MAX_CLOSE_RETRIES} error: {e}"
-                        )
-                    if attempt < MAX_CLOSE_RETRIES:
-                        await asyncio.sleep(2)  # Brief pause before retry
-                if not closed:
-                    failed_closes.append(f"{side_key.upper()} active @ {active_strike}")
+                side_state = session.get(side_key, {})
+                option_type = 'call' if side_key == 'ce' else 'put'
+                active_strike = side_state.get('active_strike', 0)
+                expiry = session.get('params', {}).get('expiry', '')
 
-            # Close each frozen position at its OWN strike
-            closed_frozen_indices = []
-            for fi, frozen in enumerate(side_state.get('frozen_positions', [])):
-                frozen_strike = frozen.get('strike', 0)
-                frozen_lots = frozen.get('lots', 0)
-                frozen_entry = frozen.get('entry_premium', 0)
-
-                if frozen_lots > 0 and frozen_strike > 0:
+                # Close active lots (original + adjustment) at active strike
+                active_lots = side_state.get('active_lots', 0)
+                if active_lots > 0 and active_strike > 0:
                     closed = False
                     for attempt in range(1, MAX_CLOSE_RETRIES + 1):
                         try:
                             symbol = self.initializer.build_symbol(
-                                option_type, 'BTC', frozen_strike, expiry,
+                                option_type, 'BTC', active_strike, expiry,
                             )
                             result = await self.executor.smart_execute(
                                 symbol=symbol,
                                 side='buy',
-                                size=frozen_lots,
+                                size=active_lots,
                                 reduce_only=True,
                             )
                             if result.get('success'):
                                 close_price = result.get('fill_price', 0)
-                                pnl = (frozen_entry - close_price) * frozen_lots * LOT_SIZE_BTC
+                                # Bug #3 fix: weighted avg entry across original + adj fills
+                                orig_lots = side_state.get('original_lots', 0)
+                                orig_prem = side_state.get('original_premium', 0)
+                                weighted_sum = orig_prem * orig_lots
+                                weighted_lots = orig_lots
+                                for fill in side_state.get('adjustment_fills', []):
+                                    f_lots = fill.get('lots', 0)
+                                    f_prem = fill.get('premium', 0)
+                                    f_strike = fill.get('strike', active_strike)
+                                    if f_strike == active_strike:
+                                        weighted_sum += f_prem * f_lots
+                                        weighted_lots += f_lots
+                                avg_entry = weighted_sum / weighted_lots if weighted_lots > 0 else 0
+                                pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
                                 session['realized_pnl'] = (
                                     session.get('realized_pnl', 0) + pnl
                                 )
                                 log.info(
-                                    f"[{sid}] Closed {frozen_lots} frozen "
-                                    f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
+                                    f"[{sid}] Closed {active_lots} active "
+                                    f"{side_key.upper()} @ {active_strike}, "
+                                    f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
                                 )
-                                closed_frozen_indices.append(fi)
+                                # Bug #13 fix: clear state
+                                side_state['original_lots'] = 0
+                                side_state['adjustment_fills'] = []
+                                side_state['active_lots'] = 0
                                 closed = True
                                 break
                             else:
                                 log.warning(
-                                    f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike} "
-                                    f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed"
+                                    f"[{sid}] Auto-close active {side_key.upper()} "
+                                    f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed: "
+                                    f"{result.get('error', 'unknown')}"
                                 )
                         except Exception as e:
                             log.error(
-                                f"Failed to auto-close frozen {side_key.upper()} "
-                                f"@ {frozen_strike}, attempt {attempt}: {e}"
+                                f"[{sid}] Auto-close active {side_key.upper()} "
+                                f"attempt {attempt}/{MAX_CLOSE_RETRIES} error: {e}"
                             )
                         if attempt < MAX_CLOSE_RETRIES:
-                            await asyncio.sleep(2)
+                            await asyncio.sleep(2)  # Brief pause before retry
                     if not closed:
-                        failed_closes.append(f"{side_key.upper()} frozen @ {frozen_strike}")
+                        failed_closes.append(f"{side_key.upper()} active @ {active_strike}")
 
-            # Bug #13 fix: remove successfully closed frozen positions (descending)
-            for fi in sorted(closed_frozen_indices, reverse=True):
-                side_state.get('frozen_positions', []).pop(fi)
+                # Close each frozen position at its OWN strike
+                closed_frozen_indices = []
+                for fi, frozen in enumerate(side_state.get('frozen_positions', [])):
+                    frozen_strike = frozen.get('strike', 0)
+                    frozen_lots = frozen.get('lots', 0)
+                    frozen_entry = frozen.get('entry_premium', 0)
 
-            # Recompute lots after clearing
-            recompute_side_lots(side_state)
-            session[side_key] = side_state
+                    if frozen_lots > 0 and frozen_strike > 0:
+                        closed = False
+                        for attempt in range(1, MAX_CLOSE_RETRIES + 1):
+                            try:
+                                symbol = self.initializer.build_symbol(
+                                    option_type, 'BTC', frozen_strike, expiry,
+                                )
+                                result = await self.executor.smart_execute(
+                                    symbol=symbol,
+                                    side='buy',
+                                    size=frozen_lots,
+                                    reduce_only=True,
+                                )
+                                if result.get('success'):
+                                    close_price = result.get('fill_price', 0)
+                                    pnl = (frozen_entry - close_price) * frozen_lots * LOT_SIZE_BTC
+                                    session['realized_pnl'] = (
+                                        session.get('realized_pnl', 0) + pnl
+                                    )
+                                    log.info(
+                                        f"[{sid}] Closed {frozen_lots} frozen "
+                                        f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
+                                    )
+                                    closed_frozen_indices.append(fi)
+                                    closed = True
+                                    break
+                                else:
+                                    log.warning(
+                                        f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike} "
+                                        f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed"
+                                    )
+                            except Exception as e:
+                                log.error(
+                                    f"Failed to auto-close frozen {side_key.upper()} "
+                                    f"@ {frozen_strike}, attempt {attempt}: {e}"
+                                )
+                            if attempt < MAX_CLOSE_RETRIES:
+                                await asyncio.sleep(2)
+                        if not closed:
+                            failed_closes.append(f"{side_key.upper()} frozen @ {frozen_strike}")
 
-        if failed_closes:
-            log.error(
-                f"[{sid}] Auto-close completed with FAILURES: {failed_closes}. "
-                f"Manual intervention may be needed."
-            )
+                # Bug #13 fix: remove successfully closed frozen positions (descending)
+                for fi in sorted(closed_frozen_indices, reverse=True):
+                    side_state.get('frozen_positions', []).pop(fi)
 
-        self.stop(reason)
+                # Recompute lots after clearing
+                recompute_side_lots(side_state)
+                session[side_key] = side_state
+
+            if failed_closes:
+                log.error(
+                    f"[{sid}] Auto-close completed with FAILURES: {failed_closes}. "
+                    f"Manual intervention may be needed."
+                )
+
+        except Exception as e:
+            log.exception(f"[{sid}] CRITICAL: _auto_close_all crashed: {e}")
+        finally:
+            # Bug #16 fix: ALWAYS stop the session, even if close orders failed
+            self.stop(reason)
 
     # =========================================================================
     # Helpers
