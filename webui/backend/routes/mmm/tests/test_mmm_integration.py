@@ -191,7 +191,7 @@ class TestStorage:
 
         # Patch storage directory
         from webui.backend.routes.mmm.mmm_storage import MMMStorage
-        storage = MMMStorage(str(tmp_path))
+        storage = MMMStorage(str(tmp_path / 'mmm_sessions.db'))
 
         from webui.backend.routes.mmm.mmm_state import create_session
         session = create_session()
@@ -205,7 +205,7 @@ class TestStorage:
 
     def test_list_sessions(self, tmp_path):
         from webui.backend.routes.mmm.mmm_storage import MMMStorage
-        storage = MMMStorage(str(tmp_path))
+        storage = MMMStorage(str(tmp_path / 'mmm_sessions.db'))
 
         from webui.backend.routes.mmm.mmm_state import create_session
         s1 = create_session()
@@ -219,7 +219,7 @@ class TestStorage:
 
     def test_delete_session(self, tmp_path):
         from webui.backend.routes.mmm.mmm_storage import MMMStorage
-        storage = MMMStorage(str(tmp_path))
+        storage = MMMStorage(str(tmp_path / 'mmm_sessions.db'))
 
         from webui.backend.routes.mmm.mmm_state import create_session
         session = create_session()
