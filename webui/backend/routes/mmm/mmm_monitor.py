@@ -396,11 +396,19 @@ class MMMMonitor:
                     # Use ORIGINAL strike (entry strike), not active_strike
                     ce_original_strike = session.get('ce', {}).get('original_strike', 0)
                     pe_original_strike = session.get('pe', {}).get('original_strike', 0)
+                    # CRITICAL: Only check sides that HAVE open positions.
+                    # After close-at-5 or shift, original_strike remains set
+                    # even when total_lots = 0 (no positions). Without this
+                    # guard, a stale original_strike on a fully-closed side
+                    # could falsely trigger ATM auto-close and kill the
+                    # other side's perfectly safe positions.
+                    ce_total_lots = session.get('ce', {}).get('total_lots', 0)
+                    pe_total_lots = session.get('pe', {}).get('total_lots', 0)
                     atm_triggered_side = None
 
-                    if ce_original_strike and abs(spot_price - ce_original_strike) <= atm_threshold:
+                    if ce_original_strike and ce_total_lots > 0 and abs(spot_price - ce_original_strike) <= atm_threshold:
                         atm_triggered_side = 'CE'
-                    elif pe_original_strike and abs(spot_price - pe_original_strike) <= atm_threshold:
+                    elif pe_original_strike and pe_total_lots > 0 and abs(spot_price - pe_original_strike) <= atm_threshold:
                         atm_triggered_side = 'PE'
 
                     if atm_triggered_side:
