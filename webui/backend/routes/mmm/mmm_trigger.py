@@ -218,8 +218,12 @@ def apply_theta_acceleration(
     fight theta decay (e.g. 15% → 30%).
     Interval reduction: FASTER heartbeats as expiry nears so decisions aren't delayed.
 
-    Tiered schedule (minutes to 5:30 PM IST expiry):
-        > theta_window  : no acceleration (use base interval)
+    Only handles the LAST theta_acceleration_window minutes (trigger widening +
+    sub-30s intervals). Longer-range interval scaling is handled by
+    compute_adaptive_interval().
+
+    Tiered schedule (minutes to expiry):
+        > theta_window  : no acceleration
         30-window min   : base / 2  (min 30s)
         15-30 min       : 20s
         5-15 min        : 10s
@@ -255,4 +259,89 @@ def apply_theta_acceleration(
         'accelerated': True,
         'effective_min_trigger_move': base_trigger_move * 2,
         'effective_interval': effective_interval,
+    }
+
+
+# =========================================================================
+# Adaptive Interval — Auto-scale heartbeat frequency by time-to-expiry
+# =========================================================================
+
+# Tier table: (min_hours, max_hours, multiplier_of_base)
+# Applied in order; first match wins.
+# Rationale: market-making desks universally speed up monitoring as expiry
+# approaches because gamma increases and theta decay accelerates.
+ADAPTIVE_INTERVAL_TIERS = [
+    # (hours_lower, hours_upper, multiplier, label)
+    (30,    float('inf'), 1.00,  '>30h'),       # Distant: full base interval
+    (20,    30,           0.83,  '20-30h'),      # Slight pickup
+    (10,    20,           0.50,  '10-20h'),      # Mid-session, premiums moving
+    (5,     10,           0.30,  '5-10h'),       # Active decay begins
+    (3,     5,            0.20,  '3-5h'),        # Gamma acceleration
+    (1,     3,            0.10,  '1-3h'),        # Rapid decay, fast checks
+    (0.5,   1,            None,  '30m-1h'),      # Fixed 30s floor
+    (0,     0.5,          None,  '<30m'),         # Handed off to theta_acceleration
+]
+
+# Absolute floor — adaptive interval never goes below this.
+# Below 30s is theta_acceleration territory.
+ADAPTIVE_INTERVAL_FLOOR = 30
+
+
+def compute_adaptive_interval(
+    base_interval: int,
+    hours_to_expiry: float,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    """
+    Auto-scale heartbeat interval based on hours remaining to expiry.
+
+    The base_interval (user's configured value) is the SLOWEST rate.
+    As expiry approaches, the interval shrinks via multipliers.
+
+    The adaptive system handles hours-scale scaling (>30min to expiry).
+    For the final 30 minutes, theta_acceleration takes over with its
+    own sub-30s tiers.
+
+    Args:
+        base_interval: User's configured adjustment_interval in seconds
+        hours_to_expiry: Hours remaining until expiry
+        enabled: If False, returns base_interval unchanged
+
+    Returns:
+        {
+            adaptive: bool,          # Whether adaptive scaling was applied
+            effective_interval: int,  # The computed interval in seconds
+            tier_label: str,         # Human-readable tier name
+            multiplier: float,       # The multiplier applied (1.0 if not adaptive)
+        }
+    """
+    if not enabled or hours_to_expiry is None or hours_to_expiry <= 0:
+        return {
+            'adaptive': False,
+            'effective_interval': base_interval,
+            'tier_label': 'manual',
+            'multiplier': 1.0,
+        }
+
+    for h_lower, h_upper, multiplier, label in ADAPTIVE_INTERVAL_TIERS:
+        if h_lower <= hours_to_expiry < h_upper:
+            if multiplier is not None:
+                effective = max(ADAPTIVE_INTERVAL_FLOOR, int(base_interval * multiplier))
+            else:
+                # Fixed floor zone (30m-1h)
+                effective = ADAPTIVE_INTERVAL_FLOOR
+
+            return {
+                'adaptive': True,
+                'effective_interval': effective,
+                'tier_label': label,
+                'multiplier': multiplier if multiplier is not None else 0,
+            }
+
+    # Fallback (shouldn't happen)
+    return {
+        'adaptive': False,
+        'effective_interval': base_interval,
+        'tier_label': 'unknown',
+        'multiplier': 1.0,
     }

@@ -28,6 +28,10 @@ import {
   Divider,
   Tooltip,
   CircularProgress,
+  Select,
+  MenuItem,
+  InputLabel,
+  FormControl,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -61,6 +65,16 @@ const PARAM_GROUPS = {
     title: 'Close-at-Expiry',
     color: '#f44336',
     params: ['auto_close_mins', 'stop_adjustment_mins', 'close_at_threshold', 'theta_acceleration_window'],
+  },
+  adaptive: {
+    title: 'Adaptive Interval',
+    color: '#00bcd4',
+    params: ['adaptive_interval_enabled'],
+  },
+  windDown: {
+    title: 'Wind-Down Mode',
+    color: '#9c27b0',
+    params: ['wind_down_enabled', 'wind_down_hours_before_expiry', 'wind_down_buyback_pct', 'wind_down_close_threshold', 'wind_down_min_lots_to_keep', 'wind_down_floor_action'],
   },
 };
 
@@ -232,6 +246,35 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     const value = formatValue(formValues[paramName], type);
     const error = errors[paramName];
     const isHot = info.hot_reload;
+
+    // String select params (e.g. wind_down_floor_action)
+    const STRING_SELECT_OPTIONS = {
+      wind_down_floor_action: [
+        { value: 'skip', label: 'Skip — do nothing, let expire' },
+        { value: 'normal', label: 'Normal — allow standard adjustments' },
+        { value: 'pause', label: 'Pause — stop bot, require manual decision' },
+      ],
+    };
+
+    if (type === 'str' && STRING_SELECT_OPTIONS[paramName]) {
+      const options = STRING_SELECT_OPTIONS[paramName];
+      return (
+        <Grid item xs={12} sm={6} key={paramName}>
+          <FormControl fullWidth size="small">
+            <InputLabel>{info.description || paramName}</InputLabel>
+            <Select
+              value={value || ''}
+              label={info.description || paramName}
+              onChange={(e) => handleChange(paramName, e.target.value, type)}
+            >
+              {options.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Grid>
+      );
+    }
 
     if (type === 'bool') {
       return (

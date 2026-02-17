@@ -36,6 +36,15 @@ PARAM_RULES = {
     'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
     'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
     'shift_threshold_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
+    # Adaptive interval
+    'adaptive_interval_enabled': {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # Wind-down mode
+    'wind_down_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'wind_down_hours_before_expiry': {'type': float, 'min': 0, 'max': 72,   'hot': True},
+    'wind_down_buyback_pct':     {'type': float, 'min': 0.05, 'max': 1.0,  'hot': True},
+    'wind_down_close_threshold': {'type': float, 'min': 1,    'max': 500,  'hot': True},
+    'wind_down_min_lots_to_keep': {'type': int,  'min': 0,    'max': 10000, 'hot': True},
+    'wind_down_floor_action':    {'type': str,   'min': None, 'max': None,  'hot': True},
 }
 
 
@@ -126,6 +135,13 @@ def get_param_info() -> Dict[str, Dict]:
         'trailing_stop_pct': 'Protect profit at this percentage of peak P&L',
         'theta_acceleration_window': 'Minutes before expiry to widen triggers',
         'close_at_atm': 'Auto-close all if original strike becomes ATM (spot ≈ strike)',
+        'adaptive_interval_enabled': 'Auto-scale heartbeat frequency based on time-to-expiry (faster checks as expiry nears)',
+        'wind_down_enabled': 'Wind-down mode: reduce positions instead of adding when triggered near expiry',
+        'wind_down_hours_before_expiry': 'Activate wind-down N hours before expiry (0 = disabled)',
+        'wind_down_buyback_pct': 'Fraction of aggressor lots to buy back per trigger during wind-down (e.g. 0.25 = 25%)',
+        'wind_down_close_threshold': 'Close any position with premium below this during wind-down (elevated close-at-5)',
+        'wind_down_min_lots_to_keep': 'Never reduce below this many lots per side during wind-down (0 = allow full unwind)',
+        'wind_down_floor_action': 'When at min lots during wind-down: skip (let theta work), normal (fall back to hedge), or pause (ask user)',
     }
 
     info = {}

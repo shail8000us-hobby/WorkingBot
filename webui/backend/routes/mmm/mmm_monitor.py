@@ -25,7 +25,8 @@ from datetime import datetime, timedelta, timezone
 from .mmm_state import recompute_side_lots, get_session_summary
 from .mmm_trigger import (
     evaluate_triggers, update_trigger_snapshots,
-    apply_theta_acceleration, OUTCOME_NONE, OUTCOME_CE,
+    apply_theta_acceleration, compute_adaptive_interval,
+    OUTCOME_NONE, OUTCOME_CE,
     OUTCOME_PE, OUTCOME_BOTH,
 )
 from .mmm_engine import get_engine
@@ -37,6 +38,11 @@ from .mmm_reversal import (
 from .mmm_strike_shift import (
     check_shift_needed, freeze_current_positions,
     find_new_strike, activate_new_strike,
+)
+from .mmm_wind_down import (
+    is_wind_down_active, compute_wind_down_action,
+    get_lifo_close_fills, apply_lifo_removals,
+    get_wind_down_close_threshold,
 )
 from .mmm_close_at_5 import (
     scan_closeable_positions, close_position,
@@ -232,8 +238,24 @@ class MMMMonitor:
                 params = self.session.get('params', {})
                 interval = params.get('adjustment_interval', 300)
 
-                # Apply theta acceleration if near expiry
+                # Layer 1: Adaptive interval scaling (hours-to-expiry)
                 minutes_to_expiry = self._get_minutes_to_expiry()
+                hours_to_expiry = minutes_to_expiry / 60.0 if minutes_to_expiry is not None else None
+                adaptive_enabled = params.get('adaptive_interval_enabled', True)
+
+                adaptive_result = compute_adaptive_interval(
+                    interval, hours_to_expiry, enabled=adaptive_enabled,
+                )
+                if adaptive_result['adaptive']:
+                    interval = adaptive_result['effective_interval']
+                    self.session['_adaptive_tier'] = adaptive_result['tier_label']
+                    self.session['_adaptive_interval'] = interval
+                else:
+                    self.session.pop('_adaptive_tier', None)
+                    self.session.pop('_adaptive_interval', None)
+
+                # Layer 2: Theta acceleration (last N minutes — trigger widening + sub-30s)
+                # Can only make interval SHORTER, never longer
                 if minutes_to_expiry is not None:
                     accel = apply_theta_acceleration(
                         self.session, minutes_to_expiry
@@ -597,21 +619,35 @@ class MMMMonitor:
             premium_now = ce_now if aggressor == 'ce' else pe_now
             hedge_premium = pe_now if aggressor == 'ce' else ce_now
 
-            log_activity('adjustment_triggered',
-                        f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
-                        f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
-                        sid, 'info',
-                        {
-                            'aggressor': aggressor.upper(),
-                            'aggressor_premium': premium_now,
-                            'hedge': hedge.upper(),
-                            'hedge_premium': hedge_premium
-                        })
+            # Wind-down mode: reduce instead of adding positions
+            if is_wind_down_active(session):
+                session['_wind_down_mode'] = True
+                log_activity('wind_down',
+                            f'🌙 Wind-Down Active: {aggressor.upper()} triggered — '
+                            f'reducing positions instead of hedging',
+                            sid, 'info',
+                            {'aggressor': aggressor.upper(), 'premium': premium_now})
 
-            await self._process_adjustment(
-                aggressor, hedge, premium_now, hedge_premium,
-                ce_now, pe_now,
-            )
+                await self._process_wind_down_buyback(
+                    aggressor, ce_now, pe_now,
+                )
+            else:
+                session.pop('_wind_down_mode', None)
+                log_activity('adjustment_triggered',
+                            f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
+                            f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
+                            sid, 'info',
+                            {
+                                'aggressor': aggressor.upper(),
+                                'aggressor_premium': premium_now,
+                                'hedge': hedge.upper(),
+                                'hedge_premium': hedge_premium
+                            })
+
+                await self._process_adjustment(
+                    aggressor, hedge, premium_now, hedge_premium,
+                    ce_now, pe_now,
+                )
 
         # Step 8: Update P&L
         pnl = self._engine.compute_total_pnl(
@@ -738,6 +774,155 @@ class MMMMonitor:
 
     # =========================================================================
     # §5: Process Adjustment
+    # =========================================================================
+
+    # =========================================================================
+    # Wind-Down: Buy back aggressor instead of selling hedge
+    # =========================================================================
+
+    async def _process_wind_down_buyback(
+        self,
+        aggressor: str,
+        ce_now: float,
+        pe_now: float,
+    ):
+        """
+        Wind-down mode: buy back a portion of the aggressor side's lots
+        instead of selling more on the hedge side.
+
+        Uses LIFO order: closes newest adjustment fills first (highest cost/risk),
+        then original lots as last resort.
+        """
+        session = self.session
+        sid = self.session_id
+
+        from .mmm_activity import log_activity
+
+        wd_action = compute_wind_down_action(session, aggressor, ce_now, pe_now)
+
+        if wd_action['action'] == 'skip':
+            log_activity('wind_down',
+                        f'🌙 Wind-Down: {wd_action["reason"]} — skipping (let theta work)',
+                        sid, 'info', {'action': 'skip', 'side': aggressor.upper()})
+            return
+
+        if wd_action['action'] == 'pause':
+            log_activity('wind_down',
+                        f'🌙 Wind-Down: {wd_action["reason"]} — pausing for user decision',
+                        sid, 'warning', {'action': 'pause', 'side': aggressor.upper()})
+            self.pause(f'Wind-down floor reached: {wd_action["reason"]}')
+            return
+
+        if wd_action['action'] == 'normal':
+            # Fall back to normal adjustment
+            hedge = 'pe' if aggressor == 'ce' else 'ce'
+            premium_now = ce_now if aggressor == 'ce' else pe_now
+            hedge_premium = pe_now if aggressor == 'ce' else ce_now
+            log_activity('wind_down',
+                        f'🌙 Wind-Down: {wd_action["reason"]} — falling back to normal adjustment',
+                        sid, 'info', {'action': 'normal', 'side': aggressor.upper()})
+            await self._process_adjustment(
+                aggressor, hedge, premium_now, hedge_premium, ce_now, pe_now,
+            )
+            return
+
+        # action == 'buyback'
+        lots_to_close = wd_action['lots_to_close']
+        side_state = session.get(aggressor, {})
+        option_type = 'call' if aggressor == 'ce' else 'put'
+        active_strike = side_state.get('active_strike', 0)
+        expiry = session.get('params', {}).get('expiry', '')
+
+        # Get LIFO fill records
+        close_records = get_lifo_close_fills(side_state, lots_to_close)
+        if not close_records:
+            log_activity('wind_down',
+                        f'🌙 Wind-Down: No fills to close on {aggressor.upper()}',
+                        sid, 'warning')
+            return
+
+        actual_lots = sum(r['lots'] for r in close_records)
+
+        # Execute buy-back at the active strike
+        symbol = self.initializer.build_symbol(
+            option_type, 'BTC', active_strike, expiry,
+        )
+
+        log.info(
+            f"[{sid}] Wind-down buyback: BUY {actual_lots} {aggressor.upper()} "
+            f"@ {active_strike} ({symbol})"
+        )
+
+        try:
+            result = await self.executor.smart_execute(
+                symbol=symbol,
+                side='buy',
+                size=actual_lots,
+                reduce_only=True,
+            )
+
+            if not result.get('success'):
+                log_activity('wind_down',
+                            f'🌙 Wind-Down FAILED: Could not buy back {actual_lots} '
+                            f'{aggressor.upper()} — {result.get("error", "unknown")}',
+                            sid, 'error',
+                            {'error': result.get('error'), 'lots': actual_lots})
+                return
+
+            close_price = result.get('fill_price', 0)
+
+            # Apply LIFO removals and get avg entry
+            avg_entry = apply_lifo_removals(side_state, close_records)
+            session[aggressor] = side_state
+
+            # Compute realized P&L from this buyback
+            # Sold at avg_entry, bought back at close_price
+            realized = (avg_entry - close_price) * actual_lots * LOT_SIZE_BTC
+            session['realized_pnl'] = session.get('realized_pnl', 0) + realized
+
+            # Update triggers (both sides, same as normal)
+            update_trigger_snapshots(
+                session, ce_now, pe_now,
+                fetch_premium_fn=self._make_fetch_fn(),
+            )
+
+            # Record in wind-down history
+            session.setdefault('_wind_down_history', []).append({
+                'timestamp': datetime.utcnow().isoformat(),
+                'side': aggressor.upper(),
+                'lots_closed': actual_lots,
+                'close_price': close_price,
+                'avg_entry': avg_entry,
+                'realized_pnl': realized,
+                'remaining_active_lots': side_state.get('active_lots', 0),
+                'remaining_total_lots': side_state.get('total_lots', 0),
+            })
+
+            remaining = side_state.get('active_lots', 0)
+            log_activity('wind_down',
+                        f'🌙 Wind-Down Complete: Bought back {actual_lots} {aggressor.upper()} lots '
+                        f'@ ${close_price:.2f} (avg entry ${avg_entry:.2f}, '
+                        f'P&L ${realized:.2f}). Remaining: {remaining} lots.',
+                        sid, 'success',
+                        {
+                            'side': aggressor.upper(),
+                            'lots_closed': actual_lots,
+                            'close_price': close_price,
+                            'avg_entry': round(avg_entry, 2),
+                            'realized_pnl': round(realized, 2),
+                            'remaining_lots': remaining,
+                        })
+
+            session['updated_at'] = datetime.utcnow().isoformat()
+
+        except Exception as e:
+            log.exception(f"[{sid}] Wind-down buyback failed: {e}")
+            log_activity('wind_down',
+                        f'🌙 Wind-Down ERROR: {str(e)}',
+                        sid, 'error', {'error': str(e)})
+
+    # =========================================================================
+    # §5: Process Adjustment (Standard / Reversal)
     # =========================================================================
 
     async def _process_adjustment(
@@ -1050,21 +1235,32 @@ class MMMMonitor:
         ce_now: float,
         pe_now: float,
     ):
-        """Scan and close positions at or below threshold."""
+        """Scan and close positions at or below threshold.
+        During wind-down, uses elevated threshold from wind_down_close_threshold
+        to harvest opportunity (close positions that have decayed significantly).
+        """
         session = self.session
         sid = self.session_id
 
+        # During wind-down, elevate the close threshold for opportunity harvest
+        wd_threshold = get_wind_down_close_threshold(session)
+        normal_threshold = session.get('params', {}).get('close_at_threshold', 5.0)
+        using_elevated = wd_threshold > normal_threshold
+
         closeable = scan_closeable_positions(
             session, self._make_fetch_fn(),
+            threshold_override=wd_threshold if using_elevated else None,
         )
 
         if closeable:
             from .mmm_activity import log_activity
+            threshold_note = f' (wind-down elevated threshold: {wd_threshold})' if using_elevated else ''
             closeable_summary = ', '.join([f"{p['side'].upper()} @ {p['strike']}" for p in closeable])
             log_activity('info',
-                        f'Close-at-5 Scan: {len(closeable)} position(s) ready to close - {closeable_summary}',
+                        f'Close-at-5 Scan: {len(closeable)} position(s) ready to close{threshold_note} - {closeable_summary}',
                         sid, 'info',
-                        {'closeable_count': len(closeable), 'positions': closeable_summary})
+                        {'closeable_count': len(closeable), 'positions': closeable_summary,
+                         'wind_down_elevated': using_elevated, 'threshold_used': wd_threshold if using_elevated else normal_threshold})
 
         for pos in closeable:
             result = await close_position(
@@ -1774,6 +1970,8 @@ class MMMMonitor:
             session.get('strategy_status', 'UNKNOWN'),
             realized + unrealized, realized,
             premium_map=premium_map,
+            adaptive_tier=session.get('_adaptive_tier', ''),
+            wind_down_active=is_wind_down_active(session),
         )
 
 

@@ -250,6 +250,42 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
           </Tooltip>
         )}
 
+        {/* Adaptive Interval Tier */}
+        {heartbeat?.adaptive_tier && (
+          <Tooltip title={`Adaptive interval is active. Current tier: ${heartbeat.adaptive_tier}. Heartbeat interval automatically shortens as expiry approaches.`}>
+            <Chip
+              label={`⚡ ${heartbeat.adaptive_tier}`}
+              size="small"
+              variant="outlined"
+              sx={{
+                cursor: 'help',
+                borderColor: '#00bcd4',
+                color: '#00bcd4',
+                fontWeight: 600,
+                fontSize: '0.7rem',
+              }}
+            />
+          </Tooltip>
+        )}
+
+        {/* Wind-Down Mode Active */}
+        {heartbeat?.wind_down_active && (
+          <Tooltip title="Wind-down mode is ACTIVE. The algo is reducing positions instead of adding new ones. Trigger events cause buybacks (LIFO) instead of adjustments.">
+            <Chip
+              label="🌙 Wind-Down"
+              size="small"
+              sx={{
+                cursor: 'help',
+                bgcolor: 'rgba(156,39,176,0.12)',
+                color: '#9c27b0',
+                fontWeight: 700,
+                borderColor: '#9c27b0',
+                border: '1px solid',
+              }}
+            />
+          </Tooltip>
+        )}
+
         {/* Spacer */}
         <Box sx={{ flexGrow: 1 }} />
 

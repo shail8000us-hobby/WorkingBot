@@ -52,13 +52,17 @@ def _emit(event: str, data: Dict[str, Any]):
 def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    ce_trigger: float, pe_trigger: float, status: str,
                    total_pnl: float, realized_pnl: float,
-                   premium_map: Dict = None):
+                   premium_map: Dict = None,
+                   adaptive_tier: str = None,
+                   wind_down_active: bool = False):
     """Emit heartbeat data every interval. Section 4.
     
     Args:
         premium_map: Dict mapping "strike:option_type" to current mark price.
                      Includes ALL strikes with open positions (active + frozen).
                      e.g. {"69600:call": 72.85, "68400:call": 303.5, "68000:put": 96.5}
+        adaptive_tier: Label of the current adaptive interval tier (e.g. "10-20h (0.50x)")
+        wind_down_active: Whether wind-down mode is currently active
     """
     _emit('mmm_heartbeat', {
         'session_id': session_id,
@@ -70,6 +74,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         'total_pnl': total_pnl,
         'realized_pnl': realized_pnl,
         'premium_map': premium_map or {},
+        'adaptive_tier': adaptive_tier,
+        'wind_down_active': wind_down_active,
     })
 
 

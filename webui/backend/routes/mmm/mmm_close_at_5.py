@@ -24,6 +24,7 @@ log = logging.getLogger('mmm_close_at_5')
 def scan_closeable_positions(
     session: Dict,
     fetch_premium_fn,
+    threshold_override: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
     §11: Scan ALL positions across both sides for premiums <= threshold.
@@ -31,13 +32,15 @@ def scan_closeable_positions(
     Args:
         session: Full session dict
         fetch_premium_fn: callable(strike, option_type) → current_premium
+        threshold_override: If provided, use this instead of params threshold.
+                           Used by wind-down mode to elevate the close threshold.
 
     Returns:
         List of positions that should be closed, each:
         {side, strike, lots, entry_premium, current_premium, type, profit}
     """
     params = session.get('params', {})
-    threshold = params.get('close_at_threshold', 5.0)
+    threshold = threshold_override if threshold_override is not None else params.get('close_at_threshold', 5.0)
     closeable = []
 
     for side_key in ['ce', 'pe']:

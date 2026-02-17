@@ -138,6 +138,17 @@ DEFAULT_PARAMS = {
     'trailing_stop_pct': 0.50,          # protect profit at N% of peak
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
+
+    # Adaptive interval
+    'adaptive_interval_enabled': True,     # auto-scale heartbeat frequency based on time-to-expiry
+
+    # Wind-down mode
+    'wind_down_enabled': False,            # reduce positions instead of adding near expiry
+    'wind_down_hours_before_expiry': 4.0,  # activate wind-down N hours before expiry
+    'wind_down_buyback_pct': 0.25,         # fraction of lots to buy back per trigger
+    'wind_down_close_threshold': 20.0,     # elevated close-at-5 during wind-down
+    'wind_down_min_lots_to_keep': 1,       # never go below this many lots per side
+    'wind_down_floor_action': 'skip',      # what to do at floor: skip|normal|pause
 }
 
 # Which parameters can be changed while algo is running
@@ -148,6 +159,10 @@ HOT_RELOAD_PARAMS = {
     'max_adjustments', 'max_loss_amount', 'stop_adjustment_mins',
     'auto_close_mins', 'cooldown_on_reversal', 'whipsaw_limit',
     'trailing_stop_pct', 'theta_acceleration_window',
+    'adaptive_interval_enabled',
+    'wind_down_enabled', 'wind_down_hours_before_expiry',
+    'wind_down_buyback_pct', 'wind_down_close_threshold',
+    'wind_down_min_lots_to_keep', 'wind_down_floor_action',
 }
 
 

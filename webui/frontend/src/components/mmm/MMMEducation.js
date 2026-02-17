@@ -102,6 +102,17 @@ export const HELP = {
     // ---------- Heartbeat ----------
     heartbeat: 'Every N seconds (default: 300 = 5 min), the algo fetches current premiums, runs safety checks, checks triggers, and decides if an adjustment is needed. Think of it as the algo\'s "pulse" — it wakes up, checks everything, acts if needed, then sleeps until next beat.',
     heartbeat_interval: 'Time between heartbeats in seconds. Shorter = more responsive but more trades/fees. Longer = fewer trades but might miss fast moves. You can change this while running.',
+
+    // ---------- Adaptive Interval ----------
+    adaptive_interval_enabled: 'Enable adaptive heartbeat interval. When ON, the algo automatically shortens the heartbeat interval as expiry approaches — monitoring more frequently when time decay accelerates. Tiers: >30h = full interval, 20-30h = 83%, 10-20h = 50%, 5-10h = 30%, 3-5h = 20%, 1-3h = 10%, <1h = 30-second floor. Works alongside theta acceleration — adaptive handles hours-scale, theta handles final minutes.',
+
+    // ---------- Wind-Down Mode ----------
+    wind_down_enabled: 'Enable wind-down mode. When ON, the algo automatically starts reducing positions as expiry approaches (within wind_down_hours_before_expiry). Instead of adding more naked lots when a trigger fires, the algo buys back existing positions in LIFO order (newest first), reducing risk exposure into the final hours.',
+    wind_down_hours_before_expiry: 'Hours before expiry to activate wind-down mode. Example: 4.0 means wind-down starts 4 hours before expiry. During wind-down, trigger events cause buybacks instead of new adjustments. Typical range: 2-8 hours for 0DTE, 12-24 hours for weekly.',
+    wind_down_buyback_pct: 'Fraction of position to buy back on each wind-down trigger. 0.25 = buy back 25% of the aggressor side\'s lots each time. 1.0 = buy back everything at once. Smaller values spread exits across multiple heartbeats, reducing market impact. Values: 0.05 (5%) to 1.0 (100%).',
+    wind_down_close_threshold: 'Elevated close-at-5 threshold during wind-down. Normal close-at-5 triggers at 5 — this raises it during wind-down so positions close earlier. Example: 20 means any position with premium ≤20 gets closed during wind-down, capturing 80%+ profit instead of waiting for 95%+. This is the "opportunity harvest" feature.',
+    wind_down_min_lots_to_keep: 'Minimum lots to keep on any side during wind-down. Prevents completely exiting a side. Example: 1 means always keep at least 1 lot on each side as theta runners. Set to 0 to allow full exit.',
+    wind_down_floor_action: 'What to do when wind-down has reduced positions to the minimum (floor). "skip" = do nothing, let remaining lots ride to expiry. "normal" = allow standard adjustments again. "pause" = stop the bot and require manual decision. Most common: "skip" for letting theta decay do the final work.',
 };
 
 // =============================================================================
