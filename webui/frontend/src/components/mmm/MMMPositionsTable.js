@@ -49,10 +49,10 @@ function pnlColor(pnl) {
   return 'text.secondary';
 }
 
-const LOT_SIZE_BTC = 0.001; // 1 contract = 0.001 BTC on Delta Exchange
+export const LOT_SIZE_BTC = 0.001; // 1 contract = 0.001 BTC on Delta Exchange
 
 // Statuses that confirm orders have actually been filled on exchange
-const CONFIRMED_STATUSES = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY', 'STOPPED'];
+export const CONFIRMED_STATUSES = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY', 'STOPPED'];
 
 /**
  * Resolve the current premium for a given position.
@@ -68,7 +68,7 @@ const CONFIRMED_STATUSES = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY
  * of the last adjustment), not the current market price. Using it would
  * display wildly incorrect "current" prices.
  */
-function resolveCurrentPremium(strike, sideKey, heartbeat, session) {
+export function resolveCurrentPremium(strike, sideKey, heartbeat, session) {
   const optionType = sideKey === 'ce' ? 'call' : 'put';
   const mapKey = `${Math.round(strike)}:${optionType}`;
 
@@ -99,7 +99,7 @@ function resolveCurrentPremium(strike, sideKey, heartbeat, session) {
   return null;
 }
 
-function buildPositionRows(session, heartbeat) {
+export function buildPositionRows(session, heartbeat) {
   const rows = [];
   if (!session) return rows;
 

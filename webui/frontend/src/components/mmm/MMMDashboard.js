@@ -72,6 +72,8 @@ import MMMBothSidesAlert from './MMMBothSidesAlert';
 import MMMSafetyPanel from './MMMSafetyPanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
+import MMMConsolidatedPositions from './MMMConsolidatedPositions';
+import MMMGreeksPanel from './MMMGreeksPanel';
 import { HelpTooltip, SectionBlurb, StrategyExplainer } from './MMMEducation';
 
 // =============================================================================
@@ -737,6 +739,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <Tab label="Safety" />
         <Tab label="Strike Map" />
         <Tab label="Algo Calculations" />
+        <Tab label="Consolidated" />
+        <Tab label="Greeks & IV" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -1030,6 +1034,16 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
           session={session}
           wsData={wsData}
         />
+      )}
+
+      {/* Tab 8: Consolidated Positions */}
+      {detailTab === 8 && (
+        <MMMConsolidatedPositions session={session} heartbeat={wsData.heartbeat} />
+      )}
+
+      {/* Tab 9: Greeks & IV */}
+      {detailTab === 9 && (
+        <MMMGreeksPanel session={session} />
       )}
     </Box>
   );

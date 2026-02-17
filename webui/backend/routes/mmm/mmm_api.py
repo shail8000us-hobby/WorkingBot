@@ -2108,3 +2108,202 @@ def get_walkthrough(session_id: str):
     except Exception as e:
         log.exception(f"Failed to get walkthrough for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =========================================================================
+# Greeks, IV & Fees
+# =========================================================================
+
+@mmm_bp.route('/session/<session_id>/greeks-iv', methods=['GET'])
+def get_greeks_iv(session_id: str):
+    """
+    Fetch live Greeks, IV, and position data for all open positions in a session.
+
+    For each unique (strike, option_type) in the session, fetches the
+    Delta Exchange ticker to get Greeks (delta, gamma, theta, vega, rho),
+    IV (mark_iv, bid_iv, ask_iv), mark_price, and spot price.
+
+    Returns:
+        {success, positions: [{side, strike, lots, greeks: {...}, iv: {...}, ...}]}
+    """
+    import asyncio
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        expiry = session.get('params', {}).get('expiry', '')
+        if not expiry:
+            return jsonify({'success': False, 'error': 'Session has no expiry'}), 400
+
+        from .mmm_initializer import get_initializer
+        initializer = get_initializer()
+
+        # Collect all unique (strike, option_type, lots) from session
+        position_map = {}  # key=(strike, opt_type) -> {lots, entries}
+        for side_key in ['ce', 'pe']:
+            side = session.get(side_key, {})
+            if not side:
+                continue
+            opt = 'call' if side_key == 'ce' else 'put'
+            side_label = side_key.upper()
+
+            # Original lots at active strike
+            active_strike = side.get('active_strike', 0)
+            orig_lots = side.get('original_lots', 0)
+            orig_prem = side.get('original_premium', 0)
+            if active_strike and orig_lots > 0:
+                key = (float(active_strike), opt)
+                if key not in position_map:
+                    position_map[key] = {'side': side_label, 'lots': 0, 'entries': []}
+                position_map[key]['lots'] += orig_lots
+                position_map[key]['entries'].append({
+                    'type': 'original', 'lots': orig_lots, 'premium': orig_prem,
+                })
+
+            # Adjustment fills
+            for fill in side.get('adjustment_fills', []):
+                fill_strike = float(fill.get('strike', active_strike) or active_strike)
+                fill_lots = fill.get('lots', 0)
+                fill_prem = fill.get('premium', 0)
+                if fill_strike and fill_lots > 0:
+                    key = (fill_strike, opt)
+                    if key not in position_map:
+                        position_map[key] = {'side': side_label, 'lots': 0, 'entries': []}
+                    position_map[key]['lots'] += fill_lots
+                    position_map[key]['entries'].append({
+                        'type': 'adjustment', 'lots': fill_lots, 'premium': fill_prem,
+                    })
+
+            # Frozen positions
+            for frozen in side.get('frozen_positions', []):
+                f_strike = float(frozen.get('strike', 0))
+                f_lots = frozen.get('lots', 0)
+                f_prem = frozen.get('entry_premium', 0)
+                if f_strike and f_lots > 0:
+                    key = (f_strike, opt)
+                    if key not in position_map:
+                        position_map[key] = {'side': side_label, 'lots': 0, 'entries': [],
+                                             'frozen': True}
+                    position_map[key]['lots'] += f_lots
+                    position_map[key]['entries'].append({
+                        'type': 'frozen', 'lots': f_lots, 'premium': f_prem,
+                    })
+
+        if not position_map:
+            return jsonify({'success': True, 'positions': [], 'spot_price': 0})
+
+        # Build symbols and fetch tickers in parallel
+        from config.loader import get_api_credentials
+        from bot.api.async_delta_client import AsyncDeltaClient
+
+        creds = get_api_credentials()
+        client = AsyncDeltaClient(
+            api_key=creds.get('api_key', ''),
+            api_secret=creds.get('api_secret', ''),
+            testnet=creds.get('testnet', False) or False,
+        )
+
+        async def fetch_all():
+            tasks = []
+            keys = []
+            for (strike, opt) in position_map:
+                symbol = initializer.build_symbol(opt, 'BTC', strike, expiry)
+                keys.append((strike, opt))
+                tasks.append(
+                    client._request_with_retry(
+                        method="GET", path=f"/v2/tickers/{symbol}",
+                    )
+                )
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            return list(zip(keys, results))
+
+        ticker_results = asyncio.run(fetch_all())
+
+        # Also fetch spot price
+        try:
+            spot_price = initializer.get_spot_price()
+        except Exception:
+            spot_price = 0
+
+        # Build response
+        positions = []
+        for (strike, opt), resp in ticker_results:
+            info = position_map[(strike, opt)]
+            side_label = info['side']
+            total_lots = info['lots']
+            entries = info['entries']
+            is_frozen = info.get('frozen', False)
+
+            # Weighted average entry premium
+            total_lot_prem = sum(e['lots'] * e['premium'] for e in entries)
+            avg_entry = total_lot_prem / total_lots if total_lots else 0
+
+            # Parse ticker data
+            greeks = {}
+            iv = {}
+            mark_price = 0
+            if isinstance(resp, Exception):
+                log.warning(f"Failed to fetch ticker for {opt}@{strike}: {resp}")
+            else:
+                data = resp.get('result', resp)
+                mark_price = float(data.get('mark_price', 0))
+                # Greeks
+                g = data.get('greeks', {})
+                greeks = {
+                    'delta': _safe_float(g.get('delta')),
+                    'gamma': _safe_float(g.get('gamma')),
+                    'theta': _safe_float(g.get('theta')),
+                    'vega': _safe_float(g.get('vega')),
+                    'rho': _safe_float(g.get('rho')),
+                }
+                # IV
+                iv = {
+                    'mark_iv': _safe_float(data.get('mark_iv', data.get('quotes', {}).get('mark_iv'))),
+                    'bid_iv': _safe_float(data.get('bid_iv', data.get('quotes', {}).get('bid_iv'))),
+                    'ask_iv': _safe_float(data.get('ask_iv', data.get('quotes', {}).get('ask_iv'))),
+                }
+
+            # P&L calc: (entry - current) * lots * LOT_SIZE_BTC
+            from .mmm_constants import LOT_SIZE_BTC
+            pnl = (avg_entry - mark_price) * total_lots * LOT_SIZE_BTC if mark_price else None
+
+            positions.append({
+                'side': side_label,
+                'strike': strike,
+                'option_type': opt,
+                'lots': total_lots,
+                'avg_entry': round(avg_entry, 2),
+                'mark_price': round(mark_price, 2),
+                'pnl': round(pnl, 6) if pnl is not None else None,
+                'greeks': greeks,
+                'iv': iv,
+                'frozen': is_frozen,
+                'entries': entries,
+            })
+
+        # Sort: active before frozen, CE before PE, then by strike
+        positions.sort(key=lambda p: (p.get('frozen', False), p['side'], p['strike']))
+
+        return jsonify({
+            'success': True,
+            'positions': positions,
+            'spot_price': spot_price,
+            'timestamp': datetime.utcnow().isoformat(),
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get Greeks/IV for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _safe_float(val):
+    """Convert value to float, returning None on failure."""
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None

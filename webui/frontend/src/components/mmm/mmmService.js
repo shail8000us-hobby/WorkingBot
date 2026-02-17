@@ -422,6 +422,22 @@ const mmmService = {
     );
     return data;
   },
+
+  // =========================================================================
+  // Greeks, IV & Position Analytics
+  // =========================================================================
+
+  /**
+   * Get live Greeks, IV, and position data for all positions in a session.
+   * Fetches from Delta Exchange tickers API.
+   * @param {string} sessionId
+   */
+  async getGreeksIV(sessionId) {
+    const { data } = await api.get(
+      `${BASE_URL}/session/${sessionId}/greeks-iv`
+    );
+    return data;
+  },
 };
 
 export default mmmService;
