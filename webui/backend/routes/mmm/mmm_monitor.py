@@ -209,18 +209,21 @@ class MMMMonitor:
                 storage = get_storage()
                 fresh_session = storage.get_session(self.session_id)
                 if fresh_session:
-                    old_whipsaw = self.session.get('params', {}).get('whipsaw_limit', 3)
-                    new_whipsaw = fresh_session.get('params', {}).get('whipsaw_limit', 3)
+                    old_params = self.session.get('params', {})
+                    new_params = fresh_session.get('params', {})
                     
                     self.session = fresh_session
                     
-                    # Log parameter reload if whipsaw changed
-                    if old_whipsaw != new_whipsaw:
-                        from .mmm_activity import log_activity
-                        log_activity('info',
-                                    f'🔄 Hot Reload: whipsaw_limit updated {old_whipsaw} → {new_whipsaw}',
-                                    self.session_id, 'success',
-                                    {'old_value': old_whipsaw, 'new_value': new_whipsaw})
+                    # Log ALL hot-reloaded parameter changes
+                    for pkey in new_params:
+                        old_val = old_params.get(pkey)
+                        new_val = new_params.get(pkey)
+                        if old_val is not None and old_val != new_val:
+                            from .mmm_activity import log_activity
+                            log_activity('info',
+                                        f'🔄 Hot Reload: {pkey} updated {old_val} → {new_val}',
+                                        self.session_id, 'success',
+                                        {'param': pkey, 'old_value': old_val, 'new_value': new_val})
                 else:
                     log.error(f"Session {self.session_id} not found in storage, stopping monitor")
                     self.stop('Session not found')
@@ -1812,9 +1815,22 @@ def get_all_monitors() -> Dict[str, MMMMonitor]:
 
 
 def _save_session(session: Dict):
-    """Persist session to storage."""
+    """Persist session to storage, preserving hot-reload param updates.
+
+    The heartbeat never modifies session['params'].  However, the user may
+    update params via the Settings API (PATCH /params) while a heartbeat is
+    in-flight.  If we blindly save the monitor's in-memory copy, those
+    API-driven param changes get overwritten.  To prevent this, we re-read
+    the latest params from storage right before saving so hot-reload
+    updates are never lost.
+    """
     try:
         storage = get_storage()
+        sid = session.get('session_id')
+        if sid:
+            stored = storage.get_session(sid)
+            if stored and 'params' in stored:
+                session['params'] = stored['params']
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")
