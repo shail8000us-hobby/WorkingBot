@@ -38,8 +38,10 @@ import {
   Bolt as HotIcon,
   Lock as LockIcon,
   Warning as WarningIcon,
+  HelpOutline as HelpIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
+import { HELP } from './MMMEducation';
 
 // =============================================================================
 // Parameter Groups for UI Organization
@@ -49,33 +51,68 @@ const PARAM_GROUPS = {
   core: {
     title: 'Core Parameters',
     color: '#2196f3',
+    blurb: 'Fundamental settings that define position size, check frequency, and hard stop.',
     params: ['initial_lots', 'adjustment_interval', 'max_loss_amount'],
   },
   triggers: {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
+    blurb: 'Controls when the algo adjusts and how it shifts strikes. Lower trigger = more sensitive.',
     params: ['min_trigger_move', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',
     color: '#ff9800',
+    blurb: 'Guard rails to prevent runaway exposure. Adjust carefully.',
     params: ['whipsaw_limit', 'max_lots_per_side', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm'],
   },
   expiry: {
     title: 'Close-at-Expiry',
     color: '#f44336',
+    blurb: 'End-of-life behavior: when to stop adjusting, auto-close, and profit-lock thresholds.',
     params: ['auto_close_mins', 'stop_adjustment_mins', 'close_at_threshold', 'theta_acceleration_window'],
   },
   adaptive: {
     title: 'Adaptive Interval',
     color: '#00bcd4',
+    blurb: 'Automatically shortens heartbeat interval as expiry nears. More checks when theta accelerates.',
     params: ['adaptive_interval_enabled'],
   },
   windDown: {
     title: 'Wind-Down Mode',
     color: '#9c27b0',
+    blurb: 'Near-expiry risk reduction: buys back positions (LIFO) instead of adding new naked lots.',
     params: ['wind_down_enabled', 'wind_down_hours_before_expiry', 'wind_down_buyback_pct', 'wind_down_close_threshold', 'wind_down_min_lots_to_keep', 'wind_down_floor_action'],
   },
+};
+
+// Rich tooltip text for each parameter (maps param name → detailed help)
+const PARAM_TOOLTIPS = {
+  initial_lots: 'Starting lots per side at entry. CE and PE each get this many lots. These "original" lots naturally hedge each other — when one side loses, the other gains. This is the safe foundation of the strategy.',
+  adjustment_interval: HELP.heartbeat_interval || 'Seconds between heartbeat checks. Shorter = more responsive (catches fast moves) but more API calls and potential fees. Default 300 = 5 minutes.',
+  max_loss_amount: HELP.max_loss || 'Absolute dollar hard stop. If your total P&L drops below this negative amount, ALL positions are immediately closed. Your last line of defense.',
+  min_trigger_move: HELP.min_trigger_move || 'Minimum % premium must exceed trigger to fire adjustment.',
+  shift_threshold: HELP.shift_threshold || 'Minimum premium at the hedge strike to avoid a strike shift.',
+  shift_threshold_pct: HELP.shift_threshold_pct || 'Dynamic shift threshold as % of entry premium.',
+  shift_target_premium: 'Target premium when looking for a new strike after a shift. The algo picks the strike closest to this premium value. Higher = deeper OTM (safer but less premium). Lower = closer to ATM (more premium but riskier).',
+  max_adjustments: HELP.max_adjustments || 'Maximum number of adjustments before the algo stops and alerts you.',
+  cooldown_on_reversal: HELP.cooldown || 'After a reversal is detected, skip one heartbeat interval before adjusting. Filters out false reversals from short price spikes.',
+  whipsaw_limit: HELP.whipsaw || 'If the last N adjustments alternate between CE and PE, the market is whipsawing. The algo pauses.',
+  max_lots_per_side: HELP.position_cap || 'Maximum total lots allowed per side (CE or PE). Prevents runaway lot accumulation from repeated adjustments.',
+  trailing_stop_pct: HELP.trailing_profit || 'Once P&L hits a peak, if it drops more than this % from that peak, the algo alerts you. Protects profits from giving back too much.',
+  premium_buffer_pct: 'Extra lots percentage for slippage protection. When calculating how many lots to sell, add this % extra to account for price movement between quote and fill. 0.05 = 5% buffer.',
+  close_at_atm: 'Auto-close ALL positions if the original strike becomes at-the-money (spot price ≈ strike price). This is dangerous territory — ATM options have maximum gamma and can move violently.',
+  auto_close_mins: 'Auto-close ALL positions N minutes before expiry. This is the absolute final safety net. Default 5 = close everything 5 minutes before expiry, regardless of P&L.',
+  stop_adjustment_mins: HELP.near_expiry || 'Stop making new adjustments N minutes before expiry. Let theta decay do the final work instead of adding risky late adjustments.',
+  close_at_threshold: HELP.close_at_5 || 'Close any position whose premium drops to this level or below. Default 5 = when an option is worth $5 or less, buy it back to lock in ~95% profit.',
+  theta_acceleration_window: 'Minutes before expiry to activate theta acceleration. Within this window, the algo widens trigger thresholds (allows more premium move before adjusting) because time decay is rapidly working in your favor.',
+  adaptive_interval_enabled: HELP.adaptive_interval_enabled || 'Auto-scale heartbeat frequency based on time-to-expiry.',
+  wind_down_enabled: HELP.wind_down_enabled || 'Enable wind-down mode near expiry.',
+  wind_down_hours_before_expiry: HELP.wind_down_hours_before_expiry || 'Hours before expiry to activate wind-down.',
+  wind_down_buyback_pct: HELP.wind_down_buyback_pct || 'Fraction of lots to buy back per trigger during wind-down.',
+  wind_down_close_threshold: HELP.wind_down_close_threshold || 'Elevated close threshold during wind-down.',
+  wind_down_min_lots_to_keep: HELP.wind_down_min_lots_to_keep || 'Minimum lots to keep per side during wind-down.',
+  wind_down_floor_action: HELP.wind_down_floor_action || 'Action when at minimum lots during wind-down.',
 };
 
 // =============================================================================
@@ -238,6 +275,25 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     }
   };
 
+  // Render the (?) tooltip icon for a parameter
+  const renderHelpIcon = (paramName) => {
+    const tip = PARAM_TOOLTIPS[paramName];
+    if (!tip) return null;
+    return (
+      <Tooltip
+        title={
+          <Typography variant="body2" sx={{ p: 0.5, lineHeight: 1.5, maxWidth: 360, fontSize: '0.78rem' }}>
+            {tip}
+          </Typography>
+        }
+        placement="top"
+        arrow
+      >
+        <HelpIcon sx={{ fontSize: 14, color: 'text.disabled', opacity: 0.6, cursor: 'help', ml: 0.5, '&:hover': { opacity: 1, color: '#2196f3' } }} />
+      </Tooltip>
+    );
+  };
+
   // Render parameter input
   const renderParam = (paramName) => {
     const params = paramsInfo?.params || {};
@@ -250,9 +306,9 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     // String select params (e.g. wind_down_floor_action)
     const STRING_SELECT_OPTIONS = {
       wind_down_floor_action: [
-        { value: 'skip', label: 'Skip — do nothing, let expire' },
-        { value: 'normal', label: 'Normal — allow standard adjustments' },
-        { value: 'pause', label: 'Pause — stop bot, require manual decision' },
+        { value: 'skip', label: 'Skip — let theta work' },
+        { value: 'normal', label: 'Normal — allow adjustments' },
+        { value: 'pause', label: 'Pause — require decision' },
       ],
     };
 
@@ -260,18 +316,21 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const options = STRING_SELECT_OPTIONS[paramName];
       return (
         <Grid item xs={12} sm={6} key={paramName}>
-          <FormControl fullWidth size="small">
-            <InputLabel>{info.description || paramName}</InputLabel>
-            <Select
-              value={value || ''}
-              label={info.description || paramName}
-              onChange={(e) => handleChange(paramName, e.target.value, type)}
-            >
-              {options.map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>{info.description || paramName}</InputLabel>
+              <Select
+                value={value || ''}
+                label={info.description || paramName}
+                onChange={(e) => handleChange(paramName, e.target.value, type)}
+              >
+                {options.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {renderHelpIcon(paramName)}
+          </Box>
         </Grid>
       );
     }
@@ -301,6 +360,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       <HotIcon sx={{ fontSize: 14, color: '#ff9800' }} />
                     </Tooltip>
                   )}
+                  {renderHelpIcon(paramName)}
                 </Box>
               }
             />
@@ -325,6 +385,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                   <HotIcon sx={{ fontSize: 12, color: '#ff9800', ml: 0.5 }} />
                 </Tooltip>
               )}
+              {renderHelpIcon(paramName)}
             </Box>
           }
           type="number"
@@ -364,7 +425,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
         </Box>
       </DialogTitle>
 
-      <DialogContent>
+      <DialogContent sx={{ maxHeight: '75vh', overflowY: 'auto' }}>
         {loading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
             <CircularProgress />
@@ -396,7 +457,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
           <Box key={groupKey} sx={{ mb: 3 }}>
             {idx > 0 && <Divider sx={{ my: 3 }} />}
             
-            <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box
                 sx={{
                   width: 4,
@@ -419,6 +480,11 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                 />
               )}
             </Box>
+            {group.blurb && (
+              <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1.5, fontStyle: 'italic', fontSize: '0.72rem', opacity: 0.8 }}>
+                💡 {group.blurb}
+              </Typography>
+            )}
 
             <Grid container spacing={2}>
               {group.params.map((paramName) => renderParam(paramName))}
