@@ -129,7 +129,7 @@ class MMMSafety:
         """Check if max adjustment count reached."""
         events = []
         params = session.get('params', {})
-        max_adj = params.get('max_adjustments', 30)
+        max_adj = params.get('max_adjustments', 100)
         current = session.get('adjustment_count', 0)
 
         if current >= max_adj:
@@ -143,7 +143,7 @@ class MMMSafety:
                 'action': 'stop',
                 'details': {'count': current, 'max': max_adj},
             })
-        elif current >= max_adj * 0.8:
+        elif current >= max_adj * 0.9:
             events.append({
                 'type': 'max_adjustments',
                 'level': 'warning',

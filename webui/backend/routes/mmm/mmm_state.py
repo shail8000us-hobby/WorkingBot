@@ -129,7 +129,7 @@ DEFAULT_PARAMS = {
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'premium_buffer_pct': 0.05,         # 5% extra lots for slippage
     'max_lots_per_side': 100,           # maximum total lots per CE or PE
-    'max_adjustments': 30,              # maximum adjustment events
+    'max_adjustments': 100,              # maximum adjustment events
     'max_loss_amount': 5000.0,          # hard stop P&L threshold
     'stop_adjustment_mins': 15,         # stop adjusting N mins before expiry
     'auto_close_mins': 5,              # auto-close all N mins before expiry

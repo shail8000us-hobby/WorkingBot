@@ -2059,7 +2059,7 @@ def get_safety_status(session_id: str):
             },
             'adjustments': {
                 'count': session.get('adjustment_count', 0),
-                'max': params.get('max_adjustments', 30),
+                'max': params.get('max_adjustments', 100),
             },
             'max_loss': {
                 'current': session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0),
