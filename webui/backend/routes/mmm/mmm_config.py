@@ -35,6 +35,7 @@ PARAM_RULES = {
     'trailing_stop_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
     'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'itm_guard_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
     'shift_threshold_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     # Adaptive interval
     'adaptive_interval_enabled': {'type': bool,  'min': None, 'max': None,  'hot': True},
@@ -135,6 +136,7 @@ def get_param_info() -> Dict[str, Dict]:
         'trailing_stop_pct': 'Protect profit at this percentage of peak P&L',
         'theta_acceleration_window': 'Minutes before expiry to widen triggers',
         'close_at_atm': 'Auto-close all if original strike becomes ATM (spot ≈ strike)',
+        'itm_guard_enabled': 'Block selling ITM options for adjustment (ON = safe, OFF = allow ITM selling near expiry)',
         'adaptive_interval_enabled': 'Auto-scale heartbeat frequency based on time-to-expiry (faster checks as expiry nears)',
         'wind_down_enabled': 'Wind-down mode: reduce positions instead of adding when triggered near expiry',
         'wind_down_hours_before_expiry': 'Activate wind-down N hours before expiry (0 = disabled)',

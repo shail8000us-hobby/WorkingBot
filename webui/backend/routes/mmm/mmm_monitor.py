@@ -42,12 +42,13 @@ from .mmm_strike_shift import (
 from .mmm_wind_down import (
     is_wind_down_active, compute_wind_down_action,
     get_lifo_close_fills, apply_lifo_removals,
-    get_wind_down_close_threshold,
+    get_wind_down_close_threshold, get_wind_down_status,
 )
 from .mmm_close_at_5 import (
     scan_closeable_positions, close_position,
     check_side_fully_closed, check_both_sides_closed,
 )
+from .mmm_analytics_storage import get_analytics_storage
 from .mmm_safety import (
     get_safety, should_block_adjustment, should_pause,
     update_peak_pnl,
@@ -86,6 +87,7 @@ class MMMMonitor:
         self._paused = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._force_event = threading.Event()   # Force-heartbeat signal
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._session_lock = threading.Lock()
 
@@ -130,6 +132,18 @@ class MMMMonitor:
         )
         self.session['updated_at'] = datetime.utcnow().isoformat()
 
+        # Analytics: Track session start time
+        analytics = self.session.setdefault('analytics', {})
+        if not analytics.get('session_start_time'):
+            analytics['session_start_time'] = datetime.utcnow().isoformat()
+            # Capture initial lots from session
+            analytics['initial_ce_lots'] = self.session.get('ce', {}).get('original_lots', 0)
+            analytics['initial_pe_lots'] = self.session.get('pe', {}).get('original_lots', 0)
+            # Initialize cumulative traded volume with initial position
+            analytics['total_ce_lots_traded'] = analytics['initial_ce_lots']
+            analytics['total_pe_lots_traded'] = analytics['initial_pe_lots']
+            analytics['total_combined_lots_traded'] = analytics['initial_ce_lots'] + analytics['initial_pe_lots']
+
         self._thread = threading.Thread(
             target=self._run_loop,
             name=f"mmm-monitor-{self.session_id}",
@@ -153,7 +167,27 @@ class MMMMonitor:
         self.session['strategy_status'] = 'STOPPED'
         self.session['updated_at'] = datetime.utcnow().isoformat()
 
+        # Analytics: Track session end time and duration
+        analytics = self.session.setdefault('analytics', {})
+        analytics['session_end_time'] = datetime.utcnow().isoformat()
+        start_time = analytics.get('session_start_time')
+        if start_time:
+            try:
+                start_dt = datetime.fromisoformat(start_time)
+                end_dt = datetime.utcnow()
+                analytics['session_duration_seconds'] = (end_dt - start_dt).total_seconds()
+            except (ValueError, TypeError):
+                pass
+
         _save_session(self.session)
+        
+        # Persist analytics to separate storage (survives session deletion)
+        try:
+            analytics_storage = get_analytics_storage()
+            analytics_storage.save_session_analytics(self.session)
+            log.info(f"Saved analytics for {self.session_id} to persistent storage")
+        except Exception as e:
+            log.error(f"Failed to save analytics to persistent storage: {e}")
 
         emit_status_change(
             self.session_id, old_status, 'STOPPED', reason
@@ -199,6 +233,42 @@ class MMMMonitor:
     def _should_stop(self) -> bool:
         """Bug #11 fix: check if stop has been requested (use in long operations)."""
         return self._stop_event.is_set() or not self._running
+
+    def force_heartbeat(self) -> bool:
+        """Force the next heartbeat to run immediately (skip wait timer).
+
+        Sets a threading event that interrupts the inter-heartbeat wait.
+        The heartbeat itself is identical to a normal one — same trigger
+        evaluation, safety checks, and guards.  After the forced beat
+        the loop resumes its default interval-based schedule.
+
+        Returns True if force was accepted, False if monitor is not running.
+        """
+        if not self._running:
+            return False
+        self._force_event.set()
+        log.info(f"[{self.session_id}] ⚡ Force heartbeat requested")
+        return True
+
+    def _wait_for_next_cycle(self, timeout: float):
+        """Wait for next heartbeat cycle, interruptible by stop or force.
+
+        Polls every 0.5s so a force_heartbeat() call triggers within 500ms.
+        After a force, the event is cleared and the loop proceeds normally.
+        """
+        end_time = time.monotonic() + timeout
+        while time.monotonic() < end_time:
+            if self._stop_event.is_set():
+                return
+            if self._force_event.is_set():
+                self._force_event.clear()
+                from .mmm_activity import log_activity
+                log_activity('force_heartbeat',
+                            '⚡ Force Heartbeat — running immediately',
+                            self.session_id, 'info')
+                return
+            remaining = end_time - time.monotonic()
+            self._stop_event.wait(timeout=min(0.5, max(0, remaining)))
 
     # =========================================================================
     # Main Loop
@@ -303,7 +373,7 @@ class MMMMonitor:
                         f"[{self.session_id}] Heartbeat took {elapsed:.1f}s "
                         f"(exceeds {interval}s interval) — running next immediately"
                     )
-                self._stop_event.wait(timeout=remaining)
+                self._wait_for_next_cycle(remaining)
 
         except Exception as e:
             log.exception(f"Monitor loop crashed for {self.session_id}: {e}")
@@ -373,6 +443,22 @@ class MMMMonitor:
                     f'Current Premiums: CE {ce_strike} = ${ce_now:.2f}, PE {pe_strike} = ${pe_now:.2f}',
                     sid, 'info',
                     {'ce_premium': ce_now, 'pe_premium': pe_now, 'ce_strike': ce_strike, 'pe_strike': pe_strike})
+
+        # Log wind-down status every heartbeat so user can see if it's active or pending
+        wd_status = get_wind_down_status(session)
+        if wd_status['enabled']:
+            if wd_status['active']:
+                log_activity('wind_down',
+                             f'🌙 Wind-Down MODE ACTIVE — reducing positions '
+                             f'({wd_status.get("hours_remaining", "?"):.1f}h to expiry)',
+                             sid, 'info', wd_status)
+            else:
+                activates_in = wd_status.get('activates_in_hours')
+                if activates_in is not None:
+                    log_activity('wind_down',
+                                 f'🌙 Wind-Down PENDING — activates in {activates_in:.1f}h '
+                                 f'({wd_status.get("hours_before_expiry")}h before expiry threshold)',
+                                 sid, 'info', wd_status)
 
         # Populate premium cache for sync engine calls (_make_fetch_fn)
         await self._prefetch_all_premiums(ce_now, pe_now)
@@ -450,6 +536,15 @@ class MMMMonitor:
         if check_both_sides_closed(session):
             self.stop('Both sides fully closed — strategy complete!')
             return
+
+        # Step 2b: Proactive wind-down buyback — every heartbeat while wind-down is active
+        # (independent of trigger evaluation — reduces positions even when no trigger fires)
+        if is_wind_down_active(session):
+            await self._process_proactive_wind_down(ce_now, pe_now)
+            # Re-check if both sides fully closed after proactive reduction
+            if check_both_sides_closed(session):
+                self.stop('Both sides fully closed via wind-down — strategy complete!')
+                return
 
         # Bug #7 fix: compute FRESH unrealized P&L before safety checks
         # so that check_max_loss uses current prices, not stale values.
@@ -631,6 +726,11 @@ class MMMMonitor:
             self.pause('Both sides triggered')
             session['strategy_status'] = 'BOTH_SIDES_UP'
             session['both_sides_up_at'] = datetime.utcnow().isoformat()
+            
+            # Analytics: Track both_sides_up event (no trading logic impact)
+            analytics = session.setdefault('analytics', {})
+            analytics.setdefault('both_sides_up_timestamps', []).append(datetime.utcnow().isoformat())
+            
             emit_both_sides_alert(
                 sid, ce_now, pe_now,
                 trigger_result['ce_trigger'],
@@ -698,6 +798,19 @@ class MMMMonitor:
                         'unrealized': round(pnl['unrealized'], 2),
                         'fees': round(pnl['fees'], 2)
                     })
+
+        # Step 9: Calculate Portfolio Delta (monitoring only, no trading logic)
+        portfolio_delta = await self._calculate_portfolio_delta()
+        session['portfolio_delta'] = portfolio_delta
+        log_activity('info',
+                    f'Portfolio Delta: {portfolio_delta:+.3f}',
+                    sid, 'info',
+                    {'portfolio_delta': round(portfolio_delta, 3)})
+
+        # Update analytics tracking (zero impact on trading logic)
+        self._update_analytics_exposure()
+        self._update_analytics_pnl_milestones(pnl)
+        self._update_analytics_delta(portfolio_delta)
 
         # P&L history for chart
         session.setdefault('pnl_history', []).append({
@@ -786,6 +899,15 @@ class MMMMonitor:
 
         # Save state
         _save_session(session)
+        
+        # Periodically persist analytics (every 10 heartbeats or ~5min for 30s intervals)
+        heartbeat_counter = session.get('_heartbeat_counter', 0)
+        if heartbeat_counter % 10 == 0:
+            try:
+                analytics_storage = get_analytics_storage()
+                analytics_storage.save_session_analytics(session)
+            except Exception as e:
+                log.error(f"Failed to persist analytics: {e}")
 
         # Reset error count AFTER successful heartbeat completion
         session['error_count'] = 0
@@ -806,6 +928,54 @@ class MMMMonitor:
     # =========================================================================
     # Wind-Down: Buy back aggressor instead of selling hedge
     # =========================================================================
+
+    async def _process_proactive_wind_down(
+        self,
+        ce_now: float,
+        pe_now: float,
+    ):
+        """
+        Proactive wind-down: every heartbeat while wind-down is active,
+        attempt to reduce BOTH sides (not just triggered side).
+
+        This is separate from the trigger-based path so positions are
+        reduced even when no trigger fires (e.g. premiums falling quietly).
+        Uses LIFO order + wind_down_buyback_pct per call.
+        """
+        session = self.session
+        sid = self.session_id
+        from .mmm_activity import log_activity
+
+        reduced_any = False
+        for side in ['ce', 'pe']:
+            side_state = session.get(side, {})
+            active_lots = side_state.get('active_lots', 0)
+            params = session.get('params', {})
+            min_keep = params.get('wind_down_min_lots_to_keep', 0)
+
+            if active_lots <= min_keep:
+                log.debug(f"[{sid}] Proactive wind-down: {side.upper()} at floor "
+                          f"({active_lots} lots, min_keep={min_keep}) — skipping")
+                continue
+
+            wd_action = compute_wind_down_action(session, side, ce_now, pe_now)
+            if wd_action['action'] != 'buyback' or wd_action['lots_to_close'] <= 0:
+                log.debug(f"[{sid}] Proactive wind-down: {side.upper()} skipped — "
+                          f"action={wd_action['action']}")
+                continue
+
+            log_activity('wind_down',
+                         f'🌙 Proactive Wind-Down: reducing {side.upper()} by '
+                         f'{wd_action["lots_to_close"]} lots',
+                         sid, 'info',
+                         {'side': side.upper(), 'lots': wd_action['lots_to_close'],
+                          'active_lots': active_lots})
+            await self._process_wind_down_buyback(side, ce_now, pe_now)
+            reduced_any = True
+
+        if not reduced_any:
+            params = session.get('params', {})
+            log.debug(f"[{sid}] Proactive wind-down: no sides eligible for reduction this heartbeat")
 
     async def _process_wind_down_buyback(
         self,
@@ -870,83 +1040,128 @@ class MMMMonitor:
 
         actual_lots = sum(r['lots'] for r in close_records)
 
-        # Execute buy-back at the active strike
-        symbol = self.initializer.build_symbol(
-            option_type, 'BTC', active_strike, expiry,
-        )
+        # -----------------------------------------------------------------
+        # CRITICAL FIX: Group records by their ACTUAL strike and place a
+        # separate buy order per strike.
+        # LIFO fills span multiple strikes when the algo has shifted.
+        # Placing one order at active_strike would buy the WRONG contract
+        # for fills that belong to a shifted (old) strike.
+        # -----------------------------------------------------------------
+        from collections import defaultdict
+        # Map: strike → {'lots': int, 'records': list, 'weighted_premium_sum': float}
+        by_strike: Dict[float, Dict] = defaultdict(lambda: {'lots': 0, 'records': [], 'wp_sum': 0.0})
+        for rec in close_records:
+            # resolve the actual strike for this fill
+            rec_strike = rec.get('strike') or active_strike
+            if rec_strike == 0:
+                rec_strike = active_strike
+            by_strike[rec_strike]['lots'] += rec['lots']
+            by_strike[rec_strike]['records'].append(rec)
+            by_strike[rec_strike]['wp_sum'] += rec.get('premium', 0) * rec['lots']
 
-        log.info(
-            f"[{sid}] Wind-down buyback: BUY {actual_lots} {aggressor.upper()} "
-            f"@ {active_strike} ({symbol})"
-        )
+        total_realized = 0.0
+        any_failed = False
 
-        try:
-            result = await self.executor.smart_execute(
-                symbol=symbol,
-                side='buy',
-                size=actual_lots,
-                reduce_only=True,
+        for strike_val, group in by_strike.items():
+            group_lots = group['lots']
+            group_records = group['records']
+            group_wp_sum = group['wp_sum']
+            group_avg_entry = group_wp_sum / group_lots if group_lots > 0 else 0
+
+            symbol = self.initializer.build_symbol(
+                option_type, 'BTC', strike_val, expiry,
             )
 
-            if not result.get('success'):
+            log.info(
+                f"[{sid}] Wind-down buyback: BUY {group_lots} {aggressor.upper()} "
+                f"@ {strike_val} ({symbol})"
+            )
+
+            log_activity('wind_down',
+                        f'🌙 Wind-Down: Placing BUY {group_lots} {aggressor.upper()} @ {strike_val}',
+                        sid, 'info',
+                        {'side': aggressor.upper(), 'strike': strike_val, 'lots': group_lots})
+
+            try:
+                result = await self.executor.smart_execute(
+                    symbol=symbol,
+                    side='buy',
+                    size=group_lots,
+                    reduce_only=True,
+                )
+
+                if not result.get('success'):
+                    log_activity('wind_down',
+                                f'🌙 Wind-Down FAILED: Could not buy back {group_lots} '
+                                f'{aggressor.upper()} @ {strike_val} — {result.get("error", "unknown")}',
+                                sid, 'error',
+                                {'error': result.get('error'), 'lots': group_lots, 'strike': strike_val})
+                    any_failed = True
+                    continue
+
+                close_price = result.get('fill_price', 0)
+
+                # Apply LIFO removals for this strike's records only
+                avg_entry = apply_lifo_removals(side_state, group_records)
+                session[aggressor] = side_state
+
+                # Realized P&L for this strike group
+                group_realized = (avg_entry - close_price) * group_lots * LOT_SIZE_BTC
+                total_realized += group_realized
+                session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
+
                 log_activity('wind_down',
-                            f'🌙 Wind-Down FAILED: Could not buy back {actual_lots} '
-                            f'{aggressor.upper()} — {result.get("error", "unknown")}',
-                            sid, 'error',
-                            {'error': result.get('error'), 'lots': actual_lots})
-                return
+                            f'🌙 Wind-Down leg: Bought back {group_lots} {aggressor.upper()} '
+                            f'@ {strike_val} fill ${close_price:.2f} '
+                            f'(avg entry ${avg_entry:.2f}, P&L ${group_realized:.2f})',
+                            sid, 'success',
+                            {'side': aggressor.upper(), 'strike': strike_val,
+                             'lots': group_lots, 'close_price': close_price,
+                             'avg_entry': round(avg_entry, 2),
+                             'realized_pnl': round(group_realized, 2)})
 
-            close_price = result.get('fill_price', 0)
+            except Exception as e:
+                log.exception(f"[{sid}] Wind-down buyback @ {strike_val} failed: {e}")
+                log_activity('wind_down',
+                            f'🌙 Wind-Down ERROR @ {strike_val}: {str(e)}',
+                            sid, 'error', {'error': str(e), 'strike': strike_val})
+                any_failed = True
 
-            # Apply LIFO removals and get avg entry
-            avg_entry = apply_lifo_removals(side_state, close_records)
-            session[aggressor] = side_state
-
-            # Compute realized P&L from this buyback
-            # Sold at avg_entry, bought back at close_price
-            realized = (avg_entry - close_price) * actual_lots * LOT_SIZE_BTC
-            session['realized_pnl'] = session.get('realized_pnl', 0) + realized
-
-            # Update triggers (both sides, same as normal)
+        if not any_failed:
+            # Update triggers only on full success
             update_trigger_snapshots(
                 session, ce_now, pe_now,
                 fetch_premium_fn=self._make_fetch_fn(),
             )
 
-            # Record in wind-down history
-            session.setdefault('_wind_down_history', []).append({
-                'timestamp': datetime.utcnow().isoformat(),
-                'side': aggressor.upper(),
-                'lots_closed': actual_lots,
-                'close_price': close_price,
-                'avg_entry': avg_entry,
-                'realized_pnl': realized,
-                'remaining_active_lots': side_state.get('active_lots', 0),
-                'remaining_total_lots': side_state.get('total_lots', 0),
-            })
+        # Record in wind-down history
+        remaining = session.get(aggressor, {}).get('active_lots', 0)
+        session.setdefault('_wind_down_history', []).append({
+            'timestamp': datetime.utcnow().isoformat(),
+            'side': aggressor.upper(),
+            'lots_closed': actual_lots,
+            'total_realized_pnl': round(total_realized, 2),
+            'remaining_active_lots': remaining,
+            'remaining_total_lots': session.get(aggressor, {}).get('total_lots', 0),
+            'strikes_closed': list(by_strike.keys()),
+            'any_failed': any_failed,
+        })
 
-            remaining = side_state.get('active_lots', 0)
-            log_activity('wind_down',
-                        f'🌙 Wind-Down Complete: Bought back {actual_lots} {aggressor.upper()} lots '
-                        f'@ ${close_price:.2f} (avg entry ${avg_entry:.2f}, '
-                        f'P&L ${realized:.2f}). Remaining: {remaining} lots.',
-                        sid, 'success',
-                        {
-                            'side': aggressor.upper(),
-                            'lots_closed': actual_lots,
-                            'close_price': close_price,
-                            'avg_entry': round(avg_entry, 2),
-                            'realized_pnl': round(realized, 2),
-                            'remaining_lots': remaining,
-                        })
-
-            session['updated_at'] = datetime.utcnow().isoformat()
-
-        except Exception as e:
-            log.exception(f"[{sid}] Wind-down buyback failed: {e}")
-            log_activity('wind_down',
-                        f'🌙 Wind-Down ERROR: {str(e)}',
-                        sid, 'error', {'error': str(e)})
+        remaining = session.get(aggressor, {}).get('active_lots', 0)
+        session['updated_at'] = datetime.utcnow().isoformat()
+        log_activity('wind_down',
+                    f'🌙 Wind-Down Complete: {aggressor.upper()} '
+                    f'closed {actual_lots} lots across {len(by_strike)} strike(s), '
+                    f'P&L ${total_realized:.2f}. Remaining: {remaining} lots.',
+                    sid, 'success' if not any_failed else 'warning',
+                    {
+                        'side': aggressor.upper(),
+                        'lots_closed': actual_lots,
+                        'total_realized_pnl': round(total_realized, 2),
+                        'remaining_lots': remaining,
+                        'strikes': list(by_strike.keys()),
+                        'any_failed': any_failed,
+                    })
 
     # =========================================================================
     # §5: Process Adjustment (Standard / Reversal)
@@ -975,6 +1190,10 @@ class MMMMonitor:
 
         if is_reversal:
             record_reversal(session, session.get('last_aggressor', 'NONE'), aggressor)
+            
+            # Analytics: Track reversal event (no trading logic impact)
+            analytics = session.setdefault('analytics', {})
+            analytics.setdefault('reversal_timestamps', []).append(datetime.utcnow().isoformat())
 
             # First reversal: use adjustment P&L formula
             loss, adj_pnl = self._engine.calculate_reversal_loss(
@@ -1066,8 +1285,9 @@ class MMMMonitor:
             return
 
         # §5.4: Calculate lots to sell
-        # ITM Guard: NEVER sell ITM options for adjustment.
+        # ITM Guard: NEVER sell ITM options for adjustment (unless disabled by user).
         # CE is ITM when strike <= spot. PE is ITM when strike >= spot.
+        itm_guard_on = session.get('params', {}).get('itm_guard_enabled', True)
         hedge_strike = session.get(hedge, {}).get('active_strike', 0)
         if hedge_strike:
             spot_price = await self._fetch_spot_price()
@@ -1079,23 +1299,36 @@ class MMMMonitor:
                     is_itm = True
 
                 if is_itm:
-                    log.warning(
-                        f"[{sid}] ITM GUARD: {hedge.upper()} strike {hedge_strike} is ITM "
-                        f"(spot=${spot_price:.0f}). Refusing to sell ITM for adjustment."
-                    )
-                    from .mmm_activity import log_activity
-                    log_activity('itm_guard_blocked',
-                                f'🚫 ITM GUARD: {hedge.upper()} @ {hedge_strike} is ITM '
-                                f'(spot ${spot_price:.0f}). Adjustment blocked — will not sell ITM.',
-                                sid, 'error',
-                                {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
-                    emit_safety(
-                        sid, 'itm_guard', 'critical',
-                        f'ITM GUARD: Cannot sell {hedge.upper()} @ {hedge_strike} — '
-                        f'strike is ITM (spot ${spot_price:.0f}). Adjustment blocked.',
-                        {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price}
-                    )
-                    return
+                    if itm_guard_on:
+                        log.warning(
+                            f"[{sid}] ITM GUARD: {hedge.upper()} strike {hedge_strike} is ITM "
+                            f"(spot=${spot_price:.0f}). Refusing to sell ITM for adjustment."
+                        )
+                        from .mmm_activity import log_activity
+                        log_activity('itm_guard_blocked',
+                                    f'🚫 ITM GUARD: {hedge.upper()} @ {hedge_strike} is ITM '
+                                    f'(spot ${spot_price:.0f}). Adjustment blocked — will not sell ITM.',
+                                    sid, 'error',
+                                    {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
+                        emit_safety(
+                            sid, 'itm_guard', 'critical',
+                            f'ITM GUARD: Cannot sell {hedge.upper()} @ {hedge_strike} — '
+                            f'strike is ITM (spot ${spot_price:.0f}). Adjustment blocked.',
+                            {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price}
+                        )
+                        return
+                    else:
+                        # ITM guard disabled — user explicitly allows ITM selling
+                        log.warning(
+                            f"[{sid}] ITM GUARD OFF: {hedge.upper()} strike {hedge_strike} is ITM "
+                            f"(spot=${spot_price:.0f}). Proceeding with adjustment (user disabled guard)."
+                        )
+                        from .mmm_activity import log_activity
+                        log_activity('itm_guard_bypassed',
+                                    f'⚠️ ITM GUARD OFF: {hedge.upper()} @ {hedge_strike} is ITM '
+                                    f'(spot ${spot_price:.0f}). Proceeding — guard disabled by user.',
+                                    sid, 'warning',
+                                    {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
 
         lots, constraint_msg = self._engine.calculate_lots_to_sell(
             session, hedge, loss, hedge_premium,
@@ -1119,6 +1352,16 @@ class MMMMonitor:
         if result.get('success'):
             from .mmm_activity import log_activity
             fill_price = result['fill_price']
+
+            # Analytics: Track adjustment event (no trading logic impact)
+            analytics = session.setdefault('analytics', {})
+            analytics.setdefault('adjustment_events_by_side', {}).setdefault(hedge, 0)
+            analytics['adjustment_events_by_side'][hedge] += 1
+            analytics.setdefault('adjustment_events_by_type', {}).setdefault(adj_type, 0)
+            analytics['adjustment_events_by_type'][adj_type] += 1
+            # Track cumulative traded volume
+            analytics['total_{}_lots_traded'.format(hedge)] = analytics.get('total_{}_lots_traded'.format(hedge), 0) + lots
+            analytics['total_combined_lots_traded'] = analytics.get('total_combined_lots_traded', 0) + lots
 
             # Track adjustment for walkthrough
             self._hb_wt['adjustment'] = {
@@ -1226,9 +1469,21 @@ class MMMMonitor:
             aggressor_side = 'pe' if side == 'ce' else 'ce'
             session['last_aggressor'] = aggressor_side.upper()
             session['adjustment_count'] = session.get('adjustment_count', 0) + 1
+            session['shift_count'] = session.get('shift_count', 0) + 1
             session['total_premium_collected'] = (
                 session.get('total_premium_collected', 0) + premium_collected
             )
+            
+            # Analytics: Track shift event (no trading logic impact)
+            analytics = session.setdefault('analytics', {})
+            analytics.setdefault('shift_timestamps', []).append({
+                'timestamp': datetime.utcnow().isoformat(),
+                'side': side.upper(),
+                'old_strike': old_strike,
+                'new_strike': new_strike,
+                'frozen_lots': freeze_result['frozen_lots'],
+            })
+            
             session.setdefault('adjustment_history', []).append({
                 'side': side.upper(),
                 'aggressor': aggressor_side.upper(),
@@ -1966,6 +2221,178 @@ class MMMMonitor:
         except (ValueError, TypeError):
             return None
 
+    def _update_analytics_exposure(self):
+        """Update analytics tracking for exposure metrics (no trading logic impact)."""
+        session = self.session
+        analytics = session.setdefault('analytics', {})
+        
+        # Current exposure
+        ce_lots = session.get('ce', {}).get('total_lots', 0)
+        pe_lots = session.get('pe', {}).get('total_lots', 0)
+        combined_lots = ce_lots + pe_lots
+        
+        # Track peak exposure
+        if ce_lots > analytics.get('max_ce_lots', 0):
+            analytics['max_ce_lots'] = ce_lots
+            analytics['peak_risk_timestamp'] = datetime.utcnow().isoformat()
+        
+        if pe_lots > analytics.get('max_pe_lots', 0):
+            analytics['max_pe_lots'] = pe_lots
+            if not analytics.get('peak_risk_timestamp'):
+                analytics['peak_risk_timestamp'] = datetime.utcnow().isoformat()
+        
+        if combined_lots > analytics.get('max_combined_lots', 0):
+            analytics['max_combined_lots'] = combined_lots
+            analytics['peak_risk_timestamp'] = datetime.utcnow().isoformat()
+
+    def _update_analytics_pnl_milestones(self, pnl: Dict):
+        """Update P&L milestone tracking (no trading logic impact)."""
+        session = self.session
+        analytics = session.setdefault('analytics', {})
+        
+        net_pnl = pnl.get('net_pnl', 0)
+        
+        # Track time to first profit
+        if net_pnl > 0 and analytics.get('time_to_first_profit') is None:
+            start_time = analytics.get('session_start_time')
+            if start_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time)
+                    elapsed = (datetime.utcnow() - start_dt).total_seconds()
+                    analytics['time_to_first_profit'] = elapsed
+                except (ValueError, TypeError):
+                    pass
+        
+        # Track time to peak P&L
+        peak = session.get('peak_pnl', 0)
+        if net_pnl >= peak and peak > 0:
+            start_time = analytics.get('session_start_time')
+            if start_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time)
+                    elapsed = (datetime.utcnow() - start_dt).total_seconds()
+                    analytics['time_to_peak_pnl'] = elapsed
+                except (ValueError, TypeError):
+                    pass
+        
+        # Track max drawdown from peak
+        if peak > 0:
+            drawdown = peak - net_pnl
+            if drawdown > analytics.get('max_drawdown_from_peak', 0):
+                analytics['max_drawdown_from_peak'] = drawdown
+                analytics['max_drawdown_timestamp'] = datetime.utcnow().isoformat()
+
+    def _update_analytics_delta(self, portfolio_delta: float):
+        """Update delta tracking (no trading logic impact)."""
+        session = self.session
+        analytics = session.setdefault('analytics', {})
+        
+        abs_delta = abs(portfolio_delta)
+        if abs_delta > analytics.get('max_abs_delta', 0):
+            analytics['max_abs_delta'] = abs_delta
+            analytics['max_abs_delta_timestamp'] = datetime.utcnow().isoformat()
+
+    async def _calculate_portfolio_delta(self) -> float:
+        """Calculate current portfolio delta from all positions.
+        
+        Portfolio delta = sum of (position_lots × greek_delta × LOT_SIZE_BTC × multiplier)
+        multiplier: short CE = -1, short PE = +1
+        
+        Returns:
+            float: Portfolio delta (positive = net long, negative = net short)
+        """
+        session = self.session
+        expiry = session.get('params', {}).get('expiry', '')
+        if not expiry:
+            return 0.0
+        
+        try:
+            from .mmm_initializer import get_initializer
+            from config.loader import get_api_credentials
+            from bot.api.async_delta_client import AsyncDeltaClient
+            import asyncio
+            
+            initializer = get_initializer()
+            
+            # Collect all positions
+            position_map = {}  # key=(strike, opt_type) -> lots
+            for side_key in ['ce', 'pe']:
+                side = session.get(side_key, {})
+                if not side:
+                    continue
+                opt = 'call' if side_key == 'ce' else 'put'
+                
+                # Active strike positions
+                active_strike = side.get('active_strike', 0)
+                orig_lots = side.get('original_lots', 0)
+                if active_strike and orig_lots > 0:
+                    key = (float(active_strike), opt)
+                    position_map[key] = position_map.get(key, 0) + orig_lots
+                
+                # Adjustment fills
+                for fill in side.get('adjustment_fills', []):
+                    fill_strike = float(fill.get('strike', active_strike) or active_strike)
+                    fill_lots = fill.get('lots', 0)
+                    if fill_strike and fill_lots > 0:
+                        key = (fill_strike, opt)
+                        position_map[key] = position_map.get(key, 0) + fill_lots
+                
+                # Frozen positions
+                for frozen in side.get('frozen_positions', []):
+                    f_strike = float(frozen.get('strike', 0))
+                    f_lots = frozen.get('lots', 0)
+                    if f_strike and f_lots > 0:
+                        key = (f_strike, opt)
+                        position_map[key] = position_map.get(key, 0) + f_lots
+            
+            if not position_map:
+                return 0.0
+            
+            # Fetch Greeks for all positions
+            creds = get_api_credentials()
+            client = AsyncDeltaClient(
+                api_key=creds.get('api_key', ''),
+                api_secret=creds.get('api_secret', ''),
+                testnet=creds.get('testnet', False) or False,
+            )
+            
+            async def fetch_all():
+                tasks = []
+                keys = []
+                for (strike, opt) in position_map:
+                    symbol = initializer.build_symbol(opt, 'BTC', strike, expiry)
+                    keys.append((strike, opt))
+                    tasks.append(
+                        client._request_with_retry(
+                            method="GET", path=f"/v2/tickers/{symbol}",
+                        )
+                    )
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                return list(zip(keys, results))
+            
+            ticker_results = await fetch_all()
+            
+            # Calculate portfolio delta
+            portfolio_delta = 0.0
+            for (strike, opt), resp in ticker_results:
+                if isinstance(resp, Exception):
+                    continue
+                
+                result = resp.get('result', {})
+                greek_delta = result.get('greeks', {}).get('delta', 0)
+                
+                lots = position_map[(strike, opt)]
+                # multiplier: short CE = -1, short PE = +1
+                multiplier = 1 if opt == 'put' else -1
+                position_delta = greek_delta * lots * LOT_SIZE_BTC * multiplier
+                portfolio_delta += position_delta
+            
+            return portfolio_delta
+            
+        except Exception as e:
+            log.warning(f"[{self.session_id}] Failed to calculate portfolio delta: {e}")
+            return 0.0
+
     def _emit_heartbeat_data(self, ce_now: float, pe_now: float):
         """Emit heartbeat WebSocket event with premium_map for live prices."""
         session = self.session
@@ -1998,6 +2425,9 @@ class MMMMonitor:
         # Persist premium_map in session for page-reload resilience
         session['_premium_map'] = premium_map
 
+        # Get portfolio delta from session (calculated in heartbeat)
+        portfolio_delta = session.get('portfolio_delta', 0)
+
         emit_heartbeat(
             self.session_id, ce_now, pe_now,
             ce_trigger, pe_trigger,
@@ -2006,6 +2436,7 @@ class MMMMonitor:
             premium_map=premium_map,
             adaptive_tier=session.get('_adaptive_tier', ''),
             wind_down_active=is_wind_down_active(session),
+            portfolio_delta=portfolio_delta,
         )
 
 

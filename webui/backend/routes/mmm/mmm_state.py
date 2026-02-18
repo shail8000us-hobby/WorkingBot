@@ -129,7 +129,7 @@ DEFAULT_PARAMS = {
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'premium_buffer_pct': 0.05,         # 5% extra lots for slippage
     'max_lots_per_side': 100,           # maximum total lots per CE or PE
-    'max_adjustments': 100,              # maximum adjustment events
+    'max_adjustments': 1000,             # maximum adjustment events
     'max_loss_amount': 5000.0,          # hard stop P&L threshold
     'stop_adjustment_mins': 15,         # stop adjusting N mins before expiry
     'auto_close_mins': 5,              # auto-close all N mins before expiry
@@ -144,10 +144,10 @@ DEFAULT_PARAMS = {
 
     # Wind-down mode
     'wind_down_enabled': False,            # reduce positions instead of adding near expiry
-    'wind_down_hours_before_expiry': 4.0,  # activate wind-down N hours before expiry
+    'wind_down_hours_before_expiry': 2.0,  # activate wind-down N hours before expiry
     'wind_down_buyback_pct': 0.25,         # fraction of lots to buy back per trigger
     'wind_down_close_threshold': 20.0,     # elevated close-at-5 during wind-down
-    'wind_down_min_lots_to_keep': 1,       # never go below this many lots per side
+    'wind_down_min_lots_to_keep': 0,       # never go below this many lots per side (0 = full unwind allowed)
     'wind_down_floor_action': 'skip',      # what to do at floor: skip|normal|pause
 }
 
@@ -187,13 +187,42 @@ def create_session(
     Returns:
         Complete session dictionary
     """
-    if session_id is None:
-        short_uuid = uuid.uuid4().hex[:6]
-        session_id = f"mmm_{short_uuid}"
-
     merged_params = {**DEFAULT_PARAMS}
     if params:
         merged_params.update(params)
+    
+    if session_id is None:
+        # Generate informative session ID: mmm18feb26-1
+        expiry = merged_params.get('expiry', '')
+        if expiry:
+            # Parse expiry: 19022026 → 19feb26
+            try:
+                day = expiry[:2]
+                month_num = expiry[2:4]
+                year = expiry[6:8] if len(expiry) >= 8 else expiry[4:6]
+                month_names = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+                             'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+                month = month_names[int(month_num) - 1]
+                expiry_str = f"{day}{month}{year}"
+            except (ValueError, IndexError):
+                # Fallback to old format if parsing fails
+                expiry_str = uuid.uuid4().hex[:6]
+            
+            # Count existing sessions for this expiry (to get next sequence number)
+            from .mmm_storage import get_storage
+            storage = get_storage()
+            try:
+                all_sessions = storage.list_sessions()
+                same_expiry = [s for s in all_sessions if s.get('params', {}).get('expiry') == expiry]
+                count = len(same_expiry) + 1
+            except:
+                count = 1
+            
+            session_id = f"mmm{expiry_str}-{count}"
+        else:
+            # No expiry provided, fallback to random
+            short_uuid = uuid.uuid4().hex[:6]
+            session_id = f"mmm_{short_uuid}"
 
     session = {
         'session_id': session_id,
@@ -242,6 +271,58 @@ def create_session(
         # Error tracking
         'last_error': None,
         'error_count': 0,
+
+        # Session Analytics (institutional-level exposure tracking)
+        'analytics': {
+            'session_start_time': None,
+            'session_end_time': None,
+            'session_duration_seconds': 0,
+            
+            # Initial exposure
+            'initial_ce_lots': 0,
+            'initial_pe_lots': 0,
+            
+            # Peak exposure (maximum at any point)
+            'max_ce_lots': 0,
+            'max_pe_lots': 0,
+            'max_combined_lots': 0,
+            'peak_risk_timestamp': None,
+            
+            # Cumulative trading volume
+            'total_ce_lots_traded': 0,  # Total CE lots sold (initial + all adjustments)
+            'total_pe_lots_traded': 0,  # Total PE lots sold (initial + all adjustments)
+            'total_combined_lots_traded': 0,
+            
+            # Exit statistics
+            'auto_close_events': [],  # [{timestamp, side, strike, lots, reason}]
+            'auto_close_total_lots': 0,
+            'manual_close_events': [],  # [{timestamp, side, strike, lots}]
+            'manual_close_total_lots': 0,
+            
+            # Adjustment breakdown
+            'adjustment_events_by_side': {'ce': 0, 'pe': 0},
+            'adjustment_events_by_type': {
+                'standard': 0,
+                'reversal': 0,
+                'first_reversal': 0,
+            },
+            
+            # Risk events
+            'reversal_timestamps': [],
+            'shift_timestamps': [],
+            'both_sides_up_timestamps': [],
+            'safety_trigger_events': [],  # [{timestamp, type, level}]
+            
+            # P&L milestones
+            'time_to_first_profit': None,  # seconds from start
+            'time_to_peak_pnl': None,      # seconds from start
+            'max_drawdown_from_peak': 0,
+            'max_drawdown_timestamp': None,
+            
+            # Greeks tracking
+            'max_abs_delta': 0,
+            'max_abs_delta_timestamp': None,
+        },
     }
 
     return session

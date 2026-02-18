@@ -54,7 +54,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    total_pnl: float, realized_pnl: float,
                    premium_map: Dict = None,
                    adaptive_tier: str = None,
-                   wind_down_active: bool = False):
+                   wind_down_active: bool = False,
+                   portfolio_delta: float = 0):
     """Emit heartbeat data every interval. Section 4.
     
     Args:
@@ -63,6 +64,7 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                      e.g. {"69600:call": 72.85, "68400:call": 303.5, "68000:put": 96.5}
         adaptive_tier: Label of the current adaptive interval tier (e.g. "10-20h (0.50x)")
         wind_down_active: Whether wind-down mode is currently active
+        portfolio_delta: Portfolio delta (monitoring only, no trading impact)
     """
     _emit('mmm_heartbeat', {
         'session_id': session_id,
@@ -76,6 +78,7 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         'premium_map': premium_map or {},
         'adaptive_tier': adaptive_tier,
         'wind_down_active': wind_down_active,
+        'portfolio_delta': portfolio_delta,
     })
 
 

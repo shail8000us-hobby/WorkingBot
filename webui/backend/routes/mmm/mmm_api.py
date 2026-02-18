@@ -1783,6 +1783,38 @@ def list_monitors():
         log.exception("Failed to list monitors")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@mmm_bp.route('/session/<session_id>/force-heartbeat', methods=['POST'])
+def force_heartbeat(session_id: str):
+    """Force an immediate heartbeat for a running session.
+
+    Skips the inter-heartbeat wait timer so the next heartbeat runs
+    within 500ms.  The heartbeat itself is identical to a normal one —
+    same trigger evaluation, safety checks, and guards.  After the
+    forced heartbeat, the monitor resumes its default interval schedule.
+    """
+    try:
+        monitor = get_monitor(session_id)
+        if not monitor:
+            return jsonify({
+                'success': False,
+                'error': 'No active monitor for this session',
+            }), 404
+
+        if not monitor.is_running:
+            return jsonify({
+                'success': False,
+                'error': 'Session is not running',
+            }), 400
+
+        accepted = monitor.force_heartbeat()
+        return jsonify({
+            'success': accepted,
+            'message': '⚡ Force heartbeat triggered — next beat will run immediately',
+        })
+    except Exception as e:
+        log.exception(f"Failed to force heartbeat for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @mmm_bp.route('/session/<session_id>/positions', methods=['GET'])
 def get_positions(session_id: str):
@@ -2073,6 +2105,7 @@ def get_safety_status(session_id: str):
             },
             'cooldown_active': session.get('cooldown_active', False),
             'reversal_count': session.get('reversal_count', 0),
+            'portfolio_delta': session.get('portfolio_delta', 0),
         }
 
         return jsonify({'success': True, 'safety': safety_data})
@@ -2250,18 +2283,22 @@ def get_greeks_iv(session_id: str):
             else:
                 data = resp.get('result', resp)
                 mark_price = float(data.get('mark_price', 0))
-                # Greeks — raw option Greeks from ticker.
+                # Greeks — ticker returns per-1-BTC option Greeks.
+                # 1 lot = LOT_SIZE_BTC (0.001 BTC), so multiply by
+                # LOT_SIZE_BTC to get per-lot Greeks.
                 # MMM only holds SHORT positions, so negate to get
                 # position Greeks (matching Delta Exchange position display).
+                # Result: per-lot position Greek = ticker_greek × LOT_SIZE_BTC × (-1)
+                from .mmm_constants import LOT_SIZE_BTC
                 g = data.get('greeks', {})
-                greeks = {
-                    'delta': -_safe_float(g.get('delta')) if _safe_float(g.get('delta')) is not None else None,
-                    'gamma': -_safe_float(g.get('gamma')) if _safe_float(g.get('gamma')) is not None else None,
-                    'theta': -_safe_float(g.get('theta')) if _safe_float(g.get('theta')) is not None else None,
-                    'vega': -_safe_float(g.get('vega')) if _safe_float(g.get('vega')) is not None else None,
-                    'rho': -_safe_float(g.get('rho')) if _safe_float(g.get('rho')) is not None else None,
-                }
-                # IV
+                greeks = {}
+                for gk in ('delta', 'gamma', 'theta', 'vega', 'rho'):
+                    raw = _safe_float(g.get(gk))
+                    if raw is not None:
+                        greeks[gk] = -raw * LOT_SIZE_BTC
+                    else:
+                        greeks[gk] = None
+                # IV — stored as decimals (0.60 = 60%)
                 iv = {
                     'mark_iv': _safe_float(data.get('mark_iv', data.get('quotes', {}).get('mark_iv'))),
                     'bid_iv': _safe_float(data.get('bid_iv', data.get('quotes', {}).get('bid_iv'))),
@@ -2269,7 +2306,7 @@ def get_greeks_iv(session_id: str):
                 }
 
             # P&L calc: (entry - current) * lots * LOT_SIZE_BTC
-            from .mmm_constants import LOT_SIZE_BTC
+            from .mmm_constants import LOT_SIZE_BTC  # noqa: F811
             pnl = (avg_entry - mark_price) * total_lots * LOT_SIZE_BTC if mark_price else None
 
             positions.append({
@@ -2309,3 +2346,187 @@ def _safe_float(val):
         return float(val)
     except (TypeError, ValueError):
         return None
+
+# =========================================================================
+# Session Analytics
+# =========================================================================
+
+@mmm_bp.route('/session/<session_id>/analytics', methods=['GET'])
+def get_session_analytics(session_id: str):
+    """
+    Get institutional-level session analytics for exposure tracking.
+    
+    Checks persistent analytics storage first (survives session deletion),
+    then falls back to live session data.
+    
+    Returns comprehensive metrics:
+    - Session duration and timing
+    - Initial vs current vs peak exposure
+    - Cumulative trading volume
+    - Auto-close and manual close statistics
+    - Adjustment breakdown by side and type
+    - Risk event timeline (reversals, shifts, both_sides_up)
+    - P&L milestones
+    - Greeks tracking
+    """
+    try:
+        from .mmm_analytics_storage import get_analytics_storage
+        
+        # Try persistent storage first (includes deleted/expired sessions)
+        analytics_storage = get_analytics_storage()
+        stored_analytics = analytics_storage.get_session_analytics(session_id)
+        
+        if stored_analytics:
+            # Return stored analytics directly
+            return jsonify({
+                'success': True,
+                'analytics': stored_analytics,
+                'session_id': session_id,
+                'source': 'persistent_storage'
+            })
+        
+        # Fallback to live session (for new sessions not yet persisted)
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        analytics = session.get('analytics', {})
+        
+        # Compute current duration if still running
+        if session.get('strategy_status') == 'RUNNING':
+            start_time = analytics.get('session_start_time')
+            if start_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time)
+                    current_duration = (datetime.utcnow() - start_dt).total_seconds()
+                except (ValueError, TypeError):
+                    current_duration = analytics.get('session_duration_seconds', 0)
+            else:
+                current_duration = 0
+        else:
+            current_duration = analytics.get('session_duration_seconds', 0)
+
+        # Build response with computed fields
+        response_analytics = {
+            **analytics,
+            'current_duration_seconds': current_duration,
+            'session_status': session.get('strategy_status', 'UNKNOWN'),
+            'expiry': session.get('params', {}).get('expiry', ''),
+            
+            # Current live exposure
+            'current_ce_lots': session.get('ce', {}).get('total_lots', 0),
+            'current_pe_lots': session.get('pe', {}).get('total_lots', 0),
+            'current_combined_lots': (
+                session.get('ce', {}).get('total_lots', 0) +
+                session.get('pe', {}).get('total_lots', 0)
+            ),
+            
+            # Final P&L
+            'final_realized_pnl': session.get('realized_pnl', 0),
+            'final_total_pnl': (
+                session.get('realized_pnl', 0) +
+                session.get('unrealized_pnl', 0)
+            ),
+            
+            # Counters
+            'total_adjustments': session.get('adjustment_count', 0),
+            'total_reversals': session.get('reversal_count', 0),
+            'total_shifts': session.get('shift_count', 0),
+            'total_close_at_5': session.get('close_at_5_count', 0),
+        }
+
+        return jsonify({
+            'success': True,
+            'analytics': response_analytics,
+            'session_id': session_id,
+            'source': 'live_session'
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get analytics for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/analytics/history', methods=['GET'])
+def get_analytics_history():
+    """
+    Get historical analytics for all sessions (includes deleted/expired).
+    
+    Query parameters:
+    - limit: Max records to return (default: 50, max: 200)
+    - status: Filter by session status (RUNNING, STOPPED, etc.)
+    - expiry: Filter by expiry date (e.g., 19022026)
+    
+    Returns persistent analytics records that survive session deletion.
+    """
+    try:
+        from .mmm_analytics_storage import get_analytics_storage
+        
+        # Get query parameters
+        limit = request.args.get('limit', 50, type=int)
+        limit = min(limit, 200)  # Cap at 200
+        
+        status_filter = request.args.get('status', None)
+        expiry_filter = request.args.get('expiry', None)
+        
+        # Fetch from persistent storage
+        analytics_storage = get_analytics_storage()
+        history = analytics_storage.get_all_analytics(
+            limit=limit,
+            status_filter=status_filter,
+            expiry_filter=expiry_filter
+        )
+        
+        return jsonify({
+            'success': True,
+            'analytics': history,
+            'count': len(history),
+            'filters': {
+                'limit': limit,
+                'status': status_filter,
+                'expiry': expiry_filter
+            }
+        })
+    
+    except Exception as e:
+        log.exception("Failed to get analytics history")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/analytics/aggregated', methods=['GET'])
+def get_aggregated_analytics():
+    """
+    Get INSTITUTIONAL-GRADE aggregated analytics across ALL historical sessions.
+    
+    Provides actionable business intelligence to answer:
+    1. Capital Requirements: How much capital needed to scale?
+    2. Risk Analytics: What's the probability of auto-close/max-loss?
+    3. Profitability: Is this strategy actually profitable?
+    4. Strategy Performance: How aggressive is the algo?
+    
+    Returns comprehensive metrics:
+    - Overview: Total sessions, win rate, total P&L
+    - Capital Requirements: Max lots ever, scaling guidance
+    - Risk Analytics: Auto-close probability, drawdown analysis
+    - Profitability: Best/worst/average P&L, profit factor
+    - Strategy Performance: Adjustment frequency, trading volume
+    - Recent Sessions: Last 10 sessions summary
+    
+    Use this to make data-driven decisions about scaling and risk management.
+    """
+    try:
+        from .mmm_analytics_aggregator import get_aggregator
+        
+        aggregator = get_aggregator()
+        aggregated = aggregator.get_aggregated_analytics()
+        
+        return jsonify({
+            'success': True,
+            'aggregated': aggregated,
+        })
+    
+    except Exception as e:
+        log.exception("Failed to get aggregated analytics")
+        return jsonify({'success': False, 'error': str(e)}), 500

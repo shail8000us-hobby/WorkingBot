@@ -193,6 +193,18 @@ async def close_position(
         session['close_at_5_count'] = session.get('close_at_5_count', 0) + 1
         session['updated_at'] = datetime.utcnow().isoformat()
 
+        # Analytics: Track auto-close event (no trading logic impact)
+        analytics = session.setdefault('analytics', {})
+        analytics.setdefault('auto_close_events', []).append({
+            'timestamp': datetime.utcnow().isoformat(),
+            'side': side,
+            'strike': strike,
+            'lots': lots,
+            'reason': 'close_at_threshold',
+            'realized_pnl': realized_pnl,
+        })
+        analytics['auto_close_total_lots'] = analytics.get('auto_close_total_lots', 0) + lots
+
         log.info(
             f"Close-at-5 success: {lots} {side.upper()} @ {strike}, "
             f"realized P&L: {realized_pnl:.2f}"

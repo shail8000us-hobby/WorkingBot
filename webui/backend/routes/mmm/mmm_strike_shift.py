@@ -43,9 +43,13 @@ def check_shift_needed(
     params = session.get('params', {})
     threshold_floor = params.get('shift_threshold', 50.0)
     threshold_pct = params.get('shift_threshold_pct', 0.0)
+    
+    sid = session.get('session_id', 'unknown')
 
     # Dynamic threshold: use hedge entry premium * pct if configured
     effective_threshold = threshold_floor
+    hedge_entry_premium = 0
+    
     if threshold_pct > 0:
         side_state = session.get(side, {})
         hedge_entry_premium = side_state.get('original_premium', 0)
@@ -56,14 +60,31 @@ def check_shift_needed(
                 hedge_entry_premium = fills[-1].get('premium', 0)
         dynamic = hedge_entry_premium * threshold_pct
         effective_threshold = max(threshold_floor, dynamic)
+        
+        # DETAILED LOGGING for debugging
+        log.info(
+            f"[{sid}] 🔍 SHIFT CHECK: {side.upper()} | "
+            f"Current: ${current_premium:.2f}, "
+            f"Entry: ${hedge_entry_premium:.2f}, "
+            f"Floor: ${threshold_floor:.2f}, "
+            f"Pct: {threshold_pct:.0%}, "
+            f"Dynamic: ${dynamic:.2f}, "
+            f"Effective: ${effective_threshold:.2f}"
+        )
 
     if current_premium < effective_threshold:
         log.info(
-            f"Strike shift needed: {side.upper()} premium "
-            f"{current_premium:.2f} < effective threshold {effective_threshold:.2f} "
-            f"(floor={threshold_floor:.2f}, pct={threshold_pct:.0%})"
+            f"[{sid}] ✅ SHIFT NEEDED: {side.upper()} premium "
+            f"${current_premium:.2f} < ${effective_threshold:.2f} "
+            f"(floor=${threshold_floor:.2f}, pct={threshold_pct:.0%}, entry=${hedge_entry_premium:.2f})"
         )
         return True
+    else:
+        log.info(
+            f"[{sid}] ❌ NO SHIFT: {side.upper()} premium "
+            f"${current_premium:.2f} >= ${effective_threshold:.2f} "
+            f"(still above threshold)"
+        )
 
     return False
 

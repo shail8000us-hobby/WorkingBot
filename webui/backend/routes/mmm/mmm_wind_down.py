@@ -52,8 +52,10 @@ def is_wind_down_active(session: Dict) -> bool:
             return False
 
         try:
-            # Parse expiry — handle multiple formats
-            expiry_dt = _parse_expiry(expiry_str)
+            # Use canonical expiry parser: DDMMYYYY → 5:30 PM IST (12:00 UTC)
+            from .mmm_initializer import expiry_to_utc_datetime
+            expiry_iso = expiry_to_utc_datetime(expiry_str)
+            expiry_dt = datetime.fromisoformat(expiry_iso)
             now = datetime.utcnow()
             hours_remaining = (expiry_dt - now).total_seconds() / 3600.0
 
@@ -65,28 +67,59 @@ def is_wind_down_active(session: Dict) -> bool:
             return False
 
     # wind_down_enabled is True but no hours threshold → always active
-    # (user manually toggled it on via WebUI)
+    # (user manually toggled it on via WebUI with hours=0)
     return True
 
 
-def _parse_expiry(expiry_str: str) -> datetime:
-    """Parse expiry string into datetime (UTC)."""
-    # Try ISO format first
-    for fmt in [
-        '%Y-%m-%dT%H:%M:%S',
-        '%Y-%m-%dT%H:%M:%SZ',
-        '%Y-%m-%dT%H:%M:%S.%f',
-        '%Y-%m-%dT%H:%M:%S.%fZ',
-        '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%d %H:%M',
-        '%Y-%m-%d',
-    ]:
-        try:
-            return datetime.strptime(expiry_str.strip(), fmt)
-        except ValueError:
-            continue
+def get_wind_down_status(session: Dict) -> Dict[str, Any]:
+    """
+    Return detailed wind-down status for logging and heartbeat emission.
 
-    raise ValueError(f"Cannot parse expiry: {expiry_str}")
+    Returns:
+        {
+            'active': bool,
+            'enabled': bool,
+            'hours_before_expiry': float,
+            'hours_remaining': float | None,   # None if no expiry or hours=0
+            'activates_in_hours': float | None, # None if already active or no time gate
+        }
+    """
+    params = session.get('params', {})
+    enabled = params.get('wind_down_enabled', False)
+    wd_hours = params.get('wind_down_hours_before_expiry', 0)
+
+    if not enabled:
+        return {'active': False, 'enabled': False, 'hours_before_expiry': wd_hours,
+                'hours_remaining': None, 'activates_in_hours': None}
+
+    if wd_hours <= 0:
+        return {'active': True, 'enabled': True, 'hours_before_expiry': 0,
+                'hours_remaining': None, 'activates_in_hours': None}
+
+    expiry_str = params.get('expiry', '')
+    if not expiry_str:
+        return {'active': False, 'enabled': True, 'hours_before_expiry': wd_hours,
+                'hours_remaining': None, 'activates_in_hours': None}
+
+    try:
+        from .mmm_initializer import expiry_to_utc_datetime
+        expiry_iso = expiry_to_utc_datetime(expiry_str)
+        expiry_dt = datetime.fromisoformat(expiry_iso)
+        now = datetime.utcnow()
+        hours_remaining = (expiry_dt - now).total_seconds() / 3600.0
+        active = hours_remaining <= wd_hours
+        activates_in = max(0.0, hours_remaining - wd_hours) if not active else None
+        return {
+            'active': active,
+            'enabled': True,
+            'hours_before_expiry': wd_hours,
+            'hours_remaining': round(hours_remaining, 2),
+            'activates_in_hours': round(activates_in, 2) if activates_in is not None else None,
+        }
+    except Exception as e:
+        log.warning(f"Wind-down status: failed to parse expiry '{expiry_str}': {e}")
+        return {'active': False, 'enabled': True, 'hours_before_expiry': wd_hours,
+                'hours_remaining': None, 'activates_in_hours': None}
 
 
 def compute_wind_down_action(
@@ -220,10 +253,17 @@ def get_lifo_close_fills(
         orig_lots = side_state.get('original_lots', 0)
         if orig_lots > 0:
             close_from_orig = min(remaining, orig_lots)
+            # CRITICAL: use original_strike (entry strike), not active_strike.
+            # active_strike changes on shifts — using it would place a buy order
+            # at the WRONG contract for the original position.
+            orig_strike = (
+                side_state.get('original_strike')
+                or side_state.get('active_strike', 0)
+            )
             close_records.append({
                 'lots': close_from_orig,
                 'premium': side_state.get('original_premium', 0),
-                'strike': side_state.get('active_strike', 0),
+                'strike': orig_strike,
                 'source': 'original',
                 'fill_index': -1,
             })

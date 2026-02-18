@@ -567,7 +567,7 @@ React Frontend (production build served by Flask)
 - Color-coded Greek columns: blue δ, purple γ, green θ, orange ν, red IV
 - Auto-refreshes every 60 seconds, manual refresh button with timestamp
 - Dashboard Tab 9
-- **KNOWN ISSUE:** Greeks shown are raw option Greeks from exchange, NOT position Greeks (short sign not applied). See MONEY_POWER §22.4.
+- **FIXED (Feb 18, 2026):** Greeks are now correctly converted from per-1-BTC ticker values to per-lot position Greeks (× LOT_SIZE_BTC × -1 for short), matching Delta Exchange position display exactly.
 
 ---
 
