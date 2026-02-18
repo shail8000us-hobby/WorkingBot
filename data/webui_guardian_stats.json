@@ -1,8 +1,8 @@
 {
-  "uptime_seconds": 280,
+  "uptime_seconds": 6879,
   "total_restarts": 0,
-  "total_health_checks": 9,
+  "total_health_checks": 221,
   "failed_health_checks": 1,
-  "last_check_time": "2026-02-04T21:45:57.260657",
+  "last_check_time": "2026-02-18T21:03:52.307245",
   "status": "healthy"
 }

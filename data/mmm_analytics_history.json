@@ -1,0 +1,42 @@
+{
+  "analytics": [
+    {
+      "max_ce_lots": 58,
+      "peak_risk_timestamp": "2026-02-18T07:06:46.726252",
+      "max_pe_lots": 58,
+      "max_combined_lots": 116,
+      "max_drawdown_from_peak": 0.33000000000000007,
+      "max_drawdown_timestamp": "2026-02-18T06:50:15.919231",
+      "adjustment_events_by_side": {
+        "ce": 4
+      },
+      "adjustment_events_by_type": {
+        "standard": 4
+      },
+      "total_ce_lots_traded": 14,
+      "total_combined_lots_traded": 14,
+      "reversal_timestamps": [
+        "2026-02-18T07:01:54.771587",
+        "2026-02-18T07:03:07.455955",
+        "2026-02-18T07:08:16.363291"
+      ],
+      "session_id": "mmm_cee298",
+      "session_status": "RUNNING",
+      "saved_at": "2026-02-18T07:09:27.910386",
+      "expiry": "18022026",
+      "created_at": "2026-02-17T19:28:35.203292",
+      "entry_time": "2026-02-17T19:30:02.535536",
+      "final_ce_lots": 58,
+      "final_pe_lots": 58,
+      "final_realized_pnl": 2.6238000000000006,
+      "final_unrealized_pnl": 1.85,
+      "final_total_pnl": 4.473800000000001,
+      "total_adjustments": 59,
+      "total_reversals": 75,
+      "total_shifts": 6,
+      "total_close_at_5": 12
+    }
+  ],
+  "last_updated": "2026-02-18T07:09:27.910864",
+  "total_records": 1
+}

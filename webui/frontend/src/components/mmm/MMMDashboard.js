@@ -708,6 +708,160 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
 };
 
 // =============================================================================
+// HeartbeatHealthPanel — institutional beat telemetry widget
+// =============================================================================
+
+const GRADE_COLORS = { A: '#4caf50', B: '#8bc34a', C: '#ff9800', D: '#f44336', F: '#9c27b0' };
+
+const HeartbeatHealthPanel = ({ sessionId, status }) => {
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  const fetchHealth = useCallback(async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    try {
+      const data = await mmmService.getBeatHealth(sessionId);
+      if (data && data.success) {
+        setHealth(data);
+        setLastRefresh(new Date());
+      }
+    } catch (_e) {
+      // silently ignore — health panel is non-critical
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    fetchHealth();
+    if (status === 'RUNNING') {
+      const interval = setInterval(fetchHealth, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchHealth, status]);
+
+  if (!health) return null;
+
+  const bh = health.beat_health || {};
+  const circ = health.circuit || {};
+  const grade = bh.grade || '?';
+  const gradeColor = GRADE_COLORS[grade] || '#9e9e9e';
+  const circuitColor = circ.state === 'CLOSED' ? '#4caf50' : circ.state === 'HALF_OPEN' ? '#ff9800' : '#f44336';
+
+  const outcomeDot = (o) => {
+    if (o === 'ok') return '🟢';
+    if (o === 'partial') return '🟡';
+    if (o === 'miss') return '🔴';
+    if (o === 'error') return '❌';
+    return '⬜';
+  };
+
+  return (
+    <Paper elevation={0} sx={{ p: 2, mb: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+          💓 Heartbeat Health
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {lastRefresh && (
+            <Typography variant="caption" color="text.secondary">
+              {lastRefresh.toLocaleTimeString()}
+            </Typography>
+          )}
+          <Tooltip title="Refresh health stats">
+            <IconButton size="small" onClick={fetchHealth} disabled={loading}>
+              <RefreshIcon fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </Box>
+
+      <Grid container spacing={1.5} alignItems="stretch">
+        <Grid item xs={4} sm={2}>
+          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <Typography variant="caption" color="text.secondary" display="block">Grade</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: gradeColor, fontFamily: 'monospace' }}>
+              {grade}
+            </Typography>
+          </Box>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <Typography variant="caption" color="text.secondary" display="block">p50 Latency</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+              {bh.latency_p50_ms != null ? `${bh.latency_p50_ms}ms` : '—'}
+            </Typography>
+          </Box>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <Typography variant="caption" color="text.secondary" display="block">p95 Latency</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+              {bh.latency_p95_ms != null ? `${bh.latency_p95_ms}ms` : '—'}
+            </Typography>
+          </Box>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <Typography variant="caption" color="text.secondary" display="block">Miss Rate</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace',
+              color: (bh.miss_rate_pct || 0) > 10 ? '#f44336' : (bh.miss_rate_pct || 0) > 2 ? '#ff9800' : 'inherit' }}>
+              {bh.miss_rate_pct != null ? `${bh.miss_rate_pct}%` : '—'}
+            </Typography>
+          </Box>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Tooltip title={circ.last_error ? `Last error: ${circ.last_error}` : 'Exchange API circuit breaker'}>
+            <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)', cursor: 'help' }}>
+              <Typography variant="caption" color="text.secondary" display="block">Circuit</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: circuitColor, fontFamily: 'monospace' }}>
+                {circ.state || '—'}
+              </Typography>
+              {circ.open_depth > 0 && (
+                <Typography variant="caption" sx={{ color: '#ff9800' }}>depth {circ.open_depth}</Typography>
+              )}
+            </Box>
+          </Tooltip>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <Typography variant="caption" color="text.secondary" display="block">Beats</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.75rem' }}>
+              ✅{bh.ok_beats || 0} 🟡{bh.partial_beats || 0} ❌{bh.error_beats || 0}
+            </Typography>
+          </Box>
+        </Grid>
+      </Grid>
+
+      {bh.recent_outcomes && bh.recent_outcomes.length > 0 && (
+        <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>Last 20:</Typography>
+          {bh.recent_outcomes.map((o, i) => (
+            <span key={i} style={{ fontSize: '10px', lineHeight: 1 }}>{outcomeDot(o)}</span>
+          ))}
+        </Box>
+      )}
+
+      {(bh.stale_ce || bh.stale_pe) && (
+        <Alert severity="warning" sx={{ mt: 1, py: 0.5 }}>
+          ⚠️ Stale price detected: {[bh.stale_ce && 'CE', bh.stale_pe && 'PE'].filter(Boolean).join(' & ')} mark price
+          unchanged for 3+ consecutive beats — exchange may be serving cached data.
+        </Alert>
+      )}
+
+      {circ.state && circ.state !== 'CLOSED' && (
+        <Alert severity={circ.state === 'OPEN' ? 'error' : 'warning'} sx={{ mt: 1, py: 0.5 }}>
+          🔴 Circuit breaker {circ.state} — using cached prices for safety checks.
+          {circ.seconds_until_probe != null && ` Next probe in ${Math.ceil(circ.seconds_until_probe)}s.`}
+        </Alert>
+      )}
+    </Paper>
+  );
+};
+
+// =============================================================================
 // Manual Reduce Modal
 // =============================================================================
 
@@ -1181,6 +1335,9 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
               triggerData={wsData.heartbeat}
             />
           </Paper>
+
+          {/* Heartbeat Health Panel */}
+          <HeartbeatHealthPanel sessionId={session.session_id} status={status} />
 
           {/* Global State + Activity Counters */}
           <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>

@@ -2430,6 +2430,54 @@ def get_walkthrough(session_id: str):
 # Greeks, IV & Fees
 # =========================================================================
 
+@mmm_bp.route('/session/<session_id>/beat-health', methods=['GET'])
+def get_beat_health(session_id: str):
+    """
+    Return heartbeat health telemetry for a session.
+
+    Includes latency percentiles, miss rate, health grade (A-F),
+    circuit breaker state, and watchdog status.
+    """
+    try:
+        from .mmm_monitor import get_monitor
+        monitor = get_monitor(session_id)
+
+        if not monitor:
+            # Session may be stopped — return stored snapshot from session
+            storage = get_storage()
+            session = storage.get_session(session_id)
+            if not session:
+                return jsonify({'success': False, 'error': 'Session not found'}), 404
+            beat_health = session.get('_beat_health', {})
+            circuit_state = session.get('_circuit_state', {})
+            return jsonify({
+                'success': True,
+                'session_id': session_id,
+                'monitor_active': False,
+                'beat_health': beat_health,
+                'circuit': circuit_state,
+                'watchdog': {'running': False},
+            })
+
+        health_summary = monitor._health.summary() if hasattr(monitor, '_health') else {}
+        circuit_summary = monitor._circuit.summary() if hasattr(monitor, '_circuit') else {}
+
+        from .mmm_watchdog import MMMWatchdog
+        watchdog_status = MMMWatchdog.get_instance().status()
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'monitor_active': True,
+            'beat_health': health_summary,
+            'circuit': circuit_summary,
+            'watchdog': watchdog_status,
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/session/<session_id>/greeks-iv', methods=['GET'])
 def get_greeks_iv(session_id: str):
     """

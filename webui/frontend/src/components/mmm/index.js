@@ -26,6 +26,9 @@ export { default as MMMPnLChart } from './MMMPnLChart';
 export { default as MMMBothSidesAlert } from './MMMBothSidesAlert';
 export { default as MMMSafetyPanel } from './MMMSafetyPanel';
 export { default as MMMActivityFeed } from './MMMActivityFeed';
+export { default as MMMAnalyticsPanel } from './MMMAnalyticsPanel';
+export { default as MMMAnalyticsTable } from './MMMAnalyticsTable';
+export { default as MMMAnalyticsSummary } from './MMMAnalyticsSummary';
 
 // Error Boundary
 export { default as MMMErrorBoundary } from './MMMErrorBoundary';

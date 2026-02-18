@@ -64,7 +64,7 @@ const PARAM_GROUPS = {
     title: 'Safety Limits',
     color: '#ff9800',
     blurb: 'Guard rails to prevent runaway exposure. Adjust carefully.',
-    params: ['whipsaw_limit', 'max_lots_per_side', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm'],
+    params: ['whipsaw_limit', 'max_lots_per_side', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled'],
   },
   expiry: {
     title: 'Close-at-Expiry',
@@ -102,6 +102,7 @@ const PARAM_TOOLTIPS = {
   trailing_stop_pct: HELP.trailing_profit || 'Once P&L hits a peak, if it drops more than this % from that peak, the algo alerts you. Protects profits from giving back too much.',
   premium_buffer_pct: 'Extra lots percentage for slippage protection. When calculating how many lots to sell, add this % extra to account for price movement between quote and fill. 0.05 = 5% buffer.',
   close_at_atm: 'Auto-close ALL positions if the original strike becomes at-the-money (spot price ≈ strike price). This is dangerous territory — ATM options have maximum gamma and can move violently.',
+  itm_guard_enabled: 'When ON (default): blocks selling ITM options for adjustment — safe, prevents selling worthless contracts. When OFF: allows the algo to sell ITM options. Useful in the last 2-3 hours before expiry when strikes may briefly go ITM but you still want the algo to adjust. ⚠️ Turn OFF only when you understand the risk.',
   auto_close_mins: 'Auto-close ALL positions N minutes before expiry. This is the absolute final safety net. Default 5 = close everything 5 minutes before expiry, regardless of P&L.',
   stop_adjustment_mins: HELP.near_expiry || 'Stop making new adjustments N minutes before expiry. Let theta decay do the final work instead of adding risky late adjustments.',
   close_at_threshold: HELP.close_at_5 || 'Close any position whose premium drops to this level or below. Default 5 = when an option is worth $5 or less, buy it back to lock in ~95% profit.',
@@ -181,7 +182,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const handleChange = (paramName, value, paramType) => {
     const params = paramsInfo?.params || {};
     const info = params[paramName] || {};
-    
+
     // Type coercion
     let coercedValue = value;
     if (paramType === 'int') {
@@ -233,7 +234,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const changedParams = {};
       const nonHotChanges = [];
       const params = paramsInfo?.params || {};
-      
+
       for (const [key, value] of Object.entries(formValues)) {
         if (value !== currentParams[key]) {
           changedParams[key] = value;
@@ -261,12 +262,12 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
       // Send update request
       await mmmService.updateSessionParams(sessionId, changedParams);
-      
+
       setSuccess(true);
       setTimeout(() => {
         onClose(true); // true = params were updated
       }, 1000);
-      
+
     } catch (error) {
       console.error('Failed to update params:', error);
       setServerError(error.response?.data?.error || error.message || 'Failed to update parameters');
@@ -452,45 +453,45 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
               session restart.
             </Alert>
 
-        {/* Render parameter groups */}
-        {Object.entries(PARAM_GROUPS).map(([groupKey, group], idx) => (
-          <Box key={groupKey} sx={{ mb: 3 }}>
-            {idx > 0 && <Divider sx={{ my: 3 }} />}
-            
-            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box
-                sx={{
-                  width: 4,
-                  height: 20,
-                  backgroundColor: group.color,
-                  borderRadius: 1,
-                }}
-              />
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: group.color }}>
-                {group.title}
-              </Typography>
-              
-              {groupKey === 'safety' && (
-                <Chip
-                  label="CRITICAL"
-                  size="small"
-                  color="warning"
-                  icon={<WarningIcon />}
-                  sx={{ ml: 'auto', fontWeight: 700 }}
-                />
-              )}
-            </Box>
-            {group.blurb && (
-              <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1.5, fontStyle: 'italic', fontSize: '0.72rem', opacity: 0.8 }}>
-                💡 {group.blurb}
-              </Typography>
-            )}
+            {/* Render parameter groups */}
+            {Object.entries(PARAM_GROUPS).map(([groupKey, group], idx) => (
+              <Box key={groupKey} sx={{ mb: 3 }}>
+                {idx > 0 && <Divider sx={{ my: 3 }} />}
 
-            <Grid container spacing={2}>
-              {group.params.map((paramName) => renderParam(paramName))}
-            </Grid>
-          </Box>
-        ))}
+                <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box
+                    sx={{
+                      width: 4,
+                      height: 20,
+                      backgroundColor: group.color,
+                      borderRadius: 1,
+                    }}
+                  />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: group.color }}>
+                    {group.title}
+                  </Typography>
+
+                  {groupKey === 'safety' && (
+                    <Chip
+                      label="CRITICAL"
+                      size="small"
+                      color="warning"
+                      icon={<WarningIcon />}
+                      sx={{ ml: 'auto', fontWeight: 700 }}
+                    />
+                  )}
+                </Box>
+                {group.blurb && (
+                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1.5, fontStyle: 'italic', fontSize: '0.72rem', opacity: 0.8 }}>
+                    💡 {group.blurb}
+                  </Typography>
+                )}
+
+                <Grid container spacing={2}>
+                  {group.params.map((paramName) => renderParam(paramName))}
+                </Grid>
+              </Box>
+            ))}
           </>
         )}
       </DialogContent>

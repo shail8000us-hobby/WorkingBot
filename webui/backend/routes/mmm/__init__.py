@@ -95,6 +95,17 @@ def init_mmm():
             print(f"[MMM] No active sessions to restore")
             log.info(f"MMM initialized: No active sessions to restore")
 
+        # Start the watchdog supervisor (watches all monitors for thread death / beat timeout)
+        try:
+            from .mmm_watchdog import MMMWatchdog
+            watchdog = MMMWatchdog.get_instance()
+            watchdog.start()
+            print("[MMM] Watchdog supervisor started")
+            log.info("MMM Watchdog started")
+        except Exception as we:
+            print(f"[MMM] ⚠️ Watchdog failed to start: {we}")
+            log.warning(f"MMM Watchdog failed to start: {we}")
+
     except Exception as e:
         error_msg = f"MMM initialization FAILED: {e}"
         print(f"[MMM] ❌ {error_msg}")

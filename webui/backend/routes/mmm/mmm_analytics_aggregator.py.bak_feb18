@@ -1,0 +1,339 @@
+"""
+MMM Institutional-Grade Analytics Aggregator
+
+Provides actionable business intelligence by analyzing ALL historical sessions:
+- Capital requirements (max lots observed)
+- Risk probability (auto-close frequency)
+- Strategy performance (win rate, P&L distribution)
+
+Created: February 18, 2026
+"""
+
+import logging
+import json
+import sqlite3
+from typing import Dict, List, Optional
+from datetime import datetime
+from collections import defaultdict
+
+log = logging.getLogger('mmm_analytics_aggregator')
+
+
+class MMMAnalyticsAggregator:
+    """
+    Aggregate historical analytics to provide institutional-grade insights.
+    
+    Key Questions Answered:
+    1. How much capital do I need to scale safely?
+    2. What's the probability of auto-close hitting?
+    3. Is this strategy actually profitable?
+    """
+    
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+    
+    def _get_conn(self) -> sqlite3.Connection:
+        """Get a connection to the analytics database."""
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    
+    def get_aggregated_analytics(self) -> Dict:
+        """
+        Calculate comprehensive aggregated analytics across ALL sessions.
+        
+        Returns institutional-grade metrics for business decision-making.
+        """
+        conn = self._get_conn()
+        try:
+            # Fetch all historical analytics
+            rows = conn.execute(
+                'SELECT analytics_json FROM mmm_analytics ORDER BY saved_at DESC'
+            ).fetchall()
+            
+            if not rows:
+                return self._empty_analytics()
+            
+            sessions_data = [json.loads(row['analytics_json']) for row in rows]
+            
+            # Calculate aggregated metrics
+            return {
+                'overview': self._calculate_overview(sessions_data),
+                'capital_requirements': self._calculate_capital_requirements(sessions_data),
+                'risk_analytics': self._calculate_risk_analytics(sessions_data),
+                'profitability': self._calculate_profitability(sessions_data),
+                'strategy_performance': self._calculate_strategy_performance(sessions_data),
+                'recent_sessions': self._get_recent_sessions_summary(sessions_data[:10]),  # Last 10
+                'metadata': {
+                    'total_sessions_analyzed': len(sessions_data),
+                    'generated_at': datetime.utcnow().isoformat(),
+                }
+            }
+        except Exception as e:
+            log.error(f"Failed to aggregate analytics: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._empty_analytics()
+        finally:
+            conn.close()
+    
+    def _calculate_overview(self, sessions: List[Dict]) -> Dict:
+        """Overall summary statistics."""
+        total = len(sessions)
+        profitable = sum(1 for s in sessions if s.get('final_total_pnl', 0) > 0)
+        total_pnl = sum(s.get('final_total_pnl', 0) for s in sessions)
+        
+        return {
+            'total_sessions': total,
+            'profitable_sessions': profitable,
+            'losing_sessions': total - profitable,
+            'win_rate_pct': round((profitable / total * 100) if total > 0 else 0, 1),
+            'total_pnl': round(total_pnl, 2),
+            'average_pnl_per_session': round(total_pnl / total if total > 0 else 0, 2),
+        }
+    
+    def _calculate_capital_requirements(self, sessions: List[Dict]) -> Dict:
+        """
+        CRITICAL: Determine how much capital is needed to scale.
+        
+        If you start with 10 lots and algo peaks at 80 lots,
+        you need 8x starting capital to scale safely.
+        """
+        max_ce_ever = max((s.get('max_ce_lots', 0) for s in sessions), default=0)
+        max_pe_ever = max((s.get('max_pe_lots', 0) for s in sessions), default=0)
+        max_combined_ever = max((s.get('max_combined_lots', 0) for s in sessions), default=0)
+        
+        # Calculate average peaks
+        avg_max_ce = sum(s.get('max_ce_lots', 0) for s in sessions) / len(sessions) if sessions else 0
+        avg_max_pe = sum(s.get('max_pe_lots', 0) for s in sessions) / len(sessions) if sessions else 0
+        avg_max_combined = sum(s.get('max_combined_lots', 0) for s in sessions) / len(sessions) if sessions else 0
+        
+        # Find initial lots from sessions (if tracked)
+        initial_lots_samples = []
+        for s in sessions:
+            initial_ce = s.get('initial_ce_lots', 0) or s.get('params', {}).get('lots', 0)
+            initial_pe = s.get('initial_pe_lots', 0) or s.get('params', {}).get('lots', 0)
+            if initial_ce > 0 or initial_pe > 0:
+                initial_lots_samples.append({'ce': initial_ce, 'pe': initial_pe})
+        
+        # Calculate capital multiplier
+        avg_initial = sum(s['ce'] + s['pe'] for s in initial_lots_samples) / len(initial_lots_samples) if initial_lots_samples else 10
+        capital_multiplier = round(max_combined_ever / avg_initial if avg_initial > 0 else 0, 2)
+        
+        return {
+            # Absolute maximums observed
+            'max_ce_lots_ever': max_ce_ever,
+            'max_pe_lots_ever': max_pe_ever,
+            'max_combined_lots_ever': max_combined_ever,
+            
+            # Average peaks
+            'avg_peak_ce_lots': round(avg_max_ce, 1),
+            'avg_peak_pe_lots': round(avg_max_pe, 1),
+            'avg_peak_combined_lots': round(avg_max_combined, 1),
+            
+            # Scaling guidance
+            'capital_multiplier': capital_multiplier,
+            'scaling_guidance': f"To scale to 100 lots/side, prepare for up to {int(capital_multiplier * 100)} total lots",
+        }
+    
+    def _calculate_risk_analytics(self, sessions: List[Dict]) -> Dict:
+        """
+        Calculate probability of different risk events.
+        
+        Example: "Out of 100 sessions, 5 hit auto-close = 5% risk"
+        """
+        total = len(sessions)
+        
+        # Auto-close analysis
+        sessions_with_auto_close = sum(
+            1 for s in sessions 
+            if s.get('auto_close_total_lots', 0) > 0 or len(s.get('auto_close_events', [])) > 0
+        )
+        
+        # Count different stop reasons
+        stopped_sessions = [s for s in sessions if s.get('session_status') in ['STOPPED', 'CLOSED', 'EXITED']]
+        
+        # Max loss analysis (if tracked)
+        max_drawdown_sessions = []
+        for s in sessions:
+            dd = s.get('max_drawdown_from_peak', 0)
+            if dd != 0:  # Only sessions where drawdown was tracked
+                max_drawdown_sessions.append(abs(dd))
+        
+        avg_max_drawdown = sum(max_drawdown_sessions) / len(max_drawdown_sessions) if max_drawdown_sessions else 0
+        worst_drawdown = max(max_drawdown_sessions) if max_drawdown_sessions else 0
+        
+        return {
+            # Auto-close probability
+            'sessions_with_auto_close': sessions_with_auto_close,
+            'auto_close_probability_pct': round((sessions_with_auto_close / total * 100) if total > 0 else 0, 1),
+            
+            # Drawdown analysis
+            'avg_max_drawdown': round(avg_max_drawdown, 2),
+            'worst_drawdown_ever': round(worst_drawdown, 2),
+            'sessions_with_drawdown_data': len(max_drawdown_sessions),
+            
+            # Session completion
+            'normally_completed_sessions': len(stopped_sessions),
+            'completion_rate_pct': round((len(stopped_sessions) / total * 100) if total > 0 else 0, 1),
+        }
+    
+    def _calculate_profitability(self, sessions: List[Dict]) -> Dict:
+        """
+        P&L distribution and profitability analysis.
+        
+        Shows best case, worst case, average case.
+        """
+        pnls = [s.get('final_total_pnl', 0) for s in sessions]
+        profitable_pnls = [p for p in pnls if p > 0]
+        losing_pnls = [p for p in pnls if p < 0]
+        
+        return {
+            # Overall P&L
+            'total_pnl': round(sum(pnls), 2),
+            'average_pnl': round(sum(pnls) / len(pnls) if pnls else 0, 2),
+            'median_pnl': round(sorted(pnls)[len(pnls) // 2] if pnls else 0, 2),
+            
+            # Best and worst
+            'best_session_pnl': round(max(pnls) if pnls else 0, 2),
+            'worst_session_pnl': round(min(pnls) if pnls else 0, 2),
+            
+            # Win/loss breakdown
+            'avg_win_amount': round(sum(profitable_pnls) / len(profitable_pnls) if profitable_pnls else 0, 2),
+            'avg_loss_amount': round(sum(losing_pnls) / len(losing_pnls) if losing_pnls else 0, 2),
+            
+            # Profitability ratio
+            'profit_factor': round(
+                abs(sum(profitable_pnls) / sum(losing_pnls)) if losing_pnls and sum(losing_pnls) != 0 else 0,
+                2
+            ),
+        }
+    
+    def _calculate_strategy_performance(self, sessions: List[Dict]) -> Dict:
+        """
+        Strategy execution statistics.
+        
+        How actively does the algo trade? Adjustments, reversals, shifts.
+        """
+        total_adjustments = sum(s.get('total_adjustments', 0) for s in sessions)
+        total_reversals = sum(s.get('total_reversals', 0) for s in sessions)
+        total_shifts = sum(s.get('total_shifts', 0) for s in sessions)
+        
+        # CE/PE adjustments breakdown
+        ce_adjustments = sum(s.get('adjustment_events_by_side', {}).get('ce', 0) for s in sessions)
+        pe_adjustments = sum(s.get('adjustment_events_by_side', {}).get('pe', 0) for s in sessions)
+        
+        # Volume traded
+        total_ce_volume = sum(s.get('total_ce_lots_traded', 0) for s in sessions)
+        total_pe_volume = sum(s.get('total_pe_lots_traded', 0) for s in sessions)
+        
+        n = len(sessions)
+        
+        return {
+            # Adjustment frequency
+            'total_adjustments': total_adjustments,
+            'total_reversals': total_reversals,
+            'total_shifts': total_shifts,
+            'avg_adjustments_per_session': round(total_adjustments / n if n > 0 else 0, 1),
+            'avg_reversals_per_session': round(total_reversals / n if n > 0 else 0, 1),
+            'avg_shifts_per_session': round(total_shifts / n if n > 0 else 0, 1),
+            
+            # Side breakdown
+            'total_ce_adjustments': ce_adjustments,
+            'total_pe_adjustments': pe_adjustments,
+            'ce_pe_adjustment_ratio': round(ce_adjustments / pe_adjustments if pe_adjustments > 0 else 0, 2),
+            
+            # Trading volume
+            'total_ce_lots_traded': total_ce_volume,
+            'total_pe_lots_traded': total_pe_volume,
+            'total_volume': total_ce_volume + total_pe_volume,
+        }
+    
+    def _get_recent_sessions_summary(self, recent: List[Dict]) -> List[Dict]:
+        """Summarize the most recent sessions for quick review."""
+        return [
+            {
+                'session_id': s.get('session_id'),
+                'expiry': s.get('expiry'),
+                'status': s.get('session_status'),
+                'final_pnl': round(s.get('final_total_pnl', 0), 2),
+                'max_lots': s.get('max_combined_lots', 0),
+                'adjustments': s.get('total_adjustments', 0),
+                'saved_at': s.get('saved_at'),
+            }
+            for s in recent
+        ]
+    
+    def _empty_analytics(self) -> Dict:
+        """Return empty structure when no data exists."""
+        return {
+            'overview': {
+                'total_sessions': 0,
+                'profitable_sessions': 0,
+                'losing_sessions': 0,
+                'win_rate_pct': 0,
+                'total_pnl': 0,
+                'average_pnl_per_session': 0,
+            },
+            'capital_requirements': {
+                'max_ce_lots_ever': 0,
+                'max_pe_lots_ever': 0,
+                'max_combined_lots_ever': 0,
+                'avg_peak_ce_lots': 0,
+                'avg_peak_pe_lots': 0,
+                'avg_peak_combined_lots': 0,
+                'capital_multiplier': 0,
+                'scaling_guidance': 'No data yet',
+            },
+            'risk_analytics': {
+                'sessions_with_auto_close': 0,
+                'auto_close_probability_pct': 0,
+                'avg_max_drawdown': 0,
+                'worst_drawdown_ever': 0,
+                'sessions_with_drawdown_data': 0,
+                'normally_completed_sessions': 0,
+                'completion_rate_pct': 0,
+            },
+            'profitability': {
+                'total_pnl': 0,
+                'average_pnl': 0,
+                'median_pnl': 0,
+                'best_session_pnl': 0,
+                'worst_session_pnl': 0,
+                'avg_win_amount': 0,
+                'avg_loss_amount': 0,
+                'profit_factor': 0,
+            },
+            'strategy_performance': {
+                'total_adjustments': 0,
+                'total_reversals': 0,
+                'total_shifts': 0,
+                'avg_adjustments_per_session': 0,
+                'avg_reversals_per_session': 0,
+                'avg_shifts_per_session': 0,
+                'total_ce_adjustments': 0,
+                'total_pe_adjustments': 0,
+                'ce_pe_adjustment_ratio': 0,
+                'total_ce_lots_traded': 0,
+                'total_pe_lots_traded': 0,
+                'total_volume': 0,
+            },
+            'recent_sessions': [],
+            'metadata': {
+                'total_sessions_analyzed': 0,
+                'generated_at': datetime.utcnow().isoformat(),
+            }
+        }
+
+
+# Singleton instance
+_aggregator_instance = None
+
+def get_aggregator(db_path: str = None) -> MMMAnalyticsAggregator:
+    """Get the analytics aggregator singleton."""
+    global _aggregator_instance
+    if _aggregator_instance is None or db_path:
+        from .mmm_analytics_storage import DB_FILE
+        _aggregator_instance = MMMAnalyticsAggregator(db_path or DB_FILE)
+    return _aggregator_instance

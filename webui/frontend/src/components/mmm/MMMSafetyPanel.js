@@ -44,6 +44,18 @@ function getBarColor(ratio) {
   return '#4caf50';
 }
 
+function getDeltaLevel(absDelta) {
+  if (absDelta >= 0.5) return 'alert';
+  if (absDelta >= 0.3) return 'warning';
+  return 'ok';
+}
+
+function getDeltaColor(absDelta) {
+  if (absDelta >= 0.5) return '#f44336';
+  if (absDelta >= 0.3) return '#ff9800';
+  return '#4caf50';
+}
+
 function SafetyIndicator({
   label,
   value,
@@ -133,6 +145,10 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
   const unrealized = session.unrealized_pnl || 0;
   const totalPnl = realized + unrealized;
   const peakPnl = session.peak_pnl || 0;
+
+  // Portfolio Delta (monitoring only)
+  const portfolioDelta = session.portfolio_delta || 0;
+  const absDelta = Math.abs(portfolioDelta);
 
   // Asymmetry
   const maxSideLots = Math.max(ceLots, peLots);
@@ -279,6 +295,21 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
               ? `Peak reached $${peakPnl.toFixed(0)}. Current P&L: $${totalPnl.toFixed(0)}. Floor: $${trailingFloor.toFixed(0)}. If P&L drops below the floor (${(trailingPct * 100).toFixed(0)}% of peak), the algo alerts you to protect profits.`
               : 'Once you become profitable, the algo tracks your highest P&L. If P&L drops below 50% of that peak, it alerts you — protecting profits from giving back too much.'
             }
+          />
+        </Grid>
+
+        {/* Portfolio Delta */}
+        <Grid item xs={6} sm={4} md={3}>
+          <SafetyIndicator
+            label="Portfolio Δ"
+            value={absDelta}
+            maxValue={0.5}
+            displayText={portfolioDelta >= 0 
+              ? `+${portfolioDelta.toFixed(3)} (Long)` 
+              : `${portfolioDelta.toFixed(3)} (Short)`
+            }
+            level={getDeltaLevel(absDelta)}
+            tooltip={`Portfolio delta measures your directional exposure to BTC price movement. Positive = net long (profit when BTC rises), negative = net short (profit when BTC falls). Green: |Δ| < 0.3 (well-balanced), Yellow: 0.3-0.5 (moderate exposure), Red: > 0.5 (high directional risk). This is for monitoring only — no auto-adjustments are made.`}
           />
         </Grid>
       </Grid>

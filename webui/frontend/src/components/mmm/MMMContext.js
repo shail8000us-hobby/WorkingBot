@@ -97,15 +97,18 @@ function mmmReducer(state, action) {
       return { ...state, selectedSessionId: action.payload };
 
     case ACTIONS.SET_LOADING:
+      if (state.loading === action.payload) return state;
       return { ...state, loading: action.payload };
 
     case ACTIONS.SET_ERROR:
+      if (state.error === action.payload) return state;
       return { ...state, error: action.payload };
 
     case ACTIONS.SET_HEALTH_STATUS:
       return { ...state, healthStatus: action.payload };
 
     case ACTIONS.SET_CONNECTION_STATUS:
+      if (state.connectionStatus === action.payload) return state;
       return { ...state, connectionStatus: action.payload };
 
     case ACTIONS.SET_LAST_UPDATE:
@@ -144,6 +147,7 @@ export function MMMProvider({ children, socket }) {
   const [state, dispatch] = useReducer(mmmReducer, initialState);
   const retryTimeoutRef = useRef(null);
   const retryCountRef = useRef(0);
+  const lastSessionsJson = useRef('');
   const maxRetries = 5;
   const baseRetryDelay = 2000;
 
@@ -159,10 +163,17 @@ export function MMMProvider({ children, socket }) {
       const result = await mmmService.getSessions(false, true);
       if (result.success) {
         const sessions = result.sessions || [];
-        dispatch({ type: ACTIONS.SET_SESSIONS, payload: sessions });
+
+        // Fix: Deep comparison to prevent redundant re-renders
+        const currentJson = JSON.stringify(sessions);
+        if (currentJson !== lastSessionsJson.current) {
+          lastSessionsJson.current = currentJson;
+          dispatch({ type: ACTIONS.SET_SESSIONS, payload: sessions });
+          dispatch({ type: ACTIONS.SET_LAST_UPDATE, payload: new Date().toISOString() });
+        }
+
         dispatch({ type: ACTIONS.SET_ERROR, payload: null });
         dispatch({ type: ACTIONS.SET_CONNECTION_STATUS, payload: 'connected' });
-        dispatch({ type: ACTIONS.SET_LAST_UPDATE, payload: new Date().toISOString() });
         retryCountRef.current = 0;
 
         // Clear stale localStorage session ID if it no longer exists

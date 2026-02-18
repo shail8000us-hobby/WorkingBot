@@ -16,7 +16,6 @@ module.exports = override(
         chunks: 'all',
         maxInitialRequests: Infinity,
         minSize: 20000, // 20KB minimum chunk size
-        maxSize: 244000, // 244KB maximum chunk size (split larger chunks)
         cacheGroups: {
           // Vendor chunk: React, React-DOM, and core libraries
           vendor: {

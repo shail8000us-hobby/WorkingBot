@@ -154,6 +154,16 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Get heartbeat health telemetry: latency percentiles, miss rate,
+   * health grade (A-F), circuit breaker state, watchdog status.
+   * @param {string} sessionId
+   */
+  async getBeatHealth(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/beat-health`);
+    return data;
+  },
+
   // =========================================================================
   // Manual Position Reduction
   // =========================================================================

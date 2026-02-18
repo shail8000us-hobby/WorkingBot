@@ -22,6 +22,8 @@ import time
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime, timedelta, timezone
 
+import random
+
 from .mmm_state import recompute_side_lots, get_session_summary
 from .mmm_trigger import (
     evaluate_triggers, update_trigger_snapshots,
@@ -29,6 +31,8 @@ from .mmm_trigger import (
     OUTCOME_NONE, OUTCOME_CE,
     OUTCOME_PE, OUTCOME_BOTH,
 )
+from .mmm_heartbeat_health import HeartbeatHealth
+from .mmm_circuit_breaker import CircuitBreaker
 from .mmm_engine import get_engine
 from .mmm_reversal import (
     detect_reversal, is_cooldown_active, activate_cooldown,
@@ -52,6 +56,10 @@ from .mmm_analytics_storage import get_analytics_storage
 from .mmm_safety import (
     get_safety, should_block_adjustment, should_pause,
     update_peak_pnl,
+)
+from .mmm_pending_orders import (
+    register_pending, clear_pending, get_pending,
+    check_and_resolve_pending, clear_all as clear_all_pending,
 )
 from .mmm_websocket import (
     emit_heartbeat, emit_adjustment, emit_reversal,
@@ -93,6 +101,11 @@ class MMMMonitor:
 
         self._engine = get_engine()
         self._safety = get_safety()
+
+        # Institutional heartbeat infrastructure
+        base_interval = session.get('params', {}).get('adjustment_interval', 300)
+        self._health = HeartbeatHealth(session_id, base_interval)
+        self._circuit = CircuitBreaker(session_id)
 
         # Lazy-loaded
         self._executor = None
@@ -156,6 +169,13 @@ class MMMMonitor:
         )
         log.info(f"Monitor started for {self.session_id}")
 
+        # Register with watchdog supervisor
+        try:
+            from .mmm_watchdog import MMMWatchdog
+            MMMWatchdog.get_instance().register(self)
+        except Exception as _we:
+            log.warning(f"Watchdog registration failed: {_we}")
+
     def stop(self, reason: str = 'User requested'):
         """Stop the heartbeat monitor."""
         if not self._running:
@@ -193,6 +213,19 @@ class MMMMonitor:
             self.session_id, old_status, 'STOPPED', reason
         )
         log.info(f"Monitor stopped for {self.session_id}: {reason}")
+
+        # Clear any pending orders from the guard registry
+        try:
+            clear_all_pending(self.session_id)
+        except Exception:
+            pass
+
+        # Deregister from watchdog
+        try:
+            from .mmm_watchdog import MMMWatchdog
+            MMMWatchdog.get_instance().deregister(self.session_id)
+        except Exception as _we:
+            pass
 
     def pause(self, reason: str = 'User requested'):
         """Pause the heartbeat (monitoring continues but no adjustments)."""
@@ -355,19 +388,45 @@ class MMMMonitor:
                 except Exception as e:
                     log.exception(f"Heartbeat error for {self.session_id}: {e}")
                     self.session['last_error'] = str(e)
-                    self.session['error_count'] = (
-                        self.session.get('error_count', 0) + 1
-                    )
 
-                    # If too many consecutive errors, stop
-                    if self.session.get('error_count', 0) >= 5:
-                        self.stop('Too many consecutive errors')
+                    # Circuit breaker: record failure (not a blunt stop)
+                    self._circuit.record_failure(str(e))
+
+                    # Graduated response: only hard-stop on truly unrecoverable errors
+                    # (e.g. programming bugs), not exchange connectivity issues
+                    unrecoverable = any(kw in str(e).lower() for kw in (
+                        'typeerror', 'attributeerror', 'nameerror', 'assertionerror',
+                    ))
+                    if unrecoverable:
+                        log.critical(
+                            f"[{self.session_id}] Unrecoverable error, stopping: {e}"
+                        )
+                        self.stop(f'Unrecoverable error: {type(e).__name__}')
                         break
 
-                # Cycle-based wait: subtract heartbeat execution time
-                # so total cycle ≈ interval, not interval + execution_time
+                    if self._circuit.should_alert:
+                        from .mmm_websocket import emit_safety
+                        emit_safety(
+                            self.session_id, 'circuit_breaker', 'critical',
+                            f'Exchange API unreachable — circuit breaker OPEN '
+                            f'(depth {self._circuit.open_depth}). '
+                            f'Using cached prices for safety checks.',
+                            self._circuit.summary(),
+                        )
+
+                    # Health record the error beat
+                    self._health.record_beat(
+                        'error',
+                        latency_ms=(time.monotonic() - hb_start) * 1000,
+                        error_msg=str(e),
+                    )
+
+                # Cycle-based wait: subtract heartbeat execution time so total
+                # cycle ≈ interval, not interval + execution_time.
+                # ± 2s jitter to desync sessions from each other.
                 elapsed = time.monotonic() - hb_start
-                remaining = max(0, interval - elapsed)
+                jitter = random.uniform(-2.0, 2.0)
+                remaining = max(0, interval - elapsed + jitter)
                 if elapsed > interval:
                     log.warning(
                         f"[{self.session_id}] Heartbeat took {elapsed:.1f}s "
@@ -404,6 +463,8 @@ class MMMMonitor:
                     sid, 'info')
         session['_heartbeat_counter'] = session.get('_heartbeat_counter', 0) + 1
 
+        beat_start_mono = time.monotonic()
+
         # Generate entry walkthrough on first heartbeat
         if session['_heartbeat_counter'] == 1:
             try:
@@ -427,13 +488,60 @@ class MMMMonitor:
         # Step 0: Reconcile with exchange positions (§14.5 — exchange reality check)
         await self._reconcile_exchange_positions()
 
-        # Step 1: Fetch current premiums
-        ce_now, pe_now = await self._fetch_premiums()
-        if ce_now is None or pe_now is None:
-            log.warning(f"[{sid}] Failed to fetch premiums, skipping beat")
-            log_activity('heartbeat_error',
-                        'Failed to fetch premium data from exchange',
-                        sid, 'error')
+        # Step 1: Fetch current premiums — with circuit breaker + fallback
+        ce_now, pe_now, fetch_ok = await self._fetch_premiums_with_fallback()
+
+        if not fetch_ok:
+            # ----------------------------------------------------------------
+            # PARTIAL BEAT: premium fetch failed.
+            # Instead of silently aborting (the old behaviour which skipped
+            # close-at-5 and safety), run critical safety tasks using the
+            # last cached prices.  This ensures positions get closed and
+            # max-loss is enforced even during exchange outages.
+            # ----------------------------------------------------------------
+            cached_ce = (getattr(self, '_premium_cache', {}) or {}).get(
+                (float(session.get('ce', {}).get('active_strike', 0)), 'call'), None
+            )
+            cached_pe = (getattr(self, '_premium_cache', {}) or {}).get(
+                (float(session.get('pe', {}).get('active_strike', 0)), 'put'), None
+            )
+
+            if cached_ce is not None and cached_pe is not None:
+                # Run close-at-5 + safety using stale cached prices
+                log.warning(
+                    f"[{sid}] PARTIAL BEAT: using cached prices "
+                    f"CE={cached_ce:.2f} PE={cached_pe:.2f} "
+                    f"(circuit={self._circuit.state.value})"
+                )
+                log_activity('heartbeat_partial',
+                            f'⚠️ Partial Beat: Exchange unreachable — '
+                            f'running safety checks with cached prices '
+                            f'(CE={cached_ce:.2f}, PE={cached_pe:.2f})',
+                            sid, 'warning',
+                            {'circuit_state': self._circuit.state.value,
+                             'cached_ce': cached_ce, 'cached_pe': cached_pe})
+                await self._process_close_at_5(cached_ce, cached_pe)
+                fresh_unrealized = self._engine.compute_unrealized_pnl(
+                    session, self._make_fetch_fn()
+                )
+                session['unrealized_pnl'] = fresh_unrealized
+                minutes_to_expiry = self._get_minutes_to_expiry()
+                self._safety.run_all_checks(session, minutes_to_expiry)
+                _save_session(session)
+                latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                self._health.record_beat(
+                    'partial', latency_ms=latency_ms,
+                    ce_premium=cached_ce, pe_premium=cached_pe,
+                )
+            else:
+                log.warning(f"[{sid}] MISS BEAT: no cached prices available, skipping entirely")
+                log_activity('heartbeat_miss',
+                            f'💤 Miss Beat: No cached prices — skipping heartbeat '
+                            f'(circuit={self._circuit.state.value})',
+                            sid, 'warning',
+                            {'circuit_state': self._circuit.state.value})
+                latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                self._health.record_beat('miss', latency_ms=latency_ms)
             return
 
         # Log premium values
@@ -443,6 +551,26 @@ class MMMMonitor:
                     f'Current Premiums: CE {ce_strike} = ${ce_now:.2f}, PE {pe_strike} = ${pe_now:.2f}',
                     sid, 'info',
                     {'ce_premium': ce_now, 'pe_premium': pe_now, 'ce_strike': ce_strike, 'pe_strike': pe_strike})
+
+        # Stale-price guard: warn if HeartbeatHealth detects frozen exchange data
+        if self._health.stale_ce_detected or self._health.stale_pe_detected:
+            stale_sides = []
+            if self._health.stale_ce_detected:
+                stale_sides.append('CE')
+            if self._health.stale_pe_detected:
+                stale_sides.append('PE')
+            stale_msg = (
+                f"Stale price detected for {'/'.join(stale_sides)}: "
+                f"mark_price unchanged for {3}+ consecutive beats. "
+                f"Exchange may be serving cached data."
+            )
+            log_activity('stale_price_warning', f'⚠️ STALE PRICE: {stale_msg}',
+                        sid, 'warning',
+                        {'stale_ce': self._health.stale_ce_detected,
+                         'stale_pe': self._health.stale_pe_detected})
+            emit_safety(sid, 'stale_price', 'alert', stale_msg,
+                       {'stale_ce': self._health.stale_ce_detected,
+                        'stale_pe': self._health.stale_pe_detected})
 
         # Log wind-down status every heartbeat so user can see if it's active or pending
         wd_status = get_wind_down_status(session)
@@ -911,15 +1039,32 @@ class MMMMonitor:
 
         # Reset error count AFTER successful heartbeat completion
         session['error_count'] = 0
+        # Circuit breaker: record success to heal open/half-open state
+        self._circuit.record_success()
+
+        # Record beat telemetry
+        beat_latency_ms = (time.monotonic() - beat_start_mono) * 1000
+        self._health.record_beat(
+            'ok',
+            latency_ms=beat_latency_ms,
+            ce_premium=ce_now,
+            pe_premium=pe_now,
+        )
+        # Persist health summary into session for API/UI access
+        session['_beat_health'] = self._health.summary()
+        session['_circuit_state'] = self._circuit.summary()
 
         # Log heartbeat completion with ACTUAL effective interval
         effective_iv = getattr(self, '_effective_interval', session.get('params', {}).get('adjustment_interval', 300))
         from .mmm_activity import log_activity
         log_activity('heartbeat_complete',
-                    f'✓ Heartbeat #{session.get("_heartbeat_counter", 0)} complete - '
+                    f'✓ Heartbeat #{session.get("_heartbeat_counter", 0)} complete '
+                    f'[{beat_latency_ms:.0f}ms, grade={self._health.grade()}] — '
                     f'Next check in {effective_iv}s',
                     sid, 'success',
-                    {'next_interval': effective_iv})
+                    {'next_interval': effective_iv,
+                     'latency_ms': round(beat_latency_ms, 1),
+                     'health_grade': self._health.grade()})
 
     # =========================================================================
     # §5: Process Adjustment
@@ -1164,6 +1309,86 @@ class MMMMonitor:
                     })
 
     # =========================================================================
+    # Pending Order Fill Recorder
+    # =========================================================================
+
+    def _record_fill_from_pending(
+        self,
+        session: Dict,
+        side: str,
+        strike: float,
+        lots: int,
+        fill_price: float,
+        adj_type: str = 'standard',
+    ) -> None:
+        """
+        Record a confirmed fill for a pending order into session state.
+
+        Called by the pending order guard when it discovers a previously
+        un-recorded fill on the exchange.  Mirrors the state update that
+        would have been done by _update_state_after_adjustment() had
+        smart_execute returned success.
+
+        Note: Does NOT update trigger_snapshots (no live premiums available
+        here).  The normal heartbeat will refresh snapshots on next cycle.
+        """
+        from .mmm_state import recompute_side_lots
+        from .mmm_activity import log_activity
+
+        side_state = session.setdefault(side, {})
+        aggressor_side = 'pe' if side == 'ce' else 'ce'
+
+        # Record the fill
+        side_state.setdefault('adjustment_fills', []).append({
+            'lots': lots,
+            'premium': fill_price,
+            'strike': strike,
+            'timestamp': datetime.utcnow().isoformat(),
+            'type': adj_type,
+            'source': 'pending_order_recovery',  # Distinguishes from normal fills
+        })
+        recompute_side_lots(side_state)
+        session[side] = side_state
+
+        # Update tracking
+        session['last_aggressor'] = aggressor_side.upper()
+        session['adjustment_count'] = session.get('adjustment_count', 0) + 1
+        premium_collected = fill_price * lots * LOT_SIZE_BTC
+        session['total_premium_collected'] = (
+            session.get('total_premium_collected', 0) + premium_collected
+        )
+
+        session.setdefault('adjustment_history', []).append({
+            'side': side.upper(),
+            'aggressor': aggressor_side.upper(),
+            'lots_sold': lots,
+            'premium': fill_price,
+            'strike': strike,
+            'timestamp': datetime.utcnow().isoformat(),
+            'type': adj_type,
+            'premium_collected': premium_collected,
+            'adjustment_number': session['adjustment_count'],
+            'source': 'pending_order_recovery',
+        })
+
+        session['updated_at'] = datetime.utcnow().isoformat()
+
+        log.info(
+            f"[{self.session_id}] Pending fill recorded: "
+            f"{side.upper()} {lots} lots @ {strike} fill_price={fill_price:.2f} "
+            f"(adj #{session['adjustment_count']})"
+        )
+        log_activity('pending_fill_recorded',
+                     f'📋 Pending fill recovered: SELL {lots} lots {side.upper()} @ {strike} '
+                     f'for ${fill_price:.2f} (recorded from exchange verification)',
+                     self.session_id, 'info',
+                     {'side': side.upper(), 'strike': strike, 'lots': lots,
+                      'fill_price': fill_price, 'adj_type': adj_type})
+
+        # Save to storage immediately
+        _save_session(session)
+
+    # =========================================================================
     # §5: Process Adjustment (Standard / Reversal)
     # =========================================================================
 
@@ -1184,6 +1409,55 @@ class MMMMonitor:
         """
         session = self.session
         sid = self.session_id
+
+        # ── PENDING ORDER GUARD ───────────────────────────────────────────────
+        # Before firing ANY new order, verify whether a pending adjustment order
+        # from a previous heartbeat is still open on the exchange.  If it is,
+        # skip this heartbeat to avoid position accumulation.  If it was filled
+        # but not recorded (e.g. executor timed out), record the fill now so
+        # calculations stay accurate.
+        from .mmm_activity import log_activity as _log_act
+        try:
+            rest_for_guard = self._create_heartbeat_rest_client()
+            guard_result = await check_and_resolve_pending(
+                session_id=sid,
+                side=hedge,
+                session=session,
+                rest_client=rest_for_guard,
+                record_fill_fn=self._record_fill_from_pending,
+            )
+
+            if guard_result == 'filled':
+                _log_act('pending_order_resolved',
+                         f'✅ Pending {hedge.upper()} order confirmed FILLED (recorded from exchange). '
+                         f'Skipping duplicate order this heartbeat.',
+                         sid, 'success',
+                         {'side': hedge, 'guard_result': guard_result})
+                log.info(
+                    f"[{sid}] Pending {hedge.upper()} order was filled — "
+                    f"fill recorded, skipping new order"
+                )
+                return
+
+            elif guard_result in ('open', 'error'):
+                _log_act('pending_order_active',
+                         f'⏳ Pending {hedge.upper()} order still OPEN on exchange — '
+                         f'skipping duplicate order (guard_result={guard_result})',
+                         sid, 'warning',
+                         {'side': hedge, 'guard_result': guard_result})
+                log.warning(
+                    f"[{sid}] Pending {hedge.upper()} order still open/unverifiable — "
+                    f"skipping this heartbeat to prevent accumulation"
+                )
+                return
+
+            # 'none', 'dead', 'stale' → proceed normally
+
+        except Exception as _guard_err:
+            log.warning(
+                f"[{sid}] Pending order guard failed: {_guard_err} — proceeding with caution"
+            )
+        # ── END PENDING ORDER GUARD ───────────────────────────────────────────
 
         # §9: Check for reversal
         is_reversal = detect_reversal(session, aggressor)
@@ -1447,17 +1721,51 @@ class MMMMonitor:
             option_type, 'BTC', new_strike, expiry,
         )
 
+        # Register pending order before strike shift execution
+        try:
+            register_pending(
+                session_id=sid,
+                side=side,
+                order_id='pending',
+                symbol=symbol,
+                lots=lots,
+                strike=new_strike,
+                adj_type='strike_shift',
+            )
+        except Exception as _pe:
+            log.warning(f"[{sid}] Failed to register pending order for strike shift: {_pe}")
+
         result = await self.executor.smart_execute(
             symbol=symbol,
             side='sell',
             size=lots,
         )
 
+        # Update pending registry with real order ID
+        try:
+            real_oid = result.get('order_id', '')
+            if real_oid and result.get('success'):
+                register_pending(
+                    session_id=sid, side=side,
+                    order_id=str(real_oid), symbol=symbol,
+                    lots=lots, strike=new_strike, adj_type='strike_shift',
+                )
+            elif not result.get('success'):
+                clear_pending(sid, side)
+        except Exception as _pe:
+            log.warning(f"[{sid}] Failed to update pending registry for strike shift: {_pe}")
+
         if result.get('success'):
             fill_price = result.get('fill_price', 0)
             activate_new_strike(
                 session, side, new_strike, fill_price, lots,
             )
+
+            # Clear pending after state is updated
+            try:
+                clear_pending(sid, side)
+            except Exception:
+                pass
 
             # Update triggers at new strike
             update_trigger_snapshots(session, ce_now, pe_now,
@@ -2055,6 +2363,101 @@ class MMMMonitor:
 
         except Exception as e:
             log.error(f"Error fetching premiums: {e}")
+            return None, None
+
+    async def _fetch_premiums_with_fallback(self):
+        """
+        Circuit-breaker-aware premium fetch with order-book mid fallback.
+
+        Returns:
+            (ce_premium, pe_premium, ok: bool)
+            ok=False means partial/miss beat should run, not full beat.
+        """
+        sid = self.session_id
+
+        # --- Check circuit breaker ---
+        if not self._circuit.allow_request():
+            log.warning(
+                f"[{sid}] Circuit OPEN (depth={self._circuit.open_depth}) — "
+                f"skipping exchange call, returning cached"
+            )
+            return None, None, False
+
+        try:
+            ce_now, pe_now = await self._fetch_premiums()
+            if ce_now is not None and pe_now is not None and ce_now > 0 and pe_now > 0:
+                self._circuit.record_success()
+                return ce_now, pe_now, True
+
+            # Primary ticker API returned zeros — try order-book mid as fallback
+            ce_fb, pe_fb = await self._fetch_premiums_orderbook_fallback()
+            if ce_fb is not None and pe_fb is not None and ce_fb > 0 and pe_fb > 0:
+                log.info(
+                    f"[{sid}] Ticker API returned zero — using order-book mid: "
+                    f"CE={ce_fb:.2f} PE={pe_fb:.2f}"
+                )
+                self._circuit.record_success()
+                return ce_fb, pe_fb, True
+
+            # Both sources failed
+            self._circuit.record_failure('all premium sources returned invalid data')
+            return None, None, False
+
+        except Exception as e:
+            self._circuit.record_failure(str(e))
+            log.error(f"[{sid}] Premium fetch exception: {e}")
+            return None, None, False
+
+    async def _fetch_premiums_orderbook_fallback(self):
+        """
+        Fallback: derive CE and PE premiums from order-book mid-price
+        when the mark-price ticker returns zero or is unavailable.
+
+        Order-book mid = (best_bid + best_ask) / 2
+        Returns (ce_mid, pe_mid) or (None, None) on failure.
+        """
+        try:
+            ce_state = self.session.get('ce', {})
+            pe_state = self.session.get('pe', {})
+            ce_strike = ce_state.get('active_strike', 0)
+            pe_strike = pe_state.get('active_strike', 0)
+            expiry = self.session.get('params', {}).get('expiry', '')
+
+            if not ce_strike or not pe_strike:
+                return None, None
+
+            ce_symbol = self.initializer.build_symbol('call', 'BTC', ce_strike, expiry)
+            pe_symbol = self.initializer.build_symbol('put', 'BTC', pe_strike, expiry)
+
+            rest = getattr(self, '_heartbeat_rest', None) or self._create_heartbeat_rest_client()
+
+            async def _mid(symbol):
+                try:
+                    resp = await rest._request_with_retry(
+                        method="GET", path=f"/v2/orderbook/{symbol}",
+                        params={"depth": 1},
+                    )
+                    data = resp.get('result', resp)
+                    bids = data.get('buy', [])
+                    asks = data.get('sell', [])
+                    best_bid = float(bids[0][0]) if bids else 0.0
+                    best_ask = float(asks[0][0]) if asks else 0.0
+                    if best_bid > 0 and best_ask > 0:
+                        return (best_bid + best_ask) / 2.0
+                    elif best_bid > 0:
+                        return best_bid
+                    elif best_ask > 0:
+                        return best_ask
+                    return None
+                except Exception:
+                    return None
+
+            import asyncio as _asyncio
+            ce_mid, pe_mid = await _asyncio.gather(_mid(ce_symbol), _mid(pe_symbol))
+            return ce_mid, pe_mid
+
+        except Exception as e:
+            log.warning(f"[{self.session_id}] Order-book fallback failed: {e}")
             return None, None
 
     def _create_heartbeat_rest_client(self):

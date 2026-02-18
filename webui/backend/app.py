@@ -1087,8 +1087,31 @@ if __name__ == '__main__':
     # ============================================================================
     # SINGLE INSTANCE ENFORCEMENT
     # ============================================================================
+    import os as _os
+    import signal as _signal
     from webui.backend.utils.instance_lock import WebUIInstanceLock
-    
+
+    # Use os._exit() instead of sys.exit() to skip Py_FinalizeEx, which causes
+    # SIGABRT crashes when scipy/numpy OpenBLAS threads are still running.
+    def _hard_exit(code=0):
+        """Bypass Python finalizer to prevent SIGABRT from C-extension threads."""
+        try:
+            # Flush stdout/stderr before exiting
+            import sys as _sys
+            _sys.stdout.flush()
+            _sys.stderr.flush()
+        except Exception:
+            pass
+        _os._exit(code)
+
+    # Handle SIGTERM (launchd stop / kill) and SIGINT (Ctrl-C) gracefully
+    def _signal_handler(signum, frame):
+        print(f"\n[app.py] Received signal {signum} — shutting down cleanly.")
+        _hard_exit(0)
+
+    _signal.signal(_signal.SIGTERM, _signal_handler)
+    _signal.signal(_signal.SIGINT, _signal_handler)
+
     # Allow port configuration via CLI argument or YAML config
     import sys
     if len(sys.argv) > 1:
@@ -1097,13 +1120,13 @@ if __name__ == '__main__':
             print(f"🔧 Using CLI port argument: {WEBUI_PORT}")
         except ValueError:
             print(f"❌ Invalid port argument: {sys.argv[1]}")
-            sys.exit(1)
+            _hard_exit(1)
     else:
         WEBUI_PORT = cfg.webui.port
         print(f"🔧 Using config port: {WEBUI_PORT}")
-    
+
     instance_lock = WebUIInstanceLock(BASE_DIR, WEBUI_PORT)
-    
+
     if not instance_lock.acquire():
         # Another instance is already running
         existing_info = instance_lock.get_running_instance_info()
@@ -1119,8 +1142,8 @@ if __name__ == '__main__':
         print("  • Stop it: launchctl stop com.gridbot.webui")
         print("  • Or kill process: kill <PID>")
         print("=" * 80)
-        sys.exit(1)
-    
+        _hard_exit(1)
+
     # Register cleanup on exit
     import atexit
     atexit.register(instance_lock.release)

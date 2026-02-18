@@ -297,6 +297,14 @@ export default function MMMGreeksPanel({ session }) {
                 const g = pos.greeks || {};
                 const iv = pos.iv || {};
                 const isFrozen = pos.frozen;
+                const lots = pos.lots || 0;
+                // Position-level Greeks = per-lot Greek × lots
+                const posGreeks = {
+                  delta: g.delta != null ? g.delta * lots : null,
+                  gamma: g.gamma != null ? g.gamma * lots : null,
+                  theta: g.theta != null ? g.theta * lots : null,
+                  vega: g.vega != null ? g.vega * lots : null,
+                };
 
                 return (
                   <TableRow
@@ -360,36 +368,36 @@ export default function MMMGreeksPanel({ session }) {
                       {fmtNum(pos.mark_price)}
                     </TableCell>
 
-                    {/* Delta */}
+                    {/* Delta (position total) */}
                     <TableCell
                       align="right"
                       sx={{ fontFamily: 'monospace', color: '#42a5f5' }}
                     >
-                      {fmtGreek(g.delta)}
+                      {fmtGreek(posGreeks.delta)}
                     </TableCell>
 
-                    {/* Gamma */}
+                    {/* Gamma (position total) */}
                     <TableCell
                       align="right"
                       sx={{ fontFamily: 'monospace', color: '#ab47bc' }}
                     >
-                      {fmtGreek(g.gamma, 6)}
+                      {fmtGreek(posGreeks.gamma, 6)}
                     </TableCell>
 
-                    {/* Theta */}
+                    {/* Theta (position total) */}
                     <TableCell
                       align="right"
                       sx={{ fontFamily: 'monospace', color: '#66bb6a' }}
                     >
-                      {fmtGreek(g.theta)}
+                      {fmtGreek(posGreeks.theta)}
                     </TableCell>
 
-                    {/* Vega */}
+                    {/* Vega (position total) */}
                     <TableCell
                       align="right"
                       sx={{ fontFamily: 'monospace', color: '#ffa726' }}
                     >
-                      {fmtGreek(g.vega)}
+                      {fmtGreek(posGreeks.vega)}
                     </TableCell>
 
                     {/* Mark IV */}
