@@ -13,6 +13,7 @@ export { default as MMMDashboard } from './MMMDashboard';
 // Phase 2: Config Panel & Strike Selector
 export { default as MMMConfigPanel } from './MMMConfigPanel';
 export { default as MMMStrikeSelector } from './MMMStrikeSelector';
+export { default as MMMAdoptPanel } from './MMMAdoptPanel';
 
 // Phase 3-7: Live Dashboard Components
 export { default as MMMStatusBanner } from './MMMStatusBanner';

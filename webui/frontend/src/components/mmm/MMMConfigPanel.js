@@ -1,12 +1,13 @@
 /**
  * MMM Config Panel — Money Mind & Method
  *
- * Phase 2 Enhanced: Initialization UI with three modes.
+ * Phase 2 Enhanced: Initialization UI with four modes.
  *
- * Three modes:
+ * Four modes:
  *   Mode A (Fresh):  Auto-find strikes by desired premium → preview → confirm → execute
  *   Mode B (Import): Enter existing position details → initialize
  *   Mode C (Manual): Browse full chain → click to select CE & PE → validate → execute
+ *   Mode D (Adopt):  Scan exchange for open positions → select → assign roles → adopt
  *
  * Smart Execution:
  *   After strike selection (Mode A or C), orders are placed at mid-price
@@ -57,9 +58,11 @@ import {
   Upload as ImportIcon,
   TouchApp as ManualIcon,
   PlayArrow as ExecuteIcon,
+  GetApp as AdoptIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
 import MMMStrikeSelector from './MMMStrikeSelector';
+import MMMAdoptPanel from './MMMAdoptPanel';
 
 // =============================================================================
 // Helpers
@@ -70,7 +73,7 @@ import MMMStrikeSelector from './MMMStrikeSelector';
  */
 const formatExpiry = (ddmmyyyy) => {
   if (!ddmmyyyy || ddmmyyyy.length !== 8) return ddmmyyyy;
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const dd = ddmmyyyy.slice(0, 2);
   const mm = parseInt(ddmmyyyy.slice(2, 4), 10) - 1;
   const yyyy = ddmmyyyy.slice(4, 8);
@@ -207,7 +210,7 @@ const StrikePreviewTable = ({ label, best, alternatives, color, onSelect }) => {
 
 const MMMConfigPanel = ({ sessionId, sessionStatus, onInitialized }) => {
   // ----- State -----
-  const [mode, setMode] = useState('fresh'); // 'fresh' | 'import' | 'manual'
+  const [mode, setMode] = useState('fresh'); // 'fresh' | 'import' | 'manual' | 'adopt'
   const [expiries, setExpiries] = useState([]);
   const [selectedExpiry, setSelectedExpiry] = useState('');
   const [spotPrice, setSpotPrice] = useState(null);
@@ -654,6 +657,18 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, onInitialized }) => {
         >
           Import Existing
         </Button>
+        <Button
+          variant={mode === 'adopt' ? 'contained' : 'outlined'}
+          size="small"
+          onClick={() => setMode('adopt')}
+          startIcon={<AdoptIcon />}
+          sx={mode === 'adopt' ? {
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderColor: 'transparent',
+          } : {}}
+        >
+          Adopt from Exchange
+        </Button>
       </Box>
 
       {/* Shared: Expiry + Lots */}
@@ -941,6 +956,19 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, onInitialized }) => {
             {loading ? 'Initializing...' : 'Import & Initialize'}
           </Button>
         </>
+      )}
+
+      {/* ================================================================= */}
+      {/* Mode D: Adopt — Scan exchange for open positions                  */}
+      {/* ================================================================= */}
+      {mode === 'adopt' && (
+        <MMMAdoptPanel
+          sessionId={sessionId}
+          selectedExpiry={selectedExpiry}
+          onAdopted={(result) => {
+            onInitialized?.(result);
+          }}
+        />
       )}
     </Paper>
   );

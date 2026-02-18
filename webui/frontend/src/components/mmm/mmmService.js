@@ -396,6 +396,33 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Fetch open SHORT BTC options positions from Delta Exchange.
+   * Powers the "Adopt from Exchange" UI — shows what's on the exchange.
+   * @param {string} [expiry] - Optional expiry filter (DDMMYYYY)
+   */
+  async getExchangePositions(expiry = null) {
+    const params = expiry ? { expiry } : {};
+    const { data } = await api.get(`${BASE_URL}/exchange-positions`, { params });
+    return data;
+  },
+
+  /**
+   * Adopt selected exchange positions into an IDLE session.
+   * @param {string} sessionId
+   * @param {Array} positions - Position objects with symbol, strike, lots, entry_price, side, role
+   * @param {string} expiry - DDMMYYYY
+   * @param {string} [triggerMode='current_prices'] - 'current_prices' | 'entry_prices'
+   */
+  async adoptPositions(sessionId, positions, expiry, triggerMode = 'current_prices') {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/adopt`, {
+      positions,
+      expiry,
+      trigger_mode: triggerMode,
+    });
+    return data;
+  },
+
   // =========================================================================
   // Phase 2 Enhanced: Chain Data, Validation & Smart Execution
   // =========================================================================

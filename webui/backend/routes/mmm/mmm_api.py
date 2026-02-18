@@ -1514,6 +1514,252 @@ def init_session_import(session_id: str):
 
 
 # =============================================================================
+# Phase 2C: Adopt Existing Positions from Exchange
+# =============================================================================
+
+@mmm_bp.route('/exchange-positions', methods=['GET'])
+def get_exchange_positions():
+    """
+    Fetch all open SHORT BTC options positions from Delta Exchange.
+
+    Powers the "Adopt from Exchange" UI: shows what's open on the exchange
+    so the user can select which positions to bring under MMM management.
+
+    Query params:
+        expiry: str   (optional, DDMMYYYY — filter to specific expiry)
+
+    Returns:
+        {
+            success: bool,
+            positions: [ {symbol, side, strike, expiry, lots, entry_price,
+                          mark_price, unrealized_pnl, iv, delta, theta} ],
+            spot_price: float,
+            expiries_with_positions: [str],
+        }
+    """
+    try:
+        from .mmm_adopter import fetch_exchange_btc_options
+
+        expiry = request.args.get('expiry')
+        if expiry:
+            expiry = normalize_expiry(expiry)
+
+        result = fetch_exchange_btc_options(expiry_filter=expiry)
+        return jsonify(result), 200 if result.get('success') else 500
+
+    except Exception as e:
+        log.exception("Failed to fetch exchange positions")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/adopt', methods=['POST'])
+def adopt_positions(session_id: str):
+    """
+    Adopt existing exchange positions into an IDLE session.
+
+    This is the core of the "Adopt from Exchange" feature. It takes
+    user-selected positions, classifies them into active/frozen per side,
+    validates them, and builds the full session state.
+
+    Once adopted, the session behaves identically to an import-mode session.
+    No changes to monitor, engine, trigger, safety, or any runtime modules.
+
+    Body (JSON):
+        positions: [
+            {
+                symbol: str,
+                strike: float,
+                lots: int,
+                entry_price: float,
+                role: str  ('active' or 'frozen'),
+                side: str  ('CE' or 'PE'),
+            }
+        ]
+        expiry: str        (DDMMYYYY — required)
+        trigger_mode: str  ('current_prices' | 'entry_prices', default 'current_prices')
+    """
+    try:
+        from .mmm_adopter import (
+            classify_positions,
+            validate_adoptable,
+            build_adopted_session_state,
+        )
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}',
+            }), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('IDLE', 'STOPPED'):
+            return jsonify({
+                'success': False,
+                'error': f'Session must be in IDLE or STOPPED status to adopt. '
+                         f'Current: {status}',
+            }), 400
+
+        data = request.get_json(force=True)
+
+        positions = data.get('positions', [])
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': 'No positions provided. Select at least one CE and one PE position.',
+            }), 400
+
+        expiry = data.get('expiry', '')
+        if not expiry:
+            return jsonify({
+                'success': False,
+                'error': 'Expiry date is required.',
+            }), 400
+
+        expiry = normalize_expiry(expiry)
+        trigger_mode = data.get('trigger_mode', 'current_prices')
+
+        # Validate each position has required fields
+        required_pos_fields = ['symbol', 'strike', 'lots', 'entry_price', 'side']
+        for i, pos in enumerate(positions):
+            missing = [f for f in required_pos_fields if f not in pos or pos[f] is None]
+            if missing:
+                return jsonify({
+                    'success': False,
+                    'error': f'Position {i+1} missing fields: {", ".join(missing)}',
+                }), 400
+
+        # Get spot price for classification
+        spot_price = 0.0
+        try:
+            from .mmm_initializer import get_initializer
+            initializer = get_initializer()
+            spot_price = initializer.get_spot_price('BTC')
+        except Exception:
+            pass
+
+        # Classify positions into active/frozen per side
+        classified = classify_positions(positions, spot_price)
+
+        # Validate
+        max_lots = session.get('params', {}).get('max_lots_per_side', 100)
+        validation = validate_adoptable(classified, session_id=session_id, max_lots_per_side=max_lots)
+
+        if not validation['valid']:
+            return jsonify({
+                'success': False,
+                'error': 'Validation failed: ' + '; '.join(validation['errors']),
+                'errors': validation['errors'],
+                'warnings': validation['warnings'],
+            }), 400
+
+        # Build session state
+        build_adopted_session_state(
+            session,
+            classified,
+            trigger_mode=trigger_mode,
+            expiry=expiry,
+        )
+
+        # If trigger_mode is current_prices, fetch live premiums now
+        if trigger_mode == 'current_prices':
+            for side_key in ('ce', 'pe'):
+                side_data = session.get(side_key, {})
+                active_strike = side_data.get('active_strike')
+                symbol = side_data.get('symbol', '')
+                if symbol and active_strike:
+                    try:
+                        from bot.api.delta_client import DeltaClient
+                        dc = DeltaClient()
+                        ticker_resp = dc._req('GET', f'/v2/tickers/{symbol}')
+                        if ticker_resp.get('success'):
+                            live_mark = float(ticker_resp.get('result', {}).get('mark_price', 0))
+                            if live_mark > 0:
+                                side_data['trigger_snapshot'] = {
+                                    str(int(active_strike)): live_mark,
+                                }
+                                side_data['current_price'] = live_mark
+                                log.info(
+                                    f"[Adopt] Set {side_key.upper()} trigger to current price: "
+                                    f"strike={active_strike}, trigger={live_mark:.2f}"
+                                )
+                    except Exception as e:
+                        log.warning(f"[Adopt] Could not fetch live price for {symbol}: {e}")
+
+        # Store adoption snapshot
+        session['adoption_snapshot']['spot_at_adoption'] = spot_price
+        session['adoption_snapshot']['premiums_at_adoption'] = {
+            'ce': session.get('ce', {}).get('trigger_snapshot', {}),
+            'pe': session.get('pe', {}).get('trigger_snapshot', {}),
+        }
+
+        # Save
+        storage.save_session(session)
+
+        emit_status_change(session_id, 'IDLE', 'IDLE', 'Positions adopted from exchange')
+
+        from .mmm_activity import log_activity
+        ce = session.get('ce', {})
+        pe = session.get('pe', {})
+        log_activity('session_adopted',
+            f"Adopted {len(positions)} positions: "
+            f"CE {ce.get('active_strike')}×{ce.get('active_lots')} "
+            f"({ce.get('frozen_total_lots', 0)} frozen), "
+            f"PE {pe.get('active_strike')}×{pe.get('active_lots')} "
+            f"({pe.get('frozen_total_lots', 0)} frozen), "
+            f"trigger_mode={trigger_mode}",
+            session_id=session_id, severity='success',
+            details={
+                'positions_adopted': len(positions),
+                'trigger_mode': trigger_mode,
+                'validation': validation,
+            })
+
+        log.info(
+            f"MMM session {session_id} ADOPTED: "
+            f"CE={ce.get('active_strike')}×{ce.get('active_lots')} + "
+            f"{ce.get('frozen_total_lots', 0)} frozen, "
+            f"PE={pe.get('active_strike')}×{pe.get('active_lots')} + "
+            f"{pe.get('frozen_total_lots', 0)} frozen"
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Positions adopted successfully',
+            'session_id': session_id,
+            'adopted': {
+                'ce_active': {
+                    'strike': ce.get('active_strike'),
+                    'lots': ce.get('active_lots'),
+                },
+                'ce_frozen': [
+                    {'strike': fp.get('strike'), 'lots': fp.get('lots')}
+                    for fp in ce.get('frozen_positions', [])
+                ],
+                'pe_active': {
+                    'strike': pe.get('active_strike'),
+                    'lots': pe.get('active_lots'),
+                },
+                'pe_frozen': [
+                    {'strike': fp.get('strike'), 'lots': fp.get('lots')}
+                    for fp in pe.get('frozen_positions', [])
+                ],
+                'total_premium_collected': session.get('initial_total_premium', 0),
+                'trigger_mode': trigger_mode,
+            },
+            'warnings': validation.get('warnings', []),
+        })
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        log.exception(f"Failed to adopt positions for session {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # Phase 2 Enhanced: Full Chain Data & Manual Selection & Smart Execution
 # =============================================================================
 

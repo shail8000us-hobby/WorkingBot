@@ -1182,7 +1182,7 @@
     },
     {
       "id": "act_181326_088",
-      "timestamp": "2026-02-18T18:13:26.224914",
+      "timestamp": "2026-02-18T18:13:26.229803",
       "type": "info",
       "type_label": "Info",
       "message": "P&L Update: Net $0.08 (Realized: $0.00, Unrealized: $0.08, Fees: $0.00)",
@@ -1194,7 +1194,142 @@
         "unrealized": 0.08,
         "fees": 0.0
       }
+    },
+    {
+      "id": "act_181326_089",
+      "timestamp": "2026-02-18T18:13:26.331778",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: +0.000",
+      "session_id": "mmm19feb26-1",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": 0.0
+      }
+    },
+    {
+      "id": "act_181326_090",
+      "timestamp": "2026-02-18T18:13:26.349215",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #7 complete [353ms, grade=A] \u2014 Next check in 600s",
+      "session_id": "mmm19feb26-1",
+      "severity": "success",
+      "details": {
+        "next_interval": 600,
+        "latency_ms": 353.3,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_182327_091",
+      "timestamp": "2026-02-18T18:23:27.637914",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #8: Checking market conditions",
+      "session_id": "mmm19feb26-1",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_182327_092",
+      "timestamp": "2026-02-18T18:23:27.750319",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 70000.0 = $93.93, PE 63000.0 = $135.92",
+      "session_id": "mmm19feb26-1",
+      "severity": "info",
+      "details": {
+        "ce_premium": 93.92966785,
+        "pe_premium": 135.91862015,
+        "ce_strike": 70000.0,
+        "pe_strike": 63000.0
+      }
+    },
+    {
+      "id": "act_182327_093",
+      "timestamp": "2026-02-18T18:23:27.820509",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm19feb26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_182327_094",
+      "timestamp": "2026-02-18T18:23:27.821042",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -21.1% (need >3.0%), PE +17.2% (need >3.0%) - Result: PE_TRIGGERED",
+      "session_id": "mmm19feb26-1",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -21.07,
+        "pe_excess_pct": 17.17,
+        "min_trigger_move": 3.0,
+        "outcome": "pe_triggered"
+      }
+    },
+    {
+      "id": "act_182327_095",
+      "timestamp": "2026-02-18T18:23:27.821225",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($135.92), hedging with CE ($93.93)",
+      "session_id": "mmm19feb26-1",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 135.91862015,
+        "hedge": "CE",
+        "hedge_premium": 93.92966785
+      }
+    },
+    {
+      "id": "act_182327_096",
+      "timestamp": "2026-02-18T18:23:27.834335",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "SELL 3 lot(s) C-BTC-70000-200226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-70000-200226",
+        "side": "sell",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_182329_097",
+      "timestamp": "2026-02-18T18:23:29.178701",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "message": "SELL 3 C-BTC-70000-200226 @ $97.00 (bid=$95.00, ask=$99.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1183965204",
+        "mid_price": 97.0,
+        "bid": 95.0,
+        "ask": 99.0
+      }
+    },
+    {
+      "id": "act_182352_098",
+      "timestamp": "2026-02-18T18:23:52.308028",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "message": "\u2705 SELL C-BTC-70000-200226 FILLED @ $97.00 in 24.5s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1183965204",
+        "fill_price": 97.0,
+        "elapsed": 24.5,
+        "attempts": 1
+      }
     }
   ],
-  "updated_at": "2026-02-18T18:13:26.226622"
+  "updated_at": "2026-02-18T18:23:52.309631"
 }
