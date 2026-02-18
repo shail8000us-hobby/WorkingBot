@@ -134,7 +134,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
     const isStarting = status === 'STARTING';
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography color="text.secondary" sx={{ fontSize: '0.95rem' }}>
+        <Typography color="text.secondary" sx={{ fontSize: '1rem' }}>
           {isStarting
             ? 'Placing orders... Consolidated positions will appear once orders are filled.'
             : 'No positions to consolidate.'}
@@ -161,7 +161,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
           lineHeight: 1.5,
           mb: 1,
           fontStyle: 'italic',
-          fontSize: '0.82rem',
+          fontSize: '0.88rem',
           opacity: 0.75,
         }}
       >
@@ -193,7 +193,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
       <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
         <Table size="small">
           <TableHead>
-            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.85rem' } }}>
+            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: '0.9rem' } }}>
               <Tooltip title="CE (Call) or PE (Put) side" arrow>
                 <TableCell sx={{ cursor: 'help' }}>Side</TableCell>
               </Tooltip>
@@ -285,7 +285,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
                   {/* Notional BTC */}
                   <TableCell
                     align="right"
-                    sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}
+                    sx={{ fontFamily: 'monospace', fontSize: '0.88rem' }}
                   >
                     {row.notionalBtc.toFixed(3)}
                   </TableCell>
@@ -340,7 +340,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
                         <Box
                           sx={{
                             whiteSpace: 'pre-line',
-                            fontSize: '0.85rem',
+                            fontSize: '0.9rem',
                             p: 0.5,
                           }}
                         >
@@ -349,7 +349,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
                             sx={{
                               fontWeight: 700,
                               mb: 0.5,
-                              fontSize: '0.8rem',
+                              fontSize: '0.85rem',
                             }}
                           >
                             Position Breakdown
@@ -365,7 +365,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
                         variant="outlined"
                         sx={{
                           fontWeight: 600,
-                          fontSize: '0.82rem',
+                          fontSize: '0.88rem',
                           cursor: 'help',
                           minWidth: 32,
                         }}
@@ -388,7 +388,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
               </TableCell>
               <TableCell
                 align="right"
-                sx={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.82rem' }}
+                sx={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.88rem' }}
               >
                 {grandNotional.toFixed(3)}
               </TableCell>
@@ -399,7 +399,7 @@ export default function MMMConsolidatedPositions({ session, heartbeat }) {
                 sx={{
                   fontFamily: 'monospace',
                   fontWeight: 700,
-                  fontSize: '0.875rem',
+                  fontSize: '0.95rem',
                   color: pnlColor(grandPnl),
                 }}
               >

@@ -121,7 +121,7 @@ function StrikeEntry({ entry, spotPrice }) {
         size="small"
         variant={isActive ? 'filled' : 'outlined'}
         sx={{
-          fontSize: '0.78rem',
+          fontSize: '0.85rem',
           height: 20,
           fontWeight: 600,
           bgcolor: isActive ? `${sideColor}15` : 'transparent',
@@ -171,7 +171,7 @@ export default function MMMStrikeMap({ session, spotPrice = 0 }) {
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Strike Map
         </Typography>
-        <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic', fontSize: '0.78rem' }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic', fontSize: '0.85rem' }}>
           Visual layout of positions across strikes. CE strikes (calls) are above BTC spot, PE (puts) are below. Active = currently monitored. Frozen = old positions after a strike shift.
         </Typography>
       </Box>
@@ -195,7 +195,7 @@ export default function MMMStrikeMap({ session, spotPrice = 0 }) {
                   label={`BTC: ${Number(spotPrice).toLocaleString()}`}
                   size="small"
                   color="primary"
-                  sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                  sx={{ fontWeight: 600, fontSize: '0.78rem' }}
                 />
                 <Divider sx={{ flex: 1 }} />
               </Box>
@@ -212,7 +212,7 @@ export default function MMMStrikeMap({ session, spotPrice = 0 }) {
               label={`BTC: ${Number(spotPrice).toLocaleString()}`}
               size="small"
               color="primary"
-              sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+              sx={{ fontWeight: 600, fontSize: '0.78rem' }}
             />
             <Divider sx={{ flex: 1 }} />
           </Box>

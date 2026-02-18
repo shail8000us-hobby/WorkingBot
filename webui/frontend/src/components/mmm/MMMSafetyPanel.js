@@ -87,7 +87,7 @@ function SafetyIndicator({
           />
         )}
 
-        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.8rem' }}>
+        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.88rem' }}>
           {displayText}
         </Typography>
       </Paper>
@@ -153,7 +153,7 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
   return (
     <Box>
       {/* Section explainer */}
-      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.5, mb: 1.5, fontStyle: 'italic', fontSize: '0.7rem', opacity: 0.75 }}>
+      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.5, mb: 1.5, fontStyle: 'italic', fontSize: '0.78rem', opacity: 0.75 }}>
         💡 Safety mechanisms protect your positions from extreme scenarios. Each indicator shows how close you are to a limit — green is safe, yellow is approaching, red means the limit has been reached and the algo will pause or alert you. Hover over any indicator for details.
       </Typography>
 

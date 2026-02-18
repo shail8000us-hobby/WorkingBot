@@ -164,7 +164,7 @@ function AdjustmentEntry({ entry, number }) {
                 bgcolor: `${cfg.color}20`,
                 color: cfg.color,
                 fontWeight: 600,
-                fontSize: '0.78rem',
+                fontSize: '0.85rem',
                 height: 20,
                 cursor: 'help',
               }}
@@ -384,7 +384,7 @@ export default function MMMAdjustmentLog({
                 size="small"
                 sx={{
                   height: 18,
-                  fontSize: '0.78rem',
+                  fontSize: '0.85rem',
                   bgcolor: `${cfg.color}15`,
                   color: cfg.color,
                 }}

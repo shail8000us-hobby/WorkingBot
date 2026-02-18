@@ -108,7 +108,7 @@ const ActivityItem = React.memo(({ activity }) => {
       sx={{
         display: 'flex',
         gap: 1,
-        py: 0.75,
+        py: 1,
         px: 1.5,
         borderBottom: '1px solid rgba(255,255,255,0.04)',
         bgcolor: cfg.bg,
@@ -137,8 +137,8 @@ const ActivityItem = React.memo(({ activity }) => {
           variant="body2"
           sx={{
             color: '#e0e0e0',
-            fontSize: '0.82rem',
-            lineHeight: 1.4,
+            fontSize: '0.88rem',
+            lineHeight: 1.5,
             wordBreak: 'break-word',
           }}
         >

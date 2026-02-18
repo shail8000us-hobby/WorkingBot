@@ -98,7 +98,7 @@ function TriggerSideGauge({
                 bgcolor: `${color}20`,
                 color,
                 fontWeight: 600,
-                fontSize: '0.78rem',
+                fontSize: '0.85rem',
                 height: 20,
                 cursor: 'help',
               }}

@@ -199,7 +199,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
           variant="caption"
           sx={{
             color: 'text.secondary',
-            fontSize: '0.75rem',
+            fontSize: '0.85rem',
             fontStyle: 'italic',
           }}
         >
@@ -262,7 +262,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 borderColor: '#00bcd4',
                 color: '#00bcd4',
                 fontWeight: 600,
-                fontSize: '0.7rem',
+                fontSize: '0.78rem',
               }}
             />
           </Tooltip>
@@ -384,7 +384,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 variant="outlined"
                 color="primary"
                 onClick={() => onBothSidesAction?.('adjust_ce')}
-                sx={{ fontSize: '0.82rem', py: 0.5 }}
+                sx={{ fontSize: '0.88rem', py: 0.5 }}
               >
                 Hedge CE → Sell PE
               </Button>
@@ -395,7 +395,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 variant="outlined"
                 color="primary"
                 onClick={() => onBothSidesAction?.('adjust_pe')}
-                sx={{ fontSize: '0.82rem', py: 0.5 }}
+                sx={{ fontSize: '0.88rem', py: 0.5 }}
               >
                 Hedge PE → Sell CE
               </Button>
@@ -407,7 +407,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
                 color="success"
                 startIcon={<ResumeIcon sx={{ fontSize: 14 }} />}
                 onClick={() => onBothSidesAction?.('skip')}
-                sx={{ fontSize: '0.82rem', py: 0.5 }}
+                sx={{ fontSize: '0.88rem', py: 0.5 }}
               >
                 Resume (Update Triggers)
               </Button>
