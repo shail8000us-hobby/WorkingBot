@@ -43,7 +43,10 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
+import ContentCutIcon from '@mui/icons-material/ContentCut';
 import {
   Refresh as RefreshIcon,
   PlayArrow as PlayIcon,
@@ -56,6 +59,7 @@ import {
   CheckCircle as HealthyIcon,
   Error as ErrorIcon,
   Circle as CircleIcon,
+  Bolt as BoltIcon,
 } from '@mui/icons-material';
 import { useMMM } from './MMMContext';
 import mmmService from './mmmService';
@@ -74,6 +78,8 @@ import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
 import MMMGreeksPanel from './MMMGreeksPanel';
+import MMMAnalyticsSummary from './MMMAnalyticsSummary';
+import MMMInstitutionalAnalytics from '../MMMInstitutionalAnalytics';
 import { HelpTooltip, SectionBlurb, StrategyExplainer } from './MMMEducation';
 
 // =============================================================================
@@ -269,6 +275,20 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
                 onClick={(e) => { e.stopPropagation(); onControl('pause', session.session_id); }}
               >
                 <PauseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {status === 'RUNNING' && (
+            <Tooltip title="⚡ Force Heartbeat — run next check immediately">
+              <IconButton
+                size="small"
+                sx={{
+                  color: '#ffab00',
+                  '&:hover': { color: '#ffd600', backgroundColor: 'rgba(255,171,0,0.12)' },
+                }}
+                onClick={(e) => { e.stopPropagation(); onControl('force_heartbeat', session.session_id); }}
+              >
+                <BoltIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           )}
@@ -687,11 +707,224 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
   );
 };
 
+// =============================================================================
+// Manual Reduce Modal
+// =============================================================================
+
+/**
+ * Modal dialog for manually buying back lots while the algo keeps running.
+ * Side selector, lots stepper, optional specific strike.
+ *
+ * Props:
+ *   open    — boolean
+ *   session — session object (for max lots, strikes list)
+ *   onClose — callback
+ */
+const MMMReduceModal = ({ open, session, onClose }) => {
+  const [side, setSide] = useState('ce');
+  const [lots, setLots] = useState(1);
+  const [strikeMode, setStrikeMode] = useState('lifo');  // 'lifo' | 'specific'
+  const [specificStrike, setSpecificStrike] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);   // last API result
+  const [error, setError] = useState('');
+
+  if (!session) return null;
+
+  // Collect unique strikes per side for the dropdown
+  const getStrikes = (sideKey) => {
+    const s = session[sideKey] || {};
+    const strikes = new Set();
+    if (s.active_strike) strikes.add(s.active_strike);
+    if (s.original_strike) strikes.add(s.original_strike);
+    (s.adjustment_fills || []).forEach(f => { if (f.strike) strikes.add(f.strike); });
+    (s.frozen_positions || []).forEach(f => { if (f.strike) strikes.add(f.strike); });
+    return Array.from(strikes).sort((a, b) => a - b);
+  };
+
+  const maxLots = side === 'both'
+    ? Math.min(session.ce?.active_lots || 0, session.pe?.active_lots || 0)
+    : (session[side]?.active_lots || 0);
+
+  const ceStrikes = getStrikes('ce');
+  const peStrikes = getStrikes('pe');
+  const availableStrikes = side === 'both'
+    ? [...new Set([...ceStrikes, ...peStrikes])].sort((a, b) => a - b)
+    : (side === 'ce' ? ceStrikes : peStrikes);
+
+  const handleClose = () => {
+    if (loading) return;
+    setResult(null);
+    setError('');
+    setLots(1);
+    setSide('ce');
+    setStrikeMode('lifo');
+    setSpecificStrike('');
+    onClose();
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const strike = strikeMode === 'specific' && specificStrike ? Number(specificStrike) : null;
+      const res = await mmmService.reducePosition(session.session_id, side, lots, strike);
+      setResult(res);
+      if (!res.success && !res.results?.length) {
+        setError(res.error || (res.errors || []).join('; ') || 'Reduction failed');
+      }
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message || 'Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isDone = result != null;
+
+  return (
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 700 }}>
+        ✂️ Reduce Position
+      </DialogTitle>
+
+      <DialogContent sx={{ pt: 2 }}>
+        {isDone ? (
+          /* ---- Result view ---- */
+          <Box>
+            {result.results?.length > 0 ? (
+              <Alert severity="success" sx={{ mb: 1.5 }}>
+                Reduced successfully. Realized P&L: <strong>${(result.total_realized_pnl || 0).toFixed(2)}</strong>
+              </Alert>
+            ) : (
+              <Alert severity="error" sx={{ mb: 1.5 }}>
+                {error || 'No lots were reduced.'}
+              </Alert>
+            )}
+            {result.results?.map((r, i) => (
+              <Box key={i} sx={{ mb: 0.5, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                {r.side} @ {Number(r.strike).toLocaleString()}: {r.lots} lots
+                — fill ${r.fill_price?.toFixed(2)}, P&L ${r.realized_pnl?.toFixed(2)}
+              </Box>
+            ))}
+            {result.errors?.length > 0 && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                {result.errors.join('; ')}
+              </Alert>
+            )}
+          </Box>
+        ) : (
+          /* ---- Input view ---- */
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Buy back lots while the algo keeps running. Does not count as an adjustment.
+            </Typography>
+
+            {/* Side toggle */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                Side to reduce
+              </Typography>
+              <ToggleButtonGroup
+                value={side}
+                exclusive
+                onChange={(_, v) => { if (v) { setSide(v); setLots(1); setSpecificStrike(''); } }}
+                size="small"
+                sx={{ width: '100%' }}
+              >
+                <ToggleButton value="ce" sx={{ flex: 1, fontWeight: 700 }}>
+                  📈 CE  {session.ce?.active_lots != null && `(${session.ce.active_lots} lots)`}
+                </ToggleButton>
+                <ToggleButton value="pe" sx={{ flex: 1, fontWeight: 700 }}>
+                  📉 PE  {session.pe?.active_lots != null && `(${session.pe.active_lots} lots)`}
+                </ToggleButton>
+                <ToggleButton value="both" sx={{ flex: 1, fontWeight: 700 }}>
+                  ⚖️ Both
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+
+            {/* Lots input */}
+            <TextField
+              label={`Lots to buy back ${maxLots > 0 ? `(max ${maxLots})` : ''}`}
+              type="number"
+              value={lots}
+              onChange={e => setLots(Math.max(1, Math.min(maxLots, parseInt(e.target.value) || 1)))}
+              inputProps={{ min: 1, max: maxLots }}
+              size="small"
+              fullWidth
+              error={lots > maxLots}
+              helperText={lots > maxLots ? `Max available: ${maxLots}` : ''}
+            />
+
+            {/* Strike mode */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                Strike selection
+              </Typography>
+              <ToggleButtonGroup
+                value={strikeMode}
+                exclusive
+                onChange={(_, v) => { if (v) setStrikeMode(v); }}
+                size="small"
+                sx={{ width: '100%' }}
+              >
+                <ToggleButton value="lifo" sx={{ flex: 1 }}>
+                  Auto (LIFO)
+                </ToggleButton>
+                <ToggleButton value="specific" sx={{ flex: 1 }}>
+                  Specific Strike
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+
+            {strikeMode === 'specific' && (
+              <FormControl size="small" fullWidth>
+                <InputLabel>Strike</InputLabel>
+                <Select
+                  value={specificStrike}
+                  label="Strike"
+                  onChange={e => setSpecificStrike(e.target.value)}
+                >
+                  {availableStrikes.map(s => (
+                    <MenuItem key={s} value={s}>{Number(s).toLocaleString()}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {error && <Alert severity="error">{error}</Alert>}
+          </Box>
+        )}
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={handleClose} disabled={loading}>
+          {isDone ? 'Close' : 'Cancel'}
+        </Button>
+        {!isDone && (
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={handleSubmit}
+            disabled={loading || lots < 1 || lots > maxLots || maxLots === 0 || (strikeMode === 'specific' && !specificStrike)}
+            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <ContentCutIcon />}
+          >
+            {loading ? 'Executing...' : `Buy Back ${lots} Lot${lots !== 1 ? 's' : ''}`}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 /**
  * Session detail panel — tabbed live dashboard view
  */
 const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
   const [detailTab, setDetailTab] = useState(0);
+  const [reduceOpen, setReduceOpen] = useState(false);
 
   if (!session) {
     return (
@@ -741,6 +974,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <Tab label="Algo Calculations" />
         <Tab label="Consolidated" />
         <Tab label="Greeks & IV" />
+        <Tab label="Analytics" icon={<i className="fas fa-chart-line" />} />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -983,7 +1217,29 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
 
       {/* Tab 1: Positions */}
       {detailTab === 1 && (
-        <MMMPositionsTable session={session} heartbeat={wsData.heartbeat} />
+        <Box>
+          {/* Reduce Position button — only shown when session is active */}
+          {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status) && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                startIcon={<ContentCutIcon />}
+                onClick={() => setReduceOpen(true)}
+                sx={{ fontWeight: 700, borderRadius: 2 }}
+              >
+                Reduce Position
+              </Button>
+            </Box>
+          )}
+          <MMMPositionsTable session={session} heartbeat={wsData.heartbeat} />
+          <MMMReduceModal
+            open={reduceOpen}
+            session={session}
+            onClose={() => setReduceOpen(false)}
+          />
+        </Box>
       )}
 
       {/* Tab 2: Triggers */}
@@ -1045,6 +1301,12 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
       {detailTab === 9 && (
         <MMMGreeksPanel session={session} />
       )}
+
+      {/* Tab 10: Institutional Analytics */}
+      {detailTab === 10 && (
+        <MMMInstitutionalAnalytics />
+      )}
+
     </Box>
   );
 };
@@ -1161,6 +1423,9 @@ const MMMDashboard = () => {
           break;
         case 'stop':
           result = await mmmService.stopSession(sessionId);
+          break;
+        case 'force_heartbeat':
+          result = await mmmService.forceHeartbeat(sessionId);
           break;
         case 'delete':
           result = await mmmService.deleteSession(sessionId);
@@ -1413,6 +1678,11 @@ const MMMDashboard = () => {
               {/* Background Activities Feed */}
               <Box sx={{ mt: 2 }}>
                 <MMMActivityFeed sessionId={selectedSessionId} socket={wsData.socket} />
+              </Box>
+
+              {/* Session Analytics Summary */}
+              <Box sx={{ mt: 2 }}>
+                <MMMAnalyticsSummary sessionId={selectedSessionId} />
               </Box>
             </Box>
           </Grid>

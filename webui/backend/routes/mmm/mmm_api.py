@@ -1783,6 +1783,289 @@ def list_monitors():
         log.exception("Failed to list monitors")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# =============================================================================
+# Manual Position Reduction
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/reduce-position', methods=['POST'])
+def reduce_position(session_id: str):
+    """
+    Manually reduce open position size by buying back N lots.
+
+    Works while the algo is RUNNING or PAUSED — the heartbeat continues
+    uninterrupted. This is a risk-reducing action and does NOT count as
+    an adjustment (adjustment_count unchanged, whipsaw guard unaffected).
+
+    Body (JSON):
+        side   : str   — 'ce', 'pe', or 'both'
+        lots   : int   — number of lots to buy back per side
+        strike : float — optional: specific strike to close (null = LIFO auto)
+
+    After a successful fill the trigger snapshots are reset to current
+    premiums so the next heartbeat doesn't misfire against a stale baseline.
+
+    Returns:
+        {
+            success       : bool,
+            results       : [{side, lots, strike, fill_price, realized_pnl}, ...],
+            total_realized: float,
+            errors        : [str],
+        }
+    """
+    import asyncio
+    from collections import defaultdict
+    from .mmm_wind_down import get_lifo_close_fills, apply_lifo_removals
+    from .mmm_trigger import update_trigger_snapshots
+    from .mmm_executor import get_executor
+    from .mmm_activity import log_activity
+    from .mmm_initializer import get_initializer
+
+    try:
+        data = request.get_json(force=True) or {}
+        side_param = data.get('side', '').lower()
+        lots_param = int(data.get('lots', 0))
+        strike_param = data.get('strike')  # None → LIFO
+
+        if side_param not in ('ce', 'pe', 'both'):
+            return jsonify({'success': False, 'error': "side must be 'ce', 'pe', or 'both'"}), 400
+        if lots_param <= 0:
+            return jsonify({'success': False, 'error': 'lots must be a positive integer'}), 400
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP'):
+            return jsonify({
+                'success': False,
+                'error': f'Session must be RUNNING or PAUSED. Current: {status}',
+            }), 400
+
+        sides_to_process = ['ce', 'pe'] if side_param == 'both' else [side_param]
+        executor = get_executor()
+        initializer = get_initializer()
+        expiry = session.get('params', {}).get('expiry', '')
+
+        results = []
+        errors = []
+        total_realized = 0.0
+
+        async def _do_reduce():
+            nonlocal total_realized
+            for side_key in sides_to_process:
+                side_state = session.get(side_key, {})
+                active_lots = side_state.get('active_lots', 0)
+                option_type = 'call' if side_key == 'ce' else 'put'
+
+                if active_lots <= 0:
+                    errors.append(f'{side_key.upper()}: no open lots to reduce')
+                    continue
+
+                max_lots = active_lots
+                lots_to_close = min(lots_param, max_lots)
+
+                if lots_to_close <= 0:
+                    errors.append(f'{side_key.upper()}: requested {lots_param} > available {max_lots}')
+                    continue
+
+                # --- Build close records (LIFO or specific strike) ---
+                if strike_param:
+                    # User specified a strike: target that strike only
+                    active_strike = side_state.get('active_strike', 0)
+                    orig_strike = side_state.get('original_strike') or active_strike
+                    target_strike = float(strike_param)
+
+                    # Find matching fills at that strike
+                    close_records = []
+                    remaining = lots_to_close
+
+                    adj_fills = list(side_state.get('adjustment_fills', []))
+                    for i in range(len(adj_fills) - 1, -1, -1):
+                        if remaining <= 0:
+                            break
+                        fill = adj_fills[i]
+                        fill_strike = fill.get('strike') or active_strike
+                        if abs(float(fill_strike) - target_strike) < 1:
+                            take = min(remaining, fill.get('lots', 0))
+                            if take > 0:
+                                close_records.append({
+                                    'lots': take,
+                                    'premium': fill.get('premium', 0),
+                                    'strike': fill_strike,
+                                    'source': 'adjustment',
+                                    'fill_index': i,
+                                })
+                                remaining -= take
+
+                    if remaining > 0 and abs(orig_strike - target_strike) < 1:
+                        orig_lots = side_state.get('original_lots', 0)
+                        take = min(remaining, orig_lots)
+                        if take > 0:
+                            close_records.append({
+                                'lots': take,
+                                'premium': side_state.get('original_premium', 0),
+                                'strike': orig_strike,
+                                'source': 'original',
+                                'fill_index': -1,
+                            })
+                            remaining -= take
+
+                    if not close_records:
+                        errors.append(
+                            f'{side_key.upper()}: no fills found at strike {target_strike}'
+                        )
+                        continue
+                else:
+                    close_records = get_lifo_close_fills(side_state, lots_to_close)
+
+                if not close_records:
+                    errors.append(f'{side_key.upper()}: no LIFO records found')
+                    continue
+
+                # --- Group by actual strike, place one order per strike ---
+                by_strike = defaultdict(lambda: {'lots': 0, 'records': [], 'wp_sum': 0.0})
+                for rec in close_records:
+                    rec_strike = rec.get('strike') or side_state.get('active_strike', 0)
+                    by_strike[rec_strike]['lots'] += rec['lots']
+                    by_strike[rec_strike]['records'].append(rec)
+                    by_strike[rec_strike]['wp_sum'] += rec.get('premium', 0) * rec['lots']
+
+                side_any_failed = False
+                for strike_val, group in by_strike.items():
+                    group_lots = group['lots']
+                    symbol = initializer.build_symbol(
+                        option_type, 'BTC', strike_val, expiry
+                    )
+
+                    log_activity(
+                        'manual_reduce',
+                        f'✂️ Manual Reduce: BUY {group_lots} {side_key.upper()} @ {strike_val} ({symbol})',
+                        session_id, 'info',
+                        {'side': side_key.upper(), 'strike': strike_val, 'lots': group_lots}
+                    )
+
+                    result = await executor.smart_execute(
+                        symbol=symbol,
+                        side='buy',
+                        size=group_lots,
+                        reduce_only=True,
+                    )
+
+                    if not result.get('success'):
+                        err = result.get('error', 'execution failed')
+                        errors.append(
+                            f'{side_key.upper()} @ {strike_val}: {err}'
+                        )
+                        log_activity(
+                            'manual_reduce',
+                            f'✂️ Manual Reduce FAILED: {side_key.upper()} @ {strike_val} — {err}',
+                            session_id, 'error',
+                            {'side': side_key.upper(), 'strike': strike_val, 'error': err}
+                        )
+                        side_any_failed = True
+                        continue
+
+                    fill_price = result.get('fill_price', 0)
+                    avg_entry = apply_lifo_removals(side_state, group['records'])
+                    session[side_key] = side_state
+
+                    group_realized = (avg_entry - fill_price) * group_lots * LOT_SIZE_BTC
+                    total_realized += group_realized
+                    session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
+                    session['manual_reduction_pnl'] = (
+                        session.get('manual_reduction_pnl', 0) + group_realized
+                    )
+
+                    reduction_record = {
+                        'side': side_key.upper(),
+                        'lots': group_lots,
+                        'strike': strike_val,
+                        'avg_entry_price': round(avg_entry, 4),
+                        'fill_price': round(fill_price, 4),
+                        'realized_pnl': round(group_realized, 2),
+                        'timestamp': datetime.utcnow().isoformat(),
+                    }
+                    session.setdefault('manual_reductions', []).append(reduction_record)
+
+                    results.append(reduction_record)
+
+                    log_activity(
+                        'manual_reduce',
+                        f'✂️ Manual Reduce OK: Bought {group_lots} {side_key.upper()} '
+                        f'@ {strike_val} fill ${fill_price:.2f} '
+                        f'(entry ${avg_entry:.2f}, P&L ${group_realized:.2f})',
+                        session_id, 'success',
+                        reduction_record
+                    )
+
+        asyncio.run(_do_reduce())
+
+        # --- Reset trigger snapshots with fresh live premiums ---
+        # Fetch current premiums for both sides so the heartbeat doesn't
+        # misfirer against a stale snapshot after position size changed.
+        try:
+            from .mmm_executor import get_executor as _ge
+            from .mmm_initializer import get_initializer as _gi
+
+            async def _fetch_premiums():
+                _executor = _ge()
+                _initializer = _gi()
+                _expiry = session.get('params', {}).get('expiry', '')
+                ce_state = session.get('ce', {})
+                pe_state = session.get('pe', {})
+                ce_strike = ce_state.get('active_strike', 0)
+                pe_strike = pe_state.get('active_strike', 0)
+                ce_sym = _initializer.build_symbol('call', 'BTC', ce_strike, _expiry)
+                pe_sym = _initializer.build_symbol('put', 'BTC', pe_strike, _expiry)
+                ce_mid = await _executor.get_mid_price(ce_sym)
+                pe_mid = await _executor.get_mid_price(pe_sym)
+                return ce_mid or 0.0, pe_mid or 0.0
+
+            ce_now, pe_now = asyncio.run(_fetch_premiums())
+            if ce_now > 0 and pe_now > 0:
+                update_trigger_snapshots(session, ce_now, pe_now)
+                log.info(
+                    f'[{session_id}] Manual reduce: trigger snapshots reset '
+                    f'CE={ce_now:.2f} PE={pe_now:.2f}'
+                )
+        except Exception as snap_err:
+            log.warning(f'[{session_id}] Could not reset trigger snapshots after manual reduce: {snap_err}')
+
+        session['updated_at'] = datetime.utcnow().isoformat()
+        storage.save_session(session)
+
+        # Emit WebSocket event so frontend updates immediately
+        try:
+            from .mmm_websocket import emit_to_session
+            emit_to_session(session_id, 'mmm_manual_reduce', {
+                'session_id': session_id,
+                'results': results,
+                'total_realized_pnl': round(total_realized, 2),
+                'errors': errors,
+            })
+        except Exception:
+            pass
+
+        log.info(
+            f'[{session_id}] Manual reduce complete: '
+            f'{len(results)} fills, P&L ${total_realized:.2f}, '
+            f'{len(errors)} errors'
+        )
+
+        return jsonify({
+            'success': len(results) > 0,
+            'results': results,
+            'total_realized_pnl': round(total_realized, 2),
+            'errors': errors,
+        })
+
+    except Exception as e:
+        log.exception(f'Failed to reduce position for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/session/<session_id>/force-heartbeat', methods=['POST'])
 def force_heartbeat(session_id: str):
     """Force an immediate heartbeat for a running session.

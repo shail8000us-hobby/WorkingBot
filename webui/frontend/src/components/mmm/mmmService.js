@@ -144,6 +144,37 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Force an immediate heartbeat for a running session.
+   * Skips the wait timer; heartbeat logic is unchanged.
+   * @param {string} sessionId
+   */
+  async forceHeartbeat(sessionId) {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/force-heartbeat`);
+    return data;
+  },
+
+  // =========================================================================
+  // Manual Position Reduction
+  // =========================================================================
+
+  /**
+   * Manually buy back lots while the algo continues running.
+   * Does NOT count as an adjustment. Trigger snapshots reset after fill.
+   *
+   * @param {string} sessionId
+   * @param {'ce'|'pe'|'both'} side     - Which side(s) to reduce
+   * @param {number}           lots     - Number of lots to buy back per side
+   * @param {number|null}      strike   - Specific strike (null = LIFO auto)
+   */
+  async reducePosition(sessionId, side, lots, strike = null) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/reduce-position`,
+      { side, lots, strike }
+    );
+    return data;
+  },
+
   // =========================================================================
   // Phase 3+: Live Data Endpoints
   // =========================================================================
@@ -184,6 +215,24 @@ const mmmService = {
    */
   async getSafetyStatus(sessionId) {
     const { data } = await api.get(`${BASE_URL}/session/${sessionId}/safety`);
+    return data;
+  },
+
+  /**
+   * Get session analytics (exposure tracking, milestones, etc.)
+   * @param {string} sessionId
+   */
+  async getSessionAnalytics(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/analytics`);
+    return data;
+  },
+
+  /**
+   * Get aggregated institutional-grade analytics across ALL sessions
+   * Provides capital requirements, risk analytics, profitability, and strategy performance
+   */
+  async getAggregatedAnalytics() {
+    const { data } = await api.get(`${BASE_URL}/analytics/aggregated`);
     return data;
   },
 

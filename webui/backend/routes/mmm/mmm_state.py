@@ -243,6 +243,10 @@ def create_session(
         'total_fees': 0.0,
         'strategy_status': 'IDLE',  # IDLE → RUNNING → PAUSED/BOTH_SIDES_UP → STOPPED
 
+        # Manual position reductions (user-triggered buybacks)
+        'manual_reductions': [],     # [{side, lots, strike, avg_price, realized_pnl, timestamp}]
+        'manual_reduction_pnl': 0.0, # cumulative realized P&L from manual reductions
+
         # P&L tracking
         'unrealized_pnl': 0.0,
         'peak_pnl': 0.0,
