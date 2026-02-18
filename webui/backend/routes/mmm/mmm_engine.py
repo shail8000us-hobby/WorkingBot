@@ -100,12 +100,10 @@ class MMMEngine:
 
         # 2. Shifted position losses — ALL positions at old strikes
         #    Every open position contributes to total loss. No exceptions.
-        #    BUG FIX: Use trigger_snapshot as baseline (incremental loss since
-        #    last hedge), NOT entry_premium (lifetime loss). This prevents
-        #    double-counting losses that were already hedged.
+        #    §5.2 Case A: Use entry_premium as baseline for frozen positions
+        #    (lifetime loss). trigger_snapshot is only for the ACTIVE strike.
         shifted_loss = 0.0
         option_type = 'call' if aggressor_side == 'ce' else 'put'
-        trigger_snapshot = side_state.get('trigger_snapshot', {})
 
         if fetch_premium_fn:
             for pos in side_state.get('frozen_positions', []):
@@ -125,22 +123,23 @@ class MMMEngine:
                     )
                     continue
 
-                # Use trigger_snapshot for this strike as baseline if available.
-                # This gives INCREMENTAL loss (since last hedge) not LIFETIME.
-                # Falls back to entry_premium for first-ever calculation
-                # (before any trigger snapshot exists for this strike).
-                p_strike_key = str(int(p_strike))
-                p_baseline = trigger_snapshot.get(p_strike_key, p_entry)
+                # §5.2 Case A: Use entry_premium as baseline for frozen positions.
+                # The spec computes LIFETIME loss (current vs entry) for shifted
+                # positions, NOT incremental loss vs trigger_snapshot.
+                # trigger_snapshot is only used as baseline for the ACTIVE strike.
+                # Using entry_premium ensures we only hedge when the position is
+                # actually underwater vs what we sold it for.
+                p_baseline = p_entry
 
-                # Loss = (current - baseline) per lot
-                # Positive when premium rose past baseline (seller losing)
+                # Loss = (current - entry) per lot
+                # Positive when premium rose past entry (seller losing)
                 pos_loss = (p_current - p_baseline) * p_lots * LOT_SIZE_BTC
                 if pos_loss > 0:
                     shifted_loss += pos_loss
                     log.info(
                         f"Shifted position loss @ {p_strike}: "
                         f"({p_current:.2f} - {p_baseline:.2f}) × {p_lots} lots "
-                        f"= ${pos_loss:.4f} [baseline from {'trigger' if p_strike_key in trigger_snapshot else 'entry'}]"
+                        f"= ${pos_loss:.4f} [baseline from entry_premium]"
                     )
 
         total_loss = max(active_loss, 0) + shifted_loss
@@ -192,23 +191,40 @@ class MMMEngine:
 
             try:
                 current = fetch_premium_fn(strike, option_type)
-                # Sold at entry_prem, costs current to buy back
-                # P&L = (entry_prem - current) × lots × LOT_SIZE_BTC (positive = profit)
+                # §5.2 Case B / §9: Use entry_premium as baseline — ALWAYS.
+                # The reversal formula computes the ACTUAL P&L of each adjustment
+                # fill: (entry_premium - current_premium). This tells us whether
+                # the fill is profitable or underwater since it was opened.
+                # trigger_snapshot must NOT be used here — it gets updated to
+                # current price after every adjustment, making P&L appear ~0.
                 fill_pnl = (entry_prem - current) * lots * LOT_SIZE_BTC
                 adjustment_pnl += fill_pnl
             except Exception as e:
                 log.warning(f"Failed to fetch premium for {strike}: {e}")
 
-        # Check frozen positions
+        # Check frozen ADJUSTMENT positions (exclude original entry positions).
+        # §9: "The original CE and PE naturally offset each other. We only
+        # need to hedge the loss on the adjustment positions."
+        # Frozen positions with type='original' are excluded — they have a
+        # natural hedge on the opposite side and are NOT naked risk.
         for frozen in side_state.get('frozen_positions', []):
+            # §9: Only include adjustment positions in reversal P&L
+            if frozen.get('type') == 'original':
+                continue
+
             strike = frozen.get('strike', 0)
             entry_prem = frozen.get('entry_premium', 0)
             lots = frozen.get('lots', 0)
 
             try:
                 current = fetch_premium_fn(strike, option_type)
+                # §5.2 Case B: Use entry_premium as baseline — ALWAYS.
                 fill_pnl = (entry_prem - current) * lots * LOT_SIZE_BTC
                 adjustment_pnl += fill_pnl
+                log.debug(
+                    f"Reversal frozen adj pos @ {strike}: entry={entry_prem:.2f}, "
+                    f"current={current:.2f}, lots={lots}, pnl={fill_pnl:.4f}"
+                )
             except Exception as e:
                 log.warning(f"Failed to fetch premium for frozen {strike}: {e}")
 
@@ -324,12 +340,57 @@ class MMMEngine:
             f"@ {hedge_strike} ({symbol}), type={adj_type}"
         )
 
+        # ── PENDING ORDER GUARD: register before placement ───────────────────
+        # The order_id is not known yet, so we register a placeholder with
+        # order_id='pending'.  Once smart_execute returns, we update it with
+        # the real order_id (or clear it on failure).
+        session_id = session.get('session_id', '')
+        order_id_for_pending = 'pending'
+        if session_id:
+            try:
+                from .mmm_pending_orders import register_pending, clear_pending
+                register_pending(
+                    session_id=session_id,
+                    side=hedge_side,
+                    order_id='pending',
+                    symbol=symbol,
+                    lots=lots_to_sell,
+                    strike=hedge_strike,
+                    adj_type=adj_type,
+                )
+            except Exception as _pe:
+                log.warning(f"Failed to register pending order: {_pe}")
+        # ── END PRE-REGISTRATION ─────────────────────────────────────────────
+
         try:
             result = await self.executor.smart_execute(
                 symbol=symbol,
                 side='sell',
                 size=lots_to_sell,
             )
+
+            # ── UPDATE PENDING REGISTRY WITH REAL ORDER ID ───────────────────
+            if session_id:
+                try:
+                    from .mmm_pending_orders import register_pending, clear_pending
+                    real_order_id = result.get('order_id', '')
+                    if real_order_id and result.get('success'):
+                        # Update with real order_id — will be cleared after fill recorded below
+                        register_pending(
+                            session_id=session_id,
+                            side=hedge_side,
+                            order_id=str(real_order_id),
+                            symbol=symbol,
+                            lots=lots_to_sell,
+                            strike=hedge_strike,
+                            adj_type=adj_type,
+                        )
+                    elif not result.get('success'):
+                        # Execution failed — clear the pending entry so next beat can retry
+                        clear_pending(session_id, hedge_side)
+                except Exception as _pe:
+                    log.warning(f"Failed to update pending order registry: {_pe}")
+            # ── END REGISTRY UPDATE ──────────────────────────────────────────
 
             if not result.get('success'):
                 return {
@@ -356,6 +417,16 @@ class MMMEngine:
                 fetch_premium_fn=fetch_premium_fn,
             )
 
+            # ── CLEAR PENDING AFTER SUCCESSFUL STATE UPDATE ──────────────────
+            # Fill is now recorded in session state — guard can be cleared.
+            if session_id:
+                try:
+                    from .mmm_pending_orders import clear_pending
+                    clear_pending(session_id, hedge_side)
+                except Exception as _pe:
+                    log.warning(f"Failed to clear pending order: {_pe}")
+            # ── END CLEAR ────────────────────────────────────────────────────
+
             return {
                 'success': True,
                 'fill_price': fill_price,
@@ -367,6 +438,13 @@ class MMMEngine:
 
         except Exception as e:
             log.exception(f"Adjustment execution failed: {e}")
+            # Clear pending registry on exception so next heartbeat can retry
+            if session_id:
+                try:
+                    from .mmm_pending_orders import clear_pending
+                    clear_pending(session_id, hedge_side)
+                except Exception:
+                    pass
             return {
                 'success': False,
                 'error': str(e),

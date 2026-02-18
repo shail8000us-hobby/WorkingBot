@@ -316,8 +316,8 @@ def activate_new_strike(
     recompute_side_lots(side_state)
     session[side] = side_state
 
-    # Update shift count
-    session['shift_count'] = session.get('shift_count', 0) + 1
+    # NOTE: shift_count is incremented by _process_strike_shift() in mmm_monitor.py
+    # Do NOT increment here to avoid double-counting.
     session['updated_at'] = datetime.utcnow().isoformat()
 
     log.info(
