@@ -281,7 +281,7 @@ const SSRAlgoDashboardRefactored = () => {
     const rm = async () => { try { const r = await ssrAlgoService.getMonitorStatus(sid); if (r.success) setMonitor(r.monitor); } catch {} };
     rp(); rm();
     const pi = setInterval(rp, payoff?.pending_orders_count > 0 ? 5000 : 30000);
-    const mi = setInterval(rm, 5000);
+    const mi = setInterval(rm, 15000);
     return () => { clearInterval(pi); clearInterval(mi); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sess?.session_id, payoff?.pending_orders_count]);
@@ -290,7 +290,7 @@ const SSRAlgoDashboardRefactored = () => {
     if (!sess || (!isActive && !isPaused)) return;
     const sync = async () => { try { await ssrAlgoService.syncOrders(sess.session_id); } catch {} };
     sync();
-    const i = setInterval(sync, 5000);
+    const i = setInterval(sync, 15000);
     return () => clearInterval(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sess?.session_id, isActive, isPaused]);

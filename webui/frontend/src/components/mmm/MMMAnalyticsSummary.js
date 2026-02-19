@@ -33,7 +33,11 @@ const MMMAnalyticsSummary = ({ sessionId }) => {
   const [source, setSource] = useState('');
 
   const fetchAnalytics = async () => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setLoading(false);
+      setAnalytics(null);
+      return;
+    }
 
     try {
       setLoading(true);

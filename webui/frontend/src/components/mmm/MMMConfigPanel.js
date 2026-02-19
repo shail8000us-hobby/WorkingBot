@@ -208,9 +208,9 @@ const StrikePreviewTable = ({ label, best, alternatives, color, onSelect }) => {
 // MMMConfigPanel
 // =============================================================================
 
-const MMMConfigPanel = ({ sessionId, sessionStatus, onInitialized }) => {
+const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }) => {
   // ----- State -----
-  const [mode, setMode] = useState('fresh'); // 'fresh' | 'import' | 'manual' | 'adopt'
+  const [mode, setMode] = useState(initialMode || 'fresh'); // 'fresh' | 'import' | 'manual' | 'adopt'
   const [expiries, setExpiries] = useState([]);
   const [selectedExpiry, setSelectedExpiry] = useState('');
   const [spotPrice, setSpotPrice] = useState(null);

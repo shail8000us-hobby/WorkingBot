@@ -222,7 +222,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
   // Initial load + polling
   useEffect(() => {
     fetchActivities();
-    const interval = setInterval(fetchActivities, 5000);
+    const interval = setInterval(fetchActivities, 15000);
     return () => clearInterval(interval);
   }, [fetchActivities]);
 

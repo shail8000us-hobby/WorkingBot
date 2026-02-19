@@ -253,18 +253,7 @@ const TradeNotification = ({ notification, onDismiss, duration }) => {
             overflow: 'hidden',
           }}
         >
-          {/* Fullscreen overlay flash */}
-          <motion.div
-            initial={{ opacity: 0.3 }}
-            animate={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: theme.gradient,
-              pointerEvents: 'none',
-            }}
-          />
+          {/* Fullscreen overlay flash — DISABLED: blocks navigation */}
 
           {/* Main Card */}
           <motion.div
@@ -298,11 +287,11 @@ const TradeNotification = ({ notification, onDismiss, duration }) => {
               willChange: 'transform, opacity',
             }}
           >
-            {/* Glow effect */}
-            <GlowRing color={theme.glow} />
+            {/* Glow effect — DISABLED: distracting */}
+            {/* <GlowRing color={theme.glow} /> */}
 
-            {/* Particle burst on entry */}
-            {Array.from({ length: CONFIG.PARTICLE_COUNT }).map((_, i) => (
+            {/* Particle burst on entry — DISABLED: distracting */}
+            {false && Array.from({ length: CONFIG.PARTICLE_COUNT }).map((_, i) => (
               <Particle
                 key={i}
                 index={i}

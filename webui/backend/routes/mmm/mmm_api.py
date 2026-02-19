@@ -208,8 +208,31 @@ def create_session_endpoint():
 
             session['entry_time'] = datetime.utcnow().isoformat()
 
-        # Persist
+        # Safety check: Never overwrite a non-STOPPED session
         storage = get_storage()
+        existing = storage.get_session(session['session_id'])
+        if existing:
+            ex_status = existing.get('strategy_status', 'IDLE')
+            if ex_status not in ('IDLE', 'STOPPED'):
+                log.error(
+                    f"Session ID collision! {session['session_id']} already exists "
+                    f"with status {ex_status}. Refusing to overwrite."
+                )
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f"Session '{session['session_id']}' already exists and is "
+                        f"{ex_status}. Cannot overwrite an active session. "
+                        f"Please stop it first or use a different expiry."
+                    ),
+                }), 409  # 409 Conflict
+            else:
+                # Existing IDLE/STOPPED session — safe to overwrite (recycle the slot)
+                log.info(
+                    f"Recycling existing {ex_status} session {session['session_id']}"
+                )
+
+        # Persist
         storage.save_session(session)
 
         # Emit WebSocket
@@ -2410,7 +2433,7 @@ def get_positions(session_id: str):
 
 
 @mmm_bp.route('/exchange/positions', methods=['GET'])
-def get_exchange_positions():
+def get_exchange_positions_direct():
     """
     Query ACTUAL exchange positions (options only).
 

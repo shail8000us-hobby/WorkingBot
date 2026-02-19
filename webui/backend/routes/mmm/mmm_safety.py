@@ -126,21 +126,47 @@ class MMMSafety:
     # =========================================================================
 
     def check_max_adjustments(self, session: Dict) -> List[Dict]:
-        """Check if max adjustment count reached."""
+        """Check if max adjustment count reached.
+
+        When the limit is hit: pause the session (visible PAUSED state) so
+        the user can decide whether to raise max_adjustments via Settings.
+        Close-at-5 continues every heartbeat while paused.
+
+        Auto-resume: if the user increases max_adjustments via hot-reload and
+        adjustment_count is now below the new limit, emits a 'resume' event so
+        the session picks up adjustments again without manual intervention.
+        """
         events = []
         params = session.get('params', {})
         max_adj = params.get('max_adjustments', 100)
         current = session.get('adjustment_count', 0)
 
+        # Auto-resume: user increased max_adjustments via hot-reload.
+        if session.get('_max_adj_paused') and current < max_adj:
+            session.pop('_max_adj_paused', None)
+            events.append({
+                'type': 'max_adjustments_resume',
+                'level': 'info',
+                'message': (
+                    f"Adjustments resumed: limit raised to {max_adj} "
+                    f"(used {current}/{max_adj})"
+                ),
+                'action': 'resume',
+                'details': {'count': current, 'max': max_adj},
+            })
+            return events  # Don't re-evaluate this heartbeat
+
         if current >= max_adj:
+            session['_max_adj_paused'] = True
             events.append({
                 'type': 'max_adjustments',
                 'level': 'critical',
                 'message': (
                     f"Max adjustments reached: {current}/{max_adj}. "
-                    f"No more adjustments allowed."
+                    f"Pausing — increase limit in Settings to resume, "
+                    f"or leave paused and positions will close at ≤5."
                 ),
-                'action': 'stop',
+                'action': 'pause',
                 'details': {'count': current, 'max': max_adj},
             })
         elif current >= max_adj * 0.9:
@@ -536,21 +562,39 @@ def update_peak_pnl(session: Dict, total_pnl: float):
         session['peak_pnl'] = total_pnl
 
 
-def should_block_adjustment(safety_events: List[Dict]) -> Tuple[bool, str]:
+def should_block_adjustment(safety_events: List[Dict]) -> bool:
     """
     Determine if safety events should block the next adjustment.
 
     Returns:
-        (should_block, reason)
+        True if any event requires blocking adjustments, False otherwise.
+        Use get_block_action() to get the reason and action type.
     """
     for event in safety_events:
-        action = event.get('action', 'continue')
-        if action in ('stop', 'auto_close'):
-            return True, event.get('message', 'Safety stop')
-        if action == 'stop_adjustments':
-            return True, event.get('message', 'Adjustments stopped')
+        if event.get('action') in ('stop', 'auto_close', 'stop_adjustments'):
+            return True
+    return False
 
-    return False, ''
+
+def get_block_action(safety_events: List[Dict]) -> Tuple[str, str]:
+    """
+    Return (reason, action_type) for the most severe blocking safety event.
+
+    Priority (highest → lowest): auto_close > stop > stop_adjustments.
+    action_type is one of: 'stop', 'auto_close', 'stop_adjustments'.
+    Call only after should_block_adjustment() returns True.
+    """
+    priority = {'auto_close': 3, 'stop': 2, 'stop_adjustments': 1}
+    best = None
+    best_priority = 0
+    for event in safety_events:
+        action = event.get('action', '')
+        if action in priority and priority[action] > best_priority:
+            best = event
+            best_priority = priority[action]
+    if best:
+        return best.get('message', 'Safety block'), best['action']
+    return 'Safety block', 'stop'
 
 
 def should_pause(safety_events: List[Dict]) -> Tuple[bool, str]:

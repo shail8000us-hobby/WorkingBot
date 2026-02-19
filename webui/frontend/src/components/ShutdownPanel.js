@@ -55,8 +55,8 @@ const ShutdownPanel = ({ socket }) => {
     // Fetch immediately
     fetchShutdownData();
 
-    // Poll every 5 seconds for updates
-    const interval = setInterval(fetchShutdownData, 5000);
+    // Poll every 15 seconds for updates
+    const interval = setInterval(fetchShutdownData, 15000);
 
     return () => clearInterval(interval);
   }, []);

@@ -57,10 +57,10 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
     }
   };
 
-  // Auto-refresh every 3 seconds for real-time monitoring
+  // Auto-refresh every 10 seconds for monitoring
   useEffect(() => {
     fetchActivity();
-    intervalRef.current = setInterval(fetchActivity, 3000);
+    intervalRef.current = setInterval(fetchActivity, 10000);
     
     return () => {
       if (intervalRef.current) {

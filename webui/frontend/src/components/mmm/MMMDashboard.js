@@ -457,7 +457,9 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     setError(null);
 
     try {
-      const config = { mode, params };
+      // For adopt mode, create as 'fresh' on backend — adoption happens in ConfigPanel
+      const backendMode = mode === 'adopt' ? 'fresh' : mode;
+      const config = { mode: backendMode, params };
       if (mode === 'import') {
         config.import_data = {
           ce: {
@@ -474,6 +476,10 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       }
       const result = await mmmService.createSession(config);
       if (result.success) {
+        // Signal adopt mode to parent so ConfigPanel opens in adopt tab
+        if (mode === 'adopt') {
+          result.session._adoptMode = true;
+        }
         onCreated(result.session);
         onClose();
         // Reset form
@@ -523,6 +529,12 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
           <Select value={mode} label="Mode" onChange={(e) => setMode(e.target.value)}>
             <MenuItem value="fresh">Fresh — Auto-find strikes</MenuItem>
             <MenuItem value="import">Import — Use existing positions</MenuItem>
+            <MenuItem value="adopt">
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                Adopt — Scan exchange for open positions
+                <Chip label="NEW" size="small" color="secondary" sx={{ height: 18, fontSize: '0.65rem' }} />
+              </Box>
+            </MenuItem>
           </Select>
         </FormControl>
 
@@ -689,6 +701,24 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
             and preview before confirming entry.
           </Alert>
         )}
+
+        {/* Adopt mode hint */}
+        {mode === 'adopt' && (
+          <Alert severity="info" sx={{ mt: 1 }} icon={false}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+              🔍 Adopt from Exchange
+            </Typography>
+            <Typography variant="body2">
+              Creates a session, then opens the <strong>Adopt Panel</strong> where you can
+              scan Delta Exchange for your open short BTC options, select positions,
+              assign active/frozen roles, and start the algorithm.
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+              Only the <strong>Expiry</strong> and <strong>Max Loss</strong> fields above are needed.
+              Other params (desired premium, lots) will be auto-filled from your positions.
+            </Typography>
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} disabled={creating}>
@@ -806,8 +836,10 @@ const HeartbeatHealthPanel = ({ sessionId, status }) => {
         <Grid item xs={4} sm={2}>
           <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.04)' }}>
             <Typography variant="caption" color="text.secondary" display="block">Miss Rate</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace',
-              color: (bh.miss_rate_pct || 0) > 10 ? '#f44336' : (bh.miss_rate_pct || 0) > 2 ? '#ff9800' : 'inherit' }}>
+            <Typography variant="body2" sx={{
+              fontWeight: 700, fontFamily: 'monospace',
+              color: (bh.miss_rate_pct || 0) > 10 ? '#f44336' : (bh.miss_rate_pct || 0) > 2 ? '#ff9800' : 'inherit'
+            }}>
               {bh.miss_rate_pct != null ? `${bh.miss_rate_pct}%` : '—'}
             </Typography>
           </Box>
@@ -1513,6 +1545,7 @@ const MMMDashboard = () => {
   const [tabValue, setTabValue] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [adoptModeForSession, setAdoptModeForSession] = useState(null);  // session_id that needs adopt mode
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1556,7 +1589,7 @@ const MMMDashboard = () => {
     };
 
     fetchFull();
-    const interval = setInterval(fetchFull, 5000);
+    const interval = setInterval(fetchFull, 15000);
 
     return () => {
       cancelled = true;
@@ -1586,6 +1619,12 @@ const MMMDashboard = () => {
           break;
         case 'delete':
           result = await mmmService.deleteSession(sessionId);
+          if (result.success && sessionId === selectedSessionId) {
+            // Auto-select first remaining active session, or clear selection
+            const remaining = sessions.filter(s => s.session_id !== sessionId);
+            const nextActive = remaining.find(s => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(s.status || s.strategy_status));
+            selectSession(nextActive ? nextActive.session_id : (remaining[0]?.session_id || null));
+          }
           break;
         case 'settings':
           // Open settings dialog
@@ -1649,6 +1688,10 @@ const MMMDashboard = () => {
     setSnackbar({ open: true, message: `Session ${session.session_id} created`, severity: 'success' });
     fetchSessions(false);
     selectSession(session.session_id);
+    // If created in adopt mode, tell ConfigPanel
+    if (session._adoptMode) {
+      setAdoptModeForSession(session.session_id);
+    }
   }, [fetchSessions, selectSession]);
 
   // Categorize sessions
@@ -1822,8 +1865,10 @@ const MMMDashboard = () => {
                 <MMMConfigPanel
                   sessionId={selectedSessionId}
                   sessionStatus={fullSession.strategy_status || fullSession.status}
+                  initialMode={adoptModeForSession === selectedSessionId ? 'adopt' : undefined}
                   onInitialized={() => {
                     setSnackbar({ open: true, message: 'Session initialized!', severity: 'success' });
+                    setAdoptModeForSession(null);
                     fetchSessions(false);
                   }}
                 />

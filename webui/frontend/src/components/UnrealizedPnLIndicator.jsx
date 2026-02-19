@@ -40,8 +40,8 @@ function UnrealizedPnLIndicator() {
     // Initial fetch
     fetchUpnl();
 
-    // Refresh every 5 seconds
-    const interval = setInterval(fetchUpnl, 5000);
+    // Refresh every 15 seconds
+    const interval = setInterval(fetchUpnl, 15000);
 
     return () => clearInterval(interval);
   }, []);

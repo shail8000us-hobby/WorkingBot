@@ -129,7 +129,7 @@ DEFAULT_PARAMS = {
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'premium_buffer_pct': 0.05,         # 5% extra lots for slippage
     'max_lots_per_side': 100,           # maximum total lots per CE or PE
-    'max_adjustments': 1000,             # maximum adjustment events
+    'max_adjustments': 500,             # maximum adjustment events
     'max_loss_amount': 5000.0,          # hard stop P&L threshold
     'stop_adjustment_mins': 15,         # stop adjusting N mins before expiry
     'auto_close_mins': 5,              # auto-close all N mins before expiry
@@ -209,16 +209,30 @@ def create_session(
                 expiry_str = uuid.uuid4().hex[:6]
             
             # Count existing sessions for this expiry (to get next sequence number)
+            # CRITICAL: Must guarantee unique ID — never overwrite an existing session
             from .mmm_storage import get_storage
             storage = get_storage()
             try:
                 all_sessions = storage.list_sessions()
                 same_expiry = [s for s in all_sessions if s.get('params', {}).get('expiry') == expiry]
                 count = len(same_expiry) + 1
-            except:
+            except Exception as e:
+                log.warning(f"Failed to count existing sessions for expiry {expiry}: {e}")
                 count = 1
             
-            session_id = f"mmm{expiry_str}-{count}"
+            # Collision guard: keep incrementing until we find an unused ID
+            candidate_id = f"mmm{expiry_str}-{count}"
+            try:
+                existing = storage.get_session(candidate_id)
+                while existing is not None:
+                    count += 1
+                    candidate_id = f"mmm{expiry_str}-{count}"
+                    existing = storage.get_session(candidate_id)
+            except Exception as e:
+                log.warning(f"Collision check failed: {e}, using uuid fallback")
+                candidate_id = f"mmm{expiry_str}-{uuid.uuid4().hex[:4]}"
+            
+            session_id = candidate_id
         else:
             # No expiry provided, fallback to random
             short_uuid = uuid.uuid4().hex[:6]

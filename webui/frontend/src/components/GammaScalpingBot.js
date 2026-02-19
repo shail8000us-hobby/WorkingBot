@@ -160,8 +160,8 @@ const GammaScalpingBot = () => {
   useEffect(() => {
     if (enabled) {
       setStatus('monitoring');
-      // Check every 5 seconds when enabled
-      intervalRef.current = setInterval(checkForScalp, 5000);
+      // Check every 15 seconds when enabled
+      intervalRef.current = setInterval(checkForScalp, 15000);
       // Initial check
       checkForScalp();
     } else {

@@ -398,10 +398,10 @@ export function MMMProvider({ children, socket }) {
     checkHealth();
     fetchParamsInfo();
 
-    // Auto-refresh every 10s as WebSocket fallback
+    // Auto-refresh every 30s as WebSocket fallback (WS handles real-time updates)
     const interval = setInterval(() => {
       fetchSessions(false);
-    }, 10000);
+    }, 30000);
 
     return () => {
       clearInterval(interval);

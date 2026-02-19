@@ -119,34 +119,15 @@
   transition: transform 0.3s ease;
 }
 
+/* holographic shimmer — DISABLED: distracting full-card flash */
 .holographic-card::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(
-    115deg,
-    transparent 20%,
-    rgba(99, 102, 241, 0.15) 40%,
-    rgba(168, 85, 247, 0.2) 50%,
-    rgba(236, 72, 153, 0.15) 55%,
-    transparent 70%
-  );
-  transform: translateX(-100%) translateY(-100%);
-  transition: transform 0.8s;
+  display: none;
 }
 
-.holographic-card:hover::before {
-  transform: translateX(100%) translateY(100%);
-}
-
+/* holographic hover — disabled excessive glow */
 .holographic-card:hover {
-  transform: translateY(-4px) scale(1.01);
-  box-shadow:
-    0 20px 40px rgba(0, 0, 0, 0.3),
-    0 0 40px rgba(99, 102, 241, 0.2);
+  transform: none;
+  box-shadow: none;
 }
 
 /* ============================================================================
@@ -252,15 +233,10 @@
   overflow: hidden;
 }
 
+/* Floating particles — DISABLED: distracting */
 .particles-container::before,
 .particles-container::after {
-  content: '';
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  background: rgba(99, 102, 241, 0.6);
-  border-radius: 50%;
-  animation: floatParticle 8s infinite;
+  display: none;
 }
 
 .particles-container::before {
@@ -352,16 +328,9 @@
   overflow: hidden;
 }
 
+/* Scanline sweep — DISABLED: distracting */
 .scanline-effect::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: 0;
-  width: 100%;
-  height: 10px;
-  background: linear-gradient(transparent, rgba(99, 102, 241, 0.3), transparent);
-  animation: scanline 4s linear infinite;
-  pointer-events: none;
+  display: none;
 }
 
 @keyframes scanline {
@@ -469,7 +438,8 @@
     0 2px 8px rgba(99, 102, 241, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px);
-  animation: badgeFloat 3s ease-in-out infinite;
+  /* badgeFloat animation DISABLED: distracting bouncing */
+  animation: none;
 }
 
 @keyframes badgeFloat {

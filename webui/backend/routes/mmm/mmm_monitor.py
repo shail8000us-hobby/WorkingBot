@@ -54,7 +54,7 @@ from .mmm_close_at_5 import (
 )
 from .mmm_analytics_storage import get_analytics_storage
 from .mmm_safety import (
-    get_safety, should_block_adjustment, should_pause,
+    get_safety, should_block_adjustment, get_block_action, should_pause,
     update_peak_pnl,
 )
 from .mmm_pending_orders import (
@@ -709,29 +709,39 @@ class MMMMonitor:
         self._hb_wt['safety_events'] = safety_events
 
         # Handle safety actions
-        block, reason = should_block_adjustment(safety_events)
-        if block:
-            if 'auto_close' in reason.lower():
+        if should_block_adjustment(safety_events):
+            reason, action_type = get_block_action(safety_events)
+            if action_type == 'auto_close':
                 await self._auto_close_all(reason)
-            else:
+            elif action_type == 'stop':
                 self.stop(reason)
+            else:
+                # stop_adjustments: block new adjustments but keep heartbeat
+                # running so close-at-5 continues on future intervals.
+                log_activity('adjustments_stopped',
+                             f'⛔ Adjustments blocked: {reason}',
+                             sid, 'warning',
+                             {'reason': reason, 'action_type': action_type})
             return
 
         pause_needed, pause_reason = should_pause(safety_events)
         if pause_needed:
+            pause_event = next(
+                (e for e in safety_events if e.get('action') == 'pause'), {}
+            )
             log_activity('session_paused',
                         f'Auto-paused by safety: {pause_reason}',
                         sid, 'warning',
-                        {'reason': pause_reason, 'whipsaw_limit': session.get('params', {}).get('whipsaw_limit', 3)})
+                        {'reason': pause_reason, 'trigger': pause_event.get('type', 'unknown')})
             self.pause(pause_reason)
 
-        # Bug #15 fix: handle whipsaw auto-resume events
+        # Handle auto-resume events (whipsaw timeout, max_adjustments limit raised, etc.)
         for event in safety_events:
             if event.get('action') == 'resume' and self._paused:
                 log_activity('session_resumed',
                             f'Auto-resumed: {event.get("message", "")}',
                             sid, 'success')
-                self.resume(event.get('message', 'Whipsaw auto-resume'))
+                self.resume(event.get('message', 'Auto-resume'))
 
         # Step 4: If paused, check for both-sides-up auto-decision (30s timeout)
         if self._paused:

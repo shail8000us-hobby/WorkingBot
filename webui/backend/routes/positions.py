@@ -25,6 +25,9 @@ import sys
 import copy
 import json
 import logging
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, jsonify, request
@@ -90,6 +93,17 @@ positions_bp = Blueprint('positions', __name__)
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 POSITIONS_FILE = BASE_DIR / "bot" / "reports" / "positions.json"
 STATE_FILE = BASE_DIR / "bot" / "reports" / "state.json"
+
+# Positions cache (TTL-based to avoid hammering Delta Exchange API)
+_positions_cache = {
+    'data': None,
+    'timestamp': 0,
+    'lock': threading.Lock()
+}
+_POSITIONS_CACHE_TTL = 5.0  # 5 seconds - fresh enough for trading, avoids N+1 per poll
+
+# Thread pool for concurrent API calls (reuse across requests)
+_ticker_pool = ThreadPoolExecutor(max_workers=8)
 
 # ============================================================================
 # Helper Functions
@@ -314,39 +328,69 @@ def get_state():
 # Helper Functions - Position Data Sources
 # ============================================================================
 
+def _fetch_ticker_greeks(delta_client, product_symbol):
+    """Fetch Greeks for a single option symbol. Used by thread pool."""
+    try:
+        ticker_response = delta_client._req('GET', f'/v2/tickers/{product_symbol}')
+        if ticker_response.get('success'):
+            ticker_data = ticker_response.get('result', {})
+            greeks = ticker_data.get('greeks', {})
+            if greeks:
+                return product_symbol, {
+                    'delta': float(greeks.get('delta', 0)),
+                    'vega': float(greeks.get('vega', 0)),
+                    'theta': float(greeks.get('theta', 0)),
+                    'gamma': float(greeks.get('gamma', 0)),
+                }
+    except Exception as e:
+        log.debug(f"Could not fetch Greeks for {product_symbol}: {e}")
+    return product_symbol, {'delta': 0, 'vega': 0, 'theta': 0, 'gamma': 0}
+
+
 def _get_positions_from_delta():
     """
     Get ALL positions directly from Delta Exchange API (with circuit breaker protection)
-    
+
     Fetches COMPLETE portfolio including:
     - Futures positions (BTCUSD, ETHUSD, etc.)
     - Options positions (calls and puts)
     - All underlying assets
-    
+
     Returns position data with Greeks (delta, vega, theta) and PnL.
     Greeks are fetched from ticker endpoint as they're not available in positions endpoint.
+
+    Performance: Uses TTL cache (5s) + concurrent Greeks fetching via thread pool.
+    Before: N+1 sequential API calls (5-11s for 10 positions)
+    After:  1 positions call + parallel Greeks calls (~500ms-1s total)
     """
+    # Check cache first (avoids hammering Delta API on every frontend poll)
+    now = time.time()
+    with _positions_cache['lock']:
+        if _positions_cache['data'] is not None and (now - _positions_cache['timestamp']) < _POSITIONS_CACHE_TTL:
+            log.debug("Returning cached positions data")
+            return _positions_cache['data']
+
     try:
         from bot.api.delta_client import DeltaClient
-        
+
         def _fetch_from_delta():
             """Inner function wrapped by circuit breaker"""
             delta_client = DeltaClient()
             # Use /v2/positions/margined to get ALL positions (futures + options)
             response = delta_client._req('GET', '/v2/positions/margined')
-            
+
             if not response.get('success'):
                 raise Exception("Delta API returned unsuccessful response")
-            
+
             return response
-        
+
         # Call through circuit breaker (fail fast if Delta API is down)
         response = delta_api_breaker.call(_fetch_from_delta, fallback=None)
-        
+
         if not response:
             log.warning("Delta API circuit breaker open - falling back to other sources")
             return None
-        
+
         positions_data = []
         total_pnl = 0
         total_delta = 0
@@ -354,24 +398,48 @@ def _get_positions_from_delta():
         total_theta = 0
         total_notional_deployed = 0
         usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
-        
+
         pos_list = response.get('result', [])
-        log.info(f"📊 Fetched {len(pos_list)} positions from Delta Exchange (futures + options)")
-        
-        # Initialize Delta client for ticker requests
+        log.info(f"Fetched {len(pos_list)} positions from Delta Exchange (futures + options)")
+
+        # Separate options that need Greeks fetching
         delta_client = DeltaClient()
-        
+        option_symbols = []
         for pos_data in pos_list:
             size = int(pos_data.get('size', 0))
             if size == 0:
                 continue
-            
+            product_symbol = pos_data.get('product_symbol', 'UNKNOWN')
+            if any(x in product_symbol for x in ['C-', 'P-']):
+                option_symbols.append(product_symbol)
+
+        # Fetch ALL option Greeks concurrently (instead of N sequential calls)
+        greeks_map = {}
+        if option_symbols:
+            unique_symbols = list(set(option_symbols))
+            log.info(f"Fetching Greeks for {len(unique_symbols)} options concurrently")
+            futures = {
+                _ticker_pool.submit(_fetch_ticker_greeks, delta_client, sym): sym
+                for sym in unique_symbols
+            }
+            for future in as_completed(futures, timeout=10):
+                try:
+                    symbol, greeks = future.result()
+                    greeks_map[symbol] = greeks
+                except Exception as e:
+                    log.debug(f"Greeks fetch failed for {futures[future]}: {e}")
+
+        for pos_data in pos_list:
+            size = int(pos_data.get('size', 0))
+            if size == 0:
+                continue
+
             entry_price = float(pos_data.get('entry_price', 0))
             mark_price = float(pos_data.get('mark_price', 0))
             product_symbol = pos_data.get('product_symbol', 'UNKNOWN')
             product_id = int(pos_data.get('product_id', 0))
-            
-            # Calculate PnL: (Mark - Entry) × Size × Contract Multiplier
+
+            # Calculate PnL: (Mark - Entry) x Size x Contract Multiplier
             # Contract sizes per Delta Exchange India:
             # - BTC: 1 lot = 0.001 BTC (multiplier = 0.001)
             # - ETH: 1 lot = 0.01 ETH (multiplier = 0.01)
@@ -380,49 +448,29 @@ def _get_positions_from_delta():
             else:
                 CONTRACT_MULTIPLIER = 0.001  # BTC and other assets default to 0.001
             unrealized_pnl = (mark_price - entry_price) * size * CONTRACT_MULTIPLIER
-            
+
             # Determine type
             position_type = "OPTION" if any(x in product_symbol for x in ['C-', 'P-']) else "FUTURE"
-            
-            # Initialize Greeks
-            delta = 0
-            vega = 0
-            theta = 0
-            gamma = 0
-            
+
+            # Get Greeks (from concurrent fetch for options, defaults for futures)
             if position_type == "FUTURE":
-                # Futures always have delta = +1 (long) or -1 (short)
-                # Position delta = size (positive for long, negative for short)
                 delta = float(size)
-                # Futures have no vega, theta, gamma
                 vega = 0
                 theta = 0
                 gamma = 0
             else:
-                # Fetch Greeks from ticker endpoint for options
-                try:
-                    ticker_response = delta_client._req('GET', f'/v2/tickers/{product_symbol}')
-                    if ticker_response.get('success'):
-                        ticker_data = ticker_response.get('result', {})
-                        greeks = ticker_data.get('greeks', {})
-                        if greeks:
-                            # Return PER-CONTRACT Greeks (frontend handles position scaling)
-                            # Delta Exchange API returns per-contract values
-                            delta = float(greeks.get('delta', 0))
-                            vega = float(greeks.get('vega', 0))
-                            theta = float(greeks.get('theta', 0))
-                            gamma = float(greeks.get('gamma', 0))
-                            
-                            log.debug(f"Greeks (per-contract) for {product_symbol}: delta={delta:.4f}, vega={vega:.4f}, theta={theta:.4f}")
-                except Exception as e:
-                    log.debug(f"Could not fetch Greeks for {product_symbol}: {e}")
-            
+                g = greeks_map.get(product_symbol, {})
+                delta = g.get('delta', 0)
+                vega = g.get('vega', 0)
+                theta = g.get('theta', 0)
+                gamma = g.get('gamma', 0)
+
             # Notional
             notional_usd = abs(size * mark_price * CONTRACT_MULTIPLIER)
             notional_deployed = notional_usd * usd_to_inr_rate
-            
+
             # Calculate position-level Greeks for summary (multiply per-contract by size)
-            # 
+            #
             # CRITICAL THETA LOGIC (Fixed Jan 14, 2026 - v2):
             # - Delta Exchange returns theta as "daily P&L contribution from time decay"
             # - Theta convention: POSITIVE = earning money, NEGATIVE = losing money
@@ -431,8 +479,8 @@ def _get_positions_from_delta():
             #
             # Example:
             # - SHORT Call: size = -1, per-contract theta = +0.31
-            # - position theta = +0.31 * (-1) = -0.31 ❌ WRONG!
-            # - We want: position theta = +0.31 (you earn $0.31/day) ✅
+            # - position theta = +0.31 * (-1) = -0.31 -- WRONG!
+            # - We want: position theta = +0.31 (you earn $0.31/day)
             #
             # The cashflow display shows POSITIVE values (0.36 USD, 0.26 USD) for short positions
             # This means Delta API already returns theta from seller's perspective
@@ -442,7 +490,7 @@ def _get_positions_from_delta():
             pos_gamma = gamma * abs(size)  # Gamma always positive magnitude
             pos_theta = theta * abs(size)  # Theta * absolute size (preserve sign from API)
             pos_vega = vega * abs(size)  # Vega always positive magnitude
-            
+
             positions_data.append({
                 'symbol': product_symbol,
                 'product_id': product_id,
@@ -466,14 +514,14 @@ def _get_positions_from_delta():
                 'notional_deployed': round(notional_deployed, 2),
                 'exchange': 'delta_exchange'
             })
-            
+
             total_pnl += unrealized_pnl
             total_delta += pos_delta  # Use position-level delta
             total_vega += pos_vega    # Use position-level vega
             total_theta += pos_theta  # Use position-level theta
             total_notional_deployed += notional_deployed
-        
-        return {
+
+        result = {
             'positions': positions_data,
             'summary': {
                 'total_positions': len(positions_data),
@@ -487,7 +535,14 @@ def _get_positions_from_delta():
                 'data_source': 'delta_exchange'
             }
         }
-        
+
+        # Update cache
+        with _positions_cache['lock']:
+            _positions_cache['data'] = result
+            _positions_cache['timestamp'] = time.time()
+
+        return result
+
     except Exception as e:
         log.debug(f"Delta API positions fetch failed: {e}")
         return None

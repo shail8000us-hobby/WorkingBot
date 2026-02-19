@@ -749,8 +749,8 @@ const MVStraddlePanel = () => {
     if (activeTab === 0) {
       fetchWatchlist();
       fetchPositions();
-      const watchlistInterval = setInterval(fetchWatchlist, 10000);
-      const positionsInterval = setInterval(fetchPositions, 5000);
+      const watchlistInterval = setInterval(fetchWatchlist, 20000);
+      const positionsInterval = setInterval(fetchPositions, 15000);
       return () => {
         clearInterval(watchlistInterval);
         clearInterval(positionsInterval);

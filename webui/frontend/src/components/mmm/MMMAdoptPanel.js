@@ -366,6 +366,7 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
                                 <TableRow>
                                     <TableCell padding="checkbox" />
                                     <TableCell>Side</TableCell>
+                                    <TableCell>Expiry</TableCell>
                                     <TableCell align="right">Strike</TableCell>
                                     <TableCell align="right">Lots</TableCell>
                                     <TableCell align="right">Entry $</TableCell>
@@ -415,6 +416,9 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
                                                         height: 22,
                                                     }}
                                                 />
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                                                {formatExpiry(pos.expiry)}
                                             </TableCell>
                                             <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                                                 {fmtStrike(pos.strike)}

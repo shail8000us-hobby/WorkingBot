@@ -17,6 +17,7 @@ import requests
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 # Add parent directory to path for imports
@@ -30,6 +31,9 @@ ticker_bp = Blueprint('ticker', __name__)
 # Cache for ticker data (5 second TTL to match frontend cache)
 _ticker_cache = {}
 _cache_ttl = 5.0
+
+# Thread pool for concurrent batch ticker requests
+_batch_ticker_pool = ThreadPoolExecutor(max_workers=10)
 
 
 @ticker_bp.route('/api/ticker/<symbol>', methods=['GET'])
@@ -206,58 +210,70 @@ def get_batch_tickers():
         
         results = {}
         errors = {}
-        
-        # Fetch each symbol (could be parallelized for better performance)
+        symbols_to_fetch = []
+
+        # Check cache first for all symbols
+        now = time.time()
         for symbol in symbols:
             cache_key = f"ticker_{symbol}"
-            
-            # Check cache
             if cache_key in _ticker_cache:
                 cached_time, cached_data = _ticker_cache[cache_key]
-                if time.time() - cached_time < _cache_ttl:
+                if now - cached_time < _cache_ttl:
                     results[symbol] = cached_data
                     continue
-            
+            symbols_to_fetch.append(symbol)
+
+        # Fetch uncached symbols concurrently via thread pool
+        def _fetch_single_ticker(symbol):
             try:
                 api_url = f"https://api.india.delta.exchange/v2/tickers/{symbol}"
-                response = requests.get(api_url, timeout=5)
-                
-                if response.status_code == 404:
-                    errors[symbol] = "Ticker not found"
-                    continue
-                
-                if response.status_code != 200:
-                    errors[symbol] = f"API error: {response.status_code}"
-                    continue
-                
-                data = response.json()
-                if not data.get('success'):
-                    errors[symbol] = data.get('error', 'Unknown error')
-                    continue
-                
-                result = data.get('result', {})
+                resp = requests.get(api_url, timeout=5)
+
+                if resp.status_code == 404:
+                    return symbol, None, "Ticker not found"
+                if resp.status_code != 200:
+                    return symbol, None, f"API error: {resp.status_code}"
+
+                resp_data = resp.json()
+                if not resp_data.get('success'):
+                    return symbol, None, resp_data.get('error', 'Unknown error')
+
+                r = resp_data.get('result', {})
                 ticker_data = {
-                    'symbol': result.get('symbol', symbol),
-                    'mark_price': result.get('mark_price'),
-                    'spot_price': result.get('spot_price'),
+                    'symbol': r.get('symbol', symbol),
+                    'mark_price': r.get('mark_price'),
+                    'spot_price': r.get('spot_price'),
                 }
-                
-                if 'greeks' in result:
+                if 'greeks' in r:
                     ticker_data['greeks'] = {
-                        'delta': result['greeks'].get('delta'),
-                        'gamma': result['greeks'].get('gamma'),
-                        'theta': result['greeks'].get('theta'),
-                        'vega': result['greeks'].get('vega'),
-                        'rho': result['greeks'].get('rho'),
+                        'delta': r['greeks'].get('delta'),
+                        'gamma': r['greeks'].get('gamma'),
+                        'theta': r['greeks'].get('theta'),
+                        'vega': r['greeks'].get('vega'),
+                        'rho': r['greeks'].get('rho'),
                     }
-                
-                _ticker_cache[cache_key] = (time.time(), ticker_data)
-                results[symbol] = ticker_data
-                
+                return symbol, ticker_data, None
             except Exception as e:
-                log.error(f"Error fetching {symbol}: {e}")
-                errors[symbol] = str(e)
-        
+                return symbol, None, str(e)
+
+        if symbols_to_fetch:
+            futures = {
+                _batch_ticker_pool.submit(_fetch_single_ticker, sym): sym
+                for sym in symbols_to_fetch
+            }
+            for future in as_completed(futures, timeout=10):
+                try:
+                    symbol, ticker_data, error = future.result()
+                    if ticker_data:
+                        _ticker_cache[f"ticker_{symbol}"] = (time.time(), ticker_data)
+                        results[symbol] = ticker_data
+                    elif error:
+                        errors[symbol] = error
+                except Exception as e:
+                    sym = futures[future]
+                    log.error(f"Error fetching {sym}: {e}")
+                    errors[sym] = str(e)
+
         return jsonify({
             'results': results,
             'errors': errors if errors else None

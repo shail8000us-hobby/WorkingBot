@@ -21,9 +21,9 @@ class DataAggregator {
   constructor() {
     this.interval = null;
     this.isRunning = false;
-    this.pollInterval = 15000; // 15 seconds default (reduced API load)
-    this.pollIntervalFast = 8000; // 8 seconds for active trading
-    this.pollIntervalSlow = 60000; // 60 seconds for idle/hidden tab
+    this.pollInterval = 20000; // 20 seconds default (positions endpoint has 5s backend cache)
+    this.pollIntervalFast = 10000; // 10 seconds for active trading
+    this.pollIntervalSlow = 120000; // 120 seconds for idle/hidden tab
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 5;
     this.isDocumentVisible = true;

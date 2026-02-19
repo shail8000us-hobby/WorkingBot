@@ -84,17 +84,31 @@ class TestMaxAdjustments:
         session = _make_session()
         session['adjustment_count'] = 5
         events = safety.check_max_adjustments(session)
-        critical = [e for e in events if e.get('action') == 'stop_adjustments']
-        assert len(critical) == 0
+        pause_events = [e for e in events if e.get('action') == 'pause']
+        assert len(pause_events) == 0
 
-    def test_at_max_stops(self):
+    def test_at_max_pauses(self):
         from webui.backend.routes.mmm.mmm_safety import MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['adjustment_count'] = 20
         events = safety.check_max_adjustments(session)
-        stop_events = [e for e in events if e.get('action') == 'stop_adjustments']
-        assert len(stop_events) > 0
+        pause_events = [e for e in events if e.get('action') == 'pause']
+        assert len(pause_events) > 0
+        assert session.get('_max_adj_paused') is True
+
+    def test_at_max_auto_resumes_when_limit_raised(self):
+        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        safety = MMWSafety()
+        session = _make_session()
+        # Simulate: previously paused at limit=20, user raised limit to 30
+        session['adjustment_count'] = 20
+        session['_max_adj_paused'] = True
+        session['params']['max_adjustments'] = 30
+        events = safety.check_max_adjustments(session)
+        resume_events = [e for e in events if e.get('action') == 'resume']
+        assert len(resume_events) > 0
+        assert '_max_adj_paused' not in session
 
 
 class TestMaxLoss:
