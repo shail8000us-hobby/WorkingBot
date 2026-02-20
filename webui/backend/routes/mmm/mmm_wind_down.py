@@ -34,11 +34,19 @@ def is_wind_down_active(session: Dict) -> bool:
     1. wind_down_enabled must be True
     2. wind_down_hours_before_expiry > 0: activate if hours_to_expiry <= value
        (0 = disabled / manual-only via wind_down_enabled toggle)
+    3. wind_down_on_atm: activates when original strike goes ATM (set via
+       _atm_wind_down_triggered session flag by the monitor heartbeat)
 
     Returns:
         True if wind-down should be active
     """
     params = session.get('params', {})
+
+    # ATM-triggered wind-down: if wind_down_on_atm is enabled and the monitor
+    # detected an original strike going ATM, activate wind-down regardless of
+    # the time-based setting.
+    if params.get('wind_down_on_atm', False) and session.get('_atm_wind_down_triggered', False):
+        return True
 
     if not params.get('wind_down_enabled', False):
         return False

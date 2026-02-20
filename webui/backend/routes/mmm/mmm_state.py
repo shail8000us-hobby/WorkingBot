@@ -149,6 +149,16 @@ DEFAULT_PARAMS = {
     'wind_down_close_threshold': 20.0,     # elevated close-at-5 during wind-down
     'wind_down_min_lots_to_keep': 0,       # never go below this many lots per side (0 = full unwind allowed)
     'wind_down_floor_action': 'skip',      # what to do at floor: skip|normal|pause
+    'wind_down_on_atm': True,              # auto-activate wind-down when original strike goes ATM
+
+    # Margin Guardian (P1 safety layer)
+    'margin_monitor_enabled': False,       # disabled until user opts in
+    'margin_green_pct': 50.0,             # below this = normal operation
+    'margin_yellow_pct': 60.0,            # caution — block new sells
+    'margin_orange_pct': 75.0,            # auto wind-down (aggressive buyback)
+    'margin_red_pct': 85.0,              # emergency reduce (taker orders)
+    'margin_critical_pct': 90.0,          # survival — close ALL, stop session
+    'margin_target_pct': 50.0,            # target utilization to wind down to
 }
 
 # Which parameters can be changed while algo is running
@@ -163,6 +173,11 @@ HOT_RELOAD_PARAMS = {
     'wind_down_enabled', 'wind_down_hours_before_expiry',
     'wind_down_buyback_pct', 'wind_down_close_threshold',
     'wind_down_min_lots_to_keep', 'wind_down_floor_action',
+    'wind_down_on_atm',
+    # Margin Guardian
+    'margin_monitor_enabled', 'margin_green_pct', 'margin_yellow_pct',
+    'margin_orange_pct', 'margin_red_pct', 'margin_critical_pct',
+    'margin_target_pct',
 }
 
 

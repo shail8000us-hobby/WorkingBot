@@ -164,6 +164,7 @@ When BOTH CE and PE exceed triggers simultaneously:
 | `wind_down_minutes` | 120 | **Yes** |
 | `wind_down_threshold_pct` | 25 | **Yes** |
 | `wind_down_floor_action` | stop_adjustments | **Yes** |
+| `wind_down_on_atm` | false | **Yes** |
 
 "Hot Reload = Yes" means the parameter can be changed via WebUI while the algo is running and takes effect on the next heartbeat interval.
 
@@ -188,8 +189,9 @@ Activates when `minutes_to_expiry ≤ wind_down_minutes` (default 120 = 2 hours)
 1. **Elevated close threshold**: Closes positions at premium ≤ `entry_premium × (wind_down_threshold_pct / 100)` instead of static 5
 2. **LIFO order**: Closes most recently added positions first
 3. **Floor action**: If positions can't be closed, executes `wind_down_floor_action` (stop_adjustments / close_all / alert)
+4. **ATM auto-trigger** (`wind_down_on_atm`): When ON, wind-down is automatically activated the moment any **original** strike becomes ATM (spot within 0.5% of entry strike). This is a gentler alternative to `close_at_atm` — instead of an immediate close-all, the algo switches to gradual LIFO buyback. The session flag `_atm_wind_down_triggered` is set once and persists for the session. Checked in `is_wind_down_active()` in `mmm_wind_down.py`.
 
-**Implementation:** `mmm_wind_down.py` (new module, ~270 lines) + integration in `mmm_monitor.py` and `mmm_close_at_5.py`.
+**Implementation:** `mmm_wind_down.py` + `mmm_monitor.py` (ATM detection block before `close_at_atm` check) + `mmm_config.py` + `MMMSettingsDialog.js`.
 
 ---
 

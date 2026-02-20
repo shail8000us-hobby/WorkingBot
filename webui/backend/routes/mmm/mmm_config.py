@@ -46,6 +46,15 @@ PARAM_RULES = {
     'wind_down_close_threshold': {'type': float, 'min': 1,    'max': 500,  'hot': True},
     'wind_down_min_lots_to_keep': {'type': int,  'min': 0,    'max': 10000, 'hot': True},
     'wind_down_floor_action':    {'type': str,   'min': None, 'max': None,  'hot': True},
+    'wind_down_on_atm':          {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # Margin Guardian
+    'margin_monitor_enabled':    {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'margin_green_pct':          {'type': float, 'min': 10,   'max': 100,   'hot': True},
+    'margin_yellow_pct':         {'type': float, 'min': 20,   'max': 100,   'hot': True},
+    'margin_orange_pct':         {'type': float, 'min': 30,   'max': 100,   'hot': True},
+    'margin_red_pct':            {'type': float, 'min': 40,   'max': 100,   'hot': True},
+    'margin_critical_pct':       {'type': float, 'min': 50,   'max': 100,   'hot': True},
+    'margin_target_pct':         {'type': float, 'min': 10,   'max': 100,   'hot': True},
 }
 
 
@@ -144,6 +153,15 @@ def get_param_info() -> Dict[str, Dict]:
         'wind_down_close_threshold': 'Close any position with premium below this during wind-down (elevated close-at-5)',
         'wind_down_min_lots_to_keep': 'Never reduce below this many lots per side during wind-down (0 = allow full unwind)',
         'wind_down_floor_action': 'When at min lots during wind-down: skip (let theta work), normal (fall back to hedge), or pause (ask user)',
+        'wind_down_on_atm': 'Auto-trigger wind-down mode if any original strike becomes ATM (spot ≈ strike). Instead of closing all, switches to gradual position reduction.',
+        # Margin Guardian
+        'margin_monitor_enabled': 'Enable real-time margin monitoring — auto-defends when margin utilization gets too high',
+        'margin_green_pct': 'Below this % = normal operation (no intervention)',
+        'margin_yellow_pct': 'At this % = caution — blocks new sell orders',
+        'margin_orange_pct': 'At this % = force wind-down — aggressive buyback regardless of time-to-expiry',
+        'margin_red_pct': 'At this % = emergency — close all positions using taker orders',
+        'margin_critical_pct': 'At this % = survival — close all + stop session immediately',
+        'margin_target_pct': 'Target margin utilization to wind down to during ORANGE/RED tiers',
     }
 
     info = {}

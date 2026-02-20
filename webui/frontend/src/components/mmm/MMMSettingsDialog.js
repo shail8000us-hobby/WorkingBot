@@ -82,7 +82,13 @@ const PARAM_GROUPS = {
     title: 'Wind-Down Mode',
     color: '#9c27b0',
     blurb: 'Near-expiry risk reduction: buys back positions (LIFO) instead of adding new naked lots.',
-    params: ['wind_down_enabled', 'wind_down_hours_before_expiry', 'wind_down_buyback_pct', 'wind_down_close_threshold', 'wind_down_min_lots_to_keep', 'wind_down_floor_action'],
+    params: ['wind_down_on_atm', 'wind_down_enabled', 'wind_down_hours_before_expiry', 'wind_down_buyback_pct', 'wind_down_close_threshold', 'wind_down_min_lots_to_keep', 'wind_down_floor_action'],
+  },
+  marginGuardian: {
+    title: '🛡️ Margin Guardian',
+    color: '#e91e63',
+    blurb: 'Real-time margin monitoring — auto-defends when margin utilization crosses thresholds: blocks new sells (Yellow), forces buybacks (Orange), emergency closes (Red), survival shutdown (Critical).',
+    params: ['margin_monitor_enabled', 'margin_green_pct', 'margin_yellow_pct', 'margin_orange_pct', 'margin_red_pct', 'margin_critical_pct', 'margin_target_pct'],
   },
 };
 
@@ -108,12 +114,21 @@ const PARAM_TOOLTIPS = {
   close_at_threshold: HELP.close_at_5 || 'Close any position whose premium drops to this level or below. Default 5 = when an option is worth $5 or less, buy it back to lock in ~95% profit.',
   theta_acceleration_window: 'Minutes before expiry to activate theta acceleration. Within this window, the algo widens trigger thresholds (allows more premium move before adjusting) because time decay is rapidly working in your favor.',
   adaptive_interval_enabled: HELP.adaptive_interval_enabled || 'Auto-scale heartbeat frequency based on time-to-expiry.',
+  wind_down_on_atm: 'Auto-trigger wind-down mode if any original strike becomes ATM (spot ≈ strike). Instead of closing all positions immediately (like close_at_atm), this switches the algo into gradual LIFO buyback mode. The original strike is the entry strike — real danger territory. Activates once and stays active for the rest of the session.',
   wind_down_enabled: HELP.wind_down_enabled || 'Enable wind-down mode near expiry.',
   wind_down_hours_before_expiry: HELP.wind_down_hours_before_expiry || 'Hours before expiry to activate wind-down.',
   wind_down_buyback_pct: HELP.wind_down_buyback_pct || 'Fraction of lots to buy back per trigger during wind-down.',
   wind_down_close_threshold: HELP.wind_down_close_threshold || 'Elevated close threshold during wind-down.',
   wind_down_min_lots_to_keep: HELP.wind_down_min_lots_to_keep || 'Minimum lots to keep per side during wind-down.',
   wind_down_floor_action: HELP.wind_down_floor_action || 'Action when at minimum lots during wind-down.',
+  // Margin Guardian tooltips
+  margin_monitor_enabled: 'Master switch for real-time margin monitoring. When ON, the heartbeat checks your exchange margin utilization and auto-defends when thresholds are crossed. When OFF, no margin checks are made.',
+  margin_green_pct: 'Below this % = GREEN tier — completely normal operation, no intervention. This is the safe zone. Default: 50%.',
+  margin_yellow_pct: 'At this % = YELLOW tier — caution mode. The algo blocks new sell orders but keeps existing positions. Think of it as a soft defense. Default: 60%.',
+  margin_orange_pct: 'At this % = ORANGE tier — aggressive buyback mode. Forces position reduction (wind-down) regardless of time-to-expiry. Sells are also blocked. Default: 75%.',
+  margin_red_pct: 'At this % = RED tier — emergency mode. Closes ALL positions using taker (IOC) orders for fastest fills. This is the fire alarm. Default: 85%.',
+  margin_critical_pct: 'At this % = CRITICAL tier — survival mode. Closes ALL positions AND stops the session completely. Only manual restart possible. Default: 90%.',
+  margin_target_pct: 'Target margin utilization to wind down to during ORANGE/RED reductions. The algo estimates how many lots to close to reach this level. Default: 50%.',
 };
 
 // =============================================================================

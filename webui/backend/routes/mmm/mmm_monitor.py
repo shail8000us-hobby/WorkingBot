@@ -68,6 +68,12 @@ from .mmm_websocket import (
 )
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC
+from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
+from .mmm_telegram import (
+    alert_margin_tier_change, alert_emergency_close,
+    alert_session_stopped, alert_rapid_check_activated,
+    alert_max_loss_breach,
+)
 
 log = logging.getLogger('mmm_monitor')
 
@@ -106,6 +112,9 @@ class MMMMonitor:
         base_interval = session.get('params', {}).get('adjustment_interval', 300)
         self._health = HeartbeatHealth(session_id, base_interval)
         self._circuit = CircuitBreaker(session_id)
+
+        # Margin Guardian (P1 safety layer)
+        self._margin_guardian = MarginGuardian(session_id)
 
         # Lazy-loaded
         self._executor = None
@@ -167,7 +176,7 @@ class MMMMonitor:
         emit_status_change(
             self.session_id, 'IDLE', 'RUNNING', 'Monitor started'
         )
-        log.info(f"Monitor started for {self.session_id}")
+        log.warning(f"[{self.session_id}] Monitor started")
 
         # Register with watchdog supervisor
         try:
@@ -200,6 +209,13 @@ class MMMMonitor:
                 pass
 
         _save_session(self.session)
+
+        # AFTER our own save, mark save-disabled so that any in-flight
+        # heartbeat completing after this point cannot overwrite the
+        # session status.  This prevents the watchdog restart race
+        # condition where an old heartbeat saves stale STOPPED status
+        # over the watchdog's freshly-saved RUNNING status.
+        self.session['_save_disabled'] = True
         
         # Persist analytics to separate storage (survives session deletion)
         try:
@@ -212,7 +228,7 @@ class MMMMonitor:
         emit_status_change(
             self.session_id, old_status, 'STOPPED', reason
         )
-        log.info(f"Monitor stopped for {self.session_id}: {reason}")
+        log.warning(f"[{self.session_id}] Monitor stopped: {reason}")
 
         # Clear any pending orders from the guard registry
         try:
@@ -321,6 +337,9 @@ class MMMMonitor:
                     old_params = self.session.get('params', {})
                     new_params = fresh_session.get('params', {})
                     
+                    # Clear _save_disabled from freshly loaded session so
+                    # this monitor instance can save normally.
+                    fresh_session.pop('_save_disabled', None)
                     self.session = fresh_session
                     
                     # Log ALL hot-reloaded parameter changes
@@ -373,6 +392,18 @@ class MMMMonitor:
                     elif self.session.pop('_theta_accelerated', False):
                         # Restore: remove ephemeral override
                         self.session.pop('_effective_min_trigger_move', None)
+
+                # Layer 3: Margin Guardian rapid-check mode
+                # When margin is elevated (YELLOW+), shrink interval to 15s
+                # for faster detection and response.
+                margin_tier = self._margin_guardian.last_tier
+                if margin_tier in (TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL):
+                    RAPID_CHECK_INTERVAL = 15  # seconds
+                    if interval > RAPID_CHECK_INTERVAL:
+                        interval = RAPID_CHECK_INTERVAL
+                        self.session['_margin_rapid_check'] = True
+                elif self.session.pop('_margin_rapid_check', None):
+                    pass  # cleared — back to normal interval
 
                 # Store effective interval so _heartbeat() can log it
                 self._effective_interval = interval
@@ -488,6 +519,33 @@ class MMMMonitor:
         # Step 0: Reconcile with exchange positions (§14.5 — exchange reality check)
         await self._reconcile_exchange_positions()
 
+        # Step 0.5: Margin Guardian — real-time margin utilization check
+        margin_result = await self._check_margin_guardian()
+        # Store margin snapshot for heartbeat WS emission
+        if margin_result and margin_result.get('checked'):
+            self._last_margin_snapshot = {
+                'tier': margin_result['tier'],
+                'utilization_pct': round(margin_result.get('utilization_pct', 0), 1),
+                'enabled': True,
+            }
+        else:
+            self._last_margin_snapshot = None
+
+        if margin_result and margin_result.get('checked'):
+            if margin_result['tier'] in (TIER_RED, TIER_CRITICAL):
+                # RED/CRITICAL: emergency close all and bail out of heartbeat
+                return
+            if margin_result['tier'] == TIER_ORANGE:
+                # ORANGE: flag for aggressive buyback (used later in heartbeat)
+                session['_margin_wind_down'] = True
+            elif margin_result['tier'] == TIER_YELLOW:
+                # YELLOW: block new sells (checked by adjustment logic)
+                session['_margin_block_sells'] = True
+            else:
+                # GREEN: clear any stale flags
+                session.pop('_margin_wind_down', None)
+                session.pop('_margin_block_sells', None)
+
         # Step 1: Fetch current premiums — with circuit breaker + fallback
         ce_now, pe_now, fetch_ok = await self._fetch_premiums_with_fallback()
 
@@ -598,6 +656,58 @@ class MMMMonitor:
         # The purpose of close_at_atm is to protect when spot reaches the
         # ORIGINAL entry strike — real danger territory.
         params = session.get('params', {})
+
+        # ATM Wind-Down Trigger: if enabled, activate wind-down mode when spot ≈ ORIGINAL strike.
+        # This is a GENTLER alternative to close_at_atm — instead of closing all positions
+        # immediately, it switches the algo into wind-down mode (gradual LIFO buyback).
+        # Uses the same 0.5% proximity threshold as close_at_atm.
+        # CRITICAL: checks original_strike only on sides with open positions (same guard
+        # as close_at_atm — prevents stale zero-lot sides from falsely triggering).
+        if params.get('wind_down_on_atm', False):
+            if session.get('_atm_wind_down_triggered'):
+                log.debug(f"[{sid}] ATM wind-down already triggered, skipping check")
+            else:
+                _wd_spot = await self._fetch_spot_price()
+                if _wd_spot > 0:
+                    _wd_atm_threshold = _wd_spot * 0.005  # 0.5% of spot (same as close_at_atm)
+                    _ce_orig = session.get('ce', {}).get('original_strike', 0)
+                    _pe_orig = session.get('pe', {}).get('original_strike', 0)
+                    _ce_lots = session.get('ce', {}).get('total_lots', 0)
+                    _pe_lots = session.get('pe', {}).get('total_lots', 0)
+                    _atm_wd_side = None
+
+                    if _ce_orig and _ce_lots > 0 and abs(_wd_spot - _ce_orig) <= _wd_atm_threshold:
+                        _atm_wd_side = 'CE'
+                    elif _pe_orig and _pe_lots > 0 and abs(_wd_spot - _pe_orig) <= _wd_atm_threshold:
+                        _atm_wd_side = 'PE'
+
+                    if _atm_wd_side:
+                        _triggered_strike = _ce_orig if _atm_wd_side == 'CE' else _pe_orig
+                        # Set guard flag BEFORE any state changes to prevent re-entry
+                        session['_atm_wind_down_triggered'] = True
+                        log.warning(
+                            f"[{sid}] ATM WIND-DOWN TRIGGERED: Spot ${_wd_spot:.0f} within "
+                            f"0.5% of {_atm_wd_side} ORIGINAL strike ${_triggered_strike:.0f}. "
+                            f"Switching to wind-down mode (gradual LIFO buyback)."
+                        )
+                        log_activity('atm_wind_down',
+                                     f'🌙 ATM WIND-DOWN: Spot ${_wd_spot:.0f} reached '
+                                     f'{_atm_wd_side} ORIGINAL strike ${_triggered_strike:.0f} '
+                                     f'— activating wind-down mode (gradual buyback)',
+                                     sid, 'warning',
+                                     {'spot': _wd_spot,
+                                      'ce_original_strike': _ce_orig,
+                                      'pe_original_strike': _pe_orig,
+                                      'triggered_side': _atm_wd_side,
+                                      'triggered_strike': _triggered_strike})
+                        emit_safety(
+                            sid, 'atm_wind_down', 'warning',
+                            f'ATM WIND-DOWN: Spot ${_wd_spot:.0f} reached {_atm_wd_side} '
+                            f'ORIGINAL strike ${_triggered_strike:.0f}. Wind-down mode activated.',
+                            {'spot': _wd_spot, 'triggered_side': _atm_wd_side,
+                             'triggered_strike': _triggered_strike}
+                        )
+
         if params.get('close_at_atm', False):
             # Guard: skip if already triggered this session (prevent repeat fires)
             if session.get('_atm_close_triggered'):
@@ -653,7 +763,8 @@ class MMMMonitor:
                         )
                         await self._auto_close_all(
                             f'ATM auto-close: Spot ${spot_price:.0f} at {atm_triggered_side} '
-                            f'original strike ${triggered_strike:.0f}'
+                            f'original strike ${triggered_strike:.0f}',
+                            emergency=True,
                         )
                         return
 
@@ -712,7 +823,7 @@ class MMMMonitor:
         if should_block_adjustment(safety_events):
             reason, action_type = get_block_action(safety_events)
             if action_type == 'auto_close':
-                await self._auto_close_all(reason)
+                await self._auto_close_all(reason, emergency=True)
             elif action_type == 'stop':
                 self.stop(reason)
             else:
@@ -896,6 +1007,29 @@ class MMMMonitor:
                 await self._process_wind_down_buyback(
                     aggressor, ce_now, pe_now,
                 )
+            elif session.get('_margin_block_sells') or session.get('_margin_wind_down'):
+                # Margin Guardian: block new sells when YELLOW+, force buyback when ORANGE+
+                margin_tier = self._margin_guardian.last_tier
+                margin_util = self._margin_guardian.last_utilization
+                if session.get('_margin_wind_down'):
+                    # ORANGE tier: force aggressive buyback instead of hedging
+                    log_activity('margin_wind_down',
+                                f'🟠 MARGIN WIND-DOWN ({margin_util:.1f}%): '
+                                f'{aggressor.upper()} triggered — reducing positions '
+                                f'instead of adding (tier: {margin_tier})',
+                                sid, 'warning',
+                                {'margin_tier': margin_tier, 'utilization': margin_util})
+                    await self._process_wind_down_buyback(
+                        aggressor, ce_now, pe_now,
+                    )
+                else:
+                    # YELLOW tier: just block new sells
+                    log_activity('margin_block_sells',
+                                f'🟡 MARGIN SELLS BLOCKED ({margin_util:.1f}%): '
+                                f'{aggressor.upper()} triggered but new sells blocked '
+                                f'(tier: {margin_tier})',
+                                sid, 'warning',
+                                {'margin_tier': margin_tier, 'utilization': margin_util})
             else:
                 session.pop('_wind_down_mode', None)
                 log_activity('adjustment_triggered',
@@ -993,8 +1127,14 @@ class MMMMonitor:
                 f'-${max_loss_amount:.2f}. CLOSING ALL.',
                 {'total_pnl': current_total_pnl, 'max_loss': max_loss_amount}
             )
+            # Telegram alert for max loss breach
+            try:
+                await alert_max_loss_breach(sid, current_total_pnl, max_loss_amount)
+            except Exception:
+                pass
             await self._auto_close_all(
-                f'Max loss breached: P&L ${current_total_pnl:.2f} <= -${max_loss_amount:.2f}'
+                f'Max loss breached: P&L ${current_total_pnl:.2f} <= -${max_loss_amount:.2f}',
+                emergency=True,
             )
             return
 
@@ -1103,6 +1243,11 @@ class MMMMonitor:
 
         reduced_any = False
         for side in ['ce', 'pe']:
+            # Check stop before processing each side — each side may take minutes
+            if self._should_stop():
+                log.info(f"[{sid}] Proactive wind-down: stop requested, aborting")
+                break
+
             side_state = session.get(side, {})
             active_lots = side_state.get('active_lots', 0)
             params = session.get('params', {})
@@ -1218,6 +1363,11 @@ class MMMMonitor:
         any_failed = False
 
         for strike_val, group in by_strike.items():
+            # Check if monitor was stopped while we were executing buybacks
+            if self._should_stop():
+                log.info(f"[{sid}] Wind-down buyback: stop requested, aborting remaining strikes")
+                break
+
             group_lots = group['lots']
             group_records = group['records']
             group_wp_sum = group['wp_sum']
@@ -1695,23 +1845,54 @@ class MMMMonitor:
         sid = self.session_id
 
         old_strike = session.get(side, {}).get('active_strike', 0)
+        hedge_premium = ce_now if side == 'ce' else pe_now
 
-        # Freeze current positions
-        freeze_result = freeze_current_positions(session, side)
-
-        # Find new strike
+        # Find new strike FIRST — do NOT freeze positions until we confirm
+        # a viable new strike exists. If we freeze first and find_new_strike
+        # fails, positions get stuck at active_lots=0 with no active strike.
         spot_price = await self._fetch_spot_price()
         new_strike_info = find_new_strike(
             self.initializer, session, side, spot_price,
         )
 
         if not new_strike_info:
+            from .mmm_activity import log_activity
+            shift_threshold = session.get('params', {}).get('shift_threshold', 50.0)
+            log.warning(
+                f"[{sid}] SHIFT FAILED: No OTM {side.upper()} strike with "
+                f"premium >= ${shift_threshold:.0f} found. "
+                f"Falling back to current strike {old_strike} "
+                f"(premium ${hedge_premium:.2f})."
+            )
+            log_activity('shift_fallback',
+                        f'⚠️ Strike Shift Failed: No {side.upper()} strike with premium '
+                        f'>= ${shift_threshold:.0f} found. Selling at current strike '
+                        f'{old_strike} (${hedge_premium:.2f}) instead.',
+                        sid, 'warning',
+                        {
+                            'side': side.upper(),
+                            'current_strike': old_strike,
+                            'current_premium': hedge_premium,
+                            'shift_threshold': shift_threshold,
+                            'reason': 'no_suitable_strike',
+                        })
             emit_safety(
                 sid, 'no_strike', 'alert',
-                f"No suitable strike found for {side.upper()} shift. "
-                f"Cannot shift.",
+                f"No suitable strike found for {side.upper()} shift "
+                f"(need premium >= ${shift_threshold:.0f}). "
+                f"Falling back to selling at current strike {old_strike} "
+                f"(${hedge_premium:.2f}).",
+            )
+            # Fall back: sell at current strike instead of doing nothing.
+            # The shift_threshold is a best-effort preference — failing to
+            # hedge at all is worse than hedging at a lower premium.
+            await self._process_shift_fallback(
+                side, loss, hedge_premium, ce_now, pe_now,
             )
             return
+
+        # New strike found — NOW freeze current positions
+        freeze_result = freeze_current_positions(session, side)
 
         # Sell at new strike
         new_strike = new_strike_info['strike']
@@ -1827,8 +2008,118 @@ class MMMMonitor:
             )
 
     # =========================================================================
+    # §10b: Strike Shift Fallback — sell at current strike when no new strike
+    # =========================================================================
+
+    async def _process_shift_fallback(
+        self,
+        side: str,
+        loss: float,
+        hedge_premium: float,
+        ce_now: float,
+        pe_now: float,
+    ):
+        """
+        Fallback when strike shift fails (no suitable new strike found).
+
+        Instead of silently doing nothing (which leaves the position unhedged),
+        sell at the current active strike even though its premium is below
+        shift_threshold. A sub-optimal hedge is better than no hedge.
+        """
+        session = self.session
+        sid = self.session_id
+
+        lots, constraint_msg = self._engine.calculate_lots_to_sell(
+            session, side, loss, hedge_premium,
+        )
+
+        if lots <= 0:
+            if constraint_msg:
+                emit_safety(sid, 'position_cap', 'alert', constraint_msg)
+            return
+
+        hedge_strike = session.get(side, {}).get('active_strike', 0)
+
+        # ITM Guard check (same as normal adjustment)
+        itm_guard_on = session.get('params', {}).get('itm_guard_enabled', True)
+        if hedge_strike:
+            spot_price = await self._fetch_spot_price()
+            if spot_price > 0:
+                is_itm = False
+                if side == 'ce' and hedge_strike <= spot_price:
+                    is_itm = True
+                elif side == 'pe' and hedge_strike >= spot_price:
+                    is_itm = True
+
+                if is_itm and itm_guard_on:
+                    from .mmm_activity import log_activity
+                    log.warning(
+                        f"[{sid}] ITM GUARD (shift fallback): {side.upper()} "
+                        f"{hedge_strike} is ITM (spot=${spot_price:.0f})."
+                    )
+                    log_activity('itm_guard_blocked',
+                                f'🚫 ITM GUARD: {side.upper()} @ {hedge_strike} is ITM '
+                                f'(spot ${spot_price:.0f}). Shift fallback blocked.',
+                                sid, 'error',
+                                {'hedge': side.upper(), 'strike': hedge_strike,
+                                 'spot': spot_price, 'context': 'shift_fallback'})
+                    return
+
+        result = await self._engine.execute_adjustment(
+            session, side, hedge_strike, lots,
+            ce_now, pe_now, 'shift_fallback',
+            fetch_premium_fn=self._make_fetch_fn(),
+        )
+
+        if result.get('success'):
+            from .mmm_activity import log_activity
+            fill_price = result['fill_price']
+
+            # Analytics tracking
+            analytics = session.setdefault('analytics', {})
+            analytics.setdefault('adjustment_events_by_side', {}).setdefault(side, 0)
+            analytics['adjustment_events_by_side'][side] += 1
+            analytics.setdefault('adjustment_events_by_type', {}).setdefault('shift_fallback', 0)
+            analytics['adjustment_events_by_type']['shift_fallback'] += 1
+
+            self._hb_wt['adjustment'] = {
+                'side': side,
+                'strike': hedge_strike,
+                'lots': lots,
+                'fill_price': fill_price,
+                'loss': loss,
+                'adj_type': 'shift_fallback',
+                'hedge_premium': hedge_premium,
+                'adjustment_number': session.get('adjustment_count', 0),
+            }
+
+            log_activity('adjustment_complete',
+                        f'✓ Shift Fallback: SELL {lots} lots {side.upper()} @ {hedge_strike} '
+                        f'for ${fill_price:.2f} (no better strike available)',
+                        sid, 'success',
+                        {
+                            'side': side.upper(),
+                            'strike': hedge_strike,
+                            'lots': lots,
+                            'fill_price': fill_price,
+                            'type': 'shift_fallback',
+                            'adjustment_number': session.get('adjustment_count', 0),
+                        })
+            emit_adjustment(
+                sid, side.upper(), lots,
+                fill_price, hedge_strike,
+                loss, 'shift_fallback',
+                session.get('adjustment_count', 0),
+            )
+
+    # =========================================================================
     # §11: Close-at-5 Processing
     # =========================================================================
+
+    # Maximum positions to close per heartbeat to prevent heartbeat stalling.
+    # Each close involves smart_execute (up to 60s wait + reprices), so
+    # closing N positions can block the heartbeat for N * 60+ seconds.
+    MAX_CLOSES_PER_HEARTBEAT = 3
 
     async def _process_close_at_5(
         self,
@@ -1838,6 +2129,10 @@ class MMMMonitor:
         """Scan and close positions at or below threshold.
         During wind-down, uses elevated threshold from wind_down_close_threshold
         to harvest opportunity (close positions that have decayed significantly).
+
+        Caps at MAX_CLOSES_PER_HEARTBEAT per heartbeat to prevent the heartbeat
+        from hanging for 10+ minutes when many positions are eligible.
+        Remaining positions will be closed in subsequent heartbeats.
         """
         session = self.session
         sid = self.session_id
@@ -1856,18 +2151,40 @@ class MMMMonitor:
             from .mmm_activity import log_activity
             threshold_note = f' (wind-down elevated threshold: {wd_threshold})' if using_elevated else ''
             closeable_summary = ', '.join([f"{p['side'].upper()} @ {p['strike']}" for p in closeable])
+            capped_note = ''
+            if len(closeable) > self.MAX_CLOSES_PER_HEARTBEAT:
+                capped_note = (f' [processing {self.MAX_CLOSES_PER_HEARTBEAT} of '
+                              f'{len(closeable)} this heartbeat]')
             log_activity('info',
-                        f'Close-at-5 Scan: {len(closeable)} position(s) ready to close{threshold_note} - {closeable_summary}',
+                        f'Close-at-5 Scan: {len(closeable)} position(s) ready to close'
+                        f'{threshold_note}{capped_note} - {closeable_summary}',
                         sid, 'info',
                         {'closeable_count': len(closeable), 'positions': closeable_summary,
-                         'wind_down_elevated': using_elevated, 'threshold_used': wd_threshold if using_elevated else normal_threshold})
+                         'wind_down_elevated': using_elevated,
+                         'threshold_used': wd_threshold if using_elevated else normal_threshold,
+                         'capped_at': self.MAX_CLOSES_PER_HEARTBEAT})
 
+        closed_count = 0
         for pos in closeable:
+            # Cap: don't process more than MAX_CLOSES_PER_HEARTBEAT per beat
+            if closed_count >= self.MAX_CLOSES_PER_HEARTBEAT:
+                log.info(
+                    f"[{sid}] Close-at-5: capped at {self.MAX_CLOSES_PER_HEARTBEAT} "
+                    f"closes this heartbeat ({len(closeable) - closed_count} deferred)"
+                )
+                break
+
+            # Check if monitor was stopped while we were executing closes
+            if self._should_stop():
+                log.info(f"[{sid}] Close-at-5: stop requested, aborting remaining closes")
+                break
+
             result = await close_position(
                 self.executor, self.initializer, session, pos,
             )
 
             if result.get('success'):
+                closed_count += 1
                 emit_close_at_5(
                     sid, pos['side'].upper(), pos['strike'],
                     result['lots_closed'], result['realized_pnl'],
@@ -1983,12 +2300,18 @@ class MMMMonitor:
     # Auto-Close All (Near Expiry)
     # =========================================================================
 
-    async def _auto_close_all(self, reason: str):
-        """Close all open positions (near-expiry safety).
-        
+    async def _auto_close_all(self, reason: str, emergency: bool = False):
+        """Close all open positions (near-expiry safety / max-loss / margin breach).
+
         Closes each position at its own strike:
         - Active positions (original + adjustment) at active_strike
         - Each frozen position at its own frozen strike
+
+        Args:
+            reason: Human-readable reason for the close
+            emergency: If True, uses emergency_execute (taker IOC orders) and
+                       closes both sides in parallel for maximum speed.
+                       If False, uses smart_execute (maker orders) sequentially.
 
         Bug #9 fix: retry failed closes up to MAX_CLOSE_RETRIES times.
         Bug #13 fix: clear lot counts and position arrays after closes.
@@ -1997,152 +2320,198 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
         MAX_CLOSE_RETRIES = 3
+        RETRY_DELAY = 0.5 if emergency else 2  # Faster retries in emergency
 
-        log.info(f"[{sid}] Auto-closing all positions: {reason}")
+        mode_label = "🚨 EMERGENCY" if emergency else "🔄 Normal"
+        log.info(f"[{sid}] {mode_label} auto-closing all positions: {reason}")
+
+        from .mmm_activity import log_activity
+        log_activity('auto_close_all',
+                     f'{mode_label} close-all initiated: {reason}',
+                     sid, 'critical' if emergency else 'warning',
+                     {'reason': reason, 'emergency': emergency})
 
         failed_closes = []
 
         try:
-
-            for side_key in ['ce', 'pe']:
-                # Bug #11 fix: check stop event between sides
-                if self._should_stop():
-                    log.warning(f"[{sid}] Stop requested during auto-close, aborting remaining closes")
-                    break
-
-                side_state = session.get(side_key, {})
-                option_type = 'call' if side_key == 'ce' else 'put'
-                active_strike = side_state.get('active_strike', 0)
-                expiry = session.get('params', {}).get('expiry', '')
-
-                # Close active lots (original + adjustment) at active strike
-                active_lots = side_state.get('active_lots', 0)
-                if active_lots > 0 and active_strike > 0:
-                    closed = False
-                    for attempt in range(1, MAX_CLOSE_RETRIES + 1):
-                        try:
-                            symbol = self.initializer.build_symbol(
-                                option_type, 'BTC', active_strike, expiry,
-                            )
-                            result = await self.executor.smart_execute(
-                                symbol=symbol,
-                                side='buy',
-                                size=active_lots,
-                                reduce_only=True,
-                            )
-                            if result.get('success'):
-                                close_price = result.get('fill_price', 0)
-                                # Bug #3 fix: weighted avg entry across original + adj fills
-                                orig_lots = side_state.get('original_lots', 0)
-                                orig_prem = side_state.get('original_premium', 0)
-                                weighted_sum = orig_prem * orig_lots
-                                weighted_lots = orig_lots
-                                for fill in side_state.get('adjustment_fills', []):
-                                    f_lots = fill.get('lots', 0)
-                                    f_prem = fill.get('premium', 0)
-                                    f_strike = fill.get('strike', active_strike)
-                                    if f_strike == active_strike:
-                                        weighted_sum += f_prem * f_lots
-                                        weighted_lots += f_lots
-                                avg_entry = weighted_sum / weighted_lots if weighted_lots > 0 else 0
-                                pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
-                                session['realized_pnl'] = (
-                                    session.get('realized_pnl', 0) + pnl
-                                )
-                                log.info(
-                                    f"[{sid}] Closed {active_lots} active "
-                                    f"{side_key.upper()} @ {active_strike}, "
-                                    f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
-                                )
-                                # Bug #13 fix: clear state
-                                side_state['original_lots'] = 0
-                                side_state['adjustment_fills'] = []
-                                side_state['active_lots'] = 0
-                                closed = True
-                                break
-                            else:
-                                log.warning(
-                                    f"[{sid}] Auto-close active {side_key.upper()} "
-                                    f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed: "
-                                    f"{result.get('error', 'unknown')}"
-                                )
-                        except Exception as e:
-                            log.error(
-                                f"[{sid}] Auto-close active {side_key.upper()} "
-                                f"attempt {attempt}/{MAX_CLOSE_RETRIES} error: {e}"
-                            )
-                        if attempt < MAX_CLOSE_RETRIES:
-                            await asyncio.sleep(2)  # Brief pause before retry
-                    if not closed:
-                        failed_closes.append(f"{side_key.upper()} active @ {active_strike}")
-
-                # Close each frozen position at its OWN strike
-                closed_frozen_indices = []
-                for fi, frozen in enumerate(side_state.get('frozen_positions', [])):
-                    frozen_strike = frozen.get('strike', 0)
-                    frozen_lots = frozen.get('lots', 0)
-                    frozen_entry = frozen.get('entry_premium', 0)
-
-                    if frozen_lots > 0 and frozen_strike > 0:
-                        closed = False
-                        for attempt in range(1, MAX_CLOSE_RETRIES + 1):
-                            try:
-                                symbol = self.initializer.build_symbol(
-                                    option_type, 'BTC', frozen_strike, expiry,
-                                )
-                                result = await self.executor.smart_execute(
-                                    symbol=symbol,
-                                    side='buy',
-                                    size=frozen_lots,
-                                    reduce_only=True,
-                                )
-                                if result.get('success'):
-                                    close_price = result.get('fill_price', 0)
-                                    pnl = (frozen_entry - close_price) * frozen_lots * LOT_SIZE_BTC
-                                    session['realized_pnl'] = (
-                                        session.get('realized_pnl', 0) + pnl
-                                    )
-                                    log.info(
-                                        f"[{sid}] Closed {frozen_lots} frozen "
-                                        f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
-                                    )
-                                    closed_frozen_indices.append(fi)
-                                    closed = True
-                                    break
-                                else:
-                                    log.warning(
-                                        f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike} "
-                                        f"attempt {attempt}/{MAX_CLOSE_RETRIES} failed"
-                                    )
-                            except Exception as e:
-                                log.error(
-                                    f"Failed to auto-close frozen {side_key.upper()} "
-                                    f"@ {frozen_strike}, attempt {attempt}: {e}"
-                                )
-                            if attempt < MAX_CLOSE_RETRIES:
-                                await asyncio.sleep(2)
-                        if not closed:
-                            failed_closes.append(f"{side_key.upper()} frozen @ {frozen_strike}")
-
-                # Bug #13 fix: remove successfully closed frozen positions (descending)
-                for fi in sorted(closed_frozen_indices, reverse=True):
-                    side_state.get('frozen_positions', []).pop(fi)
-
-                # Recompute lots after clearing
-                recompute_side_lots(side_state)
-                session[side_key] = side_state
+            if emergency:
+                # PARALLEL close: both sides simultaneously for speed
+                ce_task = self._close_one_side(
+                    'ce', MAX_CLOSE_RETRIES, RETRY_DELAY, emergency=True)
+                pe_task = self._close_one_side(
+                    'pe', MAX_CLOSE_RETRIES, RETRY_DELAY, emergency=True)
+                ce_fails, pe_fails = await asyncio.gather(
+                    ce_task, pe_task, return_exceptions=False)
+                failed_closes.extend(ce_fails)
+                failed_closes.extend(pe_fails)
+            else:
+                # SEQUENTIAL close: one side at a time (original behavior)
+                for side_key in ['ce', 'pe']:
+                    if self._should_stop():
+                        log.warning(f"[{sid}] Stop requested during auto-close, aborting")
+                        break
+                    side_fails = await self._close_one_side(
+                        side_key, MAX_CLOSE_RETRIES, RETRY_DELAY, emergency=False)
+                    failed_closes.extend(side_fails)
 
             if failed_closes:
                 log.error(
                     f"[{sid}] Auto-close completed with FAILURES: {failed_closes}. "
                     f"Manual intervention may be needed."
                 )
+                log_activity('auto_close_failures',
+                             f'{mode_label} close-all had failures: {failed_closes}',
+                             sid, 'error',
+                             {'failures': failed_closes, 'emergency': emergency})
 
         except Exception as e:
             log.exception(f"[{sid}] CRITICAL: _auto_close_all crashed: {e}")
         finally:
             # Bug #16 fix: ALWAYS stop the session, even if close orders failed
             self.stop(reason)
+
+    async def _close_one_side(
+        self,
+        side_key: str,
+        max_retries: int,
+        retry_delay: float,
+        emergency: bool = False,
+    ) -> list:
+        """Close all positions on one side (active + frozen).
+
+        Returns a list of failure descriptions (empty = all success).
+        Extracted from _auto_close_all to enable parallel execution.
+        """
+        session = self.session
+        sid = self.session_id
+        failed_closes = []
+
+        side_state = session.get(side_key, {})
+        option_type = 'call' if side_key == 'ce' else 'put'
+        active_strike = side_state.get('active_strike', 0)
+        expiry = session.get('params', {}).get('expiry', '')
+
+        # Choose executor method
+        async def _execute_close(symbol, lots):
+            if emergency:
+                return await self.executor.emergency_execute(
+                    symbol=symbol, side='buy', size=lots,
+                    reduce_only=True, session_id=sid,
+                )
+            else:
+                return await self.executor.smart_execute(
+                    symbol=symbol, side='buy', size=lots,
+                    reduce_only=True,
+                )
+
+        # Close active lots (original + adjustment) at active strike
+        active_lots = side_state.get('active_lots', 0)
+        if active_lots > 0 and active_strike > 0:
+            closed = False
+            for attempt in range(1, max_retries + 1):
+                try:
+                    symbol = self.initializer.build_symbol(
+                        option_type, 'BTC', active_strike, expiry,
+                    )
+                    result = await _execute_close(symbol, active_lots)
+                    if result.get('success'):
+                        close_price = result.get('fill_price', 0)
+                        # Bug #3 fix: weighted avg entry across original + adj fills
+                        orig_lots = side_state.get('original_lots', 0)
+                        orig_prem = side_state.get('original_premium', 0)
+                        weighted_sum = orig_prem * orig_lots
+                        weighted_lots = orig_lots
+                        for fill in side_state.get('adjustment_fills', []):
+                            f_lots = fill.get('lots', 0)
+                            f_prem = fill.get('premium', 0)
+                            f_strike = fill.get('strike', active_strike)
+                            if f_strike == active_strike:
+                                weighted_sum += f_prem * f_lots
+                                weighted_lots += f_lots
+                        avg_entry = weighted_sum / weighted_lots if weighted_lots > 0 else 0
+                        pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
+                        session['realized_pnl'] = (
+                            session.get('realized_pnl', 0) + pnl
+                        )
+                        log.info(
+                            f"[{sid}] Closed {active_lots} active "
+                            f"{side_key.upper()} @ {active_strike}, "
+                            f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
+                        )
+                        # Bug #13 fix: clear state
+                        side_state['original_lots'] = 0
+                        side_state['adjustment_fills'] = []
+                        side_state['active_lots'] = 0
+                        closed = True
+                        break
+                    else:
+                        log.warning(
+                            f"[{sid}] Auto-close active {side_key.upper()} "
+                            f"attempt {attempt}/{max_retries} failed: "
+                            f"{result.get('error', 'unknown')}"
+                        )
+                except Exception as e:
+                    log.error(
+                        f"[{sid}] Auto-close active {side_key.upper()} "
+                        f"attempt {attempt}/{max_retries} error: {e}"
+                    )
+                if attempt < max_retries:
+                    await asyncio.sleep(retry_delay)
+            if not closed:
+                failed_closes.append(f"{side_key.upper()} active @ {active_strike}")
+
+        # Close each frozen position at its OWN strike
+        closed_frozen_indices = []
+        for fi, frozen in enumerate(side_state.get('frozen_positions', [])):
+            frozen_strike = frozen.get('strike', 0)
+            frozen_lots = frozen.get('lots', 0)
+            frozen_entry = frozen.get('entry_premium', 0)
+
+            if frozen_lots > 0 and frozen_strike > 0:
+                closed = False
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        symbol = self.initializer.build_symbol(
+                            option_type, 'BTC', frozen_strike, expiry,
+                        )
+                        result = await _execute_close(symbol, frozen_lots)
+                        if result.get('success'):
+                            close_price = result.get('fill_price', 0)
+                            pnl = (frozen_entry - close_price) * frozen_lots * LOT_SIZE_BTC
+                            session['realized_pnl'] = (
+                                session.get('realized_pnl', 0) + pnl
+                            )
+                            log.info(
+                                f"[{sid}] Closed {frozen_lots} frozen "
+                                f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
+                            )
+                            closed_frozen_indices.append(fi)
+                            closed = True
+                            break
+                        else:
+                            log.warning(
+                                f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike} "
+                                f"attempt {attempt}/{max_retries} failed"
+                            )
+                    except Exception as e:
+                        log.error(
+                            f"Failed to auto-close frozen {side_key.upper()} "
+                            f"@ {frozen_strike}, attempt {attempt}: {e}"
+                        )
+                    if attempt < max_retries:
+                        await asyncio.sleep(retry_delay)
+                if not closed:
+                    failed_closes.append(f"{side_key.upper()} frozen @ {frozen_strike}")
+
+        # Bug #13 fix: remove successfully closed frozen positions (descending)
+        for fi in sorted(closed_frozen_indices, reverse=True):
+            side_state.get('frozen_positions', []).pop(fi)
+
+        # Recompute lots after clearing
+        recompute_side_lots(side_state)
+        session[side_key] = side_state
+
+        return failed_closes
 
     # =========================================================================
     # Helpers
@@ -2151,6 +2520,131 @@ class MMMMonitor:
     # =========================================================================
     # §14.5: Exchange Position Reconciliation
     # =========================================================================
+
+    async def _check_margin_guardian(self):
+        """
+        Run the Margin Guardian check. Called at the start of every heartbeat
+        (Step 0.5, after reconcile, before premium fetch).
+
+        Returns the margin result dict, or None if skipped/disabled.
+        On RED/CRITICAL, triggers emergency close and session stop.
+        """
+        from .mmm_activity import log_activity
+        sid = self.session_id
+        session = self.session
+
+        try:
+            rest = self._create_heartbeat_rest_client()
+            hb_num = session.get('_heartbeat_counter', 0)
+
+            result = await self._margin_guardian.check(session, rest, hb_num)
+
+            if not result.get('checked'):
+                return result
+
+            util = result['utilization_pct']
+            tier = result['tier']
+            margin_data = result.get('margin_data', {})
+
+            # Always log margin status on tier change
+            if result.get('tier_changed'):
+                log_activity(
+                    'margin_tier_change',
+                    f'⚠️ MARGIN TIER: {result["prev_tier"]} → {tier} '
+                    f'(utilization: {util:.1f}%, '
+                    f'equity: ${margin_data.get("net_equity", 0):.2f})',
+                    sid, 'warning' if tier in (TIER_YELLOW, TIER_ORANGE) else 'error',
+                    {'tier': tier, 'prev_tier': result['prev_tier'],
+                     'utilization_pct': util,
+                     'net_equity': margin_data.get('net_equity', 0),
+                     'position_margin': margin_data.get('position_margin', 0)},
+                )
+                emit_safety(
+                    sid, 'margin_tier_change', 'critical' if tier in (TIER_RED, TIER_CRITICAL) else 'alert',
+                    f'Margin {result["prev_tier"]} → {tier}: {util:.1f}% utilization',
+                    {'tier': tier, 'utilization_pct': util},
+                )
+                # Telegram alert for tier change
+                try:
+                    await alert_margin_tier_change(
+                        sid, result['prev_tier'], tier, util,
+                        margin_data.get('net_equity', 0),
+                        margin_data.get('position_margin', 0),
+                    )
+                except Exception:
+                    pass  # non-fatal
+
+            # Handle critical tiers
+            if tier == TIER_CRITICAL:
+                log.critical(
+                    f"[{sid}] MARGIN CRITICAL ({util:.1f}%) — "
+                    f"SURVIVAL MODE: closing ALL positions and stopping session"
+                )
+                log_activity(
+                    'margin_critical',
+                    f'🚨 MARGIN CRITICAL: {util:.1f}% utilization — '
+                    f'SURVIVAL MODE — closing all + stopping session',
+                    sid, 'error',
+                    {'utilization_pct': util,
+                     'net_equity': margin_data.get('net_equity', 0)},
+                )
+                # Telegram alerts for CRITICAL
+                try:
+                    await alert_emergency_close(sid, f'MARGIN CRITICAL: {util:.1f}%', tier, util)
+                except Exception:
+                    pass
+                await self._auto_close_all(
+                    f'MARGIN CRITICAL: {util:.1f}% utilization — survival mode',
+                    emergency=True,
+                )
+                self.stop(f'MARGIN CRITICAL: {util:.1f}% utilization — session stopped for safety')
+                try:
+                    await alert_session_stopped(sid, f'MARGIN CRITICAL: {util:.1f}% utilization')
+                except Exception:
+                    pass
+                return result
+
+            if tier == TIER_RED:
+                lots = result.get('lots_to_close', {'ce': 0, 'pe': 0})
+                log.critical(
+                    f"[{sid}] MARGIN RED ({util:.1f}%) — "
+                    f"emergency reducing: CE={lots['ce']}, PE={lots['pe']} lots"
+                )
+                log_activity(
+                    'margin_red',
+                    f'🔴 MARGIN RED: {util:.1f}% — emergency reduce '
+                    f'(closing CE={lots["ce"]}, PE={lots["pe"]} lots)',
+                    sid, 'error',
+                    {'utilization_pct': util, 'lots_to_close': lots},
+                )
+                # Telegram alert for RED
+                try:
+                    await alert_emergency_close(sid, f'MARGIN RED: {util:.1f}%', tier, util)
+                except Exception:
+                    pass
+                # Emergency close all positions to reduce margin quickly
+                await self._auto_close_all(
+                    f'MARGIN RED: {util:.1f}% utilization — emergency reduce',
+                    emergency=True,
+                )
+                return result
+
+            # For YELLOW/ORANGE tiers — send rapid-check alert on tier change
+            if result.get('tier_changed') and tier in (TIER_YELLOW, TIER_ORANGE):
+                try:
+                    await alert_rapid_check_activated(
+                        sid,
+                        f'Margin tier elevated to {tier}',
+                        util,
+                    )
+                except Exception:
+                    pass
+
+            return result
+
+        except Exception as e:
+            log.error(f"[{sid}] Margin guardian check failed: {e}")
+            return None
 
     async def _reconcile_exchange_positions(self):
         """
@@ -2850,6 +3344,7 @@ class MMMMonitor:
             adaptive_tier=session.get('_adaptive_tier', ''),
             wind_down_active=is_wind_down_active(session),
             portfolio_delta=portfolio_delta,
+            margin_data=getattr(self, '_last_margin_snapshot', None),
         )
 
 
@@ -2914,6 +3409,15 @@ def _save_session(session: Dict):
     the latest params from storage right before saving so hot-reload
     updates are never lost.
     """
+    # Guard: if the monitor has been stopped (e.g. by watchdog restart),
+    # do NOT save — an in-flight heartbeat completing after stop() could
+    # overwrite the watchdog's freshly-saved RUNNING status with STOPPED.
+    if session.get('_save_disabled'):
+        log.warning(
+            f"[{session.get('session_id')}] _save_session blocked: "
+            f"monitor was stopped (save_disabled flag set)"
+        )
+        return
     try:
         storage = get_storage()
         sid = session.get('session_id')
