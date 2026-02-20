@@ -835,6 +835,207 @@ def get_params_info():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@mmm_bp.route('/session/<session_id>/margin', methods=['GET'])
+def get_session_margin_status(session_id: str):
+    """
+    Get real-time margin utilization and guardian tier for a session.
+    Always fetches live exchange wallet data — margin is account-level
+    (covers ALL positions: all algos + manual trades).
+    Guardian tier thresholds come from session params.
+    """
+    import asyncio
+
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        params = session.get('params', {})
+        guardian_enabled = params.get('margin_monitor_enabled', False)
+
+        # Always fetch real-time margin data from exchange
+        from .mmm_margin_guardian import fetch_margin_utilization, evaluate_margin_tier
+        from bot.api.async_delta_client import AsyncDeltaClient
+        from config.loader import get_api_credentials
+
+        creds = get_api_credentials()
+        testnet = creds.get('testnet', False) or False
+        rest = AsyncDeltaClient(
+            api_key=creds.get('api_key', ''),
+            api_secret=creds.get('api_secret', ''),
+            testnet=testnet,
+        )
+
+        loop = asyncio.new_event_loop()
+        try:
+            margin_data = loop.run_until_complete(fetch_margin_utilization(rest))
+        finally:
+            loop.close()
+
+        if not margin_data.get('success'):
+            return jsonify({
+                'success': False,
+                'error': margin_data.get('error', 'Failed to fetch margin data'),
+            }), 502
+
+        tier_result = evaluate_margin_tier(margin_data['utilization_pct'], params)
+
+        # Get guardian state from running monitor if available
+        monitor = get_monitor(session_id)
+        guardian_state = {}
+        if monitor and hasattr(monitor, '_margin_guardian'):
+            mg = monitor._margin_guardian
+            guardian_state = {
+                'last_tier': mg.last_tier,
+                'last_utilization': mg.last_utilization,
+            }
+
+        return jsonify({
+            'success': True,
+            'enabled': guardian_enabled,
+            'tier': tier_result['tier'],
+            'utilization_pct': margin_data['utilization_pct'],
+            'actions': tier_result['actions'],
+            'headroom_pct': tier_result['headroom_pct'],
+            'next_threshold': tier_result['next_threshold'],
+            'margin_data': {
+                'position_margin': margin_data.get('position_margin', 0),
+                'order_margin': margin_data.get('order_margin', 0),
+                'available_balance': margin_data.get('available_balance', 0),
+                'balance': margin_data.get('balance', 0),
+                'net_equity': margin_data.get('net_equity', 0),
+                'blocked_margin': margin_data.get('blocked_margin', 0),
+                'portfolio_margin': margin_data.get('portfolio_margin', 0),
+                'total_margin_used': margin_data.get('total_margin_used', 0),
+                'cross_position_margin': margin_data.get('cross_position_margin', 0),
+                'cross_order_margin': margin_data.get('cross_order_margin', 0),
+                'asset_symbol': margin_data.get('asset_symbol', 'USD'),
+            },
+            'guardian_state': guardian_state,
+            'thresholds': {
+                'green': params.get('margin_green_pct', 50),
+                'yellow': params.get('margin_yellow_pct', 60),
+                'orange': params.get('margin_orange_pct', 75),
+                'red': params.get('margin_red_pct', 85),
+                'critical': params.get('margin_critical_pct', 90),
+                'target': params.get('margin_target_pct', 50),
+            },
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get margin status for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/exchange/margin', methods=['GET'])
+def get_exchange_margin():
+    """
+    Get real-time ACCOUNT-LEVEL margin utilization from Delta Exchange.
+
+    This is exchange-wide: covers ALL positions from all algos, manual trades,
+    every product. The exchange is the single source of truth for margin.
+
+    Returns wallet breakdown + all open positions.
+    """
+    import asyncio
+
+    try:
+        from .mmm_margin_guardian import fetch_margin_utilization
+        from bot.api.async_delta_client import AsyncDeltaClient
+        from config.loader import get_api_credentials
+
+        creds = get_api_credentials()
+        testnet = creds.get('testnet', False) or False
+        rest = AsyncDeltaClient(
+            api_key=creds.get('api_key', ''),
+            api_secret=creds.get('api_secret', ''),
+            testnet=testnet,
+        )
+
+        loop = asyncio.new_event_loop()
+        try:
+            # Fetch wallet + positions in parallel
+            async def _fetch_all():
+                import asyncio as _aio
+                margin_task = fetch_margin_utilization(rest)
+                positions_task = rest.get_positions_margined()
+                margin_data, raw_positions = await _aio.gather(
+                    margin_task, positions_task, return_exceptions=True
+                )
+                # Handle exceptions from gather
+                if isinstance(margin_data, Exception):
+                    margin_data = {'success': False, 'error': str(margin_data)}
+                if isinstance(raw_positions, Exception):
+                    raw_positions = []
+                return margin_data, raw_positions
+
+            margin_data, raw_positions = loop.run_until_complete(_fetch_all())
+        finally:
+            loop.close()
+
+        if not margin_data.get('success'):
+            return jsonify({
+                'success': False,
+                'error': margin_data.get('error', 'Failed to fetch exchange margin'),
+            }), 502
+
+        # Filter and format open positions
+        positions = []
+        for pos in raw_positions:
+            size = float(pos.get('size', 0) or 0)
+            if size == 0:
+                continue
+            entry_price = float(pos.get('entry_price', 0) or 0)
+            mark_price = float(pos.get('mark_price', 0) or 0)
+            margin = float(pos.get('margin', 0) or 0)
+            unrealized = float(pos.get('unrealized_pnl', 0) or 0)
+            product = pos.get('product', {})
+            symbol = product.get('symbol', pos.get('product_symbol', 'UNKNOWN'))
+            contract_type = product.get('contract_type', '')
+
+            positions.append({
+                'symbol': symbol,
+                'size': size,
+                'side': 'long' if size > 0 else 'short',
+                'entry_price': entry_price,
+                'mark_price': mark_price,
+                'margin': margin,
+                'unrealized_pnl': unrealized,
+                'contract_type': contract_type,
+                'product_id': pos.get('product_id', 0),
+            })
+
+        # Sort: largest position first (margin may be 0 in portfolio mode)
+        positions.sort(key=lambda p: abs(p['size']), reverse=True)
+
+        utilization = margin_data['utilization_pct']
+
+        return jsonify({
+            'success': True,
+            'utilization_pct': utilization,
+            'margin_data': {
+                'position_margin': margin_data.get('position_margin', 0),
+                'order_margin': margin_data.get('order_margin', 0),
+                'available_balance': margin_data.get('available_balance', 0),
+                'balance': margin_data.get('balance', 0),
+                'net_equity': margin_data.get('net_equity', 0),
+                'blocked_margin': margin_data.get('blocked_margin', 0),
+                'portfolio_margin': margin_data.get('portfolio_margin', 0),
+                'total_margin_used': margin_data.get('total_margin_used', 0),
+                'cross_position_margin': margin_data.get('cross_position_margin', 0),
+                'cross_order_margin': margin_data.get('cross_order_margin', 0),
+                'asset_symbol': margin_data.get('asset_symbol', 'USD'),
+            },
+            'positions': positions,
+            'position_count': len(positions),
+            'timestamp': margin_data.get('timestamp', 0),
+        })
+
+    except Exception as e:
+        log.exception("Failed to get exchange margin")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @mmm_bp.route('/session/<session_id>/params', methods=['GET'])
 def get_session_params(session_id: str):
     """Get current parameters for a session."""

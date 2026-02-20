@@ -139,24 +139,34 @@ def get_dashboard():
         
         # Extract positions for Greeks calculation
         positions = positions_data.get('positions', []) if isinstance(positions_data, dict) else []
-        
+
         # Calculate portfolio Greeks server-side (Phase 2 optimization)
         portfolio_greeks = calculate_portfolio_greeks(positions)
-        
+
+        # Phase 5 Optimization: Use content-based last_modified
+        # Generate a fingerprint from position symbols + sizes + prices so frontend
+        # can skip re-renders when nothing actually changed
+        pos_fingerprint = '|'.join(
+            f"{p.get('product_symbol','')},{p.get('size',0)},{p.get('best_bid',0)},{p.get('best_ask',0)},{p.get('unrealized_pnl',0)}"
+            for p in positions
+        )
+        pending_orders_list = pending_data.get('orders', []) if isinstance(pending_data, dict) else []
+        content_hash = hash(pos_fingerprint + str(len(pending_orders_list)))
+
         # Response time tracking
         response_time_ms = (time.time() - start_time) * 1000
-        
+
         # Build unified response
         response = {
             'success': True,
             'positions': positions,
-            'pending_orders': pending_data.get('orders', []) if isinstance(pending_data, dict) else [],
+            'pending_orders': pending_orders_list,
             'futures_positions': futures_data.get('positions', []) if isinstance(futures_data, dict) else [],
             'status': status_data if isinstance(status_data, dict) else {},
             'portfolio_greeks': portfolio_greeks,
-            'last_modified': int(time.time()),
+            'last_modified': content_hash,
             'response_time_ms': round(response_time_ms, 2),
-            'optimization': 'phase_2_unified_endpoint'
+            'optimization': 'phase_5_content_hash'
         }
         
         log.info(f"Dashboard data fetched in {response_time_ms:.2f}ms")

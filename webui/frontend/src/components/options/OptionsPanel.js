@@ -119,6 +119,10 @@ import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
 const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
 const OptionsActivityPanel = lazy(() => import('./OptionsActivityPanel'));
 
+// Phase 5 Optimization: IV cache with 60s TTL to avoid 17+ external API calls per poll
+const IV_CACHE_TTL_MS = 60000; // 60 seconds - IV doesn't change meaningfully every second
+const _ivCache = { data: {}, timestamp: 0 };
+
 // ============================================================================
 // PHASE 1 OPTIMIZATION: React.memo for SortableRow
 // Prevents unnecessary re-renders when position data hasn't changed
@@ -1213,35 +1217,29 @@ const OptionsPanel = () => {
       const { data } = await api.get('/api/options/dashboard');
       
       if (data?.success) {
-        // Phase 3: Change detection - skip update if data unchanged
+        // Phase 5: Content-hash based change detection - skip ALL state updates if unchanged
         if (data.last_modified && data.last_modified === lastModifiedRef.current) {
-          console.log('⚡ Dashboard unchanged - skipping update (Phase 3 optimization)');
-          return true;
+          return true; // Data unchanged - skip re-render entirely
         }
         lastModifiedRef.current = data.last_modified;
-        
+
         // Update all state from single response
         const dashPositions = data.positions || [];
         const dashStatus = data.status || {};
         const dashPendingOrders = data.pending_orders || [];
         const dashFuturesPositions = data.futures_positions || [];
-        
-        // Enrich positions with IV data (still needed client-side for now)
+
+        // Phase 5: IV enrichment now uses 60s cache - instant on cache hit
         const positionsWithIV = await enrichPositionsWithIV(dashPositions);
-        
+
         setPositions(positionsWithIV);
         setStatus(dashStatus);
         setPendingOrders(dashPendingOrders);
         setFuturesPositions(dashFuturesPositions);
-        
+
         hasPositionsRef.current = positionsWithIV.length > 0;
         setError(null);
-        
-        // Log performance metrics
-        if (data.response_time_ms) {
-          console.log(`⚡ Dashboard loaded in ${data.response_time_ms}ms (Phase 2 unified endpoint)`);
-        }
-        
+
         return true;
       } else {
         throw new Error(data?.error || 'Dashboard fetch failed');
@@ -1467,50 +1465,72 @@ const OptionsPanel = () => {
   }, [futuresPositions, selectedFuturesState]);
 
   // Enrich positions with IV data from Delta Exchange
+  // Phase 5 Optimization: Uses module-level cache with 60s TTL
   const enrichPositionsWithIV = async (positions) => {
     try {
-      // Fetch IV data for all positions' symbols
       const symbols = positions.map(pos => pos.product_symbol).filter(Boolean);
+      if (symbols.length === 0) return positions;
 
-      if (symbols.length === 0) {
-        return positions;
+      const now = Date.now();
+      const cacheAge = now - _ivCache.timestamp;
+
+      // Check if cache is still fresh
+      if (cacheAge < IV_CACHE_TTL_MS && Object.keys(_ivCache.data).length > 0) {
+        // Use cached IV data - only fetch for symbols not in cache
+        const uncachedSymbols = symbols.filter(s => _ivCache.data[s] === undefined);
+
+        if (uncachedSymbols.length === 0) {
+          // All symbols cached - instant return
+          return positions.map(pos => ({
+            ...pos,
+            iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null
+          }));
+        }
+
+        // Only fetch uncached symbols
+        const newIvData = await fetchIVForSymbols(uncachedSymbols);
+        Object.assign(_ivCache.data, newIvData);
+
+        return positions.map(pos => ({
+          ...pos,
+          iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null
+        }));
       }
 
-      // Fetch ticker data from Delta Exchange API (public endpoint, no auth needed)
-      const tickerPromises = symbols.map(async (symbol) => {
-        try {
-          const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
-          const result = await response.json();
+      // Cache expired - refresh all
+      const ivMap = await fetchIVForSymbols(symbols);
+      _ivCache.data = ivMap;
+      _ivCache.timestamp = now;
 
-          if (result?.success && result?.result) {
-            const quotes = result.result.quotes || {};
-            // Use average of bid_iv and ask_iv
-            const bidIV = parseFloat(quotes.bid_iv) || 0;
-            const askIV = parseFloat(quotes.ask_iv) || 0;
-            const avgIV = bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV);
-
-            return { symbol, iv: avgIV };
-          }
-          return { symbol, iv: null };
-        } catch (err) {
-          console.warn(`Failed to fetch IV for ${symbol}:`, err.message);
-          return { symbol, iv: null };
-        }
-      });
-
-      const ivData = await Promise.all(tickerPromises);
-      const ivMap = Object.fromEntries(ivData.map(d => [d.symbol, d.iv]));
-
-      // Enrich positions with IV data
       return positions.map(pos => ({
         ...pos,
-        iv: ivMap[pos.product_symbol] || null
+        iv: ivMap[pos.product_symbol] ?? null
       }));
     } catch (err) {
       console.error('Failed to enrich positions with IV:', err);
-      // Return original positions if enrichment fails
       return positions;
     }
+  };
+
+  // Fetch IV for specific symbols from Delta Exchange
+  const fetchIVForSymbols = async (symbols) => {
+    const tickerPromises = symbols.map(async (symbol) => {
+      try {
+        const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
+        const result = await response.json();
+        if (result?.success && result?.result) {
+          const quotes = result.result.quotes || {};
+          const bidIV = parseFloat(quotes.bid_iv) || 0;
+          const askIV = parseFloat(quotes.ask_iv) || 0;
+          return { symbol, iv: bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV) };
+        }
+        return { symbol, iv: null };
+      } catch {
+        return { symbol, iv: null };
+      }
+    });
+    const ivData = await Promise.all(tickerPromises);
+    return Object.fromEntries(ivData.map(d => [d.symbol, d.iv]));
   };
 
   // Load SL/TP settings for all positions
@@ -1670,17 +1690,14 @@ const OptionsPanel = () => {
   }, [fetchDashboard, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, fetchStatus, fetchPositions, fetchPendingOrders, fetchFuturesPositions]);
 
   // Auto-refresh every pollInterval ms - use unified endpoint (Phase 2)
+  // Phase 5 Optimization: Removed SL/TP/MaxLoss/TP settings from poll loop
+  // Those are user-configured and only change when user explicitly modifies them
   useEffect(() => {
     const interval = setInterval(async () => {
-      // Use unified endpoint for faster polling
       await fetchDashboard();
-      // Refresh auxiliary data (SL/TP settings, Max Loss, Take Profit)
-      loadSLTPSettings();
-      loadMaxLossSettings();
-      loadTakeProfitSettings();
     }, pollInterval);
     return () => clearInterval(interval);
-  }, [fetchDashboard, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, pollInterval]);
+  }, [fetchDashboard, pollInterval]);
 
   // ============================================================================
   // PHASE 2 OPTIMIZATION: Persistent WebSocket Connection
@@ -1857,108 +1874,72 @@ const OptionsPanel = () => {
   }, [turboMode, sortedPositions, selectedRowIndex, lastUsedSize, closeDialog.open, addDialog.open]);
 
   // Day 1: Calculate Probability of Profit (PoP) for each position
+  // Phase 5 Optimization: Throttled to recalculate every 30s or when position count changes
+  const popLastCalcRef = useRef(0);
+  const popLastCountRef = useRef(0);
   useEffect(() => {
     if (!sortedPositions || sortedPositions.length === 0) {
-      console.log('PoP: No positions to calculate');
-      setPopData({});
+      if (Object.keys(popData).length > 0) setPopData({});
       return;
     }
 
-    console.log(`PoP: Starting calculation for ${sortedPositions.length} positions`);
-    console.log('PoP: Index prices:', indexPrices);
+    // Only recalculate if: position count changed OR 30 seconds elapsed
+    const now = Date.now();
+    const positionSymbols = sortedPositions.map(p => p.product_symbol).sort().join(',');
+    const posCountChanged = positionSymbols !== popLastCountRef.current;
+    const timeElapsed = now - popLastCalcRef.current > 30000;
+
+    if (!posCountChanged && !timeElapsed) return;
+
+    popLastCalcRef.current = now;
+    popLastCountRef.current = positionSymbols;
 
     const newPopData = {};
-    let calculatedCount = 0;
-    let skippedReasons = {};
 
     sortedPositions.forEach((pos) => {
-      const symbol = pos.product_symbol;
-
-      // Parse symbol: C-BTC-113000-300126 or P-BTC-69000-270226
       const symbolParts = (pos.product_symbol || '').split('-');
-      if (symbolParts.length < 4) {
-        skippedReasons[symbol] = 'Invalid symbol format';
-        return;
-      }
+      if (symbolParts.length < 4) return;
 
       const optionTypeChar = symbolParts[0];
-      const underlying = symbolParts[1]; // BTC or ETH
+      const underlying = symbolParts[1];
       const strikePrice = parseFloat(symbolParts[2]);
-      const expiryStr = symbolParts[3]; // DDMMYY format (e.g., 270226)
+      const expiryStr = symbolParts[3];
 
-      // Validate option type
       const optionType = optionTypeChar === 'C' ? 'call' : optionTypeChar === 'P' ? 'put' : null;
-      if (!optionType) {
-        skippedReasons[symbol] = `Unknown option type: ${optionTypeChar}`;
-        return;
-      }
+      if (!optionType) return;
 
-      // Get spot price - try greeks.spot first, then indexPrices
       let spotPrice = pos.greeks?.spot || indexPrices[underlying] || 0;
-      if (!spotPrice || spotPrice <= 0) {
-        skippedReasons[symbol] = `No spot price for ${underlying} (greeks.spot: ${pos.greeks?.spot}, indexPrices: ${indexPrices[underlying]})`;
-        return;
-      }
-
-      // Validate strike price
-      if (!strikePrice || strikePrice <= 0) {
-        skippedReasons[symbol] = `Invalid strike price: ${strikePrice}`;
-        return;
-      }
-
-      // Parse expiry date from DDMMYY format to full date
-      if (!expiryStr || expiryStr.length !== 6) {
-        skippedReasons[symbol] = `Invalid expiry format: ${expiryStr} (expected DDMMYY)`;
-        return;
-      }
-
+      if (!spotPrice || spotPrice <= 0) return;
+      if (!strikePrice || strikePrice <= 0) return;
+      if (!expiryStr || expiryStr.length !== 6) return;
 
       try {
-        // Parse DDMMYY to full date
         const day = parseInt(expiryStr.slice(0, 2));
-        const month = parseInt(expiryStr.slice(2, 4)) - 1; // JS months are 0-indexed
-        const year = 2000 + parseInt(expiryStr.slice(4, 6)); // Convert YY to YYYY
-        const expiryDate = new Date(year, month, day, 8, 0, 0); // 8am UTC (Delta Exchange settlement)
-        const timeToExpiry = (expiryDate - new Date()) / (1000 * 60 * 60 * 24 * 365); // in years
+        const month = parseInt(expiryStr.slice(2, 4)) - 1;
+        const year = 2000 + parseInt(expiryStr.slice(4, 6));
+        const expiryDate = new Date(year, month, day, 8, 0, 0);
+        const timeToExpiry = (expiryDate - new Date()) / (1000 * 60 * 60 * 24 * 365);
 
-        if (timeToExpiry <= 0) {
-          skippedReasons[symbol] = `Expired (${expiryDate.toLocaleDateString()})`;
-          return;
-        }
+        if (timeToExpiry <= 0) return;
 
-        // Get IV - try multiple sources
-        // 1. Check if there's an 'iv' field in position
-        // 2. Calculate from greeks if available
-        // 3. Default to 80% (0.8)
-        let volatility = pos.iv || 0.8; // Default 80% IV
+        let volatility = pos.iv || 0.8;
 
-        // If we have vega and other greeks, IV might be calculable
-        // For now, use default since IV isn't in the response
-
-        // Calculate PoP using Black-Scholes
         const pop = calculatePoP({
           spotPrice,
           strike: strikePrice,
           entryPrice: Math.abs(pos.entry_price) || 0,
           timeToExpiry,
           volatility,
-          optionType, // 'call' or 'put' parsed from symbol
-          side: pos.size > 0 ? 'buy' : 'sell', // Long = buy, Short = sell
+          optionType,
+          side: pos.size > 0 ? 'buy' : 'sell',
         });
 
-        newPopData[pos.product_symbol] = pop * 100; // Convert to percentage
-        calculatedCount++;
-        console.log(`PoP: ✓ ${symbol} = ${(pop * 100).toFixed(1)}% (spot: $${spotPrice.toFixed(0)}, strike: $${strikePrice}, DTE: ${(timeToExpiry * 365).toFixed(0)}d, IV: ${(volatility * 100).toFixed(0)}%)`);
-      } catch (err) {
-        skippedReasons[symbol] = `Error: ${err.message}`;
-        console.warn(`PoP: Failed for ${symbol}:`, err);
+        newPopData[pos.product_symbol] = pop * 100;
+      } catch {
+        // Skip failed calculations silently
       }
     });
 
-    console.log(`PoP: Calculated ${calculatedCount} of ${sortedPositions.length} positions`);
-    if (Object.keys(skippedReasons).length > 0) {
-      console.log('PoP: Skipped reasons:', skippedReasons);
-    }
     setPopData(newPopData);
   }, [sortedPositions, indexPrices]);
 

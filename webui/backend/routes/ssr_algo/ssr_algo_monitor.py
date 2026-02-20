@@ -290,6 +290,9 @@ class SSRPriceMonitor:
         self.last_price: Optional[float] = None
         self.last_check_time: Optional[datetime] = None
         self.adjustment_count: int = 0
+        self._last_regime_check: Optional[datetime] = None
+        self._last_rv_check: Optional[datetime] = None
+        self._rv_record_counter: int = 0
         
     def start(self):
         """Start the monitoring thread."""
@@ -549,7 +552,238 @@ class SSRPriceMonitor:
                 
                 self.last_price = current_price
                 self.last_check_time = datetime.now()
-                
+
+                # === DTE Phase Check (Phase 6) ===
+                _dte_override_threshold = None
+                try:
+                    from .ssr_algo_dte_manager import get_dte_manager
+                    dte_mgr = get_dte_manager()
+                    dte_phase = dte_mgr.get_dte_phase(session)
+
+                    # Log phase transitions
+                    current_phase = session.get('current_dte_phase')
+                    if current_phase != dte_phase.get('phase'):
+                        add_session_log(self.session_id,
+                            f"DTE Phase: {dte_phase['phase_name']} (DTE={dte_phase['dte']:.1f})",
+                            'info')
+                        self.update_session(self.session_id, {
+                            'current_dte_phase': dte_phase['phase']
+                        })
+
+                    # Get DTE-adjusted delta threshold for this cycle
+                    cycle_config = dte_mgr.apply_dte_adjustments(session, dte_phase)
+                    _dte_override_threshold = cycle_config.get('delta_threshold')
+                except Exception as e:
+                    log.debug(f"DTE phase check skipped: {e}")
+                # === End DTE Phase Check ===
+
+                # === Regime Check (Phase 7) — every 5 minutes ===
+                try:
+                    now = datetime.now()
+                    should_check_regime = (
+                        self._last_regime_check is None or
+                        (now - self._last_regime_check).total_seconds() >= 300
+                    )
+                    if should_check_regime and current_price:
+                        from .ssr_algo_regime import get_regime_adapter
+                        regime_adapter = get_regime_adapter()
+                        underlying = session.get('underlying', 'BTC')
+                        regime_adj = regime_adapter.get_regime_adjustments(underlying, current_price)
+                        self._last_regime_check = now
+
+                        prev_regime = session.get('current_regime')
+                        new_regime = regime_adj.get('regime')
+                        if prev_regime != new_regime:
+                            add_session_log(self.session_id,
+                                f"Regime: {regime_adj.get('description', new_regime)}",
+                                'info')
+                            self.update_session(self.session_id, {
+                                'current_regime': new_regime,
+                                'regime_details': regime_adj.get('details', {})
+                            })
+                except Exception as e:
+                    log.debug(f"Regime check skipped: {e}")
+                # === End Regime Check ===
+
+                # === RV/IV Tracker (Phase 10) ===
+                try:
+                    from .ssr_algo_rv_tracker import get_rv_tracker
+                    rv_tracker = get_rv_tracker()
+                    underlying = session.get('underlying', 'BTC')
+
+                    # Record price every ~60 cycles (~5 min at 5s interval)
+                    self._rv_record_counter += 1
+                    if self._rv_record_counter >= 60:
+                        self._rv_record_counter = 0
+                        rv_tracker.record_price(underlying, current_price)
+
+                        # Compute RV/IV snapshot every ~10 min
+                        now = datetime.now()
+                        if (self._last_rv_check is None or
+                                (now - self._last_rv_check).total_seconds() >= 600):
+                            self._last_rv_check = now
+                            expiry = session.get('expiry', '')
+                            if expiry:
+                                rv_snapshot = rv_tracker.get_rv_iv_snapshot(underlying, expiry)
+                                if rv_snapshot.get('signal') != 'INSUFFICIENT_DATA':
+                                    self.update_session(self.session_id, {
+                                        'rv_iv_snapshot': rv_snapshot
+                                    })
+                                    # Warn if realized vol exceeds implied
+                                    if rv_snapshot.get('signal') == 'DANGER':
+                                        add_session_log(self.session_id,
+                                            f"RV/IV WARNING: {rv_snapshot.get('message', '')}",
+                                            'warn')
+                except Exception as e:
+                    log.debug(f"RV tracker skipped: {e}")
+                # === End RV/IV Tracker ===
+
+                # === Multi-Session Correlation Monitor (Phase 10) ===
+                try:
+                    from .ssr_algo_rv_tracker import get_rv_tracker
+                    rv_tracker = get_rv_tracker()
+                    underlying = session.get('underlying', 'BTC')
+
+                    # Only check every ~5 minutes, and only if multiple underlyings tracked
+                    price_histories = rv_tracker._price_history
+                    if (len(price_histories) >= 2 and
+                            self._rv_record_counter == 0 and  # piggyback on RV cycle
+                            self._last_rv_check is not None):
+                        # Calculate BTC-ETH correlation if both exist
+                        symbols = list(price_histories.keys())
+                        if len(symbols) >= 2:
+                            prices_a = [p for _, p in price_histories[symbols[0]]]
+                            prices_b = [p for _, p in price_histories[symbols[1]]]
+                            min_len = min(len(prices_a), len(prices_b), 30)
+                            if min_len >= 10:
+                                a = prices_a[-min_len:]
+                                b = prices_b[-min_len:]
+                                import statistics
+                                mean_a = statistics.mean(a)
+                                mean_b = statistics.mean(b)
+                                std_a = statistics.stdev(a) if len(a) > 1 else 1
+                                std_b = statistics.stdev(b) if len(b) > 1 else 1
+                                if std_a > 0 and std_b > 0:
+                                    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b)) / (min_len - 1)
+                                    correlation = cov / (std_a * std_b)
+                                    correlation = max(-1.0, min(1.0, correlation))
+
+                                    prev_corr = session.get('cross_asset_correlation')
+                                    self.update_session(self.session_id, {
+                                        'cross_asset_correlation': round(correlation, 3)
+                                    })
+
+                                    # Log significant correlation changes
+                                    if prev_corr is not None and abs(correlation - prev_corr) > 0.1:
+                                        level = 'warn' if correlation > 0.95 else 'info'
+                                        msg = (f"Cross-asset correlation: {correlation:.2f} — "
+                                               f"{'HIGH RISK: portfolio heavily correlated' if correlation > 0.95 else 'diversification benefit'}")
+                                        add_session_log(self.session_id, msg, level)
+                except Exception as e:
+                    log.debug(f"Correlation check skipped: {e}")
+                # === End Correlation Monitor ===
+
+                # === Live Greeks & MTM Calculation (Phase 1) ===
+                if session.get('positions'):
+                    try:
+                        from .ssr_algo_greeks import get_greeks_fetcher
+                        greeks_fetcher = get_greeks_fetcher()
+
+                        position_greeks = greeks_fetcher.fetch_position_greeks(session)
+
+                        if position_greeks:
+                            portfolio_greeks = greeks_fetcher.calculate_portfolio_greeks(
+                                position_greeks, session.get('underlying', 'BTC')
+                            )
+                            mtm_pnl = greeks_fetcher.calculate_mtm_pnl(session, position_greeks)
+
+                            self.update_session(self.session_id, {
+                                'live_greeks': portfolio_greeks,
+                                'live_pnl': mtm_pnl,
+                                'greeks_updated_at': datetime.utcnow().isoformat()
+                            })
+                    except Exception as e:
+                        log.debug(f"Greeks/MTM calculation skipped: {e}")
+                # === End Live Greeks & MTM ===
+
+                # Re-read session to get updated live_pnl/live_greeks
+                session = self.get_session(self.session_id)
+                if not session:
+                    break
+
+                # === Exit Condition Checks (Phase 2) ===
+                if session.get('positions') and session.get('live_pnl'):
+                    try:
+                        from .ssr_algo_exit_manager import get_exit_manager
+                        exit_mgr = get_exit_manager()
+
+                        exit_check = exit_mgr.check_exit_conditions(session)
+
+                        if exit_check.get('should_exit'):
+                            reason = exit_check['reason']
+                            details = exit_check.get('details', {})
+                            log.warning(f"[{self.session_id}] EXIT TRIGGERED: {reason}")
+                            add_session_log(self.session_id,
+                                f"EXIT TRIGGERED: {reason} — {details.get('message', '')}",
+                                'trigger')
+
+                            exit_result = exit_mgr.execute_full_exit(self.session_id, reason)
+
+                            if exit_result.get('success'):
+                                add_session_log(self.session_id,
+                                    f"All positions closed. Reason: {reason}. Orders: {exit_result.get('orders_placed', 0)}",
+                                    'success')
+                                self._running = False
+                                break
+                            else:
+                                add_session_log(self.session_id,
+                                    f"Exit attempted but had issues: {exit_result.get('error')}",
+                                    'error')
+                    except Exception as e:
+                        log.debug(f"Exit check skipped: {e}")
+                # === End Exit Condition Checks ===
+
+                # === Delta-Based Hedging (Phase 3) ===
+                if session.get('positions') and session.get('live_greeks'):
+                    try:
+                        from .ssr_algo_delta_hedger import get_delta_hedger
+                        delta_hedger = get_delta_hedger()
+
+                        hedge_config = session.get('delta_hedge_config', {})
+                        if hedge_config.get('enabled', False):
+                            hedge_check = delta_hedger.check_delta_hedge_needed(
+                                session, override_threshold=_dte_override_threshold)
+
+                            if hedge_check.get('hedge_needed'):
+                                hedge_type = hedge_check['hedge_type']
+                                direction = hedge_check['direction']
+                                current_delta = hedge_check['current_delta']
+
+                                add_session_log(self.session_id,
+                                    f"Delta hedge triggered: {hedge_type} ({direction}) — delta={current_delta:.4f}",
+                                    'trigger')
+
+                                if hedge_type == 'micro':
+                                    result = delta_hedger.execute_micro_hedge(session, direction)
+                                elif hedge_type == 'standard':
+                                    result = delta_hedger.execute_standard_hedge(session, direction)
+                                elif hedge_type == 'emergency':
+                                    result = delta_hedger.execute_emergency_hedge(session, direction)
+                                else:
+                                    result = {'success': False, 'error': f'Unknown hedge type: {hedge_type}'}
+
+                                if result.get('success'):
+                                    add_session_log(self.session_id,
+                                        f"{hedge_type} hedge completed. Orders: {result.get('orders_placed', 0)}",
+                                        'success')
+                                else:
+                                    add_session_log(self.session_id,
+                                        f"{hedge_type} hedge failed: {result.get('error', 'unknown')}",
+                                        'error')
+                    except Exception as e:
+                        log.debug(f"Delta hedge check skipped: {e}")
+                # === End Delta-Based Hedging ===
+
                 # Calculate payoff and find max loss points
                 payoff_data = self.payoff_calc.calculate_session_payoff(session)
                 max_loss_points = payoff_data.get('max_loss_points', {})
@@ -591,6 +825,17 @@ class SSRPriceMonitor:
                                 'warn'
                             )
                 
+                if threshold_exceeded:
+                    # If delta hedging is enabled, extend dwell as backstop
+                    # (delta hedger should have caught it first)
+                    if session.get('delta_hedge_config', {}).get('enabled', False):
+                        backstop_dwell_min = 20  # 20 min when delta hedging active
+                        if self.dwell_tracker.zone_entry_time:
+                            actual_time = (datetime.now() - self.dwell_tracker.zone_entry_time).total_seconds() / 60
+                            if actual_time < backstop_dwell_min:
+                                # Not enough time for backstop — skip this cycle
+                                threshold_exceeded = False
+
                 if threshold_exceeded:
                     # CHECK 3: Circuit breakers before adjustment
                     breaker_triggered, breaker_reason = CircuitBreaker.check_breakers(session)

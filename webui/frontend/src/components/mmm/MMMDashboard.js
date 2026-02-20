@@ -74,6 +74,7 @@ import MMMAlgoCalculations from './MMMAlgoCalculations';
 import MMMPnLChart from './MMMPnLChart';
 import MMMBothSidesAlert from './MMMBothSidesAlert';
 import MMMSafetyPanel from './MMMSafetyPanel';
+import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
@@ -1160,7 +1161,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <Tab label="Algo Calculations" />
         <Tab label="Consolidated" />
         <Tab label="Greeks & IV" />
-        <Tab label="Analytics" icon={<i className="fas fa-chart-line" />} />
+        <Tab label="Analytics" />
+        <Tab label="Margin" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -1496,6 +1498,14 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <MMMInstitutionalAnalytics />
       )}
 
+      {/* Tab 11: Margin — Exchange-level margin & risk dashboard */}
+      {detailTab === 11 && (
+        <MMMMarginGuardianPanel
+          session={session}
+          sessionId={session?.session_id || session?.id}
+        />
+      )}
+
     </Box>
   );
 };
@@ -1602,9 +1612,17 @@ const MMMDashboard = () => {
     try {
       let result;
       switch (action) {
-        case 'start':
+        case 'start': {
+          // Guard: prevent starting a session that is not IDLE
+          const sess = sessions.find(s => s.session_id === sessionId);
+          const currentStatus = sess?.status || sess?.strategy_status;
+          if (currentStatus && currentStatus !== 'IDLE') {
+            setSnackbar({ open: true, message: `Session is already ${currentStatus}`, severity: 'info' });
+            return;
+          }
           result = await mmmService.startSession(sessionId);
           break;
+        }
         case 'pause':
           result = await mmmService.pauseSession(sessionId);
           break;

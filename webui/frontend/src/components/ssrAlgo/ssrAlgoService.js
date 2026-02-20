@@ -201,6 +201,68 @@ const ssrAlgoService = {
   },
 
   /**
+   * Exit a session — close all positions via market orders
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<{success: boolean, orders_placed: number, message: string}>}
+   */
+  async exitSession(sessionId) {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/exit`);
+    return data;
+  },
+
+  /**
+   * Get live Greeks and MTM P&L for a session (forces fresh fetch)
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<{success: boolean, live_greeks: Object, live_pnl: Object, position_greeks: Array}>}
+   */
+  async getSessionGreeks(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/greeks`);
+    return data;
+  },
+
+  /**
+   * Get analytics for a specific session
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<{success: boolean, analytics: Object}>}
+   */
+  async getSessionAnalytics(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/analytics`);
+    return data;
+  },
+
+  /**
+   * Get aggregate analytics across all sessions
+   * @returns {Promise<{success: boolean, total_sessions: number, win_rate: number, total_pnl: number}>}
+   */
+  async getAggregateAnalytics() {
+    const { data } = await api.get(`${BASE_URL}/analytics`);
+    return data;
+  },
+
+  /**
+   * Get RV/IV analysis for a session
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<{success: boolean, snapshot: Object, history: Array}>}
+   */
+  async getSessionRvIv(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/rv_iv`);
+    return data;
+  },
+
+  /**
+   * Roll session to next expiry
+   * @param {string} sessionId - Session ID
+   * @param {string} nextExpiry - Next expiry in DDMMYYYY format
+   * @returns {Promise<{success: boolean, new_session_id: string}>}
+   */
+  async rollSession(sessionId, nextExpiry) {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/roll`, {
+      next_expiry: nextExpiry
+    });
+    return data;
+  },
+
+  /**
    * Health check
    * @returns {Promise<{success: boolean, module: string, status: string}>}
    */

@@ -524,6 +524,32 @@ const mmmService = {
     );
     return data;
   },
+
+  // =========================================================================
+  // Margin Guardian
+  // =========================================================================
+
+  /**
+   * Get real-time margin utilization and guardian tier for a session.
+   * Queries exchange wallet and returns current status.
+   * @param {string} sessionId
+   */
+  async getMarginStatus(sessionId) {
+    const { data } = await api.get(
+      `${BASE_URL}/session/${sessionId}/margin`
+    );
+    return data;
+  },
+
+  /**
+   * Get ACCOUNT-LEVEL exchange margin utilization.
+   * Covers ALL positions from all algos + manual trades.
+   * The exchange is the single source of truth for margin.
+   */
+  async getExchangeMargin() {
+    const { data } = await api.get(`${BASE_URL}/exchange/margin`);
+    return data;
+  },
 };
 
 export default mmmService;

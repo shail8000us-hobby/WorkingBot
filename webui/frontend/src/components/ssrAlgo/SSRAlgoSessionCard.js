@@ -37,6 +37,7 @@ import {
   TrendingDown as TrendingDownIcon,
   Warning as WarningIcon,
   Timer as TimerIcon,
+  ShowChart as ShowChartIcon,
 } from '@mui/icons-material';
 import ssrAlgoService from './ssrAlgoService';
 
@@ -443,6 +444,94 @@ const SSRAlgoSessionCard = ({ session, onRefresh, onDelete }) => {
             </Typography>
           </Grid>
         </Grid>
+
+        {/* IV Rank & DTE Phase — Phase 4.4 / 9.3 */}
+        {(session?.iv_context_at_entry || session?.current_dte_phase || session?.live_pnl) && (
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+            {/* IV Rank Badge */}
+            {session?.iv_context_at_entry && (
+              <Chip
+                size="small"
+                icon={<ShowChartIcon />}
+                label={`IV Rank: ${Math.round(session.iv_context_at_entry.iv_rank || 0)}% ${(session.iv_context_at_entry.iv_classification || '').toUpperCase()}`}
+                sx={{
+                  fontWeight: 600,
+                  bgcolor: (session.iv_context_at_entry.iv_rank || 0) >= 50
+                    ? 'rgba(34, 197, 94, 0.2)'
+                    : (session.iv_context_at_entry.iv_rank || 0) >= 30
+                    ? 'rgba(251, 191, 36, 0.2)'
+                    : 'rgba(239, 68, 68, 0.2)',
+                  color: (session.iv_context_at_entry.iv_rank || 0) >= 50
+                    ? '#4ade80'
+                    : (session.iv_context_at_entry.iv_rank || 0) >= 30
+                    ? '#fbbf24'
+                    : '#f87171',
+                  border: '1px solid',
+                  borderColor: (session.iv_context_at_entry.iv_rank || 0) >= 50
+                    ? 'rgba(34, 197, 94, 0.5)'
+                    : (session.iv_context_at_entry.iv_rank || 0) >= 30
+                    ? 'rgba(251, 191, 36, 0.5)'
+                    : 'rgba(239, 68, 68, 0.5)',
+                }}
+              />
+            )}
+            {/* DTE Phase Badge */}
+            {session?.current_dte_phase && (
+              <Chip
+                size="small"
+                icon={<TimerIcon />}
+                label={
+                  session.current_dte_phase === 'early_life' ? 'Early Life (>21 DTE)' :
+                  session.current_dte_phase === 'peak_theta' ? 'Peak Theta (7-21 DTE)' :
+                  session.current_dte_phase === 'gamma_danger' ? 'Gamma Danger (3-7 DTE)' :
+                  session.current_dte_phase === 'exit_zone' ? 'EXIT ZONE (<3 DTE)' :
+                  session.current_dte_phase
+                }
+                sx={{
+                  fontWeight: 600,
+                  bgcolor:
+                    session.current_dte_phase === 'peak_theta' ? 'rgba(34, 197, 94, 0.2)' :
+                    session.current_dte_phase === 'early_life' ? 'rgba(59, 130, 246, 0.2)' :
+                    session.current_dte_phase === 'gamma_danger' ? 'rgba(251, 191, 36, 0.2)' :
+                    'rgba(239, 68, 68, 0.25)',
+                  color:
+                    session.current_dte_phase === 'peak_theta' ? '#4ade80' :
+                    session.current_dte_phase === 'early_life' ? '#60a5fa' :
+                    session.current_dte_phase === 'gamma_danger' ? '#fbbf24' :
+                    '#f87171',
+                  border: '1px solid',
+                  borderColor:
+                    session.current_dte_phase === 'peak_theta' ? 'rgba(34, 197, 94, 0.5)' :
+                    session.current_dte_phase === 'early_life' ? 'rgba(59, 130, 246, 0.5)' :
+                    session.current_dte_phase === 'gamma_danger' ? 'rgba(251, 191, 36, 0.5)' :
+                    'rgba(239, 68, 68, 0.5)',
+                  ...(session.current_dte_phase === 'exit_zone' && {
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                    '@keyframes pulse': {
+                      '0%, 100%': { opacity: 1 },
+                      '50%': { opacity: 0.5 },
+                    }
+                  })
+                }}
+              />
+            )}
+            {/* Live P&L Badge */}
+            {session?.live_pnl?.total_pnl !== undefined && session.live_pnl.total_pnl !== 0 && (
+              <Chip
+                size="small"
+                icon={session.live_pnl.total_pnl >= 0 ? <TrendingUpIcon /> : <TrendingDownIcon />}
+                label={`P&L: $${session.live_pnl.total_pnl.toFixed(2)}`}
+                sx={{
+                  fontWeight: 700,
+                  bgcolor: session.live_pnl.total_pnl >= 0 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: session.live_pnl.total_pnl >= 0 ? '#4ade80' : '#f87171',
+                  border: '1px solid',
+                  borderColor: session.live_pnl.total_pnl >= 0 ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+                }}
+              />
+            )}
+          </Box>
+        )}
 
         {/* Adjustment Trigger Zones - THE KEY INFO */}
         {isActive && payoffData?.adjustment_triggers && (

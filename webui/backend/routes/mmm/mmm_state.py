@@ -159,6 +159,32 @@ DEFAULT_PARAMS = {
     'margin_red_pct': 85.0,              # emergency reduce (taker orders)
     'margin_critical_pct': 90.0,          # survival — close ALL, stop session
     'margin_target_pct': 50.0,            # target utilization to wind down to
+
+    # Regime Controls — pre-adjustment risk intelligence
+    # Section A: Volatility Regime Filter
+    'vol_regime_enabled': True,            # master switch for vol regime filter
+    'vol_iv_spike_pct': 30,               # IV change % threshold to trigger ELEVATED/HIGH
+    'vol_rv_threshold': 80,               # annualized RV % threshold
+    'vol_lookback_beats': 5,              # beats for IV rate calculation
+    'vol_rv_window': 20,                  # beats for RV window
+    'vol_regime_action': 'block_sells',   # action: block_sells / pause / wind_down
+    'vol_regime_cooldown_beats': 10,      # beats below threshold before NORMAL
+
+    # Section B: Portfolio Gamma Cap
+    'gamma_cap_enabled': True,             # master switch for gamma cap
+    'gamma_soft_limit': 50.0,             # dollar gamma soft limit (warning)
+    'gamma_hard_limit': 100.0,            # dollar gamma hard limit (block sells)
+    'gamma_emergency_limit': 200.0,       # dollar gamma emergency (force reduce)
+    'gamma_near_expiry_multiplier': 0.5,  # tighten limits by this factor in last 30 min
+
+    # Section C: Trend Detection Guard
+    'trend_enabled': True,                 # master switch for trend guard
+    'trend_move_pct': 1.5,               # % move from anchor to trigger
+    'trend_retrace_pct': 30,             # % retracement required to reset
+    'trend_ema_period': 10,              # EMA period in beats
+    'trend_ema_slope_threshold': 25,     # EMA slope threshold
+    'trend_action': 'block_sells',       # action: block_sells / pause / wind_down
+    'trend_reset_beats': 5,              # beats calm required before reset
 }
 
 # Which parameters can be changed while algo is running
@@ -178,6 +204,15 @@ HOT_RELOAD_PARAMS = {
     'margin_monitor_enabled', 'margin_green_pct', 'margin_yellow_pct',
     'margin_orange_pct', 'margin_red_pct', 'margin_critical_pct',
     'margin_target_pct',
+    # Regime Controls
+    'vol_regime_enabled', 'vol_iv_spike_pct', 'vol_rv_threshold',
+    'vol_lookback_beats', 'vol_rv_window', 'vol_regime_action',
+    'vol_regime_cooldown_beats',
+    'gamma_cap_enabled', 'gamma_soft_limit', 'gamma_hard_limit',
+    'gamma_emergency_limit', 'gamma_near_expiry_multiplier',
+    'trend_enabled', 'trend_move_pct', 'trend_retrace_pct',
+    'trend_ema_period', 'trend_ema_slope_threshold', 'trend_action',
+    'trend_reset_beats',
 }
 
 

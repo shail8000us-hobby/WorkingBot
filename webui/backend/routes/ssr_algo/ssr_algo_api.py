@@ -247,9 +247,12 @@ def create_session():
             'far_otm_percent_max': 30
         })
         circuit_breaker_config = data.get('circuit_breaker_config', None)
+        exit_rules = data.get('exit_rules', None)
+        delta_hedge_config = data.get('delta_hedge_config', None)
+        iv_filter_config = data.get('iv_filter_config', None)
         dwell_time_minutes = data.get('dwell_time_minutes', 10)
         price_tolerance = data.get('price_tolerance', 100)
-        
+
         if not expiry:
             return jsonify({
                 'success': False,
@@ -268,7 +271,10 @@ def create_session():
             strike_config=strike_config,
             circuit_breaker_config=circuit_breaker_config,
             dwell_time_minutes=dwell_time_minutes,
-            price_tolerance=price_tolerance
+            price_tolerance=price_tolerance,
+            exit_rules=exit_rules,
+            delta_hedge_config=delta_hedge_config,
+            iv_filter_config=iv_filter_config
         )
         
         # Preview strikes
@@ -372,9 +378,22 @@ def preview_strikes():
         
         selector = get_strike_selector()
         strikes = selector.select_all_strikes(underlying, expiry, strike_config)
-        
+
+        # Add IV context to preview
+        iv_context = None
+        try:
+            from .ssr_algo_vol_analyzer import get_vol_analyzer
+            vol_analyzer = get_vol_analyzer()
+            iv_context = vol_analyzer.get_iv_context(underlying, expiry)
+            if iv_context:
+                recommendation = vol_analyzer.get_entry_recommendation(iv_context)
+                strikes['iv_context'] = iv_context
+                strikes['iv_recommendation'] = recommendation
+        except Exception:
+            pass
+
         return jsonify(strikes)
-        
+
     except Exception as e:
         log.exception("Failed to preview strikes")
         return jsonify({
@@ -439,12 +458,57 @@ def start_session(session_id: str):
         })
         storage.add_log(session_id, f"🔍 Scanning option chain for optimal strikes...", 'info')
         
+        # === IV Context Check (Phase 4) ===
+        iv_context = None
+        try:
+            from .ssr_algo_vol_analyzer import get_vol_analyzer
+            vol_analyzer = get_vol_analyzer()
+            iv_context = vol_analyzer.get_iv_context(session['underlying'], session['expiry'])
+
+            iv_filter = session.get('iv_filter_config', {})
+            if iv_filter.get('enabled', False) and iv_context.get('iv_rank', 50) > 0:
+                recommendation = vol_analyzer.get_entry_recommendation(iv_context)
+                if not recommendation.get('should_enter', True):
+                    storage.add_log(session_id, f"IV filter blocked entry: {recommendation.get('reason')}", 'warn')
+                    storage.update_session(session_id, {
+                        'status': 'IDLE',
+                        'started_at': None
+                    })
+                    return jsonify({
+                        'success': False,
+                        'error': f"IV filter: {recommendation.get('reason')}",
+                        'iv_context': iv_context
+                    }), 400
+                storage.add_log(session_id, f"IV Rank: {iv_context.get('iv_rank', 0):.0f}% — {recommendation.get('reason', '')}", 'info')
+        except Exception as e:
+            log.debug(f"IV context check skipped: {e}")
+
+        # === Regime Check (Phase 7) ===
+        regime_adjustments = None
+        active_strike_config = session.get('strike_config', {})
+        try:
+            from .ssr_algo_regime import get_regime_adapter
+            regime_adapter = get_regime_adapter()
+
+            from .ssr_algo_engine import get_strike_selector as _gs
+            _temp_selector = _gs()
+            spot = _temp_selector._get_spot_price(session['underlying'])
+            if spot:
+                regime_adjustments = regime_adapter.get_regime_adjustments(session['underlying'], spot)
+                if regime_adjustments.get('regime') != 'ranging':
+                    active_strike_config = regime_adapter.adjust_strike_config(active_strike_config, regime_adjustments)
+                    storage.add_log(session_id,
+                        f"Regime: {regime_adjustments.get('description', 'unknown')}",
+                        'info')
+        except Exception as e:
+            log.debug(f"Regime check skipped: {e}")
+
         # Select strikes
         selector = get_strike_selector()
         strikes = selector.select_all_strikes(
             session['underlying'],
             session['expiry'],
-            session.get('strike_config', {})
+            active_strike_config
         )
         
         if not strikes.get('success'):
@@ -961,6 +1025,59 @@ def stop_session(session_id: str):
         }), 500
 
 
+@ssr_algo_bp.route('/session/<session_id>/exit', methods=['POST'])
+def exit_session(session_id: str):
+    """
+    Manually trigger full position exit for a session.
+
+    Closes ALL open positions via market orders and stops the session.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}'
+            }), 404
+
+        active_statuses = ['MONITORING', 'PAUSED', 'EXECUTING_AUTO_LOOP']
+        if session.get('status') not in active_statuses:
+            return jsonify({
+                'success': False,
+                'error': f"Cannot exit session in {session.get('status')} state. Must be {', '.join(active_statuses)}"
+            }), 400
+
+        from .ssr_algo_exit_manager import get_exit_manager
+        exit_mgr = get_exit_manager()
+
+        storage.add_log(session_id, "Manual exit requested by user", 'warn')
+        result = exit_mgr.execute_full_exit(session_id, 'MANUAL_EXIT')
+
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'session_id': session_id,
+                'status': 'STOPPED',
+                'orders_placed': result.get('orders_placed', 0),
+                'message': f"Exit complete. {result.get('orders_placed', 0)} orders placed."
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Exit failed'),
+                'session_id': session_id
+            }), 500
+
+    except Exception as e:
+        log.exception(f"Failed to exit session {session_id}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # =============================================================================
 # Status and Monitoring
 # =============================================================================
@@ -988,7 +1105,11 @@ def get_status():
                     'status': s.get('status'),
                     'trigger_count': s.get('trigger_count', 0),
                     'started_at': s.get('started_at'),
-                    'monitor': monitor_statuses.get(s.get('session_id'))
+                    'monitor': monitor_statuses.get(s.get('session_id')),
+                    'current_dte_phase': s.get('current_dte_phase'),
+                    'live_greeks': s.get('live_greeks'),
+                    'live_pnl': s.get('live_pnl'),
+                    'current_regime': s.get('current_regime'),
                 }
                 for s in active
             ]
@@ -1132,6 +1253,82 @@ def get_all_monitors():
         
     except Exception as e:
         log.exception("Failed to get monitor statuses")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# =============================================================================
+# Live Greeks & MTM P&L (Phase 1)
+# =============================================================================
+
+@ssr_algo_bp.route('/session/<session_id>/greeks', methods=['GET'])
+def get_session_greeks(session_id: str):
+    """
+    Get live Greeks and MTM P&L for a session (forces fresh fetch).
+
+    Returns:
+        {
+            success: bool,
+            session_id: str,
+            live_greeks: {net_delta, net_gamma, net_theta, net_vega},
+            live_pnl: {unrealized_pnl, realized_pnl, total_pnl, per_leg_pnl},
+            position_greeks: [...per-leg data...],
+            greeks_updated_at: str
+        }
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}'
+            }), 404
+
+        if not session.get('positions'):
+            return jsonify({
+                'success': True,
+                'session_id': session_id,
+                'live_greeks': session.get('live_greeks', {}),
+                'live_pnl': session.get('live_pnl', {}),
+                'position_greeks': [],
+                'greeks_updated_at': session.get('greeks_updated_at'),
+                'message': 'No open positions'
+            })
+
+        from .ssr_algo_greeks import get_greeks_fetcher
+        greeks_fetcher = get_greeks_fetcher()
+
+        # Fresh fetch
+        position_greeks = greeks_fetcher.fetch_position_greeks(session)
+        portfolio_greeks = greeks_fetcher.calculate_portfolio_greeks(
+            position_greeks, session.get('underlying', 'BTC')
+        )
+        mtm_pnl = greeks_fetcher.calculate_mtm_pnl(session, position_greeks)
+
+        updated_at = datetime.utcnow().isoformat()
+
+        # Update session storage with fresh values
+        storage.update_session(session_id, {
+            'live_greeks': portfolio_greeks,
+            'live_pnl': mtm_pnl,
+            'greeks_updated_at': updated_at
+        })
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'live_greeks': portfolio_greeks,
+            'live_pnl': mtm_pnl,
+            'position_greeks': position_greeks,
+            'greeks_updated_at': updated_at
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get Greeks for {session_id}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -1319,3 +1516,146 @@ def get_session_logs(session_id: str):
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ============================================================
+# Phase 10: Analytics, RV/IV, and Roll Endpoints
+# ============================================================
+
+@ssr_algo_bp.route('/analytics', methods=['GET'])
+def get_aggregate_analytics():
+    """
+    Get aggregate analytics across all sessions.
+
+    Returns win rate, total P&L, average return on premium, etc.
+    """
+    try:
+        from .ssr_algo_analytics import get_analytics
+
+        storage = get_storage()
+        sessions = storage.list_sessions()
+        analytics = get_analytics()
+
+        result = analytics.get_aggregate_analytics(sessions)
+
+        return jsonify({
+            'success': True,
+            **result
+        })
+
+    except Exception as e:
+        log.exception("Failed to get aggregate analytics")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@ssr_algo_bp.route('/session/<session_id>/analytics', methods=['GET'])
+def get_session_analytics(session_id: str):
+    """
+    Get analytics for a specific session.
+
+    Returns P&L breakdown, execution quality, hedge efficiency, etc.
+    """
+    try:
+        from .ssr_algo_analytics import get_analytics
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        analytics = get_analytics()
+        result = analytics.get_session_analytics(session)
+
+        return jsonify({
+            'success': True,
+            'analytics': result
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get analytics for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@ssr_algo_bp.route('/session/<session_id>/rv_iv', methods=['GET'])
+def get_session_rv_iv(session_id: str):
+    """
+    Get RV/IV analysis for a session's underlying.
+
+    Returns realized vol, implied vol, ratio, signal, and history.
+    """
+    try:
+        from .ssr_algo_rv_tracker import get_rv_tracker
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        rv_tracker = get_rv_tracker()
+        underlying = session.get('underlying', 'BTC')
+        expiry = session.get('expiry', '')
+
+        snapshot = rv_tracker.get_rv_iv_snapshot(underlying, expiry)
+        history = rv_tracker.get_rv_iv_history(underlying)
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'underlying': underlying,
+            'snapshot': snapshot,
+            'history': history
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get RV/IV for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@ssr_algo_bp.route('/session/<session_id>/roll', methods=['POST'])
+def roll_session(session_id: str):
+    """
+    Roll session to next expiry — close current positions and create new session.
+
+    Request body:
+        {
+            "next_expiry": "DDMMYYYY" or "DDMMYY"
+        }
+    """
+    try:
+        from .ssr_algo_exit_manager import get_exit_manager
+
+        data = request.get_json() or {}
+        next_expiry = data.get('next_expiry')
+
+        if not next_expiry:
+            return jsonify({'success': False, 'error': 'next_expiry is required'}), 400
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        if session.get('status') not in ('MONITORING', 'PAUSED'):
+            return jsonify({
+                'success': False,
+                'error': f"Cannot roll session in '{session.get('status')}' state. Must be MONITORING or PAUSED."
+            }), 400
+
+        exit_mgr = get_exit_manager()
+        result = exit_mgr.execute_roll(session_id, next_expiry)
+
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'message': f"Rolled to new session {result['new_session_id']} with expiry {next_expiry}",
+                **result
+            })
+        else:
+            return jsonify({'success': False, **result}), 500
+
+    except Exception as e:
+        log.exception(f"Failed to roll session {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500

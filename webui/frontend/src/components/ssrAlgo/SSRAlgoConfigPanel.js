@@ -76,6 +76,36 @@ const DEFAULT_MONITOR_CONFIG = {
   price_tolerance: 100,
 };
 
+// Default delta hedge configuration
+const DEFAULT_DELTA_HEDGE_CONFIG = {
+  enabled: false,
+  micro_threshold: 0.20,
+  standard_threshold: 0.40,
+  emergency_threshold: 0.80,
+  check_interval_seconds: 30,
+  max_hedges_per_day: 10,
+};
+
+// Default IV filter configuration
+const DEFAULT_IV_FILTER_CONFIG = {
+  enabled: false,
+  min_iv_rank: 20,
+  warn_iv_rank: 30,
+  ideal_iv_rank: 50,
+};
+
+// Default exit rules configuration
+const DEFAULT_EXIT_RULES = {
+  profit_target_enabled: true,
+  profit_target_pct: 50,
+  stop_loss_enabled: true,
+  stop_loss_pct: 200,
+  dte_exit_enabled: true,
+  dte_exit_days: 2,
+  theta_decay_exit_enabled: false,
+  theta_decay_exit_pct: 80,
+};
+
 /**
  * Configuration panel for SSR Algo sessions
  */
@@ -92,7 +122,10 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
   const [strikeConfig, setStrikeConfig] = useState(DEFAULT_STRIKE_CONFIG);
   const [circuitBreaker, setCircuitBreaker] = useState(DEFAULT_CIRCUIT_BREAKER);
   const [monitorConfig, setMonitorConfig] = useState(DEFAULT_MONITOR_CONFIG);
-  
+  const [deltaHedgeConfig, setDeltaHedgeConfig] = useState(DEFAULT_DELTA_HEDGE_CONFIG);
+  const [ivFilterConfig, setIvFilterConfig] = useState(DEFAULT_IV_FILTER_CONFIG);
+  const [exitRules, setExitRules] = useState(DEFAULT_EXIT_RULES);
+
   // UI state
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -100,6 +133,7 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
   const [strikePreview, setStrikePreview] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSafetySettings, setShowSafetySettings] = useState(false);
+  const [showAlgoSettings, setShowAlgoSettings] = useState(false);
   const [loadingExpiries, setLoadingExpiries] = useState(false);
 
   // Fetch available expiries
@@ -189,6 +223,9 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
         circuit_breaker_config: circuitBreaker,
         dwell_time_minutes: monitorConfig.dwell_time_minutes,
         price_tolerance: monitorConfig.price_tolerance,
+        delta_hedge_config: deltaHedgeConfig,
+        iv_filter_config: ivFilterConfig,
+        exit_rules: exitRules,
       });
 
       if (!createResult.success) {
@@ -245,6 +282,21 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
       ...prev,
       [field]: value
     }));
+  };
+
+  // Handle delta hedge config changes
+  const handleDeltaHedgeChange = (field, value) => {
+    setDeltaHedgeConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Handle IV filter config changes
+  const handleIvFilterChange = (field, value) => {
+    setIvFilterConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Handle exit rules changes
+  const handleExitRulesChange = (field, value) => {
+    setExitRules(prev => ({ ...prev, [field]: value }));
   };
 
   return (
@@ -464,6 +516,15 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
             color="warning"
           >
             {showSafetySettings ? 'Hide' : 'Show'} Safety & Limits
+          </Button>
+          <Button
+            size="small"
+            onClick={() => setShowAlgoSettings(!showAlgoSettings)}
+            endIcon={showAlgoSettings ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            startIcon={<SettingsIcon />}
+            color="info"
+          >
+            {showAlgoSettings ? 'Hide' : 'Show'} Algo Features
           </Button>
         </Box>
 
@@ -718,6 +779,213 @@ const SSRAlgoConfigPanel = ({ onSessionCreated }) => {
                 </>
               )}
             </Alert>
+          </Box>
+        </Collapse>
+
+        {/* Algo Features: Delta Hedge, IV Filter, Exit Rules */}
+        <Collapse in={showAlgoSettings}>
+          <Box sx={{
+            mt: 2, p: 2,
+            bgcolor: 'rgba(56,189,248,0.06)',
+            borderRadius: 1,
+            border: '1px solid rgba(56,189,248,0.2)',
+          }}>
+            {/* ── Delta Hedge Config ── */}
+            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#38bdf8', fontWeight: 600 }}>
+              Delta Hedge
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={deltaHedgeConfig.enabled}
+                  onChange={(e) => handleDeltaHedgeChange('enabled', e.target.checked)}
+                  color="info"
+                  size="small"
+                />
+              }
+              label={
+                <Typography variant="body2" sx={{ fontSize: 13 }}>
+                  {deltaHedgeConfig.enabled ? 'Auto delta hedging enabled' : 'Delta hedging disabled'}
+                </Typography>
+              }
+              sx={{ mb: 1 }}
+            />
+            <Collapse in={deltaHedgeConfig.enabled}>
+              <Grid container spacing={1.5} sx={{ mb: 1 }}>
+                <Grid item xs={4}>
+                  <Tooltip title="Micro hedge threshold — small adjustments when |delta| exceeds this" arrow>
+                    <TextField label="Micro" type="number" size="small" fullWidth
+                      value={deltaHedgeConfig.micro_threshold}
+                      onChange={(e) => handleDeltaHedgeChange('micro_threshold', parseFloat(e.target.value) || 0.1)}
+                      inputProps={{ step: 0.05, min: 0.05, max: 0.5 }}
+                      helperText="|delta| > this"
+                    />
+                  </Tooltip>
+                </Grid>
+                <Grid item xs={4}>
+                  <Tooltip title="Standard hedge threshold — buy protective options" arrow>
+                    <TextField label="Standard" type="number" size="small" fullWidth
+                      value={deltaHedgeConfig.standard_threshold}
+                      onChange={(e) => handleDeltaHedgeChange('standard_threshold', parseFloat(e.target.value) || 0.2)}
+                      inputProps={{ step: 0.05, min: 0.1, max: 0.8 }}
+                      helperText="|delta| > this"
+                    />
+                  </Tooltip>
+                </Grid>
+                <Grid item xs={4}>
+                  <Tooltip title="Emergency threshold — surgical adjustment of troubled side" arrow>
+                    <TextField label="Emergency" type="number" size="small" fullWidth
+                      value={deltaHedgeConfig.emergency_threshold}
+                      onChange={(e) => handleDeltaHedgeChange('emergency_threshold', parseFloat(e.target.value) || 0.5)}
+                      inputProps={{ step: 0.05, min: 0.3, max: 1.0 }}
+                      helperText="|delta| > this"
+                    />
+                  </Tooltip>
+                </Grid>
+              </Grid>
+              <Grid container spacing={1.5}>
+                <Grid item xs={6}>
+                  <TextField label="Check Interval (s)" type="number" size="small" fullWidth
+                    value={deltaHedgeConfig.check_interval_seconds}
+                    onChange={(e) => handleDeltaHedgeChange('check_interval_seconds', parseInt(e.target.value) || 30)}
+                    inputProps={{ min: 10, max: 300 }}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField label="Max Hedges/Day" type="number" size="small" fullWidth
+                    value={deltaHedgeConfig.max_hedges_per_day}
+                    onChange={(e) => handleDeltaHedgeChange('max_hedges_per_day', parseInt(e.target.value) || 5)}
+                    inputProps={{ min: 1, max: 50 }}
+                  />
+                </Grid>
+              </Grid>
+            </Collapse>
+
+            <Divider sx={{ my: 2, borderColor: 'rgba(56,189,248,0.15)' }} />
+
+            {/* ── IV Filter Config ── */}
+            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#a78bfa', fontWeight: 600 }}>
+              IV Rank Entry Filter
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={ivFilterConfig.enabled}
+                  onChange={(e) => handleIvFilterChange('enabled', e.target.checked)}
+                  color="secondary"
+                  size="small"
+                />
+              }
+              label={
+                <Typography variant="body2" sx={{ fontSize: 13 }}>
+                  {ivFilterConfig.enabled ? 'Block entry when IV rank is too low' : 'IV filter disabled — enter at any IV rank'}
+                </Typography>
+              }
+              sx={{ mb: 1 }}
+            />
+            <Collapse in={ivFilterConfig.enabled}>
+              <Grid container spacing={1.5}>
+                <Grid item xs={4}>
+                  <Tooltip title="Minimum IV rank to allow entry. Below this, session won't start." arrow>
+                    <TextField label="Min IV Rank" type="number" size="small" fullWidth
+                      value={ivFilterConfig.min_iv_rank}
+                      onChange={(e) => handleIvFilterChange('min_iv_rank', parseInt(e.target.value) || 10)}
+                      inputProps={{ min: 5, max: 80 }}
+                      helperText="Block below"
+                    />
+                  </Tooltip>
+                </Grid>
+                <Grid item xs={4}>
+                  <Tooltip title="Warning threshold — entry allowed but with caution alert" arrow>
+                    <TextField label="Warn IV Rank" type="number" size="small" fullWidth
+                      value={ivFilterConfig.warn_iv_rank}
+                      onChange={(e) => handleIvFilterChange('warn_iv_rank', parseInt(e.target.value) || 20)}
+                      inputProps={{ min: 10, max: 80 }}
+                      helperText="Warn below"
+                    />
+                  </Tooltip>
+                </Grid>
+                <Grid item xs={4}>
+                  <Tooltip title="Ideal IV rank for best entry conditions" arrow>
+                    <TextField label="Ideal IV Rank" type="number" size="small" fullWidth
+                      value={ivFilterConfig.ideal_iv_rank}
+                      onChange={(e) => handleIvFilterChange('ideal_iv_rank', parseInt(e.target.value) || 50)}
+                      inputProps={{ min: 20, max: 95 }}
+                      helperText="Best entry"
+                    />
+                  </Tooltip>
+                </Grid>
+              </Grid>
+            </Collapse>
+
+            <Divider sx={{ my: 2, borderColor: 'rgba(56,189,248,0.15)' }} />
+
+            {/* ── Exit Rules Config ── */}
+            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#f97316', fontWeight: 600 }}>
+              Exit Rules
+            </Typography>
+            <Grid container spacing={1.5}>
+              <Grid item xs={6}>
+                <FormControlLabel
+                  control={<Switch checked={exitRules.profit_target_enabled} onChange={(e) => handleExitRulesChange('profit_target_enabled', e.target.checked)} color="success" size="small" />}
+                  label={<Typography variant="body2" sx={{ fontSize: 12 }}>Profit Target</Typography>}
+                />
+                {exitRules.profit_target_enabled && (
+                  <TextField label="Target %" type="number" size="small" fullWidth
+                    value={exitRules.profit_target_pct}
+                    onChange={(e) => handleExitRulesChange('profit_target_pct', parseInt(e.target.value) || 30)}
+                    inputProps={{ min: 10, max: 90 }}
+                    helperText="% of max profit"
+                    sx={{ mt: 0.5 }}
+                  />
+                )}
+              </Grid>
+              <Grid item xs={6}>
+                <FormControlLabel
+                  control={<Switch checked={exitRules.stop_loss_enabled} onChange={(e) => handleExitRulesChange('stop_loss_enabled', e.target.checked)} color="error" size="small" />}
+                  label={<Typography variant="body2" sx={{ fontSize: 12 }}>Stop Loss</Typography>}
+                />
+                {exitRules.stop_loss_enabled && (
+                  <TextField label="Loss %" type="number" size="small" fullWidth
+                    value={exitRules.stop_loss_pct}
+                    onChange={(e) => handleExitRulesChange('stop_loss_pct', parseInt(e.target.value) || 100)}
+                    inputProps={{ min: 50, max: 500 }}
+                    helperText="% of net premium"
+                    sx={{ mt: 0.5 }}
+                  />
+                )}
+              </Grid>
+              <Grid item xs={6}>
+                <FormControlLabel
+                  control={<Switch checked={exitRules.dte_exit_enabled} onChange={(e) => handleExitRulesChange('dte_exit_enabled', e.target.checked)} color="warning" size="small" />}
+                  label={<Typography variant="body2" sx={{ fontSize: 12 }}>DTE Exit</Typography>}
+                />
+                {exitRules.dte_exit_enabled && (
+                  <TextField label="Exit at DTE" type="number" size="small" fullWidth
+                    value={exitRules.dte_exit_days}
+                    onChange={(e) => handleExitRulesChange('dte_exit_days', parseInt(e.target.value) || 1)}
+                    inputProps={{ min: 0, max: 14 }}
+                    helperText="Days before expiry"
+                    sx={{ mt: 0.5 }}
+                  />
+                )}
+              </Grid>
+              <Grid item xs={6}>
+                <FormControlLabel
+                  control={<Switch checked={exitRules.theta_decay_exit_enabled} onChange={(e) => handleExitRulesChange('theta_decay_exit_enabled', e.target.checked)} color="info" size="small" />}
+                  label={<Typography variant="body2" sx={{ fontSize: 12 }}>Theta Decay</Typography>}
+                />
+                {exitRules.theta_decay_exit_enabled && (
+                  <TextField label="Decay %" type="number" size="small" fullWidth
+                    value={exitRules.theta_decay_exit_pct}
+                    onChange={(e) => handleExitRulesChange('theta_decay_exit_pct', parseInt(e.target.value) || 70)}
+                    inputProps={{ min: 50, max: 95 }}
+                    helperText="% of theta captured"
+                    sx={{ mt: 0.5 }}
+                  />
+                )}
+              </Grid>
+            </Grid>
           </Box>
         </Collapse>
 

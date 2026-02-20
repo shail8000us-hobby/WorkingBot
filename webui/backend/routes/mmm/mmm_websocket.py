@@ -55,7 +55,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    premium_map: Dict = None,
                    adaptive_tier: str = None,
                    wind_down_active: bool = False,
-                   portfolio_delta: float = 0):
+                   portfolio_delta: float = 0,
+                   margin_data: Dict = None):
     """Emit heartbeat data every interval. Section 4.
     
     Args:
@@ -65,8 +66,9 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         adaptive_tier: Label of the current adaptive interval tier (e.g. "10-20h (0.50x)")
         wind_down_active: Whether wind-down mode is currently active
         portfolio_delta: Portfolio delta (monitoring only, no trading impact)
+        margin_data: Optional margin guardian snapshot (tier, utilization_pct, etc.)
     """
-    _emit('mmm_heartbeat', {
+    payload = {
         'session_id': session_id,
         'ce_premium': ce_premium,
         'pe_premium': pe_premium,
@@ -79,7 +81,10 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         'adaptive_tier': adaptive_tier,
         'wind_down_active': wind_down_active,
         'portfolio_delta': portfolio_delta,
-    })
+    }
+    if margin_data:
+        payload['margin'] = margin_data
+    _emit('mmm_heartbeat', payload)
 
 
 def emit_price_tick(session_id: str, premium_map: Dict):

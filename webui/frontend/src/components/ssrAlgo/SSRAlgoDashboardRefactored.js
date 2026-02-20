@@ -3,14 +3,17 @@
  * 
  * Layout (top-to-bottom):
  *   ROW 1: Header bar — 44px — logo, status, controls
- *   ROW 2: Metrics ribbon — 44px — single horizontal row of key numbers
- *   ROW 3: Main content — fills remaining — chart (left 62%) | tabs (right 38%)
- *   Below chart: Stats strip + trigger cards (compact)
+ *   ROW 2: Metrics ribbon — wrapping — P&L, Greeks, Phase, Regime, Price, ATM, etc.
+ *   ROW 3: Main content — fills remaining
+ *     Left (62%): Chart + Stats strip + Trigger cards
+ *     Right (38%): Intelligence summary (P&L card + Greeks grid + badges)
+ *                  + Tabbed panel (Positions | Greeks | Activity | History)
  * 
  * Design principles:
  *   - Minimum font size: 13px for data, 11px for labels
  *   - Payoff chart is the HERO element (~60% of screen)
- *   - Metrics ribbon is ONE horizontal row, never wraps
+ *   - Intelligence summary is ALWAYS visible (above tabs in right panel)
+ *   - Metrics ribbon wraps if needed to show all critical data
  *   - Config lives in a slide-out drawer, not on screen
  */
 
@@ -50,6 +53,7 @@ import SSRAlgoPayoffChart from './SSRAlgoPayoffChart';
 import SSRAlgoPositionsTable from './SSRAlgoPositionsTable';
 import SSRAlgoLogPanel from './SSRAlgoLogPanel';
 import SSRAlgoTriggerHistory from './SSRAlgoTriggerHistory';
+import SSRAlgoGreeksPanel from './SSRAlgoGreeksPanel';
 import ssrAlgoService from './ssrAlgoService';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -440,16 +444,16 @@ const SSRAlgoDashboardRefactored = () => {
         </Box>
       </Box>
 
-      {/* ═════════════ ROW 2: METRICS RIBBON — single horizontal row ═════════════ */}
+      {/* ═════════════ ROW 2: METRICS RIBBON — wrapping, priority-ordered ═════════════ */}
       {sess && (
         <Box sx={{
           display: 'flex',
           alignItems: 'center',
-          height: 44,
           minHeight: 44,
           px: 2,
           gap: 1.5,
-          overflow: 'hidden',
+          flexWrap: 'wrap',
+          py: 0.5,
           flexShrink: 0,
           borderBottom: `2px solid ${
             inZone ? 'rgba(239,68,68,0.6)' :
@@ -485,6 +489,51 @@ const SSRAlgoDashboardRefactored = () => {
 
           <Sep />
           <Metric label="Price" value={currentPrice ? `$${currentPrice.toLocaleString()}` : '—'} color={priceDir > 0 ? '#4ade80' : priceDir < 0 ? '#f87171' : '#e2e8f0'} valueSize={15} />
+
+          {/* ── P&L PROMINENT (right after price) ── */}
+          {sess.live_pnl?.total_pnl != null && (
+            <>
+              <Sep />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.3, borderRadius: 1, background: sess.live_pnl.total_pnl >= 0 ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', border: `1px solid ${sess.live_pnl.total_pnl >= 0 ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)'}` }}>
+                <Typography sx={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>P&L</Typography>
+                <Typography sx={{ fontWeight: 800, fontSize: 16, fontFamily: '"JetBrains Mono", monospace', color: sess.live_pnl.total_pnl >= 0 ? '#4ade80' : '#f87171' }}>
+                  {sess.live_pnl.total_pnl >= 0 ? '+' : ''}${sess.live_pnl.total_pnl.toFixed(0)}
+                </Typography>
+                {sess.live_pnl.unrealized_pnl != null && (
+                  <Typography sx={{ fontSize: 10, color: '#64748b', ml: 0.5 }}>
+                    (U:{sess.live_pnl.unrealized_pnl >= 0 ? '+' : ''}{sess.live_pnl.unrealized_pnl.toFixed(0)} R:{(sess.live_pnl.realized_pnl || 0) >= 0 ? '+' : ''}{(sess.live_pnl.realized_pnl || 0).toFixed(0)})
+                  </Typography>
+                )}
+              </Box>
+            </>
+          )}
+
+          {/* ── GREEKS (right after P&L) ── */}
+          {sess.live_greeks?.net_delta != null && (
+            <>
+              <Sep />
+              <Metric label="Δ" value={sess.live_greeks.net_delta.toFixed(3)} color={Math.abs(sess.live_greeks.net_delta) > 0.40 ? '#f87171' : Math.abs(sess.live_greeks.net_delta) > 0.20 ? '#fbbf24' : '#4ade80'} />
+              <Metric label="θ" value={`$${(sess.live_greeks.net_theta || 0).toFixed(1)}`} color={(sess.live_greeks.net_theta || 0) > 0 ? '#4ade80' : '#f87171'} />
+              {sess.live_greeks.net_gamma != null && (
+                <Metric label="Γ" value={sess.live_greeks.net_gamma.toFixed(5)} color="#a78bfa" />
+              )}
+              {sess.live_greeks.net_vega != null && (
+                <Metric label="V" value={`$${sess.live_greeks.net_vega.toFixed(1)}`} color="#38bdf8" />
+              )}
+            </>
+          )}
+
+          {/* ── DTE Phase + Regime (always visible) ── */}
+          {sess.current_dte_phase && (
+            <>
+              <Sep />
+              <Chip size="small" label={`📅 ${sess.current_dte_phase.replace(/_/g, ' ')}`} sx={{ height: 22, fontSize: 11, fontWeight: 700, bgcolor: sess.current_dte_phase === 'EXIT_ZONE' ? 'rgba(239,68,68,0.25)' : sess.current_dte_phase === 'GAMMA_DANGER' ? 'rgba(249,115,22,0.25)' : sess.current_dte_phase === 'PEAK_THETA' ? 'rgba(34,197,94,0.25)' : 'rgba(59,130,246,0.25)', color: sess.current_dte_phase === 'EXIT_ZONE' ? '#f87171' : sess.current_dte_phase === 'GAMMA_DANGER' ? '#fb923c' : sess.current_dte_phase === 'PEAK_THETA' ? '#4ade80' : '#60a5fa', border: `1px solid ${sess.current_dte_phase === 'EXIT_ZONE' ? 'rgba(239,68,68,0.4)' : sess.current_dte_phase === 'GAMMA_DANGER' ? 'rgba(249,115,22,0.4)' : sess.current_dte_phase === 'PEAK_THETA' ? 'rgba(34,197,94,0.4)' : 'rgba(59,130,246,0.4)'}` }} />
+            </>
+          )}
+          {sess.current_regime && (
+            <Chip size="small" label={`${sess.current_regime === 'low_vol' ? '📉' : sess.current_regime === 'high_vol' ? '📈' : sess.current_regime === 'trending' ? '➡️' : '↔️'} ${sess.current_regime.replace(/_/g, ' ')}`} sx={{ height: 22, fontSize: 11, fontWeight: 700, bgcolor: sess.current_regime === 'high_vol' ? 'rgba(168,85,247,0.25)' : sess.current_regime === 'trending' ? 'rgba(249,115,22,0.25)' : sess.current_regime === 'low_vol' ? 'rgba(100,116,139,0.25)' : 'rgba(74,222,128,0.25)', color: sess.current_regime === 'high_vol' ? '#c084fc' : sess.current_regime === 'trending' ? '#fb923c' : sess.current_regime === 'low_vol' ? '#94a3b8' : '#4ade80', border: `1px solid ${sess.current_regime === 'high_vol' ? 'rgba(168,85,247,0.4)' : sess.current_regime === 'trending' ? 'rgba(249,115,22,0.4)' : sess.current_regime === 'low_vol' ? 'rgba(100,116,139,0.3)' : 'rgba(74,222,128,0.4)'}` }} />
+          )}
+
           <Sep />
           <Metric label="ATM" value={atmStrike ? `$${atmStrike.toLocaleString()}` : '—'} color="#a78bfa" />
           <Sep />
@@ -593,8 +642,105 @@ const SSRAlgoDashboardRefactored = () => {
           </Box>
         </Box>
 
-        {/* ─── RIGHT: TABBED PANEL (38%) ─── */}
+        {/* ─── RIGHT: INTELLIGENCE + TABBED PANEL (38%) ─── */}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+
+          {/* ═══ PERSISTENT INTELLIGENCE SUMMARY (always visible) ═══ */}
+          {sess && (
+            <Box sx={{
+              flexShrink: 0,
+              borderBottom: '1px solid rgba(71,85,105,0.3)',
+              background: 'linear-gradient(180deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0.6) 100%)',
+              px: 1.5, py: 1,
+            }}>
+              {/* Row 1: P&L Card + Greeks Summary */}
+              <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 1, mb: 0.8 }}>
+                {/* P&L Card */}
+                <Box sx={{
+                  flex: 1,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  px: 1.5, py: 0.8,
+                  borderRadius: 1.5,
+                  background: sess.live_pnl?.total_pnl >= 0
+                    ? 'linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.05) 100%)'
+                    : sess.live_pnl?.total_pnl != null
+                    ? 'linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(239,68,68,0.05) 100%)'
+                    : 'rgba(30,41,59,0.5)',
+                  border: `1px solid ${sess.live_pnl?.total_pnl >= 0 ? 'rgba(74,222,128,0.3)' : sess.live_pnl?.total_pnl != null ? 'rgba(248,113,113,0.3)' : 'rgba(71,85,105,0.3)'}`,
+                }}>
+                  <Typography sx={{ color: '#64748b', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Total P&L</Typography>
+                  <Typography sx={{
+                    fontWeight: 800, fontSize: 22, fontFamily: '"JetBrains Mono", monospace',
+                    color: sess.live_pnl?.total_pnl >= 0 ? '#4ade80' : sess.live_pnl?.total_pnl != null ? '#f87171' : '#64748b',
+                    lineHeight: 1.2,
+                  }}>
+                    {sess.live_pnl?.total_pnl != null ? `${sess.live_pnl.total_pnl >= 0 ? '+' : ''}$${sess.live_pnl.total_pnl.toFixed(0)}` : '—'}
+                  </Typography>
+                  {sess.live_pnl?.unrealized_pnl != null && (
+                    <Box sx={{ display: 'flex', gap: 1, mt: 0.3 }}>
+                      <Typography sx={{ fontSize: 10, color: '#64748b' }}>
+                        Unr: <span style={{ color: sess.live_pnl.unrealized_pnl >= 0 ? '#4ade80' : '#f87171' }}>${sess.live_pnl.unrealized_pnl.toFixed(0)}</span>
+                      </Typography>
+                      <Typography sx={{ fontSize: 10, color: '#64748b' }}>
+                        Re: <span style={{ color: (sess.live_pnl.realized_pnl || 0) >= 0 ? '#4ade80' : '#f87171' }}>${(sess.live_pnl.realized_pnl || 0).toFixed(0)}</span>
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+
+                {/* Greeks Mini Grid */}
+                <Box sx={{
+                  flex: 1,
+                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5,
+                  px: 1, py: 0.5,
+                  borderRadius: 1.5,
+                  background: 'rgba(30,41,59,0.5)',
+                  border: '1px solid rgba(71,85,105,0.3)',
+                }}>
+                  {[
+                    { label: 'Delta', key: 'net_delta', fmt: (v) => v?.toFixed(3) || '—', color: (v) => v != null ? (Math.abs(v) > 0.4 ? '#f87171' : Math.abs(v) > 0.2 ? '#fbbf24' : '#4ade80') : '#64748b' },
+                    { label: 'Theta', key: 'net_theta', fmt: (v) => v != null ? `$${v.toFixed(1)}` : '—', color: (v) => v != null ? (v > 0 ? '#4ade80' : '#f87171') : '#64748b' },
+                    { label: 'Gamma', key: 'net_gamma', fmt: (v) => v?.toFixed(5) || '—', color: () => '#a78bfa' },
+                    { label: 'Vega', key: 'net_vega', fmt: (v) => v != null ? `$${v.toFixed(1)}` : '—', color: () => '#38bdf8' },
+                  ].map(g => {
+                    const val = sess.live_greeks?.[g.key];
+                    return (
+                      <Box key={g.label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 0.5 }}>
+                        <Typography sx={{ color: '#64748b', fontSize: 10, fontWeight: 600 }}>{g.label}</Typography>
+                        <Typography sx={{ color: g.color(val), fontSize: 12, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>{g.fmt(val)}</Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
+
+              {/* Row 2: Phase + Regime + Key Info Badges */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
+                {sess.current_dte_phase && (
+                  <Chip size="small" label={`📅 DTE: ${sess.current_dte_phase.replace(/_/g, ' ')}`} sx={{
+                    height: 22, fontSize: 11, fontWeight: 700,
+                    bgcolor: sess.current_dte_phase === 'EXIT_ZONE' ? 'rgba(239,68,68,0.2)' : sess.current_dte_phase === 'GAMMA_DANGER' ? 'rgba(249,115,22,0.2)' : sess.current_dte_phase === 'PEAK_THETA' ? 'rgba(34,197,94,0.2)' : 'rgba(59,130,246,0.2)',
+                    color: sess.current_dte_phase === 'EXIT_ZONE' ? '#f87171' : sess.current_dte_phase === 'GAMMA_DANGER' ? '#fb923c' : sess.current_dte_phase === 'PEAK_THETA' ? '#4ade80' : '#60a5fa',
+                    border: `1px solid ${sess.current_dte_phase === 'EXIT_ZONE' ? 'rgba(239,68,68,0.35)' : sess.current_dte_phase === 'GAMMA_DANGER' ? 'rgba(249,115,22,0.35)' : sess.current_dte_phase === 'PEAK_THETA' ? 'rgba(34,197,94,0.35)' : 'rgba(59,130,246,0.35)'}`,
+                  }} />
+                )}
+                {sess.current_regime && (
+                  <Chip size="small" label={`${sess.current_regime === 'low_vol' ? '📉' : sess.current_regime === 'high_vol' ? '📈' : sess.current_regime === 'trending' ? '➡️' : '↔️'} ${sess.current_regime.replace(/_/g, ' ').toUpperCase()}`} sx={{
+                    height: 22, fontSize: 11, fontWeight: 700,
+                    bgcolor: sess.current_regime === 'high_vol' ? 'rgba(168,85,247,0.2)' : sess.current_regime === 'trending' ? 'rgba(249,115,22,0.2)' : sess.current_regime === 'low_vol' ? 'rgba(100,116,139,0.2)' : 'rgba(74,222,128,0.2)',
+                    color: sess.current_regime === 'high_vol' ? '#c084fc' : sess.current_regime === 'trending' ? '#fb923c' : sess.current_regime === 'low_vol' ? '#94a3b8' : '#4ade80',
+                  }} />
+                )}
+                <Chip size="small" label={`💰 Legs: ${countLegs(sess)}`} sx={{ height: 22, fontSize: 11, fontWeight: 600, bgcolor: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }} />
+                <Chip size="small" label={`🔄 Rounds: ${sess.rounds_completed || 0}/${sess.auto_loop_rounds || 2}`} sx={{ height: 22, fontSize: 11, fontWeight: 600, bgcolor: 'rgba(56,189,248,0.15)', color: '#7dd3fc' }} />
+                {sess.trigger_count > 0 && (
+                  <Chip size="small" label={`⚡ ${sess.trigger_count} adj`} sx={{ height: 22, fontSize: 11, fontWeight: 600, bgcolor: 'rgba(251,191,36,0.15)', color: '#fbbf24' }} />
+                )}
+              </Box>
+            </Box>
+          )}
+
+          {/* ═══ TABS (below intelligence strip) ═══ */}
           <Box sx={{ borderBottom: '1px solid rgba(71,85,105,0.3)', flexShrink: 0, bgcolor: 'rgba(15,23,42,0.5)' }}>
             <Tabs
               value={rightTab}
@@ -611,6 +757,7 @@ const SSRAlgoDashboardRefactored = () => {
               }}
             >
               <Tab label="📊 Positions" />
+              <Tab label="📈 Greeks" />
               <Tab label="📋 Activity" />
               <Tab label="⚡ History" />
             </Tabs>
@@ -630,6 +777,12 @@ const SSRAlgoDashboardRefactored = () => {
           </TabPanel>
 
           <TabPanel value={rightTab} index={1}>
+            <Box sx={{ flex: 1, overflow: 'auto' }}>
+              <SSRAlgoGreeksPanel session={sess} compact={false} />
+            </Box>
+          </TabPanel>
+
+          <TabPanel value={rightTab} index={2}>
             <Box sx={{ flex: 1, minHeight: 0 }}>
               {sess ? (
                 <SSRAlgoLogPanel sessionId={sess.session_id} height="100%" compact={true} showHeader={false} refreshInterval={2000} />
@@ -639,7 +792,7 @@ const SSRAlgoDashboardRefactored = () => {
             </Box>
           </TabPanel>
 
-          <TabPanel value={rightTab} index={2}>
+          <TabPanel value={rightTab} index={3}>
             <Box sx={{ flex: 1, overflow: 'auto', p: 1.5 }}>
               {sess ? <SSRAlgoTriggerHistory session={sess} compact={true} /> : <EmptyState text="No triggers" />}
             </Box>

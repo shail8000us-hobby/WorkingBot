@@ -264,6 +264,19 @@ class MMMWatchdog:
             except Exception as e:
                 log.warning(f"[{sid}] Watchdog: clean stop failed: {e}")
 
+            # Wait for old thread to actually finish so an in-flight
+            # heartbeat can't overwrite freshly-saved state.  Timeout
+            # prevents hanging if the thread is truly stuck.
+            old_thread = getattr(old_monitor, '_thread', None)
+            if old_thread is not None and old_thread.is_alive():
+                log.info(f"[{sid}] Watchdog: waiting for old thread to exit...")
+                old_thread.join(timeout=15)
+                if old_thread.is_alive():
+                    log.warning(
+                        f"[{sid}] Watchdog: old thread did not exit within 15s, "
+                        f"proceeding with restart anyway"
+                    )
+
             # Import here to avoid circular import at module level
             from .mmm_storage import get_storage
             from .mmm_monitor import start_session_monitor, _monitors
@@ -284,6 +297,8 @@ class MMMWatchdog:
                 'restart_number': fresh_session['_watchdog_restarts'],
             })
             fresh_session['strategy_status'] = 'RUNNING'
+            # Clear _save_disabled flag so the new monitor can save
+            fresh_session.pop('_save_disabled', None)
             storage.save_session(fresh_session)
 
             # Remove the dead monitor from the registry
@@ -294,12 +309,19 @@ class MMMWatchdog:
             new_monitor = start_session_monitor(sid, fresh_session)
             self.register(new_monitor)
 
+            # Re-assert RUNNING status after new monitor starts —
+            # belt-and-suspenders in case the old thread slipped through
+            # and overwrote the status between our save above and now.
+            fresh_session['strategy_status'] = 'RUNNING'
+            fresh_session.pop('_save_disabled', None)
+            storage.save_session(fresh_session)
+
             self._log_activity(
                 sid,
                 f'🔄 Watchdog restarted monitor (restart #{fresh_session["_watchdog_restarts"]})'
                 f' — reason: {reason}',
             )
-            log.info(f"[{sid}] Watchdog restart complete (#{fresh_session['_watchdog_restarts']})")
+            log.warning(f"[{sid}] Watchdog restart complete (#{fresh_session['_watchdog_restarts']})")
 
         except Exception as e:
             log.exception(f"[{sid}] Watchdog restart failed: {e}")

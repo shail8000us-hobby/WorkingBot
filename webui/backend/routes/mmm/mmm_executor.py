@@ -420,6 +420,256 @@ class MMMExecutor:
         )
 
     # =========================================================================
+    # Emergency Execute — Taker fills for crash/margin-breach scenarios
+    # =========================================================================
+
+    # Emergency execution constants
+    EMERGENCY_FILL_TIMEOUT = 10       # Max 10 seconds per attempt
+    EMERGENCY_MAX_ATTEMPTS = 2        # At most 2 tries
+    EMERGENCY_SLIPPAGE_TICKS = 5      # Extra ticks beyond best bid/ask
+
+    async def emergency_execute(
+        self,
+        symbol: str,
+        side: str,
+        size: int,
+        reduce_only: bool = True,
+        session_id: str = None,
+        max_slippage_pct: float = 5.0,
+    ) -> Dict[str, Any]:
+        """
+        Emergency order execution — designed for crash/margin-breach scenarios.
+
+        Key differences from smart_execute:
+        - Uses IOC (Immediate-or-Cancel) limit orders at aggressive prices
+        - Allows taker fills (post_only=False) for instant execution
+        - Single 10-second timeout (not 60s × 10 reprices)
+        - Max 2 attempts total (~20s worst case vs 10 min)
+        - Accepts slippage to guarantee fills in fast-moving markets
+
+        Args:
+            symbol: Options symbol (e.g., 'C-BTC-100000-150226')
+            side: 'buy' or 'sell'
+            size: Number of lots (contracts)
+            reduce_only: If True, only reduces position (default True for emergency)
+            session_id: Session ID for activity logging
+            max_slippage_pct: Maximum slippage % from mid-price to accept
+
+        Returns:
+            Same shape as smart_execute for compatibility.
+        """
+        start_time = time.time()
+
+        log.critical(
+            f"🚨 EMERGENCY EXECUTE: {side.upper()} {size} {symbol} "
+            f"(slippage cap: {max_slippage_pct}%)"
+        )
+
+        _log_activity('emergency_order',
+            f"🚨 EMERGENCY {side.upper()} {size} {symbol} — crash protocol active",
+            session_id=session_id, severity='critical',
+            details={'symbol': symbol, 'side': side, 'size': size,
+                     'max_slippage_pct': max_slippage_pct})
+
+        rest_client = self._create_rest_client()
+
+        for attempt in range(1, self.EMERGENCY_MAX_ATTEMPTS + 1):
+            try:
+                # Fetch fresh quotes
+                quotes = await self._fetch_quotes(symbol, rest_client)
+                if not quotes or quotes.get('best_bid', 0) <= 0 or quotes.get('best_ask', 0) <= 0:
+                    log.error(f"🚨 Emergency attempt {attempt}: no valid quotes for {symbol}")
+                    if attempt < self.EMERGENCY_MAX_ATTEMPTS:
+                        await asyncio.sleep(1)
+                        continue
+                    return self._failure('No valid quotes in emergency mode',
+                                         symbol, side, size,
+                                         total_time=round(time.time() - start_time, 2))
+
+                bid = quotes['best_bid']
+                ask = quotes['best_ask']
+                tick = quotes.get('tick_size', 0.5)
+
+                # Calculate aggressive price that will fill as taker
+                if side.lower() == 'buy':
+                    # Buy at ask + slippage (overpay to guarantee fill)
+                    slippage_amount = ask * (max_slippage_pct / 100.0)
+                    aggressive_price = ask + slippage_amount
+                else:
+                    # Sell at bid - slippage (accept less to guarantee fill)
+                    slippage_amount = bid * (max_slippage_pct / 100.0)
+                    aggressive_price = max(bid - slippage_amount, tick)  # Floor at 1 tick
+
+                # Round to tick size
+                if tick > 0:
+                    aggressive_price = round(aggressive_price / tick) * tick
+                aggressive_price = round(aggressive_price, 2)
+
+                log.info(
+                    f"🚨 Emergency attempt {attempt}: {side.upper()} {size} {symbol} "
+                    f"@ ${aggressive_price:.2f} (bid=${bid:.2f}, ask=${ask:.2f}, "
+                    f"slippage={max_slippage_pct}%)"
+                )
+
+                _log_activity('emergency_placing',
+                    f"🚨 Emergency placing: {side.upper()} {size} {symbol} "
+                    f"@ ${aggressive_price:.2f} (IOC, taker allowed)",
+                    session_id=session_id, severity='critical',
+                    details={'price': aggressive_price, 'bid': bid, 'ask': ask,
+                             'attempt': attempt})
+
+                # Place IOC limit order — taker fill allowed (post_only=False)
+                response = await rest_client.place_order_by_symbol(
+                    symbol=symbol,
+                    side=side,
+                    price=aggressive_price,
+                    size=int(size),
+                    order_type="limit_order",
+                    time_in_force="ioc",      # Immediate-or-Cancel
+                    post_only=False,           # Allow taker fills
+                    reduce_only=reduce_only,
+                )
+
+                result = response.get('result', response)
+                order_id = str(result.get('id', ''))
+
+                if not order_id:
+                    log.error(f"🚨 Emergency order placement failed: {response}")
+                    if attempt < self.EMERGENCY_MAX_ATTEMPTS:
+                        await asyncio.sleep(1)
+                        continue
+                    return self._failure(
+                        f"Emergency order placement failed: {response}",
+                        symbol, side, size,
+                        total_time=round(time.time() - start_time, 2))
+
+                # IOC fills instantly or cancels — wait briefly then check
+                await asyncio.sleep(2)
+
+                product_id = result.get('product_id')
+                order_data = await self._get_order_status(order_id, product_id, rest_client)
+
+                if not order_data:
+                    log.warning(f"🚨 Cannot fetch order {order_id} status, using placement data")
+                    order_data = result
+
+                state = str(order_data.get('state', '')).lower()
+
+                if state in ORDER_STATES_FILLED:
+                    raw_fill = order_data.get('average_fill_price')
+                    if raw_fill and str(raw_fill).strip() not in ('', '0'):
+                        fill_price = float(raw_fill)
+                    else:
+                        # IOC file price should be ≤ aggressive_price
+                        fill_price = aggressive_price
+
+                    raw_unfilled = order_data.get('unfilled_size')
+                    filled_size = size - int(raw_unfilled) if raw_unfilled is not None else size
+
+                    elapsed = time.time() - start_time
+
+                    log.critical(
+                        f"🚨 EMERGENCY FILL: {side.upper()} {filled_size} {symbol} "
+                        f"@ ${fill_price:.2f} in {elapsed:.1f}s"
+                    )
+
+                    _log_activity('emergency_filled',
+                        f"🚨 EMERGENCY FILLED: {side.upper()} {symbol} "
+                        f"@ ${fill_price:.2f} in {elapsed:.1f}s",
+                        session_id=session_id, severity='critical',
+                        details={'order_id': order_id, 'fill_price': fill_price,
+                                 'filled_size': filled_size, 'elapsed': round(elapsed, 1)})
+
+                    return {
+                        'success': True,
+                        'order_id': order_id,
+                        'fill_price': fill_price,
+                        'filled_size': filled_size,
+                        'execution_type': 'emergency_ioc',
+                        'attempts': attempt,
+                        'total_time': round(elapsed, 2),
+                        'error': None,
+                        'symbol': symbol,
+                        'side': side,
+                        'size': size,
+                        'order_details': order_data,
+                    }
+
+                elif state in ORDER_STATES_DEAD or state == 'open':
+                    # IOC was cancelled (no fill) or partially
+                    unfilled = order_data.get('unfilled_size', size)
+                    log.warning(
+                        f"🚨 Emergency IOC {state}: {symbol} — "
+                        f"unfilled={unfilled}/{size}. "
+                        f"{'Retrying with more aggression...' if attempt < self.EMERGENCY_MAX_ATTEMPTS else 'Giving up.'}"
+                    )
+                    # Try more aggressive price on next attempt
+                    max_slippage_pct = min(max_slippage_pct * 2, 20.0)
+
+                    if attempt < self.EMERGENCY_MAX_ATTEMPTS:
+                        continue
+
+                    # Check for partial fill
+                    raw_fill = order_data.get('average_fill_price')
+                    raw_unfilled = order_data.get('unfilled_size')
+                    if raw_unfilled is not None and int(raw_unfilled) < size:
+                        filled_size = size - int(raw_unfilled)
+                        fill_price = float(raw_fill) if raw_fill else aggressive_price
+                        elapsed = time.time() - start_time
+                        log.warning(
+                            f"🚨 Emergency PARTIAL fill: {filled_size}/{size} @ ${fill_price:.2f}"
+                        )
+                        return {
+                            'success': True,  # Partial is better than nothing in emergency
+                            'order_id': order_id,
+                            'fill_price': fill_price,
+                            'filled_size': filled_size,
+                            'execution_type': 'emergency_partial',
+                            'attempts': attempt,
+                            'total_time': round(time.time() - start_time, 2),
+                            'error': f'Partial fill: {filled_size}/{size}',
+                            'symbol': symbol,
+                            'side': side,
+                            'size': size,
+                        }
+
+                    return self._failure(
+                        f"Emergency IOC not filled after {attempt} attempts (state={state})",
+                        symbol, side, size, order_id=order_id,
+                        attempts=attempt,
+                        total_time=round(time.time() - start_time, 2))
+                else:
+                    # Unknown state — unexpected
+                    log.error(f"🚨 Emergency: unexpected order state '{state}' for {order_id}")
+                    if attempt < self.EMERGENCY_MAX_ATTEMPTS:
+                        continue
+                    return self._failure(
+                        f"Emergency: unexpected order state '{state}'",
+                        symbol, side, size, order_id=order_id,
+                        attempts=attempt,
+                        total_time=round(time.time() - start_time, 2))
+
+            except Exception as e:
+                log.exception(f"🚨 Emergency execute attempt {attempt} crashed: {e}")
+                _log_activity('emergency_error',
+                    f"🚨 EMERGENCY ERROR: {str(e)}",
+                    session_id=session_id, severity='critical',
+                    details={'error': str(e), 'attempt': attempt})
+                if attempt < self.EMERGENCY_MAX_ATTEMPTS:
+                    await asyncio.sleep(1)
+                    continue
+                return self._failure(
+                    f"Emergency execute crashed: {str(e)}",
+                    symbol, side, size,
+                    total_time=round(time.time() - start_time, 2))
+
+        # Should not reach here, but safety net
+        return self._failure(
+            'Emergency execute exhausted all attempts',
+            symbol, side, size,
+            total_time=round(time.time() - start_time, 2))
+
+    # =========================================================================
     # Execute a sell straddle entry (CE + PE)
     # =========================================================================
 
@@ -735,9 +985,15 @@ class MMMExecutor:
 
             except Exception as e:
                 err_str = str(e)
+
+                # Immediately fail on "no position" errors — retrying is pointless
+                if 'no_position_for_reduce_only' in err_str.lower() or 'no position' in err_str.lower():
+                    log.warning(f"⚠️ No position exists for reduce_only {side} {symbol} — aborting immediately")
+                    return {'error': err_str}
+
                 is_post_only_reject = ('400' in err_str and
                     ('post-only' in err_str.lower() or 'post_only' in err_str.lower()
-                     or 'would have matched' in err_str.lower() or '400' in err_str))
+                     or 'would have matched' in err_str.lower()))
 
                 if is_post_only_reject and attempt < POST_ONLY_RETRIES:
                     log.warning(

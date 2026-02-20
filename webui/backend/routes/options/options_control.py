@@ -2479,11 +2479,24 @@ def set_sl_tp():
                     except Exception as rollback_err:
                         log.error(f"❌ Rollback failed: {rollback_err}")
                 
+                # Extract exchange error details if available
+                exchange_detail = ''
+                if hasattr(e, 'response'):
+                    try:
+                        err_body = e.response.json()
+                        exchange_detail = err_body.get('error', {}).get('message', '') or str(err_body)
+                    except Exception:
+                        exchange_detail = getattr(e.response, 'text', '')[:200]
+                
+                error_msg = f'Failed to place TP order on exchange: {str(e)}'
+                if exchange_detail:
+                    error_msg += f' — Exchange: {exchange_detail}'
+                
                 return jsonify({
                     'success': False,
-                    'error': f'Failed to place TP order on exchange: {str(e)}',
+                    'error': error_msg,
                     'rollback': 'SL/TP settings were not saved (rollback performed)'
-                }), 500
+                }), 422
         
         return jsonify(result)
     

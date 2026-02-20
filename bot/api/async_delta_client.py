@@ -623,6 +623,25 @@ class AsyncDeltaClient:
         )
         
         return response.get("result", [])
+
+    async def get_positions_margined(self) -> List[Dict[str, Any]]:
+        """
+        Get ALL open positions across all products (no filter required).
+
+        Uses /v2/positions/margined which returns all positions that have
+        margin allocated. This is the correct endpoint for account-level
+        position overview.
+
+        Returns:
+            List of position dicts with keys: product_symbol, size, margin,
+            entry_price, mark_price, unrealized_pnl, product_id, product, etc.
+        """
+        response = await self._request_with_retry(
+            method="GET",
+            path="/v2/positions/margined"
+        )
+        
+        return response.get("result", [])
     
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """
@@ -686,6 +705,19 @@ class AsyncDeltaClient:
         )
         
         return response.get("result", [])
+
+    async def get_wallet_balances_full(self) -> Dict[str, Any]:
+        """
+        Get wallet balances with full response including meta (net_equity, etc.).
+        
+        Returns:
+            Full API response dict with 'result' (wallets list) and 'meta' (net_equity etc.)
+        """
+        response = await self._request_with_retry(
+            method="GET",
+            path="/v2/wallet/balances"
+        )
+        return response
     
     async def get_product(self, symbol: str) -> Dict[str, Any]:
         """

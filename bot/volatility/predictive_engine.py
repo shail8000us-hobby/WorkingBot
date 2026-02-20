@@ -57,7 +57,37 @@ class VolatilityPredictor:
         self.prediction_horizon = 7  # Predict 7 minutes ahead
         self.min_confidence = 0.6   # Minimum confidence to warn
         
+        # Ensure required tables exist (the collector normally creates them,
+        # but the predictive engine may be used before the collector runs)
+        self._ensure_tables()
+        
         log.info(f"🧠 Predictive Engine initialized (DB: {db_path})")
+    
+    def _ensure_tables(self):
+        """Create iv_snapshots table if it doesn't exist."""
+        try:
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self.db_path, timeout=5.0)
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS iv_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    datetime TEXT NOT NULL,
+                    iv_value REAL NOT NULL,
+                    source TEXT NOT NULL,
+                    atm_strike REAL,
+                    num_options INTEGER
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_iv_timestamp 
+                ON iv_snapshots(timestamp DESC)
+            """)
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            log.warning(f"Could not ensure iv_snapshots table: {e}")
     
     def predict_spike(self) -> Optional[PredictionResult]:
         """

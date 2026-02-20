@@ -108,7 +108,7 @@ class SSRAlgoStorage:
         session_id = f"ssr_{session_count:03d}_{expiry}_{underlying.lower()}_{short_uuid}"
         return session_id
     
-    def create_session(self, 
+    def create_session(self,
                        underlying: str,
                        expiry: str,
                        auto_loop_rounds: int = 2,
@@ -119,7 +119,10 @@ class SSRAlgoStorage:
                        circuit_breaker_config: Dict = None,
                        greeks_limits: Dict = None,
                        dwell_time_minutes: int = 10,
-                       price_tolerance: int = 100) -> Dict:
+                       price_tolerance: int = 100,
+                       exit_rules: Dict = None,
+                       delta_hedge_config: Dict = None,
+                       iv_filter_config: Dict = None) -> Dict:
         """
         Create a new SSR Algo session.
         
@@ -189,7 +192,42 @@ class SSRAlgoStorage:
                 'max_vega_exposure': 1000,   # Max vega exposure in USD
                 'enabled': False             # Disabled by default (advanced feature)
             }
-        
+
+        # Default exit rules (Phase 2)
+        if exit_rules is None:
+            exit_rules = {
+                'profit_target_enabled': True,
+                'profit_target_percent': 50,
+                'stop_loss_enabled': True,
+                'stop_loss_percent': 200,
+                'dte_exit_enabled': True,
+                'dte_exit_days': 3,
+                'dte_exit_time': '14:00',
+                'trailing_profit_enabled': False,
+                'trailing_profit_percent': 20,
+            }
+
+        # Default delta hedge config (Phase 3)
+        if delta_hedge_config is None:
+            delta_hedge_config = {
+                'enabled': True,
+                'micro_hedge_threshold': 0.20,
+                'standard_hedge_threshold': 0.40,
+                'emergency_hedge_threshold': 0.80,
+                'hedge_cooldown_minutes': 5,
+                'max_hedges_per_day': 15,
+                'hedge_method': 'roll_leg',
+            }
+
+        # Default IV filter config (Phase 4)
+        if iv_filter_config is None:
+            iv_filter_config = {
+                'enabled': False,
+                'min_iv_rank': 20,
+                'warn_iv_rank': 30,
+                'ideal_iv_rank': 50,
+            }
+
         session = {
             'session_id': session_id,
             'underlying': underlying,
@@ -201,6 +239,9 @@ class SSRAlgoStorage:
             'strike_config': strike_config,
             'circuit_breaker_config': circuit_breaker_config,
             'greeks_limits': greeks_limits,
+            'exit_rules': exit_rules,
+            'delta_hedge_config': delta_hedge_config,
+            'iv_filter_config': iv_filter_config,
             'dwell_time_minutes': dwell_time_minutes,
             'price_tolerance': price_tolerance,
             'status': 'IDLE',
@@ -221,6 +262,33 @@ class SSRAlgoStorage:
             'max_loss_lower': None,
             'zone_entry_time': None,
             'logs': [],  # Activity logs for user visibility
+            # Phase 1: Live Greeks & MTM P&L
+            'live_greeks': {
+                'net_delta': 0.0,
+                'net_gamma': 0.0,
+                'net_theta': 0.0,
+                'net_vega': 0.0,
+                'leg_count': 0
+            },
+            'live_pnl': {
+                'unrealized_pnl': 0.0,
+                'realized_pnl': 0.0,
+                'total_pnl': 0.0,
+                'per_leg_pnl': []
+            },
+            'greeks_updated_at': None,
+            # Phase 8: Execution quality tracking
+            'execution_stats': {
+                'total_orders': 0,
+                'total_slippage_pct': 0.0,
+                'avg_slippage_pct': 0.0,
+                'maker_fills': 0,
+                'taker_fills': 0,
+            },
+            # Phase 3: Delta hedging tracking
+            'last_hedge_time': None,
+            'daily_hedge_count': 0,
+            'hedge_history': [],
             'created_at': datetime.utcnow().isoformat(),
             'updated_at': datetime.utcnow().isoformat()
         }
@@ -542,6 +610,81 @@ class SSRAlgoStorage:
         if not session:
             return 0
         return len(session.get('pending_orders', []))
+
+    def update_position_leg(self, session_id: str, trigger_id: int,
+                             leg_key: str, new_leg_data: Dict) -> Optional[Dict]:
+        """
+        Update a single leg within a specific position group.
+
+        Args:
+            session_id: Session identifier
+            trigger_id: Trigger ID of the position group
+            leg_key: Leg key (atm_ce, atm_pe, etc.)
+            new_leg_data: New data for the leg
+
+        Returns:
+            Updated session or None
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return None
+
+        positions = session.get('positions', [])
+        for pos_group in positions:
+            if pos_group.get('trigger_id') == trigger_id:
+                pos_group[leg_key] = new_leg_data
+                return self.update_session(session_id, {'positions': positions})
+
+        return None
+
+    def close_position_leg(self, session_id: str, trigger_id: int,
+                            leg_key: str, close_price: float,
+                            realized_pnl: float) -> Optional[Dict]:
+        """
+        Mark a specific leg as closed and record realized P&L.
+
+        Args:
+            session_id: Session identifier
+            trigger_id: Trigger ID of the position group
+            leg_key: Leg key (atm_ce, atm_pe, etc.)
+            close_price: Exit fill price
+            realized_pnl: P&L realized on this leg
+
+        Returns:
+            Updated session or None
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return None
+
+        positions = session.get('positions', [])
+        for pos_group in positions:
+            if pos_group.get('trigger_id') == trigger_id:
+                leg = pos_group.get(leg_key)
+                if leg:
+                    leg['closed'] = True
+                    leg['close_price'] = close_price
+                    leg['closed_at'] = datetime.utcnow().isoformat()
+                    leg['realized_pnl'] = realized_pnl
+
+                    # Add to closed_positions
+                    closed = session.get('closed_positions', [])
+                    closed.append({
+                        'symbol': leg.get('symbol'),
+                        'leg_key': leg_key,
+                        'trigger_id': trigger_id,
+                        'entry_price': leg.get('entry_price', 0),
+                        'close_price': close_price,
+                        'pnl': realized_pnl,
+                        'closed_at': datetime.utcnow().isoformat()
+                    })
+
+                    return self.update_session(session_id, {
+                        'positions': positions,
+                        'closed_positions': closed
+                    })
+
+        return None
 
 
 # Singleton instance

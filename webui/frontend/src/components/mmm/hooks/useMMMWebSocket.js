@@ -52,6 +52,21 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   // Track the latest premium_map from price ticks (updated every 5s)
   const latestPremiumMap = useRef({});
 
+  // Reset all state when sessionId changes to prevent stale cross-session data
+  useEffect(() => {
+    setHeartbeat(null);
+    setAdjustments([]);
+    setReversals([]);
+    setShifts([]);
+    setCloseEvents([]);
+    setBothSidesAlert(null);
+    setSafetyEvents([]);
+    setPnl(null);
+    setStatus(null);
+    setWalkthroughEntries([]);
+    latestPremiumMap.current = {};
+  }, [sessionId]);
+
   useEffect(() => {
     if (!sharedSocket) return;
 

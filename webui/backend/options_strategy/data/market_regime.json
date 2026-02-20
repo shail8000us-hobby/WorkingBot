@@ -1,0 +1,18 @@
+{
+  "trend": "neutral",
+  "trend_strength": 0.5,
+  "volatility": "low",
+  "volatility_percentile": 25.0,
+  "current_iv": 0.6,
+  "momentum": "steady",
+  "momentum_score": 0,
+  "price_location": "mid_range",
+  "distance_to_support_pct": 0.0,
+  "distance_to_resistance_pct": 0.0,
+  "current_price": 67006.1,
+  "price_24h_change_pct": 0.0,
+  "price_7d_change_pct": 0.0,
+  "symbol": "BTCUSD",
+  "analyzed_at": "2026-02-20T23:02:54.794716",
+  "confidence": 0.3
+}
