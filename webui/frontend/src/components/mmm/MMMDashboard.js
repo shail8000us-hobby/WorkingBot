@@ -75,6 +75,7 @@ import MMMPnLChart from './MMMPnLChart';
 import MMMBothSidesAlert from './MMMBothSidesAlert';
 import MMMSafetyPanel from './MMMSafetyPanel';
 import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
+import MMMRegimePanel from './MMMRegimePanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
@@ -1163,6 +1164,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <Tab label="Greeks & IV" />
         <Tab label="Analytics" />
         <Tab label="Margin" />
+        <Tab label="Regime" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -1503,6 +1505,15 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <MMMMarginGuardianPanel
           session={session}
           sessionId={session?.session_id || session?.id}
+        />
+      )}
+
+      {/* Tab 12: Regime — Pre-adjustment risk controls */}
+      {detailTab === 12 && (
+        <MMMRegimePanel
+          session={session}
+          regimeData={wsData.regimeData}
+          heartbeat={wsData.heartbeat}
         />
       )}
 

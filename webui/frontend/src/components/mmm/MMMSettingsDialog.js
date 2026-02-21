@@ -90,6 +90,22 @@ const PARAM_GROUPS = {
     blurb: 'Real-time margin monitoring — auto-defends when margin utilization crosses thresholds: blocks new sells (Yellow), forces buybacks (Orange), emergency closes (Red), survival shutdown (Critical).',
     params: ['margin_monitor_enabled', 'margin_green_pct', 'margin_yellow_pct', 'margin_orange_pct', 'margin_red_pct', 'margin_critical_pct', 'margin_target_pct'],
   },
+  regimeControls: {
+    title: 'Regime Controls',
+    color: '#ff5722',
+    blurb: 'Pre-adjustment intelligence: detects dangerous market conditions (vol spikes, gamma explosion, strong trends) and blocks exposure-increasing trades. Risk-reducing trades always proceed.',
+    params: [
+      'regime_enabled',
+      'vol_regime_enabled', 'vol_iv_spike_pct', 'vol_rv_threshold',
+      'vol_lookback_beats', 'vol_rv_window', 'vol_regime_action',
+      'vol_regime_cooldown_beats',
+      'gamma_cap_enabled', 'gamma_soft_limit', 'gamma_hard_limit',
+      'gamma_emergency_limit', 'gamma_near_expiry_multiplier',
+      'trend_enabled', 'trend_move_pct', 'trend_retrace_pct',
+      'trend_ema_period', 'trend_ema_slope_threshold', 'trend_action',
+      'trend_reset_beats',
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)
@@ -129,6 +145,29 @@ const PARAM_TOOLTIPS = {
   margin_red_pct: 'At this % = RED tier — emergency mode. Closes ALL positions using taker (IOC) orders for fastest fills. This is the fire alarm. Default: 85%.',
   margin_critical_pct: 'At this % = CRITICAL tier — survival mode. Closes ALL positions AND stops the session completely. Only manual restart possible. Default: 90%.',
   margin_target_pct: 'Target margin utilization to wind down to during ORANGE/RED reductions. The algo estimates how many lots to close to reach this level. Default: 50%.',
+  // Regime Controls — Volatility Regime Filter
+  regime_enabled: 'MASTER SWITCH for ALL regime controls (Vol Filter, Gamma Cap, Trend Guard). When OFF, regime data is still collected for observation but NO trades are blocked or forced. Turn ON only after validating regime data for a few days.',
+  vol_regime_enabled: 'Master switch for the volatility regime filter. When enabled, monitors IV change rate and realized volatility to detect dangerous vol environments. Blocks new sells during spikes.',
+  vol_iv_spike_pct: 'IV change % threshold. If implied volatility rises this much from the lookback point (e.g., 30%), the vol regime triggers. Higher = less sensitive. For BTC 0DTE, 30% is a good starting point.',
+  vol_rv_threshold: 'Annualized realized volatility threshold. If RV exceeds this (e.g., 80%), it indicates a high-vol environment. Computed from spot prices already being fetched.',
+  vol_lookback_beats: 'How many heartbeats to look back for the IV rate-of-change calculation. At 60s adaptive interval, 5 beats = 5-minute lookback.',
+  vol_rv_window: 'Number of heartbeats for the realized volatility calculation window. More beats = smoother but slower to react. 20 beats at 60s = ~20 minute window.',
+  vol_regime_action: 'What to do when vol regime triggers: "block_sells" (block new sell orders), "pause" (pause entire session), "wind_down" (activate wind-down to reduce positions).',
+  vol_regime_cooldown_beats: 'After regime goes HIGH, it must stay below threshold for this many consecutive beats before returning to NORMAL. Prevents premature reset from brief IV dips.',
+  // Regime Controls — Portfolio Gamma Cap
+  gamma_cap_enabled: 'Master switch for portfolio gamma cap. Monitors total dollar gamma exposure and enforces soft/hard/emergency limits.',
+  gamma_soft_limit: 'Dollar gamma soft limit (warning). When your portfolio $gamma exceeds this, you get a warning log but adjustments still proceed. Suggested: max_loss × 0.01.',
+  gamma_hard_limit: 'Dollar gamma hard limit. ALL new sell orders are blocked when exceeded. Adjustments blocked but risk-reducing trades continue. Suggested: max_loss × 0.02.',
+  gamma_emergency_limit: 'Dollar gamma emergency limit. Forces wind-down buybacks to reduce gamma below the hard limit. This is the "gamma knife" defense for 0DTE. Suggested: max_loss × 0.04.',
+  gamma_near_expiry_multiplier: 'In the last 30 minutes before expiry, multiply all gamma limits by this factor (e.g., 0.5 = limits cut in half). Gamma explodes near ATM at expiry — tighter control needed.',
+  // Regime Controls — Trend Detection Guard
+  trend_enabled: 'Master switch for the trend detection guard. Detects strong directional moves and blocks exposure-increasing sells on the dangerous side. The most impactful regime control.',
+  trend_move_pct: 'Percentage move from session anchor that triggers the trend guard. For BTC at $100K, 1.5% = ~$1,500 — roughly a 1-sigma move for an 8-hour session.',
+  trend_retrace_pct: 'Spot must retrace this percentage of the move before the trend guard resets. 30% means if BTC moved $2K, it needs to pull back $600 before the guard clears.',
+  trend_ema_period: 'EMA (Exponential Moving Average) period in heartbeats for slope calculation. Confirms sustained directional drift vs. a one-time spike.',
+  trend_ema_slope_threshold: 'EMA slope threshold for trend confirmation. Higher = less sensitive. A slope of 25 means ~0.25% per beat average drift — strong sustained move.',
+  trend_action: 'What to do when trend triggers: "block_sells" (block dangerous-side sells only — smart directional blocking), "pause" (pause session), "wind_down" (also activate wind-down on dangerous side).',
+  trend_reset_beats: 'After retracement and EMA slope calm down, must stay calm for this many consecutive beats before resetting to NORMAL. Prevents whipsaw on/off of trend guard.',
 };
 
 // =============================================================================

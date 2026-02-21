@@ -56,9 +56,10 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    adaptive_tier: str = None,
                    wind_down_active: bool = False,
                    portfolio_delta: float = 0,
-                   margin_data: Dict = None):
+                   margin_data: Dict = None,
+                   regime_data: Dict = None):
     """Emit heartbeat data every interval. Section 4.
-    
+
     Args:
         premium_map: Dict mapping "strike:option_type" to current mark price.
                      Includes ALL strikes with open positions (active + frozen).
@@ -67,6 +68,7 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         wind_down_active: Whether wind-down mode is currently active
         portfolio_delta: Portfolio delta (monitoring only, no trading impact)
         margin_data: Optional margin guardian snapshot (tier, utilization_pct, etc.)
+        regime_data: Optional regime controls snapshot (vol/gamma/trend regimes + action)
     """
     payload = {
         'session_id': session_id,
@@ -84,6 +86,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
     }
     if margin_data:
         payload['margin'] = margin_data
+    if regime_data:
+        payload['regime'] = regime_data
     _emit('mmm_heartbeat', payload)
 
 
@@ -240,6 +244,21 @@ def emit_session_deleted(session_id: str):
 def emit_activity(activity: Dict):
     """Emit a background activity event for real-time UI updates."""
     _emit('mmm_activity', activity)
+
+
+def emit_regime(session_id: str, regime_status: Dict):
+    """
+    Emit regime controls status update every heartbeat.
+
+    Args:
+        session_id: Session identifier
+        regime_status: Full regime status from MMMRegimeEngine.get_regime_status()
+            Contains: vol_regime, gamma_regime, trend_regime, regime_action, details
+    """
+    _emit('mmm_regime', {
+        'session_id': session_id,
+        **regime_status,
+    })
 
 
 def emit_activities_updated():

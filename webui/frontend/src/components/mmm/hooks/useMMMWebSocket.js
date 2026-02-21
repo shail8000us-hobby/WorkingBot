@@ -30,6 +30,7 @@ const EVENTS = [
   'mmm_params_changed',
   'mmm_status_change',
   'mmm_session_created',
+  'mmm_regime',
 ];
 
 /**
@@ -48,6 +49,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   const [status, setStatus] = useState(null);
   const [connected, setConnected] = useState(false);
   const [walkthroughEntries, setWalkthroughEntries] = useState([]);
+  const [regimeData, setRegimeData] = useState(null);
 
   // Track the latest premium_map from price ticks (updated every 5s)
   const latestPremiumMap = useRef({});
@@ -64,6 +66,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     setPnl(null);
     setStatus(null);
     setWalkthroughEntries([]);
+    setRegimeData(null);
     latestPremiumMap.current = {};
   }, [sessionId]);
 
@@ -189,6 +192,14 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     };
     socket.on('mmm_walkthrough', onWalkthrough);
 
+    // Regime controls
+    const onRegime = (data) => {
+      if (!sessionId || data.session_id === sessionId) {
+        setRegimeData(data);
+      }
+    };
+    socket.on('mmm_regime', onRegime);
+
     return () => {
       // Remove only OUR listeners — don't disconnect the shared socket
       socket.off('connect', onConnect);
@@ -205,6 +216,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
       socket.off('mmm_status_change', onStatus);
       socket.off('mmm_params_changed', onParams);
       socket.off('mmm_walkthrough', onWalkthrough);
+      socket.off('mmm_regime', onRegime);
     };
   }, [sessionId, sharedSocket]);
 
@@ -231,5 +243,6 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     clearBothSidesAlert,
     clearSafetyEvents,
     walkthroughEntries,
+    regimeData,
   };
 }

@@ -525,6 +525,17 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Get regime controls status for a session
+   * @param {string} sessionId
+   */
+  async getRegimeStatus(sessionId) {
+    const { data } = await api.get(
+      `${BASE_URL}/session/${sessionId}/regime`
+    );
+    return data;
+  },
+
   // =========================================================================
   // Margin Guardian
   // =========================================================================

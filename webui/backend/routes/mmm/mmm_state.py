@@ -161,8 +161,9 @@ DEFAULT_PARAMS = {
     'margin_target_pct': 50.0,            # target utilization to wind down to
 
     # Regime Controls — pre-adjustment risk intelligence
+    'regime_enabled': False,                 # MASTER switch for ALL regime controls (vol/gamma/trend)
     # Section A: Volatility Regime Filter
-    'vol_regime_enabled': True,            # master switch for vol regime filter
+    'vol_regime_enabled': True,            # per-subsystem switch for vol regime filter
     'vol_iv_spike_pct': 30,               # IV change % threshold to trigger ELEVATED/HIGH
     'vol_rv_threshold': 80,               # annualized RV % threshold
     'vol_lookback_beats': 5,              # beats for IV rate calculation
@@ -172,9 +173,9 @@ DEFAULT_PARAMS = {
 
     # Section B: Portfolio Gamma Cap
     'gamma_cap_enabled': True,             # master switch for gamma cap
-    'gamma_soft_limit': 50.0,             # dollar gamma soft limit (warning)
-    'gamma_hard_limit': 100.0,            # dollar gamma hard limit (block sells)
-    'gamma_emergency_limit': 200.0,       # dollar gamma emergency (force reduce)
+    'gamma_soft_limit': 2500.0,           # dollar gamma soft limit (warning) — BTC-scaled
+    'gamma_hard_limit': 5000.0,           # dollar gamma hard limit (block sells) — BTC-scaled
+    'gamma_emergency_limit': 10000.0,     # dollar gamma emergency (force reduce) — BTC-scaled
     'gamma_near_expiry_multiplier': 0.5,  # tighten limits by this factor in last 30 min
 
     # Section C: Trend Detection Guard
@@ -205,6 +206,7 @@ HOT_RELOAD_PARAMS = {
     'margin_orange_pct', 'margin_red_pct', 'margin_critical_pct',
     'margin_target_pct',
     # Regime Controls
+    'regime_enabled',
     'vol_regime_enabled', 'vol_iv_spike_pct', 'vol_rv_threshold',
     'vol_lookback_beats', 'vol_rv_window', 'vol_regime_action',
     'vol_regime_cooldown_beats',
@@ -339,6 +341,36 @@ def create_session(
         # Error tracking
         'last_error': None,
         'error_count': 0,
+
+        # Regime Controls — runtime state (persisted for crash recovery)
+        '_vol_regime': 'NORMAL',
+        '_vol_regime_since': None,
+        '_vol_iv_history': [],       # ring buffer [(timestamp, iv_avg), ...]
+        '_vol_spot_history': [],     # ring buffer [(timestamp, spot), ...]
+        '_vol_regime_beats_below': 0,
+        '_vol_iv_change_pct': 0.0,
+        '_vol_rv_annualized': 0.0,
+        '_vol_regime_score': 0.0,
+
+        '_portfolio_gamma': 0.0,
+        '_portfolio_dollar_gamma': 0.0,
+        '_gamma_regime': 'NORMAL',
+        '_gamma_history': [],        # ring buffer [(timestamp, dollar_gamma), ...]
+        '_gamma_blocked_count': 0,
+        '_gamma_data_incomplete': False,
+
+        '_trend_regime': 'NORMAL',
+        '_trend_since': None,
+        '_trend_anchor_spot': 0.0,
+        '_trend_high': 0.0,
+        '_trend_low': 0.0,
+        '_trend_calm_beats': 0,
+        '_trend_ema': 0.0,
+        '_trend_ema_prev': 0.0,
+        '_trend_ema_slope': 0.0,
+        '_trend_move_pct': 0.0,
+
+        '_regime_action': 'NORMAL',
 
         # Session Analytics (institutional-level exposure tracking)
         'analytics': {

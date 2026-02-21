@@ -2948,6 +2948,49 @@ def get_beat_health(session_id: str):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@mmm_bp.route('/session/<session_id>/regime', methods=['GET'])
+def get_regime_status(session_id: str):
+    """
+    Return full regime controls status for a session.
+
+    Includes all three control states (vol, gamma, trend), current aggregate
+    action, metric details, and recent history arrays.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        from .mmm_regime import MMMRegimeEngine
+        engine = MMMRegimeEngine()
+        regime_status = engine.get_regime_status(session)
+
+        # Add history arrays (last 20 data points)
+        regime_status['vol_iv_history'] = (session.get('_vol_iv_history', []) or [])[-20:]
+        regime_status['vol_spot_history'] = (session.get('_vol_spot_history', []) or [])[-20:]
+        regime_status['gamma_history'] = (session.get('_gamma_history', []) or [])[-20:]
+        regime_status['vol_regime_since'] = session.get('_vol_regime_since')
+        regime_status['gamma_regime_since'] = session.get('_gamma_regime_since')
+        regime_status['trend_since'] = session.get('_trend_since')
+        regime_status['gamma_blocked_count'] = session.get('_gamma_blocked_count', 0)
+
+        # Observation mode: regime_enabled is OFF — data collected but not enforced
+        params = session.get('params', {})
+        if not params.get('regime_enabled', False):
+            regime_status['observation_mode'] = True
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            **regime_status,
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get regime status for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/session/<session_id>/greeks-iv', methods=['GET'])
 def get_greeks_iv(session_id: str):
     """

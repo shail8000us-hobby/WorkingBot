@@ -278,9 +278,10 @@ def _update_gamma_cap(
     session['_gamma_history'] = gamma_history
 
     # ── Get limits with near-expiry multiplier (Section B.3) ──
-    soft_limit = params.get('gamma_soft_limit', 50.0)
-    hard_limit = params.get('gamma_hard_limit', 100.0)
-    emergency_limit = params.get('gamma_emergency_limit', 200.0)
+    # Defaults scaled for BTC ($67K spot produces ~$1000+ dollar gamma with 100 lots)
+    soft_limit = params.get('gamma_soft_limit', 2500.0)
+    hard_limit = params.get('gamma_hard_limit', 5000.0)
+    emergency_limit = params.get('gamma_emergency_limit', 10000.0)
 
     if minutes_to_expiry is not None and minutes_to_expiry <= 30:
         multiplier = params.get('gamma_near_expiry_multiplier', 0.5)
@@ -722,7 +723,7 @@ class MMMRegimeEngine:
             session, new_strike_gamma, new_lots, spot_price,
         )
         hard_limit = session.get('_gamma_hard_limit_effective',
-                                  params.get('gamma_hard_limit', 100.0))
+                                  params.get('gamma_hard_limit', 5000.0))
 
         if projected > hard_limit:
             session['_gamma_blocked_count'] = session.get('_gamma_blocked_count', 0) + 1

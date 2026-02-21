@@ -55,6 +55,29 @@ PARAM_RULES = {
     'margin_red_pct':            {'type': float, 'min': 40,   'max': 100,   'hot': True},
     'margin_critical_pct':       {'type': float, 'min': 50,   'max': 100,   'hot': True},
     'margin_target_pct':         {'type': float, 'min': 10,   'max': 100,   'hot': True},
+    # Regime Controls — Volatility Regime Filter
+    'regime_enabled':             {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'vol_regime_enabled':        {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'vol_iv_spike_pct':          {'type': int,   'min': 5,    'max': 200,   'hot': True},
+    'vol_rv_threshold':          {'type': int,   'min': 20,   'max': 300,   'hot': True},
+    'vol_lookback_beats':        {'type': int,   'min': 2,    'max': 30,    'hot': True},
+    'vol_rv_window':             {'type': int,   'min': 5,    'max': 60,    'hot': True},
+    'vol_regime_action':         {'type': str,   'min': None, 'max': None,  'hot': True},
+    'vol_regime_cooldown_beats': {'type': int,   'min': 3,    'max': 60,    'hot': True},
+    # Regime Controls — Portfolio Gamma Cap
+    'gamma_cap_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'gamma_soft_limit':          {'type': float, 'min': 1,    'max': 50000, 'hot': True},
+    'gamma_hard_limit':          {'type': float, 'min': 1,    'max': 50000, 'hot': True},
+    'gamma_emergency_limit':     {'type': float, 'min': 1,    'max': 50000, 'hot': True},
+    'gamma_near_expiry_multiplier': {'type': float, 'min': 0.1, 'max': 1.0, 'hot': True},
+    # Regime Controls — Trend Detection Guard
+    'trend_enabled':             {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'trend_move_pct':            {'type': float, 'min': 0.5,  'max': 10,    'hot': True},
+    'trend_retrace_pct':         {'type': int,   'min': 10,   'max': 80,    'hot': True},
+    'trend_ema_period':          {'type': int,   'min': 5,    'max': 50,    'hot': True},
+    'trend_ema_slope_threshold': {'type': int,   'min': 5,    'max': 100,   'hot': True},
+    'trend_action':              {'type': str,   'min': None, 'max': None,  'hot': True},
+    'trend_reset_beats':         {'type': int,   'min': 2,    'max': 30,    'hot': True},
 }
 
 
@@ -162,6 +185,29 @@ def get_param_info() -> Dict[str, Dict]:
         'margin_red_pct': 'At this % = emergency — close all positions using taker orders',
         'margin_critical_pct': 'At this % = survival — close all + stop session immediately',
         'margin_target_pct': 'Target margin utilization to wind down to during ORANGE/RED tiers',
+        # Regime Controls — Volatility Regime Filter
+        'regime_enabled': 'MASTER SWITCH for ALL regime controls (Volatility Filter, Gamma Cap, Trend Guard). When OFF, no regime checks run and adjustments proceed freely. Turn ON only after validating the data for a few days.',
+        'vol_regime_enabled': 'Enable volatility regime filter — detects IV spikes and high RV to block sells in dangerous vol environments',
+        'vol_iv_spike_pct': 'IV change % threshold — if IV rises this much from lookback point, trigger ELEVATED/HIGH regime',
+        'vol_rv_threshold': 'Annualized realized volatility % threshold — high RV indicates dangerous market',
+        'vol_lookback_beats': 'Number of heartbeats to look back for IV rate-of-change calculation',
+        'vol_rv_window': 'Number of heartbeats for realized volatility computation window',
+        'vol_regime_action': 'Action when vol regime triggers: block_sells (block new sells), pause (pause session), wind_down (activate wind-down)',
+        'vol_regime_cooldown_beats': 'Must stay below threshold for this many beats before returning to NORMAL (prevents premature reset)',
+        # Regime Controls — Portfolio Gamma Cap
+        'gamma_cap_enabled': 'Enable portfolio gamma cap — monitors total dollar gamma exposure and blocks/reduces when limits exceeded',
+        'gamma_soft_limit': 'Dollar gamma soft limit — warning level. Log alert but allow adjustments',
+        'gamma_hard_limit': 'Dollar gamma hard limit — block all new sell orders when exceeded',
+        'gamma_emergency_limit': 'Dollar gamma emergency — force wind-down buybacks to reduce gamma below hard limit',
+        'gamma_near_expiry_multiplier': 'Tighten gamma limits by this factor in last 30 minutes (gamma explodes near expiry for ATM strikes)',
+        # Regime Controls — Trend Detection Guard
+        'trend_enabled': 'Enable trend detection guard — blocks exposure-increasing sells into strong directional moves',
+        'trend_move_pct': 'Percentage move from session anchor to trigger trend guard (1.5% = ~$1,500 at BTC $100K)',
+        'trend_retrace_pct': 'Spot must retrace this % of the move before trend guard resets (30 = need 30% retracement)',
+        'trend_ema_period': 'EMA period in beats for slope calculation — confirms sustained directional drift',
+        'trend_ema_slope_threshold': 'EMA slope threshold for trend confirmation — higher = less sensitive',
+        'trend_action': 'Action when trend triggers: block_sells (block dangerous-side sells), pause, wind_down (also activate wind-down)',
+        'trend_reset_beats': 'Must stay calm (retrace + low EMA slope) for this many beats before resetting to NORMAL',
     }
 
     info = {}

@@ -269,7 +269,16 @@ class MMMSafety:
                             'resume_after': resume_after,
                         },
                     })
-                    return events  # Resume, don't re-check whipsaw
+                else:
+                    # Still in cooldown — return immediately without re-checking.
+                    # Critical: falling through to the whipsaw detection below would
+                    # re-detect the same alternating pattern (no new trades during pause)
+                    # and reset _whipsaw_paused_at to now, causing the timer to never
+                    # count down and the session to never auto-resume.
+                    log.debug(
+                        f"Whipsaw cooldown active: {elapsed:.0f}s / {resume_after}s elapsed"
+                    )
+                return events  # Resume or still cooling — don't re-check whipsaw
             except (ValueError, TypeError):
                 session.pop('_whipsaw_paused_at', None)
 

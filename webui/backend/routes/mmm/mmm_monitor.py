@@ -69,6 +69,7 @@ from .mmm_websocket import (
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
+from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE
 from .mmm_telegram import (
     alert_margin_tier_change, alert_emergency_close,
     alert_session_stopped, alert_rapid_check_activated,
@@ -115,6 +116,11 @@ class MMMMonitor:
 
         # Margin Guardian (P1 safety layer)
         self._margin_guardian = MarginGuardian(session_id)
+
+        # Regime Engine (pre-adjustment risk controls)
+        self._regime_engine = MMMRegimeEngine()
+        self._last_iv_data = {}   # Populated by _fetch_premiums
+        self._last_gamma_data = {}  # Populated by _calculate_portfolio_delta
 
         # Lazy-loaded
         self._executor = None
@@ -854,6 +860,115 @@ class MMMMonitor:
                             sid, 'success')
                 self.resume(event.get('message', 'Auto-resume'))
 
+        # ────────────────── NEW: Regime Controls ──────────────────
+        # Step 3.5: Portfolio Delta/Gamma + Volatility Regime + Trend Detection
+        # Runs AFTER safety (safety hard stops always fire first)
+        # Runs BEFORE trigger evaluation (gates adjustment engine)
+        # Risk-reducing trades (close-at-5, wind-down) already ran above — immune to regime blocks
+
+        # Fetch portfolio delta + gamma EARLY — outside try so crash doesn't kill regime
+        # This populates self._last_gamma_data for the regime engine
+        portfolio_delta = await self._calculate_portfolio_delta()
+        session['portfolio_delta'] = portfolio_delta
+
+        # Fetch spot price for regime controls (reused by trend guard)
+        regime_spot_price = await self._fetch_spot_price()
+        session['_regime_spot_price'] = regime_spot_price
+
+        # MASTER SWITCH: skip all regime checks when disabled
+        regime_master = params.get('regime_enabled', False)
+        if not regime_master:
+            session['_regime_action'] = ACTION_NORMAL
+            # Still emit regime data (observation mode) but don't gate adjustments
+            try:
+                spot_price = regime_spot_price
+                iv_data = self._last_iv_data
+                gamma_data = self._last_gamma_data
+                self._regime_engine.update_vol_regime(session, iv_data, spot_price)
+                self._regime_engine.update_gamma_cap(
+                    session, gamma_data, spot_price, minutes_to_expiry,
+                )
+                self._regime_engine.update_trend_guard(session, spot_price)
+                # Compute but DON'T enforce — observation only
+                self._regime_engine.compute_regime_action(session)
+                regime_status = self._regime_engine.get_regime_status(session)
+                regime_status['observation_mode'] = True
+                from .mmm_websocket import emit_regime
+                emit_regime(sid, regime_status)
+            except Exception:
+                pass  # non-fatal in observation mode
+            # Fall through to normal trigger evaluation
+        else:
+            # Regime is ENABLED — enforce regime actions
+            try:
+                spot_price = regime_spot_price
+                iv_data = self._last_iv_data
+                gamma_data = self._last_gamma_data
+
+                self._regime_engine.update_vol_regime(session, iv_data, spot_price)
+                self._regime_engine.update_gamma_cap(
+                    session, gamma_data, spot_price, minutes_to_expiry,
+                )
+                self._regime_engine.update_trend_guard(session, spot_price)
+                regime_action = self._regime_engine.compute_regime_action(session)
+
+                # Emit regime status via WebSocket (included in heartbeat, low overhead)
+                regime_status = self._regime_engine.get_regime_status(session)
+                from .mmm_websocket import emit_regime
+                emit_regime(sid, regime_status)
+
+                # Log regime state
+                if regime_action != ACTION_NORMAL:
+                    vol_r = session.get('_vol_regime', 'NORMAL')
+                    gamma_r = session.get('_gamma_regime', 'NORMAL')
+                    trend_r = session.get('_trend_regime', 'NORMAL')
+                    log_activity('regime_control',
+                                f'Regime: {regime_action} '
+                                f'(vol={vol_r}, gamma={gamma_r}, trend={trend_r})',
+                                sid, 'warning',
+                                regime_status)
+                    emit_safety(
+                        sid, 'regime', 'alert' if 'BLOCK' in regime_action else 'warning',
+                        f'Regime controls active: {regime_action}',
+                        regime_status,
+                    )
+                else:
+                    log_activity('info', 'Regime Controls: All clear', sid, 'success')
+
+                # Handle FORCE_REDUCE (gamma emergency — Priority 2)
+                # NOTE: only PAUSEs and warns — does NOT auto-wind-down
+                if regime_action == ACTION_FORCE_REDUCE:
+                    log_activity('regime_emergency',
+                                f'GAMMA EMERGENCY: $Gamma={session.get("_portfolio_dollar_gamma", 0):.2f} '
+                                f'exceeds emergency limit. Session PAUSED for manual review.',
+                                sid, 'error',
+                                {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)})
+                    emit_safety(
+                        sid, 'regime', 'critical',
+                        f'⚠️ GAMMA EMERGENCY: $Γ={session.get("_portfolio_dollar_gamma", 0):.2f} — session paused. '
+                        f'Review positions and manually wind down if needed.',
+                        {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)},
+                    )
+                    self.pause('Gamma emergency — manual review required')
+                    self._emit_heartbeat_data(ce_now, pe_now)
+                    _save_session(session)
+                    return
+
+                # Handle BLOCK_ALL_SELLS — skip trigger evaluation entirely
+                if regime_action == ACTION_BLOCK_ALL_SELLS:
+                    log_activity('regime_block',
+                                f'All sells blocked by regime controls — skipping trigger evaluation',
+                                sid, 'warning')
+                    self._emit_heartbeat_data(ce_now, pe_now)
+                    _save_session(session)
+                    return
+
+            except Exception as e:
+                log.warning(f"[{sid}] Regime check failed (non-fatal): {e}")
+                # Regime failure is non-fatal — continue with normal heartbeat
+                session['_regime_action'] = ACTION_NORMAL
+        # ────────────────── END Regime Controls ──────────────────
+
         # Step 4: If paused, check for both-sides-up auto-decision (30s timeout)
         if self._paused:
             status = session.get('strategy_status', '')
@@ -995,8 +1110,26 @@ class MMMMonitor:
             premium_now = ce_now if aggressor == 'ce' else pe_now
             hedge_premium = pe_now if aggressor == 'ce' else ce_now
 
+            # Regime-based directional blocking (Section C.4 / D.4)
+            # Check BEFORE wind-down/margin — regime controls gate sells
+            regime_action = session.get('_regime_action', ACTION_NORMAL)
+            blocked, block_reason = self._regime_engine.should_block_sell(session, hedge)
+            if blocked and regime_action != ACTION_FORCE_REDUCE:
+                # Regime blocks this sell, but risk-reducing trades continue
+                log_activity('regime_block',
+                            f'Regime blocked {hedge.upper()} sell: {block_reason}',
+                            sid, 'warning',
+                            {'hedge': hedge, 'aggressor': aggressor, 'reason': block_reason})
+                emit_safety(
+                    sid, 'regime', 'alert',
+                    f'Sell blocked: {block_reason}',
+                    {'hedge': hedge, 'aggressor': aggressor},
+                )
+                # Still allow wind-down buybacks if wind-down is active
+                if is_wind_down_active(session) or session.get('_gamma_emergency_wind_down'):
+                    await self._process_wind_down_buyback(aggressor, ce_now, pe_now)
             # Wind-down mode: reduce instead of adding positions
-            if is_wind_down_active(session):
+            elif is_wind_down_active(session):
                 session['_wind_down_mode'] = True
                 log_activity('wind_down',
                             f'🌙 Wind-Down Active: {aggressor.upper()} triggered — '
@@ -1071,9 +1204,9 @@ class MMMMonitor:
                         'fees': round(pnl['fees'], 2)
                     })
 
-        # Step 9: Calculate Portfolio Delta (monitoring only, no trading logic)
-        portfolio_delta = await self._calculate_portfolio_delta()
-        session['portfolio_delta'] = portfolio_delta
+        # Step 9: Portfolio Delta (already computed in Step 3.5 for regime checks)
+        # Reuse cached value — no duplicate API call
+        portfolio_delta = session.get('portfolio_delta', 0)
         log_activity('info',
                     f'Portfolio Delta: {portfolio_delta:+.3f}',
                     sid, 'info',
@@ -2696,8 +2829,7 @@ class MMMMonitor:
             # Fetch all open positions from the exchange
             resp = await rest._request_with_retry(
                 method="GET",
-                path="/v2/positions",
-                params={"product_types": "options"},
+                path="/v2/positions/margined",
             )
 
             positions = resp.get('result', [])
@@ -2857,8 +2989,25 @@ class MMMMonitor:
             ce_data = ce_resp.get('result', ce_resp)
             pe_data = pe_resp.get('result', pe_resp)
 
-            ce_mark = float(ce_data.get('mark_price', 0))
-            pe_mark = float(pe_data.get('mark_price', 0))
+            ce_mark = float(ce_data.get('mark_price', 0) or 0)
+            pe_mark = float(pe_data.get('mark_price', 0) or 0)
+
+            # Extract IV data for regime controls (zero extra API calls)
+            # Delta Exchange returns IV as:
+            #   - 'mark_vol' (top level, decimal, e.g. 0.3664 = 36.64%)
+            #   - quotes.mark_iv (string, same value)
+            # Convert to percentage for regime engine.
+            try:
+                ce_iv_raw = ce_data.get('mark_vol') or ce_data.get('quotes', {}).get('mark_iv') or 0
+                ce_iv = float(ce_iv_raw) * 100  # 0.3664 → 36.64
+            except (ValueError, TypeError):
+                ce_iv = 0.0
+            try:
+                pe_iv_raw = pe_data.get('mark_vol') or pe_data.get('quotes', {}).get('mark_iv') or 0
+                pe_iv = float(pe_iv_raw) * 100  # 0.3664 → 36.64
+            except (ValueError, TypeError):
+                pe_iv = 0.0
+            self._last_iv_data = {'ce_iv': ce_iv, 'pe_iv': pe_iv}
 
             # Store the rest client for prefetch to reuse in this heartbeat
             self._heartbeat_rest = rest
@@ -3263,6 +3412,53 @@ class MMMMonitor:
                 testnet=creds.get('testnet', False) or False,
             )
             
+            # ── Correct position_map with actual exchange positions ──
+            # Session's position_map only ADDS lots (original + fills + frozen)
+            # and never subtracts buybacks (wind-down, close-at-5).
+            # Query /v2/positions/margined for the real lot counts.
+            try:
+                pos_resp = await client._request_with_retry(
+                    method="GET", path="/v2/positions/margined",
+                )
+                exchange_positions = pos_resp.get('result', [])
+                if isinstance(exchange_positions, list):
+                    exchange_sizes = {}
+                    for pos in exchange_positions:
+                        symbol = (pos.get('product', {}).get('symbol', '')
+                                  or pos.get('symbol', ''))
+                        size = abs(float(pos.get('size', 0)))
+                        if symbol and size > 0:
+                            exchange_sizes[symbol] = size
+
+                    corrected_map = {}
+                    for (strike, opt) in list(position_map.keys()):
+                        symbol = initializer.build_symbol(opt, 'BTC', strike, expiry)
+                        actual_size = exchange_sizes.get(symbol, 0)
+                        if actual_size > 0:
+                            corrected_map[(strike, opt)] = actual_size
+
+                    old_total = sum(position_map.values())
+                    new_total = sum(corrected_map.values()) if corrected_map else 0
+                    if old_total != new_total:
+                        log.info(
+                            f"[{self.session_id}] Delta/Gamma calc: corrected "
+                            f"position_map {old_total} → {new_total} lots "
+                            f"(exchange reality)"
+                        )
+                    position_map = corrected_map
+            except Exception as e:
+                log.warning(
+                    f"[{self.session_id}] Could not fetch exchange positions "
+                    f"for delta calc, using session data: {e}"
+                )
+
+            if not position_map:
+                self._last_gamma_data = {
+                    'portfolio_gamma': 0.0,
+                    'positions': [],
+                }
+                return 0.0
+
             async def fetch_all():
                 tasks = []
                 keys = []
@@ -3279,21 +3475,53 @@ class MMMMonitor:
             
             ticker_results = await fetch_all()
             
-            # Calculate portfolio delta
+            # Calculate portfolio delta AND extract gamma for regime controls
             portfolio_delta = 0.0
+            portfolio_gamma = 0.0
+            gamma_positions = []
+
+            def _safe_greek(val):
+                """Safely convert a greek value to float (exchange may return str/None/list)."""
+                if val is None:
+                    return 0.0
+                if isinstance(val, (int, float)):
+                    return float(val)
+                if isinstance(val, str):
+                    try:
+                        return float(val)
+                    except (ValueError, TypeError):
+                        return 0.0
+                return 0.0
+
             for (strike, opt), resp in ticker_results:
                 if isinstance(resp, Exception):
                     continue
-                
-                result = resp.get('result', {})
-                greek_delta = result.get('greeks', {}).get('delta', 0)
-                
-                lots = position_map[(strike, opt)]
+
+                result = resp.get('result', resp) if isinstance(resp, dict) else {}
+                if isinstance(result, list):
+                    result = result[0] if result else {}
+                greeks = result.get('greeks', {}) or {}
+                greek_delta = _safe_greek(greeks.get('delta', 0))
+                greek_gamma = _safe_greek(greeks.get('gamma', 0))
+
+                lots = int(position_map.get((strike, opt), 0))
                 # multiplier: short CE = -1, short PE = +1
                 multiplier = 1 if opt == 'put' else -1
                 position_delta = greek_delta * lots * LOT_SIZE_BTC * multiplier
                 portfolio_delta += position_delta
-            
+
+                # Gamma: accumulate absolute gamma exposure (short options = negative gamma)
+                position_gamma = greek_gamma * lots * LOT_SIZE_BTC
+                portfolio_gamma += position_gamma
+                if greek_gamma:
+                    gamma_positions.append((greek_gamma, lots, opt))
+
+            # Store gamma data for regime engine (zero extra API calls)
+            self._last_gamma_data = {
+                'portfolio_gamma': portfolio_gamma,
+                'positions': gamma_positions,
+            }
+
             return portfolio_delta
             
         except Exception as e:
@@ -3335,6 +3563,17 @@ class MMMMonitor:
         # Get portfolio delta from session (calculated in heartbeat)
         portfolio_delta = session.get('portfolio_delta', 0)
 
+        # Build regime summary for heartbeat payload
+        regime_data = {
+            'regime_action': session.get('_regime_action', 'NORMAL'),
+            'vol_regime': session.get('_vol_regime', 'NORMAL'),
+            'gamma_regime': session.get('_gamma_regime', 'NORMAL'),
+            'trend_regime': session.get('_trend_regime', 'NORMAL'),
+            'dollar_gamma': session.get('_portfolio_dollar_gamma', 0),
+            'trend_move_pct': session.get('_trend_move_pct', 0),
+            'vol_regime_score': session.get('_vol_regime_score', 0),
+        }
+
         emit_heartbeat(
             self.session_id, ce_now, pe_now,
             ce_trigger, pe_trigger,
@@ -3345,6 +3584,7 @@ class MMMMonitor:
             wind_down_active=is_wind_down_active(session),
             portfolio_delta=portfolio_delta,
             margin_data=getattr(self, '_last_margin_snapshot', None),
+            regime_data=regime_data,
         )
 
 

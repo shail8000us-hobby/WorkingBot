@@ -1,2663 +1,2638 @@
 {
   "activities": [
     {
-      "id": "act_161620_200",
-      "timestamp": "2026-02-20T16:16:20.023494",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #119 complete [1327ms, grade=A] \u2014 Next check in 150s",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "next_interval": 150,
-        "latency_ms": 1327.1,
-        "health_grade": "A"
-      }
-    },
-    {
-      "id": "act_161849_200",
-      "timestamp": "2026-02-20T16:18:49.444907",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #120: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_161850_200",
-      "timestamp": "2026-02-20T16:18:50.485050",
+      "id": "act_022753_200",
+      "timestamp": "2026-02-21T02:27:53.673823",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $78.20, PE 65200.0 = $68.38",
+      "message": "P&L Update: Net $14.70 (Realized: $14.36, Unrealized: $0.34, Fees: $0.00)",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 78.20285867,
-        "pe_premium": 68.38080966,
-        "ce_strike": 69200.0,
-        "pe_strike": 65200.0
-      }
-    },
-    {
-      "id": "act_161850_200",
-      "timestamp": "2026-02-20T16:18:50.693174",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 3 event(s) - position_cap (warning), trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_161850_200",
-      "timestamp": "2026-02-20T16:18:50.702818",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:21:19",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:21:19.880642"
-      }
-    },
-    {
-      "id": "act_162119_200",
-      "timestamp": "2026-02-20T16:21:19.504339",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #121: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_162120_200",
-      "timestamp": "2026-02-20T16:21:20.441887",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $68.55, PE 65200.0 = $73.17",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 68.55140277,
-        "pe_premium": 73.16671359,
-        "ce_strike": 69200.0,
-        "pe_strike": 65200.0
-      }
-    },
-    {
-      "id": "act_162120_200",
-      "timestamp": "2026-02-20T16:21:20.628821",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - position_cap (warning), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_162120_200",
-      "timestamp": "2026-02-20T16:21:20.629364",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -12.1% (need >10.0%), PE +0.6% (need >10.0%) - Result: NONE",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -12.12,
-        "pe_excess_pct": 0.64,
-        "min_trigger_move": 10.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_162120_200",
-      "timestamp": "2026-02-20T16:21:20.629501",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_162220_200",
-      "timestamp": "2026-02-20T16:22:20.108151",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #122: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_162220_200",
-      "timestamp": "2026-02-20T16:22:20.936049",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $73.11, PE 65200.0 = $68.41",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 73.1087072,
-        "pe_premium": 68.41009819,
-        "ce_strike": 69200.0,
-        "pe_strike": 65200.0
-      }
-    },
-    {
-      "id": "act_162221_200",
-      "timestamp": "2026-02-20T16:22:21.125239",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - position_cap (warning), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_162221_200",
-      "timestamp": "2026-02-20T16:22:21.125382",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -6.3% (need >10.0%), PE -5.9% (need >10.0%) - Result: NONE",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -6.27,
-        "pe_excess_pct": -5.91,
-        "min_trigger_move": 10.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_162221_200",
-      "timestamp": "2026-02-20T16:22:21.129712",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_162221_200",
-      "timestamp": "2026-02-20T16:22:21.129800",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $0.56 (Realized: $0.00, Unrealized: $0.56, Fees: $0.00)",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "net_pnl": 0.56,
-        "realized": 0.0,
-        "unrealized": 0.56,
+        "net_pnl": 14.7,
+        "realized": 14.36,
+        "unrealized": 0.34,
         "fees": 0.0
       }
     },
     {
-      "id": "act_162221_200",
-      "timestamp": "2026-02-20T16:22:21.307497",
+      "id": "act_022753_200",
+      "timestamp": "2026-02-21T02:27:53.673867",
       "type": "info",
       "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
+      "message": "Portfolio Delta: -0.003",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "portfolio_delta": 0.0
+        "portfolio_delta": -0.003
       }
     },
     {
-      "id": "act_162221_200",
-      "timestamp": "2026-02-20T16:22:21.323350",
+      "id": "act_022753_200",
+      "timestamp": "2026-02-21T02:27:53.700729",
       "type": "heartbeat_complete",
       "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #122 complete [1215ms, grade=A] \u2014 Next check in 150s",
+      "message": "\u2713 Heartbeat #375 complete [1448ms, grade=A] \u2014 Next check in 90s",
       "session_id": "mmm20feb26-5",
       "severity": "success",
       "details": {
-        "next_interval": 150,
-        "latency_ms": 1215.0,
+        "next_interval": 90,
+        "latency_ms": 1447.7,
         "health_grade": "A"
       }
     },
     {
-      "id": "act_162450_200",
-      "timestamp": "2026-02-20T16:24:50.873681",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: max_lots_per_side updated 100 \u2192 150",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "max_lots_per_side",
-        "old_value": 100,
-        "new_value": 150
-      }
-    },
-    {
-      "id": "act_162450_200",
-      "timestamp": "2026-02-20T16:24:50.880004",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: max_adjustments updated 30 \u2192 50",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "max_adjustments",
-        "old_value": 30,
-        "new_value": 50
-      }
-    },
-    {
-      "id": "act_162450_200",
-      "timestamp": "2026-02-20T16:24:50.880266",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: whipsaw_limit updated 30 \u2192 50",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "whipsaw_limit",
-        "old_value": 30,
-        "new_value": 50
-      }
-    },
-    {
-      "id": "act_162450_200",
-      "timestamp": "2026-02-20T16:24:50.880670",
+      "id": "act_022920_200",
+      "timestamp": "2026-02-21T02:29:20.830911",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #123: Checking market conditions",
+      "message": "Heartbeat #376: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_162451_200",
-      "timestamp": "2026-02-20T16:24:51.850426",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $105.79, PE 65200.0 = $49.45",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 105.79443457,
-        "pe_premium": 49.44762665,
-        "ce_strike": 69200.0,
-        "pe_strike": 65200.0
-      }
-    },
-    {
-      "id": "act_162452_200",
-      "timestamp": "2026-02-20T16:24:52.038716",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - trailing_stop (alert)",
+      "id": "act_022921_200",
+      "timestamp": "2026-02-21T02:29:21.117063",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: CE active: session has 1 lots but exchange shows 0",
       "session_id": "mmm20feb26-5",
       "severity": "warning",
       "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
+        "side": "CE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "CE active: session has 1 lots but exchange shows 0",
+        "symbol": "C-BTC-70000-210226",
+        "session_lots": 1,
+        "exchange_size": 0
       }
     },
     {
-      "id": "act_162452_200",
-      "timestamp": "2026-02-20T16:24:52.045553",
+      "id": "act_022921_200",
+      "timestamp": "2026-02-21T02:29:21.117318",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE active: session has 2 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "PE active: session has 2 lots but exchange shows 0",
+        "symbol": "P-BTC-65200-210226",
+        "session_lots": 2,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_022921_200",
+      "timestamp": "2026-02-21T02:29:21.117494",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=2 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=2 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 2,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_022921_200",
+      "timestamp": "2026-02-21T02:29:21.117660",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=1 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=1 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 1,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.124636",
       "type": "info",
       "type_label": "Info",
-      "message": "Trigger Check: CE +35.6% (need >10.0%), PE -32.0% (need >10.0%) - Result: CE_TRIGGERED",
+      "message": "Current Premiums: CE 68000.0 = $194.94, PE 67800.0 = $63.52",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_excess_pct": 35.63,
-        "pe_excess_pct": -31.99,
+        "ce_premium": 194.93997151,
+        "pe_premium": 63.51700926,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.452491",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.798736",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +9.2% (need >10.0%), PE -11.9% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 9.24,
+        "pe_excess_pct": -11.87,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.798783",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.798895",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.70 (Realized: $14.36, Unrealized: $0.34, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.7,
+        "realized": 14.36,
+        "unrealized": 0.34,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.798940",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.003",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.003
+      }
+    },
+    {
+      "id": "act_022922_200",
+      "timestamp": "2026-02-21T02:29:22.829502",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #376 complete [1994ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1994.0,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_023049_200",
+      "timestamp": "2026-02-21T02:30:49.407483",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #377: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_023050_200",
+      "timestamp": "2026-02-21T02:30:50.154195",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $197.36, PE 67800.0 = $63.32",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 197.36080082,
+        "pe_premium": 63.31937121,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_023050_200",
+      "timestamp": "2026-02-21T02:30:50.405398",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_023050_200",
+      "timestamp": "2026-02-21T02:30:50.720638",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +10.6% (need >10.0%), PE -12.2% (need >10.0%) - Result: CE_TRIGGERED",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 10.59,
+        "pe_excess_pct": -12.15,
         "min_trigger_move": 10.0,
         "outcome": "ce_triggered"
       }
     },
     {
-      "id": "act_162452_200",
-      "timestamp": "2026-02-20T16:24:52.045772",
+      "id": "act_023050_200",
+      "timestamp": "2026-02-21T02:30:50.730930",
       "type": "adjustment_triggered",
       "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($105.79), hedging with PE ($49.45)",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($197.36), hedging with PE ($63.32)",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
         "aggressor": "CE",
-        "aggressor_premium": 105.79443457,
+        "aggressor_premium": 197.36080082,
         "hedge": "PE",
-        "hedge_premium": 49.44762665
+        "hedge_premium": 63.31937121
       }
     },
     {
-      "id": "act_162452_200",
-      "timestamp": "2026-02-20T16:24:52.186852",
+      "id": "act_023050_200",
+      "timestamp": "2026-02-21T02:30:50.746369",
       "type": "order_placing",
       "type_label": "Placing Order",
-      "message": "SELL 38 lot(s) P-BTC-66200-210226 \u2014 fetching prices...",
+      "message": "SELL 1 lot(s) P-BTC-67800-210226 \u2014 fetching prices...",
       "session_id": null,
       "severity": "progress",
       "details": {
-        "symbol": "P-BTC-66200-210226",
+        "symbol": "P-BTC-67800-210226",
         "side": "sell",
-        "size": 38
+        "size": 1
       }
     },
     {
-      "id": "act_162453_200",
-      "timestamp": "2026-02-20T16:24:53.482961",
+      "id": "act_023052_200",
+      "timestamp": "2026-02-21T02:30:52.091178",
       "type": "order_placed",
       "type_label": "Order Placed",
-      "message": "SELL 38 P-BTC-66200-210226 @ $101.00 (bid=$98.00, ask=$104.00)",
+      "message": "SELL 1 P-BTC-67800-210226 @ $64.50 (bid=$64.00, ask=$65.00)",
       "session_id": null,
       "severity": "info",
       "details": {
-        "order_id": "1187002702",
-        "mid_price": 101.0,
-        "bid": 98.0,
-        "ask": 104.0
+        "order_id": "1187446856",
+        "mid_price": 64.5,
+        "bid": 64.0,
+        "ask": 65.0
       }
     },
     {
-      "id": "act_162457_200",
-      "timestamp": "2026-02-20T16:24:57.407714",
+      "id": "act_023111_200",
+      "timestamp": "2026-02-21T02:31:11.862786",
       "type": "order_filled",
       "type_label": "Order Filled",
-      "message": "\u2705 SELL P-BTC-66200-210226 FILLED @ $101.00 in 5.2s",
+      "message": "\u2705 SELL P-BTC-67800-210226 FILLED @ $64.50 in 21.1s",
       "session_id": null,
       "severity": "success",
       "details": {
-        "order_id": "1187002702",
-        "fill_price": 101.0,
-        "elapsed": 5.2,
+        "order_id": "1187446856",
+        "fill_price": 64.5,
+        "elapsed": 21.1,
         "attempts": 1
       }
     },
     {
-      "id": "act_162457_200",
-      "timestamp": "2026-02-20T16:24:57.424074",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $3.03 (Realized: $0.00, Unrealized: $3.03, Fees: $0.00)",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "net_pnl": 3.03,
-        "realized": 0.0,
-        "unrealized": 3.03,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_162457_200",
-      "timestamp": "2026-02-20T16:24:57.958345",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "portfolio_delta": 0.0
-      }
-    },
-    {
-      "id": "act_162457_200",
-      "timestamp": "2026-02-20T16:24:57.974981",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #123 complete [7094ms, grade=A] \u2014 Next check in 150s",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "next_interval": 150,
-        "latency_ms": 7094.0,
-        "health_grade": "A"
-      }
-    },
-    {
-      "id": "act_162720_200",
-      "timestamp": "2026-02-20T16:27:20.539558",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #124: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_162721_200",
-      "timestamp": "2026-02-20T16:27:21.163085",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $85.24, PE 66200.0 = $117.54",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 85.24194614,
-        "pe_premium": 117.5357008,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_162721_200",
-      "timestamp": "2026-02-20T16:27:21.432586",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_162721_200",
-      "timestamp": "2026-02-20T16:27:21.433069",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:29:52",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:29:52.054737"
-      }
-    },
-    {
-      "id": "act_162950_200",
-      "timestamp": "2026-02-20T16:29:50.637351",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #125: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_162951_200",
-      "timestamp": "2026-02-20T16:29:51.534412",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $43.28, PE 66200.0 = $192.50",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 43.28172805,
-        "pe_premium": 192.50220672,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_162951_200",
-      "timestamp": "2026-02-20T16:29:51.973465",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_162951_200",
-      "timestamp": "2026-02-20T16:29:51.979866",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:29:52",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:29:52.054737"
-      }
-    },
-    {
-      "id": "act_163219_200",
-      "timestamp": "2026-02-20T16:32:19.784976",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #126: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_163220_200",
-      "timestamp": "2026-02-20T16:32:20.846322",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $51.94, PE 66200.0 = $178.18",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 51.93689547,
-        "pe_premium": 178.17670418,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_163221_200",
-      "timestamp": "2026-02-20T16:32:21.100210",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_163221_200",
-      "timestamp": "2026-02-20T16:32:21.100586",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -50.9% (need >10.0%), PE +260.3% (need >10.0%) - Result: PE_TRIGGERED",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -50.91,
-        "pe_excess_pct": 260.33,
-        "min_trigger_move": 10.0,
-        "outcome": "pe_triggered"
-      }
-    },
-    {
-      "id": "act_163221_200",
-      "timestamp": "2026-02-20T16:32:21.107043",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($178.18), hedging with CE ($51.94)",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 178.17670418,
-        "hedge": "CE",
-        "hedge_premium": 51.93689547
-      }
-    },
-    {
-      "id": "act_163221_200",
-      "timestamp": "2026-02-20T16:32:21.116673",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "message": "SELL 56 lot(s) C-BTC-69200-210226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-69200-210226",
-        "side": "sell",
-        "size": 56
-      }
-    },
-    {
-      "id": "act_163222_200",
-      "timestamp": "2026-02-20T16:32:22.456113",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "message": "SELL 56 C-BTC-69200-210226 @ $52.50 (bid=$50.00, ask=$55.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1187023593",
-        "mid_price": 52.5,
-        "bid": 50.0,
-        "ask": 55.0
-      }
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.120035",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "message": "\u2705 SELL C-BTC-69200-210226 FILLED @ $52.50 in 18.0s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1187023593",
-        "fill_price": 52.5,
-        "elapsed": 18.0,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.120705",
+      "id": "act_023111_200",
+      "timestamp": "2026-02-21T02:31:11.863117",
       "type": "adjustment_complete",
       "type_label": "Adjustment Complete",
-      "message": "\u2713 Adjustment Complete: SELL 56 lots CE @ 69200.0 for $52.50 (Type: first_reversal)",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "side": "CE",
-        "strike": 69200.0,
-        "lots": 56,
-        "fill_price": 52.5,
-        "type": "first_reversal",
-        "adjustment_number": 26
-      }
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.129404",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $-2.20 (Realized: $0.00, Unrealized: $-2.20, Fees: $0.00)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "net_pnl": -2.2,
-        "realized": 0.0,
-        "unrealized": -2.2,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.640568",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "portfolio_delta": 0.0
-      }
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.642954",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #126 complete [19858ms, grade=A] \u2014 Next check in 150s",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "next_interval": 150,
-        "latency_ms": 19857.6,
-        "health_grade": "A"
-      }
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.667893",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #127: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_163239_200",
-      "timestamp": "2026-02-20T16:32:39.675701",
-      "type": "watchdog",
-      "type_label": "watchdog",
-      "message": "\ud83d\udd04 Watchdog restarted monitor (restart #1) \u2014 reason: beat timeout: last beat 457s ago (threshold=450s, interval=150s)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {}
-    },
-    {
-      "id": "act_163240_200",
-      "timestamp": "2026-02-20T16:32:40.337496",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $55.32, PE 66200.0 = $169.91",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 55.31531154,
-        "pe_premium": 169.91468901,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_163240_200",
-      "timestamp": "2026-02-20T16:32:40.539644",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:37:21",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:37:21.116355"
-      }
-    },
-    {
-      "id": "act_163508_200",
-      "timestamp": "2026-02-20T16:35:08.560317",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #128: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_163509_200",
-      "timestamp": "2026-02-20T16:35:09.228284",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $57.83, PE 66200.0 = $166.33",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 57.82934613,
-        "pe_premium": 166.32796404,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_163509_200",
-      "timestamp": "2026-02-20T16:35:09.518173",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_163509_200",
-      "timestamp": "2026-02-20T16:35:09.526268",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:37:21",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:37:21.116355"
-      }
-    },
-    {
-      "id": "act_163739_200",
-      "timestamp": "2026-02-20T16:37:39.417389",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #129: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_163740_200",
-      "timestamp": "2026-02-20T16:37:40.112116",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $65.35, PE 66200.0 = $148.29",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 65.35114503,
-        "pe_premium": 148.29190062,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_163740_200",
-      "timestamp": "2026-02-20T16:37:40.392616",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_163740_200",
-      "timestamp": "2026-02-20T16:37:40.393108",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -38.2% (need >10.0%), PE +199.9% (need >10.0%) - Result: PE_TRIGGERED",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -38.23,
-        "pe_excess_pct": 199.9,
-        "min_trigger_move": 10.0,
-        "outcome": "pe_triggered"
-      }
-    },
-    {
-      "id": "act_163740_200",
-      "timestamp": "2026-02-20T16:37:40.399701",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($148.29), hedging with CE ($65.35)",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 148.29190062,
-        "hedge": "CE",
-        "hedge_premium": 65.35114503
-      }
-    },
-    {
-      "id": "act_163740_200",
-      "timestamp": "2026-02-20T16:37:40.408945",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "message": "SELL 24 lot(s) C-BTC-69200-210226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-69200-210226",
-        "side": "sell",
-        "size": 24
-      }
-    },
-    {
-      "id": "act_163741_200",
-      "timestamp": "2026-02-20T16:37:41.798835",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "message": "SELL 24 C-BTC-69200-210226 @ $64.00 (bid=$61.00, ask=$67.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1187034834",
-        "mid_price": 64.0,
-        "bid": 61.0,
-        "ask": 67.0
-      }
-    },
-    {
-      "id": "act_163820_200",
-      "timestamp": "2026-02-20T16:38:20.794823",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "message": "\u2705 SELL C-BTC-69200-210226 FILLED @ $64.00 in 40.4s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1187034834",
-        "fill_price": 64.0,
-        "elapsed": 40.4,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_163820_200",
-      "timestamp": "2026-02-20T16:38:20.795260",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "message": "\u2713 Adjustment Complete: SELL 24 lots CE @ 69200.0 for $64.00 (Type: first_reversal)",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "side": "CE",
-        "strike": 69200.0,
-        "lots": 24,
-        "fill_price": 64.0,
-        "type": "first_reversal",
-        "adjustment_number": 26
-      }
-    },
-    {
-      "id": "act_163820_200",
-      "timestamp": "2026-02-20T16:38:20.804845",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $-0.97 (Realized: $0.00, Unrealized: $-0.97, Fees: $0.00)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "net_pnl": -0.97,
-        "realized": 0.0,
-        "unrealized": -0.97,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_163821_200",
-      "timestamp": "2026-02-20T16:38:21.369395",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "portfolio_delta": 0.0
-      }
-    },
-    {
-      "id": "act_163821_200",
-      "timestamp": "2026-02-20T16:38:21.382001",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #129 complete [41964ms, grade=A] \u2014 Next check in 150s",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "next_interval": 150,
-        "latency_ms": 41964.1,
-        "health_grade": "A"
-      }
-    },
-    {
-      "id": "act_164007_200",
-      "timestamp": "2026-02-20T16:40:07.615355",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #130: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_164008_200",
-      "timestamp": "2026-02-20T16:40:08.644132",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $65.99, PE 66200.0 = $141.28",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 65.98838494,
-        "pe_premium": 141.28078685,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_164008_200",
-      "timestamp": "2026-02-20T16:40:08.909911",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_164008_200",
-      "timestamp": "2026-02-20T16:40:08.910210",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:42:40",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:42:40.408591"
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.225482",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: shift_threshold updated 50.0 \u2192 60.0",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "shift_threshold",
-        "old_value": 50.0,
-        "new_value": 60.0
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.225714",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: close_at_threshold updated 5.0 \u2192 10.0",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "close_at_threshold",
-        "old_value": 5.0,
-        "new_value": 10.0
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.225776",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: whipsaw_limit updated 50 \u2192 3",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "whipsaw_limit",
-        "old_value": 50,
-        "new_value": 3
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.233569",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: wind_down_min_lots_to_keep updated 0 \u2192 10",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "wind_down_min_lots_to_keep",
-        "old_value": 0,
-        "new_value": 10
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.233877",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: wind_down_floor_action updated skip \u2192 normal",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "wind_down_floor_action",
-        "old_value": "skip",
-        "new_value": "normal"
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.233947",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: margin_green_pct updated 50.0 \u2192 60.0",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "margin_green_pct",
-        "old_value": 50.0,
-        "new_value": 60.0
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.234008",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: margin_yellow_pct updated 60.0 \u2192 70.0",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "margin_yellow_pct",
-        "old_value": 60.0,
-        "new_value": 70.0
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.234065",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: margin_orange_pct updated 75.0 \u2192 80.0",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "param": "margin_orange_pct",
-        "old_value": 75.0,
-        "new_value": 80.0
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.239520",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #131: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.899713",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $56.82, PE 66200.0 = $156.04",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 56.81793694,
-        "pe_premium": 156.0415486,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.985467",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_164239_200",
-      "timestamp": "2026-02-20T16:42:39.985944",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Cooldown Active - Skip adjustment until 2026-02-20T16:42:40",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "cooldown_until": "2026-02-20T16:42:40.408591"
-      }
-    },
-    {
-      "id": "act_164508_200",
-      "timestamp": "2026-02-20T16:45:08.816172",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #132: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_164509_200",
-      "timestamp": "2026-02-20T16:45:09.773873",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $64.04, PE 66200.0 = $139.74",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 64.04169234,
-        "pe_premium": 139.73820451,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_164510_200",
-      "timestamp": "2026-02-20T16:45:10.709863",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_164510_200",
-      "timestamp": "2026-02-20T16:45:10.710225",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -2.0% (need >10.0%), PE -5.8% (need >10.0%) - Result: NONE",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -2.0,
-        "pe_excess_pct": -5.77,
-        "min_trigger_move": 10.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_164510_200",
-      "timestamp": "2026-02-20T16:45:10.710281",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_164510_200",
-      "timestamp": "2026-02-20T16:45:10.710363",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $-0.14 (Realized: $0.00, Unrealized: $-0.14, Fees: $0.00)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "net_pnl": -0.14,
-        "realized": 0.0,
-        "unrealized": -0.14,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_164510_200",
-      "timestamp": "2026-02-20T16:45:10.822590",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "portfolio_delta": 0.0
-      }
-    },
-    {
-      "id": "act_164510_200",
-      "timestamp": "2026-02-20T16:45:10.835882",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #132 complete [2019ms, grade=A] \u2014 Next check in 150s",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "next_interval": 150,
-        "latency_ms": 2019.3,
-        "health_grade": "A"
-      }
-    },
-    {
-      "id": "act_164740_200",
-      "timestamp": "2026-02-20T16:47:40.329788",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #133: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_164740_200",
-      "timestamp": "2026-02-20T16:47:40.744008",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $64.90, PE 66200.0 = $135.29",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 64.90431006,
-        "pe_premium": 135.29361878,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_164740_200",
-      "timestamp": "2026-02-20T16:47:40.880769",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_164740_200",
-      "timestamp": "2026-02-20T16:47:40.889021",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -0.7% (need >10.0%), PE -8.8% (need >10.0%) - Result: NONE",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -0.68,
-        "pe_excess_pct": -8.77,
-        "min_trigger_move": 10.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_164740_200",
-      "timestamp": "2026-02-20T16:47:40.889326",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_164740_200",
-      "timestamp": "2026-02-20T16:47:40.889516",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $0.09 (Realized: $0.00, Unrealized: $0.09, Fees: $0.00)",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "net_pnl": 0.09,
-        "realized": 0.0,
-        "unrealized": 0.09,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_164741_200",
-      "timestamp": "2026-02-20T16:47:41.002247",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "portfolio_delta": 0.0
-      }
-    },
-    {
-      "id": "act_164741_200",
-      "timestamp": "2026-02-20T16:47:41.014106",
-      "type": "heartbeat_complete",
-      "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #133 complete [684ms, grade=A] \u2014 Next check in 150s",
-      "session_id": "mmm20feb26-5",
-      "severity": "success",
-      "details": {
-        "next_interval": 150,
-        "latency_ms": 684.0,
-        "health_grade": "A"
-      }
-    },
-    {
-      "id": "act_165008_200",
-      "timestamp": "2026-02-20T16:50:08.789575",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #134: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_165009_200",
-      "timestamp": "2026-02-20T16:50:09.627295",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $74.67, PE 66200.0 = $115.56",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 74.66625367,
-        "pe_premium": 115.55607932,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_165010_200",
-      "timestamp": "2026-02-20T16:50:10.613082",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_165010_200",
-      "timestamp": "2026-02-20T16:50:10.613654",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE +14.2% (need >10.0%), PE -22.1% (need >10.0%) - Result: CE_TRIGGERED",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": 14.25,
-        "pe_excess_pct": -22.08,
-        "min_trigger_move": 10.0,
-        "outcome": "ce_triggered"
-      }
-    },
-    {
-      "id": "act_165010_200",
-      "timestamp": "2026-02-20T16:50:10.613813",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($74.67), hedging with PE ($115.56)",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "aggressor": "CE",
-        "aggressor_premium": 74.66625367,
-        "hedge": "PE",
-        "hedge_premium": 115.55607932
-      }
-    },
-    {
-      "id": "act_165010_200",
-      "timestamp": "2026-02-20T16:50:10.629816",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "message": "SELL 9 lot(s) P-BTC-66200-210226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "P-BTC-66200-210226",
-        "side": "sell",
-        "size": 9
-      }
-    },
-    {
-      "id": "act_165011_200",
-      "timestamp": "2026-02-20T16:50:11.987348",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "message": "SELL 9 P-BTC-66200-210226 @ $118.50 (bid=$116.00, ask=$121.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1187055781",
-        "mid_price": 118.5,
-        "bid": 116.0,
-        "ask": 121.0
-      }
-    },
-    {
-      "id": "act_165019_200",
-      "timestamp": "2026-02-20T16:50:19.187120",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "message": "\u2705 SELL P-BTC-66200-210226 FILLED @ $118.50 in 8.6s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1187055781",
-        "fill_price": 118.5,
-        "elapsed": 8.6,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_165019_200",
-      "timestamp": "2026-02-20T16:50:19.187270",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "message": "\u2713 Adjustment Complete: SELL 9 lots PE @ 66200.0 for $118.50 (Type: first_reversal)",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots PE @ 67800.0 for $64.50 (Type: standard)",
       "session_id": "mmm20feb26-5",
       "severity": "success",
       "details": {
         "side": "PE",
-        "strike": 66200.0,
-        "lots": 9,
-        "fill_price": 118.5,
-        "type": "first_reversal",
-        "adjustment_number": 27
+        "strike": 67800.0,
+        "lots": 1,
+        "fill_price": 64.5,
+        "type": "standard",
+        "adjustment_number": 37
       }
     },
     {
-      "id": "act_165019_200",
-      "timestamp": "2026-02-20T16:50:19.187729",
+      "id": "act_023111_200",
+      "timestamp": "2026-02-21T02:31:11.874222",
       "type": "info",
       "type_label": "Info",
-      "message": "P&L Update: Net $0.50 (Realized: $0.00, Unrealized: $0.50, Fees: $0.00)",
+      "message": "P&L Update: Net $14.69 (Realized: $14.36, Unrealized: $0.33, Fees: $0.00)",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "net_pnl": 0.5,
-        "realized": 0.0,
-        "unrealized": 0.5,
+        "net_pnl": 14.69,
+        "realized": 14.36,
+        "unrealized": 0.33,
         "fees": 0.0
       }
     },
     {
-      "id": "act_165019_200",
-      "timestamp": "2026-02-20T16:50:19.633959",
+      "id": "act_023111_200",
+      "timestamp": "2026-02-21T02:31:11.874268",
       "type": "info",
       "type_label": "Info",
-      "message": "Portfolio Delta: +0.000",
+      "message": "Portfolio Delta: -0.003",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "portfolio_delta": 0.0
+        "portfolio_delta": -0.003
       }
     },
     {
-      "id": "act_165019_200",
-      "timestamp": "2026-02-20T16:50:19.656291",
+      "id": "act_023111_200",
+      "timestamp": "2026-02-21T02:31:11.898784",
       "type": "heartbeat_complete",
       "type_label": "Heartbeat Complete",
-      "message": "\u2713 Heartbeat #134 complete [10866ms, grade=A] \u2014 Next check in 150s",
+      "message": "\u2713 Heartbeat #377 complete [22491ms, grade=A] \u2014 Next check in 90s",
       "session_id": "mmm20feb26-5",
       "severity": "success",
       "details": {
-        "next_interval": 150,
-        "latency_ms": 10866.5,
+        "next_interval": 90,
+        "latency_ms": 22491.0,
         "health_grade": "A"
       }
     },
     {
-      "id": "act_165237_200",
-      "timestamp": "2026-02-20T16:52:37.615661",
+      "id": "act_023218_200",
+      "timestamp": "2026-02-21T02:32:18.402188",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #135: Checking market conditions",
+      "message": "Heartbeat #378: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_165238_200",
-      "timestamp": "2026-02-20T16:52:38.032068",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.085963",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $70.76, PE 66200.0 = $114.30",
+      "message": "Current Premiums: CE 68000.0 = $207.51, PE 67800.0 = $59.21",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 70.7567134,
-        "pe_premium": 114.29710291,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 207.5092111,
+        "pe_premium": 59.21113511,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_165238_200",
-      "timestamp": "2026-02-20T16:52:38.121573",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 4 event(s) - position_cap (warning), whipsaw (alert), trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 4,
-        "events": [
-          "position_cap",
-          "whipsaw",
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_165238_200",
-      "timestamp": "2026-02-20T16:52:38.129163",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_165238_200",
-      "timestamp": "2026-02-20T16:52:38.142599",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.578356",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_165506_200",
-      "timestamp": "2026-02-20T16:55:06.720365",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #136: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_165507_200",
-      "timestamp": "2026-02-20T16:55:07.748961",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.943866",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $75.22, PE 66200.0 = $106.47",
+      "message": "Trigger Check: CE +5.1% (need >10.0%), PE -6.5% (need >10.0%) - Result: NONE",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 75.21859298,
-        "pe_premium": 106.47053095,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_excess_pct": 5.14,
+        "pe_excess_pct": -6.49,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
       }
     },
     {
-      "id": "act_165508_200",
-      "timestamp": "2026-02-20T16:55:08.018844",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 4 event(s) - position_cap (warning), whipsaw (alert), trailing_stop (alert), margin_warning (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 4,
-        "events": [
-          "position_cap",
-          "whipsaw",
-          "trailing_stop",
-          "margin_warning"
-        ]
-      }
-    },
-    {
-      "id": "act_165508_200",
-      "timestamp": "2026-02-20T16:55:08.026343",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_165508_200",
-      "timestamp": "2026-02-20T16:55:08.042581",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.943917",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "No triggers fired - Positions stable",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_165736_200",
-      "timestamp": "2026-02-20T16:57:36.165904",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #137: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_165736_200",
-      "timestamp": "2026-02-20T16:57:36.580338",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.944033",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $82.67, PE 66200.0 = $94.58",
+      "message": "P&L Update: Net $14.68 (Realized: $14.36, Unrealized: $0.32, Fees: $0.00)",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 82.67239031,
-        "pe_premium": 94.58063,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "net_pnl": 14.68,
+        "realized": 14.36,
+        "unrealized": 0.32,
+        "fees": 0.0
       }
     },
     {
-      "id": "act_165736_200",
-      "timestamp": "2026-02-20T16:57:36.764334",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_165736_200",
-      "timestamp": "2026-02-20T16:57:36.775091",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_165736_200",
-      "timestamp": "2026-02-20T16:57:36.793117",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.944079",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {}
-    },
-    {
-      "id": "act_170004_200",
-      "timestamp": "2026-02-20T17:00:04.357154",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #138: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_170005_200",
-      "timestamp": "2026-02-20T17:00:05.352499",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $81.47, PE 66200.0 = $93.28",
+      "message": "Portfolio Delta: -0.004",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 81.46689771,
-        "pe_premium": 93.27661223,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "portfolio_delta": -0.004
       }
     },
     {
-      "id": "act_170005_200",
-      "timestamp": "2026-02-20T17:00:05.797583",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - whipsaw (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "whipsaw"
-        ]
-      }
-    },
-    {
-      "id": "act_170005_200",
-      "timestamp": "2026-02-20T17:00:05.807085",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_170005_200",
-      "timestamp": "2026-02-20T17:00:05.999106",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {}
-    },
-    {
-      "id": "act_170233_200",
-      "timestamp": "2026-02-20T17:02:33.362199",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #139: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_170234_200",
-      "timestamp": "2026-02-20T17:02:34.063866",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $75.88, PE 66200.0 = $94.90",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 75.88139253,
-        "pe_premium": 94.89771931,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_170234_200",
-      "timestamp": "2026-02-20T17:02:34.326620",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - whipsaw (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "whipsaw"
-        ]
-      }
-    },
-    {
-      "id": "act_170234_200",
-      "timestamp": "2026-02-20T17:02:34.336069",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_170234_200",
-      "timestamp": "2026-02-20T17:02:34.346198",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {}
-    },
-    {
-      "id": "act_170455_200",
-      "timestamp": "2026-02-20T17:04:55.209045",
-      "type": "heartbeat_start",
-      "type_label": "Heartbeat Running",
-      "message": "Heartbeat #140: Checking market conditions",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {}
-    },
-    {
-      "id": "act_170455_200",
-      "timestamp": "2026-02-20T17:04:55.211843",
-      "type": "watchdog",
-      "type_label": "watchdog",
-      "message": "\ud83d\udd04 Watchdog restarted monitor (restart #2) \u2014 reason: beat timeout: last beat 876s ago (threshold=450s, interval=150s)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {}
-    },
-    {
-      "id": "act_170455_200",
-      "timestamp": "2026-02-20T17:04:55.839520",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $64.28, PE 66200.0 = $107.57",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 64.27784819,
-        "pe_premium": 107.56976905,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_170455_200",
-      "timestamp": "2026-02-20T17:04:55.953291",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - whipsaw (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "whipsaw"
-        ]
-      }
-    },
-    {
-      "id": "act_170455_200",
-      "timestamp": "2026-02-20T17:04:55.953626",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_170455_200",
-      "timestamp": "2026-02-20T17:04:55.968692",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {}
-    },
-    {
-      "id": "act_170726_200",
-      "timestamp": "2026-02-20T17:07:26.028609",
-      "type": "info",
-      "type_label": "Info",
-      "message": "\ud83d\udd04 Hot Reload: max_adjustments updated 50 \u2192 75",
+      "id": "act_023219_200",
+      "timestamp": "2026-02-21T02:32:19.974954",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #378 complete [1568ms, grade=A] \u2014 Next check in 90s",
       "session_id": "mmm20feb26-5",
       "severity": "success",
       "details": {
-        "param": "max_adjustments",
-        "old_value": 50,
-        "new_value": 75
+        "next_interval": 90,
+        "latency_ms": 1567.7,
+        "health_grade": "A"
       }
     },
     {
-      "id": "act_170726_200",
-      "timestamp": "2026-02-20T17:07:26.030090",
+      "id": "act_023346_200",
+      "timestamp": "2026-02-21T02:33:46.744220",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #141: Checking market conditions",
+      "message": "Heartbeat #379: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_170726_200",
-      "timestamp": "2026-02-20T17:07:26.987658",
+      "id": "act_023347_200",
+      "timestamp": "2026-02-21T02:33:47.742672",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $52.99, PE 66200.0 = $124.36",
+      "message": "Current Premiums: CE 68000.0 = $192.55, PE 67800.0 = $63.08",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 52.98885793,
-        "pe_premium": 124.36286965,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 192.5498171,
+        "pe_premium": 63.08053224,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_170728_200",
-      "timestamp": "2026-02-20T17:07:28.018017",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 1 event(s) - whipsaw (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "whipsaw"
-        ]
-      }
-    },
-    {
-      "id": "act_170728_200",
-      "timestamp": "2026-02-20T17:07:28.018166",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_170728_200",
-      "timestamp": "2026-02-20T17:07:28.033620",
+      "id": "act_023348_200",
+      "timestamp": "2026-02-21T02:33:48.122894",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_170955_200",
-      "timestamp": "2026-02-20T17:09:55.841920",
+      "id": "act_023348_200",
+      "timestamp": "2026-02-21T02:33:48.522812",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -2.4% (need >10.0%), PE -0.4% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -2.44,
+        "pe_excess_pct": -0.38,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_023348_200",
+      "timestamp": "2026-02-21T02:33:48.531629",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_023348_200",
+      "timestamp": "2026-02-21T02:33:48.531742",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.70 (Realized: $14.36, Unrealized: $0.34, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.7,
+        "realized": 14.36,
+        "unrealized": 0.34,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_023348_200",
+      "timestamp": "2026-02-21T02:33:48.531777",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.003",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.003
+      }
+    },
+    {
+      "id": "act_023348_200",
+      "timestamp": "2026-02-21T02:33:48.554079",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #379 complete [1810ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1809.6,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_023515_200",
+      "timestamp": "2026-02-21T02:35:15.889355",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #142: Checking market conditions",
+      "message": "Heartbeat #380: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_170956_200",
-      "timestamp": "2026-02-20T17:09:56.242154",
+      "id": "act_023517_200",
+      "timestamp": "2026-02-21T02:35:17.167438",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $33.59, PE 66200.0 = $174.82",
+      "message": "Current Premiums: CE 68000.0 = $197.94, PE 67800.0 = $62.69",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 33.58887966,
-        "pe_premium": 174.81766478,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 197.94373888,
+        "pe_premium": 62.69289755,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_170956_200",
-      "timestamp": "2026-02-20T17:09:56.342248",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_170956_200",
-      "timestamp": "2026-02-20T17:09:56.342633",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_170956_200",
-      "timestamp": "2026-02-20T17:09:56.360692",
+      "id": "act_023517_200",
+      "timestamp": "2026-02-21T02:35:17.696254",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_171227_200",
-      "timestamp": "2026-02-20T17:12:27.294470",
+      "id": "act_023518_200",
+      "timestamp": "2026-02-21T02:35:18.090002",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +0.3% (need >10.0%), PE -1.0% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 0.3,
+        "pe_excess_pct": -0.99,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_023518_200",
+      "timestamp": "2026-02-21T02:35:18.090048",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_023518_200",
+      "timestamp": "2026-02-21T02:35:18.090177",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.69 (Realized: $14.36, Unrealized: $0.33, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.69,
+        "realized": 14.36,
+        "unrealized": 0.33,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_023518_200",
+      "timestamp": "2026-02-21T02:35:18.100100",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_023518_200",
+      "timestamp": "2026-02-21T02:35:18.124000",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #380 complete [2234ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 2234.4,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_023646_200",
+      "timestamp": "2026-02-21T02:36:46.635657",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #143: Checking market conditions",
+      "message": "Heartbeat #381: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_171228_200",
-      "timestamp": "2026-02-20T17:12:28.005734",
+      "id": "act_023646_200",
+      "timestamp": "2026-02-21T02:36:46.880053",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: CE active: session has 1 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "CE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "CE active: session has 1 lots but exchange shows 0",
+        "symbol": "C-BTC-70000-210226",
+        "session_lots": 1,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_023646_200",
+      "timestamp": "2026-02-21T02:36:46.880284",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE active: session has 3 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "PE active: session has 3 lots but exchange shows 0",
+        "symbol": "P-BTC-65200-210226",
+        "session_lots": 3,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_023646_200",
+      "timestamp": "2026-02-21T02:36:46.889995",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=2 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=2 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 2,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_023646_200",
+      "timestamp": "2026-02-21T02:36:46.890197",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=1 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=1 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 1,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_023647_200",
+      "timestamp": "2026-02-21T02:36:47.847177",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $38.98, PE 66200.0 = $171.94",
+      "message": "Current Premiums: CE 68000.0 = $183.06, PE 67800.0 = $70.32",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 38.98070766,
-        "pe_premium": 171.93605322,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 183.05580443,
+        "pe_premium": 70.32016388,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_171228_200",
-      "timestamp": "2026-02-20T17:12:28.647044",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_171228_200",
-      "timestamp": "2026-02-20T17:12:28.647336",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_171228_200",
-      "timestamp": "2026-02-20T17:12:28.661016",
+      "id": "act_023648_200",
+      "timestamp": "2026-02-21T02:36:48.107519",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_171459_200",
-      "timestamp": "2026-02-20T17:14:59.267847",
+      "id": "act_023648_200",
+      "timestamp": "2026-02-21T02:36:48.478409",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -7.2% (need >10.0%), PE +11.1% (need >10.0%) - Result: PE_TRIGGERED",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -7.25,
+        "pe_excess_pct": 11.06,
+        "min_trigger_move": 10.0,
+        "outcome": "pe_triggered"
+      }
+    },
+    {
+      "id": "act_023648_200",
+      "timestamp": "2026-02-21T02:36:48.488505",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($70.32), hedging with CE ($183.06)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 70.32016388,
+        "hedge": "CE",
+        "hedge_premium": 183.05580443
+      }
+    },
+    {
+      "id": "act_023648_200",
+      "timestamp": "2026-02-21T02:36:48.500155",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.70 (Realized: $14.36, Unrealized: $0.34, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.7,
+        "realized": 14.36,
+        "unrealized": 0.34,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_023648_200",
+      "timestamp": "2026-02-21T02:36:48.500180",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_023648_200",
+      "timestamp": "2026-02-21T02:36:48.520593",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #381 complete [1885ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1884.7,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_023817_200",
+      "timestamp": "2026-02-21T02:38:17.163176",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #144: Checking market conditions",
+      "message": "Heartbeat #382: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_171459_200",
-      "timestamp": "2026-02-20T17:14:59.663205",
+      "id": "act_023818_200",
+      "timestamp": "2026-02-21T02:38:18.171158",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $30.62, PE 66200.0 = $211.85",
+      "message": "Current Premiums: CE 68000.0 = $183.49, PE 67800.0 = $69.46",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 30.61664629,
-        "pe_premium": 211.85085361,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 183.49127861,
+        "pe_premium": 69.46090911,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_171459_200",
-      "timestamp": "2026-02-20T17:14:59.763490",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_171459_200",
-      "timestamp": "2026-02-20T17:14:59.763866",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_171459_200",
-      "timestamp": "2026-02-20T17:14:59.778525",
+      "id": "act_023818_200",
+      "timestamp": "2026-02-21T02:38:18.635235",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_171730_200",
-      "timestamp": "2026-02-20T17:17:30.944041",
+      "id": "act_023818_200",
+      "timestamp": "2026-02-21T02:38:18.988303",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Cooldown Active - Skip adjustment until 2026-02-21T02:41:48",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "cooldown_until": "2026-02-21T02:41:48.499450"
+      }
+    },
+    {
+      "id": "act_023948_200",
+      "timestamp": "2026-02-21T02:39:48.992974",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #145: Checking market conditions",
+      "message": "Heartbeat #383: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_171731_200",
-      "timestamp": "2026-02-20T17:17:31.879566",
+      "id": "act_023949_200",
+      "timestamp": "2026-02-21T02:39:49.768676",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $45.26, PE 66200.0 = $181.30",
+      "message": "Current Premiums: CE 68000.0 = $191.55, PE 67800.0 = $66.12",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 45.26465302,
-        "pe_premium": 181.30414397,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 191.55015771,
+        "pe_premium": 66.12116381,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_171732_200",
-      "timestamp": "2026-02-20T17:17:32.319285",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_171732_200",
-      "timestamp": "2026-02-20T17:17:32.319722",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_171732_200",
-      "timestamp": "2026-02-20T17:17:32.333732",
+      "id": "act_023950_200",
+      "timestamp": "2026-02-21T02:39:50.041397",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_171959_200",
-      "timestamp": "2026-02-20T17:19:59.450227",
+      "id": "act_023950_200",
+      "timestamp": "2026-02-21T02:39:50.652060",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Cooldown Active - Skip adjustment until 2026-02-21T02:41:48",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "cooldown_until": "2026-02-21T02:41:48.499450"
+      }
+    },
+    {
+      "id": "act_024119_200",
+      "timestamp": "2026-02-21T02:41:19.918167",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #146: Checking market conditions",
+      "message": "Heartbeat #384: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_172000_200",
-      "timestamp": "2026-02-20T17:20:00.426724",
+      "id": "act_024120_200",
+      "timestamp": "2026-02-21T02:41:20.613991",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $41.42, PE 66200.0 = $192.91",
+      "message": "Current Premiums: CE 68000.0 = $185.75, PE 67800.0 = $69.33",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 41.41817686,
-        "pe_premium": 192.91120142,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 185.75087648,
+        "pe_premium": 69.33309831,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_172000_200",
-      "timestamp": "2026-02-20T17:20:00.869087",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_172000_200",
-      "timestamp": "2026-02-20T17:20:00.869546",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_172000_200",
-      "timestamp": "2026-02-20T17:20:00.890355",
+      "id": "act_024120_200",
+      "timestamp": "2026-02-21T02:41:20.858810",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_172227_200",
-      "timestamp": "2026-02-20T17:22:27.544540",
+      "id": "act_024121_200",
+      "timestamp": "2026-02-21T02:41:21.222553",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Cooldown Active - Skip adjustment until 2026-02-21T02:41:48",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "cooldown_until": "2026-02-21T02:41:48.499450"
+      }
+    },
+    {
+      "id": "act_024121_200",
+      "timestamp": "2026-02-21T02:41:21.476716",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #147: Checking market conditions",
+      "message": "Heartbeat #385: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_172228_200",
-      "timestamp": "2026-02-20T17:22:28.291266",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $33.94, PE 66200.0 = $222.46",
-      "session_id": "mmm20feb26-5",
-      "severity": "info",
-      "details": {
-        "ce_premium": 33.93915801,
-        "pe_premium": 222.46258671,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
-      }
-    },
-    {
-      "id": "act_172228_200",
-      "timestamp": "2026-02-20T17:22:28.631664",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_172228_200",
-      "timestamp": "2026-02-20T17:22:28.632194",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_172228_200",
-      "timestamp": "2026-02-20T17:22:28.656087",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "id": "act_024121_200",
+      "timestamp": "2026-02-21T02:41:21.482010",
+      "type": "watchdog",
+      "type_label": "watchdog",
+      "message": "\ud83d\udd04 Watchdog restarted monitor (restart #9) \u2014 reason: beat timeout: last beat 273s ago (threshold=270s, interval=90s)",
       "session_id": "mmm20feb26-5",
       "severity": "warning",
       "details": {}
     },
     {
-      "id": "act_172457_200",
-      "timestamp": "2026-02-20T17:24:57.841614",
+      "id": "act_024252_200",
+      "timestamp": "2026-02-21T02:42:52.523646",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #148: Checking market conditions",
+      "message": "Heartbeat #386: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_172458_200",
-      "timestamp": "2026-02-20T17:24:58.573835",
+      "id": "act_024252_200",
+      "timestamp": "2026-02-21T02:42:52.836414",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: CE active: session has 1 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "CE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "CE active: session has 1 lots but exchange shows 0",
+        "symbol": "C-BTC-70000-210226",
+        "session_lots": 1,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_024252_200",
+      "timestamp": "2026-02-21T02:42:52.845362",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE active: session has 3 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "PE active: session has 3 lots but exchange shows 0",
+        "symbol": "P-BTC-65200-210226",
+        "session_lots": 3,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_024252_200",
+      "timestamp": "2026-02-21T02:42:52.845587",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=2 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=2 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 2,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_024252_200",
+      "timestamp": "2026-02-21T02:42:52.845706",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=1 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=1 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 1,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_024253_200",
+      "timestamp": "2026-02-21T02:42:53.879969",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $36.67, PE 66200.0 = $204.59",
+      "message": "Current Premiums: CE 68000.0 = $177.97, PE 67800.0 = $71.99",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 36.67030188,
-        "pe_premium": 204.58983748,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 177.97114531,
+        "pe_premium": 71.99419255,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_172459_200",
-      "timestamp": "2026-02-20T17:24:59.145734",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_172459_200",
-      "timestamp": "2026-02-20T17:24:59.146216",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_172459_200",
-      "timestamp": "2026-02-20T17:24:59.164583",
+      "id": "act_024254_200",
+      "timestamp": "2026-02-21T02:42:54.278460",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_172726_200",
-      "timestamp": "2026-02-20T17:27:26.724530",
+      "id": "act_024254_200",
+      "timestamp": "2026-02-21T02:42:54.665641",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -2.8% (need >10.0%), PE +2.4% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -2.78,
+        "pe_excess_pct": 2.38,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_024254_200",
+      "timestamp": "2026-02-21T02:42:54.665701",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_024254_200",
+      "timestamp": "2026-02-21T02:42:54.665782",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.71 (Realized: $14.36, Unrealized: $0.35, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.71,
+        "realized": 14.36,
+        "unrealized": 0.35,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_024254_200",
+      "timestamp": "2026-02-21T02:42:54.665810",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_024254_200",
+      "timestamp": "2026-02-21T02:42:54.688074",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #386 complete [2164ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 2164.2,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_024423_200",
+      "timestamp": "2026-02-21T02:44:23.513498",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #149: Checking market conditions",
+      "message": "Heartbeat #387: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_172727_200",
-      "timestamp": "2026-02-20T17:27:27.489624",
+      "id": "act_024424_200",
+      "timestamp": "2026-02-21T02:44:24.481447",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $41.88, PE 66200.0 = $182.76",
+      "message": "Current Premiums: CE 68000.0 = $172.24, PE 67800.0 = $73.46",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 41.88413775,
-        "pe_premium": 182.76161065,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 172.24275103,
+        "pe_premium": 73.45848775,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_172727_200",
-      "timestamp": "2026-02-20T17:27:27.936541",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_172727_200",
-      "timestamp": "2026-02-20T17:27:27.936825",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_172727_200",
-      "timestamp": "2026-02-20T17:27:27.950300",
+      "id": "act_024424_200",
+      "timestamp": "2026-02-21T02:44:24.978800",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_172958_200",
-      "timestamp": "2026-02-20T17:29:58.305431",
+      "id": "act_024425_200",
+      "timestamp": "2026-02-21T02:44:25.533095",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -5.9% (need >10.0%), PE +4.5% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -5.91,
+        "pe_excess_pct": 4.46,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_024425_200",
+      "timestamp": "2026-02-21T02:44:25.533144",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_024425_200",
+      "timestamp": "2026-02-21T02:44:25.543118",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.72 (Realized: $14.36, Unrealized: $0.36, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.72,
+        "realized": 14.36,
+        "unrealized": 0.36,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_024425_200",
+      "timestamp": "2026-02-21T02:44:25.543168",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_024425_200",
+      "timestamp": "2026-02-21T02:44:25.566804",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #387 complete [2053ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 2053.1,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_024554_200",
+      "timestamp": "2026-02-21T02:45:54.028603",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #150: Checking market conditions",
+      "message": "Heartbeat #388: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {}
     },
     {
-      "id": "act_172959_200",
-      "timestamp": "2026-02-20T17:29:59.304912",
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.006105",
       "type": "info",
       "type_label": "Info",
-      "message": "Current Premiums: CE 69200.0 = $32.39, PE 66200.0 = $216.66",
+      "message": "Current Premiums: CE 68000.0 = $175.29, PE 67800.0 = $71.82",
       "session_id": "mmm20feb26-5",
       "severity": "info",
       "details": {
-        "ce_premium": 32.38644112,
-        "pe_premium": 216.6561504,
-        "ce_strike": 69200.0,
-        "pe_strike": 66200.0
+        "ce_premium": 175.28551325,
+        "pe_premium": 71.822872,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
       }
     },
     {
-      "id": "act_172959_200",
-      "timestamp": "2026-02-20T17:29:59.650382",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_172959_200",
-      "timestamp": "2026-02-20T17:29:59.650614",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-      "session_id": "mmm20feb26-5",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
-        "trigger": "whipsaw"
-      }
-    },
-    {
-      "id": "act_172959_200",
-      "timestamp": "2026-02-20T17:29:59.659885",
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.321849",
       "type": "info",
       "type_label": "Info",
-      "message": "Session PAUSED - Monitoring only, no adjustments",
+      "message": "Safety Checks: All clear \u2713",
       "session_id": "mmm20feb26-5",
-      "severity": "warning",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_173218_200",
-      "timestamp": "2026-02-20T17:32:18.774535",
-      "type": "force_heartbeat",
-      "type_label": "force_heartbeat",
-      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.727330",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -4.2% (need >10.0%), PE +2.1% (need >10.0%) - Result: NONE",
       "session_id": "mmm20feb26-5",
       "severity": "info",
+      "details": {
+        "ce_excess_pct": -4.24,
+        "pe_excess_pct": 2.14,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.727378",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
       "details": {}
     },
     {
-      "id": "act_173218_200",
-      "timestamp": "2026-02-20T17:32:18.865475",
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.727505",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.73 (Realized: $14.36, Unrealized: $0.36, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.73,
+        "realized": 14.36,
+        "unrealized": 0.36,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.727552",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_024555_200",
+      "timestamp": "2026-02-21T02:45:55.760860",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #388 complete [1727ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1726.9,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_024722_200",
+      "timestamp": "2026-02-21T02:47:22.962572",
       "type": "heartbeat_start",
       "type_label": "Heartbeat Running",
-      "message": "Heartbeat #151: Checking market conditions",
+      "message": "Heartbeat #389: Checking market conditions",
       "session_id": "mmm20feb26-5",
       "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_024723_200",
+      "timestamp": "2026-02-21T02:47:23.916240",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $160.06, PE 67800.0 = $78.17",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 160.06155087,
+        "pe_premium": 78.1709391,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_024724_200",
+      "timestamp": "2026-02-21T02:47:24.353993",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_024724_200",
+      "timestamp": "2026-02-21T02:47:24.723933",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -12.6% (need >10.0%), PE +11.2% (need >10.0%) - Result: PE_TRIGGERED",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -12.56,
+        "pe_excess_pct": 11.16,
+        "min_trigger_move": 10.0,
+        "outcome": "pe_triggered"
+      }
+    },
+    {
+      "id": "act_024724_200",
+      "timestamp": "2026-02-21T02:47:24.733761",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($78.17), hedging with CE ($160.06)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 78.1709391,
+        "hedge": "CE",
+        "hedge_premium": 160.06155087
+      }
+    },
+    {
+      "id": "act_024724_200",
+      "timestamp": "2026-02-21T02:47:24.745441",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "message": "SELL 1 lot(s) C-BTC-68000-210226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-68000-210226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_024726_200",
+      "timestamp": "2026-02-21T02:47:26.097868",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "message": "SELL 1 C-BTC-68000-210226 @ $158.50 (bid=$157.00, ask=$160.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1187456450",
+        "mid_price": 158.5,
+        "bid": 157.0,
+        "ask": 160.0
+      }
+    },
+    {
+      "id": "act_024733_200",
+      "timestamp": "2026-02-21T02:47:33.195995",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "message": "\u2705 SELL C-BTC-68000-210226 FILLED @ $158.50 in 8.5s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1187456450",
+        "fill_price": 158.5,
+        "elapsed": 8.5,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_024733_200",
+      "timestamp": "2026-02-21T02:47:33.196384",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots CE @ 68000.0 for $158.50 (Type: standard)",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 68000.0,
+        "lots": 1,
+        "fill_price": 158.5,
+        "type": "standard",
+        "adjustment_number": 38
+      }
+    },
+    {
+      "id": "act_024733_200",
+      "timestamp": "2026-02-21T02:47:33.208963",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.74 (Realized: $14.36, Unrealized: $0.38, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.74,
+        "realized": 14.36,
+        "unrealized": 0.38,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_024733_200",
+      "timestamp": "2026-02-21T02:47:33.209023",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_024733_200",
+      "timestamp": "2026-02-21T02:47:33.230793",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #389 complete [10268ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 10267.9,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_024852_200",
+      "timestamp": "2026-02-21T02:48:52.000613",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #390: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.013757",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $158.44, PE 67800.0 = $77.79",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 158.44348679,
+        "pe_premium": 77.78839907,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.329955",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.675894",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -1.0% (need >10.0%), PE -0.5% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -1.01,
+        "pe_excess_pct": -0.49,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.675947",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.676072",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.75 (Realized: $14.36, Unrealized: $0.39, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.75,
+        "realized": 14.36,
+        "unrealized": 0.39,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.676118",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_024853_200",
+      "timestamp": "2026-02-21T02:48:53.710409",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #390 complete [1705ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1705.3,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025023_200",
+      "timestamp": "2026-02-21T02:50:23.478883",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #391: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025023_200",
+      "timestamp": "2026-02-21T02:50:23.740099",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: CE active: session has 2 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "CE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "CE active: session has 2 lots but exchange shows 0",
+        "symbol": "C-BTC-70000-210226",
+        "session_lots": 2,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_025023_200",
+      "timestamp": "2026-02-21T02:50:23.740322",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE active: session has 3 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "PE active: session has 3 lots but exchange shows 0",
+        "symbol": "P-BTC-65200-210226",
+        "session_lots": 3,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_025023_200",
+      "timestamp": "2026-02-21T02:50:23.740499",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=2 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=2 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 2,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_025023_200",
+      "timestamp": "2026-02-21T02:50:23.749217",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=1 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=1 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 1,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_025024_200",
+      "timestamp": "2026-02-21T02:50:24.476235",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $157.61, PE 67800.0 = $77.32",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 157.6076957,
+        "pe_premium": 77.31711016,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025024_200",
+      "timestamp": "2026-02-21T02:50:24.990201",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025025_200",
+      "timestamp": "2026-02-21T02:50:25.350593",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -1.5% (need >10.0%), PE -1.1% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -1.53,
+        "pe_excess_pct": -1.09,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025025_200",
+      "timestamp": "2026-02-21T02:50:25.350644",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025025_200",
+      "timestamp": "2026-02-21T02:50:25.361100",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.76 (Realized: $14.36, Unrealized: $0.40, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.76,
+        "realized": 14.36,
+        "unrealized": 0.4,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025025_200",
+      "timestamp": "2026-02-21T02:50:25.361169",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025025_200",
+      "timestamp": "2026-02-21T02:50:25.387560",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #391 complete [1908ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1908.4,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025154_200",
+      "timestamp": "2026-02-21T02:51:54.153037",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #392: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025155_200",
+      "timestamp": "2026-02-21T02:51:55.439329",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $157.48, PE 67800.0 = $76.86",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 157.48253473,
+        "pe_premium": 76.85563382,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025155_200",
+      "timestamp": "2026-02-21T02:51:55.754472",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025156_200",
+      "timestamp": "2026-02-21T02:51:56.130473",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -1.6% (need >10.0%), PE -1.7% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -1.61,
+        "pe_excess_pct": -1.68,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025156_200",
+      "timestamp": "2026-02-21T02:51:56.130519",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025156_200",
+      "timestamp": "2026-02-21T02:51:56.130643",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.76 (Realized: $14.36, Unrealized: $0.40, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.76,
+        "realized": 14.36,
+        "unrealized": 0.4,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025156_200",
+      "timestamp": "2026-02-21T02:51:56.130689",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025156_200",
+      "timestamp": "2026-02-21T02:51:56.162888",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #392 complete [2005ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 2005.2,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025324_200",
+      "timestamp": "2026-02-21T02:53:24.815163",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #393: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025325_200",
+      "timestamp": "2026-02-21T02:53:25.549883",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $163.90, PE 67800.0 = $71.11",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 163.89554763,
+        "pe_premium": 71.10985364,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025326_200",
+      "timestamp": "2026-02-21T02:53:26.103367",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025326_200",
+      "timestamp": "2026-02-21T02:53:26.489286",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +2.4% (need >10.0%), PE -9.0% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 2.4,
+        "pe_excess_pct": -9.03,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025326_200",
+      "timestamp": "2026-02-21T02:53:26.498877",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025326_200",
+      "timestamp": "2026-02-21T02:53:26.499023",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.77 (Realized: $14.36, Unrealized: $0.41, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.77,
+        "realized": 14.36,
+        "unrealized": 0.41,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025326_200",
+      "timestamp": "2026-02-21T02:53:26.499061",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025326_200",
+      "timestamp": "2026-02-21T02:53:26.524385",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #393 complete [1709ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1709.0,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025453_200",
+      "timestamp": "2026-02-21T02:54:53.258119",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #394: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.017640",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $158.96, PE 67800.0 = $72.69",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 158.95990952,
+        "pe_premium": 72.68827299,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.320958",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.678728",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -0.7% (need >10.0%), PE -7.0% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -0.69,
+        "pe_excess_pct": -7.01,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.678778",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.678893",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.78 (Realized: $14.36, Unrealized: $0.42, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.78,
+        "realized": 14.36,
+        "unrealized": 0.42,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.688849",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025454_200",
+      "timestamp": "2026-02-21T02:54:54.710807",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #394 complete [1452ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1452.4,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025622_200",
+      "timestamp": "2026-02-21T02:56:22.899582",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #395: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025623_200",
+      "timestamp": "2026-02-21T02:56:23.489961",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $169.18, PE 67800.0 = $66.73",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 169.18400471,
+        "pe_premium": 66.72774043,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025623_200",
+      "timestamp": "2026-02-21T02:56:23.935559",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025624_200",
+      "timestamp": "2026-02-21T02:56:24.298681",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +5.7% (need >10.0%), PE -14.6% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 5.7,
+        "pe_excess_pct": -14.64,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025624_200",
+      "timestamp": "2026-02-21T02:56:24.298859",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025624_200",
+      "timestamp": "2026-02-21T02:56:24.298954",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.77 (Realized: $14.36, Unrealized: $0.41, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.77,
+        "realized": 14.36,
+        "unrealized": 0.41,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025624_200",
+      "timestamp": "2026-02-21T02:56:24.299010",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025624_200",
+      "timestamp": "2026-02-21T02:56:24.387609",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #395 complete [1487ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1487.5,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.150241",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #396: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.391592",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: CE active: session has 2 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "CE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "CE active: session has 2 lots but exchange shows 0",
+        "symbol": "C-BTC-70000-210226",
+        "session_lots": 2,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.393280",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE active: session has 3 lots but exchange shows 0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "MISSING_ON_EXCHANGE",
+        "detail": "PE active: session has 3 lots but exchange shows 0",
+        "symbol": "P-BTC-65200-210226",
+        "session_lots": 3,
+        "exchange_size": 0
+      }
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.396487",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=2 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=2 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 2,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.398446",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "message": "Position mismatch: PE frozen @ 67600.0: session=1 vs exchange=5.0",
+      "session_id": "mmm20feb26-5",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 67600.0: session=1 vs exchange=5.0",
+        "symbol": "P-BTC-67600-210226",
+        "session_lots": 1,
+        "exchange_size": 5.0
+      }
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.814841",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $175.98, PE 67800.0 = $63.06",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 175.97862187,
+        "pe_premium": 63.06263799,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025751_200",
+      "timestamp": "2026-02-21T02:57:51.888084",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025752_200",
+      "timestamp": "2026-02-21T02:57:52.569343",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +9.9% (need >10.0%), PE -19.3% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 9.94,
+        "pe_excess_pct": -19.33,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025752_200",
+      "timestamp": "2026-02-21T02:57:52.569417",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025752_200",
+      "timestamp": "2026-02-21T02:57:52.569603",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.76 (Realized: $14.36, Unrealized: $0.40, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.76,
+        "realized": 14.36,
+        "unrealized": 0.4,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025752_200",
+      "timestamp": "2026-02-21T02:57:52.579703",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025752_200",
+      "timestamp": "2026-02-21T02:57:52.610147",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #396 complete [1459ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1459.3,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_025922_200",
+      "timestamp": "2026-02-21T02:59:22.414969",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #397: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_025922_200",
+      "timestamp": "2026-02-21T02:59:22.958198",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $171.06, PE 67800.0 = $65.54",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 171.06302696,
+        "pe_premium": 65.53888131,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_025923_200",
+      "timestamp": "2026-02-21T02:59:23.667108",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025924_200",
+      "timestamp": "2026-02-21T02:59:24.067021",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE +6.9% (need >10.0%), PE -16.2% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": 6.87,
+        "pe_excess_pct": -16.16,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_025924_200",
+      "timestamp": "2026-02-21T02:59:24.067213",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_025924_200",
+      "timestamp": "2026-02-21T02:59:24.067353",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.77 (Realized: $14.36, Unrealized: $0.41, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.77,
+        "realized": 14.36,
+        "unrealized": 0.41,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_025924_200",
+      "timestamp": "2026-02-21T02:59:24.067402",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_025924_200",
+      "timestamp": "2026-02-21T02:59:24.086867",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #397 complete [1671ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 1671.5,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_030051_200",
+      "timestamp": "2026-02-21T03:00:51.567023",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #398: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030051_200",
+      "timestamp": "2026-02-21T03:00:51.962352",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $137.75, PE 67800.0 = $82.63",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 137.7540798,
+        "pe_premium": 82.63479076,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_030052_200",
+      "timestamp": "2026-02-21T03:00:52.094890",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_030052_200",
+      "timestamp": "2026-02-21T03:00:52.451822",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Trigger Check: CE -13.9% (need >10.0%), PE +5.7% (need >10.0%) - Result: NONE",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_excess_pct": -13.94,
+        "pe_excess_pct": 5.71,
+        "min_trigger_move": 10.0,
+        "outcome": "none"
+      }
+    },
+    {
+      "id": "act_030052_200",
+      "timestamp": "2026-02-21T03:00:52.451918",
+      "type": "info",
+      "type_label": "Info",
+      "message": "No triggers fired - Positions stable",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_030052_200",
+      "timestamp": "2026-02-21T03:00:52.462594",
+      "type": "info",
+      "type_label": "Info",
+      "message": "P&L Update: Net $14.82 (Realized: $14.36, Unrealized: $0.46, Fees: $0.00)",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "net_pnl": 14.82,
+        "realized": 14.36,
+        "unrealized": 0.46,
+        "fees": 0.0
+      }
+    },
+    {
+      "id": "act_030052_200",
+      "timestamp": "2026-02-21T03:00:52.462907",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Portfolio Delta: -0.004",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "portfolio_delta": -0.004
+      }
+    },
+    {
+      "id": "act_030052_200",
+      "timestamp": "2026-02-21T03:00:52.486692",
+      "type": "heartbeat_complete",
+      "type_label": "Heartbeat Complete",
+      "message": "\u2713 Heartbeat #398 complete [919ms, grade=A] \u2014 Next check in 90s",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
+      "details": {
+        "next_interval": 90,
+        "latency_ms": 919.3,
+        "health_grade": "A"
+      }
+    },
+    {
+      "id": "act_030220_200",
+      "timestamp": "2026-02-21T03:02:20.382179",
+      "type": "heartbeat_start",
+      "type_label": "Heartbeat Running",
+      "message": "Heartbeat #399: Checking market conditions",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030220_200",
+      "timestamp": "2026-02-21T03:02:20.787300",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Current Premiums: CE 68000.0 = $77.02, PE 67800.0 = $174.45",
+      "session_id": "mmm20feb26-5",
+      "severity": "info",
+      "details": {
+        "ce_premium": 77.0204274,
+        "pe_premium": 174.44778799,
+        "ce_strike": 68000.0,
+        "pe_strike": 67800.0
+      }
+    },
+    {
+      "id": "act_030220_200",
+      "timestamp": "2026-02-21T03:02:20.881549",
+      "type": "info",
+      "type_label": "Info",
+      "message": "Safety Checks: All clear \u2713",
+      "session_id": "mmm20feb26-5",
+      "severity": "success",
       "details": {}
     }
   ],
-  "updated_at": "2026-02-20T17:32:18.904391"
+  "updated_at": "2026-02-21T03:02:20.882543"
 }
