@@ -1874,14 +1874,33 @@ class MMMMonitor:
                         from .mmm_activity import log_activity
                         log_activity('itm_guard_blocked',
                                     f'🚫 ITM GUARD: {hedge.upper()} @ {hedge_strike} is ITM '
-                                    f'(spot ${spot_price:.0f}). Adjustment blocked — will not sell ITM.',
+                                    f'(spot ${spot_price:.0f}). Auto-shifting to OTM strike.',
                                     sid, 'error',
                                     {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
                         emit_safety(
                             sid, 'itm_guard', 'critical',
                             f'ITM GUARD: Cannot sell {hedge.upper()} @ {hedge_strike} — '
-                            f'strike is ITM (spot ${spot_price:.0f}). Adjustment blocked.',
+                            f'strike is ITM (spot ${spot_price:.0f}). Triggering auto-shift.',
                             {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price}
+                        )
+                        # Auto-trigger strike shift instead of deadlocking.
+                        # The normal shift check (above) only fires when premium
+                        # drops below shift_threshold.  ITM strikes need to shift
+                        # regardless of premium level — sitting on an ITM strike
+                        # and refusing to sell is a deadlock.
+                        log.info(
+                            f"[{sid}] ITM GUARD → AUTO-SHIFT: forcing strike shift "
+                            f"for {hedge.upper()} (ITM @ {hedge_strike}, spot=${spot_price:.0f})"
+                        )
+                        self._hb_wt['shift'] = {
+                            'side': hedge,
+                            'reason': 'itm_guard_auto_shift',
+                            'hedge_premium': hedge_premium,
+                            'loss': loss,
+                            'spot': spot_price,
+                        }
+                        await self._process_strike_shift(
+                            hedge, loss, ce_now, pe_now,
                         )
                         return
                     else:

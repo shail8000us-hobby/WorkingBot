@@ -631,6 +631,8 @@ def pause_session(session_id: str):
 def resume_session(session_id: str):
     """
     Resume a paused session. Heartbeat resumes.
+    If the monitor thread is dead (e.g. watchdog max restarts), creates
+    a fresh monitor instance and resets the watchdog restart counter.
     """
     try:
         # Check guardian
@@ -651,7 +653,7 @@ def resume_session(session_id: str):
             }), 404
 
         status = session.get('strategy_status', 'IDLE')
-        if status != 'PAUSED':
+        if status not in ('PAUSED', 'RUNNING'):
             return jsonify({
                 'success': False,
                 'error': f"Cannot resume session in {status} state. Must be PAUSED.",
@@ -660,14 +662,36 @@ def resume_session(session_id: str):
         old_status = status
         new_status = 'RUNNING'
 
-        storage.update_session(session_id, {
-            'strategy_status': new_status,
-            'last_heartbeat': datetime.utcnow().isoformat(),
-        })
+        # Reset watchdog restart counter so the session gets a fresh set
+        # of restart attempts after manual intervention.
+        session['_watchdog_restarts'] = 0
+        session['strategy_status'] = new_status
+        session['last_heartbeat'] = datetime.utcnow().isoformat()
+        storage.save_session(session)
 
         emit_status_change(session_id, old_status, new_status, 'User resumed')
-        resume_session_monitor(session_id, 'User resumed')
-        log.info(f"MMM session {session_id} resumed")
+
+        # Check if a live monitor exists. If not (watchdog killed it),
+        # start a brand new one instead of calling resume() on a dead object.
+        from .mmm_monitor import get_monitor, start_session_monitor
+        monitor = get_monitor(session_id)
+        if monitor and getattr(monitor, '_running', False):
+            # Reset watchdog counter on the LIVE monitor's in-memory session
+            # so the watchdog won't immediately give up on next timeout.
+            monitor.session['_watchdog_restarts'] = 0
+            monitor.resume('User resumed')
+        else:
+            # Monitor is dead — start a fresh one
+            log.info(f"[{session_id}] Resume: monitor is dead, starting fresh instance")
+            new_monitor = start_session_monitor(session_id, session)
+            # Re-register with watchdog
+            try:
+                from .mmm_watchdog import MMMWatchdog
+                MMMWatchdog.get_instance().register(new_monitor)
+            except Exception as we:
+                log.warning(f"[{session_id}] Resume: watchdog register failed: {we}")
+
+        log.info(f"MMM session {session_id} resumed (watchdog restarts reset to 0)")
 
         return jsonify({
             'success': True,
@@ -2656,8 +2680,7 @@ def get_exchange_positions_direct():
         async def fetch():
             resp = await client._request_with_retry(
                 method="GET",
-                path="/v2/positions",
-                params={"product_types": "options"},
+                path="/v2/positions/margined",
             )
             return resp.get('result', [])
 

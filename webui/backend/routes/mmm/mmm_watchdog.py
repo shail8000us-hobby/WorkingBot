@@ -191,6 +191,15 @@ class MMMWatchdog:
                 f"MANUAL INTERVENTION REQUIRED.",
                 level='critical',
             )
+            # Set session to PAUSED so the UI shows the correct state
+            # and the user can use the Resume button to revive it.
+            try:
+                session['strategy_status'] = 'PAUSED'
+                from .mmm_storage import get_storage
+                get_storage().save_session(session)
+                log.info(f"[{sid}] Watchdog: set session to PAUSED for manual resume")
+            except Exception as e:
+                log.warning(f"[{sid}] Watchdog: failed to set PAUSED status: {e}")
             # Deregister to stop repeated log spam
             self.deregister(sid)
             return
