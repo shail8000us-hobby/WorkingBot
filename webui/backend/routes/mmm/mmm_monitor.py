@@ -3562,62 +3562,22 @@ class MMMMonitor:
                         position_map[key] = position_map.get(key, 0) + f_lots
             
             if not position_map:
+                self._last_gamma_data = {
+                    'portfolio_gamma': 0.0,
+                    'positions': [],
+                }
                 return 0.0
-            
-            # Fetch Greeks for all positions
+
+            # Fetch Greeks for all positions from exchange tickers
+            # NOTE: Position lots come from session data only (this algo's
+            # positions).  Session properly tracks buybacks via LIFO removals
+            # in wind-down and close-at-5.  No exchange correction needed.
             creds = get_api_credentials()
             client = AsyncDeltaClient(
                 api_key=creds.get('api_key', ''),
                 api_secret=creds.get('api_secret', ''),
                 testnet=creds.get('testnet', False) or False,
             )
-            
-            # ── Correct position_map with actual exchange positions ──
-            # Session's position_map only ADDS lots (original + fills + frozen)
-            # and never subtracts buybacks (wind-down, close-at-5).
-            # Query /v2/positions/margined for the real lot counts.
-            try:
-                pos_resp = await client._request_with_retry(
-                    method="GET", path="/v2/positions/margined",
-                )
-                exchange_positions = pos_resp.get('result', [])
-                if isinstance(exchange_positions, list):
-                    exchange_sizes = {}
-                    for pos in exchange_positions:
-                        symbol = (pos.get('product', {}).get('symbol', '')
-                                  or pos.get('symbol', ''))
-                        size = abs(float(pos.get('size', 0)))
-                        if symbol and size > 0:
-                            exchange_sizes[symbol] = size
-
-                    corrected_map = {}
-                    for (strike, opt) in list(position_map.keys()):
-                        symbol = initializer.build_symbol(opt, 'BTC', strike, expiry)
-                        actual_size = exchange_sizes.get(symbol, 0)
-                        if actual_size > 0:
-                            corrected_map[(strike, opt)] = actual_size
-
-                    old_total = sum(position_map.values())
-                    new_total = sum(corrected_map.values()) if corrected_map else 0
-                    if old_total != new_total:
-                        log.info(
-                            f"[{self.session_id}] Delta/Gamma calc: corrected "
-                            f"position_map {old_total} → {new_total} lots "
-                            f"(exchange reality)"
-                        )
-                    position_map = corrected_map
-            except Exception as e:
-                log.warning(
-                    f"[{self.session_id}] Could not fetch exchange positions "
-                    f"for delta calc, using session data: {e}"
-                )
-
-            if not position_map:
-                self._last_gamma_data = {
-                    'portfolio_gamma': 0.0,
-                    'positions': [],
-                }
-                return 0.0
 
             async def fetch_all():
                 tasks = []
