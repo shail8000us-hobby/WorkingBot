@@ -2808,15 +2808,36 @@ class MMMMonitor:
 
         for side_key in ['ce', 'pe']:
             side = session.get(side_key, {})
-            # Active symbol
+            opt = 'call' if side_key == 'ce' else 'put'
+
+            # Active symbol (from side state — may be stale if symbol wasn't updated)
             sym = side.get('symbol', '')
             if sym:
                 session_symbols.add(sym)
+
+            # CRITICAL FIX: Always include the CURRENT active strike symbol.
+            # The symbol field may be stale (pointing to original entry strike)
+            # if it wasn't updated during strike shifts. Build dynamically.
+            active_strike = side.get('active_strike', 0)
+            if active_strike > 0:
+                active_sym = self.initializer.build_symbol(opt, 'BTC', active_strike, expiry)
+                session_symbols.add(active_sym)
+                # Update stale symbol field while we're at it
+                if sym and sym != active_sym:
+                    log.info(f"[{sid}] Reconciliation: fixing stale symbol {sym} → {active_sym}")
+                    side['symbol'] = active_sym
+
+            # Include ALL adjustment fill strikes (may differ from active strike)
+            for fill in side.get('adjustment_fills', []):
+                fill_strike = fill.get('strike', 0)
+                if fill_strike > 0:
+                    fill_sym = self.initializer.build_symbol(opt, 'BTC', fill_strike, expiry)
+                    session_symbols.add(fill_sym)
+
             # Frozen positions may be at different strikes
             for frozen in side.get('frozen_positions', []):
                 frozen_strike = frozen.get('strike', 0)
                 if frozen_strike > 0:
-                    opt = 'call' if side_key == 'ce' else 'put'
                     fsym = self.initializer.build_symbol(opt, 'BTC', frozen_strike, expiry)
                     session_symbols.add(fsym)
 
@@ -2858,9 +2879,16 @@ class MMMMonitor:
                 side = session.get(side_key, {})
                 option_type = 'call' if side_key == 'ce' else 'put'
                 active_strike = side.get('active_strike', 0)
-                symbol = side.get('symbol', '')
 
-                if not symbol:
+                # CRITICAL FIX: Use symbol built from current active_strike,
+                # not the stale side['symbol'] which may point to original entry.
+                if active_strike > 0:
+                    active_symbol = self.initializer.build_symbol(
+                        option_type, 'BTC', active_strike, expiry)
+                else:
+                    active_symbol = side.get('symbol', '')
+
+                if not active_symbol:
                     continue
 
                 # Bug #6 fix: Compare active symbol lots (original + adj at active strike)
@@ -2871,15 +2899,15 @@ class MMMMonitor:
                     if f_strike == active_strike:
                         active_lots += fill.get('lots', 0)
 
-                exchange_pos = exchange_positions.get(symbol, {})
+                exchange_pos = exchange_positions.get(active_symbol, {})
                 exchange_size = exchange_pos.get('size', 0)
 
                 if active_lots > 0 and exchange_size == 0:
                     discrepancies.append({
                         'side': side_key.upper(),
                         'type': 'MISSING_ON_EXCHANGE',
-                        'detail': f"{side_key.upper()} active: session has {active_lots} lots but exchange shows 0",
-                        'symbol': symbol,
+                        'detail': f"{side_key.upper()} active @ {active_strike}: session has {active_lots} lots but exchange shows 0",
+                        'symbol': active_symbol,
                         'session_lots': active_lots,
                         'exchange_size': 0,
                     })
@@ -2887,40 +2915,115 @@ class MMMMonitor:
                     discrepancies.append({
                         'side': side_key.upper(),
                         'type': 'SIZE_MISMATCH',
-                        'detail': f"{side_key.upper()} active: session={active_lots} vs exchange={exchange_size}",
-                        'symbol': symbol,
+                        'detail': f"{side_key.upper()} active @ {active_strike}: session={active_lots} vs exchange={exchange_size}",
+                        'symbol': active_symbol,
                         'session_lots': active_lots,
                         'exchange_size': exchange_size,
                     })
 
                 # Check frozen positions at their own strikes
+                # Aggregate frozen lots per strike first (multiple fills at same strike)
+                frozen_by_strike = {}
                 for frozen in side.get('frozen_positions', []):
                     f_strike = frozen.get('strike', 0)
                     f_lots = frozen.get('lots', 0)
-                    if f_lots <= 0 or f_strike <= 0:
-                        continue
+                    if f_lots > 0 and f_strike > 0:
+                        frozen_by_strike[f_strike] = frozen_by_strike.get(f_strike, 0) + f_lots
+
+                for f_strike, total_frozen_lots in frozen_by_strike.items():
                     fsym = self.initializer.build_symbol(option_type, 'BTC', f_strike, expiry)
                     f_exchange = exchange_positions.get(fsym, {})
                     f_ex_size = f_exchange.get('size', 0)
 
-                    if f_lots > 0 and f_ex_size == 0:
+                    if total_frozen_lots > 0 and f_ex_size == 0:
                         discrepancies.append({
                             'side': side_key.upper(),
                             'type': 'FROZEN_MISSING',
-                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={f_lots} but exchange=0",
+                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={total_frozen_lots} but exchange=0",
                             'symbol': fsym,
-                            'session_lots': f_lots,
+                            'session_lots': total_frozen_lots,
                             'exchange_size': 0,
                         })
-                    elif abs(f_lots - f_ex_size) > 0.1:
+                    elif abs(total_frozen_lots - f_ex_size) > 0.1:
                         discrepancies.append({
                             'side': side_key.upper(),
                             'type': 'FROZEN_MISMATCH',
-                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={f_lots} vs exchange={f_ex_size}",
+                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={total_frozen_lots} vs exchange={f_ex_size}",
                             'symbol': fsym,
-                            'session_lots': f_lots,
+                            'session_lots': total_frozen_lots,
                             'exchange_size': f_ex_size,
                         })
+
+                        # AUTO-SYNC FIX: If exchange has MORE lots than session,
+                        # add the difference as a synced frozen position so that
+                        # close-at-5 can find and close them.
+                        if f_ex_size > total_frozen_lots:
+                            extra = int(f_ex_size - total_frozen_lots)
+                            log.warning(
+                                f"[{sid}] AUTO-SYNC: Adding {extra} untracked "
+                                f"{side_key.upper()} lots @ {f_strike} to frozen "
+                                f"(exchange has {f_ex_size}, session has {total_frozen_lots})"
+                            )
+                            side.setdefault('frozen_positions', []).append({
+                                'strike': f_strike,
+                                'lots': extra,
+                                'entry_premium': 0.0,  # Unknown — use 0
+                                'type': 'exchange_sync',
+                                'frozen_at': datetime.utcnow().isoformat(),
+                                'note': f'Auto-synced from exchange (had {extra} untracked lots)',
+                            })
+                            from .mmm_state import recompute_side_lots
+                            recompute_side_lots(side)
+
+                # Also check for exchange positions at strikes the session
+                # doesn't know about at all (completely untracked)
+                known_strikes = set()
+                if active_strike > 0:
+                    known_strikes.add(active_strike)
+                known_strikes.update(frozen_by_strike.keys())
+                for fill in side.get('adjustment_fills', []):
+                    fs = fill.get('strike', 0)
+                    if fs > 0:
+                        known_strikes.add(fs)
+
+                for sym, epos in exchange_positions.items():
+                    # Check if this is our option type symbol
+                    prefix = 'C-BTC-' if option_type == 'call' else 'P-BTC-'
+                    if not sym.startswith(prefix):
+                        continue
+                    # Extract strike from symbol (e.g., C-BTC-68000-210226 → 68000)
+                    try:
+                        parts = sym.split('-')
+                        ex_strike = float(parts[2])
+                    except (IndexError, ValueError):
+                        continue
+
+                    if ex_strike not in known_strikes:
+                        ex_size = epos.get('size', 0)
+                        if ex_size > 0:
+                            discrepancies.append({
+                                'side': side_key.upper(),
+                                'type': 'UNTRACKED_EXCHANGE_POSITION',
+                                'detail': f"{side_key.upper()} @ {ex_strike}: exchange has {ex_size} lots but session has NO record",
+                                'symbol': sym,
+                                'session_lots': 0,
+                                'exchange_size': ex_size,
+                            })
+                            # AUTO-SYNC: Add untracked position so close-at-5 can close it
+                            log.warning(
+                                f"[{sid}] AUTO-SYNC: Adding {int(ex_size)} completely "
+                                f"untracked {side_key.upper()} lots @ {ex_strike} to frozen"
+                            )
+                            side.setdefault('frozen_positions', []).append({
+                                'strike': ex_strike,
+                                'lots': int(ex_size),
+                                'entry_premium': epos.get('entry_price', 0),
+                                'type': 'exchange_sync',
+                                'frozen_at': datetime.utcnow().isoformat(),
+                                'note': f'Auto-synced: completely untracked exchange position',
+                            })
+                            from .mmm_state import recompute_side_lots
+                            recompute_side_lots(side)
 
             # Store last reconciliation result (only our symbols)
             session['last_reconciliation'] = {

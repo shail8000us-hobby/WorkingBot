@@ -297,6 +297,20 @@ def activate_new_strike(
 
     side_state['active_strike'] = new_strike
 
+    # FIX: Update symbol to match the new active strike.
+    # Without this, reconciliation checks the stale original symbol,
+    # making exchange positions at the current strike invisible.
+    # Build symbol from the new strike + session expiry.
+    expiry = session.get('params', {}).get('expiry', '')
+    option_type = 'call' if side == 'ce' else 'put'
+    from .mmm_initializer import MMMInitializer
+    try:
+        _init = MMMInitializer()
+        side_state['symbol'] = _init.build_symbol(option_type, 'BTC', new_strike, expiry)
+        log.info(f"Symbol updated for {side.upper()}: {side_state['symbol']}")
+    except Exception as e:
+        log.warning(f"Failed to update symbol for {side.upper()} shift: {e}")
+
     # FIX: Shifted positions are adjustments, not original entry.
     # This ensures calculate_reversal_loss() includes them in risk assessment.
     side_state['original_lots'] = 0

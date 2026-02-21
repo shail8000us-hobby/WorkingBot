@@ -114,9 +114,25 @@ def scan_closeable_positions(
                 except Exception as e:
                     log.warning(f"Error fetching frozen premium: {e}")
 
+    # Log scan summary for debugging (even when nothing is closeable)
+    session_id = session.get('session_id', '?')
+    total_checked = 0
+    for side_key in ['ce', 'pe']:
+        ss = session.get(side_key, {})
+        total_checked += (1 if ss.get('original_lots', 0) > 0 else 0)
+        total_checked += len([f for f in ss.get('adjustment_fills', []) if f.get('lots', 0) > 0])
+        total_checked += len([f for f in ss.get('frozen_positions', []) if f.get('lots', 0) > 0])
+
+    if not closeable and total_checked > 0:
+        log.debug(
+            f"[{session_id}] Close-at-5 scan: checked {total_checked} positions, "
+            f"none below threshold {threshold:.1f}"
+        )
+
     if closeable:
         log.info(
-            f"Found {len(closeable)} position(s) eligible for close-at-5"
+            f"[{session_id}] Found {len(closeable)} position(s) eligible for close-at-5 "
+            f"(threshold={threshold:.1f})"
         )
         # Bug #4 fix: sort by (side, type, index) descending so that
         # higher indices within the SAME array are popped first,
