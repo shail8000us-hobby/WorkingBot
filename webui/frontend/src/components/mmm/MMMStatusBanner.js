@@ -138,9 +138,33 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
     return () => clearInterval(timer);
   }, []);
 
+  const status = session?.strategy_status || 'IDLE';
+  const baseCtx = STATUS_CONTEXT[status] || STATUS_CONTEXT.IDLE;
+
+  // Dynamic context: override short/detail text with actual reason when available
+  const ctx = useMemo(() => {
+    if (!session) return baseCtx;
+    if (status === 'PAUSED' && session._paused_reason) {
+      return {
+        ...baseCtx,
+        short: session._paused_reason,
+        detail: session._paused_resume_at
+          ? `${session._paused_reason}. Will auto-resume at ${new Date(session._paused_resume_at + 'Z').toLocaleTimeString()}.`
+          : baseCtx.detail,
+      };
+    }
+    if (status === 'STOPPED' && session._stopped_reason) {
+      return {
+        ...baseCtx,
+        short: session._stopped_reason,
+        detail: session._stopped_reason,
+      };
+    }
+    return baseCtx;
+  }, [status, session, baseCtx]);
+
   if (!session) return null;
 
-  const status = session.strategy_status || 'IDLE';
   const color = STATUS_COLORS[status] || STATUS_COLORS.IDLE;
   const adjCount = session.adjustment_count || 0;
   const reversalCount = session.reversal_count || 0;
@@ -157,7 +181,6 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
   );
 
   const interval = session.params?.adjustment_interval || 300;
-  const ctx = STATUS_CONTEXT[status] || STATUS_CONTEXT.IDLE;
   const isBothSidesUp = status === 'BOTH_SIDES_UP';
 
   return (
@@ -429,8 +452,18 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
           }}
         >
           <Typography variant="caption" sx={{ color: '#ff9800' }}>
-            ⏸ Heartbeat monitoring is paused. Positions remain open on the exchange.
-            Use "Resume" to restart monitoring, or "Stop" to end the strategy.
+            ⏸ {session._paused_reason
+              ? `Paused: ${session._paused_reason}`
+              : 'Heartbeat monitoring is paused.'}{' '}
+            {session._paused_resume_at
+              ? (() => {
+                  const resumeAt = new Date(session._paused_resume_at + 'Z');
+                  const remaining = Math.max(0, Math.round((resumeAt - now) / 1000));
+                  return remaining > 0
+                    ? `Auto-resume in ${remaining > 60 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : `${remaining}s`}.`
+                    : 'Auto-resuming shortly…';
+                })()
+              : 'Use "Resume" to restart monitoring, or "Stop" to end the strategy.'}
           </Typography>
         </Box>
       )}

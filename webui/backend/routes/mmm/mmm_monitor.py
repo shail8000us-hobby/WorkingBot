@@ -201,6 +201,12 @@ class MMMMonitor:
         self._stop_event.set()
         self.session['strategy_status'] = 'STOPPED'
         self.session['updated_at'] = datetime.utcnow().isoformat()
+        self.session['_stopped_reason'] = reason
+
+        # Clear any pause metadata
+        self.session.pop('_paused_reason', None)
+        self.session.pop('_paused_at', None)
+        self.session.pop('_paused_resume_at', None)
 
         # Analytics: Track session end time and duration
         analytics = self.session.setdefault('analytics', {})
@@ -213,6 +219,16 @@ class MMMMonitor:
                 analytics['session_duration_seconds'] = (end_dt - start_dt).total_seconds()
             except (ValueError, TypeError):
                 pass
+
+        # Log activity BEFORE disabling save so it's visible in the feed
+        try:
+            from .mmm_activity import log_activity
+            log_activity('session_stopped',
+                        f'\u23f9 Session stopped: {reason}',
+                        self.session_id, 'warning',
+                        {'reason': reason, 'old_status': old_status})
+        except Exception:
+            pass
 
         _save_session(self.session)
 
@@ -249,12 +265,23 @@ class MMMMonitor:
         except Exception as _we:
             pass
 
-    def pause(self, reason: str = 'User requested'):
-        """Pause the heartbeat (monitoring continues but no adjustments)."""
+    def pause(self, reason: str = 'User requested', resume_at: str = None):
+        """Pause the heartbeat (monitoring continues but no adjustments).
+
+        Args:
+            reason: Human-readable reason for the pause.
+            resume_at: Optional ISO timestamp of expected auto-resume time.
+        """
         old_status = self.session.get('strategy_status', 'RUNNING')
         self._paused = True
         self.session['strategy_status'] = 'PAUSED'
         self.session['updated_at'] = datetime.utcnow().isoformat()
+        self.session['_paused_reason'] = reason
+        self.session['_paused_at'] = datetime.utcnow().isoformat()
+        if resume_at:
+            self.session['_paused_resume_at'] = resume_at
+        else:
+            self.session.pop('_paused_resume_at', None)
 
         _save_session(self.session)
 
@@ -269,6 +296,11 @@ class MMMMonitor:
         self._paused = False
         self.session['strategy_status'] = 'RUNNING'
         self.session['updated_at'] = datetime.utcnow().isoformat()
+
+        # Clear pause metadata
+        self.session.pop('_paused_reason', None)
+        self.session.pop('_paused_at', None)
+        self.session.pop('_paused_resume_at', None)
 
         _save_session(self.session)
 
@@ -846,11 +878,17 @@ class MMMMonitor:
             pause_event = next(
                 (e for e in safety_events if e.get('action') == 'pause'), {}
             )
+            # Extract auto-resume time from event details (e.g. whipsaw cooldown)
+            resume_at = pause_event.get('details', {}).get('resume_at')
+            resume_info = ''
+            if resume_at:
+                resume_info = f' Will auto-resume at {resume_at[:19]}.'
             log_activity('session_paused',
-                        f'Auto-paused by safety: {pause_reason}',
+                        f'Auto-paused by safety: {pause_reason}{resume_info}',
                         sid, 'warning',
-                        {'reason': pause_reason, 'trigger': pause_event.get('type', 'unknown')})
-            self.pause(pause_reason)
+                        {'reason': pause_reason, 'trigger': pause_event.get('type', 'unknown'),
+                         'resume_at': resume_at})
+            self.pause(pause_reason, resume_at=resume_at)
 
         # Handle auto-resume events (whipsaw timeout, max_adjustments limit raised, etc.)
         for event in safety_events:

@@ -297,19 +297,24 @@ class MMMSafety:
                 break
 
         if alternating and len(set(sides)) > 1:
-            session['_whipsaw_paused_at'] = datetime.utcnow().isoformat()
+            now = datetime.utcnow()
+            cooldown_secs = params.get('adjustment_interval', 300) * 2
+            resume_at = (now + timedelta(seconds=cooldown_secs)).isoformat()
+            session['_whipsaw_paused_at'] = now.isoformat()
             events.append({
                 'type': 'whipsaw',
                 'level': 'alert',
                 'message': (
                     f"Whipsaw detected: {whipsaw_limit} alternating "
                     f"adjustments ({' → '.join(sides)}). "
-                    f"Auto-pausing for {params.get('adjustment_interval', 300) * 2}s."
+                    f"Auto-pausing for {cooldown_secs}s."
                 ),
                 'action': 'pause',
                 'details': {
                     'sequence': sides,
                     'limit': whipsaw_limit,
+                    'cooldown_seconds': cooldown_secs,
+                    'resume_at': resume_at,
                 },
             })
 
