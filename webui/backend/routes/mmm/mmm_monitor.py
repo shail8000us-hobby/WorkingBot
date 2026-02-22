@@ -66,6 +66,10 @@ from .mmm_websocket import (
     emit_strike_shift, emit_close_at_5, emit_both_sides_alert,
     emit_safety, emit_pnl_update, emit_status_change,
 )
+from .mmm_perp_hedge import (
+    run_perp_hedge, close_all_perp, get_perp_summary,
+    is_perp_hedge_enabled,
+)
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
@@ -156,14 +160,14 @@ class MMMMonitor:
 
         self.session['strategy_status'] = 'RUNNING'
         self.session['entry_time'] = (
-            self.session.get('entry_time') or datetime.utcnow().isoformat()
+            self.session.get('entry_time') or datetime.now(timezone.utc).isoformat()
         )
-        self.session['updated_at'] = datetime.utcnow().isoformat()
+        self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         # Analytics: Track session start time
         analytics = self.session.setdefault('analytics', {})
         if not analytics.get('session_start_time'):
-            analytics['session_start_time'] = datetime.utcnow().isoformat()
+            analytics['session_start_time'] = datetime.now(timezone.utc).isoformat()
             # Capture initial lots from session
             analytics['initial_ce_lots'] = self.session.get('ce', {}).get('original_lots', 0)
             analytics['initial_pe_lots'] = self.session.get('pe', {}).get('original_lots', 0)
@@ -200,7 +204,7 @@ class MMMMonitor:
         self._running = False
         self._stop_event.set()
         self.session['strategy_status'] = 'STOPPED'
-        self.session['updated_at'] = datetime.utcnow().isoformat()
+        self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
         self.session['_stopped_reason'] = reason
 
         # Clear any pause metadata
@@ -210,12 +214,15 @@ class MMMMonitor:
 
         # Analytics: Track session end time and duration
         analytics = self.session.setdefault('analytics', {})
-        analytics['session_end_time'] = datetime.utcnow().isoformat()
+        analytics['session_end_time'] = datetime.now(timezone.utc).isoformat()
         start_time = analytics.get('session_start_time')
         if start_time:
             try:
                 start_dt = datetime.fromisoformat(start_time)
-                end_dt = datetime.utcnow()
+                # Fix #14: normalize naive stored timestamp to tz-aware UTC
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+                end_dt = datetime.now(timezone.utc)
                 analytics['session_duration_seconds'] = (end_dt - start_dt).total_seconds()
             except (ValueError, TypeError):
                 pass
@@ -275,9 +282,9 @@ class MMMMonitor:
         old_status = self.session.get('strategy_status', 'RUNNING')
         self._paused = True
         self.session['strategy_status'] = 'PAUSED'
-        self.session['updated_at'] = datetime.utcnow().isoformat()
+        self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
         self.session['_paused_reason'] = reason
-        self.session['_paused_at'] = datetime.utcnow().isoformat()
+        self.session['_paused_at'] = datetime.now(timezone.utc).isoformat()
         if resume_at:
             self.session['_paused_resume_at'] = resume_at
         else:
@@ -295,7 +302,7 @@ class MMMMonitor:
         old_status = self.session.get('strategy_status', 'PAUSED')
         self._paused = False
         self.session['strategy_status'] = 'RUNNING'
-        self.session['updated_at'] = datetime.utcnow().isoformat()
+        self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         # Clear pause metadata
         self.session.pop('_paused_reason', None)
@@ -448,7 +455,7 @@ class MMMMonitor:
 
                 # Record next heartbeat time
                 self.session['next_heartbeat'] = (
-                    datetime.utcnow() + timedelta(seconds=interval)
+                    datetime.now(timezone.utc) + timedelta(seconds=interval)
                 ).isoformat()
 
                 hb_start = time.monotonic()
@@ -509,6 +516,23 @@ class MMMMonitor:
             self.session['last_error'] = str(e)
             _save_session(self.session)
         finally:
+            # §26.10: Close perp position on session stop/crash
+            # The event loop is still open here, so run_until_complete works.
+            try:
+                perp_lots = self.session.get('perp_hedge', {}).get('lots', 0)
+                if perp_lots != 0 and is_perp_hedge_enabled(self.session):
+                    reason = self.session.get('_stopped_reason', 'session_stop')
+                    log.warning(
+                        f"[{self.session_id}] Closing perp position "
+                        f"({perp_lots:+d} lots) on stop: {reason}"
+                    )
+                    self._loop.run_until_complete(
+                        close_all_perp(self.session, self.executor, reason)
+                    )
+            except Exception as perp_e:
+                log.error(
+                    f"[{self.session_id}] Failed to close perp on stop: {perp_e}"
+                )
             self._loop.close()
             self._loop = None
 
@@ -521,27 +545,28 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
 
-        session['last_heartbeat'] = datetime.utcnow().isoformat()
+        session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
         # NOTE: error_count is reset at the END of a successful heartbeat,
         # not here at the start. This ensures consecutive errors accumulate.
 
-        # Robust v2 Fix #24: Verify derived state consistency at heartbeat start.
-        # If total_lots doesn't match the sum of source arrays, auto-repair.
+        # Fix #23 + #24: Always recompute derived fields from positions[] at heartbeat
+        # start. This also auto-migrates old sessions to the Unified Position Ledger
+        # format (adds positions[] key if not present) and ensures _pos_id is present
+        # in all backward-compat views so ID-based removal works correctly.
         for _ck_side in ('ce', 'pe'):
             _ck_state = session.get(_ck_side, {})
-            _ck_expected = (
-                _ck_state.get('original_lots', 0) +
-                sum(f.get('lots', 0) for f in _ck_state.get('adjustment_fills', [])) +
-                sum(f.get('lots', 0) for f in _ck_state.get('frozen_positions', []))
-            )
+            if not isinstance(_ck_state, dict):
+                continue
             _ck_stored = _ck_state.get('total_lots', 0)
-            if _ck_stored != _ck_expected:
+            recompute_side_lots(_ck_state)
+            session[_ck_side] = _ck_state
+            _ck_new = _ck_state.get('total_lots', 0)
+            if _ck_stored != _ck_new:
                 log.critical(
-                    f"[{sid}] CONSISTENCY CHECK FAILED: {_ck_side.upper()} "
-                    f"total_lots={_ck_stored} != computed={_ck_expected}. Auto-repairing."
+                    f"[{sid}] CONSISTENCY CHECK: {_ck_side.upper()} "
+                    f"total_lots corrected from {_ck_stored} → {_ck_new} "
+                    f"(positions[] recompute fixed stale derived value)"
                 )
-                from .mmm_state import recompute_side_lots
-                recompute_side_lots(_ck_state)
 
         # Log heartbeat start
         from .mmm_activity import log_activity
@@ -825,10 +850,20 @@ class MMMMonitor:
                         return
 
         # Step 2: Close-at-5 scan (§11)
-        await self._process_close_at_5(ce_now, pe_now)
+        # Fix #11: capture which sides had positions closed so we can re-evaluate
+        # triggers before executing any adjustment on the same side.
+        _close_at_5_sides = await self._process_close_at_5(ce_now, pe_now)
 
         # Check if both sides fully closed
         if check_both_sides_closed(session):
+            # §26.10: Close perp before stopping when options are fully closed
+            if is_perp_hedge_enabled(session):
+                perp_lots = session.get('perp_hedge', {}).get('lots', 0)
+                if perp_lots != 0:
+                    await close_all_perp(
+                        session, self.executor,
+                        'both_sides_closed — options expired worthless'
+                    )
             self.stop('Both sides fully closed — strategy complete!')
             return
 
@@ -1054,7 +1089,10 @@ class MMMMonitor:
                 if both_up_at:
                     try:
                         up_time = datetime.fromisoformat(both_up_at)
-                        elapsed = (datetime.utcnow() - up_time).total_seconds()
+                        # Fix #14: normalize to tz-aware UTC before subtraction
+                        if up_time.tzinfo is None:
+                            up_time = up_time.replace(tzinfo=timezone.utc)
+                        elapsed = (datetime.now(timezone.utc) - up_time).total_seconds()
                         if elapsed >= 30:
                             # Fix #18: Re-fetch premiums before auto-decision.
                             # The original ce_now/pe_now are 30+ seconds stale.
@@ -1085,14 +1123,14 @@ class MMMMonitor:
                                         {'decision': decision, 'elapsed_seconds': elapsed})
                             # Apply decision
                             session['both_sides_decision'] = decision
-                            session['both_sides_decided_at'] = datetime.utcnow().isoformat()
+                            session['both_sides_decided_at'] = datetime.now(timezone.utc).isoformat()
                             session['both_sides_auto'] = True
                             adj_history = session.get('adjustment_history', [])
                             adj_history.append({
                                 'type': 'both_sides_decision',
                                 'decision': decision,
                                 'auto': True,
-                                'timestamp': datetime.utcnow().isoformat(),
+                                'timestamp': datetime.now(timezone.utc).isoformat(),
                             })
                             session['adjustment_history'] = adj_history
                             # Resume
@@ -1213,11 +1251,11 @@ class MMMMonitor:
                         })
             self.pause('Both sides triggered')
             session['strategy_status'] = 'BOTH_SIDES_UP'
-            session['both_sides_up_at'] = datetime.utcnow().isoformat()
+            session['both_sides_up_at'] = datetime.now(timezone.utc).isoformat()
             
             # Analytics: Track both_sides_up event (no trading logic impact)
             analytics = session.setdefault('analytics', {})
-            analytics.setdefault('both_sides_up_timestamps', []).append(datetime.utcnow().isoformat())
+            analytics.setdefault('both_sides_up_timestamps', []).append(datetime.now(timezone.utc).isoformat())
             
             emit_both_sides_alert(
                 sid, ce_now, pe_now,
@@ -1289,21 +1327,87 @@ class MMMMonitor:
                                 {'margin_tier': margin_tier, 'utilization': margin_util})
             else:
                 session.pop('_wind_down_mode', None)
-                log_activity('adjustment_triggered',
-                            f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
-                            f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
-                            sid, 'info',
-                            {
-                                'aggressor': aggressor.upper(),
-                                'aggressor_premium': premium_now,
-                                'hedge': hedge.upper(),
-                                'hedge_premium': hedge_premium
-                            })
 
-                await self._process_adjustment(
-                    aggressor, hedge, premium_now, hedge_premium,
-                    ce_now, pe_now,
+                # Fix #11: If close-at-5 closed positions on the aggressor side
+                # during this same heartbeat, re-evaluate the trigger now that
+                # the position state has changed.  Close-at-5 may have removed
+                # positions whose realized loss already reduces the net exposure —
+                # re-evaluation prevents unnecessary over-hedging.
+                if aggressor in _close_at_5_sides:
+                    log.info(
+                        f"[{sid}] Fix #11: close-at-5 closed {aggressor.upper()} positions "
+                        f"this heartbeat — re-evaluating trigger before adjustment"
+                    )
+                    re_trigger = evaluate_triggers(session, ce_now, pe_now)
+                    if re_trigger['outcome'] not in (OUTCOME_CE, OUTCOME_PE, OUTCOME_BOTH):
+                        log_activity('trigger_cleared_by_close_at_5',
+                                    f'✅ Trigger re-evaluation: {aggressor.upper()} trigger '
+                                    f'no longer active after close-at-5 — skipping adjustment',
+                                    sid, 'info',
+                                    {'aggressor': aggressor, 'original_outcome': outcome,
+                                     're_outcome': re_trigger['outcome']})
+                        # Trigger cleared — skip the adjustment
+                    else:
+                        log_activity('adjustment_triggered',
+                                    f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
+                                    f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})'
+                                    f' [trigger confirmed after close-at-5 re-check]',
+                                    sid, 'info',
+                                    {
+                                        'aggressor': aggressor.upper(),
+                                        'aggressor_premium': premium_now,
+                                        'hedge': hedge.upper(),
+                                        'hedge_premium': hedge_premium,
+                                        'close_at_5_ran_on_aggressor': True,
+                                    })
+                        await self._process_adjustment(
+                            aggressor, hedge, premium_now, hedge_premium,
+                            ce_now, pe_now,
+                        )
+                else:
+                    log_activity('adjustment_triggered',
+                                f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
+                                f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
+                                sid, 'info',
+                                {
+                                    'aggressor': aggressor.upper(),
+                                    'aggressor_premium': premium_now,
+                                    'hedge': hedge.upper(),
+                                    'hedge_premium': hedge_premium
+                                })
+
+                    await self._process_adjustment(
+                        aggressor, hedge, premium_now, hedge_premium,
+                        ce_now, pe_now,
+                    )
+
+        # Step 7.5: Perp Delta Hedge (Fix #26)
+        # Runs after adjustments, before P&L — uses cached portfolio_delta from Step 3.5
+        # BTC mark price is also cached in _regime_spot_price (no extra API call needed)
+        if is_perp_hedge_enabled(session):
+            perp_btc_mark = session.get('_regime_spot_price', 0.0)
+            perp_delta = session.get('portfolio_delta', 0.0)
+            if perp_btc_mark > 0:
+                perp_result = await run_perp_hedge(
+                    session, self.executor, perp_delta, perp_btc_mark
                 )
+                if perp_result.get('action') not in ('none', 'skipped'):
+                    log_activity(
+                        'perp_hedge',
+                        f"Perp hedge: {perp_result.get('action', '?').upper()} "
+                        f"{perp_result.get('lots_traded', 0)} lots @ "
+                        f"{perp_result.get('fill_price', 0):.2f} — "
+                        f"{perp_result.get('reason', '')}",
+                        sid, 'info',
+                        {
+                            'action': perp_result.get('action'),
+                            'lots': perp_result.get('lots_traded', 0),
+                            'fill_price': perp_result.get('fill_price', 0),
+                            'realized_pnl': perp_result.get('realized_pnl', 0),
+                        },
+                    )
+            else:
+                log.debug(f"[{sid}] Perp hedge skipped: BTC mark price not available")
 
         # Step 8: Update P&L
         pnl = self._engine.compute_total_pnl(
@@ -1343,7 +1447,7 @@ class MMMMonitor:
 
         # P&L history for chart
         session.setdefault('pnl_history', []).append({
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'total_pnl': pnl['net_pnl'],
             'realized': pnl['realized'],
             'unrealized': pnl['unrealized'],
@@ -1699,7 +1803,7 @@ class MMMMonitor:
         # Record in wind-down history
         remaining = session.get(aggressor, {}).get('active_lots', 0)
         session.setdefault('_wind_down_history', []).append({
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'side': aggressor.upper(),
             'lots_closed': actual_lots,
             'total_realized_pnl': round(total_realized, 2),
@@ -1710,7 +1814,7 @@ class MMMMonitor:
         })
 
         remaining = session.get(aggressor, {}).get('active_lots', 0)
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
         log_activity('wind_down',
                     f'🌙 Wind-Down Complete: {aggressor.upper()} '
                     f'closed {actual_lots} lots across {len(by_strike)} strike(s), '
@@ -1755,14 +1859,24 @@ class MMMMonitor:
         side_state = session.setdefault(side, {})
         aggressor_side = 'pe' if side == 'ce' else 'ce'
 
-        # Record the fill
-        side_state.setdefault('adjustment_fills', []).append({
-            'lots': lots,
-            'premium': fill_price,
+        # Fix #23: Record fill in positions[] (Unified Ledger)
+        now = datetime.now(timezone.utc).isoformat()
+        counter = side_state.get('_pos_counter', 0) + 1
+        side_state['_pos_counter'] = counter
+        side_state.setdefault('positions', []).append({
+            'id': f"{side}_adj_{counter:03d}",
             'strike': strike,
-            'timestamp': datetime.utcnow().isoformat(),
-            'type': adj_type,
-            'source': 'pending_order_recovery',  # Distinguishes from normal fills
+            'lots': lots,
+            'entry_premium': fill_price,
+            'premium': fill_price,
+            'type': adj_type or 'adjustment',
+            'status': 'active',
+            'created_at': now,
+            'shifted_at': None,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': now,
+            'source': 'pending_order_recovery',
         })
         recompute_side_lots(side_state)
         session[side] = side_state
@@ -1781,14 +1895,14 @@ class MMMMonitor:
             'lots_sold': lots,
             'premium': fill_price,
             'strike': strike,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': adj_type,
             'premium_collected': premium_collected,
             'adjustment_number': session['adjustment_count'],
             'source': 'pending_order_recovery',
         })
 
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         log.info(
             f"[{self.session_id}] Pending fill recorded: "
@@ -1888,7 +2002,7 @@ class MMMMonitor:
             
             # Analytics: Track reversal event (no trading logic impact)
             analytics = session.setdefault('analytics', {})
-            analytics.setdefault('reversal_timestamps', []).append(datetime.utcnow().isoformat())
+            analytics.setdefault('reversal_timestamps', []).append(datetime.now(timezone.utc).isoformat())
 
             # First reversal: use adjustment P&L formula
             loss, adj_pnl, _rev_incomplete = self._engine.calculate_reversal_loss(
@@ -2282,7 +2396,7 @@ class MMMMonitor:
             # Analytics: Track shift event (no trading logic impact)
             analytics = session.setdefault('analytics', {})
             analytics.setdefault('shift_timestamps', []).append({
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'side': side.upper(),
                 'old_strike': old_strike,
                 'new_strike': new_strike,
@@ -2296,12 +2410,12 @@ class MMMMonitor:
                 'premium': fill_price,
                 'strike': new_strike,
                 'old_strike': old_strike,
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'type': 'strike_shift',
                 'premium_collected': premium_collected,
                 'adjustment_number': session['adjustment_count'],
             })
-            session['updated_at'] = datetime.utcnow().isoformat()
+            session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
             emit_strike_shift(
                 sid, side.upper(), old_strike, new_strike,
@@ -2431,7 +2545,7 @@ class MMMMonitor:
         self,
         ce_now: float,
         pe_now: float,
-    ):
+    ) -> set:
         """Scan and close positions at or below threshold.
         During wind-down, uses elevated threshold from wind_down_close_threshold
         to harvest opportunity (close positions that have decayed significantly).
@@ -2439,6 +2553,11 @@ class MMMMonitor:
         Caps at MAX_CLOSES_PER_HEARTBEAT per heartbeat to prevent the heartbeat
         from hanging for 10+ minutes when many positions are eligible.
         Remaining positions will be closed in subsequent heartbeats.
+
+        Returns:
+            Set of side keys ('ce', 'pe') that had at least one successful close
+            this heartbeat.  Used by Fix #11 to decide if trigger re-evaluation
+            is needed before executing an adjustment on the same side.
         """
         session = self.session
         sid = self.session_id
@@ -2471,6 +2590,7 @@ class MMMMonitor:
                          'capped_at': self.MAX_CLOSES_PER_HEARTBEAT})
 
         closed_count = 0
+        sides_closed: set = set()  # Fix #11: track which sides had successful closes
         for pos in closeable:
             # Cap: don't process more than MAX_CLOSES_PER_HEARTBEAT per beat
             if closed_count >= self.MAX_CLOSES_PER_HEARTBEAT:
@@ -2491,6 +2611,7 @@ class MMMMonitor:
 
             if result.get('success'):
                 closed_count += 1
+                sides_closed.add(pos['side'])  # Fix #11: record side
                 emit_close_at_5(
                     sid, pos['side'].upper(), pos['strike'],
                     result['lots_closed'], result['realized_pnl'],
@@ -2513,6 +2634,8 @@ class MMMMonitor:
                     )
                     # This is a special case — we don't shift, we re-enter
                     # For now, just log. Full auto-re-entry needs user config.
+
+        return sides_closed  # Fix #11
 
     # =========================================================================
     # §8: Both-Sides-Up Auto-Decision (30s timeout)
@@ -2640,6 +2763,19 @@ class MMMMonitor:
         failed_closes = []
 
         try:
+            # §26.10: Close perp FIRST before options (reduces delta risk
+            # during the window when options positions are still open)
+            if is_perp_hedge_enabled(session):
+                perp_close = await close_all_perp(session, self.executor, reason)
+                if not perp_close.get('success') and perp_close.get('lots_closed', 0) == 0:
+                    # Only fail if there was actually a position to close
+                    perp_lots = session.get('perp_hedge', {}).get('lots', 0)
+                    if perp_lots != 0:
+                        log.error(
+                            f"[{sid}] Perp close failed ({perp_lots} lots remain). "
+                            f"Continuing with options close."
+                        )
+
             if emergency:
                 # PARALLEL close: both sides simultaneously for speed
                 ce_task = self._close_one_side(
@@ -2744,10 +2880,12 @@ class MMMMonitor:
                             f"{side_key.upper()} @ {active_strike}, "
                             f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
                         )
-                        # Bug #13 fix: clear state
-                        side_state['original_lots'] = 0
-                        side_state['adjustment_fills'] = []
-                        side_state['active_lots'] = 0
+                        # Fix #23: Mark all active positions as closed in positions[]
+                        _now = datetime.now(timezone.utc).isoformat()
+                        for _pos in side_state.get('positions', []):
+                            if _pos.get('status') == 'active':
+                                _pos['status'] = 'closed'
+                                _pos['closed_at'] = _now
                         closed = True
                         break
                     else:
@@ -2809,9 +2947,20 @@ class MMMMonitor:
                 if not closed:
                     failed_closes.append(f"{side_key.upper()} frozen @ {frozen_strike}")
 
-        # Bug #13 fix: remove successfully closed frozen positions (descending)
-        for fi in sorted(closed_frozen_indices, reverse=True):
-            side_state.get('frozen_positions', []).pop(fi)
+        # Fix #23: Mark successfully closed frozen positions as 'closed' in positions[]
+        # Use _pos_id from computed frozen_positions view for O(1) lookup
+        if closed_frozen_indices:
+            _now = datetime.now(timezone.utc).isoformat()
+            frozen_view = side_state.get('frozen_positions', [])
+            closed_ids = {
+                frozen_view[fi].get('_pos_id')
+                for fi in closed_frozen_indices
+                if fi < len(frozen_view)
+            }
+            for _pos in side_state.get('positions', []):
+                if _pos.get('id') in closed_ids:
+                    _pos['status'] = 'closed'
+                    _pos['closed_at'] = _now
 
         # Recompute lots after clearing
         recompute_side_lots(side_state)
@@ -3018,16 +3167,25 @@ class MMMMonitor:
             for side_key in ['ce', 'pe']:
                 side = session.get(side_key, {})
                 original = side.get('frozen_positions', [])
-                cleaned = [fp for fp in original if fp.get('type') != 'exchange_sync']
                 removed_lots = sum(
                     fp.get('lots', 0) for fp in original if fp.get('type') == 'exchange_sync'
                 )
                 if removed_lots > 0:
                     log.warning(
-                        f"[{sid}] Cleanup: removed {removed_lots} exchange_sync "
-                        f"{side_key.upper()} frozen lots (auto-sync disabled)"
+                        f"[{sid}] Cleanup: removing {removed_lots} exchange_sync "
+                        f"{side_key.upper()} frozen lots from positions[] (auto-sync disabled)"
                     )
-                    side['frozen_positions'] = cleaned
+                    # Fix #23: Remove exchange_sync positions from positions[] (Unified Ledger)
+                    _now = datetime.now(timezone.utc).isoformat()
+                    exchange_sync_ids = {
+                        fp.get('_pos_id')
+                        for fp in original
+                        if fp.get('type') == 'exchange_sync' and fp.get('_pos_id')
+                    }
+                    for _pos in side.get('positions', []):
+                        if _pos.get('id') in exchange_sync_ids or _pos.get('type') == 'exchange_sync':
+                            _pos['status'] = 'closed'
+                            _pos['closed_at'] = _now
                     from .mmm_state import recompute_side_lots
                     recompute_side_lots(side)
 
@@ -3249,9 +3407,79 @@ class MMMMonitor:
                             # The exchange may hold positions from other algos,
                             # manual trades, or other MMM sessions. Log only.
 
+            # §26.10: Orphan perp check — detect BTCUSD position on exchange
+            # that the session doesn't know about (crash recovery).
+            if is_perp_hedge_enabled(session):
+                from .mmm_perp_hedge import BTCUSD_SYMBOL
+                session_perp_lots = session.get('perp_hedge', {}).get('lots', 0)
+                exchange_perp_size = 0
+                exchange_perp_signed = 0
+                for pos in positions:
+                    sym = pos.get('product', {}).get('symbol', '') or pos.get('symbol', '')
+                    if sym == BTCUSD_SYMBOL:
+                        exchange_perp_signed = int(float(pos.get('size', 0)))
+                        exchange_perp_size = abs(exchange_perp_signed)
+                        break
+
+                if exchange_perp_size > 0 and session_perp_lots == 0:
+                    # Orphan detected: exchange has position, session doesn't
+                    log.warning(
+                        f"[{sid}] ORPHAN PERP DETECTED: Exchange has "
+                        f"{exchange_perp_signed:+d} BTCUSD lots but session "
+                        f"shows 0. Closing orphan position."
+                    )
+                    discrepancies.append({
+                        'side': 'PERP',
+                        'type': 'ORPHAN_PERP_POSITION',
+                        'detail': (
+                            f"BTCUSD orphan: exchange={exchange_perp_signed:+d} lots, "
+                            f"session=0. Auto-closing."
+                        ),
+                        'symbol': BTCUSD_SYMBOL,
+                        'session_lots': 0,
+                        'exchange_size': exchange_perp_size,
+                    })
+                    try:
+                        close_result = await close_all_perp(
+                            session, self.executor,
+                            f'orphan_cleanup (exchange had {exchange_perp_signed:+d} lots)'
+                        )
+                        # Force session to reflect what we just found+closed
+                        if not close_result.get('success'):
+                            log.error(
+                                f"[{sid}] Orphan perp close FAILED: "
+                                f"{close_result.get('reason', 'unknown')}"
+                            )
+                    except Exception as oe:
+                        log.error(f"[{sid}] Orphan perp close exception: {oe}")
+
+                elif exchange_perp_size == 0 and session_perp_lots != 0:
+                    # Session thinks it has a position but exchange disagrees
+                    log.warning(
+                        f"[{sid}] PERP STATE MISMATCH: Session shows "
+                        f"{session_perp_lots:+d} lots but exchange has 0. "
+                        f"Resetting session perp state."
+                    )
+                    discrepancies.append({
+                        'side': 'PERP',
+                        'type': 'PHANTOM_PERP_POSITION',
+                        'detail': (
+                            f"BTCUSD phantom: session={session_perp_lots:+d} lots, "
+                            f"exchange=0. Resetting state."
+                        ),
+                        'symbol': BTCUSD_SYMBOL,
+                        'session_lots': session_perp_lots,
+                        'exchange_size': 0,
+                    })
+                    perp = session.get('perp_hedge', {})
+                    perp['lots'] = 0
+                    perp['avg_entry'] = 0.0
+                    perp['unrealized_pnl'] = 0.0
+                    perp['target_lots'] = 0
+
             # Store last reconciliation result (only our symbols)
             session['last_reconciliation'] = {
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'session_symbols': list(session_symbols),
                 'exchange_positions': {k: v for k, v in exchange_positions.items()},
                 'discrepancies': discrepancies,
@@ -3347,13 +3575,24 @@ class MMMMonitor:
 
     async def _fetch_premiums_with_fallback(self):
         """
-        Circuit-breaker-aware premium fetch with order-book mid fallback.
+        Circuit-breaker-aware premium fetch with per-side fallback (Fix #12).
+
+        If CE fetches OK but PE fails (or vice versa), the healthy side gets fresh
+        data and the failed side falls back to cache (marked as stale).
+        This prevents a single-side network issue from blocking heartbeat processing
+        for the healthy side.
 
         Returns:
             (ce_premium, pe_premium, ok: bool)
-            ok=False means partial/miss beat should run, not full beat.
+            ok=False only when BOTH sides have no usable price (miss beat).
+            ok=True with a stale flag on session means partial per-side data.
         """
         sid = self.session_id
+        session = self.session
+
+        # Clear stale flags from previous heartbeat
+        session.pop('_ce_premium_stale', None)
+        session.pop('_pe_premium_stale', None)
 
         # --- Check circuit breaker ---
         if not self._circuit.allow_request():
@@ -3369,17 +3608,65 @@ class MMMMonitor:
                 self._circuit.record_success()
                 return ce_now, pe_now, True
 
-            # Primary ticker API returned zeros — try order-book mid as fallback
+            # Primary ticker API returned partial or zero values.
+            # Fix #12: handle per-side — try order-book fallback for each side separately.
             ce_fb, pe_fb = await self._fetch_premiums_orderbook_fallback()
-            if ce_fb is not None and pe_fb is not None and ce_fb > 0 and pe_fb > 0:
-                log.info(
-                    f"[{sid}] Ticker API returned zero — using order-book mid: "
-                    f"CE={ce_fb:.2f} PE={pe_fb:.2f}"
-                )
-                self._circuit.record_success()
-                return ce_fb, pe_fb, True
 
-            # Both sources failed
+            # Resolve CE price
+            if ce_now is not None and ce_now > 0:
+                ce_final = ce_now
+            elif ce_fb is not None and ce_fb > 0:
+                ce_final = ce_fb
+            else:
+                ce_final = None  # need cache
+
+            # Resolve PE price
+            if pe_now is not None and pe_now > 0:
+                pe_final = pe_now
+            elif pe_fb is not None and pe_fb > 0:
+                pe_final = pe_fb
+            else:
+                pe_final = None  # need cache
+
+            # Both resolved freshly
+            if ce_final is not None and pe_final is not None:
+                self._circuit.record_success()
+                return ce_final, pe_final, True
+
+            # One side failed: fall back to cache for that side
+            cache = getattr(self, '_premium_cache', {}) or {}
+            ce_strike = float(session.get('ce', {}).get('active_strike', 0))
+            pe_strike = float(session.get('pe', {}).get('active_strike', 0))
+
+            if ce_final is None:
+                cached_ce = cache.get((ce_strike, 'call'))
+                if cached_ce:
+                    log.warning(
+                        f"[{sid}] Fix #12: CE premium fetch failed — using cached "
+                        f"price {cached_ce:.2f} (stale). PE fresh: "
+                        f"{pe_final:.2f if pe_final else 'N/A'}"
+                    )
+                    session['_ce_premium_stale'] = True
+                    ce_final = cached_ce
+
+            if pe_final is None:
+                cached_pe = cache.get((pe_strike, 'put'))
+                if cached_pe:
+                    log.warning(
+                        f"[{sid}] Fix #12: PE premium fetch failed — using cached "
+                        f"price {cached_pe:.2f} (stale). CE fresh: "
+                        f"{ce_final:.2f if ce_final else 'N/A'}"
+                    )
+                    session['_pe_premium_stale'] = True
+                    pe_final = cached_pe
+
+            if ce_final is not None and pe_final is not None:
+                # At least partial fresh data — record circuit as success for
+                # the side that worked, but don't reset failure count fully.
+                self._circuit.record_success()
+                return ce_final, pe_final, True
+
+            # Both sources failed entirely
             self._circuit.record_failure('all premium sources returned invalid data')
             return None, None, False
 
@@ -3598,7 +3885,11 @@ class MMMMonitor:
                 return None
         try:
             exp = datetime.fromisoformat(expiry_time)
-            now = datetime.utcnow()
+            # Fix #14: normalize expiry to timezone-aware UTC before comparison.
+            # Handles both old naive UTC strings and new timezone-aware strings.
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
             delta = (exp - now).total_seconds() / 60
             return max(delta, 0)
         except (ValueError, TypeError):
@@ -3617,16 +3908,16 @@ class MMMMonitor:
         # Track peak exposure
         if ce_lots > analytics.get('max_ce_lots', 0):
             analytics['max_ce_lots'] = ce_lots
-            analytics['peak_risk_timestamp'] = datetime.utcnow().isoformat()
+            analytics['peak_risk_timestamp'] = datetime.now(timezone.utc).isoformat()
         
         if pe_lots > analytics.get('max_pe_lots', 0):
             analytics['max_pe_lots'] = pe_lots
             if not analytics.get('peak_risk_timestamp'):
-                analytics['peak_risk_timestamp'] = datetime.utcnow().isoformat()
+                analytics['peak_risk_timestamp'] = datetime.now(timezone.utc).isoformat()
         
         if combined_lots > analytics.get('max_combined_lots', 0):
             analytics['max_combined_lots'] = combined_lots
-            analytics['peak_risk_timestamp'] = datetime.utcnow().isoformat()
+            analytics['peak_risk_timestamp'] = datetime.now(timezone.utc).isoformat()
 
     def _update_analytics_pnl_milestones(self, pnl: Dict):
         """Update P&L milestone tracking (no trading logic impact)."""
@@ -3641,11 +3932,13 @@ class MMMMonitor:
             if start_time:
                 try:
                     start_dt = datetime.fromisoformat(start_time)
-                    elapsed = (datetime.utcnow() - start_dt).total_seconds()
+                    if start_dt.tzinfo is None:  # Fix #14: normalize naive → aware
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    elapsed = (datetime.now(timezone.utc) - start_dt).total_seconds()
                     analytics['time_to_first_profit'] = elapsed
                 except (ValueError, TypeError):
                     pass
-        
+
         # Track time to peak P&L
         peak = session.get('peak_pnl', 0)
         if net_pnl >= peak and peak > 0:
@@ -3653,7 +3946,9 @@ class MMMMonitor:
             if start_time:
                 try:
                     start_dt = datetime.fromisoformat(start_time)
-                    elapsed = (datetime.utcnow() - start_dt).total_seconds()
+                    if start_dt.tzinfo is None:  # Fix #14: normalize naive → aware
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    elapsed = (datetime.now(timezone.utc) - start_dt).total_seconds()
                     analytics['time_to_peak_pnl'] = elapsed
                 except (ValueError, TypeError):
                     pass
@@ -3663,7 +3958,7 @@ class MMMMonitor:
             drawdown = peak - net_pnl
             if drawdown > analytics.get('max_drawdown_from_peak', 0):
                 analytics['max_drawdown_from_peak'] = drawdown
-                analytics['max_drawdown_timestamp'] = datetime.utcnow().isoformat()
+                analytics['max_drawdown_timestamp'] = datetime.now(timezone.utc).isoformat()
 
     def _update_analytics_delta(self, portfolio_delta: float):
         """Update delta tracking (no trading logic impact)."""
@@ -3673,7 +3968,7 @@ class MMMMonitor:
         abs_delta = abs(portfolio_delta)
         if abs_delta > analytics.get('max_abs_delta', 0):
             analytics['max_abs_delta'] = abs_delta
-            analytics['max_abs_delta_timestamp'] = datetime.utcnow().isoformat()
+            analytics['max_abs_delta_timestamp'] = datetime.now(timezone.utc).isoformat()
 
     async def _calculate_portfolio_delta(self) -> float:
         """Calculate current portfolio delta from all positions.
@@ -3872,6 +4167,7 @@ class MMMMonitor:
             portfolio_delta=portfolio_delta,
             margin_data=getattr(self, '_last_margin_snapshot', None),
             regime_data=regime_data,
+            perp_hedge_data=get_perp_summary(session),
         )
 
 

@@ -89,7 +89,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    wind_down_active: bool = False,
                    portfolio_delta: float = 0,
                    margin_data: Dict = None,
-                   regime_data: Dict = None):
+                   regime_data: Dict = None,
+                   perp_hedge_data: Dict = None):
     """Emit heartbeat data every interval. Section 4.
 
     Args:
@@ -101,6 +102,7 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         portfolio_delta: Portfolio delta (monitoring only, no trading impact)
         margin_data: Optional margin guardian snapshot (tier, utilization_pct, etc.)
         regime_data: Optional regime controls snapshot (vol/gamma/trend regimes + action)
+        perp_hedge_data: Optional perp delta hedge snapshot (lots, pnl, last_delta, etc.)
     """
     payload = {
         'session_id': session_id,
@@ -120,6 +122,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         payload['margin'] = margin_data
     if regime_data:
         payload['regime'] = regime_data
+    if perp_hedge_data:
+        payload['perp_hedge'] = perp_hedge_data
     _emit('mmm_heartbeat', payload)
 
 
@@ -296,3 +300,45 @@ def emit_regime(session_id: str, regime_status: Dict):
 def emit_activities_updated():
     """Emit signal to refresh activities (e.g., after clearing stale progress)."""
     _emit('mmm_activities_updated', {'refresh': True})
+
+
+def emit_perp_hedge_execution(session_id: str, action: str, lots: int,
+                               fill_price: float, effective_delta: float,
+                               target_lots: int, current_lots: int,
+                               realized_pnl: float, unrealized_pnl: float):
+    """Emit perp hedge execution event. Fix #26."""
+    _emit('mmm_perp_hedge_execution', {
+        'session_id': session_id,
+        'action': action,         # 'buy' or 'sell'
+        'lots': lots,
+        'fill_price': fill_price,
+        'effective_delta': effective_delta,
+        'target_lots': target_lots,
+        'current_lots': current_lots,
+        'realized_pnl': realized_pnl,
+        'unrealized_pnl': unrealized_pnl,
+    })
+
+
+def emit_perp_hedge_update(session_id: str, perp_summary: Dict):
+    """Emit perp hedge state update (e.g., after mark P&L refresh). Fix #26."""
+    _emit('mmm_perp_hedge_update', {
+        'session_id': session_id,
+        **perp_summary,
+    })
+
+
+def emit_perp_hedge_flip(session_id: str, old_direction: str,
+                         new_direction: str, lots_closed: int,
+                         new_lots: int, realized_pnl: float,
+                         fill_price: float):
+    """Emit perp position direction flip event. Fix #26."""
+    _emit('mmm_perp_hedge_flip', {
+        'session_id': session_id,
+        'old_direction': old_direction,   # 'long' or 'short'
+        'new_direction': new_direction,   # 'long' or 'short'
+        'lots_closed': lots_closed,
+        'new_lots': new_lots,             # signed new position
+        'realized_pnl': realized_pnl,
+        'fill_price': fill_price,
+    })

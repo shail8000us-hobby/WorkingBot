@@ -3399,3 +3399,173 @@ def get_aggregated_analytics():
     except Exception as e:
         log.exception("Failed to get aggregated analytics")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# Perpetual Futures Delta Hedge Endpoints (§26.13)
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/hedge/status', methods=['GET'])
+def get_hedge_status(session_id: str):
+    """
+    GET /api/mmm/session/<session_id>/hedge/status
+
+    Returns current perp hedge state, position, P&L, and config.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}',
+            }), 404
+
+        from .mmm_perp_hedge import get_perp_summary, is_perp_hedge_enabled
+
+        params = session.get('params', {})
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'hedge': get_perp_summary(session),
+            'config': {
+                'perp_hedge_enabled': params.get('perp_hedge_enabled', False),
+                'perp_hedge_delta_threshold': params.get('perp_hedge_delta_threshold', 0.02),
+                'perp_hedge_ratio': params.get('perp_hedge_ratio', 1.0),
+                'perp_hedge_rebalance_band': params.get('perp_hedge_rebalance_band', 0.005),
+                'perp_hedge_max_lots': params.get('perp_hedge_max_lots', 50),
+                'perp_hedge_cooldown_sec': params.get('perp_hedge_cooldown_sec', 30),
+            },
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get hedge status for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/hedge/toggle', methods=['POST'])
+def toggle_hedge(session_id: str):
+    """
+    POST /api/mmm/session/<session_id>/hedge/toggle
+
+    Enable or disable perp delta hedging. Hot-reloadable param.
+
+    Request body (optional):
+        { "enabled": true/false }
+    If omitted, toggles current state.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}',
+            }), 404
+
+        data = request.get_json(silent=True) or {}
+        params = session.get('params', {})
+        current = params.get('perp_hedge_enabled', False)
+        new_value = data.get('enabled', not current)
+
+        params['perp_hedge_enabled'] = bool(new_value)
+        storage.update_session(session_id, {'params': params})
+
+        # Also update monitor's live session if running
+        monitor = get_monitor(session_id)
+        if monitor and hasattr(monitor, 'session'):
+            monitor.session.get('params', {})['perp_hedge_enabled'] = bool(new_value)
+
+        from .mmm_websocket import emit_params_changed
+        emit_params_changed(session_id, {'perp_hedge_enabled': bool(new_value)})
+
+        action = 'enabled' if new_value else 'disabled'
+        log.info(f"Perp hedge {action} for session {session_id}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Perp hedge {action}',
+            'perp_hedge_enabled': bool(new_value),
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to toggle hedge for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/hedge/close', methods=['POST'])
+def close_hedge(session_id: str):
+    """
+    POST /api/mmm/session/<session_id>/hedge/close
+
+    Manually close the entire perp hedge position.
+    The session continues running — only the perp is closed.
+
+    Request body (optional):
+        { "reason": "manual close" }
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}',
+            }), 404
+
+        perp_lots = session.get('perp_hedge', {}).get('lots', 0)
+        if perp_lots == 0:
+            return jsonify({
+                'success': True,
+                'message': 'No perp position to close',
+                'lots_closed': 0,
+            })
+
+        # Need to execute async close via the monitor's event loop
+        monitor = get_monitor(session_id)
+        if not monitor or not monitor.is_running:
+            return jsonify({
+                'success': False,
+                'error': 'Session monitor not running — cannot execute close',
+            }), 400
+
+        import asyncio
+        from .mmm_perp_hedge import close_all_perp
+
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'Manual hedge close via API')
+
+        loop = getattr(monitor, '_loop', None)
+        if not loop or loop.is_closed():
+            return jsonify({
+                'success': False,
+                'error': 'Monitor event loop not available',
+            }), 500
+
+        future = asyncio.run_coroutine_threadsafe(
+            close_all_perp(monitor.session, monitor.executor, reason),
+            loop,
+        )
+        result = future.result(timeout=30)
+
+        if result.get('success'):
+            storage.save_session(monitor.session)
+            return jsonify({
+                'success': True,
+                'message': f"Perp position closed: {result.get('lots_closed', 0)} lots",
+                'lots_closed': result.get('lots_closed', 0),
+                'fill_price': result.get('fill_price', 0),
+                'realized_pnl': result.get('realized_pnl', 0),
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f"Close failed: {result.get('reason', 'unknown')}",
+            }), 500
+
+    except Exception as e:
+        log.exception(f"Failed to close hedge for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
