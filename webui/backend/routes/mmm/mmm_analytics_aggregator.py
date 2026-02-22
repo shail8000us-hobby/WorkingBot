@@ -22,7 +22,7 @@ import logging
 import json
 import sqlite3
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 
 log = logging.getLogger('mmm_analytics_aggregator')
@@ -95,7 +95,7 @@ class MMMAnalyticsAggregator:
                 'meta': {
                     'total_sessions':     len(sessions),
                     'completed_sessions': len(completed),
-                    'generated_at':       datetime.utcnow().isoformat(),
+                    'generated_at':       datetime.now(timezone.utc).isoformat(),
                     'data_quality':       self._data_quality(sessions),
                 },
                 # ── Legacy keys kept so old frontend doesn't break ──────────
@@ -105,7 +105,7 @@ class MMMAnalyticsAggregator:
                 'recent_sessions':      self._recent_summary(sessions[:10]),
                 'metadata': {
                     'total_sessions_analyzed': len(sessions),
-                    'generated_at': datetime.utcnow().isoformat(),
+                    'generated_at': datetime.now(timezone.utc).isoformat(),
                 },
             }
         except Exception as e:
@@ -721,7 +721,7 @@ class MMMAnalyticsAggregator:
             'session_table':       [],
             'meta': {
                 'total_sessions': 0, 'completed_sessions': 0,
-                'generated_at': datetime.utcnow().isoformat(),
+                'generated_at': datetime.now(timezone.utc).isoformat(),
                 'data_quality': {'sessions_with_lot_tracking': 0, 'completeness_pct': 0},
             },
             # Legacy
@@ -743,7 +743,7 @@ class MMMAnalyticsAggregator:
                 'total_volume': 0,
             },
             'recent_sessions': [],
-            'metadata': {'total_sessions_analyzed': 0, 'generated_at': datetime.utcnow().isoformat()},
+            'metadata': {'total_sessions_analyzed': 0, 'generated_at': datetime.now(timezone.utc).isoformat()},
         }
 
 

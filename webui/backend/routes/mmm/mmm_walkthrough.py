@@ -17,7 +17,7 @@ import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional
 
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, strike_key
 
 log = logging.getLogger('mmm_walkthrough')
 
@@ -104,10 +104,10 @@ def generate_entry_walkthrough(session: Dict) -> Dict[str, Any]:
         'state': {
             'ce_active_strike': ce_strike,
             'ce_active_lots': lots,
-            'ce_trigger': {str(int(ce_strike)): ce_prem},
+            'ce_trigger': {strike_key(ce_strike): ce_prem},
             'pe_active_strike': pe_strike,
             'pe_active_lots': lots,
-            'pe_trigger': {str(int(pe_strike)): pe_prem},
+            'pe_trigger': {strike_key(pe_strike): pe_prem},
             'last_aggressor': 'NONE',
             'adjustment_count': 0,
             'total_premium_btc': round(total_prem_btc, 6),
@@ -154,12 +154,12 @@ def generate_heartbeat_walkthrough(
     ce = session.get('ce', {})
     pe = session.get('pe', {})
     params = session.get('params', {})
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
 
     ce_strike = ce.get('active_strike', 0)
     pe_strike = pe.get('active_strike', 0)
-    ce_trigger_val = ce.get('trigger_snapshot', {}).get(str(int(ce_strike)), 0)
-    pe_trigger_val = pe.get('trigger_snapshot', {}).get(str(int(pe_strike)), 0)
+    ce_trigger_val = ce.get('trigger_snapshot', {}).get(strike_key(ce_strike), 0)
+    pe_trigger_val = pe.get('trigger_snapshot', {}).get(strike_key(pe_strike), 0)
     min_trigger = params.get('min_trigger_move', 3.0)
     shift_threshold = params.get('shift_threshold', 50.0)
     interval = params.get('adjustment_interval', 300)

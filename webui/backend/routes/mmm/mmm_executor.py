@@ -281,7 +281,7 @@ class MMMExecutor:
                 
                 # API returns prices as STRINGS — must cast to float
                 # Robust v2 Fix #22: Guard against NaN, Inf, and other non-numeric strings
-                import math as _math
+                import math as _math  # noqa: cached after first call
                 try:
                     fill_price = float(raw_fill)
                     if _math.isnan(fill_price) or _math.isinf(fill_price):
@@ -422,16 +422,38 @@ class MMMExecutor:
                     status = await self._get_order_status(order_id, product_id, rest_client)
                     if status and self._is_filled(status):
                         # CRITICAL: Validate fill price before accepting
+                        # Robust v2 Fix #22 (cancel-during-reprice): Guard float parsing
+                        import math as _math_c  # noqa
                         raw_fill = status.get('average_fill_price')
+                        _cancel_fill_ok = False
                         if raw_fill and str(raw_fill).strip() != '' and str(raw_fill) != '0':
-                            fill_price = float(raw_fill)
+                            try:
+                                fill_price = float(raw_fill)
+                                if not (_math_c.isnan(fill_price) or _math_c.isinf(fill_price)):
+                                    _cancel_fill_ok = True
+                            except (ValueError, TypeError):
+                                log.error(f"❌ Order {order_id} cancel-path unparseable fill_price: {raw_fill!r}")
+                        if _cancel_fill_ok:
+                            # Robust v2 Fix #3 (cancel-during-reprice): Check unfilled_size
+                            _cancel_raw_uf = status.get('unfilled_size')
+                            if _cancel_raw_uf is not None:
+                                try:
+                                    _cancel_filled = size - int(_cancel_raw_uf)
+                                    if _cancel_filled > 0:
+                                        _cancel_fill_size = _cancel_filled
+                                    else:
+                                        _cancel_fill_size = size
+                                except (ValueError, TypeError):
+                                    _cancel_fill_size = size
+                            else:
+                                _cancel_fill_size = size
                             elapsed = time.time() - start_time
-                            log.info(f"✅ Order {order_id} filled during cancel attempt at ${fill_price:.2f}")
+                            log.info(f"✅ Order {order_id} filled during cancel attempt at ${fill_price:.2f} ({_cancel_fill_size}/{size})")
                             return {
                                 'success': True,
                                 'order_id': order_id,
                                 'fill_price': fill_price,
-                                'filled_size': size,
+                                'filled_size': _cancel_fill_size,
                                 'execution_type': 'smart_mid_price_filled_during_cancel',
                                 'attempts': attempts,
                                 'total_time': round(elapsed, 2),
@@ -608,14 +630,35 @@ class MMMExecutor:
 
                 if state in ORDER_STATES_FILLED:
                     raw_fill = order_data.get('average_fill_price')
+                    # Robust v2 Fix #22 (emergency path): Guard fill_price parsing
+                    import math as _math_e  # noqa
                     if raw_fill and str(raw_fill).strip() not in ('', '0'):
-                        fill_price = float(raw_fill)
+                        try:
+                            fill_price = float(raw_fill)
+                            if _math_e.isnan(fill_price) or _math_e.isinf(fill_price):
+                                raise ValueError(f"Invalid numeric value: {raw_fill}")
+                        except (ValueError, TypeError) as _ep:
+                            log.error(f"❌ Emergency order {order_id} unparseable fill_price: {raw_fill!r} ({_ep})")
+                            fill_price = aggressive_price  # Emergency: use aggressive_price as fallback
                     else:
                         # IOC file price should be ≤ aggressive_price
                         fill_price = aggressive_price
 
+                    # Robust v2 Fix #3 (emergency path): Guard unfilled_size parsing
                     raw_unfilled = order_data.get('unfilled_size')
-                    filled_size = size - int(raw_unfilled) if raw_unfilled is not None else size
+                    if raw_unfilled is not None:
+                        try:
+                            unfilled_int = int(raw_unfilled)
+                            filled_size = size - unfilled_int
+                            if filled_size <= 0:
+                                log.error(f"❌ Emergency order {order_id} filled_size={filled_size} (size={size}, unfilled={unfilled_int})")
+                                filled_size = size  # Emergency: assume full fill as last resort
+                        except (ValueError, TypeError):
+                            log.error(f"❌ Emergency order {order_id} unparseable unfilled_size: {raw_unfilled!r}")
+                            filled_size = size  # Emergency: assume full fill as last resort
+                    else:
+                        log.warning(f"⚠️ Emergency order {order_id} unfilled_size missing, assuming full fill")
+                        filled_size = size
 
                     elapsed = time.time() - start_time
 
@@ -661,11 +704,26 @@ class MMMExecutor:
                         continue
 
                     # Check for partial fill
+                    # Robust v2 Fix #3/#22 (emergency partial path): Guard parsing
                     raw_fill = order_data.get('average_fill_price')
                     raw_unfilled = order_data.get('unfilled_size')
-                    if raw_unfilled is not None and int(raw_unfilled) < size:
-                        filled_size = size - int(raw_unfilled)
-                        fill_price = float(raw_fill) if raw_fill else aggressive_price
+                    _partial_ok = False
+                    if raw_unfilled is not None:
+                        try:
+                            _uf = int(raw_unfilled)
+                            if _uf < size and (size - _uf) > 0:
+                                filled_size = size - _uf
+                                _partial_ok = True
+                        except (ValueError, TypeError):
+                            log.error(f"❌ Emergency partial: unparseable unfilled_size: {raw_unfilled!r}")
+                    if _partial_ok:
+                        import math as _math_ep  # noqa
+                        try:
+                            fill_price = float(raw_fill) if raw_fill else aggressive_price
+                            if _math_ep.isnan(fill_price) or _math_ep.isinf(fill_price):
+                                fill_price = aggressive_price
+                        except (ValueError, TypeError):
+                            fill_price = aggressive_price
                         elapsed = time.time() - start_time
                         log.warning(
                             f"🚨 Emergency PARTIAL fill: {filled_size}/{size} @ ${fill_price:.2f}"

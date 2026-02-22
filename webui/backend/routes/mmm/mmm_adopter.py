@@ -19,9 +19,9 @@ Created: February 18, 2026
 
 import logging
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
 
 log = logging.getLogger('mmm_adopter')
 
@@ -450,7 +450,7 @@ def build_adopted_session_state(
 
         side_label = side_key.upper()
 
-        # Create base side state
+        # Create base side state (Fix #23: positions[] initialized with original entry)
         side_state = create_side_state(
             side=side_label,
             original_lots=active['lots'],
@@ -462,41 +462,52 @@ def build_adopted_session_state(
         side_state['active_strike'] = active['strike']
         side_state['symbol'] = active['symbol']
 
-        # Populate frozen positions
+        # Fix #23: Add adopted frozen positions directly to positions[] (Unified Ledger)
+        # Do NOT set frozen_positions directly — it is a computed view from positions[].
         frozen_list = side_data.get('frozen', [])
-        side_state['frozen_positions'] = [
-            {
+        now = datetime.now(timezone.utc).isoformat()
+        for i, fp in enumerate(frozen_list, start=1):
+            counter = side_state.get('_pos_counter', 0) + 1
+            side_state['_pos_counter'] = counter
+            side_state['positions'].append({
+                'id': f"{side_key}_frozen_{counter:03d}",
                 'strike': fp['strike'],
                 'lots': fp['lots'],
                 'entry_premium': fp['entry_price'],
-                'symbol': fp.get('symbol', ''),
-                'timestamp': datetime.utcnow().isoformat(),
+                'premium': fp['entry_price'],
+                'type': fp.get('type', 'adjustment'),
+                'status': 'shifted',
+                'created_at': now,
+                'shifted_at': now,
+                'closed_at': None,
+                'realized_pnl': None,
+                'timestamp': now,
                 'source': 'adopt',
-            }
-            for fp in frozen_list
-        ]
+                'symbol': fp.get('symbol', ''),
+            })
 
         # Set trigger snapshot
+        # Robust v2 Fix #13: Use canonical strike_key() for consistent keys
         if trigger_mode == 'entry_prices':
             side_state['trigger_snapshot'] = {
-                str(int(active['strike'])): active['entry_price'],
+                _strike_key(active['strike']): active['entry_price'],
             }
         else:
             # Default: current_prices — will be set by caller after fetching live prices
             # For now set entry_price as fallback, caller will override
             side_state['trigger_snapshot'] = {
-                str(int(active['strike'])): active['entry_price'],
+                _strike_key(active['strike']): active['entry_price'],
             }
 
-        # Recompute lots (active + frozen totals)
+        # Recompute lots (rebuilds frozen_positions view + all derived scalars)
         side_state = recompute_side_lots(side_state)
 
         session[side_key] = side_state
 
     # Set entry metadata
     session['entry_mode'] = 'adopt'
-    session['entry_time'] = datetime.utcnow().isoformat()
-    session['adopted_at'] = datetime.utcnow().isoformat()
+    session['entry_time'] = datetime.now(timezone.utc).isoformat()
+    session['adopted_at'] = datetime.now(timezone.utc).isoformat()
 
     # Set lots (max of both sides for session-level, used by start_session)
     ce_lots = session.get('ce', {}).get('original_lots', 0)
@@ -522,7 +533,7 @@ def build_adopted_session_state(
     session['adoption_snapshot'] = {
         'classified': classified,
         'trigger_mode': trigger_mode,
-        'adopted_at': datetime.utcnow().isoformat(),
+        'adopted_at': datetime.now(timezone.utc).isoformat(),
         'expiry': expiry,
     }
 
@@ -535,7 +546,7 @@ def build_adopted_session_state(
         except Exception as e:
             log.warning(f"[Adopter] Could not compute expiry_time: {e}")
 
-    session['updated_at'] = datetime.utcnow().isoformat()
+    session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
     # Update analytics with initial adoption data
     analytics = session.get('analytics', {})
@@ -546,7 +557,7 @@ def build_adopted_session_state(
     analytics['max_ce_lots'] = ce.get('total_lots', 0)
     analytics['max_pe_lots'] = pe.get('total_lots', 0)
     analytics['max_combined_lots'] = ce.get('total_lots', 0) + pe.get('total_lots', 0)
-    analytics['session_start_time'] = datetime.utcnow().isoformat()
+    analytics['session_start_time'] = datetime.now(timezone.utc).isoformat()
     session['analytics'] = analytics
 
     log.info(

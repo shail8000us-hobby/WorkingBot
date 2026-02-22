@@ -20,7 +20,7 @@ Created: February 18, 2026
 
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, Any
 
 log = logging.getLogger('mmm_pending_orders')
@@ -67,7 +67,7 @@ def register_pending(
             'lots': lots,
             'strike': strike,
             'adj_type': adj_type,
-            'placed_at': datetime.utcnow().isoformat(),
+            'placed_at': datetime.now(timezone.utc).isoformat(),
         }
         log.info(
             f"[{session_id}] Pending order registered: "
@@ -143,7 +143,9 @@ async def check_and_resolve_pending(
     if placed_at_str:
         try:
             placed_dt = datetime.fromisoformat(placed_at_str)
-            age_seconds = (datetime.utcnow() - placed_dt).total_seconds()
+            if placed_dt.tzinfo is None:
+                placed_dt = placed_dt.replace(tzinfo=timezone.utc)
+            age_seconds = (datetime.now(timezone.utc) - placed_dt).total_seconds()
             if age_seconds > _STALE_SECONDS:
                 log.warning(
                     f"[{session_id}] Pending order {order_id} is stale "

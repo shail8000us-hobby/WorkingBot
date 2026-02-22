@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 log = logging.getLogger('mmm_telegram')
@@ -142,7 +142,7 @@ async def alert_margin_tier_change(
 🔒 Position Margin: *${position_margin:,.2f}*
 
 🤖 Session: `{session_id}`
-⏰ {datetime.utcnow().strftime('%d %b %Y, %H:%M:%S')} UTC"""
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"tier_change_{session_id}_{new_tier}")
 
@@ -161,7 +161,7 @@ async def alert_emergency_close(
 {"📊 Margin: " + f"*{utilization_pct:.1f}%* ({tier})" if tier else ""}
 
 🤖 Session: `{session_id}`
-⏰ {datetime.utcnow().strftime('%d %b %Y, %H:%M:%S')} UTC
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC
 
 _Using taker orders for fastest execution._"""
 
@@ -180,7 +180,7 @@ async def alert_session_stopped(
 
 _Session requires manual restart._
 
-⏰ {datetime.utcnow().strftime('%d %b %Y, %H:%M:%S')} UTC"""
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"session_stop_{session_id}")
 
@@ -198,7 +198,7 @@ async def alert_rapid_check_activated(
 {"📊 Margin: *" + f"{utilization_pct:.1f}%" + "*" if utilization_pct else ""}
 
 🤖 Session: `{session_id}`
-⏰ {datetime.utcnow().strftime('%d %b %Y, %H:%M:%S')} UTC"""
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"rapid_check_{session_id}")
 
@@ -217,6 +217,6 @@ async def alert_max_loss_breach(
 ⚡ *Emergency closing all positions*
 
 🤖 Session: `{session_id}`
-⏰ {datetime.utcnow().strftime('%d %b %Y, %H:%M:%S')} UTC"""
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"max_loss_{session_id}")

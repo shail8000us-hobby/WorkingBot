@@ -16,7 +16,7 @@ import os
 import sqlite3
 import logging
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 log = logging.getLogger('mmm_storage')
 
@@ -122,8 +122,8 @@ class MMMStorage:
 
                     params = session.get('params', {})
                     status = session.get('strategy_status', 'IDLE')
-                    created = session.get('created_at', datetime.utcnow().isoformat())
-                    updated = session.get('updated_at', datetime.utcnow().isoformat())
+                    created = session.get('created_at', datetime.now(timezone.utc).isoformat())
+                    updated = session.get('updated_at', datetime.now(timezone.utc).isoformat())
 
                     conn.execute('''
                         INSERT INTO mmm_sessions
@@ -180,7 +180,7 @@ class MMMStorage:
         if not session_id:
             raise ValueError("Session must have a session_id")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         session['updated_at'] = now
 
         status = session.get('strategy_status', 'IDLE')
@@ -327,7 +327,7 @@ class MMMStorage:
                 else:
                     session[key] = value
 
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             session['updated_at'] = now
 
             status = session.get('strategy_status', 'IDLE')

@@ -26,5 +26,5 @@ def strike_key(strike: float) -> str:
     """
     try:
         return str(int(round(float(strike))))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return str(strike)

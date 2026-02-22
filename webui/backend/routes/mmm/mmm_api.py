@@ -16,7 +16,7 @@ Created: February 15, 2026
 import logging
 import threading
 from flask import Blueprint, request, jsonify
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .mmm_storage import get_storage
 from .mmm_state import (
@@ -34,7 +34,7 @@ from .mmm_websocket import (
     emit_session_deleted,
 )
 from .mmm_initializer import get_initializer, normalize_expiry, expiry_to_utc_datetime
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, strike_key
 from .mmm_monitor import (
     start_session_monitor, stop_session_monitor,
     pause_session_monitor, resume_session_monitor,
@@ -206,7 +206,7 @@ def create_session_endpoint():
                     lots=int(lots),
                 )
 
-            session['entry_time'] = datetime.utcnow().isoformat()
+            session['entry_time'] = datetime.now(timezone.utc).isoformat()
 
         # Safety check: Never overwrite a non-STOPPED session
         storage = get_storage()
@@ -401,8 +401,8 @@ def start_session(session_id: str):
 
         storage.update_session(session_id, {
             'strategy_status': new_status,
-            'entry_time': session.get('entry_time') or datetime.utcnow().isoformat(),
-            'last_heartbeat': datetime.utcnow().isoformat(),
+            'entry_time': session.get('entry_time') or datetime.now(timezone.utc).isoformat(),
+            'last_heartbeat': datetime.now(timezone.utc).isoformat(),
         })
 
         emit_status_change(session_id, old_status, new_status, 'Started')
@@ -482,7 +482,7 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
                 'pe_filled': pe_ok,
                 'ce_result': str(ce_res)[:300],
                 'pe_result': str(pe_res)[:300],
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
             }
             storage.save_session(session)
 
@@ -542,20 +542,20 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
         session['mmm_order_ids'].append(str(pe_res['order_id']))
 
     # Update trigger snapshots to actual fill prices
-    ce_strike_key = str(int(session['ce'].get('active_strike', 0)))
-    pe_strike_key = str(int(session['pe'].get('active_strike', 0)))
+    ce_strike_key = strike_key(session['ce'].get('active_strike', 0))
+    pe_strike_key = strike_key(session['pe'].get('active_strike', 0))
     session['ce']['trigger_snapshot'] = {ce_strike_key: ce_fill}
     session['pe']['trigger_snapshot'] = {pe_strike_key: pe_fill}
 
     actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
     session['actual_total_premium'] = actual_premium
     session['total_premium_collected'] = actual_premium
-    session['execution_timestamp'] = datetime.utcnow().isoformat()
+    session['execution_timestamp'] = datetime.now(timezone.utc).isoformat()
 
     # Transition to RUNNING
     session['strategy_status'] = 'RUNNING'
-    session['entry_time'] = datetime.utcnow().isoformat()
-    session['last_heartbeat'] = datetime.utcnow().isoformat()
+    session['entry_time'] = datetime.now(timezone.utc).isoformat()
+    session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
     storage.save_session(session)
 
     emit_status_change(session_id, 'STARTING', 'RUNNING', 'Entry orders filled')
@@ -666,7 +666,7 @@ def resume_session(session_id: str):
         # of restart attempts after manual intervention.
         session['_watchdog_restarts'] = 0
         session['strategy_status'] = new_status
-        session['last_heartbeat'] = datetime.utcnow().isoformat()
+        session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
         storage.save_session(session)
 
         emit_status_change(session_id, old_status, new_status, 'User resumed')
@@ -738,7 +738,7 @@ def stop_session(session_id: str):
 
         storage.update_session(session_id, {
             'strategy_status': new_status,
-            'stopped_at': datetime.utcnow().isoformat(),
+            'stopped_at': datetime.now(timezone.utc).isoformat(),
             'stop_reason': reason,
         })
 
@@ -805,15 +805,15 @@ def both_sides_decision(session_id: str):
         updates = {
             'strategy_status': 'RUNNING',
             'both_sides_decision': decision,
-            'both_sides_decided_at': datetime.utcnow().isoformat(),
-            'last_heartbeat': datetime.utcnow().isoformat(),
+            'both_sides_decided_at': datetime.now(timezone.utc).isoformat(),
+            'last_heartbeat': datetime.now(timezone.utc).isoformat(),
         }
 
         # Track in adjustment history
         history_entry = {
             'type': 'both_sides_decision',
             'decision': decision,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         adj_history = session.get('adjustment_history', [])
         adj_history.append(history_entry)
@@ -1259,7 +1259,7 @@ def health_check():
             'status': 'healthy',
             'active_sessions': active_count,
             'total_sessions': total_count,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         })
 
     except Exception as e:
@@ -1572,8 +1572,8 @@ def init_session_fresh(session_id: str):
         session['params']['expiry'] = expiry
         session['expiry_time'] = expiry_to_utc_datetime(expiry)
         session['initial_total_premium'] = total_premium
-        session['entry_time'] = datetime.utcnow().isoformat()
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['entry_time'] = datetime.now(timezone.utc).isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
         session['lots'] = lots
 
         storage.save_session(session)
@@ -1711,8 +1711,8 @@ def init_session_import(session_id: str):
         session['params']['expiry'] = expiry
         session['expiry_time'] = expiry_to_utc_datetime(expiry)
         session['initial_total_premium'] = total_premium
-        session['entry_time'] = datetime.utcnow().isoformat()
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['entry_time'] = datetime.now(timezone.utc).isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
         session['lots'] = lots
 
         # If the user provided current prices, set them for initial P&L
@@ -1926,7 +1926,7 @@ def adopt_positions(session_id: str):
                             live_mark = float(ticker_resp.get('result', {}).get('mark_price', 0))
                             if live_mark > 0:
                                 side_data['trigger_snapshot'] = {
-                                    str(int(active_strike)): live_mark,
+                                    strike_key(active_strike): live_mark,
                                 }
                                 side_data['current_price'] = live_mark
                                 log.info(
@@ -2205,8 +2205,8 @@ def execute_entry(session_id: str):
 
             session['actual_total_premium'] = actual_premium
             # Keep strategy_status as IDLE — user starts session manually
-            session['execution_timestamp'] = datetime.utcnow().isoformat()
-            session['updated_at'] = datetime.utcnow().isoformat()
+            session['execution_timestamp'] = datetime.now(timezone.utc).isoformat()
+            session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
             storage.save_session(session)
 
@@ -2479,7 +2479,7 @@ def reduce_position(session_id: str):
                         'avg_entry_price': round(avg_entry, 4),
                         'fill_price': round(fill_price, 4),
                         'realized_pnl': round(group_realized, 2),
-                        'timestamp': datetime.utcnow().isoformat(),
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
                     }
                     session.setdefault('manual_reductions', []).append(reduction_record)
 
@@ -2527,7 +2527,7 @@ def reduce_position(session_id: str):
         except Exception as snap_err:
             log.warning(f'[{session_id}] Could not reset trigger snapshots after manual reduce: {snap_err}')
 
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
         storage.save_session(session)
 
         # Emit WebSocket event so frontend updates immediately
@@ -2710,7 +2710,7 @@ def get_exchange_positions_direct():
             'success': True,
             'positions': positions,
             'count': len(positions),
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         })
 
     except Exception as e:
@@ -2767,7 +2767,7 @@ def get_exchange_orders():
             'success': True,
             'orders': orders,
             'count': len(orders),
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         })
 
     except Exception as e:
@@ -3197,7 +3197,7 @@ def get_greeks_iv(session_id: str):
             'success': True,
             'positions': positions,
             'spot_price': spot_price,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         })
 
     except Exception as e:
@@ -3267,7 +3267,9 @@ def get_session_analytics(session_id: str):
             if start_time:
                 try:
                     start_dt = datetime.fromisoformat(start_time)
-                    current_duration = (datetime.utcnow() - start_dt).total_seconds()
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    current_duration = (datetime.now(timezone.utc) - start_dt).total_seconds()
                 except (ValueError, TypeError):
                     current_duration = analytics.get('session_duration_seconds', 0)
             else:

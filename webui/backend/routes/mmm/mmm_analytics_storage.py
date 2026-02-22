@@ -12,7 +12,7 @@ import logging
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from pathlib import Path
 
@@ -98,7 +98,7 @@ class MMMAnalyticsStorage:
             **analytics,
             'session_id': session_id,
             'session_status': session.get('strategy_status', 'UNKNOWN'),
-            'saved_at': datetime.utcnow().isoformat(),
+            'saved_at': datetime.now(timezone.utc).isoformat(),
             
             # Session metadata
             'expiry': session.get('params', {}).get('expiry', ''),
@@ -133,7 +133,7 @@ class MMMAnalyticsStorage:
                 json.dumps(record),
                 record.get('saved_at'),
                 record.get('created_at'),
-                datetime.utcnow().isoformat()
+                datetime.now(timezone.utc).isoformat()
             ))
             conn.commit()
             log.info(f"Saved analytics for session {session_id} to SQLite")

@@ -34,6 +34,7 @@
 23. [ARCHITECTURAL: Frozen Positions Data Model Fragility](#23-architectural-frozen-positions-data-model-fragility)
 24. [ARCHITECTURAL: Derived State Consistency (recompute_side_lots footgun)](#24-architectural-derived-state-consistency)
 25. [Future Improvements Summary](#25-future-improvements-summary)
+26. [NEW FEATURE: Perpetual Futures Delta Hedge Module](#26-new-feature-perpetual-futures-delta-hedge-module)
 
 ---
 
@@ -286,8 +287,10 @@ The scan returns multiple closeable positions with `fill_index` or `frozen_index
 **Fix:**
 Instead of index-based removal, use a content-match-first approach: always find by content (strike, lots, premium), never rely on indices. Or assign unique IDs to each fill/frozen position and remove by ID.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #8):**
-> - **Status:** NOT IMPLEMENTED — deferred. Content-match fallback already exists, correctness is maintained. This is a performance/cleanliness refactor, not a correctness fix. Best addressed as part of the Unified Position Ledger (Fix #23).
+> **✅ IMPLEMENTATION STATUS (Fix #8):**
+> - **Status:** IMPLEMENTED
+> - **Files Changed:** `mmm_close_at_5.py`
+> - **What was done:** Removed `fill_index`/`frozen_index` from scan results entirely. `_remove_closed_position()` now uses content-match-first for both adjustment and frozen position removal (iterates in reverse, matches on lots + premium ±0.01 + strike ±1). Updated sort key to use profit instead of index. With Fix #23, further upgraded to ID-based O(1) removal as the primary path.
 
 ---
 
@@ -313,8 +316,10 @@ In the current flow, `original_lots` at the active strike is always correct beca
 **Fix:**
 Use `side_state.get('original_strike', active_strike)` instead of `active_strike` for the original lots premium fetch. This is defensive coding.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #9):**
-> - **Status:** NOT IMPLEMENTED — deferred. The document notes this is "currently safe" since `original_strike == active_strike` until shift, at which point `original_lots` becomes 0. Defensive coding change, low risk. Can be done later.
+> **✅ IMPLEMENTATION STATUS (Fix #9):**
+> - **Status:** IMPLEMENTED
+> - **File Changed:** `mmm_close_at_5.py`
+> - **What was done:** Changed `scan_closeable_positions()` to use `orig_strike = side_state.get('original_strike', active_strike)` instead of `active_strike` for the original lots premium fetch. Updated closeable entry to use `orig_strike` for the strike field. Also removed stale `fill_index`/`frozen_index` from scan results as part of Fix #8 implementation.
 
 ---
 
@@ -373,8 +378,10 @@ The loss calculation uses current positions (post-close-at-5), which is actually
 **Fix:**
 Re-evaluate triggers AFTER close-at-5 completes, using the updated position state. If close-at-5 closed positions on the aggressor side, the trigger may no longer be breached.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #11):**
-> - **Status:** NOT IMPLEMENTED — deferred. This is a structural heartbeat flow change. The current over-hedging risk is minor (extra hedge lots are a small P&L drag). Requires careful testing. Best combined with a broader heartbeat restructure.
+> **✅ IMPLEMENTATION STATUS (Fix #11):**
+> - **Status:** IMPLEMENTED
+> - **File Changed:** `mmm_monitor.py`
+> - **What was done:** Modified `_process_close_at_5()` to return a `Set[str]` of sides that had successful closes. When the aggressor side is in the closed set, `evaluate_triggers()` is re-run with the updated position state before executing any adjustment. If the trigger is no longer breached (close-at-5 relieved the pressure), the adjustment is skipped with a log message. If still breached, the adjustment proceeds with confirmation logging.
 
 ---
 
@@ -393,8 +400,10 @@ Premium fetch treats CE and PE as an atomic pair. If CE fetches successfully but
 **Fix:**
 Implement per-side circuit breaker. If CE fetches OK but PE fails, run heartbeat with fresh CE premium and cached PE premium. Flag the PE side as `_premium_stale` so downstream code can account for it.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #12):**
-> - **Status:** NOT IMPLEMENTED — deferred. Per-side circuit breaker requires significant changes to `_fetch_premiums_with_fallback()` and all downstream consumers. Medium effort. Current behavior (both sides fall to cache or skip) is acceptable for now.
+> **✅ IMPLEMENTATION STATUS (Fix #12):**
+> - **Status:** IMPLEMENTED
+> - **File Changed:** `mmm_monitor.py`
+> - **What was done:** Rewrote `_fetch_premiums_with_fallback()` with per-side circuit breaker logic. When primary ticker fetch returns partial/zero values, the function individually resolves each side (CE/PE) using the order-book fallback as a secondary source. If one side still fails, it falls back to the last cached price for that side only and sets `session['_ce_premium_stale']` or `session['_pe_premium_stale']` flags. The heartbeat continues with fresh data for the healthy side. Only if BOTH sides have no usable price (no cache, no fallback) does the heartbeat skip. Stale flags are cleared at the start of each heartbeat.
 
 ---
 
@@ -455,8 +464,10 @@ now = datetime.now(timezone.utc)  # Always timezone-aware
 ```
 Store and compare only timezone-aware datetimes.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #14):**
-> - **Status:** NOT IMPLEMENTED — deferred. Timezone standardization is a medium-effort change touching multiple files (`mmm_initializer.py`, `mmm_state.py`, `mmm_monitor.py`, etc.). All current code consistently uses `datetime.utcnow()` naive UTC, so the risk is low as long as no one introduces `datetime.now()`. Best done as a focused cleanup session.
+> **✅ IMPLEMENTATION STATUS (Fix #14):**
+> - **Status:** IMPLEMENTED
+> - **Files Changed:** `mmm_monitor.py`, `mmm_state.py`, `mmm_engine.py`, `mmm_strike_shift.py`, `mmm_wind_down.py`, `mmm_close_at_5.py`
+> - **What was done:** Standardized all timestamp generation to `datetime.now(timezone.utc).isoformat()` throughout the codebase. Replaced all `datetime.utcnow()` calls (which produce naive UTC datetimes) with timezone-aware equivalents. Key locations fixed: all session state mutations in `mmm_monitor.py`, `mmm_state.py`'s `_migrate_side_to_positions()` and `recompute_side_lots()`, `mmm_engine.py`'s `_update_state_after_adjustment()` (3 instances previously missed), `mmm_strike_shift.py`'s `freeze_current_positions()` and `activate_new_strike()`, and `mmm_wind_down.py`'s `apply_lifo_removals()`. Wind-down and expiry time comparisons in `mmm_wind_down.py` and `mmm_initializer.py` already used the correct UTC comparison logic.
 
 ---
 
@@ -589,8 +600,13 @@ All P&L calculations use Python `float` (IEEE 754 double). After 100+ adjustment
 **Fix:**
 Use `decimal.Decimal` for all P&L accounting internally. Convert to `float` only at API/display boundaries.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #19):**
-> - **Status:** NOT IMPLEMENTED — deferred. This is a large refactor touching all P&L calculation paths across `mmm_engine.py`, `mmm_executor.py`, `mmm_close_at_5.py`, `mmm_monitor.py`, etc. The estimated drift of $0.50–$1.00 per session is acceptable for now. Best done as a dedicated refactor session when algo is not in production.
+> **✅ IMPLEMENTATION STATUS (Fix #19):**
+> - **Status:** IMPLEMENTED
+> - **Files Changed:** `mmm_engine.py`, `mmm_close_at_5.py`
+> - **What was done:** Added `_D(x) -> Decimal` helper in both files that converts via `str(x)` to avoid IEEE 754 representation errors (e.g., `_D(0.1) = Decimal('0.1')` not `Decimal(0.1000000000000000055511...)`). All internal P&L arithmetic uses Decimal; results are converted back to `float` only at the API/state boundary.
+>   - `mmm_engine.py`: `calculate_standard_loss()`, `calculate_reversal_loss()`, and `compute_unrealized_pnl()` all use `_D()` internally for all premium × lots × lot_size multiplications and accumulations.
+>   - `mmm_close_at_5.py`: `realized_pnl` calculation in `close_position()` changed from pure float to `float((_D(entry_prem) - _D(close_price)) * _D(lots) * _LOT)` where `_LOT = _D(LOT_SIZE_BTC)`.
+>   - Scope is limited to the two most critical calculation paths where accumulation errors matter. `mmm_executor.py` fill_price parsing was not changed (single multiplication, no accumulation).
 
 ---
 
@@ -724,9 +740,27 @@ Plus 5 derived scalars: `adjustment_total_lots`, `adjustment_avg`, `frozen_total
 
 **Migration:** This is a significant refactor touching engine, close-at-5, monitor, API, state, strike_shift, wind-down. Best done when algo is NOT in active production trading.
 
-> **⏳ IMPLEMENTATION STATUS (Fix #23):**
-> - **Status:** NOT IMPLEMENTED — deferred. This is a major architectural refactor (Unified Position Ledger). Best done as a dedicated v2 rewrite when algo is not in active production. The short-term consistency check (Fix #24) provides a safety net for the current model.
-> - **Plan:** Will be implemented after the current algo session finishes. Risk analysis shows 60+ touch points across 11 production files (`mmm_monitor.py`, `mmm_strike_shift.py`, `mmm_wind_down.py`, `mmm_close_at_5.py`, `mmm_engine.py`, `mmm_adopter.py`, `mmm_walkthrough.py`, `mmm_trigger.py`, `mmm_margin_guardian.py`, `mmm_state.py`, `mmm_initializer.py`) + 3 test files. Requires DB migration script, full test rewrite, and frontend updates. Estimated 2–3 weeks. **DO NOT attempt while any MMM session is running — 99% chance of breaking live positions.**
+> **✅ IMPLEMENTATION STATUS (Fix #23):**
+> - **Status:** IMPLEMENTED
+> - **Files Changed:** `mmm_state.py`, `mmm_engine.py`, `mmm_strike_shift.py`, `mmm_close_at_5.py`, `mmm_wind_down.py`, `mmm_adopter.py`, `mmm_monitor.py`
+> - **What was done:** Implemented Unified Position Ledger using a backward-compatible approach that requires no read-path changes:
+>
+>   **Core design:** `positions[]` list in each side state is the authoritative source. `recompute_side_lots()` rebuilds ALL existing fields (`adjustment_fills`, `frozen_positions`, `original_lots`, `original_premium`, `adjustment_total_lots`, `adjustment_avg`, `frozen_total_lots`, `active_lots`, `total_lots`) as computed views from `positions[]`. All 50+ read sites continue working unchanged.
+>
+>   **Auto-migration:** `_migrate_side_to_positions()` in `mmm_state.py` converts old 3-array sessions to `positions[]` on first call. `recompute_side_lots()` calls it automatically if `positions` key is absent. Since Fix #24 calls `recompute_side_lots()` at every heartbeat start, all existing sessions migrate on their first heartbeat.
+>
+>   **ID-based removal:** Each computed view entry carries `_pos_id` (the position's unique ID). `_remove_closed_position()` uses O(1) ID-based lookup in `positions[]`, setting `status='closed'` and `closed_at`. Falls back to content-match for any pre-migration sessions.
+>
+>   **Write path changes (~10 mutation points):**
+>   - `mmm_engine.py` `_update_state_after_adjustment()`: appends to `positions[]` instead of `adjustment_fills`
+>   - `mmm_strike_shift.py` `freeze_current_positions()`: sets `status='shifted'` + `shifted_at` on active positions in-place
+>   - `mmm_strike_shift.py` `activate_new_strike()`: appends `type='strike_shift'` position to `positions[]`
+>   - `mmm_close_at_5.py` `_remove_closed_position()`: sets `status='closed'` via `_pos_id`, content-match fallback
+>   - `mmm_wind_down.py` `get_lifo_close_fills()` + `apply_lifo_removals()`: reads and updates `positions[]` directly with `_pos_id`-based lookup
+>   - `mmm_adopter.py`: appends `status='shifted'` entries to `positions[]` for adopted frozen positions
+>   - `mmm_monitor.py`: all position mutation points (recovery, auto-close, exchange cleanup) updated to use `positions[]`
+>
+>   **Read paths unchanged:** `mmm_trigger.py`, `mmm_margin_guardian.py`, `mmm_walkthrough.py`, `mmm_initializer.py`, and all API endpoints continue reading `adjustment_fills`, `frozen_positions`, and scalar fields from the computed views — no changes required.
 
 ---
 
@@ -810,6 +844,505 @@ for side_key in ['ce', 'pe']:
 |---|-------|-------------|
 | 23 | Unified Position Ledger | Large — full refactor |
 
+### Priority 5 — New Feature (After v2 Refactor)
+| # | Feature | Est. Effort |
+|---|---------|-------------|
+| 26 | Perpetual Futures Delta Hedge Module | Large — 2 weeks code + 2 weeks testing |
+
+---
+
+## 26. NEW FEATURE: Perpetual Futures Delta Hedge Module
+
+> **Status:** PLANNED — implement immediately after Fix #23 (Unified Position Ledger)
+> **Priority:** HIGH — primary directional risk defense
+> **New File:** `mmm_perp_hedge.py` (~400–500 lines)
+> **Design Decisions Confirmed:** February 22, 2026
+
+### 26.1 Overview & Rationale
+
+The MMM algorithm sells short strangles (short CE + short PE) to collect theta premium on BTC 0DTE options. When the market moves directionally, one side becomes ATM/ITM and the algo adjusts by selling more on the opposite side ("hedging with premium"). This works for moderate moves but fails on strong trends — the adjustment side accumulates lots while the threatened side's loss accelerates via gamma.
+
+**The Problem:** Current adjustments are gamma-negative. Every adjustment adds more short gamma exposure. In a 3%+ trending day, the gamma drag from short options overwhelms the theta collected.
+
+**The Solution:** Hedge directional risk with BTC perpetual futures (BTCUSD on Delta Exchange). Perp futures are linear instruments — they have delta but ZERO gamma. This means:
+- A long perp offsets negative portfolio delta (market moving up, CE threatened)
+- A short perp offsets positive portfolio delta (market moving down, PE threatened)
+- The gamma from short options is unaffected — but the IMPACT of gamma on P&L is neutralized because the perp absorbs the directional move
+
+**Why Perps Over Debit Spreads:**
+| Factor | Perpetual Futures | Debit Spreads |
+|--------|------------------|---------------|
+| Execution | Single order, instant fill | 2 legs, legging risk |
+| Liquidity | Deep (BTCUSD most liquid) | Thin (0DTE far OTM) |
+| Direction switching | Close + reverse in 1 order | Close both legs + open 2 new |
+| Gamma impact | Zero (linear instrument) | Adds positive gamma (good but expensive) |
+| Cost | Funding rate only (~0.01%/8hr) | Full debit premium paid upfront |
+| API complexity | Standard order | No native combo on Delta Exchange |
+| Dynamic sizing | Scale lots continuously | Fixed spread width, hard to resize |
+
+### 26.2 Design Decisions (Confirmed)
+
+| Decision | Answer | Rationale |
+|----------|--------|-----------|
+| **Margin mode** | Portfolio margin | Short options + long perp offset each other for margin. Very capital-efficient — the hedge REDUCES total margin requirement. |
+| **Funding cost** | Accept as cost of business | When delta is negative → buy perp → pay funding. When delta is positive → sell perp → receive funding. Over time, longs and shorts balance out. No max funding exposure limit needed. |
+| **Hedge ratio** | Full delta-neutralization (target Δ = 0) with UI option for partial | This is a danger-mode defense, not a speculative tilt. When activated, we want maximum protection. But WebUI will offer a slider: 50%/70%/100% hedge ratio for flexibility. |
+| **Interaction with MMM adjustments** | Both operate simultaneously (institutional approach) | Perp hedge handles directional risk. MMM adjustments continue selling premium (theta collection). This is what institutional desks do — macro hedge + micro alpha. More capital-intensive but higher total return. |
+
+### 26.3 Existing Infrastructure (Already Built)
+
+The codebase already has most of what we need:
+
+1. **Portfolio Delta Calculation** — `_calculate_portfolio_delta()` in `mmm_monitor.py` (lines 3679–3828):
+   - Collects ALL positions: `original_lots`, `adjustment_fills[]`, `frozen_positions[]`
+   - Builds `position_map` keyed by `(strike, opt_type) → lots`
+   - Fetches live Greeks from Delta Exchange: `GET /v2/tickers/{symbol}` → extracts `greeks.delta`
+   - Applies correct multipliers: short CE = -1.0, short PE = +1.0 (selling calls gives negative delta, selling puts gives positive delta)
+   - Also extracts `greeks.gamma` for regime engine
+   - Returns `float` representing net portfolio delta
+
+2. **BTCUSD Perp Ticker** — `risk.py` already calls `/v2/tickers/BTCUSD` for perp mark price
+
+3. **Order Execution** — `mmm_executor.py` has `rest_client.place_order_by_symbol()` which works for any product (options or perps)
+
+4. **LOT_SIZE_BTC** — Both options and BTCUSD perp use 0.001 BTC contract value
+
+5. **WebSocket Infrastructure** — `mmm_websocket.py` for real-time hedge status updates to UI
+
+### 26.4 Architecture — `mmm_perp_hedge.py`
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    MMM HEARTBEAT LOOP                     │
+│                                                           │
+│  ┌──────────┐   ┌──────────┐   ┌─────────────────────┐   │
+│  │ Close@5  │ → │  P&L +   │ → │  Safety Checks      │   │
+│  │          │   │  Safety   │   │  (max_loss, trail)  │   │
+│  └──────────┘   └──────────┘   └─────────────────────┘   │
+│                                          │                │
+│                                          ▼                │
+│  ┌──────────────────────────────────────────────────┐     │
+│  │         TRIGGER EVALUATION                        │     │
+│  │  (existing: premium excess check)                 │     │
+│  └──────────────────────┬───────────────────────────┘     │
+│                          │                                │
+│              ┌───────────┴───────────┐                    │
+│              ▼                       ▼                    │
+│  ┌───────────────────┐   ┌───────────────────────────┐   │
+│  │  MMM ADJUSTMENT   │   │  PERP DELTA HEDGE         │   │
+│  │  (sell more OTM)  │   │  (mmm_perp_hedge.py)      │   │
+│  │  [continues as    │   │                           │   │
+│  │   normal]         │   │  1. Get portfolio delta    │   │
+│  └───────────────────┘   │  2. Get current perp pos   │   │
+│                          │  3. Calculate target hedge  │   │
+│                          │  4. Execute perp order      │   │
+│                          │  5. Track hedge state       │   │
+│                          └───────────────────────────┘   │
+│                                                           │
+│  Both run in parallel — adjustments collect theta,        │
+│  perp hedge neutralizes directional risk                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 26.5 Core Logic — Step by Step
+
+#### Phase 1: Monitor Portfolio Delta (Every Heartbeat)
+
+Already happens via `_calculate_portfolio_delta()`. Returns a float, e.g.:
+- **Portfolio Δ = -0.035** → net short delta → market going UP hurts us (CE side threatened)
+- **Portfolio Δ = +0.028** → net long delta → market going DOWN hurts us (PE side threatened)
+- **Portfolio Δ = -0.002** → approximately neutral → no hedge needed
+
+#### Phase 2: Determine If Hedge Is Needed
+
+The hedge does NOT activate on every small delta fluctuation. It activates when delta exceeds a **danger threshold**, meaning the algo's options positions are becoming directionally exposed.
+
+**Configurable Parameters (all via WebUI hot-reload):**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `perp_hedge_enabled` | `false` | Master on/off switch |
+| `perp_hedge_delta_threshold` | `0.02` | Minimum |portfolio Δ| to activate hedge |
+| `perp_hedge_ratio` | `1.0` | Hedge ratio: 1.0 = full neutralization, 0.7 = 70% |
+| `perp_hedge_rebalance_band` | `0.005` | Re-hedge when |current Δ - target Δ| exceeds this |
+| `perp_hedge_max_lots` | `50` | Hard cap on perp position size (safety) |
+| `perp_hedge_cooldown_sec` | `30` | Minimum seconds between hedge adjustments |
+
+**Decision Logic:**
+```
+portfolio_delta = _calculate_portfolio_delta(session)
+current_perp_lots = session.get('perp_hedge', {}).get('lots', 0)  # +ve = long, -ve = short
+effective_delta = portfolio_delta + (current_perp_lots * 0.001)    # perp delta = lots * contract_value
+
+if abs(effective_delta) < perp_hedge_delta_threshold:
+    → No action needed. Delta within safe band.
+
+if abs(effective_delta) > perp_hedge_delta_threshold:
+    → Hedge required. Calculate target.
+```
+
+#### Phase 3: Calculate Target Hedge Size
+
+```
+# Target: bring effective delta to zero (or ratio-adjusted target)
+target_delta = 0.0  # full neutralization
+
+# How much perp delta do we need?
+required_perp_delta = target_delta - portfolio_delta
+
+# Convert to lots (each BTCUSD lot = 0.001 BTC delta)
+required_perp_lots = round(required_perp_delta / 0.001)
+
+# Apply hedge ratio
+adjusted_lots = round(required_perp_lots * perp_hedge_ratio)
+
+# Apply safety cap
+capped_lots = max(-perp_hedge_max_lots, min(perp_hedge_max_lots, adjusted_lots))
+
+# How many lots to trade (difference from current position)
+lots_to_trade = capped_lots - current_perp_lots
+```
+
+**Example — CE Side Threatened (BTC rallying):**
+```
+BTC spot: $98,000 → rallied from $96,000
+Short CE at 97,000 strike → delta ≈ -0.55 per lot × 20 lots = -0.011 delta
+Short PE at 95,000 strike → delta ≈ +0.10 per lot × 20 lots = +0.002 delta
+Adjustment CEs at 97,500 → delta ≈ -0.45 × 10 lots = -0.0045 delta
+Frozen CEs at 96,000 → delta ≈ -0.80 × 15 lots = -0.012 delta
+
+Portfolio delta = -0.011 + 0.002 - 0.0045 - 0.012 = -0.0255
+
+Threshold = 0.02 → |−0.0255| > 0.02 → HEDGE NEEDED
+
+Required perp delta = 0 - (-0.0255) = +0.0255
+Required lots = round(0.0255 / 0.001) = 26 lots LONG
+Hedge ratio = 1.0 → 26 lots
+Safety cap = 50 → 26 (within cap)
+Current perp = 0 → BUY 26 lots BTCUSD
+```
+
+#### Phase 4: Execute Hedge Order
+
+```
+Order: BUY 26 BTCUSD @ market (or limit at mid-price with 2-reprice attempts)
+Symbol: "BTCUSD"
+Side: "buy" (long perp to offset negative delta)
+Size: 26
+Order type: "limit_order" with mid-price, fallback to market after 2 reprices
+```
+
+**Execution via existing `rest_client.place_order_by_symbol()`** — same API path used for options. The BTCUSD perp is just another product on Delta Exchange.
+
+#### Phase 5: Market Reverses — Hedge Adjustment
+
+This is the critical advantage of perps over debit spreads: **instant direction switching**.
+
+**Scenario: BTC reverses from $98,000 back to $95,500**
+
+```
+Previous state: LONG 26 lots BTCUSD (hedging CE-side threat)
+
+Now: BTC dropping → PE side threatened, CE side relieved
+Portfolio delta shifts: CEs lose delta (good), PEs gain delta (bad)
+New portfolio delta: +0.018 (positive = PE threatened)
+
+Effective delta with perp: +0.018 + (26 × 0.001) = +0.044
+→ Way above threshold! Perp is now ADDING to the wrong direction!
+
+Target: delta = 0
+Required perp delta = 0 - 0.018 = -0.018
+Required lots = round(-0.018 / 0.001) = -18 lots (SHORT)
+Currently: +26 lots
+Lots to trade = -18 - 26 = -44 lots → SELL 44 lots BTCUSD
+
+(This closes the 26 long + opens 18 short — net effect: now SHORT 18 lots)
+```
+
+**The key insight:** One single sell order flips from long to short. No legs to close, no spreads to unwind, no legging risk. The entire reversal is a single atomic operation.
+
+#### Phase 6: Continuous Trending — Incremental Rebalancing
+
+As market continues trending, options delta changes (gamma effect), requiring incremental hedge adjustments:
+
+```
+Heartbeat N:   portfolio Δ = -0.025, perp = +26 lots → effective Δ = +0.001 (neutral ✓)
+Heartbeat N+1: portfolio Δ = -0.030, perp = +26 lots → effective Δ = -0.004 (within band ✓)
+Heartbeat N+2: portfolio Δ = -0.038, perp = +26 lots → effective Δ = -0.012 (|Δ| > rebalance_band)
+  → Buy 12 more → perp = +38 lots → effective Δ = 0.000 ✓
+Heartbeat N+3: portfolio Δ = -0.042, perp = +38 lots → effective Δ = -0.004 (within band ✓)
+```
+
+The `perp_hedge_rebalance_band` (default 0.005) prevents excessive trading. Only rebalance when the drift exceeds the band.
+
+#### Phase 7: End of Day — Full Exit
+
+At session end (0DTE expiry), ALL positions close:
+1. Options expire worthless (OTM) or get exercised (ITM)
+2. Perp hedge position is closed via market order
+3. **The perp P&L offsets the options directional loss**
+
+**Exit Triggers (any one of these):**
+- Session wind-down activates → close perp as part of wind-down
+- Session max-loss hit → close perp immediately (part of emergency stop)
+- Session trailing stop → close perp immediately
+- Close-at-5 completes all positions → close perp (no options to hedge)
+- Manual session stop → close perp
+- Options expiry (auto-close at configured time) → close perp
+
+### 26.6 P&L Math — How The Hedge Saves You
+
+**Scenario: BTC rallies 3% in 2 hours (96,000 → 98,880)**
+
+**WITHOUT Perp Hedge (current system):**
+```
+Short 97,000 CE × 20 lots: sold at 95, now worth 1,980 → loss = (1980-95) × 20 × 0.001 = -$37.70
+Short 95,000 PE × 20 lots: sold at 85, now worth 3    → gain = (85-3) × 20 × 0.001 = +$1.64
+Adjustment: sold 15 more PE at 94,000 @ 60              → gain = (60-2) × 15 × 0.001 = +$0.87
+Frozen 96,000 CE × 15 lots: sold at 120, now worth 2,900 → loss = (2900-120) × 15 × 0.001 = -$41.70
+
+Total unrealized = -$37.70 + $1.64 + $0.87 - $41.70 = -$76.89
+Options theta collected today: ~$8.50
+Net P&L: -$68.39
+```
+
+**WITH Perp Hedge (new system):**
+```
+Same options positions: -$76.89 unrealized
+
+Perp hedge: LONG 38 lots BTCUSD (accumulated via incremental rebalancing)
+Perp entry avg: ~$97,200 (weighted average of incremental buys)
+Perp mark: $98,880
+Perp P&L: (98,880 - 97,200) × 38 × 0.001 = +$63.84
+Funding paid (2 intervals): 38 × 0.001 × 97,200 × 0.0003 = -$1.11
+
+Net P&L: -$76.89 + $63.84 - $1.11 + $8.50 (theta) = -$5.66
+```
+
+**Result: Loss reduced from -$68.39 to -$5.66 (92% reduction)**
+
+The residual $5.66 loss is the "gamma drag" — the cost of continuously rebalancing as delta changes non-linearly. This is the unavoidable cost of gamma, but it's far better than eating the full directional loss.
+
+### 26.7 Exit Strategy — Detailed Scenarios
+
+#### Scenario A: Market Trends Then Stabilizes (Most Common)
+```
+08:00 — Session starts, strangles sold
+09:30 — BTC starts rallying, portfolio Δ = -0.025 → BUY 25 BTCUSD
+10:15 — Rally continues, Δ drifts to -0.032 → BUY 7 more (total: 32 long)
+11:00 — BTC stabilizes at +2.5%, Δ stabilizes → no rebalance needed
+12:00 — Theta decay accelerates, option deltas shrink as premium bleeds
+13:00 — Portfolio Δ = -0.015 with 32 long perp → effective Δ = +0.017
+         |0.017| > rebalance_band → SELL 17 (total: 15 long)
+14:30 — Options approach expiry, delta → 0 for OTM, → ±1 for ITM
+15:00 — Wind-down activates, buys back remaining options
+15:15 — Close perp: SELL 15 BTCUSD
+15:30 — Session ends. Perp profit offsets CE-side options loss.
+```
+**Exit: Perp closed as part of wind-down sequence**
+
+#### Scenario B: Sharp Reversal Mid-Day
+```
+09:30 — BTC rallies 2%, LONG 28 BTCUSD
+11:00 — BTC reverses sharply, drops 3% from high
+11:05 — Portfolio Δ flips to +0.022
+         Effective Δ = +0.022 + 0.028 = +0.050 → URGENT rebalance
+         SELL 50 lots (close 28 long + open 22 short)
+         Now: SHORT 22 BTCUSD
+11:30 — PE side threatened, perp hedge absorbs downward move
+14:30 — Options expire, close perp
+```
+**Exit: Direction flip is ONE order. Perp P&L: lost on the first leg (rally), gained on second leg (drop). Net depends on timing.**
+
+#### Scenario C: Choppy/Ranging Day (Worst Case for Hedge)
+```
+09:00 — Δ = -0.022 → BUY 22
+10:00 — Δ reverses to +0.018 → SELL 40 (flip to SHORT 18)
+11:00 — Δ reverses again to -0.020 → BUY 38 (flip to LONG 20)
+12:00 — Δ reverses again... → another flip
+
+Each flip costs: spread + slippage ≈ $0.30–$0.50 per flip
+4 flips = $1.20–$2.00 gamma drag
+```
+**Exit: On choppy days, the hedge oscillates and costs money. BUT: the cooldown parameter (`perp_hedge_cooldown_sec = 30`) and rebalance band (`0.005`) prevent excessive flipping. And on choppy days, the OPTIONS are most profitable (theta decays, price stays range-bound). The hedge cost is a small tax on a winning day.**
+
+#### Scenario D: Catastrophic Move (>5% in 1 hour) — Black Swan
+```
+09:00 — Session starts normally
+09:15 — Flash crash: BTC drops 7% in 15 minutes
+09:15 — First heartbeat detects Δ = +0.045 → SHORT 45 BTCUSD
+09:20 — Max-loss safety triggers → SESSION STOPS
+09:20 — Emergency exit: buy back all options + close 45 short perp
+
+Without hedge: options loss = catastrophic (short PE deep ITM)
+With hedge: short 45 perp gained (45 × 0.001 × 7% × $96,000 = $302.40)
+            Options loss still large but perp offsets ~60-70%
+            (Hedge didn't fully capture because it activated AFTER the move started)
+```
+**Exit: Perp closed as part of emergency stop. Partial protection — the hedge can only offset from the moment it activates, not retroactively.**
+
+### 26.8 Perp Hedge State (Tracked in Session)
+
+```python
+session['perp_hedge'] = {
+    'enabled': True,
+    'lots': 26,                      # +ve = long, -ve = short, 0 = flat
+    'avg_entry_price': 97200.0,      # Weighted average entry
+    'current_mark': 98050.0,         # Latest mark price
+    'unrealized_pnl': 22.10,         # (mark - avg_entry) × lots × 0.001
+    'realized_pnl': 0.0,             # From closed/flipped legs
+    'total_funding_paid': -0.85,     # Net funding (negative = paid, positive = received)
+    'last_rebalance_at': '2026-02-22T10:15:00',
+    'rebalance_count': 3,            # Number of rebalances this session
+    'hedge_ratio': 1.0,              # Current setting from WebUI
+    'portfolio_delta_at_entry': -0.0255,
+    'direction': 'long',             # 'long' | 'short' | 'flat'
+    'direction_flips': 0,            # Counter for whipsaw tracking
+}
+```
+
+### 26.9 WebUI Integration
+
+**New Dashboard Section: "Delta Hedge"**
+
+Displays:
+- Current portfolio delta (already computed)
+- Perp hedge status: `ACTIVE (LONG 26)` / `ACTIVE (SHORT 18)` / `STANDBY` / `DISABLED`
+- Perp P&L: real-time unrealized + realized + funding
+- Hedge ratio slider: 50% / 70% / 100% (hot-reloadable)
+- Master toggle: Enable/Disable perp hedge
+- Delta threshold input (hot-reloadable)
+- Rebalance band input (hot-reloadable)
+- Max lots cap input (hot-reloadable)
+- Visual: delta chart showing portfolio Δ (red), perp Δ (blue), effective Δ (green)
+
+**WebSocket Events:**
+- `mmm_perp_hedge_update` — emitted every heartbeat with hedge state
+- `mmm_perp_hedge_execution` — emitted on every hedge trade with details
+- `mmm_perp_hedge_flip` — emitted on direction flip (notable event)
+
+### 26.10 Safety Guards
+
+| Guard | Behavior |
+|-------|----------|
+| **Max lots cap** | Hard limit on perp position size. If required lots > cap, hedge is partial. Logs warning. |
+| **Cooldown** | Minimum 30s between hedge adjustments. Prevents rapid-fire trading on noisy delta. |
+| **Session stop** | If session stops for ANY reason (max-loss, manual, error), perp is closed FIRST before options. |
+| **Orphan protection** | On session start, check for existing BTCUSD position from previous session. If found, close it before starting. |
+| **Exchange error** | If perp order fails, retry once. If retry fails, log CRITICAL + emit safety event. Do NOT retry infinitely. |
+| **Delta sanity** | If `_calculate_portfolio_delta()` returns `calculation_incomplete` (Fix #2), do NOT adjust hedge — stale delta could cause wrong-direction trade. |
+| **Funding spike** | If funding rate exceeds ±0.1% per interval (extreme), log warning. Informational only (user confirmed no auto-exit on funding). |
+| **Hedge P&L isolation** | Perp P&L tracked separately from options P&L. Both visible in dashboard. Combined total shown for max-loss/trailing checks. |
+
+### 26.11 Configuration Schema (for `mmm_config.py`)
+
+```python
+PERP_HEDGE_PARAMS = {
+    'perp_hedge_enabled':          {'type': bool,  'default': False, 'hot_reload': True},
+    'perp_hedge_delta_threshold':  {'type': float, 'default': 0.02,  'min': 0.005, 'max': 0.10, 'hot_reload': True},
+    'perp_hedge_ratio':            {'type': float, 'default': 1.0,   'min': 0.3,   'max': 1.0,  'hot_reload': True},
+    'perp_hedge_rebalance_band':   {'type': float, 'default': 0.005, 'min': 0.001, 'max': 0.02, 'hot_reload': True},
+    'perp_hedge_max_lots':         {'type': int,   'default': 50,    'min': 5,     'max': 200,  'hot_reload': True},
+    'perp_hedge_cooldown_sec':     {'type': int,   'default': 30,    'min': 10,    'max': 300,  'hot_reload': True},
+}
+
+# Interdependency rules (for Fix #15):
+# perp_hedge_delta_threshold > perp_hedge_rebalance_band (otherwise constant rebalancing)
+# perp_hedge_max_lots >= 10 (meaningful hedge)
+```
+
+### 26.12 Interaction with Existing MMM Features
+
+| Feature | Interaction | Notes |
+|---------|-------------|-------|
+| **MMM Adjustments** | Independent — both run simultaneously | Adjustments sell premium (theta), perp hedges delta. Institutional approach. |
+| **Close-at-5** | No interaction | Close-at-5 closes cheap options. Perp hedge recalculates on next heartbeat with updated delta. |
+| **Wind-down** | Perp closes during wind-down | Wind-down buys back options → delta shrinks → perp auto-reduces. At final wind-down, close remaining perp. |
+| **Strike Shift** | No interaction | Shift moves options to new strike. Delta changes. Perp hedge recalculates automatically. |
+| **Regime Engine** | Regime may block adjustments but NOT perp hedge | If regime says "TREND_UP, block CE sells" — perp hedge still activates. It's the PRIMARY defense when regime blocks adjustments. |
+| **Max-Loss / Trailing Stop** | Perp P&L included in total | Session total = options P&L + perp P&L. Max-loss check uses combined total. |
+| **Both-Sides-Up** | Perp hedge covers the dominant side | If both sides triggered, perp hedges net delta (which naturally picks the more exposed side). |
+| **ATM Detection** | Perp hedge is the first responder | ATM = delta spike = perp activates immediately. This is faster than wind-down (which has delays) or close-at-ATM (which is nuclear). |
+
+### 26.13 Implementation Plan & Sequencing
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                IMPLEMENTATION ROADMAP                         │
+│                                                               │
+│  Phase 1: Fix #23 — Unified Position Ledger (Weeks 1–3)     │
+│  ├── Refactor position data model across 11 files            │
+│  ├── DB migration script                                     │
+│  ├── Full test rewrite                                       │
+│  └── Frontend position display updates                       │
+│                                                               │
+│  Phase 2: Perp Delta Hedge Module (Weeks 4–5)                │
+│  ├── Week 4:                                                  │
+│  │   ├── Create mmm_perp_hedge.py (~400-500 lines)           │
+│  │   ├── Add perp config params to mmm_config.py             │
+│  │   ├── Integrate hedge call into heartbeat loop            │
+│  │   ├── Add perp state tracking to session                  │
+│  │   ├── Add perp close to all exit paths                    │
+│  │   └── Safety guards + orphan protection                   │
+│  │                                                            │
+│  ├── Week 5:                                                  │
+│  │   ├── WebUI: hedge dashboard section                      │
+│  │   ├── WebUI: config controls (slider, toggle, inputs)     │
+│  │   ├── WebSocket events for real-time hedge updates        │
+│  │   ├── API endpoints for hedge status + manual control     │
+│  │   └── Integration tests                                   │
+│  │                                                            │
+│  Phase 3: Paper Testing (Week 6)                              │
+│  ├── Run with perp_hedge_enabled=false, log what WOULD trade │
+│  ├── Compare simulated perp P&L vs actual options P&L        │
+│  ├── Verify delta calculation accuracy vs exchange positions  │
+│  └── Tune parameters: threshold, band, cooldown              │
+│                                                               │
+│  Phase 4: Live Testing (Week 7)                               │
+│  ├── Day 1: Small max_lots (10), full hedge ratio             │
+│  ├── Day 2-3: Increase max_lots, observe in trending market  │
+│  ├── Day 4-5: Full production parameters                     │
+│  └── Monitor: funding costs, rebalance frequency, gamma drag │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 26.14 Files to Create / Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `mmm_perp_hedge.py` | **CREATE** | Core hedge module: delta monitoring, order sizing, execution, state tracking |
+| `mmm_monitor.py` | MODIFY | Add perp hedge call in heartbeat loop after trigger evaluation |
+| `mmm_config.py` | MODIFY | Add perp hedge parameters + interdependency rules |
+| `mmm_state.py` | MODIFY | Add `perp_hedge` dict to session initialization |
+| `mmm_safety.py` | MODIFY | Include perp P&L in max-loss and trailing stop calculations |
+| `mmm_wind_down.py` | MODIFY | Close perp position during wind-down sequence |
+| `mmm_websocket.py` | MODIFY | Add perp hedge event emitters |
+| `mmm_engine.py` | MODIFY | Exclude perp P&L from options-only calculations where needed |
+| `mmm_close_at_5.py` | NO CHANGE | Close-at-5 only touches options; perp recalculates naturally |
+| `tests/test_perp_hedge.py` | **CREATE** | Unit tests for hedge sizing, direction flips, safety guards |
+| Frontend: `MMMDashboard.jsx` | MODIFY | Add delta hedge section to dashboard |
+| Frontend: `MMMContext.jsx` | MODIFY | Add perp hedge state to context provider |
+| API: `mmm_api.py` | MODIFY | Add endpoints: `GET /hedge/status`, `POST /hedge/toggle`, `POST /hedge/close` |
+
+### 26.15 Estimated Effort
+
+| Component | Est. Lines | Est. Time |
+|-----------|------------|----------|
+| `mmm_perp_hedge.py` | 400–500 | 2 days |
+| Monitor integration | 50–80 | 0.5 day |
+| Config + state | 40–60 | 0.5 day |
+| Safety integration | 30–50 | 0.5 day |
+| Wind-down integration | 20–30 | 0.25 day |
+| WebSocket events | 30–40 | 0.25 day |
+| WebUI dashboard | 200–300 | 1.5 days |
+| WebUI config controls | 100–150 | 1 day |
+| API endpoints | 60–80 | 0.5 day |
+| Tests | 200–300 | 1 day |
+| Paper testing + tuning | — | 5 days |
+| Live testing | — | 5 days |
+| **Total** | **~1,200 lines** | **~2 weeks code + 2 weeks testing** |
+
 ---
 
 *This document is the comprehensive audit of the MMM algorithm. All issues are based on line-by-line code review of the production codebase as of February 22, 2026.*
@@ -829,36 +1362,41 @@ for side_key in ['ce', 'pe']:
 | 5 | Position cap enforcement | HIGH | ✅ Implemented |
 | 6 | Trigger snapshot init | HIGH | ✅ Implemented |
 | 7 | Peak P&L reset | HIGH | ✅ Implemented |
-| 8 | Close-at-5 index safety | HIGH | ⏳ Deferred (correctness ok via fallback) |
-| 9 | Close-at-5 original_strike | HIGH | ⏳ Deferred (currently safe) |
+| 8 | Close-at-5 index safety | HIGH | ✅ Implemented |
+| 9 | Close-at-5 original_strike | HIGH | ✅ Implemented |
 | 10 | Reversal case sensitivity | HIGH | ✅ Implemented |
-| 11 | Close-at-5 + adjustment interaction | HIGH | ⏳ Deferred (structural change) |
-| 12 | Per-side premium fallback | MEDIUM | ⏳ Deferred (medium effort) |
+| 11 | Close-at-5 + adjustment interaction | HIGH | ✅ Implemented |
+| 12 | Per-side premium fallback | MEDIUM | ✅ Implemented |
 | 13 | Strike key canonicalization | MEDIUM | ✅ Implemented |
-| 14 | Timezone handling | MEDIUM | ⏳ Deferred (medium effort) |
+| 14 | Timezone handling | MEDIUM | ✅ Implemented |
 | 15 | Param interdependency validation | MEDIUM | ✅ Implemented |
 | 16 | Activity log atomic writes | MEDIUM | ✅ Implemented |
 | 17 | WebSocket failure detection | MEDIUM | ✅ Implemented |
 | 18 | Both-sides re-fetch | MEDIUM | ✅ Implemented |
-| 19 | Float precision (Decimal) | LOW | ⏳ Deferred (large refactor) |
+| 19 | Float precision (Decimal) | LOW | ✅ Implemented |
 | 20 | Session ID collision | LOW | ✅ Implemented |
 | 21 | Theta acceleration cap | LOW | ✅ Implemented |
 | 22 | fill_price parse guard | LOW | ✅ Implemented |
-| 23 | Unified Position Ledger | ARCH | ⏳ Deferred → planned after current algo finishes |
+| 23 | Unified Position Ledger | ARCH | ✅ Implemented |
 | 24 | Derived state consistency | ARCH | ✅ Implemented |
+| 26 | Perpetual Futures Delta Hedge | NEW FEATURE | ⏳ Planned → after current algo session finishes |
 
-**Total: 16/24 implemented, 8 deferred (4 already fixed/safe, 4 require larger refactors)**
+**Total: 24/24 implemented, 0 deferred, 1 new feature planned**
 
 ### Files Modified:
 - `mmm_reversal.py` — Fix #10
 - `mmm_safety.py` — Fixes #5, #7
 - `mmm_executor.py` — Fixes #3, #22
 - `mmm_trigger.py` — Fixes #13, #21
-- `mmm_engine.py` — Fixes #2, #13
-- `mmm_monitor.py` — Fixes #1, #2, #6, #7, #13, #18, #24
+- `mmm_engine.py` — Fixes #2, #13, #14, #19, #23
+- `mmm_monitor.py` — Fixes #1, #2, #6, #7, #11, #12, #13, #18, #23, #24
 - `mmm_constants.py` — Fix #13
-- `mmm_state.py` — Fixes #13, #20
+- `mmm_state.py` — Fixes #13, #20, #23
 - `mmm_config.py` — Fix #15
 - `mmm_activity.py` — Fix #16
 - `mmm_websocket.py` — Fix #17
+- `mmm_close_at_5.py` — Fixes #8, #9, #19, #23
+- `mmm_strike_shift.py` — Fixes #14, #23
+- `mmm_wind_down.py` — Fixes #23
+- `mmm_adopter.py` — Fix #23
 - `tests/test_mmm_engine.py` — Fix #2 (test updates)

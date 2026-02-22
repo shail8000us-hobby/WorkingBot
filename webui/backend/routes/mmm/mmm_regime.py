@@ -18,7 +18,7 @@ Created: February 20, 2026
 import logging
 import math
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 
 from .mmm_constants import LOT_SIZE_BTC
@@ -80,7 +80,7 @@ def _update_vol_regime(session: Dict, iv_data: Dict, spot_price: float) -> str:
         session['_vol_regime'] = VOL_NORMAL
         return VOL_NORMAL
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # ── Collect IV data ──
     ce_iv = iv_data.get('ce_iv', 0)
@@ -246,7 +246,7 @@ def _update_gamma_cap(
         session['_gamma_regime'] = GAMMA_NORMAL
         return GAMMA_NORMAL
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # ── Get raw portfolio gamma ──
     portfolio_gamma = gamma_data.get('portfolio_gamma', 0)
@@ -372,7 +372,7 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     if spot_price <= 0:
         return session.get('_trend_regime', TREND_NORMAL)
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # ── Initialize anchor if needed ──
     anchor = session.get('_trend_anchor_spot', 0)

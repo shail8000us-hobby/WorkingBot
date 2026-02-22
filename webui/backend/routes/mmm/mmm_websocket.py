@@ -9,7 +9,7 @@ Created: February 15, 2026
 
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 log = logging.getLogger('mmm_websocket')
 
@@ -64,10 +64,10 @@ def _emit(event: str, data: Dict[str, Any]):
         return
 
     try:
-        data['timestamp'] = datetime.utcnow().isoformat()
+        data['timestamp'] = datetime.now(timezone.utc).isoformat()
         _socketio.emit(event, data, namespace='/')
         _consecutive_failures = 0
-        _last_successful_emit = datetime.utcnow()
+        _last_successful_emit = datetime.now(timezone.utc)
     except Exception as e:
         _consecutive_failures += 1
         log.error(f"Failed to emit {event}: {e} (consecutive_failures={_consecutive_failures})")

@@ -17,7 +17,7 @@ Created: February 17, 2026
 
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple
 
 log = logging.getLogger('mmm_wind_down')
@@ -67,7 +67,11 @@ def is_wind_down_active(session: Dict) -> bool:
             from .mmm_initializer import expiry_to_utc_datetime
             expiry_iso = expiry_to_utc_datetime(expiry_str)
             expiry_dt = datetime.fromisoformat(expiry_iso)
-            now = datetime.utcnow()
+            # Robust v2 Fix #14: Use timezone-aware UTC
+            now = datetime.now(timezone.utc)
+            # Make expiry_dt timezone-aware if it isn't already
+            if expiry_dt.tzinfo is None:
+                expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
             hours_remaining = (expiry_dt - now).total_seconds() / 3600.0
 
             if hours_remaining <= wd_hours:
@@ -116,7 +120,11 @@ def get_wind_down_status(session: Dict) -> Dict[str, Any]:
         from .mmm_initializer import expiry_to_utc_datetime
         expiry_iso = expiry_to_utc_datetime(expiry_str)
         expiry_dt = datetime.fromisoformat(expiry_iso)
-        now = datetime.utcnow()
+        # Robust v2 Fix #14: Use timezone-aware UTC
+        now = datetime.now(timezone.utc)
+        # Make expiry_dt timezone-aware if it isn't already
+        if expiry_dt.tzinfo is None:
+            expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
         hours_remaining = (expiry_dt - now).total_seconds() / 3600.0
         active = hours_remaining <= wd_hours
         activates_in = max(0.0, hours_remaining - wd_hours) if not active else None
@@ -239,46 +247,52 @@ def get_lifo_close_fills(
     remaining = lots_to_close
     close_records = []
 
-    # 1. Close adjustment fills in reverse order (LIFO — newest first)
-    adj_fills = list(side_state.get('adjustment_fills', []))
-    for i in range(len(adj_fills) - 1, -1, -1):
+    # Fix #23: Read from positions[] (Unified Ledger) for LIFO order.
+    # Active positions sorted newest-first (by created_at, fallback to list reverse)
+    from .mmm_state import _migrate_side_to_positions
+    if 'positions' not in side_state:
+        _migrate_side_to_positions(side_state)
+
+    active_positions = [
+        p for p in side_state.get('positions', [])
+        if p.get('status') == 'active'
+    ]
+
+    # LIFO: non-original first (adjustments/shift_entries), then original last resort
+    non_orig = [p for p in active_positions if p.get('type') != 'original']
+    orig_list = [p for p in active_positions if p.get('type') == 'original']
+
+    for pos in reversed(non_orig):   # newest-first (preserve list insertion order)
         if remaining <= 0:
             break
-        fill = adj_fills[i]
-        fill_lots = fill.get('lots', 0)
-        if fill_lots <= 0:
+        pos_lots = pos.get('lots', 0)
+        if pos_lots <= 0:
             continue
-
-        close_from_this = min(remaining, fill_lots)
+        close_from_this = min(remaining, pos_lots)
         close_records.append({
             'lots': close_from_this,
-            'premium': fill.get('premium', 0),
-            'strike': fill.get('strike', 0),
+            'premium': pos.get('entry_premium', pos.get('premium', 0)),
+            'strike': pos['strike'],
             'source': 'adjustment',
-            'fill_index': i,
+            '_pos_id': pos['id'],   # Fix #23: ID-based removal
         })
         remaining -= close_from_this
 
-    # 2. If still need more, close from original lots (last resort)
-    if remaining > 0:
-        orig_lots = side_state.get('original_lots', 0)
-        if orig_lots > 0:
-            close_from_orig = min(remaining, orig_lots)
-            # CRITICAL: use original_strike (entry strike), not active_strike.
-            # active_strike changes on shifts — using it would place a buy order
-            # at the WRONG contract for the original position.
-            orig_strike = (
-                side_state.get('original_strike')
-                or side_state.get('active_strike', 0)
-            )
-            close_records.append({
-                'lots': close_from_orig,
-                'premium': side_state.get('original_premium', 0),
-                'strike': orig_strike,
-                'source': 'original',
-                'fill_index': -1,
-            })
-            remaining -= close_from_orig
+    for pos in orig_list:   # CRITICAL: use original_strike, not active_strike
+        if remaining <= 0:
+            break
+        pos_lots = pos.get('lots', 0)
+        if pos_lots <= 0:
+            continue
+        close_from_orig = min(remaining, pos_lots)
+        close_records.append({
+            'lots': close_from_orig,
+            'premium': pos.get('entry_premium', pos.get('premium', 0)),
+            'strike': pos['strike'],
+            'source': 'original',
+            '_pos_id': pos['id'],   # Fix #23: ID-based removal
+        })
+        remaining -= close_from_orig
 
     return close_records
 
@@ -288,20 +302,27 @@ def apply_lifo_removals(
     close_records: List[Dict],
 ) -> float:
     """
-    Remove lots from side_state based on LIFO close records.
+    Apply LIFO lot reductions to side_state based on close records.
 
-    Mutates side_state in place: reduces adjustment_fills lots and
-    original_lots as needed.
+    Fix #23: Uses ID-based lookup in positions[] (Unified Ledger).
+    Fully closes positions whose lots reach 0; partially reduces others.
 
     Args:
-        side_state: Session side state (mutated)
+        side_state: Session side state (mutated in place)
         close_records: From get_lifo_close_fills()
 
     Returns:
         Weighted average entry premium of closed lots
     """
+    from datetime import datetime, timezone
+    from .mmm_state import recompute_side_lots
+
     total_lots_closed = 0
     weighted_premium_sum = 0.0
+    now = datetime.now(timezone.utc).isoformat()
+
+    positions = side_state.get('positions', [])
+    pos_index = {p['id']: p for p in positions}   # O(1) lookup by ID
 
     for record in close_records:
         lots = record['lots']
@@ -309,25 +330,15 @@ def apply_lifo_removals(
         weighted_premium_sum += premium * lots
         total_lots_closed += lots
 
-        if record['source'] == 'adjustment':
-            idx = record['fill_index']
-            adj_fills = side_state.get('adjustment_fills', [])
-            if 0 <= idx < len(adj_fills):
-                adj_fills[idx]['lots'] -= lots
-                if adj_fills[idx]['lots'] <= 0:
-                    adj_fills[idx]['lots'] = 0  # Will be cleaned up below
+        pos_id = record.get('_pos_id')
+        if pos_id and pos_id in pos_index:
+            pos = pos_index[pos_id]
+            pos['lots'] = max(0, pos['lots'] - lots)
+            if pos['lots'] == 0:
+                pos['status'] = 'closed'
+                pos['closed_at'] = now
 
-        elif record['source'] == 'original':
-            side_state['original_lots'] = max(
-                0, side_state.get('original_lots', 0) - lots
-            )
-
-    # Clean up zero-lot adjustment fills
-    adj_fills = side_state.get('adjustment_fills', [])
-    side_state['adjustment_fills'] = [f for f in adj_fills if f.get('lots', 0) > 0]
-
-    # Recompute derived lots
-    from .mmm_state import recompute_side_lots
+    # Recompute derived views and scalars from updated positions[]
     recompute_side_lots(side_state)
 
     avg_entry = weighted_premium_sum / total_lots_closed if total_lots_closed > 0 else 0
