@@ -814,14 +814,11 @@ class MMMMonitor:
             self.stop('Both sides fully closed — strategy complete!')
             return
 
-        # Step 2b: Proactive wind-down buyback — every heartbeat while wind-down is active
-        # (independent of trigger evaluation — reduces positions even when no trigger fires)
-        if is_wind_down_active(session):
-            await self._process_proactive_wind_down(ce_now, pe_now)
-            # Re-check if both sides fully closed after proactive reduction
-            if check_both_sides_closed(session):
-                self.stop('Both sides fully closed via wind-down — strategy complete!')
-                return
+        # NOTE: Proactive wind-down (buying back on every heartbeat) was removed.
+        # Wind-down now only acts when triggers fire (trigger-based path in the
+        # adjustment section below handles this correctly — see OUTCOME_CE/PE branch).
+        # Proactive buyback was a bug: it reduced positions on every heartbeat
+        # regardless of trigger status, causing unintended position erosion.
 
         # Bug #7 fix: compute FRESH unrealized P&L before safety checks
         # so that check_max_loss uses current prices, not stale values.
@@ -2836,6 +2833,41 @@ class MMMMonitor:
             log.error(f"[{sid}] Margin guardian check failed: {e}")
             return None
 
+    def _get_other_sessions_lots_at_symbol(self, symbol: str) -> int:
+        """
+        Return the total lots that OTHER active MMM sessions claim at a
+        given exchange symbol.  Used during reconciliation to avoid
+        auto-syncing positions that belong to a different session.
+        """
+        total = 0
+        for other_sid, other_mon in get_all_monitors().items():
+            if other_sid == self.session_id:
+                continue
+            other = other_mon.session
+            other_expiry = other.get('params', {}).get('expiry', '')
+            for side_key in ['ce', 'pe']:
+                side = other.get(side_key, {})
+                opt = 'call' if side_key == 'ce' else 'put'
+
+                # Active strike lots
+                active_strike = side.get('active_strike', 0)
+                if active_strike > 0:
+                    asym = self.initializer.build_symbol(opt, 'BTC', active_strike, other_expiry)
+                    if asym == symbol:
+                        total += side.get('original_lots', 0)
+                        for fill in side.get('adjustment_fills', []):
+                            if fill.get('strike', active_strike) == active_strike:
+                                total += fill.get('lots', 0)
+
+                # Frozen position lots
+                for frozen in side.get('frozen_positions', []):
+                    f_strike = frozen.get('strike', 0)
+                    if f_strike > 0:
+                        fsym = self.initializer.build_symbol(opt, 'BTC', f_strike, other_expiry)
+                        if fsym == symbol:
+                            total += frozen.get('lots', 0)
+        return total
+
     async def _reconcile_exchange_positions(self):
         """
         Query actual exchange positions and compare with session state.
@@ -2858,6 +2890,35 @@ class MMMMonitor:
         session['_recon_counter'] = recon_counter
         if recon_counter % 5 != 1:  # Every 5th heartbeat (first, 6th, 11th, ...)
             return
+
+        # ── One-time cleanup: remove exchange_sync frozen positions that
+        #    belong to other sessions (cross-session adoption bug fix) ──
+        if not session.get('_exchange_sync_cleaned'):
+            session['_exchange_sync_cleaned'] = True
+            expiry_tmp = session.get('params', {}).get('expiry', '')
+            for side_key in ['ce', 'pe']:
+                side = session.get(side_key, {})
+                opt = 'call' if side_key == 'ce' else 'put'
+                original = side.get('frozen_positions', [])
+                cleaned = []
+                removed_lots = 0
+                for fp in original:
+                    if fp.get('type') == 'exchange_sync':
+                        fp_strike = fp.get('strike', 0)
+                        fp_sym = self.initializer.build_symbol(opt, 'BTC', fp_strike, expiry_tmp)
+                        other = self._get_other_sessions_lots_at_symbol(fp_sym)
+                        if other > 0:
+                            removed_lots += fp.get('lots', 0)
+                            continue  # Skip — belongs to another session
+                    cleaned.append(fp)
+                if removed_lots > 0:
+                    log.warning(
+                        f"[{sid}] Cleanup: removed {removed_lots} wrongly-synced "
+                        f"{side_key.upper()} frozen lots belonging to other sessions"
+                    )
+                    side['frozen_positions'] = cleaned
+                    from .mmm_state import recompute_side_lots
+                    recompute_side_lots(side)
 
         # ── Build the set of symbols THIS session owns ──
         session_symbols = set()
@@ -2959,7 +3020,12 @@ class MMMMonitor:
                 exchange_pos = exchange_positions.get(active_symbol, {})
                 exchange_size = exchange_pos.get('size', 0)
 
-                if active_lots > 0 and exchange_size == 0:
+                # Subtract lots owned by other sessions at the same symbol
+                # to avoid false discrepancy reports.
+                other_lots_at_active = self._get_other_sessions_lots_at_symbol(active_symbol)
+                effective_exchange_size = max(exchange_size - other_lots_at_active, 0)
+
+                if active_lots > 0 and effective_exchange_size == 0 and exchange_size == 0:
                     discrepancies.append({
                         'side': side_key.upper(),
                         'type': 'MISSING_ON_EXCHANGE',
@@ -2968,11 +3034,14 @@ class MMMMonitor:
                         'session_lots': active_lots,
                         'exchange_size': 0,
                     })
-                elif abs(active_lots - exchange_size) > 0.1 and active_lots > 0:
+                elif abs(active_lots - effective_exchange_size) > 0.1 and active_lots > 0:
                     discrepancies.append({
                         'side': side_key.upper(),
                         'type': 'SIZE_MISMATCH',
-                        'detail': f"{side_key.upper()} active @ {active_strike}: session={active_lots} vs exchange={exchange_size}",
+                        'detail': (
+                            f"{side_key.upper()} active @ {active_strike}: session={active_lots} "
+                            f"vs exchange={exchange_size} (other sessions={other_lots_at_active})"
+                        ),
                         'symbol': active_symbol,
                         'session_lots': active_lots,
                         'exchange_size': exchange_size,
@@ -2992,7 +3061,11 @@ class MMMMonitor:
                     f_exchange = exchange_positions.get(fsym, {})
                     f_ex_size = f_exchange.get('size', 0)
 
-                    if total_frozen_lots > 0 and f_ex_size == 0:
+                    # Subtract other sessions' lots at this frozen strike
+                    other_frozen = self._get_other_sessions_lots_at_symbol(fsym)
+                    effective_frozen_ex = max(f_ex_size - other_frozen, 0)
+
+                    if total_frozen_lots > 0 and effective_frozen_ex == 0 and f_ex_size == 0:
                         discrepancies.append({
                             'side': side_key.upper(),
                             'type': 'FROZEN_MISSING',
@@ -3001,7 +3074,7 @@ class MMMMonitor:
                             'session_lots': total_frozen_lots,
                             'exchange_size': 0,
                         })
-                    elif abs(total_frozen_lots - f_ex_size) > 0.1:
+                    elif abs(total_frozen_lots - effective_frozen_ex) > 0.1:
                         discrepancies.append({
                             'side': side_key.upper(),
                             'type': 'FROZEN_MISMATCH',
@@ -3011,15 +3084,16 @@ class MMMMonitor:
                             'exchange_size': f_ex_size,
                         })
 
-                        # AUTO-SYNC FIX: If exchange has MORE lots than session,
-                        # add the difference as a synced frozen position so that
-                        # close-at-5 can find and close them.
-                        if f_ex_size > total_frozen_lots:
-                            extra = int(f_ex_size - total_frozen_lots)
+                        # AUTO-SYNC FIX: If exchange has MORE lots than session
+                        # (after subtracting other sessions' lots), add the
+                        # difference as a synced frozen position.
+                        if effective_frozen_ex > total_frozen_lots:
+                            extra = int(effective_frozen_ex - total_frozen_lots)
                             log.warning(
                                 f"[{sid}] AUTO-SYNC: Adding {extra} untracked "
                                 f"{side_key.upper()} lots @ {f_strike} to frozen "
-                                f"(exchange has {f_ex_size}, session has {total_frozen_lots})"
+                                f"(exchange has {f_ex_size}, session has {total_frozen_lots}, "
+                                f"other sessions own {other_frozen})"
                             )
                             side.setdefault('frozen_positions', []).append({
                                 'strike': f_strike,
@@ -3058,29 +3132,47 @@ class MMMMonitor:
                     if ex_strike not in known_strikes:
                         ex_size = epos.get('size', 0)
                         if ex_size > 0:
+                            # Before auto-syncing, check if other sessions own
+                            # these lots — avoid cross-session position adoption.
+                            other_lots = self._get_other_sessions_lots_at_symbol(sym)
+                            unowned = ex_size - other_lots
+
                             discrepancies.append({
                                 'side': side_key.upper(),
                                 'type': 'UNTRACKED_EXCHANGE_POSITION',
-                                'detail': f"{side_key.upper()} @ {ex_strike}: exchange has {ex_size} lots but session has NO record",
+                                'detail': (
+                                    f"{side_key.upper()} @ {ex_strike}: exchange has {ex_size} lots "
+                                    f"but session has NO record (other sessions own {other_lots})"
+                                ),
                                 'symbol': sym,
                                 'session_lots': 0,
                                 'exchange_size': ex_size,
+                                'other_sessions_lots': other_lots,
                             })
-                            # AUTO-SYNC: Add untracked position so close-at-5 can close it
-                            log.warning(
-                                f"[{sid}] AUTO-SYNC: Adding {int(ex_size)} completely "
-                                f"untracked {side_key.upper()} lots @ {ex_strike} to frozen"
-                            )
-                            side.setdefault('frozen_positions', []).append({
-                                'strike': ex_strike,
-                                'lots': int(ex_size),
-                                'entry_premium': epos.get('entry_price', 0),
-                                'type': 'exchange_sync',
-                                'frozen_at': datetime.utcnow().isoformat(),
-                                'note': f'Auto-synced: completely untracked exchange position',
-                            })
-                            from .mmm_state import recompute_side_lots
-                            recompute_side_lots(side)
+
+                            if unowned > 0:
+                                # AUTO-SYNC: Add truly untracked position so close-at-5 can close it
+                                log.warning(
+                                    f"[{sid}] AUTO-SYNC: Adding {int(unowned)} completely "
+                                    f"untracked {side_key.upper()} lots @ {ex_strike} to frozen "
+                                    f"(exchange={ex_size}, other sessions={other_lots})"
+                                )
+                                side.setdefault('frozen_positions', []).append({
+                                    'strike': ex_strike,
+                                    'lots': int(unowned),
+                                    'entry_premium': epos.get('entry_price', 0),
+                                    'type': 'exchange_sync',
+                                    'frozen_at': datetime.utcnow().isoformat(),
+                                    'note': f'Auto-synced: untracked exchange position (other sessions own {other_lots})',
+                                })
+                                from .mmm_state import recompute_side_lots
+                                recompute_side_lots(side)
+                            elif other_lots > 0:
+                                log.info(
+                                    f"[{sid}] Reconciliation: skipping auto-sync for "
+                                    f"{side_key.upper()} @ {ex_strike} — all {ex_size} lots "
+                                    f"belong to other sessions"
+                                )
 
             # Store last reconciliation result (only our symbols)
             session['last_reconciliation'] = {

@@ -42,14 +42,17 @@ def is_wind_down_active(session: Dict) -> bool:
     """
     params = session.get('params', {})
 
-    # ATM-triggered wind-down: if wind_down_on_atm is enabled and the monitor
-    # detected an original strike going ATM, activate wind-down regardless of
-    # the time-based setting.
-    if params.get('wind_down_on_atm', False) and session.get('_atm_wind_down_triggered', False):
-        return True
-
+    # Master switch: wind_down_enabled must be True for ANY wind-down path.
+    # Previously, wind_down_on_atm bypassed this check, which was a bug —
+    # users would disable wind-down via the master switch but ATM trigger
+    # would still activate it silently.
     if not params.get('wind_down_enabled', False):
         return False
+
+    # ATM-triggered wind-down: if wind_down_on_atm is enabled AND wind_down_enabled
+    # is True AND the monitor detected an original strike going ATM.
+    if params.get('wind_down_on_atm', False) and session.get('_atm_wind_down_triggered', False):
+        return True
 
     wd_hours = params.get('wind_down_hours_before_expiry', 0)
 

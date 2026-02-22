@@ -149,7 +149,7 @@ DEFAULT_PARAMS = {
     'wind_down_close_threshold': 20.0,     # elevated close-at-5 during wind-down
     'wind_down_min_lots_to_keep': 0,       # never go below this many lots per side (0 = full unwind allowed)
     'wind_down_floor_action': 'skip',      # what to do at floor: skip|normal|pause
-    'wind_down_on_atm': True,              # auto-activate wind-down when original strike goes ATM
+    'wind_down_on_atm': False,             # auto-activate wind-down when original strike goes ATM
 
     # Margin Guardian (P1 safety layer)
     'margin_monitor_enabled': False,       # disabled until user opts in
