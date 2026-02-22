@@ -2891,30 +2891,22 @@ class MMMMonitor:
         if recon_counter % 5 != 1:  # Every 5th heartbeat (first, 6th, 11th, ...)
             return
 
-        # ── One-time cleanup: remove exchange_sync frozen positions that
-        #    belong to other sessions (cross-session adoption bug fix) ──
-        if not session.get('_exchange_sync_cleaned'):
-            session['_exchange_sync_cleaned'] = True
-            expiry_tmp = session.get('params', {}).get('expiry', '')
+        # ── One-time cleanup: remove ALL exchange_sync frozen positions.
+        #    Auto-sync is now disabled — these are artifacts from the old
+        #    code that imported other sessions'/algos' positions. ──
+        if not session.get('_exchange_sync_cleaned_v2'):
+            session['_exchange_sync_cleaned_v2'] = True
             for side_key in ['ce', 'pe']:
                 side = session.get(side_key, {})
-                opt = 'call' if side_key == 'ce' else 'put'
                 original = side.get('frozen_positions', [])
-                cleaned = []
-                removed_lots = 0
-                for fp in original:
-                    if fp.get('type') == 'exchange_sync':
-                        fp_strike = fp.get('strike', 0)
-                        fp_sym = self.initializer.build_symbol(opt, 'BTC', fp_strike, expiry_tmp)
-                        other = self._get_other_sessions_lots_at_symbol(fp_sym)
-                        if other > 0:
-                            removed_lots += fp.get('lots', 0)
-                            continue  # Skip — belongs to another session
-                    cleaned.append(fp)
+                cleaned = [fp for fp in original if fp.get('type') != 'exchange_sync']
+                removed_lots = sum(
+                    fp.get('lots', 0) for fp in original if fp.get('type') == 'exchange_sync'
+                )
                 if removed_lots > 0:
                     log.warning(
-                        f"[{sid}] Cleanup: removed {removed_lots} wrongly-synced "
-                        f"{side_key.upper()} frozen lots belonging to other sessions"
+                        f"[{sid}] Cleanup: removed {removed_lots} exchange_sync "
+                        f"{side_key.upper()} frozen lots (auto-sync disabled)"
                     )
                     side['frozen_positions'] = cleaned
                     from .mmm_state import recompute_side_lots
@@ -3084,27 +3076,11 @@ class MMMMonitor:
                             'exchange_size': f_ex_size,
                         })
 
-                        # AUTO-SYNC FIX: If exchange has MORE lots than session
-                        # (after subtracting other sessions' lots), add the
-                        # difference as a synced frozen position.
-                        if effective_frozen_ex > total_frozen_lots:
-                            extra = int(effective_frozen_ex - total_frozen_lots)
-                            log.warning(
-                                f"[{sid}] AUTO-SYNC: Adding {extra} untracked "
-                                f"{side_key.upper()} lots @ {f_strike} to frozen "
-                                f"(exchange has {f_ex_size}, session has {total_frozen_lots}, "
-                                f"other sessions own {other_frozen})"
-                            )
-                            side.setdefault('frozen_positions', []).append({
-                                'strike': f_strike,
-                                'lots': extra,
-                                'entry_premium': 0.0,  # Unknown — use 0
-                                'type': 'exchange_sync',
-                                'frozen_at': datetime.utcnow().isoformat(),
-                                'note': f'Auto-synced from exchange (had {extra} untracked lots)',
-                            })
-                            from .mmm_state import recompute_side_lots
-                            recompute_side_lots(side)
+                        # NOTE: Auto-sync DISABLED. The exchange reports combined
+                        # lots from ALL sources (other MMM sessions, SSR algo,
+                        # manual trades). Auto-syncing extra lots into this
+                        # session inflated total_lots and triggered false
+                        # position cap alerts. Reconciliation is now log-only.
 
                 # Also check for exchange positions at strikes the session
                 # doesn't know about at all (completely untracked)
@@ -3150,29 +3126,9 @@ class MMMMonitor:
                                 'other_sessions_lots': other_lots,
                             })
 
-                            if unowned > 0:
-                                # AUTO-SYNC: Add truly untracked position so close-at-5 can close it
-                                log.warning(
-                                    f"[{sid}] AUTO-SYNC: Adding {int(unowned)} completely "
-                                    f"untracked {side_key.upper()} lots @ {ex_strike} to frozen "
-                                    f"(exchange={ex_size}, other sessions={other_lots})"
-                                )
-                                side.setdefault('frozen_positions', []).append({
-                                    'strike': ex_strike,
-                                    'lots': int(unowned),
-                                    'entry_premium': epos.get('entry_price', 0),
-                                    'type': 'exchange_sync',
-                                    'frozen_at': datetime.utcnow().isoformat(),
-                                    'note': f'Auto-synced: untracked exchange position (other sessions own {other_lots})',
-                                })
-                                from .mmm_state import recompute_side_lots
-                                recompute_side_lots(side)
-                            elif other_lots > 0:
-                                log.info(
-                                    f"[{sid}] Reconciliation: skipping auto-sync for "
-                                    f"{side_key.upper()} @ {ex_strike} — all {ex_size} lots "
-                                    f"belong to other sessions"
-                                )
+                            # NOTE: Auto-sync DISABLED for untracked positions.
+                            # The exchange may hold positions from other algos,
+                            # manual trades, or other MMM sessions. Log only.
 
             # Store last reconciliation result (only our symbols)
             session['last_reconciliation'] = {
