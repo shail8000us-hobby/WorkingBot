@@ -76,6 +76,7 @@ import MMMBothSidesAlert from './MMMBothSidesAlert';
 import MMMSafetyPanel from './MMMSafetyPanel';
 import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
 import MMMRegimePanel from './MMMRegimePanel';
+import MMMPerpHedgePanel from './MMMPerpHedgePanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
@@ -1165,6 +1166,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <Tab label="Analytics" />
         <Tab label="Margin" />
         <Tab label="Regime" />
+        <Tab label="Perp Hedge" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -1514,6 +1516,16 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
           session={session}
           regimeData={wsData.regimeData}
           heartbeat={wsData.heartbeat}
+        />
+      )}
+
+      {/* Tab 13: Perp Hedge — Perpetual futures delta hedge */}
+      {detailTab === 13 && (
+        <MMMPerpHedgePanel
+          session={session}
+          heartbeat={wsData.heartbeat}
+          perpHedgeEvents={wsData.perpHedgeEvents || []}
+          perpHedgeFlip={wsData.perpHedgeFlip}
         />
       )}
 

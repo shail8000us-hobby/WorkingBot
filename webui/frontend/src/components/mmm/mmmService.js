@@ -561,6 +561,43 @@ const mmmService = {
     const { data } = await api.get(`${BASE_URL}/exchange/margin`);
     return data;
   },
+
+  // =========================================================================
+  // Perp Delta Hedge (Section 26)
+  // =========================================================================
+
+  /**
+   * Get perp hedge status for a session
+   * @param {string} sessionId
+   */
+  async getPerpHedgeStatus(sessionId) {
+    const { data } = await api.get(
+      `${BASE_URL}/session/${sessionId}/hedge/status`
+    );
+    return data;
+  },
+
+  /**
+   * Toggle perp hedge enabled/disabled
+   * @param {string} sessionId
+   */
+  async togglePerpHedge(sessionId) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/hedge/toggle`
+    );
+    return data;
+  },
+
+  /**
+   * Manually close all perp positions for a session
+   * @param {string} sessionId
+   */
+  async closePerpHedge(sessionId) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/hedge/close`
+    );
+    return data;
+  },
 };
 
 export default mmmService;

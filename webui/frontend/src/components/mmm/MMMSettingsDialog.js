@@ -106,6 +106,19 @@ const PARAM_GROUPS = {
       'trend_reset_beats',
     ],
   },
+  perpHedge: {
+    title: '⚡ Perp Delta Hedge',
+    color: '#00bcd4',
+    blurb: 'Perpetual futures delta hedging: trades BTCUSD perp to neutralize portfolio delta exposure each heartbeat. Threshold + rebalance band prevent over-trading.',
+    params: [
+      'perp_hedge_enabled',
+      'perp_hedge_delta_threshold',
+      'perp_hedge_ratio',
+      'perp_hedge_rebalance_band',
+      'perp_hedge_max_lots',
+      'perp_hedge_cooldown_sec',
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)
@@ -168,6 +181,13 @@ const PARAM_TOOLTIPS = {
   trend_ema_slope_threshold: 'EMA slope threshold for trend confirmation. Higher = less sensitive. A slope of 25 means ~0.25% per beat average drift — strong sustained move.',
   trend_action: 'What to do when trend triggers: "block_sells" (block dangerous-side sells only — smart directional blocking), "pause" (pause session), "wind_down" (also activate wind-down on dangerous side).',
   trend_reset_beats: 'After retracement and EMA slope calm down, must stay calm for this many consecutive beats before resetting to NORMAL. Prevents whipsaw on/off of trend guard.',
+  // Perp Delta Hedge tooltips
+  perp_hedge_enabled: 'Master switch for perpetual futures delta hedging. When enabled, the algo trades BTCUSD perpetual each heartbeat to neutralize portfolio delta. When disabled, no perp trades are made but existing positions remain.',
+  perp_hedge_delta_threshold: 'Minimum absolute portfolio delta before hedging triggers. E.g., 0.02 = don\'t hedge until delta exceeds 2%. Prevents micro-adjustments on balanced portfolios.',
+  perp_hedge_ratio: 'Fraction of portfolio delta to hedge. 1.0 = full neutralization (target delta zero). 0.5 = hedge only half the delta. Use < 1.0 if you want partial directional exposure.',
+  perp_hedge_rebalance_band: 'Dead zone around target position. If current lots are within this band of target, skip the trade. Prevents tiny round-trip adjustments. E.g., 0.005 = 0.5% band.',
+  perp_hedge_max_lots: 'Maximum perp position size in lots (1 lot = 0.001 BTC). Caps total hedge exposure. E.g., 50 lots = 0.05 BTC max perp position.',
+  perp_hedge_cooldown_sec: 'Minimum seconds between consecutive hedge executions. Prevents rapid-fire trading during volatile periods. Default: 30 seconds.',
 };
 
 // =============================================================================

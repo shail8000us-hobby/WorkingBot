@@ -31,6 +31,9 @@ const EVENTS = [
   'mmm_status_change',
   'mmm_session_created',
   'mmm_regime',
+  'mmm_perp_hedge_execution',
+  'mmm_perp_hedge_flip',
+  'mmm_perp_hedge_update',
 ];
 
 /**
@@ -50,6 +53,8 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   const [connected, setConnected] = useState(false);
   const [walkthroughEntries, setWalkthroughEntries] = useState([]);
   const [regimeData, setRegimeData] = useState(null);
+  const [perpHedgeEvents, setPerpHedgeEvents] = useState([]);
+  const [perpHedgeFlip, setPerpHedgeFlip] = useState(null);
 
   // Track the latest premium_map from price ticks (updated every 5s)
   const latestPremiumMap = useRef({});
@@ -67,6 +72,8 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     setStatus(null);
     setWalkthroughEntries([]);
     setRegimeData(null);
+    setPerpHedgeEvents([]);
+    setPerpHedgeFlip(null);
     latestPremiumMap.current = {};
   }, [sessionId]);
 
@@ -200,6 +207,34 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     };
     socket.on('mmm_regime', onRegime);
 
+    // Perp hedge executions
+    const onPerpExecution = (data) => {
+      if (!sessionId || data.session_id === sessionId) {
+        setPerpHedgeEvents((prev) => [...prev.slice(-49), data]);
+      }
+    };
+    socket.on('mmm_perp_hedge_execution', onPerpExecution);
+
+    // Perp hedge flip (long↔short direction change)
+    const onPerpFlip = (data) => {
+      if (!sessionId || data.session_id === sessionId) {
+        setPerpHedgeFlip(data);
+      }
+    };
+    socket.on('mmm_perp_hedge_flip', onPerpFlip);
+
+    // Perp hedge update (periodic state sync)
+    const onPerpUpdate = (data) => {
+      if (!sessionId || data.session_id === sessionId) {
+        // Merge into heartbeat perp_hedge if available
+        setHeartbeat((prev) => {
+          if (!prev) return prev;
+          return { ...prev, perp_hedge: { ...prev.perp_hedge, ...data } };
+        });
+      }
+    };
+    socket.on('mmm_perp_hedge_update', onPerpUpdate);
+
     return () => {
       // Remove only OUR listeners — don't disconnect the shared socket
       socket.off('connect', onConnect);
@@ -217,6 +252,9 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
       socket.off('mmm_params_changed', onParams);
       socket.off('mmm_walkthrough', onWalkthrough);
       socket.off('mmm_regime', onRegime);
+      socket.off('mmm_perp_hedge_execution', onPerpExecution);
+      socket.off('mmm_perp_hedge_flip', onPerpFlip);
+      socket.off('mmm_perp_hedge_update', onPerpUpdate);
     };
   }, [sessionId, sharedSocket]);
 
@@ -244,5 +282,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     clearSafetyEvents,
     walkthroughEntries,
     regimeData,
+    perpHedgeEvents,
+    perpHedgeFlip,
   };
 }
