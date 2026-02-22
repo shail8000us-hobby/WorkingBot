@@ -8,3 +8,23 @@ Shared constants for the MMM algorithm.
 # Premiums are quoted in USD per BTC. To get USD value for N lots:
 #   usd_value = premium_per_btc * N * LOT_SIZE_BTC
 LOT_SIZE_BTC = 0.001
+
+
+def strike_key(strike: float) -> str:
+    """
+    Robust v2 Fix #13: Canonical strike key for trigger_snapshot lookups.
+
+    Converts any strike representation to a consistent string key.
+    Handles integers, floats, string inputs. Always returns str(int(round(strike))).
+
+    This prevents key mismatches where one code path uses str(int(23100.5)) = '23100'
+    and another uses str(23100.5) = '23100.5'.
+
+    Usage:
+        from .mmm_constants import strike_key
+        snapshot[strike_key(active_strike)] = premium
+    """
+    try:
+        return str(int(round(float(strike))))
+    except (ValueError, TypeError):
+        return str(strike)

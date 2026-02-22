@@ -12,7 +12,6 @@ Created: February 15, 2026
 
 import json
 import os
-import fcntl
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -25,7 +24,8 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__
 ACTIVITY_FILE = os.path.join(DATA_DIR, 'mmm_activity_log.json')
 
 # Maximum activities to keep in memory and on disk
-MAX_ACTIVITIES = 200
+# Fix #16: Increased from 200 to 500 for better post-crash debugging
+MAX_ACTIVITIES = 500
 
 # Activity types
 ACTIVITY_TYPES = {
@@ -112,23 +112,34 @@ class MMMActivityLog:
             log.warning(f"Could not load activity log: {e}")
 
     def _save_to_disk(self):
-        """Persist activities to disk (throttled — only every 5th write)."""
+        """Persist activities to disk (throttled — every 2nd write).
+
+        Fix #16: Atomic write (write to .tmp then rename) prevents corruption
+        on crash mid-write. Throttling reduced from 1-in-5 to 1-in-2.
+        """
         self._counter += 1
-        if self._counter % 5 != 0:
+        if self._counter % 2 != 0:
             return
         try:
             os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
-            with open(ACTIVITY_FILE, 'w') as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                try:
-                    json.dump({
-                        'activities': list(self._activities),
-                        'updated_at': datetime.utcnow().isoformat(),
-                    }, f, indent=2, default=str)
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            tmp_file = ACTIVITY_FILE + '.tmp'
+            with open(tmp_file, 'w') as f:
+                json.dump({
+                    'activities': list(self._activities),
+                    'updated_at': datetime.utcnow().isoformat(),
+                }, f, indent=2, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+            # Atomic rename — survives crash between write and rename
+            os.rename(tmp_file, ACTIVITY_FILE)
         except Exception as e:
             log.warning(f"Could not save activity log: {e}")
+            # Clean up temp file if rename failed
+            try:
+                if os.path.exists(tmp_file):
+                    os.unlink(tmp_file)
+            except Exception:
+                pass
 
     def add(
         self,

@@ -55,7 +55,7 @@ from .mmm_close_at_5 import (
 from .mmm_analytics_storage import get_analytics_storage
 from .mmm_safety import (
     get_safety, should_block_adjustment, get_block_action, should_pause,
-    update_peak_pnl,
+    update_peak_pnl, reset_peak_pnl_on_reversal,
 )
 from .mmm_pending_orders import (
     register_pending, clear_pending, get_pending,
@@ -67,7 +67,7 @@ from .mmm_websocket import (
     emit_safety, emit_pnl_update, emit_status_change,
 )
 from .mmm_storage import get_storage
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
 from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE
 from .mmm_telegram import (
@@ -525,6 +525,24 @@ class MMMMonitor:
         # NOTE: error_count is reset at the END of a successful heartbeat,
         # not here at the start. This ensures consecutive errors accumulate.
 
+        # Robust v2 Fix #24: Verify derived state consistency at heartbeat start.
+        # If total_lots doesn't match the sum of source arrays, auto-repair.
+        for _ck_side in ('ce', 'pe'):
+            _ck_state = session.get(_ck_side, {})
+            _ck_expected = (
+                _ck_state.get('original_lots', 0) +
+                sum(f.get('lots', 0) for f in _ck_state.get('adjustment_fills', [])) +
+                sum(f.get('lots', 0) for f in _ck_state.get('frozen_positions', []))
+            )
+            _ck_stored = _ck_state.get('total_lots', 0)
+            if _ck_stored != _ck_expected:
+                log.critical(
+                    f"[{sid}] CONSISTENCY CHECK FAILED: {_ck_side.upper()} "
+                    f"total_lots={_ck_stored} != computed={_ck_expected}. Auto-repairing."
+                )
+                from .mmm_state import recompute_side_lots
+                recompute_side_lots(_ck_state)
+
         # Log heartbeat start
         from .mmm_activity import log_activity
         log_activity('heartbeat_start',
@@ -822,10 +840,34 @@ class MMMMonitor:
 
         # Bug #7 fix: compute FRESH unrealized P&L before safety checks
         # so that check_max_loss uses current prices, not stale values.
+        # Robust v2 Fix #1: P&L is computed AFTER close-at-5 so safety checks
+        # use position state that reflects any closed positions. This ensures
+        # max-loss and trailing-stop operate on consistent data.
         fresh_unrealized = self._engine.compute_unrealized_pnl(
             session, self._make_fetch_fn()
         )
         session['unrealized_pnl'] = fresh_unrealized
+
+        # Robust v2 Fix #2: If >50% of P&L positions failed to fetch, pause
+        if session.get('_pnl_calculation_incomplete'):
+            log.error(
+                f"[{sid}] P&L CALCULATION INCOMPLETE — >50% of positions "
+                f"failed premium fetch. PAUSING session for safety."
+            )
+            emit_safety(
+                sid, 'calculation_incomplete', 'critical',
+                'P&L calculation incomplete: >50% of position premium fetches failed. '
+                'Session paused to prevent trading with unreliable data.',
+                {'fetch_errors': session.get('_pnl_fetch_errors', 0)}
+            )
+            log_activity('safety_block',
+                        f'⛔ P&L calculation incomplete — pausing session',
+                        sid, 'error',
+                        {'fetch_errors': session.get('_pnl_fetch_errors', 0)})
+            self.pause('P&L calculation incomplete — data unreliable')
+            self._emit_heartbeat_data(ce_now, pe_now)
+            _save_session(session)
+            return
 
         # Step 3: Safety checks (§13-14)
         minutes_to_expiry = self._get_minutes_to_expiry()
@@ -1014,9 +1056,27 @@ class MMMMonitor:
                         up_time = datetime.fromisoformat(both_up_at)
                         elapsed = (datetime.utcnow() - up_time).total_seconds()
                         if elapsed >= 30:
+                            # Fix #18: Re-fetch premiums before auto-decision.
+                            # The original ce_now/pe_now are 30+ seconds stale.
+                            try:
+                                fresh_ce, fresh_pe, fresh_ok = await self._fetch_premiums_with_fallback()
+                                if fresh_ok:
+                                    ce_now_decision = fresh_ce
+                                    pe_now_decision = fresh_pe
+                                    log.info(f"[{sid}] Both-sides auto-decision using FRESH premiums: "
+                                             f"CE={fresh_ce:.2f}, PE={fresh_pe:.2f}")
+                                else:
+                                    ce_now_decision = ce_now
+                                    pe_now_decision = pe_now
+                                    log.warning(f"[{sid}] Both-sides re-fetch failed, using stale premiums")
+                            except Exception as e:
+                                ce_now_decision = ce_now
+                                pe_now_decision = pe_now
+                                log.warning(f"[{sid}] Both-sides re-fetch error: {e}, using stale premiums")
+
                             # Auto-decide: hedge whichever side has loss
                             decision = self._auto_decide_both_sides(
-                                session, ce_now, pe_now
+                                session, ce_now_decision, pe_now_decision
                             )
                             log_activity('both_sides_auto_decision',
                                         f'⏱️ Auto-decision after {elapsed:.0f}s: {decision} '
@@ -1044,13 +1104,16 @@ class MMMMonitor:
                             )
                             # Process the chosen adjustment directly
                             # (skip trigger evaluation — it would hit BOTH again)
+                            # Fix #18: Use fresh premiums for the actual adjustment execution
                             if decision == 'adjust_pe':
                                 await self._process_adjustment(
-                                    'ce', 'pe', ce_now, pe_now, ce_now, pe_now
+                                    'ce', 'pe', ce_now_decision, pe_now_decision,
+                                    ce_now_decision, pe_now_decision
                                 )
                             elif decision == 'adjust_ce':
                                 await self._process_adjustment(
-                                    'pe', 'ce', pe_now, ce_now, ce_now, pe_now
+                                    'pe', 'ce', pe_now_decision, ce_now_decision,
+                                    ce_now_decision, pe_now_decision
                                 )
                             # else 'skip' — just resume, no adjustment needed
                         else:
@@ -1084,6 +1147,32 @@ class MMMMonitor:
             return
 
         # Step 6: Evaluate triggers (§7)
+        # Robust v2 Fix #6: Validate trigger_snapshot has active strike key.
+        # If missing (e.g. after restart, adoption, or strike key mismatch),
+        # initialize it with the CURRENT premium to avoid false trigger (baseline=0).
+        for _side_key in ('ce', 'pe'):
+            _side = session.get(_side_key, {})
+            _active_strike = _side.get('active_strike', 0)
+            if _active_strike > 0:
+                from .mmm_constants import strike_key as _sk
+                _strike_key = _sk(_active_strike)
+                _snap = _side.get('trigger_snapshot', {})
+                if _strike_key not in _snap or _snap.get(_strike_key, 0) == 0:
+                    _current_prem = ce_now if _side_key == 'ce' else pe_now
+                    if 'trigger_snapshot' not in _side:
+                        _side['trigger_snapshot'] = {}
+                    _side['trigger_snapshot'][_strike_key] = _current_prem
+                    session[_side_key] = _side
+                    log.warning(
+                        f"[{sid}] Robust v2 Fix #6: Initialized missing trigger_snapshot "
+                        f"for {_side_key.upper()}[{_strike_key}] = {_current_prem:.2f}"
+                    )
+                    log_activity('trigger_stale',
+                                f'⚠️ Trigger snapshot initialized for {_side_key.upper()} '
+                                f'@ {_strike_key} = ${_current_prem:.2f} (was missing/zero)',
+                                sid, 'warning',
+                                {'side': _side_key, 'strike': _strike_key, 'premium': _current_prem})
+
         trigger_result = evaluate_triggers(session, ce_now, pe_now)
         outcome = trigger_result['outcome']
 
@@ -1792,15 +1881,32 @@ class MMMMonitor:
 
         if is_reversal:
             record_reversal(session, session.get('last_aggressor', 'NONE'), aggressor)
+
+            # Robust v2 Fix #7: Reset peak P&L on reversal — new profit phase begins
+            current_total = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0)
+            reset_peak_pnl_on_reversal(session, current_total)
             
             # Analytics: Track reversal event (no trading logic impact)
             analytics = session.setdefault('analytics', {})
             analytics.setdefault('reversal_timestamps', []).append(datetime.utcnow().isoformat())
 
             # First reversal: use adjustment P&L formula
-            loss, adj_pnl = self._engine.calculate_reversal_loss(
+            loss, adj_pnl, _rev_incomplete = self._engine.calculate_reversal_loss(
                 session, aggressor, self._make_fetch_fn()
             )
+
+            # Robust v2 Fix #2: Warn if reversal calculation was incomplete
+            if _rev_incomplete:
+                log.warning(
+                    f"[{sid}] Reversal loss calculation INCOMPLETE — "
+                    f"some premium fetches failed. P&L may be inaccurate."
+                )
+                emit_safety(
+                    sid, 'calculation_incomplete', 'warning',
+                    'Reversal loss calculation incomplete: some premium fetches failed. '
+                    'Hedge quantity may be understated.',
+                    {'type': 'reversal', 'side': aggressor}
+                )
 
             # §9: If adjustments still profitable, skip
             skip, skip_reason = should_skip_reversal_adjustment(session, adj_pnl)
@@ -1864,11 +1970,24 @@ class MMMMonitor:
                 activate_cooldown(session)
         else:
             # Standard or continuation — include frozen position losses
-            loss = self._engine.calculate_standard_loss(
+            loss, _std_incomplete = self._engine.calculate_standard_loss(
                 session, aggressor, premium_now,
                 fetch_premium_fn=self._make_fetch_fn(),
             )
             adj_type = 'standard'
+
+            # Robust v2 Fix #2: Warn if standard loss calculation was incomplete
+            if _std_incomplete:
+                log.warning(
+                    f"[{sid}] Standard loss calculation INCOMPLETE — "
+                    f"some premium fetches failed. Hedge may be understated."
+                )
+                emit_safety(
+                    sid, 'calculation_incomplete', 'warning',
+                    'Standard loss calculation incomplete: some premium fetches failed. '
+                    'Hedge quantity may be understated.',
+                    {'type': 'standard', 'side': aggressor}
+                )
 
         if loss <= 0:
             return
@@ -2424,8 +2543,8 @@ class MMMMonitor:
         pe_active_lots = pe_state.get('active_lots', 0)
 
         # Use trigger snapshot as reference (that's the "covered up to" level)
-        ce_trigger_strike = str(int(ce_state.get('active_strike', 0)))
-        pe_trigger_strike = str(int(pe_state.get('active_strike', 0)))
+        ce_trigger_strike = _strike_key(ce_state.get('active_strike', 0))
+        pe_trigger_strike = _strike_key(pe_state.get('active_strike', 0))
         ce_trigger = ce_state.get('trigger_snapshot', {}).get(ce_trigger_strike, 0)
         pe_trigger = pe_state.get('trigger_snapshot', {}).get(pe_trigger_strike, 0)
 
@@ -3700,10 +3819,10 @@ class MMMMonitor:
         """Emit heartbeat WebSocket event with premium_map for live prices."""
         session = self.session
         ce_trigger = session.get('ce', {}).get('trigger_snapshot', {}).get(
-            str(int(session.get('ce', {}).get('active_strike', 0))), 0
+            _strike_key(session.get('ce', {}).get('active_strike', 0)), 0
         )
         pe_trigger = session.get('pe', {}).get('trigger_snapshot', {}).get(
-            str(int(session.get('pe', {}).get('active_strike', 0))), 0
+            _strike_key(session.get('pe', {}).get('active_strike', 0)), 0
         )
 
         realized = session.get('realized_pnl', 0)

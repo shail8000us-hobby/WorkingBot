@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from copy import deepcopy
 
+from .mmm_constants import strike_key as strike_key_fn
+
 log = logging.getLogger('mmm_state')
 
 
@@ -282,7 +284,8 @@ def create_session(
                     existing = storage.get_session(candidate_id)
             except Exception as e:
                 log.warning(f"Collision check failed: {e}, using uuid fallback")
-                candidate_id = f"mmm{expiry_str}-{uuid.uuid4().hex[:4]}"
+                # Fix #20: Use 8 hex chars (4B combinations) instead of 4 (65K) to prevent collision
+                candidate_id = f"mmm{expiry_str}-{uuid.uuid4().hex[:8]}"
             
             session_id = candidate_id
         else:
@@ -457,7 +460,7 @@ def initialize_side_from_entry(
         original_premium=premium,
         original_strike=strike,
     )
-    session[side_key]['trigger_snapshot'] = {str(int(strike)): premium}
+    session[side_key]['trigger_snapshot'] = {strike_key_fn(strike): premium}
     session[side_key] = recompute_side_lots(session[side_key])
 
     return session

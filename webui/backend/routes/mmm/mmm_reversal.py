@@ -39,7 +39,9 @@ def detect_reversal(session: Dict, current_aggressor: str) -> bool:
     last = session.get('last_aggressor', 'NONE')
 
     # First-ever adjustment is NOT a reversal
-    if last is None or last == 'NONE':
+    # Robust v2 Fix #10: Use .upper() to handle case-insensitive comparison
+    # Prevents false positive reversal if last_aggressor stored as lowercase 'none'
+    if last is None or (isinstance(last, str) and last.upper() == 'NONE'):
         return False
 
     # Same aggressor = continuation, not reversal

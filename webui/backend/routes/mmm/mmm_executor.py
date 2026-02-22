@@ -280,7 +280,22 @@ class MMMExecutor:
                     )
                 
                 # API returns prices as STRINGS — must cast to float
-                fill_price = float(raw_fill)
+                # Robust v2 Fix #22: Guard against NaN, Inf, and other non-numeric strings
+                import math as _math
+                try:
+                    fill_price = float(raw_fill)
+                    if _math.isnan(fill_price) or _math.isinf(fill_price):
+                        raise ValueError(f"Invalid numeric value: {raw_fill}")
+                except (ValueError, TypeError) as _parse_err:
+                    log.error(
+                        f"❌ Order {order_id} has unparseable fill_price: {raw_fill!r} ({_parse_err})"
+                    )
+                    return self._failure(
+                        f"Cannot parse fill_price: {raw_fill}",
+                        symbol, side, size,
+                        order_id=order_id, attempts=attempts,
+                        total_time=round(elapsed, 2),
+                    )
                 
                 # Sanity check: fill price should be reasonable
                 if fill_price <= 0 or fill_price > 1000000:
@@ -294,9 +309,45 @@ class MMMExecutor:
                 
                 raw_unfilled = final_order_data.get('unfilled_size')
                 if raw_unfilled is not None:
-                    filled_size = size - int(raw_unfilled)
+                    try:
+                        unfilled_int = int(raw_unfilled)
+                    except (ValueError, TypeError):
+                        log.error(
+                            f"❌ Order {order_id} has unparseable unfilled_size: {raw_unfilled!r}"
+                        )
+                        return self._failure(
+                            f"Cannot parse unfilled_size: {raw_unfilled}",
+                            symbol, side, size,
+                            order_id=order_id, attempts=attempts,
+                            total_time=round(elapsed, 2),
+                        )
+                    filled_size = size - unfilled_int
+                    if filled_size <= 0:
+                        log.error(
+                            f"❌ Order {order_id} marked filled but filled_size={filled_size} "
+                            f"(size={size}, unfilled={unfilled_int})"
+                        )
+                        return self._failure(
+                            f"Order filled but computed filled_size={filled_size}",
+                            symbol, side, size,
+                            order_id=order_id, attempts=attempts,
+                            total_time=round(elapsed, 2),
+                        )
                 else:
-                    filled_size = size
+                    # Robust v2 Fix #3: Missing unfilled_size means we cannot
+                    # verify fill quantity. Log error and treat as failure to
+                    # prevent phantom positions corrupting P&L calculations.
+                    log.error(
+                        f"❌ Order {order_id} filled but unfilled_size field MISSING "
+                        f"from response. Cannot verify fill quantity. "
+                        f"Order data keys: {list(final_order_data.keys())}"
+                    )
+                    return self._failure(
+                        f"Order filled but unfilled_size missing — cannot verify fill quantity",
+                        symbol, side, size,
+                        order_id=order_id, attempts=attempts,
+                        total_time=round(elapsed, 2),
+                    )
 
                 log.info(
                     f"✅ Order {order_id} FILLED at ${fill_price:.2f} "

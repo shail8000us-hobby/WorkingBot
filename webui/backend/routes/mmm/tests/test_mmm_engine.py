@@ -94,15 +94,16 @@ class TestStandardLoss:
         session = _make_session()
 
         # Premium went from 100 to 150, with 10 lots
-        loss = engine.calculate_standard_loss(session, 'ce', 150.0)
+        loss, incomplete = engine.calculate_standard_loss(session, 'ce', 150.0)
         assert loss == (150.0 - 100.0) * 10  # 500
+        assert incomplete is False
 
     def test_no_loss_when_premium_below_trigger(self):
         from webui.backend.routes.mmm.mmm_engine import MMMEngine
         engine = MMMEngine()
         session = _make_session()
 
-        loss = engine.calculate_standard_loss(session, 'ce', 80.0)
+        loss, incomplete = engine.calculate_standard_loss(session, 'ce', 80.0)
         # Even negative, it's computed; the trigger check happens elsewhere
         assert loss == (80.0 - 100.0) * 10  # -200
 
@@ -112,7 +113,7 @@ class TestStandardLoss:
         session = _make_session()
         session['ce']['active_lots'] = 0
 
-        loss = engine.calculate_standard_loss(session, 'ce', 150.0)
+        loss, incomplete = engine.calculate_standard_loss(session, 'ce', 150.0)
         assert loss == 0
 
 

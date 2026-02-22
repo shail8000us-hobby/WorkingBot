@@ -93,10 +93,10 @@ class MMMSafety:
                     'type': 'position_cap',
                     'level': 'alert',
                     'message': (
-                        f"{side_key.upper()} position cap reached: "
-                        f"{total}/{max_lots} lots"
+                        f"{side_key.upper()} POSITION CAP REACHED: "
+                        f"{total}/{max_lots} lots — ADJUSTMENTS BLOCKED"
                     ),
-                    'action': 'warn',
+                    'action': 'stop_adjustments',
                     'details': {
                         'side': side_key,
                         'lots': total,
@@ -571,9 +571,31 @@ class MMMSafety:
 
 
 def update_peak_pnl(session: Dict, total_pnl: float):
-    """Track high-water mark for trailing stop."""
-    if total_pnl > session.get('peak_pnl', 0):
+    """Track high-water mark for trailing stop.
+
+    Robust v2 Fix #7: Peak is now a 'decaying peak' — on each update, if
+    the current P&L is below peak, let peak decay toward current by 10%.
+    This prevents stale peaks from causing perpetual trailing stop alerts
+    after close-at-5 reduces the position profile.
+    """
+    current_peak = session.get('peak_pnl', 0)
+    if total_pnl > current_peak:
         session['peak_pnl'] = total_pnl
+    elif current_peak > 0 and total_pnl < current_peak:
+        # Decay peak toward current by 10% per heartbeat
+        session['peak_pnl'] = current_peak * 0.9 + total_pnl * 0.1
+
+
+def reset_peak_pnl_on_reversal(session: Dict, total_pnl: float):
+    """
+    Robust v2 Fix #7: Reset peak P&L when a reversal is detected.
+    A reversal starts a new profit phase — the old peak is irrelevant.
+    """
+    log.info(
+        f"Resetting peak_pnl on reversal: "
+        f"old={session.get('peak_pnl', 0):.2f}, new baseline={total_pnl:.2f}"
+    )
+    session['peak_pnl'] = max(total_pnl, 0)
 
 
 def should_block_adjustment(safety_events: List[Dict]) -> bool:

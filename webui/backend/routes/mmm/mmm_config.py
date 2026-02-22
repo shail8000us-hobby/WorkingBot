@@ -134,7 +134,72 @@ def validate_params(params: Dict[str, Any], hot_only: bool = False) -> Tuple[Dic
             errors.append(f"Parameter '{key}': {validated[key]} above maximum {rule['max']}")
             continue
 
+    # ── Fix #15: Cross-parameter interdependency validation ──
+    # These rules catch invalid combinations that pass individual range checks.
+    _interdependency_checks(validated, errors)
+
     return validated, errors
+
+
+def _interdependency_checks(validated: Dict[str, Any], errors: list):
+    """
+    Validate cross-parameter relationships.
+    Fix #15 from MMM_robustv2 audit: prevent degenerate parameter combinations
+    that cause infinite loops, dead triggers, or inconsistent safety tiers.
+    """
+    # wind_down_close_threshold must be >= close_at_threshold
+    wd_close = validated.get('wind_down_close_threshold')
+    close_at = validated.get('close_at_threshold')
+    if wd_close is not None and close_at is not None and wd_close < close_at:
+        errors.append(
+            f"wind_down_close_threshold ({wd_close}) must be >= close_at_threshold ({close_at}): "
+            "wind-down should be more aggressive than normal close"
+        )
+
+    # Margin tier ordering: green < yellow < orange < red < critical
+    margin_keys = ['margin_green_pct', 'margin_yellow_pct', 'margin_orange_pct',
+                   'margin_red_pct', 'margin_critical_pct']
+    margin_vals = [(k, validated.get(k)) for k in margin_keys]
+    margin_vals = [(k, v) for k, v in margin_vals if v is not None]
+    for i in range(len(margin_vals) - 1):
+        k1, v1 = margin_vals[i]
+        k2, v2 = margin_vals[i + 1]
+        if v1 >= v2:
+            errors.append(
+                f"Margin tier ordering violated: {k1} ({v1}) must be < {k2} ({v2})"
+            )
+
+    # max_adjustments should be >= whipsaw_limit for whipsaw detection to be meaningful
+    max_adj = validated.get('max_adjustments')
+    whipsaw = validated.get('whipsaw_limit')
+    if max_adj is not None and whipsaw is not None and max_adj < whipsaw:
+        errors.append(
+            f"max_adjustments ({max_adj}) < whipsaw_limit ({whipsaw}): "
+            "max-adjustments will be reached before whipsaw can detect alternation"
+        )
+
+    # auto_close_mins should be <= stop_adjustment_mins (stop adjusting before closing)
+    auto_close = validated.get('auto_close_mins')
+    stop_adj = validated.get('stop_adjustment_mins')
+    if auto_close is not None and stop_adj is not None:
+        if auto_close > 0 and stop_adj > 0 and auto_close > stop_adj:
+            errors.append(
+                f"auto_close_mins ({auto_close}) > stop_adjustment_mins ({stop_adj}): "
+                "session would close before adjustment stop takes effect"
+            )
+
+    # gamma limits: soft < hard < emergency
+    gamma_soft = validated.get('gamma_soft_limit')
+    gamma_hard = validated.get('gamma_hard_limit')
+    gamma_emrg = validated.get('gamma_emergency_limit')
+    if gamma_soft is not None and gamma_hard is not None and gamma_soft >= gamma_hard:
+        errors.append(
+            f"gamma_soft_limit ({gamma_soft}) must be < gamma_hard_limit ({gamma_hard})"
+        )
+    if gamma_hard is not None and gamma_emrg is not None and gamma_hard >= gamma_emrg:
+        errors.append(
+            f"gamma_hard_limit ({gamma_hard}) must be < gamma_emergency_limit ({gamma_emrg})"
+        )
 
 
 def get_hot_reload_params() -> Set[str]:

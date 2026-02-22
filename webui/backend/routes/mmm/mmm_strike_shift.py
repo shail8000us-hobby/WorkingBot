@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 
 from .mmm_state import recompute_side_lots
+from .mmm_constants import strike_key as _strike_key
 
 log = logging.getLogger('mmm_strike_shift')
 
@@ -325,7 +326,7 @@ def activate_new_strike(
     })
 
     # Set trigger snapshot at the new strike
-    side_state.setdefault('trigger_snapshot', {})[str(int(new_strike))] = fill_premium
+    side_state.setdefault('trigger_snapshot', {})[_strike_key(new_strike)] = fill_premium
 
     recompute_side_lots(side_state)
     session[side] = side_state

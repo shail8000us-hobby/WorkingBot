@@ -20,7 +20,7 @@ from datetime import datetime
 
 from .mmm_state import recompute_side_lots
 from .mmm_trigger import update_trigger_snapshots
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, strike_key
 
 log = logging.getLogger('mmm_engine')
 
@@ -65,7 +65,7 @@ class MMMEngine:
         aggressor_side: str,
         premium_now: float,
         fetch_premium_fn=None,
-    ) -> float:
+    ) -> Tuple[float, bool]:
         """
         §5.2 Case A — Updated v2: Total loss across ALL open positions.
 
@@ -82,12 +82,17 @@ class MMMEngine:
                               (needed to price shifted positions at old strikes)
 
         Returns:
-            Total loss amount (positive value) across all open positions
+            Tuple of (total_loss, calculation_incomplete):
+            - total_loss: positive float, total loss across all open positions
+            - calculation_incomplete: True if any premium fetch failed (Robust v2 Fix #2)
         """
         side_state = session.get(aggressor_side, {})
-        active_strike = str(int(side_state.get('active_strike', 0)))
+        active_strike = strike_key(side_state.get('active_strike', 0))
         trigger = side_state.get('trigger_snapshot', {}).get(active_strike, 0)
         active_lots = side_state.get('active_lots', 0)
+        # Robust v2 Fix #2: Track fetch failures for calculation_incomplete flag
+        _fetch_errors = 0
+        _total_positions = 0
 
         # 1. Active strike loss (trigger-based)
         active_loss = (premium_now - trigger) * active_lots * LOT_SIZE_BTC
@@ -114,12 +119,14 @@ class MMMEngine:
                 if p_lots <= 0 or p_strike <= 0:
                     continue
 
+                _total_positions += 1
                 try:
                     p_current = fetch_premium_fn(p_strike, option_type)
                 except Exception as e:
+                    _fetch_errors += 1
                     log.warning(
                         f"Failed to fetch shifted position premium "
-                        f"@ {p_strike}: {e}"
+                        f"@ {p_strike}: {e} [Robust v2 Fix #2: tracked as incomplete]"
                     )
                     continue
 
@@ -151,7 +158,17 @@ class MMMEngine:
                 f"= ${total_loss:.4f}"
             )
 
-        return max(total_loss, 0)
+        # Robust v2 Fix #2: Flag calculation as incomplete if any fetch failed
+        calculation_incomplete = _fetch_errors > 0
+        if calculation_incomplete:
+            log.warning(
+                f"CALCULATION INCOMPLETE: {_fetch_errors}/{_total_positions} "
+                f"frozen position premium fetches failed. "
+                f"Loss may be understated by missing positions."
+            )
+            session['_fetch_error_count'] = session.get('_fetch_error_count', 0) + _fetch_errors
+
+        return max(total_loss, 0), calculation_incomplete
 
     # =========================================================================
     # §5.2 Case B + §9: First-Reversal P&L
@@ -162,7 +179,7 @@ class MMMEngine:
         session: Dict,
         aggressor_side: str,
         fetch_premium_fn,
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, bool]:
         """
         §5.2 Case B / §9: Calculate actual P&L of ALL adjustment positions on
         the aggressor side. If net profitable → DO NOTHING. If underwater →
@@ -174,12 +191,16 @@ class MMMEngine:
             fetch_premium_fn: callable(strike, option_type) → current_premium
 
         Returns:
-            (loss_to_cover, adjustment_pnl)
+            (loss_to_cover, adjustment_pnl, calculation_incomplete)
             loss_to_cover = 0 if adjustments still profitable
             adjustment_pnl = actual computed P&L of adjustment fills
+            calculation_incomplete = True if any premium fetch failed (Robust v2 Fix #2)
         """
         side_state = session.get(aggressor_side, {})
         option_type = 'call' if aggressor_side == 'ce' else 'put'
+        # Robust v2 Fix #2: Track fetch failures
+        _fetch_errors = 0
+        _total_positions = 0
 
         adjustment_pnl = 0.0
 
@@ -188,6 +209,7 @@ class MMMEngine:
             strike = fill.get('strike', side_state.get('active_strike', 0))
             entry_prem = fill.get('premium', 0)
             lots = fill.get('lots', 0)
+            _total_positions += 1
 
             try:
                 current = fetch_premium_fn(strike, option_type)
@@ -200,7 +222,8 @@ class MMMEngine:
                 fill_pnl = (entry_prem - current) * lots * LOT_SIZE_BTC
                 adjustment_pnl += fill_pnl
             except Exception as e:
-                log.warning(f"Failed to fetch premium for {strike}: {e}")
+                _fetch_errors += 1
+                log.warning(f"Failed to fetch premium for {strike}: {e} [Robust v2 Fix #2: tracked]")
 
         # Check frozen ADJUSTMENT positions (exclude original entry positions).
         # §9: "The original CE and PE naturally offset each other. We only
@@ -215,6 +238,7 @@ class MMMEngine:
             strike = frozen.get('strike', 0)
             entry_prem = frozen.get('entry_premium', 0)
             lots = frozen.get('lots', 0)
+            _total_positions += 1
 
             try:
                 current = fetch_premium_fn(strike, option_type)
@@ -226,18 +250,27 @@ class MMMEngine:
                     f"current={current:.2f}, lots={lots}, pnl={fill_pnl:.4f}"
                 )
             except Exception as e:
-                log.warning(f"Failed to fetch premium for frozen {strike}: {e}")
+                _fetch_errors += 1
+                log.warning(f"Failed to fetch premium for frozen {strike}: {e} [Robust v2 Fix #2: tracked]")
 
         log.info(
             f"Reversal P&L for {aggressor_side.upper()} adjustments: "
             f"{adjustment_pnl:.2f}"
         )
 
+        # Robust v2 Fix #2: Flag calculation as incomplete
+        calculation_incomplete = _fetch_errors > 0
+        if calculation_incomplete:
+            log.warning(
+                f"REVERSAL CALCULATION INCOMPLETE: {_fetch_errors}/{_total_positions} "
+                f"premium fetches failed. Reversal P&L may be inaccurate."
+            )
+
         if adjustment_pnl >= 0:
             # Adjustments still in profit → DO NOTHING
-            return 0.0, adjustment_pnl
+            return 0.0, adjustment_pnl, calculation_incomplete
         else:
-            return abs(adjustment_pnl), adjustment_pnl
+            return abs(adjustment_pnl), adjustment_pnl, calculation_incomplete
 
     # =========================================================================
     # §5.3-5.4: Determine strike and lots
@@ -528,8 +561,13 @@ class MMMEngine:
 
         For sold options: P&L = (entry_premium - current_premium) × lots
         (Positive = option decayed = profit for seller)
+
+        Robust v2 Fix #2: Tracks fetch failures and stores _pnl_fetch_errors
+        in session state. If >50% of positions fail, sets _pnl_calculation_incomplete.
         """
         total_unrealized = 0.0
+        _fetch_errors = 0
+        _total_positions = 0
 
         for side_key in ['ce', 'pe']:
             side_state = session.get(side_key, {})
@@ -541,10 +579,12 @@ class MMMEngine:
             active_strike = side_state.get('active_strike', 0)
 
             if orig_lots > 0 and active_strike > 0:
+                _total_positions += 1
                 try:
                     current = fetch_premium_fn(active_strike, option_type)
                     total_unrealized += (orig_prem - current) * orig_lots * LOT_SIZE_BTC
                 except Exception as e:
+                    _fetch_errors += 1
                     log.warning(f"Failed to fetch {side_key} premium at {active_strike}: {e}")
 
             # Adjustment fills at active strike
@@ -553,10 +593,12 @@ class MMMEngine:
                 prem = fill.get('premium', 0)
                 strike = fill.get('strike', active_strike)
                 if lots > 0:
+                    _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
                         total_unrealized += (prem - current) * lots * LOT_SIZE_BTC
                     except Exception as e:
+                        _fetch_errors += 1
                         log.warning(f"Failed to fetch {side_key} adj premium at {strike}: {e}")
 
             # Frozen positions
@@ -565,11 +607,24 @@ class MMMEngine:
                 prem = frozen.get('entry_premium', 0)
                 strike = frozen.get('strike', 0)
                 if lots > 0 and strike > 0:
+                    _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
                         total_unrealized += (prem - current) * lots * LOT_SIZE_BTC
                     except Exception as e:
+                        _fetch_errors += 1
                         log.warning(f"Failed to fetch {side_key} frozen premium at {strike}: {e}")
+
+        # Robust v2 Fix #2: Track incomplete calculations in session state
+        session['_pnl_fetch_errors'] = _fetch_errors
+        if _total_positions > 0 and _fetch_errors > (_total_positions * 0.5):
+            session['_pnl_calculation_incomplete'] = True
+            log.error(
+                f"P&L CALCULATION INCOMPLETE: {_fetch_errors}/{_total_positions} "
+                f"position premium fetches failed (>50%). P&L is unreliable."
+            )
+        else:
+            session.pop('_pnl_calculation_incomplete', None)
 
         return total_unrealized
 

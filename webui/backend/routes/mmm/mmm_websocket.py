@@ -16,12 +16,30 @@ log = logging.getLogger('mmm_websocket')
 # SocketIO instance — set during init
 _socketio = None
 
+# Fix #17: Track emission failures for staleness detection
+_consecutive_failures = 0
+_last_successful_emit = None
+_FAILURE_THRESHOLD = 10  # After N consecutive failures, flag as stale
+
 
 def init_websocket(socketio):
     """Initialize WebSocket with the Flask-SocketIO instance."""
     global _socketio
     _socketio = socketio
     log.info("MMM WebSocket initialized")
+
+
+def get_ws_health() -> Dict:
+    """
+    Return WebSocket health metrics. Fix #17.
+    Called by safety checks or API to detect UI staleness.
+    """
+    return {
+        'consecutive_failures': _consecutive_failures,
+        'last_successful_emit': _last_successful_emit.isoformat() if _last_successful_emit else None,
+        'is_stale': _consecutive_failures >= _FAILURE_THRESHOLD,
+        'socketio_initialized': _socketio is not None,
+    }
 
 
 def _emit(event: str, data: Dict[str, Any]):
@@ -31,8 +49,14 @@ def _emit(event: str, data: Dict[str, Any]):
     Args:
         event: Event name (prefixed with 'mmm_')
         data: Event payload
+
+    Fix #17: Tracks consecutive failures. After _FAILURE_THRESHOLD consecutive
+    failures, get_ws_health() reports is_stale=True so callers can warn user.
     """
+    global _consecutive_failures, _last_successful_emit
+
     if _socketio is None:
+        _consecutive_failures += 1
         log.debug(f"WebSocket not initialized, skipping emit: {event}")
         if 'price_tick' in event:
             import sys
@@ -42,8 +66,16 @@ def _emit(event: str, data: Dict[str, Any]):
     try:
         data['timestamp'] = datetime.utcnow().isoformat()
         _socketio.emit(event, data, namespace='/')
+        _consecutive_failures = 0
+        _last_successful_emit = datetime.utcnow()
     except Exception as e:
-        log.error(f"Failed to emit {event}: {e}")
+        _consecutive_failures += 1
+        log.error(f"Failed to emit {event}: {e} (consecutive_failures={_consecutive_failures})")
+        if _consecutive_failures == _FAILURE_THRESHOLD:
+            log.critical(
+                f"WebSocket stale! {_FAILURE_THRESHOLD} consecutive emission failures. "
+                "UI may be out of sync with algo state."
+            )
         if 'price_tick' in event:
             import sys
             print(f"[MMM WS] Failed to emit {event}: {e}", flush=True, file=sys.stderr)

@@ -21,6 +21,8 @@ Updated: February 17, 2026 — Converted min_trigger_move from absolute to perce
 import logging
 from typing import Dict, Any, Tuple, Optional
 
+from .mmm_constants import strike_key
+
 log = logging.getLogger('mmm_trigger')
 
 # Minimum trigger snapshot value for percentage calculation.
@@ -80,8 +82,9 @@ def evaluate_triggers(
     pe_side = session.get('pe', {})
 
     # Get trigger snapshot at the active strike
-    ce_active_strike = str(int(ce_side.get('active_strike', 0)))
-    pe_active_strike = str(int(pe_side.get('active_strike', 0)))
+    # Robust v2 Fix #13: Use canonical strike_key() for consistent hashing
+    ce_active_strike = strike_key(ce_side.get('active_strike', 0))
+    pe_active_strike = strike_key(pe_side.get('active_strike', 0))
 
     ce_trigger = ce_side.get('trigger_snapshot', {}).get(ce_active_strike, 0)
     pe_trigger = pe_side.get('trigger_snapshot', {}).get(pe_active_strike, 0)
@@ -158,8 +161,8 @@ def update_trigger_snapshots(
     ce_side = session.get('ce', {})
     pe_side = session.get('pe', {})
 
-    ce_active = str(int(ce_side.get('active_strike', 0)))
-    pe_active = str(int(pe_side.get('active_strike', 0)))
+    ce_active = strike_key(ce_side.get('active_strike', 0))
+    pe_active = strike_key(pe_side.get('active_strike', 0))
 
     # Update snapshots at active strikes
     if 'trigger_snapshot' not in ce_side:
@@ -182,7 +185,7 @@ def update_trigger_snapshots(
                 f_strike = frozen_pos.get('strike', 0)
                 if f_strike <= 0 or frozen_pos.get('lots', 0) <= 0:
                     continue
-                f_strike_key = str(int(f_strike))
+                f_strike_key = strike_key(f_strike)
                 try:
                     f_current = fetch_premium_fn(f_strike, option_type)
                     old_snap = side_state['trigger_snapshot'].get(f_strike_key)
@@ -258,7 +261,9 @@ def apply_theta_acceleration(
 
     return {
         'accelerated': True,
-        'effective_min_trigger_move': base_trigger_move * 2,
+        # Robust v2 Fix #21: Cap effective min_trigger_move at 80% to prevent
+        # triggers from becoming unfireable near expiry
+        'effective_min_trigger_move': min(base_trigger_move * 2, 80.0),
         'effective_interval': effective_interval,
     }
 
