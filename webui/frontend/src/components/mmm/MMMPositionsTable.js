@@ -177,7 +177,14 @@ export function buildPositionRows(session, heartbeat) {
 
       // Build tooltip info for frozen explanation
       const frozenAt = frozen.frozen_at
-        ? new Date(frozen.frozen_at + 'Z').toLocaleString()
+        ? (() => {
+            try {
+              const ts = frozen.frozen_at;
+              const d = (ts.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(ts))
+                ? new Date(ts) : new Date(ts + 'Z');
+              return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleString();
+            } catch { return 'Unknown'; }
+          })()
         : 'Unknown';
       const frozenType = frozen.type === 'original' ? 'Original position' : 'Adjustment position';
       const frozenReason = `Strike Shift: Position moved from strike ${Number(frozenStrike).toLocaleString()} to a closer strike.\n`

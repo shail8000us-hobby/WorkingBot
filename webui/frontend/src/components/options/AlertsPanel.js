@@ -369,13 +369,18 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                                         <TableCell>
                                             {alert.triggered_at ? (
                                                 <Typography variant="body2" color="warning.main" fontWeight="medium">
-                                                    {new Date(alert.triggered_at + 'Z').toLocaleString(undefined, {
-                                                        month: 'short',
-                                                        day: 'numeric',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                        hour12: true
-                                                    })}
+                                                    {(() => {
+                                                        try {
+                                                            const ts = alert.triggered_at;
+                                                            const d = (ts.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(ts))
+                                                                ? new Date(ts) : new Date(ts + 'Z');
+                                                            if (isNaN(d.getTime())) return '-';
+                                                            return d.toLocaleString(undefined, {
+                                                                month: 'short', day: 'numeric',
+                                                                hour: '2-digit', minute: '2-digit', hour12: true
+                                                            });
+                                                        } catch { return '-'; }
+                                                    })()}
                                                 </Typography>
                                             ) : (
                                                 <Typography variant="body2" color="text.disabled">-</Typography>

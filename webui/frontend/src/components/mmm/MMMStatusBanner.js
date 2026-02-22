@@ -96,12 +96,23 @@ const STATUS_CONTEXT = {
 };
 
 /**
- * Ensure timestamp is parsed as UTC (backend stores UTC without 'Z' suffix)
+ * Ensure timestamp is parsed as UTC.
+ * Handles both naive UTC strings and timezone-aware (+00:00 / Z) from Fix #14.
  */
 function parseUTC(timestamp) {
   if (!timestamp) return null;
-  const ts = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
-  return new Date(ts);
+  try {
+    // Already has timezone info (+00:00, Z)? Parse directly.
+    if (timestamp.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(timestamp)) {
+      const d = new Date(timestamp);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    // Naive UTC — append Z
+    const d = new Date(timestamp + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
 }
 
 function formatElapsed(entryTime) {
@@ -149,7 +160,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
         ...baseCtx,
         short: session._paused_reason,
         detail: session._paused_resume_at
-          ? `${session._paused_reason}. Will auto-resume at ${new Date(session._paused_resume_at + 'Z').toLocaleTimeString()}.`
+          ? `${session._paused_reason}. Will auto-resume at ${(parseUTC(session._paused_resume_at) || new Date()).toLocaleTimeString()}.`
           : baseCtx.detail,
       };
     }
@@ -457,7 +468,7 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
               : 'Heartbeat monitoring is paused.'}{' '}
             {session._paused_resume_at
               ? (() => {
-                  const resumeAt = new Date(session._paused_resume_at + 'Z');
+                  const resumeAt = parseUTC(session._paused_resume_at) || new Date();
                   const remaining = Math.max(0, Math.round((resumeAt - now) / 1000));
                   return remaining > 0
                     ? `Auto-resume in ${remaining > 60 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : `${remaining}s`}.`

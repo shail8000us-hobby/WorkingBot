@@ -7,6 +7,29 @@
  */
 
 /**
+ * Safely parse a UTC timestamp string to a Date object.
+ * Handles both naive UTC (no suffix) and timezone-aware ('+00:00' or 'Z').
+ * Returns null for invalid/empty timestamps.
+ * @param {string} ts
+ * @returns {Date|null}
+ */
+export function parseUTC(ts) {
+  if (!ts) return null;
+  try {
+    // If already has timezone info (+00:00, Z, etc.), parse directly
+    if (ts.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(ts)) {
+      const d = new Date(ts);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    // Naive UTC string — append Z
+    const d = new Date(ts + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Format a dollar amount with sign.
  * @param {number} amount
  * @param {number} decimals

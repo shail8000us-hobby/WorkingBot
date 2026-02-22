@@ -82,7 +82,16 @@ const getSeverityConfig = (severity) =>
 function timeAgo(timestamp) {
   if (!timestamp) return '';
   const now = new Date();
-  const then = new Date(timestamp + 'Z'); // UTC
+  // Handle both naive UTC (no suffix) and timezone-aware (+00:00 / Z)
+  let then;
+  try {
+    if (timestamp.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(timestamp)) {
+      then = new Date(timestamp);
+    } else {
+      then = new Date(timestamp + 'Z');
+    }
+    if (isNaN(then.getTime())) return '';
+  } catch { return ''; }
   const diffMs = now - then;
   const diffSec = Math.floor(diffMs / 1000);
 
@@ -161,14 +170,18 @@ const ActivityItem = React.memo(({ activity }) => {
           <Tooltip
             title={
               activity.timestamp
-                ? new Date(activity.timestamp + 'Z').toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                  hour12: true,
-                })
+                ? (() => {
+                    try {
+                      const ts = activity.timestamp;
+                      const d = (ts.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(ts))
+                        ? new Date(ts) : new Date(ts + 'Z');
+                      if (isNaN(d.getTime())) return '';
+                      return d.toLocaleString('en-US', {
+                        month: 'short', day: 'numeric', hour: '2-digit',
+                        minute: '2-digit', second: '2-digit', hour12: true,
+                      });
+                    } catch { return ''; }
+                  })()
                 : ''
             }
             placement="top"
@@ -279,8 +292,10 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
     return activities.filter((a) => {
       if (!a.timestamp) return true; // Keep if no timestamp
       try {
-        const activityTime = new Date(a.timestamp + 'Z'); // UTC
-        return activityTime > thirtyMinutesAgo;
+        const ts = a.timestamp;
+        const activityTime = (ts.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(ts))
+          ? new Date(ts) : new Date(ts + 'Z');
+        return !isNaN(activityTime.getTime()) && activityTime > thirtyMinutesAgo;
       } catch {
         return true; // Keep if parse fails
       }

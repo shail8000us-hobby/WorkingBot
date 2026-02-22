@@ -135,8 +135,10 @@ const StatusChip = ({ status }) => {
 const computeExpiryInfo = (expiryTimeISO) => {
   if (!expiryTimeISO) return null;
   try {
-    // expiry_time is naive UTC ISO string like '2026-02-17T12:00:00'
-    const expMs = new Date(expiryTimeISO + 'Z').getTime();
+    // expiry_time may be naive UTC or timezone-aware (Fix #14)
+    const expStr = expiryTimeISO.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(expiryTimeISO)
+      ? expiryTimeISO : expiryTimeISO + 'Z';
+    const expMs = new Date(expStr).getTime();
     const nowMs = Date.now();
     const diffMs = expMs - nowMs;
 
