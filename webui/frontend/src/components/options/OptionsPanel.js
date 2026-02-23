@@ -76,6 +76,8 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   TuneRounded as AdjustIcon,
+  HelpOutline as HelpOutlineIcon,
+  KeyboardArrowDown as KeyboardArrowDownIcon,
 } from '@mui/icons-material';
 import {
   DndContext,
@@ -174,6 +176,33 @@ const OptionsPanel = () => {
       return saved ? JSON.parse(saved) : false;
     } catch {
       return false;
+    }
+  });
+  // Phase 2: Secondary toolbar visibility (persisted)
+  const [secondaryToolbarOpen, setSecondaryToolbarOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_secondary_toolbar_open');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+  // Phase 2: Scaling strategy section collapsed (persisted)
+  const [scalingStrategyCollapsed, setScalingStrategyCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_scaling_strategy_collapsed');
+      return saved ? JSON.parse(saved) : true; // default: collapsed
+    } catch {
+      return true;
+    }
+  });
+  // Phase 2: Expiry max loss section collapsed (persisted)
+  const [expiryMaxLossCollapsed, setExpiryMaxLossCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('options_expiry_maxloss_collapsed');
+      return saved ? JSON.parse(saved) : true; // default: collapsed
+    } catch {
+      return true;
     }
   });
   // Focus mode: hidden positions (persisted)
@@ -3568,9 +3597,9 @@ const OptionsPanel = () => {
       
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-          {/* Header */}
+          {/* ═══ Phase 2: Primary Header Bar ═══ */}
           <Box
-            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="subtitle1" fontWeight="600" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -3588,72 +3617,151 @@ const OptionsPanel = () => {
               )}
 
               <Chip label={`${positions.length} positions`} size="small" variant="outlined" />
-              
-              {/* Custom order active indicator - prominent visual feedback */}
-              {customOrder.length > 0 && (
-                <Chip 
-                  icon={<DragIcon />}
-                  label="Custom Order Active"
-                  size="small"
-                  color="primary"
-                  variant="filled"
-                  sx={{ fontWeight: 'bold' }}
-                />
-              )}
-              
-              {/* Reset custom order button */}
-              {customOrder.length > 0 && (
-                <Tooltip title="Reset to default sort order (by expiry)">
-                  <Button size="small" color="secondary" variant="outlined" onClick={resetOrder}>
-                    Reset Order
-                  </Button>
-                </Tooltip>
-              )}
-              {/* Show hidden positions button */}
-              {hiddenPositions.length > 0 && (
-                <Tooltip title="Show all hidden positions">
-                  <Button size="small" color="warning" variant="outlined" onClick={() => setHiddenPositions([])}>
-                    Show {hiddenPositions.length} Hidden
-                  </Button>
-                </Tooltip>
-              )}
-              {/* Show count of selected positions for payoff */}
-              {selectedPositionsForPayoff.length > 0 && (
-                <Chip
-                  size="small"
-                  label={`${selectedPositionsForPayoff.length} Selected for Payoff`}
-                  color="primary"
-                  variant="outlined"
-                />
-              )}
-              {/* Polling interval control */}
-              <Tooltip title="Change price polling interval">
-                <Button
-                  size="small"
-                  variant={pollInterval === 1000 ? 'contained' : 'outlined'}
-                  color={pollInterval === 1000 ? 'primary' : 'inherit'}
-                  onClick={() => setPollInterval(pollInterval === 5000 ? 1000 : 5000)}
-                  sx={{ ml: 1 }}
-                >
-                  Poll: {pollInterval / 1000}s
-                </Button>
-              </Tooltip>
 
-              {/* Phase 4: Turbo Mode Toggle */}
+              {/* Turbo Mode Toggle — stays in primary bar for fast access */}
               <Tooltip title={turboMode ? "Exit Turbo Mode - Show all features" : "Turbo Mode - Ultra-fast expiry day trading (minimal UI, keyboard shortcuts)"}>
                 <Button
                   size="small"
                   variant={turboMode ? 'contained' : 'outlined'}
                   color={turboMode ? 'error' : 'warning'}
                   onClick={() => setTurboMode(!turboMode)}
-                  sx={{ ml: 1, fontWeight: 'bold' }}
+                  sx={{ fontWeight: 'bold' }}
                   startIcon={turboMode ? '⚡' : null}
                 >
-                  {turboMode ? '⚡ TURBO' : 'Turbo Mode'}
+                  {turboMode ? '⚡ TURBO' : 'Turbo'}
                 </Button>
               </Tooltip>
-              
-              {/* Position Adjustment Button (JAN 31, 2026 - Sensibull-like workflow) */}
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+              {/* Keyboard Shortcuts — tooltip instead of permanent bar */}
+              <Tooltip
+                title={
+                  <Box sx={{ p: 0.5 }}>
+                    <Typography variant="caption" fontWeight="bold" sx={{ display: 'block', mb: 0.5 }}>⌨️ Keyboard Shortcuts</Typography>
+                    <Typography variant="caption" component="div">B = Buy &nbsp;|&nbsp; S = Sell &nbsp;|&nbsp; C = Close</Typography>
+                    <Typography variant="caption" component="div">R = Refresh &nbsp;|&nbsp; Esc = Cancel</Typography>
+                    <Typography variant="caption" component="div">↑/↓ = Navigate rows</Typography>
+                  </Box>
+                }
+                arrow
+                placement="bottom-end"
+              >
+                <IconButton size="small" sx={{ color: 'text.secondary' }}>
+                  <HelpOutlineIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="Sound Settings">
+                <IconButton
+                  onClick={() => setSoundSettingsOpen(true)}
+                  size="small"
+                  color="primary"
+                >
+                  <VolumeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="Refresh">
+                <IconButton onClick={handleRefresh} disabled={refreshing} size="small">
+                  {refreshing ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+
+              {/* Toggle secondary toolbar */}
+              <Tooltip title={secondaryToolbarOpen ? 'Hide toolbar' : 'More controls'}>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    const next = !secondaryToolbarOpen;
+                    setSecondaryToolbarOpen(next);
+                    localStorage.setItem('options_secondary_toolbar_open', JSON.stringify(next));
+                  }}
+                  sx={{ color: secondaryToolbarOpen ? 'primary.main' : 'text.secondary' }}
+                >
+                  <KeyboardArrowDownIcon
+                    fontSize="small"
+                    sx={{
+                      transition: 'transform 0.2s',
+                      transform: secondaryToolbarOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    }}
+                  />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </Box>
+
+          {/* ═══ Phase 2: Secondary Toolbar (collapsible) ═══ */}
+          <Collapse in={secondaryToolbarOpen}>
+            <Box
+              sx={{
+                display: 'flex',
+                gap: 1,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                mb: 1,
+                py: 0.75,
+                px: 1,
+                bgcolor: 'action.hover',
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              {/* Polling interval */}
+              <Tooltip title="Change price polling interval">
+                <Button
+                  size="small"
+                  variant={pollInterval === 1000 ? 'contained' : 'outlined'}
+                  color={pollInterval === 1000 ? 'primary' : 'inherit'}
+                  onClick={() => setPollInterval(pollInterval === 5000 ? 1000 : 5000)}
+                  sx={{ fontSize: '0.7rem', py: 0.25 }}
+                >
+                  ⏱ Poll: {pollInterval / 1000}s
+                </Button>
+              </Tooltip>
+
+              {/* Custom order indicator */}
+              {customOrder.length > 0 && (
+                <Chip 
+                  icon={<DragIcon />}
+                  label="Custom Order"
+                  size="small"
+                  color="primary"
+                  variant="filled"
+                  sx={{ fontWeight: 'bold' }}
+                  onDelete={resetOrder}
+                  deleteIcon={
+                    <Tooltip title="Reset to default sort order">
+                      <CloseIcon sx={{ fontSize: '0.9rem !important' }} />
+                    </Tooltip>
+                  }
+                />
+              )}
+
+              {/* Show hidden positions */}
+              {hiddenPositions.length > 0 && (
+                <Chip
+                  label={`👁 ${hiddenPositions.length} hidden`}
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  onClick={() => setHiddenPositions([])}
+                  onDelete={() => setHiddenPositions([])}
+                />
+              )}
+
+              {/* Selected for payoff */}
+              {selectedPositionsForPayoff.length > 0 && (
+                <Chip
+                  size="small"
+                  label={`🎯 ${selectedPositionsForPayoff.length} for Payoff`}
+                  color="primary"
+                  variant="outlined"
+                />
+              )}
+
+              {/* Position Adjustment Button */}
               {positions.length > 0 && !turboMode && (
                 <Tooltip title="Adjust positions - Add/close with live payoff preview">
                   <Button
@@ -3662,32 +3770,14 @@ const OptionsPanel = () => {
                     color="secondary"
                     startIcon={<AdjustIcon />}
                     onClick={() => setAdjustmentPanelOpen(true)}
-                    sx={{ ml: 1 }}
+                    sx={{ fontSize: '0.7rem', py: 0.25 }}
                   >
-                    Adjust Position
+                    Adjust
                   </Button>
                 </Tooltip>
               )}
             </Box>
-
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Tooltip title="Sound Settings">
-                <IconButton
-                  onClick={() => setSoundSettingsOpen(true)}
-                  size="small"
-                  color="primary"
-                >
-                  <VolumeIcon />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title="Refresh">
-                <IconButton onClick={handleRefresh} disabled={refreshing}>
-                  {refreshing ? <CircularProgress size={20} /> : <RefreshIcon />}
-                </IconButton>
-              </Tooltip>
-            </Box>
-          </Box>
+          </Collapse>
 
           {/* Expiry Filter Tabs - Multi-Select */}
           {uniqueExpiries.length > 1 && (
@@ -3727,42 +3817,97 @@ const OptionsPanel = () => {
             </Box>
           )}
 
-          {/* Phase 4: Turbo Mode Keyboard Shortcuts Help */}
+          {/* Phase 4: Turbo Mode — compact inline alert */}
           {turboMode && (
-            <Alert severity="warning" sx={{ mb: 1 }}>
+            <Alert severity="warning" sx={{ mb: 1, py: 0.25 }} icon={false}>
               <Typography variant="caption" fontWeight="bold">
-                ⚡ TURBO MODE ACTIVE - Keyboard Shortcuts:
-              </Typography>
-              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                <kbd>↑</kbd>/<kbd>↓</kbd> Navigate • <kbd>B</kbd> Buy • <kbd>S</kbd> Sell • 
-                <kbd>C</kbd> Close • <kbd>ESC</kbd> Cancel
+                ⚡ TURBO — <kbd>↑↓</kbd> Nav • <kbd>B</kbd> Buy • <kbd>S</kbd> Sell • <kbd>C</kbd> Close • <kbd>ESC</kbd> Cancel
               </Typography>
             </Alert>
           )}
 
-          {/* Per-Expiry Max Loss Settings */}
+          {/* Phase 2: Per-Expiry Max Loss Settings — collapsible */}
           {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
-            <ExpiryMaxLossPanel
-              uniqueExpiries={uniqueExpiries}
-              expiryPnlMap={expiryPnlMap}
-              expiryMaxLossSettings={expiryMaxLossSettings}
-              onSettingsUpdate={handleExpiryMaxLossUpdate}
-            />
+            <Box sx={{ mb: 1 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  cursor: 'pointer',
+                  py: 0.5,
+                  px: 1,
+                  borderRadius: 1,
+                  '&:hover': { bgcolor: 'action.hover' },
+                }}
+                onClick={() => {
+                  const next = !expiryMaxLossCollapsed;
+                  setExpiryMaxLossCollapsed(next);
+                  localStorage.setItem('options_expiry_maxloss_collapsed', JSON.stringify(next));
+                }}
+              >
+                {expiryMaxLossCollapsed ? <ExpandMoreIcon sx={{ fontSize: '1rem' }} /> : <ExpandLessIcon sx={{ fontSize: '1rem' }} />}
+                <Typography variant="caption" fontWeight="600" sx={{ fontSize: '0.75rem' }}>
+                  🛡️ Per-Expiry Max Loss
+                </Typography>
+                {expiryMaxLossCollapsed && Object.keys(expiryMaxLossSettings || {}).length > 0 && (
+                  <Chip
+                    label={`${Object.keys(expiryMaxLossSettings).length} expiries configured`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ height: 18, fontSize: '0.65rem' }}
+                  />
+                )}
+              </Box>
+              <Collapse in={!expiryMaxLossCollapsed}>
+                <ExpiryMaxLossPanel
+                  uniqueExpiries={uniqueExpiries}
+                  expiryPnlMap={expiryPnlMap}
+                  expiryMaxLossSettings={expiryMaxLossSettings}
+                  onSettingsUpdate={handleExpiryMaxLossUpdate}
+                />
+              </Collapse>
+            </Box>
           )}
 
-          {/* Position Scaling Strategy */}
-          <Box sx={{ mb: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+          {/* Phase 2: Position Scaling Strategy — collapsible */}
+          <Box sx={{ mb: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
             <Box
-              sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                p: 1,
+                cursor: 'pointer',
+                borderRadius: 1,
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
+              }}
+              onClick={() => {
+                const next = !scalingStrategyCollapsed;
+                setScalingStrategyCollapsed(next);
+                localStorage.setItem('options_scaling_strategy_collapsed', JSON.stringify(next));
+              }}
             >
-              <Typography
-                variant="caption"
-                fontWeight="600"
-                sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.8rem' }}
-              >
-                <ShowChartIcon sx={{ fontSize: '1rem' }} />
-                Position Scaling Strategy
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {scalingStrategyCollapsed ? <ExpandMoreIcon sx={{ fontSize: '1rem' }} /> : <ExpandLessIcon sx={{ fontSize: '1rem' }} />}
+                <Typography
+                  variant="caption"
+                  fontWeight="600"
+                  sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.8rem' }}
+                >
+                  <ShowChartIcon sx={{ fontSize: '1rem' }} />
+                  Position Scaling Strategy
+                </Typography>
+                {/* Compact summary when collapsed */}
+                {scalingStrategyCollapsed && (
+                  <Chip
+                    label={`${scalingStrategy === 'fixed' ? `Fixed (${scalingParams.stepSize})` : scalingStrategy === 'profit_based' ? 'Profit-Based' : 'Delta Neutral'} · Max ${scalingParams.maxPositionSize}`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.65rem' }}
+                  />
+                )}
+              </Box>
 
               {/* Large Index Prices Display */}
               {(indexPrices.BTC > 0 || indexPrices.ETH > 0) && (
@@ -3844,7 +3989,8 @@ const OptionsPanel = () => {
                 </Box>
               )}
             </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Collapse in={!scalingStrategyCollapsed}>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', p: 1, pt: 0 }}>
               {/* Strategy Selection */}
               <Box>
                 <Typography
@@ -4054,29 +4200,7 @@ const OptionsPanel = () => {
                   `⚖️ Delta-Neutral: Auto-rebalance to maintain portfolio delta ~${scalingParams.deltaTarget}`}
               </Typography>
             </Alert>
-          </Box>
-
-          {/* Keyboard Shortcuts Legend */}
-          <Box
-            sx={{
-              mb: 2,
-              p: 1,
-              bgcolor: 'action.hover',
-              borderRadius: 1,
-              display: 'flex',
-              gap: 2,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-            }}
-          >
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-              ⌨️ Shortcuts:
-            </Typography>
-            <Chip label="B = Buy" size="small" variant="outlined" sx={{ height: 22 }} />
-            <Chip label="S = Sell" size="small" variant="outlined" sx={{ height: 22 }} />
-            <Chip label="C = Close" size="small" variant="outlined" sx={{ height: 22 }} />
-            <Chip label="R = Refresh" size="small" variant="outlined" sx={{ height: 22 }} />
-            <Chip label="Esc = Cancel" size="small" variant="outlined" sx={{ height: 22 }} />
+            </Collapse>
           </Box>
 
           {/* Order Result Alert */}

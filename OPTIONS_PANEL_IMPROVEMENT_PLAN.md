@@ -13,32 +13,34 @@ After auditing **22 files / ~14,560 lines** in the Options system, **1,691 lines
 
 ---
 
-## Current Architecture Snapshot
+## Current Architecture Snapshot  (Updated Feb 23, 2026)
 
 ```
-App.js (1691 lines)
-├── 24 flat nav sections (no grouping)
-├── Sidebar.js (83 lines — flat horizontal scroll, desktop only)
-├── MobileNav (inline, 20 lines — flat horizontal scroll pills)
+App.js (1750 lines — updated)
+├── 24 nav sections with `group` property (6 groups)
+├── Sidebar.js (138 lines — grouped rendering, complete prefetch map)
+├── MobileNav (inline, 40 lines — grouped with dividers)
 │
-└── OptionsPanel.js (6887 lines — THE problem)
-    ├── 55 useState hooks
+└── OptionsPanel.js (7011 lines — Phase 2 header declutter applied)
+    ├── Primary bar: Title + Status + Count + Turbo + [?] + Sound + Refresh + [▼]
+    ├── Secondary toolbar: Collapsible — Poll, Custom Order, Hidden, Payoff, Adjust
+    ├── Keyboard shortcuts → tooltip (was permanent 40px bar)
+    ├── ScalingStrategy → collapsible, default collapsed, shows summary
+    ├── ExpiryMaxLossPanel → collapsible, default collapsed, shows count
+    ├── 55 useState hooks (+ 3 new collapse states)
     ├── 28 useEffect hooks
-    ├── 12 useRef declarations
-    ├── 16 API endpoints called
-    ├── 3 dialogs, 2 lazy-loaded sub-panels
-    ├── Inline: BatchOrderPanel, AutoLoopController, ScalingStrategy,
-    │          PendingOrders, PositionsTable, PortfolioSummary, all in ONE render
-    └── Sub-components: 21 files (SLTPDialog, MaxLossIndicator, ML*, etc.)
+    └── Sub-components: 21 files (unchanged)
 ```
 
 ---
 
-## Phase 1: Navigation Grouping & Visual Hierarchy
+## Phase 1: Navigation Grouping & Visual Hierarchy  ✅ COMPLETED (Feb 23, 2026)
 
 **Risk:** Low — CSS/JSX only, no logic changes  
 **Impact:** High — immediate UX clarity  
-**Estimated effort:** 2-3 hours
+**Estimated effort:** 2-3 hours  
+**Actual effort:** ~1.5 hours  
+**Commit:** `becc7a5fc` (plan), Phase 1 code in next commit
 
 ### Problem
 24 flat navigation buttons in a single scrollable row. Users must scroll horizontally to find options-related tabs. No visual distinction between "Grid Bot" features and "Options Trading" features.
@@ -98,11 +100,13 @@ Currently only 11 of 24 sections are in `sectionChunkMap`. All 24 should have pr
 
 ---
 
-## Phase 2: Options Panel Header Declutter
+## Phase 2: Options Panel Header Declutter  ✅ COMPLETED (Feb 23, 2026)
 
 **Risk:** Low — UI reorganization, no logic changes  
 **Impact:** High — cleaner header, less visual noise  
-**Estimated effort:** 3-4 hours
+**Estimated effort:** 3-4 hours  
+**Actual effort:** ~1.5 hours  
+**Build:** Clean (0 errors)
 
 ### Problem
 The header row packs **12+ controls** in a single flex row:
@@ -435,8 +439,8 @@ launchctl restart com.gridbot.webui && sleep 5 && curl -s http://127.0.0.1:5555/
 
 ## Approval Checklist
 
-- [ ] Phase 1 plan reviewed
-- [ ] Phase 2 plan reviewed
+- [x] Phase 1 plan reviewed — ✅ Implemented & deployed
+- [x] Phase 2 plan reviewed — ✅ Implemented & deployed
 - [ ] Phase 3 plan reviewed
 - [ ] Phase 4 extraction order confirmed
 - [ ] Phase 5 hook consolidation confirmed

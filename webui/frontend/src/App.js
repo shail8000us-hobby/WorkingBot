@@ -19,6 +19,15 @@ import {
   BarChart3,
   Brain,
   Database,
+  // Phase 1: Deduplicated navigation icons
+  PieChart,
+  Table2,
+  Workflow,
+  Scale,
+  Coins,
+  Timer,
+  ListChecks,
+  CandlestickChart,
 } from 'lucide-react';
 // framer-motion AnimatePresence removed: replaced with CSS for instant panel switches
 
@@ -198,26 +207,48 @@ const LoadingFallback = ({ message = 'Loading component...' }) => (
   </div>
 );
 
-const MobileNav = ({ sections = [], activeSection, onSelect }) => (
-  <div className="sticky top-[calc(9rem+env(safe-area-inset-top))] z-20 flex w-full gap-2 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
-    {sections.map(({ id, label }) => {
-      const active = activeSection === id;
-      return (
-        <button
-          key={id}
-          type="button"
-          onClick={() => onSelect?.(id)}
-          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${active
-            ? 'bg-sky-500 text-slate-900 shadow-card'
-            : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
-            }`}
-        >
-          {label}
-        </button>
-      );
-    })}
-  </div>
-);
+const MobileNav = ({ sections = [], activeSection, onSelect }) => {
+  // Build grouped structure for mobile nav
+  const groups = [];
+  let currentGroup = null;
+  sections.forEach((section) => {
+    const group = section.group || 'Other';
+    if (group !== currentGroup) {
+      groups.push({ group, items: [section] });
+      currentGroup = group;
+    } else {
+      groups[groups.length - 1].items.push(section);
+    }
+  });
+
+  return (
+    <div className="sticky top-[calc(9rem+env(safe-area-inset-top))] z-20 flex w-full items-center gap-1.5 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
+      {groups.map((g, gi) => (
+        <React.Fragment key={g.group}>
+          {gi > 0 && (
+            <div className="mx-1 h-6 w-px shrink-0 bg-slate-700/60" />
+          )}
+          {g.items.map(({ id, label }) => {
+            const active = activeSection === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onSelect?.(id)}
+                className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${active
+                  ? 'bg-sky-500 text-slate-900 shadow-card'
+                  : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800'
+                  }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
 
 function App() {
   const { mode, toggleMode } = useThemeMode();
@@ -484,42 +515,21 @@ function App() {
 
   const sections = useMemo(
     () => [
+      // ── Grid Bot ──────────────────────────────────────────────
       {
         id: 'dashboard',
         label: 'Dashboard',
         icon: LayoutDashboard,
         badge: pendingOrders ?? undefined,
         description: 'Trading overview & telemetry',
+        group: 'Grid Bot',
       },
       {
         id: 'portfolio',
         label: '📊 Portfolio',
-        icon: TrendingUp,
+        icon: PieChart,
         description: 'Multi-symbol overview - all symbols at a glance',
-      },
-      {
-        id: 'config',
-        label: 'Configuration',
-        icon: SlidersHorizontal,
-        description: 'Bot parameters and reconciliation tools',
-      },
-      {
-        id: 'risk',
-        label: 'Risk & Safety',
-        icon: ShieldCheck,
-        description: 'Risk analytics and protection systems',
-      },
-      {
-        id: 'tradingview',
-        label: '📊 TradingView',
-        icon: RadioTower,
-        description: 'TradingView webhook signals - buy/sell alerts from Pine Script',
-      },
-      {
-        id: 'rsi',
-        label: 'RSI',
-        icon: BarChart3,
-        description: 'RSI safety monitor - mode-specific thresholds with hysteresis',
+        group: 'Grid Bot',
       },
       {
         id: 'positions',
@@ -527,42 +537,124 @@ function App() {
         icon: Layers3,
         badge: openPositions ?? undefined,
         description: 'Active grids & execution state',
+        group: 'Grid Bot',
       },
+      {
+        id: 'config',
+        label: 'Configuration',
+        icon: SlidersHorizontal,
+        description: 'Bot parameters and reconciliation tools',
+        group: 'Grid Bot',
+      },
+      {
+        id: 'risk',
+        label: 'Risk & Safety',
+        icon: ShieldCheck,
+        description: 'Risk analytics and protection systems',
+        group: 'Grid Bot',
+      },
+      // ── Options Trading ──────────────────────────────────────
       {
         id: 'options',
         label: '📈 Options',
-        icon: TrendingUp,
+        icon: CandlestickChart,
         description: 'Options trading - manage calls/puts positions',
+        group: 'Options Trading',
       },
       {
         id: 'options_chain',
         label: '🔗 Options Chain',
-        icon: BarChart3,
+        icon: Table2,
         description: 'Options chain - market data, IV, Greeks, strike selection',
+        group: 'Options Trading',
       },
       {
         id: 'strategy_builder',
         label: '🏗️ Strategy Builder',
-        icon: Layers3,
+        icon: Workflow,
         description: 'Multi-leg options strategies - straddles, iron condors, spreads',
+        group: 'Options Trading',
       },
       {
         id: 'mv_straddle',
         label: '📊 MV Straddle',
-        icon: TrendingUp,
+        icon: Scale,
         description: 'Market View Straddle - volatility-driven directional neutral strategy',
+        group: 'Options Trading',
       },
+      // ── Algorithms ───────────────────────────────────────────
       {
         id: 'mmm',
         label: '💰 MMM',
-        icon: TrendingUp,
+        icon: Coins,
         description: 'Money Mind & Method - BTC 0DTE options selling algorithm',
+        group: 'Algorithms',
       },
       {
         id: 'ssr_algo',
         label: '🦋 SSR ALGO',
         icon: Zap,
         description: 'Modified Iron Butterfly - automated percentage-based strike selection',
+        group: 'Algorithms',
+      },
+      {
+        id: 'zero_dte',
+        label: '⏱️ 0DTE Trading',
+        icon: Timer,
+        description: '0DTE options - autonomous strangle with premium balancing',
+        group: 'Algorithms',
+      },
+      // ── Signals & ML ─────────────────────────────────────────
+      {
+        id: 'tradingview',
+        label: '📊 TradingView',
+        icon: RadioTower,
+        description: 'TradingView webhook signals - buy/sell alerts from Pine Script',
+        group: 'Signals & ML',
+      },
+      {
+        id: 'rsi',
+        label: 'RSI',
+        icon: BarChart3,
+        description: 'RSI safety monitor - mode-specific thresholds with hysteresis',
+        group: 'Signals & ML',
+      },
+      {
+        id: 'ml_trading',
+        label: 'ML',
+        icon: Brain,
+        description:
+          'Machine Learning trading insights, style analysis, and autonomous decision engine',
+        group: 'Signals & ML',
+      },
+      // ── System ───────────────────────────────────────────────
+      {
+        id: 'botmanagement',
+        label: 'Bot Management',
+        icon: Terminal,
+        description: 'tmux control, process management, and emergency controls',
+        group: 'System',
+      },
+      {
+        id: 'system_health',
+        label: 'System Health',
+        icon: Activity,
+        description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts',
+        group: 'System',
+      },
+      {
+        id: 'intelligence',
+        label: 'Intelligence',
+        icon: BookOpen,
+        description: 'AI insights, documentation, market intel',
+        group: 'System',
+      },
+      {
+        id: 'todos',
+        label: 'Todo List',
+        icon: ListChecks,
+        description: 'Track improvements and ideas for the trading bot',
+        group: 'System',
       },
       // Week 3: Guardian Dashboard (feature flag controlled)
       ...(guardianEnabled
@@ -572,57 +664,24 @@ function App() {
             label: '🛡️ Guardian',
             icon: ShieldCheck,
             description: 'WebUI robustness monitor - circuit breakers, metrics, health',
+            group: 'System',
           },
         ]
         : []),
-      {
-        id: 'ml_trading',
-        label: 'ML',
-        icon: Brain,
-        description:
-          'Machine Learning trading insights, style analysis, and autonomous decision engine',
-      },
-      {
-        id: 'botmanagement',
-        label: 'Bot Management',
-        icon: Terminal,
-        description: 'tmux control, process management, and emergency controls',
-      },
-      {
-        id: 'intelligence',
-        label: 'Intelligence',
-        icon: BookOpen,
-        description: 'AI insights, documentation, market intel',
-      },
-      {
-        id: 'system_health',
-        label: 'System Health',
-        icon: Activity,
-        description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts',
-      },
-      {
-        id: 'todos',
-        label: 'Todo List',
-        icon: BookOpen,
-        description: 'Track improvements and ideas for the trading bot',
-      },
-      {
-        id: 'zero_dte',
-        label: '⏱️ 0DTE Trading',
-        icon: Zap,
-        description: '0DTE options - autonomous strangle with premium balancing',
-      },
+      // ── Labs ─────────────────────────────────────────────────
       {
         id: 'experimental',
         label: '🧪 Experimental',
         icon: Code,
         description: 'Experimental features - Auto-Delta Hedging, Kelly Criterion, research tools',
+        group: 'Labs',
       },
       {
         id: 'advanced_features',
         label: '🚀 Advanced',
         icon: Database,
         description: 'Advanced data collection - Delta Exchange OHLCV, live streaming, technical indicators',
+        group: 'Labs',
       },
     ],
     [openPositions, pendingOrders]
