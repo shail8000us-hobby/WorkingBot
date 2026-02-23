@@ -35,19 +35,26 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 from enum import Enum
-from typing import Optional
+from typing import Optional, List, Tuple
 
 log = logging.getLogger('mmm_circuit_breaker')
 
-# Number of consecutive failures that trips the breaker
-FAILURE_THRESHOLD = 3
+# M-5 fix: raised from 3 to 5 — three consecutive exchange hiccups during
+# high volatility was too aggressive and triggered false dead-zones.
+# Now configurable per-session via 'circuit_breaker_threshold' param.
+FAILURE_THRESHOLD = 5
 
 # Seconds to wait in OPEN state before probing
 RESET_TIMEOUT = 30.0
 
 # After this many successive OPEN→HALF_OPEN probe failures, emit a safety event
 CONSECUTIVE_OPEN_ALERT_THRESHOLD = 3
+
+# Sliding window settings
+SLIDING_WINDOW_SIZE = 10  # Track last N requests
+SLIDING_WINDOW_SECONDS = 60.0  # Consider requests within this time window
 
 
 class CircuitState(str, Enum):
@@ -75,9 +82,11 @@ class CircuitBreaker:
             self._circuit.record_failure(str(e))
     """
 
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, failure_threshold: int = None):
         self._sid = session_id
         self._lock = threading.RLock()
+        # M-5 fix: configurable threshold; falls back to module-level default
+        self.failure_threshold = failure_threshold if failure_threshold is not None else FAILURE_THRESHOLD
 
         self._state: CircuitState = CircuitState.CLOSED
         self._failure_count: int = 0
@@ -87,6 +96,9 @@ class CircuitBreaker:
 
         # Backoff depth — increases each time breaker re-opens
         self._open_depth: int = 0
+        
+        # Sliding window: list of (timestamp, success:bool, error:str|None)
+        self._window: deque = deque(maxlen=SLIDING_WINDOW_SIZE)
 
         # Stats
         self.total_trips: int = 0
@@ -134,6 +146,9 @@ class CircuitBreaker:
     def record_success(self) -> None:
         """Call after a successful exchange response."""
         with self._lock:
+            # Add to sliding window
+            self._window.append((time.monotonic(), True, None))
+            
             self._failure_count = 0
             self._consecutive_successes += 1
 
@@ -151,6 +166,9 @@ class CircuitBreaker:
     def record_failure(self, error: str = '') -> None:
         """Call after an exchange call fails."""
         with self._lock:
+            # Add to sliding window
+            self._window.append((time.monotonic(), False, error))
+            
             self.last_error = error
             self.last_error_time = time.monotonic()
 
@@ -166,7 +184,7 @@ class CircuitBreaker:
 
             if (
                 self._state == CircuitState.CLOSED
-                and self._failure_count >= FAILURE_THRESHOLD
+                and self._failure_count >= self.failure_threshold
             ):
                 self._open_depth = max(1, self._open_depth + 1)
                 self._trip('failure threshold reached')
@@ -236,10 +254,113 @@ class CircuitBreaker:
         return max(0.0, timeout - elapsed)
 
     # ------------------------------------------------------------------
+    # Sliding Window Analysis
+    # ------------------------------------------------------------------
+
+    def _get_window_stats(self) -> dict:
+        """
+        Analyze the sliding window to get recent error rate and patterns.
+        
+        Returns:
+            dict with window analysis: total, failures, success_rate, error_types
+        """
+        now = time.monotonic()
+        cutoff = now - SLIDING_WINDOW_SECONDS
+        
+        with self._lock:
+            # Filter to recent entries within time window
+            recent = [(ts, ok, err) for ts, ok, err in self._window if ts >= cutoff]
+            
+            if not recent:
+                return {
+                    'total': 0,
+                    'successes': 0,
+                    'failures': 0,
+                    'success_rate': 1.0,
+                    'error_types': {},
+                    'window_seconds': SLIDING_WINDOW_SECONDS,
+                }
+            
+            total = len(recent)
+            successes = sum(1 for _, ok, _ in recent if ok)
+            failures = total - successes
+            
+            # Categorize errors
+            error_types = {}
+            for _, ok, err in recent:
+                if not ok and err:
+                    # Simple categorization by error pattern
+                    if 'timeout' in err.lower():
+                        err_type = 'timeout'
+                    elif 'rate' in err.lower() or '429' in err:
+                        err_type = 'rate_limit'
+                    elif 'connection' in err.lower():
+                        err_type = 'connection'
+                    else:
+                        err_type = 'other'
+                    error_types[err_type] = error_types.get(err_type, 0) + 1
+            
+            return {
+                'total': total,
+                'successes': successes,
+                'failures': failures,
+                'success_rate': successes / total if total > 0 else 1.0,
+                'error_types': error_types,
+                'window_seconds': SLIDING_WINDOW_SECONDS,
+            }
+
+    @property
+    def window_stats(self) -> dict:
+        """Get sliding window statistics."""
+        return self._get_window_stats()
+
+    # ------------------------------------------------------------------
+    # Manual Reset
+    # ------------------------------------------------------------------
+
+    def reset(self) -> dict:
+        """
+        Manually reset circuit breaker to CLOSED state.
+        
+        Use this for emergency recovery when you know the exchange is healthy
+        but the breaker is stuck OPEN due to transient failures.
+        
+        Returns:
+            dict with previous state info
+        """
+        with self._lock:
+            prev_state = self._state.value
+            prev_depth = self._open_depth
+            prev_failures = self._failure_count
+            prev_window = self._get_window_stats()
+            
+            self._state = CircuitState.CLOSED
+            self._failure_count = 0
+            self._open_depth = 0
+            self._consecutive_opens = 0
+            self._consecutive_successes = 0
+            self._last_open_at = None
+            self._window.clear()  # Clear sliding window on reset
+            
+            log.info(
+                f"[{self._sid}] Circuit MANUALLY RESET to CLOSED "
+                f"(was {prev_state}, depth={prev_depth})"
+            )
+            
+            return {
+                'previous_state': prev_state,
+                'previous_depth': prev_depth,
+                'previous_failure_count': prev_failures,
+                'previous_window_stats': prev_window,
+                'new_state': 'CLOSED',
+            }
+
+    # ------------------------------------------------------------------
     # Summary for API / WebSocket
     # ------------------------------------------------------------------
 
     def summary(self) -> dict:
+        window = self._get_window_stats()
         return {
             'state': self._state.value,
             'is_open': self.is_open,
@@ -252,4 +373,5 @@ class CircuitBreaker:
             'seconds_until_probe': self.seconds_until_probe,
             'last_error': self.last_error,
             'should_alert': self.should_alert,
+            'sliding_window': window,
         }

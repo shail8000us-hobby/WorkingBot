@@ -4055,6 +4055,286 @@ def emergency_health_check():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@mmm_bp.route('/emergency/pause-all', methods=['POST'])
+def emergency_pause_all():
+    """
+    Emergency procedure: Pause all running MMM sessions without stopping monitors.
+    
+    Unlike stop-all which fully stops the monitor, this keeps heartbeats running
+    but prevents new order placement. Useful for temporary market conditions.
+    
+    Returns:
+        JSON with list of paused sessions
+    """
+    try:
+        from .mmm_activity import log_activity
+        
+        storage = get_storage()
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'Emergency pause via API')
+        
+        paused = []
+        already_paused = []
+        failed = []
+        
+        sessions = storage.list_sessions()
+        running_sessions = [s for s in sessions if s.get('strategy_status') == 'RUNNING']
+        
+        for session in running_sessions:
+            sid = session.get('session_id', session.get('id', ''))
+            try:
+                session['strategy_status'] = 'PAUSED'
+                session['_emergency_pause'] = {
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'reason': reason,
+                }
+                storage.save_session(session)
+                paused.append(sid)
+                log_activity('emergency', f'⏸️ Emergency pause: {reason}', sid, 'warning')
+            except Exception as e:
+                log.error(f"Failed to pause {sid}: {e}")
+                failed.append({'session_id': sid, 'error': str(e)})
+        
+        # Log system-wide activity
+        log_activity(
+            'emergency',
+            f'⏸️ EMERGENCY PAUSE ALL: {len(paused)} sessions paused',
+            None,
+            'warning'
+        )
+        
+        return jsonify({
+            'success': True,
+            'paused_count': len(paused),
+            'paused_sessions': paused,
+            'already_paused': len(already_paused),
+            'failed_count': len(failed),
+            'failed_sessions': failed,
+            'reason': reason,
+        })
+        
+    except Exception as e:
+        log.exception("Emergency pause-all failed")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/emergency/close-all-positions', methods=['POST'])
+def emergency_close_all_positions():
+    """
+    Emergency procedure: Force close all positions across all sessions.
+    
+    WARNING: This uses market/taker orders to close positions immediately.
+    Use only in true emergencies when position risk must be eliminated.
+    
+    Request body:
+        reason: Reason for emergency close (required)
+        session_ids: Optional list of specific sessions; omit for all
+        dry_run: If true, only report what would be closed (default false)
+    
+    Returns:
+        JSON with positions closed and P&L impact
+    """
+    import asyncio
+    
+    try:
+        from .mmm_monitor import get_monitor, get_all_monitors
+        from .mmm_activity import log_activity
+        
+        storage = get_storage()
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason')
+        session_ids = data.get('session_ids')  # Optional filter
+        dry_run = data.get('dry_run', False)
+        
+        if not reason:
+            return jsonify({
+                'success': False, 
+                'error': 'reason is required for emergency close',
+            }), 400
+        
+        results = []
+        total_positions_closed = 0
+        total_realized_pnl = 0.0
+        
+        # Get target sessions
+        if session_ids:
+            monitors_to_close = {
+                sid: get_monitor(sid) 
+                for sid in session_ids 
+                if get_monitor(sid)
+            }
+        else:
+            monitors_to_close = get_all_monitors()
+        
+        if dry_run:
+            # Just report what would be closed
+            for sid, monitor in monitors_to_close.items():
+                session = monitor.session if monitor else storage.get_session(sid)
+                if not session:
+                    continue
+                
+                positions = []
+                for side_key in ['ce', 'pe']:
+                    side = session.get(side_key, {})
+                    for pos_type in ['entry', 'adj1', 'adj2', 'adj3']:
+                        pos = side.get(pos_type, {})
+                        if pos.get('open') and pos.get('lots', 0) > 0:
+                            positions.append({
+                                'side': side_key,
+                                'type': pos_type,
+                                'strike': pos.get('strike'),
+                                'lots': pos.get('lots'),
+                            })
+                
+                if positions:
+                    results.append({
+                        'session_id': sid,
+                        'positions_to_close': positions,
+                        'position_count': len(positions),
+                    })
+            
+            return jsonify({
+                'success': True,
+                'dry_run': True,
+                'sessions_affected': len(results),
+                'results': results,
+                'reason': reason,
+            })
+        
+        # Actual close operation
+        async def close_session_positions(sid: str, monitor):
+            nonlocal total_positions_closed, total_realized_pnl
+            
+            if not monitor:
+                return {'session_id': sid, 'error': 'Monitor not found'}
+            
+            try:
+                # Use the monitor's internal close method
+                await monitor._auto_close_all(
+                    f'EMERGENCY: {reason}',
+                    emergency=True,
+                )
+                
+                # Count closed positions
+                session = monitor.session
+                positions_closed = []
+                for side_key in ['ce', 'pe']:
+                    side = session.get(side_key, {})
+                    for pos_type in ['entry', 'adj1', 'adj2', 'adj3']:
+                        pos = side.get(pos_type, {})
+                        # Check if position was just closed
+                        if not pos.get('open') and pos.get('close_time'):
+                            positions_closed.append(f"{side_key}_{pos_type}")
+                
+                return {
+                    'session_id': sid,
+                    'success': True,
+                    'positions_closed': positions_closed,
+                }
+                
+            except Exception as e:
+                log.error(f"Failed to close positions for {sid}: {e}")
+                return {
+                    'session_id': sid,
+                    'success': False,
+                    'error': str(e),
+                }
+        
+        # Execute closures
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            tasks = [
+                close_session_positions(sid, monitor) 
+                for sid, monitor in monitors_to_close.items()
+            ]
+            results = loop.run_until_complete(asyncio.gather(*tasks))
+        finally:
+            loop.close()
+        
+        # Log system-wide
+        successful = [r for r in results if r.get('success')]
+        failed = [r for r in results if not r.get('success')]
+        
+        log_activity(
+            'emergency',
+            f'🚨 EMERGENCY CLOSE ALL POSITIONS: {len(successful)} sessions closed, reason: {reason}',
+            None,
+            'critical'
+        )
+        
+        return jsonify({
+            'success': True,
+            'dry_run': False,
+            'sessions_closed': len(successful),
+            'sessions_failed': len(failed),
+            'results': results,
+            'reason': reason,
+        })
+        
+    except Exception as e:
+        log.exception("Emergency close-all-positions failed")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/emergency/reset-circuit/<session_id>', methods=['POST'])
+def emergency_reset_circuit(session_id: str):
+    """
+    Emergency procedure: Manually reset a session's circuit breaker to CLOSED.
+    
+    Use when:
+    - Exchange API is confirmed healthy but breaker is stuck OPEN
+    - After resolving a known exchange outage
+    - Manual recovery from transient failures
+    
+    Returns:
+        JSON with circuit state before/after reset
+    """
+    try:
+        from .mmm_monitor import get_monitor
+        from .mmm_activity import log_activity
+        
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'Manual circuit reset via API')
+        
+        monitor = get_monitor(session_id)
+        if not monitor:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found or not running: {session_id}',
+            }), 404
+        
+        # Access the circuit breaker
+        circuit = getattr(monitor, '_circuit', None)
+        if not circuit:
+            return jsonify({
+                'success': False,
+                'error': 'Circuit breaker not available for this session',
+            }), 400
+        
+        # Reset the circuit
+        reset_info = circuit.reset()
+        
+        log_activity(
+            'emergency',
+            f'🔄 Circuit breaker reset: {reset_info["previous_state"]} → CLOSED ({reason})',
+            session_id,
+            'warning'
+        )
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'reason': reason,
+            **reset_info,
+            'new_circuit_state': circuit.summary(),
+        })
+        
+    except Exception as e:
+        log.exception(f"Emergency circuit reset failed for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/session/<session_id>/clear-backoff', methods=['POST'])
 def clear_session_backoff(session_id: str):
     """
