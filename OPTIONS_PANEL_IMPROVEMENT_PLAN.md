@@ -270,12 +270,13 @@ The remaining core handles: position table rendering, DnD ordering, expiry filte
 
 ---
 
-## Phase 5: State Management Consolidation
+## Phase 5: State Management Consolidation — ✅ COMPLETE
 
 **Risk:** Medium-High — touches data flow  
 **Impact:** High — eliminates state bugs, improves performance  
 **Estimated effort:** 4-6 hours  
-**Note:** Do this AFTER Phase 4 extractions are stable
+**Note:** Do this AFTER Phase 4 extractions are stable  
+**Result:** OptionsPanel.js 5,095 → 4,280 lines (−815 lines, 16% reduction). Three custom hooks created, apiShim enhanced with retry + circuit breaker.
 
 ### Changes
 
