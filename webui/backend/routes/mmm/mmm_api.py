@@ -3785,7 +3785,7 @@ def get_aggregate_metrics():
     """
     try:
         from .mmm_watchdog import MMMWatchdog
-        from .mmm_monitor import get_monitor, list_monitors
+        from .mmm_monitor import get_monitor
         
         storage = get_storage()
         sessions = storage.list_sessions()
@@ -3797,7 +3797,7 @@ def get_aggregate_metrics():
         circuit_open_count = 0
         
         for session in sessions:
-            sid = session.get('id', '')
+            sid = session.get('session_id', session.get('id', ''))
             status = session.get('strategy_status', 'UNKNOWN')
             restarts = session.get('_watchdog_restarts', 0)
             total_restarts += restarts
@@ -3900,7 +3900,7 @@ def emergency_stop_all():
         JSON with list of stopped sessions
     """
     try:
-        from .mmm_monitor import get_monitor, list_monitors
+        from .mmm_monitor import get_monitor
         from .mmm_activity import log_activity
         
         storage = get_storage()
@@ -3915,7 +3915,7 @@ def emergency_stop_all():
         running_sessions = [s for s in sessions if s.get('strategy_status') == 'RUNNING']
         
         for session in running_sessions:
-            sid = session.get('id', '')
+            sid = session.get('session_id', session.get('id', ''))
             try:
                 monitor = get_monitor(sid)
                 if monitor and monitor.is_running:
