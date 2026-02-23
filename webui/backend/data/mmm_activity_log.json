@@ -2,62 +2,6 @@
   "activities": [
     {
       "id": "act_110814_500",
-      "timestamp": "2026-02-23T11:08:14.029514+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "message": "Safety Checks: 2 event(s) - asymmetry (warning), near_expiry (info)",
-      "session_id": "mmm23feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "near_expiry"
-        ]
-      }
-    },
-    {
-      "id": "act_110814_500",
-      "timestamp": "2026-02-23T11:08:14.131564+00:00",
-      "type": "info",
-      "type_label": "Info",
-      "message": "Trigger Check: CE -83.3% (need >10.0%), PE -87.5% (need >10.0%) - Result: NONE",
-      "session_id": "mmm23feb26-3",
-      "severity": "info",
-      "details": {
-        "ce_excess_pct": -83.31,
-        "pe_excess_pct": -87.54,
-        "min_trigger_move": 10.0,
-        "outcome": "none"
-      }
-    },
-    {
-      "id": "act_110814_500",
-      "timestamp": "2026-02-23T11:08:14.131645+00:00",
-      "type": "info",
-      "type_label": "Info",
-      "message": "No triggers fired - Positions stable",
-      "session_id": "mmm23feb26-3",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_110814_500",
-      "timestamp": "2026-02-23T11:08:14.135501+00:00",
-      "type": "info",
-      "type_label": "Info",
-      "message": "P&L Update: Net $5.57 (Realized: $2.29, Unrealized: $3.28, Fees: $0.00)",
-      "session_id": "mmm23feb26-3",
-      "severity": "info",
-      "details": {
-        "net_pnl": 5.57,
-        "realized": 2.29,
-        "unrealized": 3.28,
-        "fees": 0.0
-      }
-    },
-    {
-      "id": "act_110814_500",
       "timestamp": "2026-02-23T11:08:14.135553+00:00",
       "type": "info",
       "type_label": "Info",
@@ -6964,7 +6908,80 @@
     },
     {
       "id": "act_182826_500",
-      "timestamp": "2026-02-23T18:28:26.713091+00:00",
+      "timestamp": "2026-02-23T18:28:26.741475+00:00",
+      "type": "regime_block",
+      "type_label": "Regime Block",
+      "category": "safety",
+      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "hedge": "pe",
+        "aggressor": "ce",
+        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
+      }
+    },
+    {
+      "id": "act_182942_500",
+      "timestamp": "2026-02-23T18:29:42.809370+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_182943_500",
+      "timestamp": "2026-02-23T18:29:43.465783+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "regime_action": "BLOCK_PE_SELLS",
+        "details": {
+          "iv_change_pct": -0.83,
+          "rv_annualized": 69.47,
+          "vol_regime_score": 0.364,
+          "dollar_gamma": 6.81,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -1.444,
+          "ema_slope": 1.28,
+          "trend_anchor": 65729.07021247
+        }
+      }
+    },
+    {
+      "id": "act_182943_500",
+      "timestamp": "2026-02-23T18:29:43.477729+00:00",
+      "type": "regime_block",
+      "type_label": "Regime Block",
+      "category": "safety",
+      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.4%)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "hedge": "pe",
+        "aggressor": "ce",
+        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.4%)"
+      }
+    },
+    {
+      "id": "act_183056_500",
+      "timestamp": "2026-02-23T18:30:56.761601+00:00",
       "type": "regime_block",
       "type_label": "Regime Block",
       "category": "safety",
@@ -6978,5 +6995,5 @@
       }
     }
   ],
-  "updated_at": "2026-02-23T18:28:26.715107+00:00"
+  "updated_at": "2026-02-23T18:30:56.763914+00:00"
 }
