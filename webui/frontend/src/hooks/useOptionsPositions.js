@@ -34,8 +34,14 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   // ---- IV enrichment ----
   const fetchIVForSymbols = async (symbols) => {
     const tickerPromises = symbols.map(async (symbol) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout per call
       try {
-        const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
+        const response = await fetch(
+          `https://api.india.delta.exchange/v2/tickers/${symbol}`,
+          { signal: controller.signal },
+        );
+        clearTimeout(timeoutId);
         const result = await response.json();
         if (result?.success && result?.result) {
           const quotes = result.result.quotes || {};
@@ -45,6 +51,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         }
         return { symbol, iv: null };
       } catch {
+        clearTimeout(timeoutId);
         return { symbol, iv: null };
       }
     });
@@ -109,15 +116,19 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         const dashPendingOrders = data.pending_orders || [];
         const dashFuturesPositions = data.futures_positions || [];
 
-        const positionsWithIV = await enrichPositionsWithIV(dashPositions);
-
-        setPositions(positionsWithIV);
+        // Show positions immediately WITHOUT waiting for IV enrichment
+        setPositions(dashPositions);
         setStatus(dashStatus);
         setPendingOrders(dashPendingOrders);
         setFuturesPositions(dashFuturesPositions);
-
-        hasPositionsRef.current = positionsWithIV.length > 0;
+        hasPositionsRef.current = dashPositions.length > 0;
         setError(null);
+
+        // Enrich IV in background (non-blocking)
+        enrichPositionsWithIV(dashPositions).then((enriched) => {
+          setPositions(enriched);
+        }).catch(() => { /* IV enrichment is best-effort */ });
+
         return true;
       } else {
         throw new Error(data?.error || 'Dashboard fetch failed');
@@ -161,10 +172,14 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         const rawOptionsPositions = optionsData.positions || [];
         const rawMVPositions = mvData?.success ? mvData.positions || [] : [];
         const combinedPositions = [...rawOptionsPositions, ...rawMVPositions];
-        const positionsWithIV = await enrichPositionsWithIV(combinedPositions);
 
-        setPositions(positionsWithIV);
-        hasPositionsRef.current = positionsWithIV.length > 0;
+        // Show positions immediately, enrich IV in background
+        setPositions(combinedPositions);
+        hasPositionsRef.current = combinedPositions.length > 0;
+
+        enrichPositionsWithIV(combinedPositions).then((enriched) => {
+          setPositions(enriched);
+        }).catch(() => {});
 
         if (!optionsData.cached) {
           setError(null);
@@ -300,10 +315,19 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
 
+    // Safety timeout: never stay in loading state forever
+    const safetyTimer = setTimeout(() => {
+      setLoading((prev) => {
+        if (prev) console.warn('⚠️ Loading safety timeout triggered after 8s');
+        return false;
+      });
+    }, 8000);
+
     const loadData = async () => {
       setLoading(true);
       const dashSuccess = await fetchDashboard();
       setLoading(false);
+      clearTimeout(safetyTimer);
 
       if (!dashSuccess) {
         console.warn('⚠️ Unified dashboard endpoint failed, using legacy individual calls');
@@ -311,6 +335,8 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
       }
     };
     loadData();
+
+    return () => clearTimeout(safetyTimer);
   }, [fetchDashboard, fetchStatus, fetchPositions, fetchPendingOrders, fetchFuturesPositions]);
 
   // ---- Polling ----
