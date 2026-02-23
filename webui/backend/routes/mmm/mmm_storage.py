@@ -9,12 +9,14 @@ into the SQLite database so no running session is lost.
 
 Created: February 15, 2026
 Updated: February 17, 2026 — Migrated from JSON to SQLite
+Updated: February 26, 2026 — Added session state checksum for corruption detection
 """
 
 import json
 import os
 import sqlite3
 import logging
+import hashlib
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
@@ -162,6 +164,44 @@ class MMMStorage:
         session['params'] = json.loads(row['params_json'])
         return session
 
+    def _calculate_checksum(self, session: Dict) -> str:
+        """
+        Calculate a checksum of critical session fields for corruption detection.
+        
+        Critical fields: session_id, params, strategy_status, positions, fills, trade_history
+        """
+        critical_data = {
+            'session_id': session.get('session_id'),
+            'params': session.get('params', {}),
+            'strategy_status': session.get('strategy_status'),
+            'positions': session.get('positions', {}),
+            'fills': session.get('fills', []),
+            'trade_history': session.get('trade_history', []),
+        }
+        # Sort keys for deterministic hashing
+        data_str = json.dumps(critical_data, sort_keys=True, default=str)
+        return hashlib.sha256(data_str.encode()).hexdigest()[:16]
+
+    def _validate_checksum(self, session: Dict) -> bool:
+        """
+        Validate session checksum. Returns True if valid or no checksum exists.
+        Logs warning on mismatch but doesn't fail (backward compatibility).
+        """
+        stored_checksum = session.get('_checksum')
+        if not stored_checksum:
+            # No checksum = legacy session, consider valid
+            return True
+        
+        calculated = self._calculate_checksum(session)
+        if calculated != stored_checksum:
+            log.warning(
+                f"Session {session.get('session_id')} checksum mismatch: "
+                f"stored={stored_checksum}, calculated={calculated}. "
+                "Possible corruption or manual edit."
+            )
+            return False
+        return True
+
     # =========================================================================
     # CRUD Operations — Identical API to old MMMStorage
     # =========================================================================
@@ -182,6 +222,9 @@ class MMMStorage:
 
         now = datetime.now(timezone.utc).isoformat()
         session['updated_at'] = now
+        
+        # Calculate and store checksum for corruption detection
+        session['_checksum'] = self._calculate_checksum(session)
 
         status = session.get('strategy_status', 'IDLE')
         params = session.get('params', {})
@@ -234,7 +277,10 @@ class MMMStorage:
             ).fetchone()
             if not row:
                 return None
-            return self._row_to_session(row)
+            session = self._row_to_session(row)
+            # Validate checksum (logs warning on mismatch, doesn't fail)
+            self._validate_checksum(session)
+            return session
         except Exception as e:
             log.error(f"Failed to get session {session_id}: {e}")
             return None

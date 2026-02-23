@@ -16,7 +16,8 @@ Created: February 15, 2026
 import logging
 import asyncio
 import threading
-from flask import Blueprint, request, jsonify
+import json
+from flask import Blueprint, request, jsonify, make_response
 from datetime import datetime, timezone
 
 
@@ -4091,4 +4092,140 @@ def clear_session_backoff(session_id: str):
         
     except Exception as e:
         log.exception(f"Failed to clear backoff for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/audit/trail', methods=['GET'])
+def get_audit_trail():
+    """
+    Query the MMM activity/audit trail with filtering.
+    
+    Query parameters:
+        session_id: Filter by session ID (optional)
+        severity: Filter by severity level: info, warning, error, critical (optional)
+        type: Filter by activity type (optional)
+        since: ISO timestamp to filter events after (optional)
+        limit: Max number of results (default 100, max 500)
+    
+    Returns:
+        JSON with filtered audit trail entries
+    """
+    try:
+        from .mmm_activity import get_activity_log
+        
+        activity_log = get_activity_log()
+        activities = activity_log.get_all()
+        
+        # Apply filters
+        session_id = request.args.get('session_id')
+        severity = request.args.get('severity')
+        activity_type = request.args.get('type')
+        since = request.args.get('since')
+        limit = min(int(request.args.get('limit', 100)), 500)
+        
+        filtered = activities
+        
+        if session_id:
+            filtered = [a for a in filtered if a.get('session_id') == session_id]
+        
+        if severity:
+            severities = severity.split(',')
+            filtered = [a for a in filtered if a.get('severity') in severities]
+        
+        if activity_type:
+            types = activity_type.split(',')
+            filtered = [a for a in filtered if a.get('type') in types]
+        
+        if since:
+            try:
+                since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+                filtered = [a for a in filtered if datetime.fromisoformat(
+                    a.get('timestamp', '').replace('Z', '+00:00')
+                ) >= since_dt]
+            except (ValueError, TypeError):
+                pass
+        
+        # Sort by timestamp descending (newest first)
+        filtered = sorted(filtered, key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Apply limit
+        filtered = filtered[:limit]
+        
+        return jsonify({
+            'success': True,
+            'count': len(filtered),
+            'total_available': len(activities),
+            'activities': filtered,
+            'filters_applied': {
+                'session_id': session_id,
+                'severity': severity,
+                'type': activity_type,
+                'since': since,
+                'limit': limit,
+            },
+        })
+        
+    except Exception as e:
+        log.exception("Failed to get audit trail")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/audit/export', methods=['GET'])
+def export_audit_trail():
+    """
+    Export audit trail as JSON for external analysis.
+    
+    Query parameters:
+        session_id: Filter by session ID (optional)
+        include_sessions: Include session state snapshots (default false)
+    
+    Returns:
+        JSON export file for download
+    """
+    try:
+        from .mmm_activity import get_activity_log
+        from .mmm_watchdog import MMMWatchdog
+        
+        activity_log = get_activity_log()
+        storage = get_storage()
+        
+        session_id = request.args.get('session_id')
+        include_sessions = request.args.get('include_sessions', 'false').lower() == 'true'
+        
+        activities = activity_log.get_all()
+        if session_id:
+            activities = [a for a in activities if a.get('session_id') == session_id]
+        
+        export_data = {
+            'export_timestamp': datetime.now(timezone.utc).isoformat(),
+            'export_type': 'mmm_audit_trail',
+            'version': '1.0',
+            'activity_count': len(activities),
+            'activities': activities,
+        }
+        
+        # Include watchdog status
+        watchdog = MMMWatchdog.get_instance()
+        export_data['watchdog_status'] = watchdog.status()
+        
+        # Include session states if requested
+        if include_sessions:
+            sessions = storage.list_sessions()
+            if session_id:
+                sessions = [s for s in sessions if s.get('session_id') == session_id]
+            
+            # Remove sensitive data
+            for s in sessions:
+                s.pop('api_key', None)
+                s.pop('api_secret', None)
+            
+            export_data['sessions'] = sessions
+        
+        response = make_response(json.dumps(export_data, indent=2, default=str))
+        response.headers['Content-Type'] = 'application/json'
+        response.headers['Content-Disposition'] = f'attachment; filename=mmm_audit_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        return response
+        
+    except Exception as e:
+        log.exception("Failed to export audit trail")
         return jsonify({'success': False, 'error': str(e)}), 500
