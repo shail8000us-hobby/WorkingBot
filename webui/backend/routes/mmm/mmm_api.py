@@ -4114,23 +4114,23 @@ def get_audit_trail():
         from .mmm_activity import get_activity_log
         
         activity_log = get_activity_log()
-        activities = activity_log.get_all()
         
-        # Apply filters
+        # Parse query params
         session_id = request.args.get('session_id')
         severity = request.args.get('severity')
         activity_type = request.args.get('type')
         since = request.args.get('since')
         limit = min(int(request.args.get('limit', 100)), 500)
         
+        # Use get_recent which supports session_id and severity filtering
+        activities = activity_log.get_recent(
+            limit=limit,
+            session_id=session_id,
+            severity=severity,
+        )
+        
+        # Apply additional filters not supported by get_recent
         filtered = activities
-        
-        if session_id:
-            filtered = [a for a in filtered if a.get('session_id') == session_id]
-        
-        if severity:
-            severities = severity.split(',')
-            filtered = [a for a in filtered if a.get('severity') in severities]
         
         if activity_type:
             types = activity_type.split(',')
@@ -4145,16 +4145,11 @@ def get_audit_trail():
             except (ValueError, TypeError):
                 pass
         
-        # Sort by timestamp descending (newest first)
-        filtered = sorted(filtered, key=lambda x: x.get('timestamp', ''), reverse=True)
-        
-        # Apply limit
-        filtered = filtered[:limit]
+        # Already sorted newest first by get_recent
         
         return jsonify({
             'success': True,
             'count': len(filtered),
-            'total_available': len(activities),
             'activities': filtered,
             'filters_applied': {
                 'session_id': session_id,
@@ -4192,9 +4187,8 @@ def export_audit_trail():
         session_id = request.args.get('session_id')
         include_sessions = request.args.get('include_sessions', 'false').lower() == 'true'
         
-        activities = activity_log.get_all()
-        if session_id:
-            activities = [a for a in activities if a.get('session_id') == session_id]
+        # Get all activities (up to 500 which is MAX_ACTIVITIES)
+        activities = activity_log.get_recent(limit=500, session_id=session_id)
         
         export_data = {
             'export_timestamp': datetime.now(timezone.utc).isoformat(),
