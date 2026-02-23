@@ -13,8 +13,9 @@ Created: February 15, 2026
 import json
 import os
 import logging
+import threading
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import deque
 
 log = logging.getLogger('mmm_activity')
@@ -91,7 +92,10 @@ class MMMActivityLog:
     """
 
     def __init__(self):
+        self._lock = threading.RLock()  # C-8 fix: thread-safe access
         self._activities: deque = deque(maxlen=MAX_ACTIVITIES)
+        # M-21 fix: create directory in __init__ not in _save_to_disk()
+        os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
         self._load_from_disk()
         self._counter = 0
         # Recommendation #6: Activity log dedup tracking
@@ -111,35 +115,68 @@ class MMMActivityLog:
         except Exception as e:
             log.warning(f"Could not load activity log: {e}")
 
-    def _save_to_disk(self):
+    # M-7 fix: activity types that must always persist regardless of throttle
+    _ALWAYS_PERSIST_TYPES = frozenset({
+        'safety_event', 'auto_close', 'max_loss', 'emergency',
+        'session_stop', 'session_stopped', 'session_pause', 'session_paused',
+        'watchdog', 'error',
+    })
+
+    def _should_persist(self, activity: Dict) -> bool:
+        """M-7 fix: determine if this activity bypasses the throttle.
+
+        Critical and error severity events, plus safety/session-lifecycle event
+        types, always write to disk so post-crash debugging has full context.
+        """
+        # Always persist critical/error/warning severity
+        if activity.get('severity') in ('critical', 'error', 'warning'):
+            return True
+        # Always persist important lifecycle types
+        if activity.get('type') in self._ALWAYS_PERSIST_TYPES:
+            return True
+        # For all other events: apply the 1-in-2 throttle
+        return self._counter % 2 == 0
+
+    def _save_to_disk(self, activity: Dict = None):
         """Persist activities to disk (throttled — every 2nd write).
 
         Fix #16: Atomic write (write to .tmp then rename) prevents corruption
         on crash mid-write. Throttling reduced from 1-in-5 to 1-in-2.
+        M-7 fix: critical/error/warning severity and safety event types bypass
+        the throttle so they are always persisted for post-crash debugging.
+        Fix: use unique tmp file per call to avoid race between concurrent
+        heartbeat threads (Thread A renames .tmp away before Thread B can).
+        H-12 fix: lock around os.rename() critical section.
         """
         self._counter += 1
-        if self._counter % 2 != 0:
+        if activity is not None and not self._should_persist(activity):
             return
+        tmp_file = None
         try:
-            os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
-            tmp_file = ACTIVITY_FILE + '.tmp'
-            with open(tmp_file, 'w') as f:
-                json.dump({
-                    'activities': list(self._activities),
-                    'updated_at': datetime.utcnow().isoformat(),
-                }, f, indent=2, default=str)
-                f.flush()
-                os.fsync(f.fileno())
-            # Atomic rename — survives crash between write and rename
-            os.rename(tmp_file, ACTIVITY_FILE)
+            import tempfile
+            fd, tmp_file = tempfile.mkstemp(
+                suffix='.tmp',
+                dir=os.path.dirname(ACTIVITY_FILE),
+                prefix='mmm_activity_',
+            )
+            with self._lock:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump({
+                        'activities': list(self._activities),
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                    }, f, indent=2, default=str)
+                    f.flush()
+                    os.fsync(f.fileno())
+                # Atomic rename — survives crash between write and rename
+                os.rename(tmp_file, ACTIVITY_FILE)
         except Exception as e:
             log.warning(f"Could not save activity log: {e}")
             # Clean up temp file if rename failed
             try:
-                if os.path.exists(tmp_file):
+                if tmp_file and os.path.exists(tmp_file):
                     os.unlink(tmp_file)
-            except Exception:
-                pass
+            except Exception as _e:
+                log.error(f"Temp cleanup failed: {_e}")  # L-7 fix
 
     def add(
         self,
@@ -171,7 +208,7 @@ class MMMActivityLog:
         if activity_type in _DEDUP_TYPES:
             # Use first 80 chars of message as dedup key (ignores changing numbers)
             dedup_key = (activity_type, session_id or '', message[:80])
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             last = self._dedup_cache.get(dedup_key)
             if last and (now - last).total_seconds() < self._DEDUP_INTERVAL_SECS:
                 return None  # Suppress duplicate
@@ -186,8 +223,8 @@ class MMMActivityLog:
                 }
 
         activity = {
-            'id': f"act_{datetime.utcnow().strftime('%H%M%S')}_{len(self._activities) % 1000:03d}",
-            'timestamp': datetime.utcnow().isoformat(),
+            'id': f"act_{datetime.now(timezone.utc).strftime('%H%M%S')}_{len(self._activities) % 1000:03d}",
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': activity_type,
             'type_label': ACTIVITY_TYPES.get(activity_type, activity_type),
             'message': message,
@@ -197,14 +234,16 @@ class MMMActivityLog:
         }
 
         self._activities.append(activity)
-        self._save_to_disk()
+        self._save_to_disk(activity)  # M-7 fix: pass activity for critical bypass
 
         # Also emit via WebSocket for real-time updates
         try:
             from .mmm_websocket import emit_activity
             emit_activity(activity)
-        except Exception:
+        except ImportError:
             pass  # WebSocket not available
+        except Exception as e:
+            log.warning(f"Activity WS emit failed: {e}")  # M-23 fix
 
         return activity
 
@@ -225,7 +264,8 @@ class MMMActivityLog:
         Returns:
             List of activity dicts
         """
-        items = list(self._activities)
+        with self._lock:
+            items = list(self._activities)
         items.reverse()  # Newest first
 
         if session_id:
@@ -237,13 +277,14 @@ class MMMActivityLog:
 
     def clear(self, session_id: str = None):
         """Clear activities, optionally for a specific session only."""
-        if session_id:
-            self._activities = deque(
-                (a for a in self._activities if a.get('session_id') != session_id),
-                maxlen=MAX_ACTIVITIES,
-            )
-        else:
-            self._activities.clear()
+        with self._lock:  # M-22 fix: atomic clear under lock
+            if session_id:
+                to_keep = [a for a in self._activities if a.get('session_id') != session_id]
+                self._activities.clear()
+                for a in to_keep:
+                    self._activities.append(a)
+            else:
+                self._activities.clear()
         self._save_to_disk()
 
     def resolve_progress(self, session_id: str = None):
@@ -259,10 +300,11 @@ class MMMActivityLog:
             return False
 
         before = len(self._activities)
-        self._activities = deque(
-            (a for a in self._activities if should_keep(a)),
-            maxlen=MAX_ACTIVITIES,
-        )
+        with self._lock:  # M-24 fix: atomic resolve under lock
+            to_keep = [a for a in self._activities if should_keep(a)]
+            self._activities.clear()
+            for a in to_keep:
+                self._activities.append(a)
         removed = before - len(self._activities)
         if removed > 0:
             log.info(f"Resolved {removed} progress activities for session {session_id}")

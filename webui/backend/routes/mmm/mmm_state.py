@@ -11,7 +11,7 @@ Created: February 15, 2026
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from copy import deepcopy
@@ -25,6 +25,95 @@ log = logging.getLogger('mmm_state')
 # Section 2: Per-Side State
 # =============================================================================
 
+# Fix #23: Unified Position Ledger helpers
+
+def _migrate_side_to_positions(side_state: Dict) -> None:
+    """
+    Fix #23: Migrate old 3-array format to Unified Position Ledger.
+
+    Converts legacy fields (original_lots scalar + adjustment_fills[] +
+    frozen_positions[]) into a single positions[] list with unique IDs and
+    lifecycle status. Called automatically by recompute_side_lots() when
+    positions[] key is absent. Idempotent.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    positions = []
+    counter = 0
+    side = side_state.get('side', 'XX').lower()
+
+    # Migrate original_lots → original position (active)
+    orig_lots = side_state.get('original_lots', 0)
+    if orig_lots > 0:
+        counter += 1
+        positions.append({
+            'id': f"{side}_orig",
+            'strike': (
+                side_state.get('original_strike')
+                or side_state.get('active_strike', 0)
+            ),
+            'lots': orig_lots,
+            'entry_premium': side_state.get('original_premium', 0),
+            'premium': side_state.get('original_premium', 0),
+            'type': 'original',
+            'status': 'active',
+            'created_at': now,
+            'shifted_at': None,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': now,
+        })
+
+    # Migrate adjustment_fills → active non-original positions
+    for fill in side_state.get('adjustment_fills', []):
+        lots = fill.get('lots', 0)
+        if lots <= 0:
+            continue
+        counter += 1
+        positions.append({
+            'id': f"{side}_adj_{counter:03d}",
+            'strike': fill.get('strike', side_state.get('active_strike', 0)),
+            'lots': lots,
+            'entry_premium': fill.get('premium', 0),
+            'premium': fill.get('premium', 0),
+            'type': fill.get('type', 'adjustment'),
+            'status': 'active',
+            'created_at': fill.get('timestamp', now),
+            'shifted_at': None,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': fill.get('timestamp', now),
+        })
+
+    # Migrate frozen_positions → shifted positions
+    for frozen in side_state.get('frozen_positions', []):
+        lots = frozen.get('lots', 0)
+        if lots <= 0:
+            continue
+        counter += 1
+        positions.append({
+            'id': f"{side}_frozen_{counter:03d}",
+            'strike': frozen.get('strike', 0),
+            'lots': lots,
+            'entry_premium': frozen.get('entry_premium', 0),
+            'premium': frozen.get('entry_premium', 0),
+            'type': frozen.get('type', 'adjustment'),
+            'status': 'shifted',
+            'created_at': frozen.get('timestamp', now),
+            'shifted_at': frozen.get('frozen_at', now),
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': frozen.get('timestamp', now),
+            'source': frozen.get('source', ''),
+        })
+
+    side_state['positions'] = positions
+    side_state['_pos_counter'] = counter
+    log.debug(
+        f"[Fix #23] Migrated {side} to Unified Position Ledger: "
+        f"{len(positions)} position(s)"
+    )
+
+
 def create_side_state(
     side: str,
     original_lots: int = 0,
@@ -36,6 +125,11 @@ def create_side_state(
 
     Maps to MONEY_POWER_CALCULATION_LOGIC.md Section 2: Per-Side State.
 
+    Fix #23: positions[] is now the single source of truth. All other
+    position-related fields are backward-compatible derived values computed
+    by recompute_side_lots(). Do NOT write to adjustment_fills, frozen_positions,
+    or original_lots directly — write to positions[] instead.
+
     Args:
         side: 'CE' or 'PE'
         original_lots: Lots sold at entry
@@ -45,50 +139,133 @@ def create_side_state(
     Returns:
         Dictionary with all per-side state fields
     """
+    now = datetime.now(timezone.utc).isoformat()
+    positions = []
+    counter = 0
+
+    # Fix #23: Add initial position to the Unified Position Ledger
+    if original_lots > 0:
+        counter += 1
+        positions.append({
+            'id': f"{side.lower()}_orig",
+            'strike': original_strike,
+            'lots': original_lots,
+            'entry_premium': original_premium,
+            'premium': original_premium,     # backward-compat alias
+            'type': 'original',
+            'status': 'active',
+            'created_at': now,
+            'shifted_at': None,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': now,                # backward-compat alias
+        })
+
     return {
         'side': side,
 
-        # Entry positions
-        'original_lots': original_lots,
-        'original_premium': original_premium,
-        'original_strike': original_strike,
+        # Fix #23: Unified Position Ledger — single authoritative source
+        'positions': positions,
+        '_pos_counter': counter,
 
         # Active strike tracking (starts as original, changes on shift)
         'active_strike': original_strike,
 
-        # Adjustment fills at the ACTIVE strike
-        # Each: {lots, premium, strike, timestamp}
+        # Trigger snapshot: {strike_key → premium_at_last_trigger_update}
+        'trigger_snapshot': {},
+
+        # --- Backward-compatible derived fields ---
+        # Populated by recompute_side_lots() from positions[].
+        # Do NOT write to these directly — they are overwritten on every recompute.
+        'original_lots': original_lots,
+        'original_premium': original_premium,
+        'original_strike': original_strike,   # Set at creation; never changed by recompute
         'adjustment_fills': [],
         'adjustment_total_lots': 0,
         'adjustment_avg': 0.0,
-
-        # Frozen positions at OLD strikes after shift
-        # Each: {strike, lots, entry_premium, timestamp}
         'frozen_positions': [],
         'frozen_total_lots': 0,
-
-        # Computed lots
-        'active_lots': original_lots,  # original_lots + adjustment_total_lots
-        'total_lots': original_lots,   # active_lots + frozen_total_lots
-
-        # Trigger snapshot: {strike: premium_at_last_trigger_update}
-        'trigger_snapshot': {},
+        'active_lots': original_lots,
+        'total_lots': original_lots,
     }
 
 
 def recompute_side_lots(side_state: Dict) -> Dict:
     """
-    Recompute active_lots and total_lots from source data.
-    Call this after any change to adjustment_fills or frozen_positions.
+    Recompute all position counts and backward-compatible views from positions[].
+
+    Fix #23: positions[] is the single source of truth. This function:
+      1. Auto-migrates old sessions (no positions[] key) to the new format
+      2. Rebuilds adjustment_fills, frozen_positions, original_lots from positions[]
+      3. Derives all scalar lot counts (active_lots, total_lots, etc.)
+
+    Call this after any mutation to positions[]. The derived fields
+    (adjustment_fills, frozen_positions, etc.) are read-only views — do NOT
+    mutate them directly, as they will be overwritten on the next recompute.
 
     Args:
-        side_state: The per-side state dictionary
+        side_state: The per-side state dictionary (mutated in place)
 
     Returns:
-        Updated side_state (mutated in place and returned)
+        Updated side_state
     """
-    # Adjustment totals at active strike
-    adj_fills = side_state.get('adjustment_fills', [])
+    # Fix #23: Auto-migrate old 3-array format if positions[] not present
+    if 'positions' not in side_state:
+        _migrate_side_to_positions(side_state)
+
+    # M-18 fix: validate positions type after migration/load
+    positions = side_state.get('positions', [])
+    if not isinstance(positions, list):
+        log.error(f"Invalid positions type {type(positions)} — resetting")
+        positions = []
+        side_state['positions'] = []
+
+    # Partition by lifecycle status
+    active_positions = [p for p in positions if p.get('status') == 'active']
+    shifted_positions = [p for p in positions if p.get('status') == 'shifted']
+
+    # --- Rebuild original_lots / original_premium scalar ---
+    orig_pos = next(
+        (p for p in active_positions if p.get('type') == 'original'), None
+    )
+    side_state['original_lots'] = orig_pos['lots'] if orig_pos else 0
+    side_state['original_premium'] = (
+        orig_pos.get('entry_premium', orig_pos.get('premium', 0)) if orig_pos else 0.0
+    )
+    # original_strike is set at creation and never changed by recompute
+
+    # --- Rebuild adjustment_fills view (active non-original positions) ---
+    # Each entry includes '_pos_id' for O(1) removal by ID (Fix #23)
+    adj_positions = [p for p in active_positions if p.get('type') != 'original']
+    side_state['adjustment_fills'] = [
+        {
+            'lots': p.get('lots', 0),
+            'premium': p.get('entry_premium', p.get('premium', 0)),
+            'strike': p.get('strike', 0),
+            'timestamp': p.get('created_at', p.get('timestamp', '')),
+            'type': p.get('type', 'adjustment'),
+            '_pos_id': p.get('id', ''),  # Fix #23: O(1) ID-based removal
+        }
+        for p in adj_positions
+    ]
+
+    # --- Rebuild frozen_positions view (shifted positions) ---
+    # Each entry includes '_pos_id' for O(1) removal by ID (Fix #23)
+    side_state['frozen_positions'] = [
+        {
+            'strike': p.get('strike', 0),
+            'lots': p.get('lots', 0),
+            'entry_premium': p.get('entry_premium', p.get('premium', 0)),
+            'type': p.get('type', 'adjustment'),
+            'frozen_at': p.get('shifted_at', ''),
+            '_pos_id': p.get('id', ''),  # Fix #23: O(1) ID-based removal
+            'source': p.get('source', ''),
+        }
+        for p in shifted_positions
+    ]
+
+    # --- Derive scalars from views ---
+    adj_fills = side_state['adjustment_fills']
     side_state['adjustment_total_lots'] = sum(f.get('lots', 0) for f in adj_fills)
 
     if side_state['adjustment_total_lots'] > 0:
@@ -97,16 +274,12 @@ def recompute_side_lots(side_state: Dict) -> Dict:
     else:
         side_state['adjustment_avg'] = 0.0
 
-    # Frozen totals
-    frozen = side_state.get('frozen_positions', [])
+    frozen = side_state['frozen_positions']
     side_state['frozen_total_lots'] = sum(f.get('lots', 0) for f in frozen)
 
-    # Active = original + adjustment at active strike
     side_state['active_lots'] = (
-        side_state.get('original_lots', 0) + side_state['adjustment_total_lots']
+        side_state['original_lots'] + side_state['adjustment_total_lots']
     )
-
-    # Total = active + frozen
     side_state['total_lots'] = side_state['active_lots'] + side_state['frozen_total_lots']
 
     return side_state
@@ -188,6 +361,14 @@ DEFAULT_PARAMS = {
     'trend_ema_slope_threshold': 25,     # EMA slope threshold
     'trend_action': 'block_sells',       # action: block_sells / pause / wind_down
     'trend_reset_beats': 5,              # beats calm required before reset
+
+    # Perpetual Futures Delta Hedge (Fix #26)
+    'perp_hedge_enabled': False,           # master switch — disabled until user opts in
+    'perp_hedge_delta_threshold': 0.02,    # min |Δ| to open initial hedge (BTC units)
+    'perp_hedge_ratio': 1.0,              # fraction of delta to neutralize (0.3–1.0)
+    'perp_hedge_rebalance_band': 0.005,   # min |effective_Δ| to trigger rebalance
+    'perp_hedge_max_lots': 50,            # hard cap on perp position size (lots)
+    'perp_hedge_cooldown_sec': 30,        # minimum seconds between hedge executions
 }
 
 # Which parameters can be changed while algo is running
@@ -217,6 +398,9 @@ HOT_RELOAD_PARAMS = {
     'trend_enabled', 'trend_move_pct', 'trend_retrace_pct',
     'trend_ema_period', 'trend_ema_slope_threshold', 'trend_action',
     'trend_reset_beats',
+    # Perpetual Futures Delta Hedge
+    'perp_hedge_enabled', 'perp_hedge_delta_threshold', 'perp_hedge_ratio',
+    'perp_hedge_rebalance_band', 'perp_hedge_max_lots', 'perp_hedge_cooldown_sec',
 }
 
 
@@ -244,7 +428,21 @@ def create_session(
     merged_params = {**DEFAULT_PARAMS}
     if params:
         merged_params.update(params)
-    
+
+    # C-4 fix: enforce expiry is present — a session without expiry is a zombie
+    if not merged_params.get('expiry'):
+        raise ValueError("params['expiry'] is required to create a session")
+
+    # C-6 fix: guard against overwriting an existing session
+    if session_id is not None:
+        from .mmm_storage import get_storage as _get_storage
+        _existing = _get_storage().get_session(session_id)
+        if _existing is not None:
+            raise RuntimeError(
+                f"Session '{session_id}' already exists. "
+                "Use resume, not create_session()."
+            )
+
     if session_id is None:
         # Generate informative session ID: mmm18feb26-1
         expiry = merged_params.get('expiry', '')
@@ -296,8 +494,8 @@ def create_session(
     session = {
         'session_id': session_id,
         'mode': mode,
-        'created_at': datetime.utcnow().isoformat(),
-        'updated_at': datetime.utcnow().isoformat(),
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'updated_at': datetime.now(timezone.utc).isoformat(),
 
         # Per-side state (initialized empty, populated on entry)
         'ce': create_side_state('CE'),
@@ -331,9 +529,11 @@ def create_session(
 
         # Timing
         'entry_time': None,
-        'last_heartbeat': None,
+        # M-17 fix: Initialize to creation time so callers don't crash on None
+        'last_heartbeat': datetime.now(timezone.utc).isoformat(),
         'next_heartbeat': None,
-        'expiry_time': None,
+        # C-5 fix: compute expiry_time from params['expiry'] at creation
+        'expiry_time': None,  # populated below
 
         # Parameters
         'params': merged_params,
@@ -344,6 +544,11 @@ def create_session(
         # Error tracking
         'last_error': None,
         'error_count': 0,
+
+        # H-4 fix: monitor generation counter — incremented on every monitor
+        # start/watchdog restart. Used by _save_session() to reject stale saves
+        # from old monitor threads that haven't exited yet.
+        '_monitor_generation': 0,
 
         # Regime Controls — runtime state (persisted for crash recovery)
         '_vol_regime': 'NORMAL',
@@ -426,7 +631,31 @@ def create_session(
             'max_abs_delta': 0,
             'max_abs_delta_timestamp': None,
         },
+
+        # Perpetual Futures Delta Hedge (Fix #26)
+        'perp_hedge': {
+            'lots': 0,               # signed; positive = long, negative = short
+            'avg_entry': 0.0,        # average fill price of current position
+            'realized_pnl': 0.0,     # cumulative realized P&L
+            'unrealized_pnl': 0.0,   # mark-to-market P&L on current position
+            'last_hedge_time': None,  # ISO8601 timestamp of last execution
+            'total_hedge_count': 0,   # total executions this session
+            'last_flip_at': None,     # timestamp of last long↔short flip
+            'target_lots': 0,         # target lots from last computation
+            'last_delta': 0.0,        # portfolio_delta at last hedge
+            # M-8 fix: sliding window of direction flip timestamps for rate limiting
+            'flip_timestamps': [],    # ISO timestamps of the last N flips (pruned to 1h)
+        },
     }
+
+    # C-5 fix: compute expiry_time from params['expiry'] at session creation
+    expiry_str = merged_params.get('expiry', '')
+    if expiry_str:
+        try:
+            d, m, y_full = int(expiry_str[0:2]), int(expiry_str[2:4]), int(expiry_str[4:8])
+            session['expiry_time'] = datetime(y_full, m, d, 15, 30, 0, tzinfo=timezone.utc).isoformat()
+        except (ValueError, IndexError) as _e:
+            log.warning(f"Failed to parse expiry string '{expiry_str}' into expiry_time: {_e}")
 
     return session
 
@@ -454,6 +683,14 @@ def initialize_side_from_entry(
         Updated session (mutated in place)
     """
     side_key = side.lower()
+    # L-6 fix: Guard against silently overwriting an already-initialized side
+    existing = session.get(side_key, {})
+    if existing.get('original_lots', 0) > 0:
+        log.warning(
+            f"initialize_side_from_entry: {side_key.upper()} already has "
+            f"{existing['original_lots']} lots — skipping re-init"
+        )
+        return session
     session[side_key] = create_side_state(
         side=side.upper(),
         original_lots=lots,

@@ -208,11 +208,15 @@ const StrikePreviewTable = ({ label, best, alternatives, color, onSelect }) => {
 // MMMConfigPanel
 // =============================================================================
 
-const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }) => {
+const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, sessionExpiry }) => {
   // ----- State -----
   const [mode, setMode] = useState(initialMode || 'fresh'); // 'fresh' | 'import' | 'manual' | 'adopt'
   const [expiries, setExpiries] = useState([]);
-  const [selectedExpiry, setSelectedExpiry] = useState('');
+  // FIX: Initialize selectedExpiry from session's creation expiry to prevent
+  // accidentally using a different expiry during init-fresh/init-import.
+  // Previously this was '' which auto-selected the first dropdown item (today's 0DTE),
+  // causing sessions created for tomorrow's expiry to trade on today's contracts.
+  const [selectedExpiry, setSelectedExpiry] = useState(sessionExpiry || '');
   const [spotPrice, setSpotPrice] = useState(null);
   const [desiredCePremium, setDesiredCePremium] = useState(100);
   const [desiredPePremium, setDesiredPePremium] = useState(100);
@@ -246,6 +250,23 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
   const mounted = useRef(true);
   useEffect(() => () => { mounted.current = false; }, []);
 
+  // M-27 fix: Regenerate import symbols when selectedExpiry changes
+  useEffect(() => {
+    if (!selectedExpiry) return;
+    setImportData(prev => {
+      const next = { ...prev };
+      const symbolExpiry = selectedExpiry.length === 8
+        ? selectedExpiry.slice(0, 4) + selectedExpiry.slice(6) : selectedExpiry;
+      if (prev.ce_strike) {
+        next.ce_symbol = `C-BTC-${Math.round(parseFloat(prev.ce_strike))}-${symbolExpiry}`;
+      }
+      if (prev.pe_strike) {
+        next.pe_symbol = `P-BTC-${Math.round(parseFloat(prev.pe_strike))}-${symbolExpiry}`;
+      }
+      return next;
+    });
+  }, [selectedExpiry]);
+
   // ----- Load expiries on mount -----
   const fetchExpiries = useCallback(async () => {
     setExpiryLoading(true);
@@ -253,9 +274,15 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
       const result = await mmmService.getExpiries();
       if (result.success && mounted.current) {
         setExpiries(result.expiries || []);
-        // Auto-select first expiry (today's 0DTE)
-        if (result.expiries?.length > 0 && !selectedExpiry) {
-          setSelectedExpiry(result.expiries[0]);
+        // M-25 fix: Only auto-select if no expiry is currently selected
+        if (result.expiries?.length > 0) {
+          setSelectedExpiry(prev => {
+            if (prev) return prev;  // Don't override existing selection
+            if (sessionExpiry && result.expiries.includes(sessionExpiry)) {
+              return sessionExpiry;
+            }
+            return result.expiries[0];
+          });
         }
       }
     } catch (err) {
@@ -263,7 +290,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
     } finally {
       if (mounted.current) setExpiryLoading(false);
     }
-  }, [selectedExpiry]);
+  }, [sessionExpiry]);  // M-25 fix: depend on sessionExpiry, not selectedExpiry
 
   const fetchSpotPrice = useCallback(async () => {
     try {
@@ -291,6 +318,12 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
       setError('Premium values must be positive');
       return;
     }
+    // L-9 fix: Warn if user already manually selected an alternative strike
+    if (selectedCe && preview && selectedCe.strike !== preview.ce?.strike) {
+      if (!window.confirm('You have a manually selected CE strike. Re-preview will replace it. Continue?')) {
+        return;
+      }
+    }
 
     setPreviewLoading(true);
     setError(null);
@@ -308,8 +341,13 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
       if (mounted.current) {
         if (result.success) {
           setPreview(result);
-          setSelectedCe(result.ce);
-          setSelectedPe(result.pe);
+          // M-26 fix: null guard on ce/pe before setting
+          if (result.ce && result.pe) {
+            setSelectedCe(result.ce);
+            setSelectedPe(result.pe);
+          } else {
+            setError('Preview data incomplete — missing CE or PE strike');
+          }
           setSpotPrice(result.spot_price);
         } else {
           setError(result.error || 'Failed to find strikes');
@@ -332,6 +370,14 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
     }
     if (!sessionId) {
       setError('No session ID');
+      return;
+    }
+    // SAFETY: Catch expiry mismatch before sending to backend
+    if (sessionExpiry && selectedExpiry !== sessionExpiry) {
+      setError(
+        `Expiry mismatch! Session was created for ${sessionExpiry} but you selected ${selectedExpiry}. ` +
+        `This would trade on the wrong contracts. Please create a new session for ${selectedExpiry} instead.`
+      );
       return;
     }
 
@@ -397,8 +443,22 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
       setError('All import fields are required');
       return;
     }
+    // M-28 fix: Validate numeric fields before sending to backend
+    if (isNaN(parseFloat(ce_strike)) || isNaN(parseFloat(ce_fill_price)) ||
+        isNaN(parseFloat(pe_strike)) || isNaN(parseFloat(pe_fill_price))) {
+      setError('Strike and fill price fields must be valid numbers');
+      return;
+    }
     if (!selectedExpiry) {
       setError('Please select an expiry date');
+      return;
+    }
+    // SAFETY: Catch expiry mismatch before sending to backend
+    if (sessionExpiry && selectedExpiry !== sessionExpiry) {
+      setError(
+        `Expiry mismatch! Session was created for ${sessionExpiry} but you selected ${selectedExpiry}. ` +
+        `This would trade on the wrong contracts. Please create a new session for ${selectedExpiry} instead.`
+      );
       return;
     }
 
@@ -454,6 +514,14 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
   const handleManualSelectionComplete = useCallback(async (selection) => {
     if (!sessionId) {
       setError('No session ID');
+      return;
+    }
+    // SAFETY: Catch expiry mismatch before sending to backend
+    if (sessionExpiry && selectedExpiry !== sessionExpiry) {
+      setError(
+        `Expiry mismatch! Session was created for ${sessionExpiry} but you selected ${selectedExpiry}. ` +
+        `This would trade on the wrong contracts. Please create a new session for ${selectedExpiry} instead.`
+      );
       return;
     }
 
@@ -678,7 +746,8 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized }
             <InputLabel>Expiry</InputLabel>
             <Select
               value={selectedExpiry}
-              label="Expiry"
+              label={sessionExpiry ? `Expiry (locked to session)` : 'Expiry'}
+              disabled={!!sessionExpiry}  // L-8 fix: lock dropdown when session expiry is set
               onChange={(e) => {
                 const newExpiry = e.target.value;
                 setSelectedExpiry(newExpiry);

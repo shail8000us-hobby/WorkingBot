@@ -96,42 +96,56 @@ def _update_vol_regime(session: Dict, iv_data: Dict, spot_price: float) -> str:
     else:
         iv_avg = 0
 
-    # ── Update ring buffers ──
-    iv_history = session.get('_vol_iv_history', [])
-    spot_history = session.get('_vol_spot_history', [])
+    # ── Update ring buffers (L-5 fix: use deque to avoid manual slicing) ──
+    # Convert from list (JSON-deserialized) to deque with maxlen for automatic eviction.
+    # We store back as list so JSON serialization in _save_session() never sees a deque.
+    raw_iv = session.get('_vol_iv_history')
+    if isinstance(raw_iv, deque):
+        iv_history = raw_iv
+    else:
+        iv_history = deque(raw_iv or [], maxlen=MAX_IV_HISTORY)
+
+    raw_spot = session.get('_vol_spot_history')
+    if isinstance(raw_spot, deque):
+        spot_history = raw_spot
+    else:
+        spot_history = deque(raw_spot or [], maxlen=MAX_SPOT_HISTORY)
 
     if iv_avg > 0:
-        iv_history.append((now, iv_avg))
-        if len(iv_history) > MAX_IV_HISTORY:
-            iv_history = iv_history[-MAX_IV_HISTORY:]
-    session['_vol_iv_history'] = iv_history
+        iv_history.append((now, iv_avg))  # deque auto-evicts oldest when full
+    session['_vol_iv_history'] = list(iv_history)  # Back to list for JSON safety
 
-    if spot_price > 0:
-        spot_history.append((now, spot_price))
-        if len(spot_history) > MAX_SPOT_HISTORY:
-            spot_history = spot_history[-MAX_SPOT_HISTORY:]
-    session['_vol_spot_history'] = spot_history
+    # M-14 fix: use last valid spot price as fallback when current is <= 0
+    last_valid_spot = session.get('_vol_last_valid_spot', 0)
+    effective_spot = spot_price if spot_price > 0 else last_valid_spot
+    if effective_spot > 0:
+        spot_history.append((now, effective_spot))
+        session['_vol_last_valid_spot'] = effective_spot
+    session['_vol_spot_history'] = list(spot_history)  # Back to list for JSON safety
 
     # ── Compute IV Change Rate (Section A.2.1) ──
-    lookback = params.get('vol_lookback_beats', 5)
-    iv_spike_threshold = params.get('vol_iv_spike_pct', 30)
+    # L-5 fix: type-check params to handle None from corrupt sessions
+    lookback = int(params.get('vol_lookback_beats') or 5)
+    iv_spike_threshold = float(params.get('vol_iv_spike_pct') or 30)
     iv_change_pct = 0.0
     have_iv = False
 
-    if len(iv_history) > lookback and iv_avg > 0:
-        iv_past = iv_history[-lookback - 1][1]
+    # M-12 fix: explicit index calculation with bounds guard
+    iv_past_idx = len(iv_history) - lookback - 1
+    if iv_past_idx >= 0 and iv_avg > 0:
+        iv_past = iv_history[iv_past_idx][1]
         if iv_past > 0:
             iv_change_pct = ((iv_avg - iv_past) / iv_past) * 100
             have_iv = True
 
     # ── Compute Realized Volatility (Section A.2.2) ──
-    rv_window = params.get('vol_rv_window', 20)
-    rv_threshold = params.get('vol_rv_threshold', 80)
+    rv_window = int(params.get('vol_rv_window') or 20)
+    rv_threshold = float(params.get('vol_rv_threshold') or 80)
     rv_annualized = 0.0
     have_rv = False
 
     if len(spot_history) >= rv_window:
-        recent = spot_history[-rv_window:]
+        recent = list(spot_history)[-rv_window:]
         log_returns = []
         time_diffs = []
         for i in range(1, len(recent)):
@@ -150,7 +164,7 @@ def _update_vol_regime(session: Dict, iv_data: Dict, spot_price: float) -> str:
         if len(log_returns) >= 2:
             n = len(log_returns)
             variance = sum(r ** 2 for r in log_returns) / (n - 1)
-            avg_dt = sum(time_diffs) / len(time_diffs) if time_diffs else 60
+            avg_dt = max(sum(time_diffs) / len(time_diffs) if time_diffs else 60, 1)  # M-13 fix: floor at 1s
             # Annualize: sqrt(seconds_per_year / avg_dt)
             # Crypto: 365 * 86400 = 31,536,000 seconds/year
             if avg_dt > 0:
@@ -271,11 +285,12 @@ def _update_gamma_cap(
     session['_portfolio_dollar_gamma'] = round(dollar_gamma, 2)
 
     # ── Update gamma history ──
-    gamma_history = session.get('_gamma_history', [])
+    # L-5 fix: deque with maxlen replaces manual slicing
+    raw_gamma = session.get('_gamma_history')
+    gamma_history = raw_gamma if isinstance(raw_gamma, deque) \
+        else deque(raw_gamma or [], maxlen=MAX_GAMMA_HISTORY)
     gamma_history.append((now, dollar_gamma))
-    if len(gamma_history) > MAX_GAMMA_HISTORY:
-        gamma_history = gamma_history[-MAX_GAMMA_HISTORY:]
-    session['_gamma_history'] = gamma_history
+    session['_gamma_history'] = list(gamma_history)  # Back to list for JSON safety
 
     # ── Get limits with near-expiry multiplier (Section B.3) ──
     # Defaults scaled for BTC ($67K spot produces ~$1000+ dollar gamma with 100 lots)
@@ -612,7 +627,12 @@ class MMMRegimeEngine:
         self, session: Dict, iv_data: Dict, spot_price: float,
     ) -> str:
         """Update volatility regime. Returns regime string."""
-        return _update_vol_regime(session, iv_data, spot_price)
+        try:
+            return _update_vol_regime(session, iv_data, spot_price)
+        except Exception as e:
+            log.error(f"[RegimeEngine] vol_regime calculation failed: {e}", exc_info=True)
+            # H-11 fix: return CURRENT regime, not NORMAL — don't downgrade safety
+            return session.get('_vol_regime', VOL_NORMAL)
 
     def update_gamma_cap(
         self,
@@ -622,13 +642,21 @@ class MMMRegimeEngine:
         minutes_to_expiry: Optional[float] = None,
     ) -> str:
         """Update gamma cap regime. Returns regime string."""
-        return _update_gamma_cap(session, gamma_data, spot_price, minutes_to_expiry)
+        try:
+            return _update_gamma_cap(session, gamma_data, spot_price, minutes_to_expiry)
+        except Exception as e:
+            log.error(f"[RegimeEngine] gamma_cap calculation failed: {e}", exc_info=True)
+            return session.get('_gamma_regime', GAMMA_NORMAL)
 
     def update_trend_guard(
         self, session: Dict, spot_price: float,
     ) -> str:
         """Update trend detection guard. Returns regime string."""
-        return _update_trend_guard(session, spot_price)
+        try:
+            return _update_trend_guard(session, spot_price)
+        except Exception as e:
+            log.error(f"[RegimeEngine] trend_guard calculation failed: {e}", exc_info=True)
+            return session.get('_trend_regime', TREND_NORMAL)
 
     def compute_regime_action(self, session: Dict) -> str:
         """Compute aggregate regime action from all three controls."""

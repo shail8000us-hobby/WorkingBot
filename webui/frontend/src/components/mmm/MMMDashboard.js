@@ -155,7 +155,8 @@ const computeExpiryInfo = (expiryTimeISO) => {
 
     if (diffMs <= 0) return { countdown: 'EXPIRED', expiryIST };
 
-    const totalMin = Math.floor(diffMs / 60000);
+    // L-10 fix: clamp to non-negative
+    const totalMin = Math.floor(Math.max(diffMs, 0) / 60000);
     const d = Math.floor(totalMin / 1440);
     const h = Math.floor((totalMin % 1440) / 60);
     const m = totalMin % 60;
@@ -175,9 +176,12 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
   // Live countdown — ticks every 30s so it stays fresh between polls
   const [expiryInfo, setExpiryInfo] = useState(() => computeExpiryInfo(session.expiry_time));
   useEffect(() => {
+    let isMounted = true;  // M-31 fix: guard against post-unmount setState
     setExpiryInfo(computeExpiryInfo(session.expiry_time));
-    const timer = setInterval(() => setExpiryInfo(computeExpiryInfo(session.expiry_time)), 30000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      if (isMounted) setExpiryInfo(computeExpiryInfo(session.expiry_time));
+    }, 30000);
+    return () => { isMounted = false; clearInterval(timer); };
   }, [session.expiry_time]);
 
   return (
@@ -454,6 +458,12 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       }
       if (!pe.strike || !pe.premium || !pe.lots) {
         setError('All PE side fields (Strike, Fill Price, Lots) are required');
+        return;
+      }
+      // M-34 fix: Validate numeric fields before sending to backend
+      if (isNaN(parseFloat(ce.strike)) || isNaN(parseFloat(ce.premium)) || isNaN(parseInt(ce.lots, 10)) ||
+          isNaN(parseFloat(pe.strike)) || isNaN(parseFloat(pe.premium)) || isNaN(parseInt(pe.lots, 10))) {
+        setError('Strike, Premium, and Lots must be valid numbers');
         return;
       }
     }
@@ -779,6 +789,9 @@ const HeartbeatHealthPanel = ({ sessionId, status }) => {
 
   if (!health) return null;
 
+  // M-33 fix: Show staleness indicator when session not running
+  const isStale = status !== 'RUNNING' && health !== null;
+
   const bh = health.beat_health || {};
   const circ = health.circuit || {};
   const grade = bh.grade || '?';
@@ -797,7 +810,7 @@ const HeartbeatHealthPanel = ({ sessionId, status }) => {
     <Paper elevation={0} sx={{ p: 2, mb: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          💓 Heartbeat Health
+          💓 Heartbeat Health {isStale && <Chip label="paused" size="small" color="warning" variant="outlined" sx={{ ml: 1 }} />}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {lastRefresh && (
@@ -1117,6 +1130,11 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
   const [detailTab, setDetailTab] = useState(0);
   const [reduceOpen, setReduceOpen] = useState(false);
 
+  // M-30 fix: Reset tab when session changes (avoids showing empty P&L tab on fresh session)
+  useEffect(() => {
+    setDetailTab(0);
+  }, [session?.session_id]);
+
   if (!session) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1132,19 +1150,24 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
   const status = session.strategy_status || session.status || 'IDLE';
   const isLive = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status);
 
-  // P&L calculations
-  const realized = session.realized_pnl || 0;
-  const unrealized = session.unrealized_pnl || 0;
-  const fees = session.total_fees || 0;
+  // P&L calculations — H-14 fix: use ?? 0 to prevent NaN when backend returns null
+  const realized = session.realized_pnl ?? 0;
+  const unrealized = session.unrealized_pnl ?? 0;
+  const fees = session.total_fees ?? 0;
   const netPnl = realized + unrealized - fees;
-  const totalPremium = session.total_premium_collected || 0;
-  const peakPnl = session.peak_pnl || 0;
+  const totalPremium = session.total_premium_collected ?? 0;
+  const peakPnl = session.peak_pnl ?? 0;
+  // L-11: Compute drawdown from peak for display
+  const peakDrawdown = peakPnl - netPnl;
+
+  // C-9 fix: safe reference to heartbeat data (may be undefined on initial load/reconnect)
+  const heartbeat = wsData?.heartbeat || null;
 
   return (
     <Box sx={{ p: 2 }}>
       {/* Status Banner — ALWAYS shown */}
       <Box sx={{ mb: 2 }}>
-        <MMMStatusBanner session={session} heartbeat={wsData.heartbeat} onBothSidesAction={onBothSidesAction} />
+        <MMMStatusBanner session={session} heartbeat={heartbeat} onBothSidesAction={onBothSidesAction} />
       </Box>
 
       {/* Detail Tabs */}
@@ -1234,6 +1257,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                 label: 'Peak P&L',
                 help: 'peak_pnl',
                 value: `$${peakPnl.toFixed(2)}`,
+                // L-11 fix: Show drawdown delta from peak
+                sub: peakDrawdown > 0.01 ? `↓ $${peakDrawdown.toFixed(2)} from peak` : null,
                 color: '#ab47bc',
                 bg: 'rgba(171,71,188,0.08)',
                 border: 'rgba(171,71,188,0.3)',
@@ -1246,7 +1271,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                 bg: 'rgba(255,152,0,0.08)',
                 border: 'rgba(255,152,0,0.3)',
               },
-            ].map(({ label, help, value, color, bg, border }) => (
+            ].map(({ label, help, value, sub, color, bg, border }) => (
               <Grid item xs={4} sm={2} key={label}>
                 <Paper
                   elevation={0}
@@ -1272,6 +1297,12 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                   >
                     {value}
                   </Typography>
+                  {/* L-11: Show sub-label (e.g., drawdown from peak) */}
+                  {sub && (
+                    <Typography variant="caption" sx={{ color: '#ef5350', display: 'block', mt: 0.25, fontSize: '0.7rem' }}>
+                      {sub}
+                    </Typography>
+                  )}
                 </Paper>
               </Grid>
             ))}
@@ -1371,8 +1402,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
             <SectionBlurb topic="trigger_system" />
             <MMMTriggerGauge
               session={session}
-              heartbeat={wsData.heartbeat}
-              triggerData={wsData.heartbeat}
+              heartbeat={heartbeat}
+              triggerData={heartbeat}
             />
           </Paper>
 
@@ -1430,7 +1461,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
               </Button>
             </Box>
           )}
-          <MMMPositionsTable session={session} heartbeat={wsData.heartbeat} />
+          <MMMPositionsTable session={session} heartbeat={heartbeat} />
           <MMMReduceModal
             open={reduceOpen}
             session={session}
@@ -1443,8 +1474,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
       {detailTab === 2 && (
         <MMMTriggerGauge
           session={session}
-          heartbeat={wsData.heartbeat}
-          triggerData={wsData.heartbeat}
+          heartbeat={heartbeat}
+          triggerData={heartbeat}
         />
       )}
 
@@ -1469,7 +1500,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <MMMSafetyPanel
           session={session}
           safetyEvents={wsData.safetyEvents}
-          minutesToExpiry={wsData.heartbeat?.minutes_to_expiry}
+          minutesToExpiry={heartbeat?.minutes_to_expiry}
         />
       )}
 
@@ -1477,7 +1508,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
       {detailTab === 6 && (
         <MMMStrikeMap
           session={session}
-          spotPrice={wsData.heartbeat?.spot_price}
+          spotPrice={heartbeat?.spot_price}
         />
       )}
 
@@ -1491,7 +1522,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
 
       {/* Tab 8: Consolidated Positions */}
       {detailTab === 8 && (
-        <MMMConsolidatedPositions session={session} heartbeat={wsData.heartbeat} />
+        <MMMConsolidatedPositions session={session} heartbeat={heartbeat} />
       )}
 
       {/* Tab 9: Greeks & IV */}
@@ -1517,7 +1548,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
         <MMMRegimePanel
           session={session}
           regimeData={wsData.regimeData}
-          heartbeat={wsData.heartbeat}
+          heartbeat={heartbeat}
         />
       )}
 
@@ -1525,7 +1556,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
       {detailTab === 13 && (
         <MMMPerpHedgePanel
           session={session}
-          heartbeat={wsData.heartbeat}
+          heartbeat={heartbeat}
           perpHedgeEvents={wsData.perpHedgeEvents || []}
           perpHedgeFlip={wsData.perpHedgeFlip}
         />
@@ -1588,6 +1619,7 @@ const MMMDashboard = () => {
 
   // Full session object for detail view
   const [fullSession, setFullSession] = useState(null);
+  const [fetchError, setFetchError] = useState(null);  // H-15 fix
 
   // When selectedSessionId changes, fetch full session
   const selectedSession = useMemo(
@@ -1608,16 +1640,22 @@ const MMMDashboard = () => {
         const result = await mmmService.getSession(selectedSessionId);
         if (!cancelled && result.success) {
           setFullSession(result.session);
+          setFetchError(null);  // H-15: clear error on success
         }
       } catch (err) {
         // If 404, the session was deleted — clear selection & localStorage
         if (err.status === 404 || err?.details?.error?.includes('not found')) {
           if (!cancelled) {
             setFullSession(null);
+            setFetchError(null);
             selectSession(null);
             localStorage.removeItem('mmm_selectedSessionId');
           }
           return;
+        }
+        // H-15 fix: Surface non-404 errors to user
+        if (!cancelled) {
+          setFetchError(err.message || 'Failed to fetch session data');
         }
         console.error('Failed to fetch full session:', err);
       }
@@ -1704,9 +1742,12 @@ const MMMDashboard = () => {
   // Both-sides decision handler — works from both the popup dialog AND the inline status banner
   const handleBothSidesDecision = useCallback(async (decision, params = {}) => {
     const alertSessionId = bothSidesAlert?.session_id
-      || wsData.bothSidesAlert?.session_id
-      || selectedSessionId;  // Fallback: user may have opened page after the alert fired
-    if (!alertSessionId) return;
+      || wsData.bothSidesAlert?.session_id;
+    // M-32 fix: Don't fall back to selectedSessionId — could be wrong session
+    if (!alertSessionId) {
+      setSnackbar({ open: true, message: 'No active alert to respond to', severity: 'error' });
+      return;
+    }
 
     try {
       const result = await mmmService.submitBothSidesDecision(alertSessionId, decision, params);
@@ -1717,6 +1758,11 @@ const MMMDashboard = () => {
           skip: 'Resumed with updated triggers',
         };
         setSnackbar({ open: true, message: labels[decision] || `Decision: ${decision}`, severity: 'success' });
+        clearBothSidesAlert();
+        wsData.clearBothSidesAlert?.();
+        fetchSessions(false);
+      } else if (result.stale) {
+        // Session already transitioned — dismiss the stale alert silently
         clearBothSidesAlert();
         wsData.clearBothSidesAlert?.();
         fetchSessions(false);
@@ -1808,6 +1854,14 @@ const MMMDashboard = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={clearError}>
           {error}
+        </Alert>
+      )}
+
+      {/* M-35 fix: Prominent WebSocket disconnected warning */}
+      {connectionStatus !== 'connected' && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          WebSocket disconnected — position data may be stale.
+          {connectionStatus === 'reconnecting' ? ' Reconnecting...' : ''}
         </Alert>
       )}
 
@@ -1908,6 +1962,7 @@ const MMMDashboard = () => {
                 <MMMConfigPanel
                   sessionId={selectedSessionId}
                   sessionStatus={fullSession.strategy_status || fullSession.status}
+                  sessionExpiry={fullSession.params?.expiry || ''}
                   initialMode={adoptModeForSession === selectedSessionId ? 'adopt' : undefined}
                   onInitialized={() => {
                     setSnackbar({ open: true, message: 'Session initialized!', severity: 'success' });
@@ -1917,7 +1972,22 @@ const MMMDashboard = () => {
                 />
               )}
               <Paper sx={{ overflow: 'auto' }}>
-                <SessionDetail session={fullSession} wsData={wsData} onBothSidesAction={handleBothSidesDecision} />
+                {/* H-15 fix: Show fetch error alert when non-404 error occurs */}
+                {fetchError && (
+                  <Alert severity="warning" sx={{ m: 1 }}>
+                    Data may be stale: {fetchError}
+                  </Alert>
+                )}
+                {/* H-13 fix: guard against null fullSession */}
+                {fullSession ? (
+                  <SessionDetail session={fullSession} wsData={wsData} onBothSidesAction={handleBothSidesDecision} />
+                ) : (
+                  <Box sx={{ p: 4, textAlign: 'center' }}>
+                    <Typography variant="body1" color="text.secondary">
+                      Select a session to view details
+                    </Typography>
+                  </Box>
+                )}
               </Paper>
 
               {/* Background Activities Feed */}

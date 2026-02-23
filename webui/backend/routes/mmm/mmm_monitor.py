@@ -80,6 +80,14 @@ from .mmm_telegram import (
     alert_max_loss_breach,
 )
 
+# L-2 fix: module-level import removes per-call import-lock overhead on every heartbeat.
+# Wrapped in try/except to avoid blocking startup if the activity module fails.
+try:
+    from .mmm_activity import log_activity
+except ImportError:
+    def log_activity(*args, **kwargs):  # noqa: E306 — fallback no-op
+        pass
+
 log = logging.getLogger('mmm_monitor')
 
 
@@ -108,7 +116,13 @@ class MMMMonitor:
         self._stop_event = threading.Event()
         self._force_event = threading.Event()   # Force-heartbeat signal
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # C-2 fix: protects self.session pointer swap in the heartbeat thread
+        # against concurrent API reads from Flask request threads.
         self._session_lock = threading.Lock()
+
+        # H-4 fix: generation stamp set in start(); saves are rejected if a
+        # newer monitor has already claimed a higher generation number.
+        self._my_generation = 0
 
         self._engine = get_engine()
         self._safety = get_safety()
@@ -155,10 +169,23 @@ class MMMMonitor:
             return
 
         self._running = True
-        self._paused = False
         self._stop_event.clear()
 
-        self.session['strategy_status'] = 'RUNNING'
+        # Respect stored PAUSED status on restore (e.g. after backend restart).
+        # If the session was PAUSED by safety (trailing stop, gamma emergency),
+        # keep it paused — don't silently unpause and start trading.
+        stored_status = self.session.get('strategy_status', 'RUNNING')
+        if stored_status == 'PAUSED':
+            self._paused = True
+            log.info(f"[{self.session_id}] Restoring in PAUSED state (reason: {self.session.get('_paused_reason', 'unknown')})")
+        else:
+            self._paused = False
+            self.session['strategy_status'] = 'RUNNING'
+
+        # H-4 fix: increment generation counter so stale old-thread saves are rejected
+        self.session['_monitor_generation'] = self.session.get('_monitor_generation', 0) + 1
+        self._my_generation = self.session['_monitor_generation']
+        log.debug(f"[{self.session_id}] Monitor generation={self._my_generation}")
         self.session['entry_time'] = (
             self.session.get('entry_time') or datetime.now(timezone.utc).isoformat()
         )
@@ -169,8 +196,11 @@ class MMMMonitor:
         if not analytics.get('session_start_time'):
             analytics['session_start_time'] = datetime.now(timezone.utc).isoformat()
             # Capture initial lots from session
-            analytics['initial_ce_lots'] = self.session.get('ce', {}).get('original_lots', 0)
-            analytics['initial_pe_lots'] = self.session.get('pe', {}).get('original_lots', 0)
+            # M-4 fix: guard against ce/pe being None
+            ce_state = self.session.get('ce') or {}
+            pe_state = self.session.get('pe') or {}
+            analytics['initial_ce_lots'] = ce_state.get('original_lots', 0) if isinstance(ce_state, dict) else 0
+            analytics['initial_pe_lots'] = pe_state.get('original_lots', 0) if isinstance(pe_state, dict) else 0
             # Initialize cumulative traded volume with initial position
             analytics['total_ce_lots_traded'] = analytics['initial_ce_lots']
             analytics['total_pe_lots_traded'] = analytics['initial_pe_lots']
@@ -183,17 +213,20 @@ class MMMMonitor:
         )
         self._thread.start()
 
+        # M-3 fix: emit correct restored status, not always 'RUNNING'
+        restored_status = 'PAUSED' if self._paused else 'RUNNING'
         emit_status_change(
-            self.session_id, 'IDLE', 'RUNNING', 'Monitor started'
+            self.session_id, 'IDLE', restored_status,
+            f'Monitor started (restored: {restored_status})',
         )
-        log.warning(f"[{self.session_id}] Monitor started")
+        log.warning(f"[{self.session_id}] Monitor started (status: {restored_status})")
 
         # Register with watchdog supervisor
         try:
             from .mmm_watchdog import MMMWatchdog
             MMMWatchdog.get_instance().register(self)
         except Exception as _we:
-            log.warning(f"Watchdog registration failed: {_we}")
+            log.error(f"[{self.session_id}] Watchdog registration failed — session may not auto-restart: {_we}")  # L-1 fix
 
     def stop(self, reason: str = 'User requested'):
         """Stop the heartbeat monitor."""
@@ -229,7 +262,6 @@ class MMMMonitor:
 
         # Log activity BEFORE disabling save so it's visible in the feed
         try:
-            from .mmm_activity import log_activity
             log_activity('session_stopped',
                         f'\u23f9 Session stopped: {reason}',
                         self.session_id, 'warning',
@@ -237,7 +269,7 @@ class MMMMonitor:
         except Exception:
             pass
 
-        _save_session(self.session)
+        self._save_my_session()
 
         # AFTER our own save, mark save-disabled so that any in-flight
         # heartbeat completing after this point cannot overwrite the
@@ -281,16 +313,18 @@ class MMMMonitor:
         """
         old_status = self.session.get('strategy_status', 'RUNNING')
         self._paused = True
-        self.session['strategy_status'] = 'PAUSED'
-        self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
-        self.session['_paused_reason'] = reason
-        self.session['_paused_at'] = datetime.now(timezone.utc).isoformat()
-        if resume_at:
-            self.session['_paused_resume_at'] = resume_at
-        else:
-            self.session.pop('_paused_resume_at', None)
+        # C-2 fix: write critical status fields under lock
+        with self._session_lock:
+            self.session['strategy_status'] = 'PAUSED'
+            self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
+            self.session['_paused_reason'] = reason
+            self.session['_paused_at'] = datetime.now(timezone.utc).isoformat()
+            if resume_at:
+                self.session['_paused_resume_at'] = resume_at
+            else:
+                self.session.pop('_paused_resume_at', None)
 
-        _save_session(self.session)
+        self._save_my_session()
 
         emit_status_change(
             self.session_id, old_status, 'PAUSED', reason
@@ -301,15 +335,19 @@ class MMMMonitor:
         """Resume from paused state."""
         old_status = self.session.get('strategy_status', 'PAUSED')
         self._paused = False
-        self.session['strategy_status'] = 'RUNNING'
-        self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
+        # C-2 fix: write critical status fields under lock
+        with self._session_lock:
+            self.session['strategy_status'] = 'RUNNING'
+            self.session['updated_at'] = datetime.now(timezone.utc).isoformat()
+            # Clear pause metadata
+            self.session.pop('_paused_reason', None)
+            self.session.pop('_paused_at', None)
+            self.session.pop('_paused_resume_at', None)
+            # Force immediate reconciliation on next heartbeat
+            self.session['_recon_counter'] = 0
+            self.session['_force_recon'] = True
 
-        # Clear pause metadata
-        self.session.pop('_paused_reason', None)
-        self.session.pop('_paused_at', None)
-        self.session.pop('_paused_resume_at', None)
-
-        _save_session(self.session)
+        self._save_my_session()
 
         emit_status_change(
             self.session_id, old_status, 'RUNNING', reason
@@ -323,6 +361,24 @@ class MMMMonitor:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    def get_session_snapshot(self) -> Dict:
+        """Return a shallow copy of session under lock — safe for API reads.
+
+        C-2 fix: API endpoints must call this instead of accessing monitor.session
+        directly to avoid torn reads during the heartbeat's session pointer swap.
+        """
+        import copy
+        with self._session_lock:
+            return copy.copy(self.session)
+
+    def _save_my_session(self, session: Dict = None):
+        """Convenience wrapper that passes this monitor's generation to _save_session.
+
+        H-4 fix: all heartbeat-path saves go through here so that stale saves
+        from old monitor threads (after a watchdog restart) are automatically rejected.
+        """
+        _save_session(session if session is not None else self.session, self._my_generation)
 
     def _should_stop(self) -> bool:
         """Bug #11 fix: check if stop has been requested (use in long operations)."""
@@ -356,7 +412,6 @@ class MMMMonitor:
                 return
             if self._force_event.is_set():
                 self._force_event.clear()
-                from .mmm_activity import log_activity
                 log_activity('force_heartbeat',
                             '⚡ Force Heartbeat — running immediately',
                             self.session_id, 'info')
@@ -385,14 +440,16 @@ class MMMMonitor:
                     # Clear _save_disabled from freshly loaded session so
                     # this monitor instance can save normally.
                     fresh_session.pop('_save_disabled', None)
-                    self.session = fresh_session
+                    # C-2 fix: swap session pointer under lock so API threads
+                    # reading self.session see a consistent snapshot.
+                    with self._session_lock:
+                        self.session = fresh_session
                     
                     # Log ALL hot-reloaded parameter changes
                     for pkey in new_params:
                         old_val = old_params.get(pkey)
                         new_val = new_params.get(pkey)
                         if old_val is not None and old_val != new_val:
-                            from .mmm_activity import log_activity
                             log_activity('info',
                                         f'🔄 Hot Reload: {pkey} updated {old_val} → {new_val}',
                                         self.session_id, 'success',
@@ -468,6 +525,14 @@ class MMMMonitor:
                     # Circuit breaker: record failure (not a blunt stop)
                     self._circuit.record_failure(str(e))
 
+                    # H-16 fix: best-effort state preservation after heartbeat crash
+                    try:
+                        current_pnl = self.session.get('unrealized_pnl', 0) + self.session.get('realized_pnl', 0) - self.session.get('total_fees', 0)
+                        update_peak_pnl(self.session, current_pnl)
+                        self._save_my_session(self.session)
+                    except Exception as save_err:
+                        log.error(f"Failed to save state after heartbeat crash: {save_err}")
+
                     # Graduated response: only hard-stop on truly unrecoverable errors
                     # (e.g. programming bugs), not exchange connectivity issues
                     unrecoverable = any(kw in str(e).lower() for kw in (
@@ -514,7 +579,7 @@ class MMMMonitor:
             log.exception(f"Monitor loop crashed for {self.session_id}: {e}")
             self.session['strategy_status'] = 'ERROR'
             self.session['last_error'] = str(e)
-            _save_session(self.session)
+            self._save_my_session()
         finally:
             # §26.10: Close perp position on session stop/crash
             # The event loop is still open here, so run_until_complete works.
@@ -541,9 +606,27 @@ class MMMMonitor:
     # =========================================================================
 
     async def _heartbeat(self):
-        """Execute one heartbeat cycle."""
+        """Execute one heartbeat cycle.
+
+        NOTE (M-2): _session_lock is NOT held during heartbeat field updates.
+        API threads calling get_session_snapshot() (which acquires the lock)
+        may see torn state mid-heartbeat. This is an accepted trade-off:
+        acquiring the lock for the entire heartbeat (~1-5s) would block all
+        API reads. API consumers should treat snapshot data as eventually
+        consistent (may lag up to one heartbeat interval).
+        """
         session = self.session
         sid = self.session_id
+
+        # H-10 fix: Reload params from storage at heartbeat start to pick up
+        # hot-reload changes (max_loss_amount, gamma_cap_enabled, etc.)
+        try:
+            from .mmm_storage import get_storage
+            fresh = get_storage().get_session(sid)
+            if fresh and isinstance(fresh.get('params'), dict):
+                session['params'].update(fresh['params'])
+        except Exception as params_e:
+            log.warning(f"[{sid}] Failed to reload params from storage: {params_e}")
 
         session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
         # NOTE: error_count is reset at the END of a successful heartbeat,
@@ -569,7 +652,6 @@ class MMMMonitor:
                 )
 
         # Log heartbeat start
-        from .mmm_activity import log_activity
         log_activity('heartbeat_start',
                     f'Heartbeat #{session.get("_heartbeat_counter", 0) + 1}: Checking market conditions',
                     sid, 'info')
@@ -598,7 +680,11 @@ class MMMMonitor:
         }
 
         # Step 0: Reconcile with exchange positions (§14.5 — exchange reality check)
-        await self._reconcile_exchange_positions()
+        # H-9 fix: skip reconciliation while paused so user can investigate mismatches
+        if not self._paused:
+            await self._reconcile_exchange_positions()
+        else:
+            session.setdefault('_force_recon', True)
 
         # Step 0.5: Margin Guardian — real-time margin utilization check
         margin_result = await self._check_margin_guardian()
@@ -614,7 +700,18 @@ class MMMMonitor:
 
         if margin_result and margin_result.get('checked'):
             if margin_result['tier'] in (TIER_RED, TIER_CRITICAL):
-                # RED/CRITICAL: emergency close all and bail out of heartbeat
+                # RED/CRITICAL: emergency close already handled inside _check_margin_guardian
+                # C-1 fix: run cleanup before returning so peak P&L, session save,
+                # heartbeat emit, and health telemetry are not skipped.
+                try:
+                    current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                    update_peak_pnl(session, current_pnl)
+                    self._emit_heartbeat_data(0, 0)
+                    self._save_my_session(session)
+                    latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                    self._health.record_beat('ok', latency_ms=latency_ms)
+                except Exception as _cleanup_err:
+                    log.error(f"[{sid}] Cleanup after margin emergency failed: {_cleanup_err}")
                 return
             if margin_result['tier'] == TIER_ORANGE:
                 # ORANGE: flag for aggressive buyback (used later in heartbeat)
@@ -665,8 +762,15 @@ class MMMMonitor:
                 )
                 session['unrealized_pnl'] = fresh_unrealized
                 minutes_to_expiry = self._get_minutes_to_expiry()
-                self._safety.run_all_checks(session, minutes_to_expiry)
-                _save_session(session)
+                safety_events = self._safety.run_all_checks(session, minutes_to_expiry)
+                # Process auto-resume events (e.g. whipsaw cooldown expired)
+                for event in safety_events:
+                    if event.get('action') == 'resume' and self._paused:
+                        log_activity('session_resumed',
+                                    f'Auto-resumed (partial beat): {event.get("message", "")}',
+                                    sid, 'success')
+                        self.resume(event.get('message', 'Auto-resume'))
+                self._save_my_session(session)
                 latency_ms = (time.monotonic() - beat_start_mono) * 1000
                 self._health.record_beat(
                     'partial', latency_ms=latency_ms,
@@ -681,6 +785,35 @@ class MMMMonitor:
                             {'circuit_state': self._circuit.state.value})
                 latency_ms = (time.monotonic() - beat_start_mono) * 1000
                 self._health.record_beat('miss', latency_ms=latency_ms)
+
+            # BUG FIX: Even on miss/partial beats, run safety checks that
+            # don't require prices (e.g. whipsaw auto-resume, time-based
+            # events).  Without this, sessions paused by whipsaw can never
+            # auto-resume when exchange is unreachable.
+            try:
+                minutes_to_expiry = self._get_minutes_to_expiry()
+                safety_events = self._safety.run_all_checks(session, minutes_to_expiry)
+                for event in safety_events:
+                    if event.get('action') == 'resume' and self._paused:
+                        log_activity('session_resumed',
+                                    f'Auto-resumed (miss beat): {event.get("message", "")}',
+                                    sid, 'success')
+                        self.resume(event.get('message', 'Auto-resume'))
+                self._save_my_session(session)
+            except Exception as safety_e:
+                log.warning(f"[{sid}] Safety check during miss beat failed: {safety_e}")
+
+            # H-4 fix: Update peak P&L even on miss/partial beats using cached value
+            try:
+                cached_pnl = session.get('unrealized_pnl', 0) or 0
+                realized = session.get('realized_pnl', 0) or 0
+                fees = session.get('total_fees', 0) or 0
+                current_total = cached_pnl + realized - fees
+                update_peak_pnl(session, current_total)
+                self._save_my_session(session)
+            except Exception as peak_e:
+                log.warning(f"[{sid}] Peak P&L update during miss/partial beat failed: {peak_e}")
+
             return
 
         # Log premium values
@@ -847,6 +980,16 @@ class MMMMonitor:
                             f'original strike ${triggered_strike:.0f}',
                             emergency=True,
                         )
+                        # C-2 fix: run cleanup before returning
+                        try:
+                            current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                            update_peak_pnl(session, current_pnl)
+                            self._emit_heartbeat_data(ce_now, pe_now)
+                            self._save_my_session(session)
+                            latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                            self._health.record_beat('ok', latency_ms=latency_ms)
+                        except Exception as _cleanup_err:
+                            log.error(f"[{sid}] Cleanup after ATM auto-close failed: {_cleanup_err}")
                         return
 
         # Step 2: Close-at-5 scan (§11)
@@ -865,6 +1008,16 @@ class MMMMonitor:
                         'both_sides_closed — options expired worthless'
                     )
             self.stop('Both sides fully closed — strategy complete!')
+            # H-2 fix: emit final heartbeat data and save before returning
+            try:
+                current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                update_peak_pnl(session, current_pnl)
+                self._emit_heartbeat_data(ce_now, pe_now)
+                self._save_my_session(session)
+                latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                self._health.record_beat('ok', latency_ms=latency_ms)
+            except Exception as _cleanup_err:
+                log.error(f"[{sid}] Cleanup after both-sides-closed failed: {_cleanup_err}")
             return
 
         # NOTE: Proactive wind-down (buying back on every heartbeat) was removed.
@@ -900,8 +1053,11 @@ class MMMMonitor:
                         sid, 'error',
                         {'fetch_errors': session.get('_pnl_fetch_errors', 0)})
             self.pause('P&L calculation incomplete — data unreliable')
+            # H-3 fix: update peak P&L even when pausing for incomplete data
+            current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+            update_peak_pnl(session, current_pnl)
             self._emit_heartbeat_data(ce_now, pe_now)
-            _save_session(session)
+            self._save_my_session(session)
             return
 
         # Step 3: Safety checks (§13-14)
@@ -932,20 +1088,48 @@ class MMMMonitor:
         self._hb_wt['safety_events'] = safety_events
 
         # Handle safety actions
+        _skip_to_pnl = False  # Flag: skip triggers/adjustments but finish heartbeat
         if should_block_adjustment(safety_events):
             reason, action_type = get_block_action(safety_events)
             if action_type == 'auto_close':
                 await self._auto_close_all(reason, emergency=True)
+                # H-5 fix: run cleanup before returning
+                try:
+                    current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                    update_peak_pnl(session, current_pnl)
+                    self._emit_heartbeat_data(ce_now, pe_now)
+                    self._save_my_session(session)
+                    latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                    self._health.record_beat('ok', latency_ms=latency_ms)
+                except Exception as _cleanup_err:
+                    log.error(f"[{sid}] Cleanup after safety auto_close failed: {_cleanup_err}")
+                return
             elif action_type == 'stop':
                 self.stop(reason)
+                # H-5 fix: emit and save before returning
+                try:
+                    current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                    update_peak_pnl(session, current_pnl)
+                    self._emit_heartbeat_data(ce_now, pe_now)
+                    self._save_my_session(session)
+                    latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                    self._health.record_beat('ok', latency_ms=latency_ms)
+                except Exception as _cleanup_err:
+                    log.error(f"[{sid}] Cleanup after safety stop failed: {_cleanup_err}")
+                return
             else:
                 # stop_adjustments: block new adjustments but keep heartbeat
-                # running so close-at-5 continues on future intervals.
+                # running so close-at-5 continues AND peak_pnl decays
+                # (preventing permanent trailing-stop lockout).
+                # BUG FIX: Previously this returned early, which skipped
+                # update_peak_pnl(), _save_my_session(), and record_beat().
+                # The decaying peak never ran, so the trailing stop fired
+                # permanently once breached.
                 log_activity('adjustments_stopped',
                              f'⛔ Adjustments blocked: {reason}',
                              sid, 'warning',
                              {'reason': reason, 'action_type': action_type})
-            return
+                _skip_to_pnl = True
 
         pause_needed, pause_reason = should_pause(safety_events)
         if pause_needed:
@@ -1062,18 +1246,14 @@ class MMMMonitor:
                         {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)},
                     )
                     self.pause('Gamma emergency — manual review required')
-                    self._emit_heartbeat_data(ce_now, pe_now)
-                    _save_session(session)
-                    return
+                    _skip_to_pnl = True
 
                 # Handle BLOCK_ALL_SELLS — skip trigger evaluation entirely
-                if regime_action == ACTION_BLOCK_ALL_SELLS:
+                if not _skip_to_pnl and regime_action == ACTION_BLOCK_ALL_SELLS:
                     log_activity('regime_block',
                                 f'All sells blocked by regime controls — skipping trigger evaluation',
                                 sid, 'warning')
-                    self._emit_heartbeat_data(ce_now, pe_now)
-                    _save_session(session)
-                    return
+                    _skip_to_pnl = True
 
             except Exception as e:
                 log.warning(f"[{sid}] Regime check failed (non-fatal): {e}")
@@ -1159,227 +1339,229 @@ class MMMMonitor:
                                         f'BOTH SIDES UP - Waiting for user decision '
                                         f'({30 - elapsed:.0f}s remaining)',
                                         sid, 'warning')
-                            self._emit_heartbeat_data(ce_now, pe_now)
-                            _save_session(session)
-                            return
+                            _skip_to_pnl = True
                     except (ValueError, TypeError):
                         pass
 
-            if self._paused:
+            if self._paused and not _skip_to_pnl:
                 log_activity('info',
                             'Session PAUSED - Monitoring only, no adjustments',
                             sid, 'warning')
-                self._emit_heartbeat_data(ce_now, pe_now)
-                _save_session(session)
-                return
+                _skip_to_pnl = True
 
         # Step 5: Cooldown check (§14.3)
-        if is_cooldown_active(session):
+        if not _skip_to_pnl and is_cooldown_active(session):
             cooldown_until = session.get('cooldown_until', '')
             log_activity('info',
                         f'Cooldown Active - Skip adjustment until {cooldown_until[:19] if cooldown_until else "unknown"}',
                         sid, 'info',
                         {'cooldown_until': cooldown_until})
+            _skip_to_pnl = True
+
+        # ── Skip trigger evaluation + adjustments when safety blocks ──
+        # When trailing stop (or other stop_adjustments safety) fires,
+        # skip directly to P&L update so peak_pnl decays and session saves.
+        if _skip_to_pnl:
             self._emit_heartbeat_data(ce_now, pe_now)
-            _save_session(session)
-            return
+            # Fall through to Step 7.5 (perp hedge) + Step 8 (P&L) + save + record_beat
 
-        # Step 6: Evaluate triggers (§7)
-        # Robust v2 Fix #6: Validate trigger_snapshot has active strike key.
-        # If missing (e.g. after restart, adoption, or strike key mismatch),
-        # initialize it with the CURRENT premium to avoid false trigger (baseline=0).
-        for _side_key in ('ce', 'pe'):
-            _side = session.get(_side_key, {})
-            _active_strike = _side.get('active_strike', 0)
-            if _active_strike > 0:
-                from .mmm_constants import strike_key as _sk
-                _strike_key = _sk(_active_strike)
-                _snap = _side.get('trigger_snapshot', {})
-                if _strike_key not in _snap or _snap.get(_strike_key, 0) == 0:
-                    _current_prem = ce_now if _side_key == 'ce' else pe_now
-                    if 'trigger_snapshot' not in _side:
-                        _side['trigger_snapshot'] = {}
-                    _side['trigger_snapshot'][_strike_key] = _current_prem
-                    session[_side_key] = _side
-                    log.warning(
-                        f"[{sid}] Robust v2 Fix #6: Initialized missing trigger_snapshot "
-                        f"for {_side_key.upper()}[{_strike_key}] = {_current_prem:.2f}"
-                    )
-                    log_activity('trigger_stale',
-                                f'⚠️ Trigger snapshot initialized for {_side_key.upper()} '
-                                f'@ {_strike_key} = ${_current_prem:.2f} (was missing/zero)',
-                                sid, 'warning',
-                                {'side': _side_key, 'strike': _strike_key, 'premium': _current_prem})
+        if not _skip_to_pnl:
+            # Step 6: Evaluate triggers (§7)
+            # Robust v2 Fix #6: Validate trigger_snapshot has active strike key.
+            # If missing (e.g. after restart, adoption, or strike key mismatch),
+            # initialize it with the CURRENT premium to avoid false trigger (baseline=0).
+            for _side_key in ('ce', 'pe'):
+                _side = session.get(_side_key, {})
+                _active_strike = _side.get('active_strike', 0)
+                if _active_strike > 0:
+                    from .mmm_constants import strike_key as _sk
+                    _strike_key = _sk(_active_strike)
+                    _snap = _side.get('trigger_snapshot', {})
+                    if _strike_key not in _snap or _snap.get(_strike_key, 0) == 0:
+                        _current_prem = ce_now if _side_key == 'ce' else pe_now
+                        if 'trigger_snapshot' not in _side:
+                            _side['trigger_snapshot'] = {}
+                        _side['trigger_snapshot'][_strike_key] = _current_prem
+                        session[_side_key] = _side
+                        log.warning(
+                            f"[{sid}] Robust v2 Fix #6: Initialized missing trigger_snapshot "
+                            f"for {_side_key.upper()}[{_strike_key}] = {_current_prem:.2f}"
+                        )
+                        log_activity('trigger_stale',
+                                    f'⚠️ Trigger snapshot initialized for {_side_key.upper()} '
+                                    f'@ {_strike_key} = ${_current_prem:.2f} (was missing/zero)',
+                                    sid, 'warning',
+                                    {'side': _side_key, 'strike': _strike_key, 'premium': _current_prem})
 
-        trigger_result = evaluate_triggers(session, ce_now, pe_now)
-        outcome = trigger_result['outcome']
+            trigger_result = evaluate_triggers(session, ce_now, pe_now)
+            outcome = trigger_result['outcome']
 
-        # Log trigger evaluation
-        params = session.get('params', {})
-        min_trigger = trigger_result.get('min_trigger_move', params.get('min_trigger_move', 10.0))
-        ce_excess_pct = trigger_result.get('ce_excess_pct', 0)
-        pe_excess_pct = trigger_result.get('pe_excess_pct', 0)
+            # Log trigger evaluation
+            params = session.get('params', {})
+            min_trigger = trigger_result.get('min_trigger_move', params.get('min_trigger_move', 10.0))
+            ce_excess_pct = trigger_result.get('ce_excess_pct', 0)
+            pe_excess_pct = trigger_result.get('pe_excess_pct', 0)
         
-        log_activity('info',
-                    f'Trigger Check: CE {ce_excess_pct:+.1f}% (need >{min_trigger:.1f}%), '
-                    f'PE {pe_excess_pct:+.1f}% (need >{min_trigger:.1f}%) - '
-                    f'Result: {outcome.upper()}',
-                    sid, 'info',
-                    {
-                        'ce_excess_pct': round(ce_excess_pct, 2),
-                        'pe_excess_pct': round(pe_excess_pct, 2),
-                        'min_trigger_move': min_trigger,
-                        'outcome': outcome
-                    })
-
-        # Step 7: Process outcome (§4.7)
-        if outcome == OUTCOME_NONE:
             log_activity('info',
-                        'No triggers fired - Positions stable',
-                        sid, 'success')
-
-        elif outcome == OUTCOME_BOTH:
-            # §8: Both sides up — pause and alert user
-            log_activity('warning',
-                        f'⚠️ BOTH SIDES UP! CE and PE both triggered - Pausing for manual decision',
-                        sid, 'error',
+                        f'Trigger Check: CE {ce_excess_pct:+.1f}% (need >{min_trigger:.1f}%), '
+                        f'PE {pe_excess_pct:+.1f}% (need >{min_trigger:.1f}%) - '
+                        f'Result: {outcome.upper()}',
+                        sid, 'info',
                         {
-                            'ce_premium': ce_now,
-                            'pe_premium': pe_now,
-                            'ce_excess': trigger_result.get('ce_excess', 0),
-                            'pe_excess': trigger_result.get('pe_excess', 0)
+                            'ce_excess_pct': round(ce_excess_pct, 2),
+                            'pe_excess_pct': round(pe_excess_pct, 2),
+                            'min_trigger_move': min_trigger,
+                            'outcome': outcome
                         })
-            self.pause('Both sides triggered')
-            session['strategy_status'] = 'BOTH_SIDES_UP'
-            session['both_sides_up_at'] = datetime.now(timezone.utc).isoformat()
+
+            # Step 7: Process outcome (§4.7)
+            if outcome == OUTCOME_NONE:
+                log_activity('info',
+                            'No triggers fired - Positions stable',
+                            sid, 'success')
+
+            elif outcome == OUTCOME_BOTH:
+                # §8: Both sides up — pause and alert user
+                log_activity('warning',
+                            f'⚠️ BOTH SIDES UP! CE and PE both triggered - Pausing for manual decision',
+                            sid, 'error',
+                            {
+                                'ce_premium': ce_now,
+                                'pe_premium': pe_now,
+                                'ce_excess': trigger_result.get('ce_excess', 0),
+                                'pe_excess': trigger_result.get('pe_excess', 0)
+                            })
+                self.pause('Both sides triggered')
+                session['strategy_status'] = 'BOTH_SIDES_UP'
+                session['both_sides_up_at'] = datetime.now(timezone.utc).isoformat()
             
-            # Analytics: Track both_sides_up event (no trading logic impact)
-            analytics = session.setdefault('analytics', {})
-            analytics.setdefault('both_sides_up_timestamps', []).append(datetime.now(timezone.utc).isoformat())
+                # Analytics: Track both_sides_up event (no trading logic impact)
+                analytics = session.setdefault('analytics', {})
+                analytics.setdefault('both_sides_up_timestamps', []).append(datetime.now(timezone.utc).isoformat())
             
-            emit_both_sides_alert(
-                sid, ce_now, pe_now,
-                trigger_result['ce_trigger'],
-                trigger_result['pe_trigger'],
-                trigger_result['ce_excess'],
-                trigger_result['pe_excess'],
-            )
-
-        elif outcome in (OUTCOME_CE, OUTCOME_PE):
-            self._hb_wt['outcome'] = 'ce_triggered' if outcome == OUTCOME_CE else 'pe_triggered'
-            aggressor = 'ce' if outcome == OUTCOME_CE else 'pe'
-            hedge = 'pe' if aggressor == 'ce' else 'ce'
-            premium_now = ce_now if aggressor == 'ce' else pe_now
-            hedge_premium = pe_now if aggressor == 'ce' else ce_now
-
-            # Regime-based directional blocking (Section C.4 / D.4)
-            # Check BEFORE wind-down/margin — regime controls gate sells
-            regime_action = session.get('_regime_action', ACTION_NORMAL)
-            blocked, block_reason = self._regime_engine.should_block_sell(session, hedge)
-            if blocked and regime_action != ACTION_FORCE_REDUCE:
-                # Regime blocks this sell, but risk-reducing trades continue
-                log_activity('regime_block',
-                            f'Regime blocked {hedge.upper()} sell: {block_reason}',
-                            sid, 'warning',
-                            {'hedge': hedge, 'aggressor': aggressor, 'reason': block_reason})
-                emit_safety(
-                    sid, 'regime', 'alert',
-                    f'Sell blocked: {block_reason}',
-                    {'hedge': hedge, 'aggressor': aggressor},
+                emit_both_sides_alert(
+                    sid, ce_now, pe_now,
+                    trigger_result['ce_trigger'],
+                    trigger_result['pe_trigger'],
+                    trigger_result['ce_excess'],
+                    trigger_result['pe_excess'],
                 )
-                # Still allow wind-down buybacks if wind-down is active
-                if is_wind_down_active(session) or session.get('_gamma_emergency_wind_down'):
-                    await self._process_wind_down_buyback(aggressor, ce_now, pe_now)
-            # Wind-down mode: reduce instead of adding positions
-            elif is_wind_down_active(session):
-                session['_wind_down_mode'] = True
-                log_activity('wind_down',
-                            f'🌙 Wind-Down Active: {aggressor.upper()} triggered — '
-                            f'reducing positions instead of hedging',
-                            sid, 'info',
-                            {'aggressor': aggressor.upper(), 'premium': premium_now})
 
-                await self._process_wind_down_buyback(
-                    aggressor, ce_now, pe_now,
-                )
-            elif session.get('_margin_block_sells') or session.get('_margin_wind_down'):
-                # Margin Guardian: block new sells when YELLOW+, force buyback when ORANGE+
-                margin_tier = self._margin_guardian.last_tier
-                margin_util = self._margin_guardian.last_utilization
-                if session.get('_margin_wind_down'):
-                    # ORANGE tier: force aggressive buyback instead of hedging
-                    log_activity('margin_wind_down',
-                                f'🟠 MARGIN WIND-DOWN ({margin_util:.1f}%): '
-                                f'{aggressor.upper()} triggered — reducing positions '
-                                f'instead of adding (tier: {margin_tier})',
+            elif outcome in (OUTCOME_CE, OUTCOME_PE):
+                self._hb_wt['outcome'] = 'ce_triggered' if outcome == OUTCOME_CE else 'pe_triggered'
+                aggressor = 'ce' if outcome == OUTCOME_CE else 'pe'
+                hedge = 'pe' if aggressor == 'ce' else 'ce'
+                premium_now = ce_now if aggressor == 'ce' else pe_now
+                hedge_premium = pe_now if aggressor == 'ce' else ce_now
+
+                # Regime-based directional blocking (Section C.4 / D.4)
+                # Check BEFORE wind-down/margin — regime controls gate sells
+                regime_action = session.get('_regime_action', ACTION_NORMAL)
+                blocked, block_reason = self._regime_engine.should_block_sell(session, hedge)
+                if blocked and regime_action != ACTION_FORCE_REDUCE:
+                    # Regime blocks this sell, but risk-reducing trades continue
+                    log_activity('regime_block',
+                                f'Regime blocked {hedge.upper()} sell: {block_reason}',
                                 sid, 'warning',
-                                {'margin_tier': margin_tier, 'utilization': margin_util})
+                                {'hedge': hedge, 'aggressor': aggressor, 'reason': block_reason})
+                    emit_safety(
+                        sid, 'regime', 'alert',
+                        f'Sell blocked: {block_reason}',
+                        {'hedge': hedge, 'aggressor': aggressor},
+                    )
+                    # Still allow wind-down buybacks if wind-down is active
+                    if is_wind_down_active(session) or session.get('_gamma_emergency_wind_down'):
+                        await self._process_wind_down_buyback(aggressor, ce_now, pe_now)
+                # Wind-down mode: reduce instead of adding positions
+                elif is_wind_down_active(session):
+                    session['_wind_down_mode'] = True
+                    log_activity('wind_down',
+                                f'🌙 Wind-Down Active: {aggressor.upper()} triggered — '
+                                f'reducing positions instead of hedging',
+                                sid, 'info',
+                                {'aggressor': aggressor.upper(), 'premium': premium_now})
+
                     await self._process_wind_down_buyback(
                         aggressor, ce_now, pe_now,
                     )
+                elif session.get('_margin_block_sells') or session.get('_margin_wind_down'):
+                    # Margin Guardian: block new sells when YELLOW+, force buyback when ORANGE+
+                    margin_tier = self._margin_guardian.last_tier
+                    margin_util = self._margin_guardian.last_utilization
+                    if session.get('_margin_wind_down'):
+                        # ORANGE tier: force aggressive buyback instead of hedging
+                        log_activity('margin_wind_down',
+                                    f'🟠 MARGIN WIND-DOWN ({margin_util:.1f}%): '
+                                    f'{aggressor.upper()} triggered — reducing positions '
+                                    f'instead of adding (tier: {margin_tier})',
+                                    sid, 'warning',
+                                    {'margin_tier': margin_tier, 'utilization': margin_util})
+                        await self._process_wind_down_buyback(
+                            aggressor, ce_now, pe_now,
+                        )
+                    else:
+                        # YELLOW tier: just block new sells
+                        log_activity('margin_block_sells',
+                                    f'🟡 MARGIN SELLS BLOCKED ({margin_util:.1f}%): '
+                                    f'{aggressor.upper()} triggered but new sells blocked '
+                                    f'(tier: {margin_tier})',
+                                    sid, 'warning',
+                                    {'margin_tier': margin_tier, 'utilization': margin_util})
                 else:
-                    # YELLOW tier: just block new sells
-                    log_activity('margin_block_sells',
-                                f'🟡 MARGIN SELLS BLOCKED ({margin_util:.1f}%): '
-                                f'{aggressor.upper()} triggered but new sells blocked '
-                                f'(tier: {margin_tier})',
-                                sid, 'warning',
-                                {'margin_tier': margin_tier, 'utilization': margin_util})
-            else:
-                session.pop('_wind_down_mode', None)
+                    session.pop('_wind_down_mode', None)
 
-                # Fix #11: If close-at-5 closed positions on the aggressor side
-                # during this same heartbeat, re-evaluate the trigger now that
-                # the position state has changed.  Close-at-5 may have removed
-                # positions whose realized loss already reduces the net exposure —
-                # re-evaluation prevents unnecessary over-hedging.
-                if aggressor in _close_at_5_sides:
-                    log.info(
-                        f"[{sid}] Fix #11: close-at-5 closed {aggressor.upper()} positions "
-                        f"this heartbeat — re-evaluating trigger before adjustment"
-                    )
-                    re_trigger = evaluate_triggers(session, ce_now, pe_now)
-                    if re_trigger['outcome'] not in (OUTCOME_CE, OUTCOME_PE, OUTCOME_BOTH):
-                        log_activity('trigger_cleared_by_close_at_5',
-                                    f'✅ Trigger re-evaluation: {aggressor.upper()} trigger '
-                                    f'no longer active after close-at-5 — skipping adjustment',
-                                    sid, 'info',
-                                    {'aggressor': aggressor, 'original_outcome': outcome,
-                                     're_outcome': re_trigger['outcome']})
-                        # Trigger cleared — skip the adjustment
+                    # Fix #11: If close-at-5 closed positions on the aggressor side
+                    # during this same heartbeat, re-evaluate the trigger now that
+                    # the position state has changed.  Close-at-5 may have removed
+                    # positions whose realized loss already reduces the net exposure —
+                    # re-evaluation prevents unnecessary over-hedging.
+                    if aggressor in _close_at_5_sides:
+                        log.info(
+                            f"[{sid}] Fix #11: close-at-5 closed {aggressor.upper()} positions "
+                            f"this heartbeat — re-evaluating trigger before adjustment"
+                        )
+                        re_trigger = evaluate_triggers(session, ce_now, pe_now)
+                        if re_trigger['outcome'] not in (OUTCOME_CE, OUTCOME_PE, OUTCOME_BOTH):
+                            log_activity('trigger_cleared_by_close_at_5',
+                                        f'✅ Trigger re-evaluation: {aggressor.upper()} trigger '
+                                        f'no longer active after close-at-5 — skipping adjustment',
+                                        sid, 'info',
+                                        {'aggressor': aggressor, 'original_outcome': outcome,
+                                         're_outcome': re_trigger['outcome']})
+                            # Trigger cleared — skip the adjustment
+                        else:
+                            log_activity('adjustment_triggered',
+                                        f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
+                                        f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})'
+                                        f' [trigger confirmed after close-at-5 re-check]',
+                                        sid, 'info',
+                                        {
+                                            'aggressor': aggressor.upper(),
+                                            'aggressor_premium': premium_now,
+                                            'hedge': hedge.upper(),
+                                            'hedge_premium': hedge_premium,
+                                            'close_at_5_ran_on_aggressor': True,
+                                        })
+                            await self._process_adjustment(
+                                aggressor, hedge, premium_now, hedge_premium,
+                                ce_now, pe_now,
+                            )
                     else:
                         log_activity('adjustment_triggered',
                                     f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
-                                    f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})'
-                                    f' [trigger confirmed after close-at-5 re-check]',
+                                    f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
                                     sid, 'info',
                                     {
                                         'aggressor': aggressor.upper(),
                                         'aggressor_premium': premium_now,
                                         'hedge': hedge.upper(),
-                                        'hedge_premium': hedge_premium,
-                                        'close_at_5_ran_on_aggressor': True,
+                                        'hedge_premium': hedge_premium
                                     })
+
                         await self._process_adjustment(
                             aggressor, hedge, premium_now, hedge_premium,
                             ce_now, pe_now,
                         )
-                else:
-                    log_activity('adjustment_triggered',
-                                f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
-                                f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
-                                sid, 'info',
-                                {
-                                    'aggressor': aggressor.upper(),
-                                    'aggressor_premium': premium_now,
-                                    'hedge': hedge.upper(),
-                                    'hedge_premium': hedge_premium
-                                })
-
-                    await self._process_adjustment(
-                        aggressor, hedge, premium_now, hedge_premium,
-                        ce_now, pe_now,
-                    )
 
         # Step 7.5: Perp Delta Hedge (Fix #26)
         # Runs after adjustments, before P&L — uses cached portfolio_delta from Step 3.5
@@ -1497,6 +1679,15 @@ class MMMMonitor:
                 f'Max loss breached: P&L ${current_total_pnl:.2f} <= -${max_loss_amount:.2f}',
                 emergency=True,
             )
+            # C-3 fix: run cleanup before returning
+            try:
+                update_peak_pnl(session, current_total_pnl)
+                self._emit_heartbeat_data(ce_now, pe_now)
+                self._save_my_session(session)
+                latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                self._health.record_beat('ok', latency_ms=latency_ms)
+            except Exception as _cleanup_err:
+                log.error(f"[{sid}] Cleanup after max loss breach failed: {_cleanup_err}")
             return
 
         # Periodic reconciliation (§14.5)
@@ -1537,7 +1728,7 @@ class MMMMonitor:
             log.warning(f'Walkthrough generation failed: {e}')
 
         # Save state
-        _save_session(session)
+        self._save_my_session(session)
         
         # Periodically persist analytics (every 10 heartbeats or ~5min for 30s intervals)
         heartbeat_counter = session.get('_heartbeat_counter', 0)
@@ -1567,7 +1758,6 @@ class MMMMonitor:
 
         # Log heartbeat completion with ACTUAL effective interval
         effective_iv = getattr(self, '_effective_interval', session.get('params', {}).get('adjustment_interval', 300))
-        from .mmm_activity import log_activity
         log_activity('heartbeat_complete',
                     f'✓ Heartbeat #{session.get("_heartbeat_counter", 0)} complete '
                     f'[{beat_latency_ms:.0f}ms, grade={self._health.grade()}] — '
@@ -1600,7 +1790,6 @@ class MMMMonitor:
         """
         session = self.session
         sid = self.session_id
-        from .mmm_activity import log_activity
 
         reduced_any = False
         for side in ['ce', 'pe']:
@@ -1654,7 +1843,6 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
 
-        from .mmm_activity import log_activity
 
         wd_action = compute_wind_down_action(session, aggressor, ce_now, pe_now)
 
@@ -1854,7 +2042,6 @@ class MMMMonitor:
         here).  The normal heartbeat will refresh snapshots on next cycle.
         """
         from .mmm_state import recompute_side_lots
-        from .mmm_activity import log_activity
 
         side_state = session.setdefault(side, {})
         aggressor_side = 'pe' if side == 'ce' else 'ce'
@@ -1917,7 +2104,7 @@ class MMMMonitor:
                       'fill_price': fill_price, 'adj_type': adj_type})
 
         # Save to storage immediately
-        _save_session(session)
+        self._save_my_session(session)
 
     # =========================================================================
     # §5: Process Adjustment (Standard / Reversal)
@@ -1947,7 +2134,6 @@ class MMMMonitor:
         # skip this heartbeat to avoid position accumulation.  If it was filled
         # but not recorded (e.g. executor timed out), record the fill now so
         # calculations stay accurate.
-        from .mmm_activity import log_activity as _log_act
         try:
             rest_for_guard = self._create_heartbeat_rest_client()
             guard_result = await check_and_resolve_pending(
@@ -1959,7 +2145,7 @@ class MMMMonitor:
             )
 
             if guard_result == 'filled':
-                _log_act('pending_order_resolved',
+                log_activity('pending_order_resolved',
                          f'✅ Pending {hedge.upper()} order confirmed FILLED (recorded from exchange). '
                          f'Skipping duplicate order this heartbeat.',
                          sid, 'success',
@@ -1971,7 +2157,7 @@ class MMMMonitor:
                 return
 
             elif guard_result in ('open', 'error'):
-                _log_act('pending_order_active',
+                log_activity('pending_order_active',
                          f'⏳ Pending {hedge.upper()} order still OPEN on exchange — '
                          f'skipping duplicate order (guard_result={guard_result})',
                          sid, 'warning',
@@ -2139,7 +2325,6 @@ class MMMMonitor:
                             f"[{sid}] ITM GUARD: {hedge.upper()} strike {hedge_strike} is ITM "
                             f"(spot=${spot_price:.0f}). Refusing to sell ITM for adjustment."
                         )
-                        from .mmm_activity import log_activity
                         log_activity('itm_guard_blocked',
                                     f'🚫 ITM GUARD: {hedge.upper()} @ {hedge_strike} is ITM '
                                     f'(spot ${spot_price:.0f}). Auto-shifting to OTM strike.',
@@ -2177,7 +2362,6 @@ class MMMMonitor:
                             f"[{sid}] ITM GUARD OFF: {hedge.upper()} strike {hedge_strike} is ITM "
                             f"(spot=${spot_price:.0f}). Proceeding with adjustment (user disabled guard)."
                         )
-                        from .mmm_activity import log_activity
                         log_activity('itm_guard_bypassed',
                                     f'⚠️ ITM GUARD OFF: {hedge.upper()} @ {hedge_strike} is ITM '
                                     f'(spot ${spot_price:.0f}). Proceeding — guard disabled by user.',
@@ -2204,7 +2388,6 @@ class MMMMonitor:
         )
 
         if result.get('success'):
-            from .mmm_activity import log_activity
             fill_price = result['fill_price']
 
             # Analytics: Track adjustment event (no trading logic impact)
@@ -2276,7 +2459,6 @@ class MMMMonitor:
         )
 
         if not new_strike_info:
-            from .mmm_activity import log_activity
             shift_threshold = session.get('params', {}).get('shift_threshold', 50.0)
             log.warning(
                 f"[{sid}] SHIFT FAILED: No OTM {side.upper()} strike with "
@@ -2472,7 +2654,6 @@ class MMMMonitor:
                     is_itm = True
 
                 if is_itm and itm_guard_on:
-                    from .mmm_activity import log_activity
                     log.warning(
                         f"[{sid}] ITM GUARD (shift fallback): {side.upper()} "
                         f"{hedge_strike} is ITM (spot=${spot_price:.0f})."
@@ -2492,7 +2673,6 @@ class MMMMonitor:
         )
 
         if result.get('success'):
-            from .mmm_activity import log_activity
             fill_price = result['fill_price']
 
             # Analytics tracking
@@ -2573,7 +2753,6 @@ class MMMMonitor:
         )
 
         if closeable:
-            from .mmm_activity import log_activity
             threshold_note = f' (wind-down elevated threshold: {wd_threshold})' if using_elevated else ''
             closeable_summary = ', '.join([f"{p['side'].upper()} @ {p['strike']}" for p in closeable])
             capped_note = ''
@@ -2754,7 +2933,6 @@ class MMMMonitor:
         mode_label = "🚨 EMERGENCY" if emergency else "🔄 Normal"
         log.info(f"[{sid}] {mode_label} auto-closing all positions: {reason}")
 
-        from .mmm_activity import log_activity
         log_activity('auto_close_all',
                      f'{mode_label} close-all initiated: {reason}',
                      sid, 'critical' if emergency else 'warning',
@@ -2984,7 +3162,6 @@ class MMMMonitor:
         Returns the margin result dict, or None if skipped/disabled.
         On RED/CRITICAL, triggers emergency close and session stop.
         """
-        from .mmm_activity import log_activity
         sid = self.session_id
         session = self.session
 
@@ -3099,6 +3276,10 @@ class MMMMonitor:
 
         except Exception as e:
             log.error(f"[{sid}] Margin guardian check failed: {e}")
+            # L-2: Intentional fail-open design — if margin check crashes,
+            # heartbeat continues normally. Rationale: a transient API error
+            # should not halt the entire strategy. The next heartbeat will
+            # retry the margin check.
             return None
 
     def _get_other_sessions_lots_at_symbol(self, symbol: str) -> int:
@@ -3136,6 +3317,161 @@ class MMMMonitor:
                             total += frozen.get('lots', 0)
         return total
 
+    # =========================================================================
+    # Auto-Correction Helpers for Exchange Reconciliation
+    # =========================================================================
+
+    def _auto_correct_missing_positions(
+        self, side_state: Dict, strike: float, reason: str
+    ):
+        """
+        Mark ALL positions at a given strike as closed/expired in the
+        Unified Position Ledger. Called when exchange shows 0 lots at a
+        strike the session thinks it owns.
+        """
+        from .mmm_state import recompute_side_lots
+        now = datetime.now(timezone.utc).isoformat()
+        removed_lots = 0
+        strike_tol = 1.0  # float tolerance for strike comparison
+
+        for pos in side_state.get('positions', []):
+            if pos.get('status') in ('active', 'shifted'):
+                pos_strike = pos.get('strike', 0)
+                if abs(pos_strike - strike) < strike_tol:
+                    removed_lots += pos.get('lots', 0)
+                    pos['status'] = 'closed'
+                    pos['closed_at'] = now
+                    pos['close_reason'] = f'exchange_reconciliation:{reason}'
+
+        if removed_lots > 0:
+            recompute_side_lots(side_state)
+            log.warning(
+                f"[{self.session_id}] AUTO-CORRECT: Removed {removed_lots} phantom "
+                f"{side_state.get('side', '?').upper()} lots @ {strike} "
+                f"(reason: {reason}, exchange=0)"
+            )
+            log_activity('reconciliation_autocorrect',
+                f'🔧 Auto-corrected: removed {removed_lots} phantom '
+                f'{side_state.get("side", "?").upper()} lots @ {strike} '
+                f'(exchange shows 0)',
+                self.session_id, 'warning',
+                {'strike': strike, 'removed_lots': removed_lots, 'reason': reason})
+
+    def _auto_correct_lot_mismatch(
+        self, side_state: Dict, strike: float, target_lots: int, reason: str
+    ):
+        """
+        Trim active positions at a strike to match exchange reality.
+        Removes excess lots in LIFO order (most recently added first).
+        """
+        from .mmm_state import recompute_side_lots
+        now = datetime.now(timezone.utc).isoformat()
+        strike_tol = 1.0
+
+        # Gather active positions at this strike, sorted by creation (LIFO)
+        active_at_strike = [
+            p for p in side_state.get('positions', [])
+            if p.get('status') == 'active'
+            and abs(p.get('strike', 0) - strike) < strike_tol
+        ]
+        # Sort by creation time descending (newest first for LIFO removal)
+        active_at_strike.sort(
+            key=lambda p: p.get('created_at', ''),
+            reverse=True,
+        )
+
+        current_lots = sum(p.get('lots', 0) for p in active_at_strike)
+        excess = current_lots - target_lots
+        removed = 0
+
+        for pos in active_at_strike:
+            if excess <= 0:
+                break
+            pos_lots = pos.get('lots', 0)
+            if pos_lots <= excess:
+                # Close entire position
+                pos['status'] = 'closed'
+                pos['closed_at'] = now
+                pos['close_reason'] = f'exchange_reconciliation:{reason}'
+                excess -= pos_lots
+                removed += pos_lots
+            else:
+                # Partial close — reduce lots
+                pos['lots'] = pos_lots - excess
+                removed += excess
+                excess = 0
+
+        if removed > 0:
+            recompute_side_lots(side_state)
+            log.warning(
+                f"[{self.session_id}] AUTO-CORRECT: Trimmed {removed} excess "
+                f"{side_state.get('side', '?').upper()} lots @ {strike} "
+                f"(session had {current_lots}, exchange has {target_lots})"
+            )
+            log_activity('reconciliation_autocorrect',
+                f'🔧 Auto-corrected: trimmed {removed} excess '
+                f'{side_state.get("side", "?").upper()} lots @ {strike} '
+                f'(session={current_lots} → {target_lots})',
+                self.session_id, 'warning',
+                {'strike': strike, 'removed': removed,
+                 'old_lots': current_lots, 'new_lots': target_lots, 'reason': reason})
+
+    def _auto_correct_frozen_mismatch(
+        self, side_state: Dict, strike: float, target_lots: int, reason: str
+    ):
+        """
+        Trim frozen (shifted) positions at a strike to match exchange reality.
+        Removes excess in LIFO order.
+        """
+        from .mmm_state import recompute_side_lots
+        now = datetime.now(timezone.utc).isoformat()
+        strike_tol = 1.0
+
+        shifted_at_strike = [
+            p for p in side_state.get('positions', [])
+            if p.get('status') == 'shifted'
+            and abs(p.get('strike', 0) - strike) < strike_tol
+        ]
+        shifted_at_strike.sort(
+            key=lambda p: p.get('shifted_at', p.get('created_at', '')),
+            reverse=True,
+        )
+
+        current_lots = sum(p.get('lots', 0) for p in shifted_at_strike)
+        excess = current_lots - target_lots
+        removed = 0
+
+        for pos in shifted_at_strike:
+            if excess <= 0:
+                break
+            pos_lots = pos.get('lots', 0)
+            if pos_lots <= excess:
+                pos['status'] = 'closed'
+                pos['closed_at'] = now
+                pos['close_reason'] = f'exchange_reconciliation:{reason}'
+                excess -= pos_lots
+                removed += pos_lots
+            else:
+                pos['lots'] = pos_lots - excess
+                removed += excess
+                excess = 0
+
+        if removed > 0:
+            recompute_side_lots(side_state)
+            log.warning(
+                f"[{self.session_id}] AUTO-CORRECT (frozen): Trimmed {removed} excess "
+                f"{side_state.get('side', '?').upper()} lots @ {strike} "
+                f"(session had {current_lots}, exchange has {target_lots})"
+            )
+            log_activity('reconciliation_autocorrect',
+                f'🔧 Auto-corrected (frozen): trimmed {removed} excess '
+                f'{side_state.get("side", "?").upper()} lots @ {strike} '
+                f'(session={current_lots} → {target_lots})',
+                self.session_id, 'warning',
+                {'strike': strike, 'removed': removed,
+                 'old_lots': current_lots, 'new_lots': target_lots,
+                 'reason': reason, 'position_type': 'frozen'})
+
     async def _reconcile_exchange_positions(self):
         """
         Query actual exchange positions and compare with session state.
@@ -3148,15 +3484,23 @@ class MMMMonitor:
         - Session thinks position is open but exchange shows 0
         - Lot count mismatch between session state and exchange
 
-        Logs discrepancies as activities but does NOT auto-correct.
+        AUTO-CORRECTS when session > exchange (phantom positions):
+        - MISSING_ON_EXCHANGE: marks all session positions at that strike as expired
+        - SIZE_MISMATCH (exchange < session): trims session to match exchange
+        - FROZEN_MISSING / FROZEN_MISMATCH: same for frozen positions
+
+        Does NOT auto-add positions from exchange → session (could be from
+        other algos, manual trades, or other MMM sessions).
         """
         session = self.session
         sid = self.session_id
 
         # Only reconcile every Nth heartbeat to avoid API spam
+        # Exception: force reconciliation on resume or first heartbeat
+        force_recon = session.pop('_force_recon', False)
         recon_counter = session.get('_recon_counter', 0) + 1
         session['_recon_counter'] = recon_counter
-        if recon_counter % 5 != 1:  # Every 5th heartbeat (first, 6th, 11th, ...)
+        if not force_recon and recon_counter % 5 != 1:  # Every 5th heartbeat (first, 6th, 11th, ...)
             return
 
         # ── One-time cleanup: remove ALL exchange_sync frozen positions.
@@ -3302,19 +3646,58 @@ class MMMMonitor:
                         'symbol': active_symbol,
                         'session_lots': active_lots,
                         'exchange_size': 0,
+                        'auto_corrected': True,
                     })
+
+                    # AUTO-CORRECT: Mark all session positions at this strike as
+                    # expired/settled. Exchange has 0 → these are phantom positions
+                    # (likely expired OTM or auto-settled by exchange).
+                    self._auto_correct_missing_positions(
+                        side_state=side,
+                        strike=active_strike,
+                        reason='exchange_shows_zero',
+                    )
+
                 elif abs(active_lots - effective_exchange_size) > 0.1 and active_lots > 0:
-                    discrepancies.append({
-                        'side': side_key.upper(),
-                        'type': 'SIZE_MISMATCH',
-                        'detail': (
-                            f"{side_key.upper()} active @ {active_strike}: session={active_lots} "
-                            f"vs exchange={exchange_size} (other sessions={other_lots_at_active})"
-                        ),
-                        'symbol': active_symbol,
-                        'session_lots': active_lots,
-                        'exchange_size': exchange_size,
-                    })
+                    # Session has MORE than exchange (phantom lots)
+                    if active_lots > effective_exchange_size:
+                        discrepancies.append({
+                            'side': side_key.upper(),
+                            'type': 'SIZE_MISMATCH',
+                            'detail': (
+                                f"{side_key.upper()} active @ {active_strike}: session={active_lots} "
+                                f"vs exchange={exchange_size} (other sessions={other_lots_at_active})"
+                            ),
+                            'symbol': active_symbol,
+                            'session_lots': active_lots,
+                            'exchange_size': exchange_size,
+                            'auto_corrected': True,
+                        })
+
+                        # AUTO-CORRECT: Trim session lots to match exchange.
+                        # Exchange is the source of truth.
+                        target_lots = int(effective_exchange_size)
+                        self._auto_correct_lot_mismatch(
+                            side_state=side,
+                            strike=active_strike,
+                            target_lots=target_lots,
+                            reason='exchange_has_fewer',
+                        )
+                    else:
+                        # Exchange has MORE than session — do NOT auto-add
+                        # (could be from other sources)
+                        discrepancies.append({
+                            'side': side_key.upper(),
+                            'type': 'SIZE_MISMATCH',
+                            'detail': (
+                                f"{side_key.upper()} active @ {active_strike}: session={active_lots} "
+                                f"vs exchange={exchange_size} (other sessions={other_lots_at_active})"
+                            ),
+                            'symbol': active_symbol,
+                            'session_lots': active_lots,
+                            'exchange_size': exchange_size,
+                            'auto_corrected': False,
+                        })
 
                 # Check frozen positions at their own strikes
                 # Aggregate frozen lots per strike first (multiple fills at same strike)
@@ -3342,22 +3725,48 @@ class MMMMonitor:
                             'symbol': fsym,
                             'session_lots': total_frozen_lots,
                             'exchange_size': 0,
-                        })
-                    elif abs(total_frozen_lots - effective_frozen_ex) > 0.1:
-                        discrepancies.append({
-                            'side': side_key.upper(),
-                            'type': 'FROZEN_MISMATCH',
-                            'detail': f"{side_key.upper()} frozen @ {f_strike}: session={total_frozen_lots} vs exchange={f_ex_size}",
-                            'symbol': fsym,
-                            'session_lots': total_frozen_lots,
-                            'exchange_size': f_ex_size,
+                            'auto_corrected': True,
                         })
 
-                        # NOTE: Auto-sync DISABLED. The exchange reports combined
-                        # lots from ALL sources (other MMM sessions, SSR algo,
-                        # manual trades). Auto-syncing extra lots into this
-                        # session inflated total_lots and triggered false
-                        # position cap alerts. Reconciliation is now log-only.
+                        # AUTO-CORRECT: Mark frozen positions at this strike as
+                        # expired/settled (exchange shows 0).
+                        self._auto_correct_missing_positions(
+                            side_state=side,
+                            strike=f_strike,
+                            reason='frozen_exchange_shows_zero',
+                        )
+
+                    elif abs(total_frozen_lots - effective_frozen_ex) > 0.1:
+                        if total_frozen_lots > effective_frozen_ex:
+                            discrepancies.append({
+                                'side': side_key.upper(),
+                                'type': 'FROZEN_MISMATCH',
+                                'detail': f"{side_key.upper()} frozen @ {f_strike}: session={total_frozen_lots} vs exchange={f_ex_size}",
+                                'symbol': fsym,
+                                'session_lots': total_frozen_lots,
+                                'exchange_size': f_ex_size,
+                                'auto_corrected': True,
+                            })
+
+                            # AUTO-CORRECT: Trim frozen lots to match exchange
+                            target_frozen = int(effective_frozen_ex)
+                            self._auto_correct_frozen_mismatch(
+                                side_state=side,
+                                strike=f_strike,
+                                target_lots=target_frozen,
+                                reason='frozen_exchange_has_fewer',
+                            )
+                        else:
+                            # Exchange has more — do NOT auto-add
+                            discrepancies.append({
+                                'side': side_key.upper(),
+                                'type': 'FROZEN_MISMATCH',
+                                'detail': f"{side_key.upper()} frozen @ {f_strike}: session={total_frozen_lots} vs exchange={f_ex_size}",
+                                'symbol': fsym,
+                                'session_lots': total_frozen_lots,
+                                'exchange_size': f_ex_size,
+                                'auto_corrected': False,
+                            })
 
                 # Also check for exchange positions at strikes the session
                 # doesn't know about at all (completely untracked)
@@ -3486,14 +3895,26 @@ class MMMMonitor:
                 'matched_count': len(exchange_positions),
             }
 
+            # Count auto-corrected discrepancies
+            auto_corrected = [d for d in discrepancies if d.get('auto_corrected')]
+
             if discrepancies:
-                from .mmm_activity import log_activity
                 for d in discrepancies:
-                    log.warning(f"[{sid}] RECONCILIATION: {d['detail']}")
+                    severity = 'error' if d.get('auto_corrected') else 'warning'
+                    prefix = '🔧 AUTO-CORRECTED' if d.get('auto_corrected') else '⚠️ MISMATCH'
+                    log.warning(f"[{sid}] RECONCILIATION: {prefix} — {d['detail']}")
                     log_activity('reconciliation_warning',
-                        f"Position mismatch: {d['detail']}",
-                        session_id=sid, severity='warning',
+                        f"Position reconciliation: {prefix} — {d['detail']}",
+                        session_id=sid, severity=severity,
                         details=d)
+
+                # If any auto-corrections happened, persist the updated state
+                if auto_corrected:
+                    log.warning(
+                        f"[{sid}] RECONCILIATION: {len(auto_corrected)} discrepancies "
+                        f"auto-corrected — saving updated session state"
+                    )
+                    self._save_my_session(session)
             else:
                 log.debug(f"[{sid}] Reconciliation OK — {len(exchange_positions)} matched positions")
 
@@ -4177,52 +4598,71 @@ class MMMMonitor:
 
 _monitors: Dict[str, MMMMonitor] = {}
 
+# C-1 fix: module-level lock protecting all _monitors dict access.
+# The per-instance self._session_lock was previously unused; this module-level
+# lock guards the registry itself across Flask threads, watchdog thread, and
+# monitor stop threads.
+_monitors_lock = threading.Lock()
+
 
 def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
-    """Start a monitor for a session."""
-    if session_id in _monitors:
-        log.warning(f"Monitor already exists for {session_id}")
-        _monitors[session_id].stop('Replaced by new monitor')
+    """Start a monitor for a session. Thread-safe (C-1 fix)."""
+    # Check-then-stop under lock to prevent TOCTOU race
+    with _monitors_lock:
+        existing = _monitors.pop(session_id, None)
+
+    if existing:
+        log.warning(f"Monitor already exists for {session_id}, stopping old one")
+        existing.stop('Replaced by new monitor')  # Outside lock — can take time
 
     monitor = MMMMonitor(session_id, session)
-    _monitors[session_id] = monitor
+
+    with _monitors_lock:
+        _monitors[session_id] = monitor
+
     monitor.start()
     return monitor
 
 
 def stop_session_monitor(session_id: str, reason: str = 'Stopped'):
-    """Stop a session's monitor."""
-    monitor = _monitors.get(session_id)
+    """Stop a session's monitor. Thread-safe (C-1 fix)."""
+    # Pop atomically under lock so no concurrent thread can also pop it
+    with _monitors_lock:
+        monitor = _monitors.pop(session_id, None)
+
     if monitor:
-        monitor.stop(reason)
-        del _monitors[session_id]
+        monitor.stop(reason)  # Outside lock — stop() can take time
 
 
 def pause_session_monitor(session_id: str, reason: str = 'Paused'):
-    """Pause a session's monitor."""
-    monitor = _monitors.get(session_id)
+    """Pause a session's monitor. Thread-safe (C-1 fix)."""
+    with _monitors_lock:
+        monitor = _monitors.get(session_id)
     if monitor:
         monitor.pause(reason)
 
 
 def resume_session_monitor(session_id: str, reason: str = 'Resumed'):
-    """Resume a session's monitor."""
-    monitor = _monitors.get(session_id)
+    """Resume a session's monitor. Thread-safe (C-1 fix)."""
+    with _monitors_lock:
+        monitor = _monitors.get(session_id)
     if monitor:
         monitor.resume(reason)
 
 
 def get_monitor(session_id: str) -> Optional[MMMMonitor]:
-    """Get an existing monitor."""
-    return _monitors.get(session_id)
+    """Get an existing monitor. Thread-safe (C-1 fix)."""
+    with _monitors_lock:
+        return _monitors.get(session_id)
 
 
 def get_all_monitors() -> Dict[str, MMMMonitor]:
-    """Get all active monitors."""
-    return dict(_monitors)
+    """Get a snapshot of all active monitors. Thread-safe (C-1 fix)."""
+    with _monitors_lock:
+        return dict(_monitors)
 
 
-def _save_session(session: Dict):
+def _save_session(session: Dict, my_generation: int = 0):
     """Persist session to storage, preserving hot-reload param updates.
 
     The heartbeat never modifies session['params'].  However, the user may
@@ -4231,6 +4671,10 @@ def _save_session(session: Dict):
     API-driven param changes get overwritten.  To prevent this, we re-read
     the latest params from storage right before saving so hot-reload
     updates are never lost.
+
+    H-4 fix: my_generation guards against stale saves from old monitor threads
+    that didn't exit cleanly after a watchdog restart. If the stored generation
+    is higher than this monitor's generation, the save is rejected.
     """
     # Guard: if the monitor has been stopped (e.g. by watchdog restart),
     # do NOT save — an in-flight heartbeat completing after stop() could
@@ -4246,8 +4690,18 @@ def _save_session(session: Dict):
         sid = session.get('session_id')
         if sid:
             stored = storage.get_session(sid)
-            if stored and 'params' in stored:
-                session['params'] = stored['params']
+            if stored:
+                # H-4 fix: generation check — reject save from stale monitor thread
+                if my_generation > 0:
+                    stored_gen = stored.get('_monitor_generation', 0)
+                    if stored_gen > my_generation:
+                        log.warning(
+                            f"[{sid}] _save_session blocked: stale monitor "
+                            f"gen={my_generation} < stored_gen={stored_gen}"
+                        )
+                        return
+                if 'params' in stored:
+                    session['params'] = stored['params']
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")

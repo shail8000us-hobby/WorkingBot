@@ -242,7 +242,8 @@ def _classify_side(
             # Fallback: most lots = active
             active = max(positions, key=lambda p: p.get('lots', 0))
 
-    frozen = [p for p in positions if p is not active]
+    # H-8 fix: use value equality, not identity check (breaks after JSON round-trip)
+    frozen = [p for p in positions if p != active]
 
     return {
         'active': {
@@ -466,15 +467,19 @@ def build_adopted_session_state(
         # Do NOT set frozen_positions directly — it is a computed view from positions[].
         frozen_list = side_data.get('frozen', [])
         now = datetime.now(timezone.utc).isoformat()
+        # C-7 fix: ensure 'positions' key exists before appending
+        if 'positions' not in side_state or side_state['positions'] is None:
+            log.warning(f"[Adopter] 'positions' missing from {side_label} state — initializing empty")
+            side_state['positions'] = []
         for i, fp in enumerate(frozen_list, start=1):
             counter = side_state.get('_pos_counter', 0) + 1
             side_state['_pos_counter'] = counter
             side_state['positions'].append({
                 'id': f"{side_key}_frozen_{counter:03d}",
-                'strike': fp['strike'],
-                'lots': fp['lots'],
-                'entry_premium': fp['entry_price'],
-                'premium': fp['entry_price'],
+                'strike': fp.get('strike', 0),
+                'lots': fp.get('lots', 0),
+                'entry_premium': fp.get('entry_price', 0),
+                'premium': fp.get('entry_price', 0),
                 'type': fp.get('type', 'adjustment'),
                 'status': 'shifted',
                 'created_at': now,
@@ -515,7 +520,17 @@ def build_adopted_session_state(
     session['lots'] = max(ce_lots, pe_lots)
 
     # Set expiry on session
+    # SAFETY: Validate expiry matches session creation expiry
+    creation_expiry = session.get('params', {}).get('expiry', '')
     if expiry:
+        if creation_expiry and creation_expiry != expiry:
+            raise ValueError(
+                f"Expiry mismatch: session was created with expiry {creation_expiry} "
+                f"but adopt specifies {expiry}. This would route trades to wrong contracts."
+            )
+        # M-20 fix: warn when session has no creation expiry
+        elif not creation_expiry:
+            log.warning(f"[Adopter] Session has no creation_expiry; adopting with {expiry}")
         session['expiry'] = expiry
 
     # Calculate total premium collected across all positions

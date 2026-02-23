@@ -14,9 +14,27 @@ Created: February 15, 2026
 """
 
 import logging
+import asyncio
 import threading
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timezone
+
+
+def _run_async(coro):
+    """Run async coroutine without closing the event loop.
+
+    Replaces ``asyncio.run()`` in Flask route handlers to prevent
+    "Event loop is closed" errors for httpx / asyncio resources.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 from .mmm_storage import get_storage
 from .mmm_state import (
@@ -171,6 +189,19 @@ def create_session_endpoint():
                 'error': 'Parameter validation failed',
                 'details': errors,
             }), 400
+
+        # M-7 fix: Validate expiry format at CREATE time (before session exists in storage)
+        expiry_str = validated.get('expiry', '')
+        if expiry_str:
+            try:
+                d, m, y = int(expiry_str[0:2]), int(expiry_str[2:4]), int(expiry_str[4:8])
+                from datetime import datetime as _dt
+                _dt(y, m, d)  # Validate it's a real date
+            except (ValueError, IndexError):
+                return jsonify({
+                    'success': False,
+                    'error': f"Invalid expiry format: '{expiry_str}'. Expected DDMMYYYY.",
+                }), 400
 
         # Create session state
         session = create_session(mode=mode, params=validated)
@@ -331,10 +362,11 @@ def start_session(session_id: str):
             }), 404
 
         status = session.get('strategy_status', 'IDLE')
-        if status not in ('IDLE',):
+        # H-6 fix: allow starting from PAUSED state (not just IDLE)
+        if status not in ('IDLE', 'PAUSED'):
             return jsonify({
                 'success': False,
-                'error': f"Cannot start session in {status} state. Must be IDLE.",
+                'error': f"Cannot start session in {status} state. Must be IDLE or PAUSED.",
             }), 400
 
         # Check if session has been initialized (both sides have positions)
@@ -444,7 +476,7 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
 
     try:
         executor = get_executor()
-        entry_result = asyncio.run(
+        entry_result = _run_async(
             executor.execute_entry(ce_symbol, pe_symbol, lots, session_id)
         )
     except Exception as e:
@@ -653,7 +685,9 @@ def resume_session(session_id: str):
             }), 404
 
         status = session.get('strategy_status', 'IDLE')
-        if status not in ('PAUSED', 'RUNNING'):
+        # M-10 fix: Only allow resume from PAUSED state (resuming RUNNING is a no-op
+        # that could trigger duplicate heartbeat registrations)
+        if status != 'PAUSED':
             return jsonify({
                 'success': False,
                 'error': f"Cannot resume session in {status} state. Must be PAUSED.",
@@ -787,10 +821,15 @@ def both_sides_decision(session_id: str):
 
         status = session.get('strategy_status', 'IDLE')
         if status != 'BOTH_SIDES_UP':
+            # Return 200 (not 400) so the browser console doesn't show a red
+            # network error.  This is a normal race condition: the session may
+            # have transitioned out of BOTH_SIDES_UP between the time the UI
+            # showed the alert and the time the user clicked.
             return jsonify({
                 'success': False,
-                'error': f"Session is not in BOTH_SIDES_UP state (current: {status})",
-            }), 400
+                'stale': True,
+                'error': f"Session is no longer in BOTH_SIDES_UP state (current: {status})",
+            }), 200
 
         data = request.get_json() or {}
         decision = data.get('decision', '')
@@ -891,11 +930,7 @@ def get_session_margin_status(session_id: str):
             testnet=testnet,
         )
 
-        loop = asyncio.new_event_loop()
-        try:
-            margin_data = loop.run_until_complete(fetch_margin_utilization(rest))
-        finally:
-            loop.close()
+        margin_data = _run_async(fetch_margin_utilization(rest))
 
         if not margin_data.get('success'):
             return jsonify({
@@ -977,26 +1012,20 @@ def get_exchange_margin():
             testnet=testnet,
         )
 
-        loop = asyncio.new_event_loop()
-        try:
-            # Fetch wallet + positions in parallel
-            async def _fetch_all():
-                import asyncio as _aio
-                margin_task = fetch_margin_utilization(rest)
-                positions_task = rest.get_positions_margined()
-                margin_data, raw_positions = await _aio.gather(
-                    margin_task, positions_task, return_exceptions=True
-                )
-                # Handle exceptions from gather
-                if isinstance(margin_data, Exception):
-                    margin_data = {'success': False, 'error': str(margin_data)}
-                if isinstance(raw_positions, Exception):
-                    raw_positions = []
-                return margin_data, raw_positions
+        async def _fetch_all():
+            import asyncio as _aio
+            margin_task = fetch_margin_utilization(rest)
+            positions_task = rest.get_positions_margined()
+            margin_data, raw_positions = await _aio.gather(
+                margin_task, positions_task, return_exceptions=True
+            )
+            if isinstance(margin_data, Exception):
+                margin_data = {'success': False, 'error': str(margin_data)}
+            if isinstance(raw_positions, Exception):
+                raw_positions = []
+            return margin_data, raw_positions
 
-            margin_data, raw_positions = loop.run_until_complete(_fetch_all())
-        finally:
-            loop.close()
+        margin_data, raw_positions = _run_async(_fetch_all())
 
         if not margin_data.get('success'):
             return jsonify({
@@ -1134,7 +1163,8 @@ def update_session_params(session_id: str):
             }), 400
 
         # Merge with existing params
-        current_params = session.get('params', {})
+        # M-8 fix: shallow copy to avoid mutating session dict before persist succeeds
+        current_params = dict(session.get('params', {}))
         changed_keys = []
 
         for key, value in validated.items():
@@ -1539,6 +1569,20 @@ def init_session_fresh(session_id: str):
                 'error': 'lots must be positive',
             }), 400
 
+        # SAFETY: Validate entry expiry matches session creation expiry.
+        # The session ID encodes the expiry (e.g. mmm24feb26-2 ↔ 24022026).
+        # If these diverge, all trades go to wrong-dated contracts.
+        creation_expiry = session.get('params', {}).get('expiry', '')
+        if creation_expiry and creation_expiry != expiry:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f'Expiry mismatch: session was created with expiry {creation_expiry} '
+                    f'but entry specifies {expiry}. This would route trades to wrong contracts. '
+                    f'Use the correct expiry or create a new session.'
+                ),
+            }), 400
+
         # Initialize CE side
         initialize_side_from_entry(
             session,
@@ -1570,7 +1614,8 @@ def init_session_fresh(session_id: str):
         session['entry_mode'] = 'fresh'
         session['expiry'] = expiry
         session['params']['expiry'] = expiry
-        session['expiry_time'] = expiry_to_utc_datetime(expiry)
+        # L-1 fix: pass session params so configurable expiry_hour/minute_utc are used
+        session['expiry_time'] = expiry_to_utc_datetime(expiry, session.get('params', {}))
         session['initial_total_premium'] = total_premium
         session['entry_time'] = datetime.now(timezone.utc).isoformat()
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -1681,6 +1726,20 @@ def init_session_import(session_id: str):
                 'error': 'lots must be positive',
             }), 400
 
+        # SAFETY: Validate entry expiry matches session creation expiry.
+        # The session ID encodes the expiry (e.g. mmm24feb26-2 ↔ 24022026).
+        # If these diverge, all trades go to wrong-dated contracts.
+        creation_expiry = session.get('params', {}).get('expiry', '')
+        if creation_expiry and creation_expiry != expiry:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f'Expiry mismatch: session was created with expiry {creation_expiry} '
+                    f'but import specifies {expiry}. This would route trades to wrong contracts. '
+                    f'Use the correct expiry or create a new session.'
+                ),
+            }), 400
+
         # Initialize CE side
         initialize_side_from_entry(
             session,
@@ -1709,7 +1768,8 @@ def init_session_import(session_id: str):
         session['entry_mode'] = 'import'
         session['expiry'] = expiry
         session['params']['expiry'] = expiry
-        session['expiry_time'] = expiry_to_utc_datetime(expiry)
+        # L-1 fix: pass session params so configurable expiry_hour/minute_utc are used
+        session['expiry_time'] = expiry_to_utc_datetime(expiry, session.get('params', {}))
         session['initial_total_premium'] = total_premium
         session['entry_time'] = datetime.now(timezone.utc).isoformat()
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -1885,8 +1945,8 @@ def adopt_positions(session_id: str):
             from .mmm_initializer import get_initializer
             initializer = get_initializer()
             spot_price = initializer.get_spot_price('BTC')
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"[{session_id}] spot price fetch failed during adoption: {e}")  # M-5 fix
 
         # Classify positions into active/frozen per side
         classified = classify_positions(positions, spot_price)
@@ -2184,7 +2244,7 @@ def execute_entry(session_id: str):
         import asyncio
         executor = get_executor()
 
-        result = asyncio.run(executor.execute_entry(ce_symbol, pe_symbol, lots))
+        result = _run_async(executor.execute_entry(ce_symbol, pe_symbol, lots))
 
         if result.get('success'):
             # Update session with actual fill prices
@@ -2199,9 +2259,10 @@ def execute_entry(session_id: str):
                 session['pe']['entry_order_id'] = pe_res.get('order_id')
 
             # Calculate actual total premium
+            # H-1 fix: include LOT_SIZE_BTC to match correct calculation at line ~580
             ce_fill = ce_res.get('fill_price', 0)
             pe_fill = pe_res.get('fill_price', 0)
-            actual_premium = (ce_fill * lots) + (pe_fill * lots)
+            actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
 
             session['actual_total_premium'] = actual_premium
             # Keep strategy_status as IDLE — user starts session manually
@@ -2463,6 +2524,10 @@ def reduce_position(session_id: str):
 
                     fill_price = result.get('fill_price', 0)
                     avg_entry = apply_lifo_removals(side_state, group['records'])
+                    # M-9 fix: guard against None return from apply_lifo_removals
+                    if avg_entry is None:
+                        log.warning(f"[{session_id}] avg_entry is None for {side_key} — defaulting to 0")
+                        avg_entry = 0.0
                     session[side_key] = side_state
 
                     group_realized = (avg_entry - fill_price) * group_lots * LOT_SIZE_BTC
@@ -2494,7 +2559,7 @@ def reduce_position(session_id: str):
                         reduction_record
                     )
 
-        asyncio.run(_do_reduce())
+        _run_async(_do_reduce())
 
         # --- Reset trigger snapshots with fresh live premiums ---
         # Fetch current premiums for both sides so the heartbeat doesn't
@@ -2517,7 +2582,7 @@ def reduce_position(session_id: str):
                 pe_mid = await _executor.get_mid_price(pe_sym)
                 return ce_mid or 0.0, pe_mid or 0.0
 
-            ce_now, pe_now = asyncio.run(_fetch_premiums())
+            ce_now, pe_now = _run_async(_fetch_premiums())
             if ce_now > 0 and pe_now > 0:
                 update_trigger_snapshots(session, ce_now, pe_now)
                 log.info(
@@ -2539,8 +2604,8 @@ def reduce_position(session_id: str):
                 'total_realized_pnl': round(total_realized, 2),
                 'errors': errors,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"[{session_id}] WS emit failed after manual reduce: {e}")  # M-6 fix
 
         log.info(
             f'[{session_id}] Manual reduce complete: '
@@ -2557,6 +2622,122 @@ def reduce_position(session_id: str):
 
     except Exception as e:
         log.exception(f'Failed to reduce position for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/reconcile', methods=['POST'])
+def reconcile_session(session_id: str):
+    """
+    Force an immediate exchange reconciliation for any session (including PAUSED).
+
+    Queries actual exchange positions and auto-corrects phantom positions
+    where the session shows lots that the exchange no longer has (e.g.,
+    expired options, manually closed positions).
+
+    Safe to call on RUNNING, PAUSED, or STOPPED sessions.
+    """
+    import asyncio
+    try:
+        monitor = get_monitor(session_id)
+        if monitor:
+            # Running/paused monitor — force reconciliation on next heartbeat
+            monitor.session['_recon_counter'] = 0
+            monitor.session['_force_recon'] = True
+
+            if monitor.is_running and not monitor.is_paused:
+                # For running sessions, trigger immediate heartbeat
+                monitor.force_heartbeat()
+                return jsonify({
+                    'success': True,
+                    'message': 'Reconciliation triggered — will run on next heartbeat (forced)',
+                })
+            else:
+                # For paused sessions: run reconciliation directly via async
+                async def run_recon():
+                    await monitor._reconcile_exchange_positions()
+                    monitor._save_my_session()
+
+                _run_async(run_recon())
+                last_recon = monitor.session.get('last_reconciliation', {})
+                discrepancies = last_recon.get('discrepancies', [])
+                auto_corrected = [d for d in discrepancies if d.get('auto_corrected')]
+                return jsonify({
+                    'success': True,
+                    'message': f'Reconciliation complete — {len(discrepancies)} discrepancies found, '
+                               f'{len(auto_corrected)} auto-corrected',
+                    'discrepancies': discrepancies,
+                })
+        else:
+            # No active monitor — load from storage and reconcile directly
+            storage = get_storage()
+            session = storage.get_session(session_id)
+            if not session:
+                return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+            # Check if the session's expiry has passed — if so, ALL positions
+            # should be 0 on exchange (auto-settled). Mark them expired.
+            from datetime import datetime, timezone
+            from .mmm_state import recompute_side_lots
+            expiry_str = session.get('params', {}).get('expiry', '')
+            corrections = []
+            _now = datetime.now(timezone.utc).isoformat()
+
+            # Parse expiry: DDMMYYYY format
+            is_expired = False
+            if expiry_str and len(expiry_str) == 8:
+                try:
+                    exp_date = datetime.strptime(expiry_str, '%d%m%Y').replace(
+                        hour=23, minute=59, tzinfo=timezone.utc)
+                    is_expired = datetime.now(timezone.utc) > exp_date
+                except ValueError:
+                    pass
+
+            if is_expired:
+                # Expired session — all exchange positions should be 0.
+                # Close ALL non-closed positions (active, shifted, frozen, etc.)
+                for side_key in ['ce', 'pe']:
+                    side = session.get(side_key, {})
+                    closed_count = 0
+                    closed_lots = 0
+
+                    for pos in side.get('positions', []):
+                        if pos.get('status') not in ('closed', 'expired'):
+                            old_status = pos.get('status', '?')
+                            old_lots = pos.get('lots', 0)
+                            pos['status'] = 'closed'
+                            pos['closed_at'] = _now
+                            pos['close_reason'] = f'expired_reconcile (was {old_status})'
+                            closed_count += 1
+                            closed_lots += old_lots
+
+                    if closed_count > 0:
+                        recompute_side_lots(side)
+                        corrections.append(
+                            f"{side_key.upper()}: closed {closed_count} positions "
+                            f"({closed_lots} lots) — all expired"
+                        )
+
+                if corrections:
+                    session['last_reconciliation'] = {
+                        'timestamp': _now,
+                        'type': 'expired_cleanup',
+                        'corrections': corrections,
+                    }
+                    storage.save_session(session)
+
+                return jsonify({
+                    'success': True,
+                    'message': f'Expired session cleanup — {len(corrections)} corrections applied',
+                    'corrections': corrections,
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Session has no active monitor. Start or resume the session first.',
+                }), 400
+
+    except Exception as e:
+        log.exception(f"Failed to reconcile session {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -2684,7 +2865,7 @@ def get_exchange_positions_direct():
             )
             return resp.get('result', [])
 
-        positions_raw = asyncio.run(fetch())
+        positions_raw = _run_async(fetch())
 
         positions = []
         for pos in (positions_raw if isinstance(positions_raw, list) else []):
@@ -2745,7 +2926,7 @@ def get_exchange_orders():
             )
             return resp.get('result', [])
 
-        orders_raw = asyncio.run(fetch())
+        orders_raw = _run_async(fetch())
 
         orders = []
         for o in (orders_raw if isinstance(orders_raw, list) else []):
@@ -3120,7 +3301,7 @@ def get_greeks_iv(session_id: str):
             results = await asyncio.gather(*tasks, return_exceptions=True)
             return list(zip(keys, results))
 
-        ticker_results = asyncio.run(fetch_all())
+        ticker_results = _run_async(fetch_all())
 
         # Also fetch spot price
         try:
@@ -3474,6 +3655,9 @@ def toggle_hedge(session_id: str):
         storage.update_session(session_id, {'params': params})
 
         # Also update monitor's live session if running
+        # M-11 note: We update storage above. The monitor reloads params from
+        # storage at heartbeat start (H-10 fix), so this in-memory update is
+        # only for immediate effect within the current heartbeat interval.
         monitor = get_monitor(session_id)
         if monitor and hasattr(monitor, 'session'):
             monitor.session.get('params', {})['perp_hedge_enabled'] = bool(new_value)
@@ -3549,7 +3733,17 @@ def close_hedge(session_id: str):
             close_all_perp(monitor.session, monitor.executor, reason),
             loop,
         )
-        result = future.result(timeout=30)
+        from concurrent.futures import TimeoutError as FuturesTimeoutError
+        try:
+            result = future.result(timeout=30)
+        except (FuturesTimeoutError, TimeoutError):
+            # The async call may take long if exchange API is slow.
+            future.cancel()
+            log.warning(f"[{session_id}] hedge/close timed out after 30s")
+            return jsonify({
+                'success': False,
+                'error': 'Hedge close timed out after 30s — the exchange API may be slow. Try again.',
+            }), 504
 
         if result.get('success'):
             storage.save_session(monitor.session)
