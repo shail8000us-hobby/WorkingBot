@@ -87,17 +87,20 @@ health_grade = A/B/C/D/F based on:
 - [ ] Broken session detection: 5 failures in 10 min → force stop (optional)
 
 ### 2.2 Circuit Breaker Improvements
-**Status:** 🟡 Partial (existing circuit breaker works, enhancements optional)
-**Files:** `mmm_circuit_breaker.py`
+**Status:** ✅ Complete
+**Files:** `mmm_circuit_breaker.py`, `mmm_api.py`
 
-**Current State:** Tracks error count, threshold-based
+**Implemented:**
+- [x] Sliding window (last 10 requests within 60s) 
+- [x] Error type classification: timeout, rate_limit, connection, other
+- [x] Success rate calculation per window
+- [x] Manual reset endpoint (`POST /api/mmm/emergency/reset-circuit/<id>`)
+- [x] Window stats included in circuit summary
 
-**Optional Improvements:**
-- [ ] Sliding window (last 10 beats) instead of counter
-- [ ] Error type classification: network vs logic vs exchange
+**Optional Enhancements:**
 - [ ] Graceful degradation mode: passive monitoring before full stop
 - [ ] Auto-recovery when error rate drops below threshold
-- [ ] Circuit state visualization on dashboard
+- [ ] Circuit state visualization on dashboard (frontend)
 
 ### 2.3 State Reconciliation Hardening
 **Status:** 🟡 Partial (basic reconciliation exists)
@@ -149,19 +152,16 @@ health_grade = A/B/C/D/F based on:
 - [ ] Add params diff view on dashboard
 
 ### 3.3 Emergency Procedures
-**Status:** ✅ Core Complete
+**Status:** ✅ Complete
 **Files:** `mmm_api.py`
 
 **Implemented APIs:**
 - [x] `POST /api/mmm/emergency/stop-all` — Stop all running sessions safely
 - [x] `GET /api/mmm/emergency/health-check` — Deep system health check
-- [x] `POST /api/mmm/session/<id>/clear-backoff` — Clear backoff for session
-
-**Optional APIs:**
-- [ ] `POST /api/mmm/emergency/close-all` — Force close all positions (market orders)
-- [ ] `POST /api/mmm/emergency/pause-all` — Pause without stopping
-- [ ] `POST /api/mmm/emergency/inject-price` — Override stale prices
-- [ ] `POST /api/mmm/emergency/reset-circuit` — Clear circuit breaker
+- [x] `POST /api/mmm/emergency/pause-all` — Pause all sessions (monitor keeps running)
+- [x] `POST /api/mmm/emergency/close-all-positions` — Force close all positions (with dry_run)
+- [x] `POST /api/mmm/emergency/reset-circuit/<id>` — Reset circuit breaker
+- [x] `POST /api/mmm/session/<id>/clear-backoff` — Clear watchdog backoff
 
 **Additional:**
 - [x] Session state checksum validation (mmm_storage.py)
@@ -213,14 +213,17 @@ health_grade = A/B/C/D/F based on:
 3. ✅ Watchdog exponential backoff (30s → 600s max)
 4. ✅ Emergency stop-all API (`/api/mmm/emergency/stop-all`)
 5. ✅ Emergency health-check API (`/api/mmm/emergency/health-check`)
-6. ✅ Audit trail API (`/api/mmm/audit/trail`, `/api/mmm/audit/export`)
-7. ✅ Session state checksum (corruption detection)
-8. ✅ Clear backoff endpoint (`/api/mmm/session/<id>/clear-backoff`)
+6. ✅ Emergency pause-all API (`/api/mmm/emergency/pause-all`)
+7. ✅ Emergency close-all-positions API (`/api/mmm/emergency/close-all-positions`)
+8. ✅ Emergency reset-circuit API (`/api/mmm/emergency/reset-circuit/<id>`)
+9. ✅ Audit trail API (`/api/mmm/audit/trail`, `/api/mmm/audit/export`)
+10. ✅ Session state checksum (corruption detection)
+11. ✅ Circuit breaker sliding window (10 requests / 60s)
+12. ✅ Clear backoff endpoint (`/api/mmm/session/<id>/clear-backoff`)
 
-### 🟡 Partial / Optional Enhancements
-- Circuit breaker sliding window (existing works, enhancement optional)
+### 🟡 Optional Enhancements
 - Params version control (low priority)
-- Additional emergency endpoints (pause-all, close-all, etc.)
+- Additional emergency endpoint: inject-price (stale price override)
 
 ### ⬜ Not Started (Future Work)
 - Frontend dashboard panels for metrics/emergency
@@ -248,6 +251,9 @@ health_grade = A/B/C/D/F based on:
 - `GET /api/mmm/metrics/aggregate` — System-wide health metrics
 - `POST /api/mmm/emergency/stop-all` — Stop all sessions safely
 - `GET /api/mmm/emergency/health-check` — Deep health check
+- `POST /api/mmm/emergency/pause-all` — Pause all sessions
+- `POST /api/mmm/emergency/close-all-positions` — Force close positions
+- `POST /api/mmm/emergency/reset-circuit/<id>` — Reset circuit breaker
 - `POST /api/mmm/session/<id>/clear-backoff` — Clear watchdog backoff
 - `GET /api/mmm/audit/trail` — Query activity log
 - `GET /api/mmm/audit/export` — Export audit as JSON
@@ -261,6 +267,12 @@ health_grade = A/B/C/D/F based on:
 - Backoff tracking per session
 - Clear backoff capability
 
+### Circuit Breaker Enhancement (mmm_circuit_breaker.py)
+- Sliding window (10 requests within 60s)
+- Error type classification
+- Success rate tracking
+- Manual reset capability
+
 ---
 
 ## Progress Tracking
@@ -269,11 +281,11 @@ health_grade = A/B/C/D/F based on:
 - [x] Phase 1.2: Structured Event Logging (via mmm_activity.py)
 - [x] Phase 1.3: Session Health Score (A-F grading)
 - [x] Phase 2.1: Enhanced Watchdog (exponential backoff)
-- [~] Phase 2.2: Circuit Breaker Improvements (existing works, enhancements optional)
+- [x] Phase 2.2: Circuit Breaker Improvements (sliding window, reset)
 - [~] Phase 2.3: State Reconciliation Hardening (basic complete, enhancements optional)
 - [x] Phase 3.1: Audit Trail (API complete)
 - [ ] Phase 3.2: Params Version Control (optional)
-- [x] Phase 3.3: Emergency Procedures (core APIs complete)
+- [x] Phase 3.3: Emergency Procedures (ALL APIs complete)
 - [ ] Phase 4.1: Unit Test Suite
 - [ ] Phase 4.2: Integration Tests
 - [ ] Phase 4.3: Stress Tests
