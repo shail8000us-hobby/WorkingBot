@@ -377,8 +377,28 @@ class MMMMonitor:
 
         H-4 fix: all heartbeat-path saves go through here so that stale saves
         from old monitor threads (after a watchdog restart) are automatically rejected.
+        
+        Also persists health telemetry so it's available even when monitor is stopped.
         """
-        _save_session(session if session is not None else self.session, self._my_generation)
+        target = session if session is not None else self.session
+        
+        # Persist health grade and summary to session
+        if self._health is not None:
+            try:
+                health_summary = self._health.summary()
+                target['_health_grade'] = health_summary.get('grade', 'N/A')
+                target['_health_summary'] = {
+                    'grade': health_summary.get('grade'),
+                    'latency_p50_ms': health_summary.get('latency_p50_ms'),
+                    'latency_p95_ms': health_summary.get('latency_p95_ms'),
+                    'miss_rate_pct': health_summary.get('miss_rate_pct'),
+                    'total_beats': health_summary.get('total_beats'),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                }
+            except Exception as e:
+                log.debug(f"[{self.session_id}] Failed to persist health: {e}")
+        
+        _save_session(target, self._my_generation)
 
     def _should_stop(self) -> bool:
         """Bug #11 fix: check if stop has been requested (use in long operations)."""

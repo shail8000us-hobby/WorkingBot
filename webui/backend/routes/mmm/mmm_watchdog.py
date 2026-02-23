@@ -49,7 +49,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 log = logging.getLogger('mmm_watchdog')
@@ -57,6 +57,11 @@ log = logging.getLogger('mmm_watchdog')
 WATCHDOG_POLL_INTERVAL   = 15       # seconds between watchdog sweeps
 BEAT_TIMEOUT_MULTIPLIER  = 3        # max intervals before "stuck" detection
 MAX_RESTARTS_PER_SESSION = 10       # safety cap — stop restarting after this many
+
+# Exponential backoff settings for restart cooldown
+BACKOFF_BASE_SECONDS     = 30       # initial cooldown after restart
+BACKOFF_MULTIPLIER       = 2.0      # exponential growth factor
+BACKOFF_MAX_SECONDS      = 600      # cap at 10 minutes
 
 
 class MMMWatchdog:
@@ -87,6 +92,8 @@ class MMMWatchdog:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        # Track last restart times for exponential backoff
+        self._last_restart: Dict[str, float] = {}  # session_id → monotonic timestamp
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -177,8 +184,17 @@ class MMMWatchdog:
         if problem is None:
             return  # monitor is fine
 
-        # ---- Restart ----
+        # ---- Check backoff cooldown ----
         restarts = session.get('_watchdog_restarts', 0)
+        cooldown_remaining = self._get_cooldown_remaining(sid, restarts)
+        if cooldown_remaining > 0:
+            log.debug(
+                f"[{sid}] Watchdog: {problem} but in cooldown "
+                f"({cooldown_remaining:.0f}s remaining)"
+            )
+            return  # wait for cooldown to expire
+
+        # ---- Restart ----
         if restarts >= MAX_RESTARTS_PER_SESSION:
             log.critical(
                 f"[{sid}] Watchdog: {problem} — "
@@ -246,7 +262,10 @@ class MMMWatchdog:
             return None
         try:
             dt = datetime.fromisoformat(last_hb)
-            age_s = (datetime.utcnow() - dt).total_seconds()
+            # Fix #14: normalize stored timestamp to tz-aware UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            age_s = (datetime.now(timezone.utc) - dt).total_seconds()
             interval = session.get('params', {}).get('adjustment_interval', 300)
             threshold = interval * BEAT_TIMEOUT_MULTIPLIER
             if age_s > threshold:
@@ -288,7 +307,7 @@ class MMMWatchdog:
 
             # Import here to avoid circular import at module level
             from .mmm_storage import get_storage
-            from .mmm_monitor import start_session_monitor, _monitors
+            from .mmm_monitor import start_session_monitor, _monitors, _monitors_lock
 
             # Load freshest session from disk
             storage = get_storage()
@@ -301,22 +320,29 @@ class MMMWatchdog:
             fresh_session.setdefault('_watchdog_restarts', 0)
             fresh_session['_watchdog_restarts'] += 1
             fresh_session.setdefault('_watchdog_history', []).append({
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'reason': reason,
                 'restart_number': fresh_session['_watchdog_restarts'],
             })
             fresh_session['strategy_status'] = 'RUNNING'
             # Clear _save_disabled flag so the new monitor can save
             fresh_session.pop('_save_disabled', None)
+            # H-4 fix: increment generation so any stale save from the old
+            # monitor thread is rejected by the generation guard in _save_session()
+            fresh_session['_monitor_generation'] = fresh_session.get('_monitor_generation', 0) + 1
             storage.save_session(fresh_session)
 
-            # Remove the dead monitor from the registry
-            _monitors.pop(sid, None)
+            # Remove the dead monitor from the registry (C-1 fix: use lock)
+            with _monitors_lock:
+                _monitors.pop(sid, None)
             self.deregister(sid)
 
             # Start a new monitor
             new_monitor = start_session_monitor(sid, fresh_session)
             self.register(new_monitor)
+            
+            # Record restart time for exponential backoff
+            self._record_restart(sid)
 
             # Re-assert RUNNING status after new monitor starts —
             # belt-and-suspenders in case the old thread slipped through
@@ -354,6 +380,44 @@ class MMMWatchdog:
         except Exception as e:
             log.warning(f"Watchdog log_activity failed: {e}")
 
+    def _get_cooldown_remaining(self, sid: str, restart_count: int) -> float:
+        """
+        Calculate remaining cooldown seconds using exponential backoff.
+        
+        Returns 0 if cooldown has expired or no restart has occurred.
+        """
+        with self._lock:
+            last_restart_time = self._last_restart.get(sid)
+        
+        if last_restart_time is None:
+            return 0.0
+        
+        # Calculate required cooldown: base * (multiplier ^ restart_count)
+        # Capped at BACKOFF_MAX_SECONDS
+        cooldown = min(
+            BACKOFF_BASE_SECONDS * (BACKOFF_MULTIPLIER ** restart_count),
+            BACKOFF_MAX_SECONDS
+        )
+        
+        elapsed = time.monotonic() - last_restart_time
+        remaining = cooldown - elapsed
+        return max(0.0, remaining)
+
+    def _record_restart(self, sid: str) -> None:
+        """Record the restart time for exponential backoff tracking."""
+        with self._lock:
+            self._last_restart[sid] = time.monotonic()
+
+    def clear_backoff(self, sid: str) -> None:
+        """
+        Clear backoff state for a session (e.g., after manual resume or successful period).
+        
+        This allows immediate restart if needed after user intervention.
+        """
+        with self._lock:
+            self._last_restart.pop(sid, None)
+        log.debug(f"[{sid}] Watchdog backoff cleared")
+
     # ------------------------------------------------------------------
     # Status
     # ------------------------------------------------------------------
@@ -361,9 +425,24 @@ class MMMWatchdog:
     def status(self) -> dict:
         with self._lock:
             count = len(self._monitors)
+            active_cooldowns = {}
+            for sid, last_time in self._last_restart.items():
+                # We don't have restart count here, use estimate from session
+                elapsed = time.monotonic() - last_time
+                if elapsed < BACKOFF_MAX_SECONDS:
+                    active_cooldowns[sid] = {
+                        'elapsed_s': round(elapsed, 1),
+                    }
+        
         return {
             'running': self._running,
             'monitored_sessions': count,
             'poll_interval_s': WATCHDOG_POLL_INTERVAL,
             'beat_timeout_multiplier': BEAT_TIMEOUT_MULTIPLIER,
+            'backoff': {
+                'base_s': BACKOFF_BASE_SECONDS,
+                'multiplier': BACKOFF_MULTIPLIER,
+                'max_s': BACKOFF_MAX_SECONDS,
+            },
+            'active_cooldowns': active_cooldowns,
         }

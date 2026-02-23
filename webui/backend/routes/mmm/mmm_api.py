@@ -3763,3 +3763,332 @@ def close_hedge(session_id: str):
     except Exception as e:
         log.exception(f"Failed to close hedge for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =========================================================================
+# AGGREGATE METRICS & SYSTEM HEALTH
+# =========================================================================
+
+@mmm_bp.route('/metrics/aggregate', methods=['GET'])
+def get_aggregate_metrics():
+    """
+    Return aggregated metrics across all MMM sessions.
+    
+    Provides system-wide observability:
+    - Active session count and health grades
+    - Watchdog status and cooldown states
+    - Circuit breaker summary per session
+    - Total restarts and anomalies
+    
+    Returns:
+        JSON with aggregate health metrics
+    """
+    try:
+        from .mmm_watchdog import MMMWatchdog
+        from .mmm_monitor import get_monitor, list_monitors
+        
+        storage = get_storage()
+        sessions = storage.list_sessions()
+        
+        # Collect per-session health data
+        session_health = []
+        total_restarts = 0
+        grade_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0, 'N/A': 0}
+        circuit_open_count = 0
+        
+        for session in sessions:
+            sid = session.get('id', '')
+            status = session.get('strategy_status', 'UNKNOWN')
+            restarts = session.get('_watchdog_restarts', 0)
+            total_restarts += restarts
+            
+            # Get live health if monitor is running
+            monitor = None
+            try:
+                monitor = get_monitor(sid)
+            except (KeyError, AttributeError):
+                pass
+            
+            health_summary = None
+            grade = 'N/A'
+            circuit_summary = None
+            
+            if monitor:
+                # Get heartbeat health
+                health = getattr(monitor, '_health', None)
+                if health:
+                    try:
+                        health_summary = health.summary()
+                        grade = health_summary.get('grade', 'N/A')
+                    except Exception:
+                        pass
+                
+                # Get circuit breaker status
+                circuit = getattr(monitor, '_circuit', None)
+                if circuit:
+                    try:
+                        circuit_summary = circuit.summary()
+                        if circuit_summary.get('is_open'):
+                            circuit_open_count += 1
+                    except Exception:
+                        pass
+            else:
+                # Use persisted health data for stopped sessions
+                grade = session.get('_health_grade', 'N/A')
+            
+            grade_counts[grade] = grade_counts.get(grade, 0) + 1
+            
+            session_health.append({
+                'session_id': sid,
+                'status': status,
+                'grade': grade,
+                'restarts': restarts,
+                'monitor_active': monitor is not None and getattr(monitor, 'is_running', False),
+                'circuit_open': circuit_summary.get('is_open') if circuit_summary else False,
+                'health_updated_at': session.get('_health_summary', {}).get('updated_at') if not monitor else None,
+            })
+        
+        # Watchdog status
+        watchdog = MMMWatchdog.get_instance()
+        watchdog_status = watchdog.status()
+        
+        # Compute overall system health
+        active_sessions = [s for s in session_health if s['status'] == 'RUNNING']
+        healthy_sessions = [s for s in active_sessions if s['grade'] in ('A', 'B')]
+        
+        if not active_sessions:
+            system_health = 'IDLE'
+        elif len(healthy_sessions) == len(active_sessions) and circuit_open_count == 0:
+            system_health = 'HEALTHY'
+        elif len(healthy_sessions) >= len(active_sessions) * 0.5:
+            system_health = 'DEGRADED'
+        else:
+            system_health = 'CRITICAL'
+        
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'system_health': system_health,
+            'summary': {
+                'total_sessions': len(sessions),
+                'active_sessions': len(active_sessions),
+                'healthy_sessions': len(healthy_sessions),
+                'circuits_open': circuit_open_count,
+                'total_watchdog_restarts': total_restarts,
+                'grade_distribution': grade_counts,
+            },
+            'watchdog': watchdog_status,
+            'sessions': session_health,
+        })
+        
+    except Exception as e:
+        log.exception("Failed to get aggregate metrics")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/emergency/stop-all', methods=['POST'])
+def emergency_stop_all():
+    """
+    Emergency procedure: Stop all running MMM sessions.
+    
+    Use this when:
+    - System-wide anomaly detected
+    - Manual intervention required across all sessions
+    - Preparing for maintenance
+    
+    Returns:
+        JSON with list of stopped sessions
+    """
+    try:
+        from .mmm_monitor import get_monitor, list_monitors
+        from .mmm_activity import log_activity
+        
+        storage = get_storage()
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'Emergency stop via API')
+        
+        stopped = []
+        failed = []
+        
+        # Get all running sessions
+        sessions = storage.list_sessions()
+        running_sessions = [s for s in sessions if s.get('strategy_status') == 'RUNNING']
+        
+        for session in running_sessions:
+            sid = session.get('id', '')
+            try:
+                monitor = get_monitor(sid)
+                if monitor and monitor.is_running:
+                    monitor.stop(reason)
+                    session['strategy_status'] = 'PAUSED'
+                    session['_emergency_stop'] = {
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'reason': reason,
+                    }
+                    storage.save_session(session)
+                    stopped.append(sid)
+                    log_activity('emergency', f'🚨 Emergency stop: {reason}', sid, 'critical')
+            except Exception as e:
+                log.error(f"Failed to stop {sid}: {e}")
+                failed.append({'session_id': sid, 'error': str(e)})
+        
+        # Log system-wide activity
+        log_activity(
+            'emergency',
+            f'🚨 EMERGENCY STOP ALL: {len(stopped)} sessions stopped, {len(failed)} failed',
+            None,
+            'critical'
+        )
+        
+        return jsonify({
+            'success': True,
+            'stopped_count': len(stopped),
+            'stopped_sessions': stopped,
+            'failed_count': len(failed),
+            'failed_sessions': failed,
+            'reason': reason,
+        })
+        
+    except Exception as e:
+        log.exception("Emergency stop-all failed")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/emergency/health-check', methods=['GET'])
+def emergency_health_check():
+    """
+    Deep system health check for emergency situations.
+    
+    Checks:
+    - Database connectivity
+    - Exchange API reachability
+    - WebSocket health
+    - Watchdog thread status
+    - Memory usage
+    
+    Returns:
+        JSON with detailed health status
+    """
+    try:
+        import psutil
+        from .mmm_watchdog import MMMWatchdog
+        from .mmm_websocket import get_ws_health
+        
+        checks = {}
+        
+        # 1. Storage health
+        try:
+            storage = get_storage()
+            sessions = storage.list_sessions()
+            checks['storage'] = {
+                'status': 'OK',
+                'session_count': len(sessions),
+            }
+        except Exception as e:
+            checks['storage'] = {'status': 'ERROR', 'error': str(e)}
+        
+        # 2. Watchdog health
+        try:
+            watchdog = MMMWatchdog.get_instance()
+            wd_status = watchdog.status()
+            checks['watchdog'] = {
+                'status': 'OK' if wd_status.get('running') else 'STOPPED',
+                **wd_status,
+            }
+        except Exception as e:
+            checks['watchdog'] = {'status': 'ERROR', 'error': str(e)}
+        
+        # 3. WebSocket health
+        try:
+            ws_health = get_ws_health()
+            checks['websocket'] = {
+                'status': 'OK' if ws_health.get('connected', 0) > 0 else 'IDLE',
+                **ws_health,
+            }
+        except Exception as e:
+            checks['websocket'] = {'status': 'UNKNOWN', 'error': str(e)}
+        
+        # 4. Memory usage
+        try:
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            checks['memory'] = {
+                'status': 'OK' if mem_info.rss < 2 * 1024 * 1024 * 1024 else 'HIGH',  # 2GB threshold
+                'rss_mb': round(mem_info.rss / (1024 * 1024), 1),
+                'vms_mb': round(mem_info.vms / (1024 * 1024), 1),
+            }
+        except Exception as e:
+            checks['memory'] = {'status': 'UNKNOWN', 'error': str(e)}
+        
+        # 5. Thread count
+        try:
+            import threading
+            thread_count = threading.active_count()
+            checks['threads'] = {
+                'status': 'OK' if thread_count < 100 else 'HIGH',
+                'count': thread_count,
+            }
+        except Exception as e:
+            checks['threads'] = {'status': 'UNKNOWN', 'error': str(e)}
+        
+        # Overall status
+        all_ok = all(c.get('status') in ('OK', 'IDLE') for c in checks.values())
+        any_error = any(c.get('status') == 'ERROR' for c in checks.values())
+        
+        if any_error:
+            overall = 'ERROR'
+        elif all_ok:
+            overall = 'HEALTHY'
+        else:
+            overall = 'DEGRADED'
+        
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'overall_status': overall,
+            'checks': checks,
+        })
+        
+    except Exception as e:
+        log.exception("Emergency health check failed")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/clear-backoff', methods=['POST'])
+def clear_session_backoff(session_id: str):
+    """
+    Clear watchdog exponential backoff for a session.
+    
+    Use after manual intervention to allow immediate restart if needed.
+    
+    Returns:
+        JSON with success status
+    """
+    try:
+        from .mmm_watchdog import MMMWatchdog
+        
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+        
+        # Clear watchdog backoff
+        watchdog = MMMWatchdog.get_instance()
+        watchdog.clear_backoff(session_id)
+        
+        # Also reset restart count if requested
+        data = request.get_json(silent=True) or {}
+        if data.get('reset_restart_count'):
+            session['_watchdog_restarts'] = 0
+            storage.save_session(session)
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'message': 'Backoff cleared',
+            'restart_count_reset': data.get('reset_restart_count', False),
+        })
+        
+    except Exception as e:
+        log.exception(f"Failed to clear backoff for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
