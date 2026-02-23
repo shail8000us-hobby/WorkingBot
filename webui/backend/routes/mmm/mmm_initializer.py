@@ -34,34 +34,50 @@ log = logging.getLogger('mmm_initializer')
 # IST is UTC+5:30
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# BTC options on Delta Exchange expire at 5:30 PM IST (12:00 PM UTC)
-EXPIRY_HOUR_IST = 17
-EXPIRY_MINUTE_IST = 30
+# BTC options on Delta Exchange expire at 5:30 PM IST (12:00 PM UTC).
+# L-1 fix: these are defaults; callers can override via session params
+# expiry_hour_utc and expiry_minute_utc.
+DEFAULT_EXPIRY_HOUR_UTC = 12
+DEFAULT_EXPIRY_MINUTE_UTC = 0
 
 
-def expiry_to_utc_datetime(expiry_ddmmyyyy: str) -> str:
+def expiry_to_utc_datetime(expiry_ddmmyyyy: str, params: dict = None) -> str:
     """
     Convert DDMMYYYY expiry date to a full UTC datetime ISO string.
 
-    BTC options expire at 5:30 PM IST (17:30 IST = 12:00 UTC).
+    BTC options expire at 5:30 PM IST (17:30 IST = 12:00 UTC) by default.
+    L-1 fix: expiry time is now configurable via session params
+    'expiry_hour_utc' and 'expiry_minute_utc' so the algo works with other
+    exchanges or instruments that expire at different times.
+
     The algo uses this to calculate minutes_to_expiry for:
       - Near-expiry safety (stop adjustments at 15 min, auto-close at 5 min)
       - Theta acceleration near expiry
 
+    Args:
+        expiry_ddmmyyyy: Date string in DDMMYYYY format
+        params: Session params dict (optional); reads expiry_hour_utc /
+                expiry_minute_utc with fallback to DEFAULT values.
+
     Returns:
-        ISO format UTC datetime string, e.g. '2026-02-16T12:00:00'
+        ISO format UTC datetime string, e.g. '2026-02-16T12:00:00+00:00'
     """
+    if params is None:
+        params = {}
+    expiry_hour_utc = params.get('expiry_hour_utc', DEFAULT_EXPIRY_HOUR_UTC)
+    expiry_minute_utc = params.get('expiry_minute_utc', DEFAULT_EXPIRY_MINUTE_UTC)
+
     dt = datetime.strptime(expiry_ddmmyyyy, '%d%m%Y')
-    expiry_ist = dt.replace(
-        hour=EXPIRY_HOUR_IST,
-        minute=EXPIRY_MINUTE_IST,
+    expiry_utc = dt.replace(
+        hour=expiry_hour_utc,
+        minute=expiry_minute_utc,
         second=0,
         microsecond=0,
-        tzinfo=IST,
+        tzinfo=timezone.utc,
     )
-    expiry_utc = expiry_ist.astimezone(timezone.utc)
-    # Store as naive UTC (consistent with datetime.utcnow() used elsewhere)
-    return expiry_utc.replace(tzinfo=None).isoformat()
+    # Fix #14: store as timezone-aware UTC ISO string (e.g. '2026-02-22T12:00:00+00:00').
+    # _get_minutes_to_expiry() normalises naive legacy strings, so both formats work.
+    return expiry_utc.isoformat()
 
 
 def normalize_expiry(expiry: str) -> str:

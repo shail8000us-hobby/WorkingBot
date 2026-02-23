@@ -1,6 +1,8 @@
 # MONEY POWER — Pure Calculation Logic (Definitive)
 
-> Sell CE + PE on BTC options. Whenever one side's loss grows beyond what's already covered, sell more of the opposite side to collect premium that covers the new loss. If the opposing premium is too low, shift to a closer strike. Close any position at ≤5 premium. Repeat until expiry or user stops.
+> Sell CE + PE on BTC options. Whenever one side's loss grows beyond what's already covered, sell more of the opposite side to collect premium that covers the new loss. If the opposing premium is too low, shift to a closer strike. Close any position at ≤5 premium. Optionally hedge directional risk with BTC perpetual futures. Repeat until expiry or user stops.
+>
+> **Last Updated:** February 22, 2026 — Added: Perpetual Futures Delta Hedge (§23), Regime Controls (§24), Margin Guardian (§25), Decimal arithmetic, Unified Position Ledger, production hardening notes.
 
 ---
 
@@ -63,7 +65,33 @@ adjustment_history     — ordered list: [{side, lots_sold, premium, strike, tim
 realized_pnl           — cumulative P&L from close-at-5 events (locked profit)
 total_premium_collected — sum of ALL premiums collected from ALL sells
 strategy_status        — "RUNNING" | "PAUSED" | "STOPPED" | "BOTH_SIDES_UP"
+peak_pnl               — high-water mark for trailing stop (decays: 0.9×old + 0.1×current when below peak)
+_pnl_calculation_incomplete — bool, set when >50% of premium fetches fail
+_watchdog_restarts     — count of monitor auto-restarts
 ```
+
+### Perp Hedge State (if perp_hedge_enabled)
+
+```
+perp_hedge.enabled           — bool, whether delta hedge is active
+perp_hedge.direction         — "LONG" | "SHORT" | "FLAT"
+perp_hedge.lots              — current perp position lots
+perp_hedge.entry_price       — average entry price
+perp_hedge.effective_delta   — most recent portfolio delta calculation
+perp_hedge.unrealized_pnl    — mark-to-market P&L on perp position
+perp_hedge.realized_pnl      — closed P&L from perp trades
+perp_hedge.last_rebalance    — ISO timestamp of last rebalance
+perp_hedge.trade_count       — total perp trades this session
+perp_hedge.cooldown_until    — ISO timestamp when cooldown expires
+```
+
+### Unified Position Ledger (Implementation Detail)
+
+All positions (original, adjustment, frozen/shifted) are stored in a single `positions[]` list per side. Each position has a unique `_pos_id`. All computed views (`active_lots`, `total_lots`, `frozen_total_lots`, `adjustment_total_lots`, `adjustment_avg`) are derived by calling `recompute_side_lots()`. ID-based removal for O(1) operations. Auto-migration adds `_pos_id` and `position_type` to legacy data.
+
+### Decimal Arithmetic (Implementation Detail)
+
+All P&L accumulation uses Python `Decimal` via `_D(x)` helper which converts through `str(x)` to avoid IEEE 754 float representation errors. This eliminates $0.50–$1.00 drift over a full session lifetime. Applies to: `realized_pnl`, `unrealized_pnl`, `total_premium_collected`, `total_fees`, and all intermediate loss calculations.
 
 ---
 
@@ -154,12 +182,16 @@ Every `interval` seconds the algo does a heartbeat. The interval is **adaptive**
 ```
 1. Fetch premium at active_ce_strike → CE_now
 2. Fetch premium at active_pe_strike → PE_now
+   — All fetches wrapped in Circuit Breaker (§13.8)
+   — If >50% of fetches fail → set _pnl_calculation_incomplete, PAUSE session
 3. Run CLOSE-AT-5 check on ALL positions (Section 11)
    — if wind-down mode active, use elevated threshold (Section 11.1)
-4. Run SAFETY CHECKS (Section 12)
-5. If strategy_status ≠ "RUNNING" → skip adjustment logic
+4. Run SAFETY CHECKS (Section 13)
+5. Run REGIME CHECKS (Section 24) — abort adjustment if regime blocks
+6. If strategy_status ≠ "RUNNING" → skip adjustment logic
+7. Run MARGIN GUARDIAN check (Section 25) — block sells if YELLOW+
 
-6. Determine if adjustment is needed:
+8. Determine if adjustment is needed:
    ce_excess = CE_now - ce_trigger_snapshot[active_ce_strike]
    pe_excess = PE_now - pe_trigger_snapshot[active_pe_strike]
 
@@ -172,7 +204,7 @@ Every `interval` seconds the algo does a heartbeat. The interval is **adaptive**
    pe_threshold = pe_trigger × (min_trigger_move_pct / 100)
    pe_triggered = pe_excess > pe_threshold
 
-7. FOUR OUTCOMES:
+9. FOUR OUTCOMES:
 
    A) NOT ce_triggered AND NOT pe_triggered
       → DO NOTHING. Both sides within safe zone.
@@ -185,6 +217,10 @@ Every `interval` seconds the algo does a heartbeat. The interval is **adaptive**
 
    D) ce_triggered AND pe_triggered
       → BOTH sides above trigger. Go to SECTION 8 (user decides).
+
+10. Run PERP HEDGE check_and_rebalance() if enabled (Section 23)
+    — Runs AFTER trigger evaluation, regardless of regime state
+    — Computes portfolio delta, adjusts perp position if threshold breached
 ```
 
 ### 4.1 Adaptive Heartbeat Interval (Added Feb 17, 2026)
@@ -861,6 +897,53 @@ Before every sell order:
         → If zero: ALERT "Insufficient margin"
 ```
 
+### 13.8 — Circuit Breaker (Exchange API Fault Isolation)
+
+Wraps all exchange API calls. 3 states: CLOSED (normal), OPEN (failing), HALF_OPEN (probing).
+
+```
+On API failure:
+    failure_count += 1
+    IF failure_count ≥ FAILURE_THRESHOLD (3):
+        → State = OPEN
+        → Partial beat: close-at-5 + safety only (cached prices)
+        → After RESET_TIMEOUT (30s): State = HALF_OPEN, probe
+        → Probe success: State = CLOSED
+        → Probe failure: stay OPEN, emit mmm_safety event after 3 successive failures
+
+NEVER terminates the session. Always self-healing.
+```
+
+### 13.9 — P&L Incomplete Guard
+
+If more than 50% of premium fetch calls fail during a heartbeat:
+```
+_pnl_calculation_incomplete = True
+→ Session PAUSED with reason "P&L calculation incomplete"
+→ Perp hedge skips rebalance (stale-delta guard)
+→ Emits mmm_safety event with type='calculation_incomplete'
+→ Resumes automatically when fetch success rate recovers above 50%
+```
+
+### 13.10 — Position Cap Hard-Block
+
+The position cap check (§13.1) action is `'stop_adjustments'` (not `'warn'`). When position cap is reached, adjustments are blocked — not merely warned.
+
+### 13.11 — Decaying Peak P&L
+
+The peak P&L for trailing stop uses exponential decay when P&L is below peak:
+```
+IF current_pnl > peak_pnl:
+    peak_pnl = current_pnl          # New high water mark
+ELSE:
+    peak_pnl = 0.9 × peak_pnl + 0.1 × current_pnl   # Decay toward reality
+
+On reversal:
+    peak_pnl = current_pnl          # Hard reset
+```
+
+This prevents stale trailing stops from never firing (e.g., peak of $500 that decayed to $50 hours ago).
+
 ---
 
 ## SECTION 14: STRENGTH IMPROVEMENTS
@@ -936,10 +1019,65 @@ In the last 2-3 hours before expiry, theta decay is fastest. Both premiums are c
 
 ```
 IF time_to_expiry < theta_acceleration_window (default 120 mins):
-    → Double the min_trigger_move (require bigger moves to trigger)
-    → Or double the interval (check less frequently)
+    base_trigger = min_trigger_move × 2
+    effective_trigger = min(base_trigger, 80.0)    ← hard cap prevents trigger from becoming unreachable
+    → Require bigger moves to trigger
     → Let theta do the work
 ```
+
+### 14.8 — Decimal Arithmetic in P&L Accumulation
+
+All P&L calculations use Python `Decimal` via a `_D(x)` helper:
+```python
+def _D(x) -> Decimal:
+    return Decimal(str(x))    # str() avoids float→Decimal IEEE 754 artifact
+```
+
+Applied in: `realized_pnl += _D(entry) - _D(current) * _D(lots)`, `total_premium_collected`, `total_fees`, and all intermediate loss calculations in `mmm_engine.py`. Eliminates $0.50–$1.00 drift observed over full-day sessions with many adjustments.
+
+### 14.9 — Unified Position Ledger
+
+All positions (original, adjustment, frozen/shifted) stored in a single `positions[]` list per side. Benefits:
+- Single source of truth — no divergence between separate arrays
+- All derived counters (`active_lots`, `total_lots`, etc.) computed by `recompute_side_lots()`
+- ID-based removal via `_pos_id` for O(1) operations (no index-based removal)
+- Auto-migration adds `_pos_id` and `position_type` to legacy sessions
+- 50+ read sites unchanged — they still read the same derived fields
+
+### 14.10 — Trigger Snapshot Validation
+
+Before `evaluate_triggers()`, the algo validates that the active strike key exists in the trigger snapshot:
+```
+IF active_strike NOT IN trigger_snapshot OR trigger_snapshot[active_strike] == 0:
+    → Fetch current premium from exchange
+    → Initialize trigger_snapshot[active_strike] = current_premium
+    → Log "trigger snapshot initialized from exchange"
+```
+
+Prevents false trigger fires after session restart or strike shift.
+
+### 14.11 — Re-evaluate After Close-at-5
+
+When close-at-5 closes positions on the aggressor side, triggers are re-evaluated before processing adjustments:
+```
+IF close_at_5 closed any aggressor positions:
+    → Re-compute ce_excess and pe_excess
+    → If aggressor side no longer triggered → skip adjustment
+```
+
+Prevents over-hedging when close-at-5 already relieved directional pressure.
+
+### 14.12 — Param Interdependency Validation
+
+On hot-reload, validates parameter relationships:
+```
+wind_down_minutes ≥ close_at_5_threshold
+margin tier thresholds in ascending order (GREEN < YELLOW < ORANGE < RED < CRITICAL)
+max_adjustments ≥ whipsaw_limit
+buffer_pct > 0 when auto-execution enabled
+```
+
+Rejects invalid parameter combinations with specific error messages.
 
 ---
 
@@ -1220,6 +1358,8 @@ realized_pnl += 1300
 - Adjustments: 5
 - Demonstrated: uptrend, strike shift, reversal, continuation, re-reversal, close-at-5
 
+> **Note:** If perp_hedge_enabled=true during this scenario, the perp hedge would have opened a SHORT BTCUSD position around T+10 (when portfolio delta exceeded threshold due to BTC rising) and flipped to LONG around T+20 (when the reversal shifted delta). The perp P&L would partially offset the option adjustment losses from the BTC move, reducing the need for as many adjustment lots. See §23.7 for a detailed perp hedge walk-through.
+
 ---
 
 ## SECTION 17: DECISION TREE (Quick Reference)
@@ -1227,16 +1367,27 @@ realized_pnl += 1300
 ```
 EVERY INTERVAL:
 │
+├─ Fetch CE_now, PE_now at active strikes (via Circuit Breaker §13.8)
+│     └─ If >50% fail → PAUSE (_pnl_calculation_incomplete)
 ├─ Run CLOSE-AT-5 on all positions
-├─ Run SAFETY CHECKS
+│     └─ If wind-down active → use elevated threshold (§11.1)
+├─ Run SAFETY CHECKS (§13)
 │     ├─ Max loss breached?         → CLOSE ALL, STOP
-│     ├─ Position cap reached?      → ALERT, skip
+│     ├─ Position cap reached?      → HARD BLOCK adjustments
 │     ├─ Max adjustments reached?   → ALERT, skip
 │     ├─ Near expiry?               → STOP adjustments / AUTO-CLOSE
 │     ├─ Whipsaw detected?          → PAUSE, alert
+│     ├─ Trailing profit drop?      → ALERT (decaying peak)
 │     └─ Margin insufficient?       → Reduce lots / skip
-│
-├─ Fetch CE_now, PE_now at active strikes
+├─ Run REGIME CHECKS (§24)
+│     ├─ Vol regime HIGH?           → BLOCK adjustments
+│     ├─ Gamma HARD/EMERGENCY?      → BLOCK / EMERGENCY
+│     └─ Trend detected?            → BLOCK adjustments
+├─ Run MARGIN GUARDIAN (§25)
+│     ├─ YELLOW?                    → WARN, block new sells
+│     ├─ ORANGE?                    → Trigger wind-down
+│     ├─ RED?                       → Emergency close
+│     └─ CRITICAL?                  → Session STOP
 │
 ├─ CE triggered? ─── PE triggered?
 │     │                    │
@@ -1263,6 +1414,14 @@ EVERY INTERVAL:
 │            YES → PE IS AGGRESSOR (mirror of above, CE↔PE swapped)
 │              │
 │             NO → DO NOTHING (both in safe zone)
+│
+├─ Run PERP HEDGE (§23) if enabled
+│     ├─ Calculate portfolio delta across ALL positions
+│     ├─ |delta| > threshold?  → Rebalance/open perp position
+│     ├─ Drift > band?         → Rebalance existing position
+│     └─ Direction flip needed? → Atomic close + open opposite
+│
+└─ Emit WebSocket events, record heartbeat health
 ```
 
 ---
@@ -1299,6 +1458,18 @@ $$\text{Total P\&L} = \text{Realized} + \text{Unrealized}$$
 
 ### Position Asymmetry Ratio
 $$R = \frac{\max(N_{\text{CE}}, N_{\text{PE}})}{\min(N_{\text{CE}}, N_{\text{PE}})}$$
+
+### Portfolio Delta (for Perp Hedge)
+$$\delta_{\text{portfolio}} = \sum_{i \in \text{all positions}} \delta_i \times N_i \times \text{LOT\_SIZE\_BTC} \times (-1)$$
+
+### Effective Delta (with Perp Position)
+$$\delta_{\text{effective}} = \delta_{\text{portfolio}} + \text{perp\_lots} \times \text{LOT\_SIZE\_BTC} \times \text{dir\_sign}$$
+
+### Target Perp Lots
+$$N_{\text{perp}} = \min\left(\left\lfloor \frac{|\delta_{\text{portfolio}}| \times \text{ratio}}{\text{LOT\_SIZE\_BTC}} + 0.5 \right\rfloor, \; N_{\text{max}}\right)$$
+
+### Margin Utilization
+$$U = \frac{M_{\text{position}} + M_{\text{order}}}{E_{\text{net}}} \times 100\%$$
 
 ---
 
@@ -1342,6 +1513,42 @@ $$R = \frac{\max(N_{\text{CE}}, N_{\text{PE}})}{\min(N_{\text{CE}}, N_{\text{PE}
 | `wind_down_floor_action` | Action when wind-down can't close: close_all / stop_adjustments / alert | stop_adjustments | **Yes** |
 
 All "Hot Reload = Yes" parameters can be changed via WebUI while the algo is running, and take effect on the next interval.
+
+**Regime Control Parameters (Added Feb 20, 2026):**
+
+| Parameter | What It Controls | Default | Hot Reload? |
+|-----------|-----------------|---------|-------------|
+| `regime_vol_enabled` | Enable volatility regime filter | true | **Yes** |
+| `regime_vol_elevated_threshold` | IV percentile for ELEVATED state | 70 | **Yes** |
+| `regime_vol_high_threshold` | IV percentile for HIGH state (blocks adjustments) | 90 | **Yes** |
+| `regime_gamma_enabled` | Enable portfolio gamma cap | true | **Yes** |
+| `regime_gamma_soft_cap` | Gamma level for SOFT state (warn) | 0.001 | **Yes** |
+| `regime_gamma_hard_cap` | Gamma level for HARD state (block) | 0.003 | **Yes** |
+| `regime_gamma_emergency` | Gamma level for EMERGENCY (close all) | 0.005 | **Yes** |
+| `regime_trend_enabled` | Enable trend detection guard | true | **Yes** |
+| `regime_trend_window_minutes` | Lookback window for trend calculation | 30 | **Yes** |
+| `regime_trend_threshold_pct` | BTC move % to classify as trending | 2.0 | **Yes** |
+
+**Margin Guardian Parameters (Added Feb 20, 2026):**
+
+| Parameter | What It Controls | Default | Hot Reload? |
+|-----------|-----------------|---------|-------------|
+| `margin_guardian_enabled` | Enable real-time margin monitoring | true | **Yes** |
+| `margin_yellow_pct` | Utilization % for YELLOW tier (warn) | 60 | **Yes** |
+| `margin_orange_pct` | Utilization % for ORANGE tier (wind-down) | 75 | **Yes** |
+| `margin_red_pct` | Utilization % for RED tier (emergency close) | 85 | **Yes** |
+| `margin_critical_pct` | Utilization % for CRITICAL tier (session stop) | 95 | **Yes** |
+
+**Perpetual Futures Delta Hedge Parameters (Added Feb 22, 2026):**
+
+| Parameter | What It Controls | Default | Hot Reload? |
+|-----------|-----------------|---------|-------------|
+| `perp_hedge_enabled` | Enable/disable perp delta hedging | false | **Yes** |
+| `perp_hedge_delta_threshold` | Min |delta| to trigger hedge action | 0.02 | **Yes** |
+| `perp_hedge_ratio` | Fraction of delta to hedge (1.0 = full) | 1.0 | **Yes** |
+| `perp_hedge_rebalance_band` | Drift from target before rebalancing | 0.005 | **Yes** |
+| `perp_hedge_max_lots` | Maximum perp position lots | 50 | **Yes** |
+| `perp_hedge_cooldown_sec` | Seconds between perp trades | 30 | **Yes** |
 
 ---
 
@@ -1427,13 +1634,25 @@ The algo's response depends on which safety mechanism fires first:
 
 13. **Complete walk-through verified** — Section 16 traces 7 intervals covering up-trend, strike shift, reversal (with adjustment P&L ≥0 skip), continuation, re-reversal, and close-at-5.
 
+14. **Decimal arithmetic eliminates P&L drift** — All accumulation paths use `Decimal` through `str(x)` conversion. No IEEE 754 artifacts.
+
+15. **Unified Position Ledger** — Single `positions[]` list per side with ID-based removal. All computed views derived by `recompute_side_lots()`. No divergence possible.
+
+16. **Perpetual futures hedge complements options** — Perps absorb directional risk (delta) while options collect theta. Institutional approach: two independent systems working simultaneously.
+
+17. **Regime controls pre-filter adjustments** — Vol/gamma/trend checks prevent selling into adverse conditions. But never force-close existing positions (that's the margin guardian's job).
+
+18. **Margin guardian enforces real exchange limits** — Tier-based escalation from warn to session-stop. Uses actual exchange margin data, not estimates.
+
+19. **Circuit breaker isolates API failures** — Never terminates the session. Self-heals after 30 seconds. Graduated partial-beat or full-skip.
+
 ---
 
 ---
 
 ## SECTION 22: WEBUI MONITORING PANELS (Added Feb 18, 2026)
 
-The WebUI provides 10 detail tabs for each session. The following are the monitoring panels relevant to the calculation logic:
+The WebUI provides 12 detail tabs for each session. The following are the monitoring panels relevant to the calculation logic:
 
 ### 22.1 Positions Tab (Tab 1)
 
@@ -1488,6 +1707,248 @@ MMM sells options. The Delta Exchange API returns Greeks as if you are LONG the 
 
 The portfolio total delta sign tells you the net directional bias.
 
+### 22.5 Perp Hedge Tab (Tab 14, Added Feb 22, 2026)
+
+Shows the perpetual futures delta hedge state:
+- Direction indicator: LONG / SHORT / FLAT
+- Current lots, entry price, effective portfolio delta
+- Unrealized and realized perp P&L
+- Rebalance history and trade count
+- Toggle button (enable/disable) and Close button (exit perp immediately)
+- Delta threshold, ratio, rebalance band parameters displayed
+- Updates via `mmm_perp_hedge_update`, `mmm_perp_hedge_execution`, `mmm_perp_hedge_flip` WebSocket events
+
+### 22.6 Regime Tab (Tab 12, Added Feb 20, 2026)
+
+Shows the three regime controls and their current states:
+- Volatility: NORMAL / ELEVATED / HIGH — with IV percentile
+- Gamma: NORMAL / SOFT / HARD / EMERGENCY — with portfolio gamma value
+- Trend: NORMAL / TREND_UP / TREND_DOWN — with price change %
+- Aggregate action badge: NORMAL / WARN / BLOCK / EMERGENCY
+- Updates via `mmm_regime` WebSocket events
+
+### 22.7 Margin Tab (Tab 13, Added Feb 20, 2026)
+
+Shows real-time margin status from the exchange:
+- Current tier badge (GREEN/YELLOW/ORANGE/RED/CRITICAL) with color coding
+- Utilization percentage with progress bar
+- Position margin, order margin, net equity values
+- Tier threshold configuration
+- Updates via heartbeat WebSocket
+
 ---
 
-*This is the definitive calculation logic for Money Power. Every decision rule, formula, and edge case is documented. Once sealed, this document drives the implementation directly — each section maps to a code module.*
+*This is the definitive calculation logic for Money Power. Every decision rule, formula, and edge case is documented. Covers 25 sections: core algorithm (§1-12), safety (§13), improvements (§14), BTC specifics (§15), walk-through (§16), reference (§17-18), parameters (§19), edge cases (§20), correctness (§21), WebUI (§22), perp hedge (§23), regime controls (§24), margin guardian (§25). Once sealed, this document drives the implementation directly — each section maps to a code module.*
+
+---
+
+## SECTION 23: PERPETUAL FUTURES DELTA HEDGE (Added Feb 22, 2026)
+
+An optional delta-hedging layer using BTC perpetual futures (BTCUSD). Perps are linear instruments (zero gamma) — they absorb directional moves without adding gamma exposure.
+
+### 23.1 Why Perp Hedging?
+
+MMM sells both CE and PE, creating a short straddle/strangle. Near-ATM, the net delta can become significant:
+- BTC rises → short calls lose, delta becomes negative
+- BTC drops → short puts lose, delta becomes positive
+
+Perp hedge neutralizes this directional risk, leaving only theta (time decay) as the primary source of income.
+
+### 23.2 Delta Calculation
+
+Every heartbeat (when perp_hedge_enabled):
+
+$$\delta_{\text{portfolio}} = \sum_{i \in \text{all positions}} \delta_i \times N_i \times \text{LOT\_SIZE\_BTC} \times (-1)$$
+
+The $\times (-1)$ accounts for SHORT positions (MMM only sells). Delta values ($\delta_i$) come from the exchange's live Greeks API.
+
+$$\delta_{\text{effective}} = \delta_{\text{portfolio}} + \delta_{\text{perp\_position}}$$
+
+Where $\delta_{\text{perp\_position}} = \text{perp\_lots} \times \text{LOT\_SIZE\_BTC} \times \text{direction\_sign}$ (LONG=+1, SHORT=-1, FLAT=0).
+
+### 23.3 Hedge Decision Logic
+
+```
+IF |effective_delta| > perp_hedge_delta_threshold:
+    target_delta = -portfolio_delta × perp_hedge_ratio
+    target_lots = round(|target_delta| / LOT_SIZE_BTC)
+    target_lots = min(target_lots, perp_hedge_max_lots)   ← cap
+    target_direction = LONG if target_delta > 0 else SHORT
+    
+    IF target_direction ≠ current_direction:
+        → Direction flip: close current → open opposite (atomic)
+    ELIF |target_lots - current_lots| / current_lots > perp_hedge_rebalance_band:
+        → Rebalance: adjust to target_lots
+    ELSE:
+        → Within band, no action
+```
+
+### 23.4 Safety Guards
+
+| Guard | Behavior |
+|-------|----------|
+| Max lots cap | `target_lots = min(target_lots, perp_hedge_max_lots)` |
+| Cooldown timer | No trade within `perp_hedge_cooldown_sec` of last trade |
+| Stale delta | Skip hedge when `_pnl_calculation_incomplete` (>50% fetch failures) |
+| Session stop | Auto-close perp position on max-loss, trailing stop, wind-down, manual stop |
+| Orphan protection | On session stop, close perp even if options close fails |
+
+### 23.5 P&L Inclusion
+
+Perp P&L is included in the session total:
+$$\text{total\_pnl} = \text{realized\_pnl} + \text{unrealized\_pnl} + \text{perp\_hedge.realized\_pnl} + \text{perp\_hedge.unrealized\_pnl}$$
+
+This means max-loss and trailing-stop checks incorporate perp hedge results.
+
+### 23.6 Interaction with MMM Adjustments
+
+- Both systems run simultaneously (institutional approach)
+- Adjustments collect theta via options; perp hedges delta
+- Regime may block adjustments but NOT perp hedge — perp hedge IS the defense when regime blocks
+- After an adjustment changes the position profile, the next heartbeat's delta calculation automatically reflects the change
+
+### 23.7 Walk-Through: Perp Hedge in Action
+
+```
+T=0: Entry — 10 CE @ 100000, 10 PE @ 96000. perp_hedge_enabled=true.
+     Portfolio delta = (-0.37 × 10 + 0.10 × 10) × 0.001 × (-1) = +0.0027
+     |0.0027| > threshold(0.02)? NO → no hedge needed
+
+T+5: BTC at 99,000 — CE delta=-0.50, PE delta=+0.05
+     Portfolio delta = (-0.50×10 + 0.05×10) × 0.001 × (-1) = +0.0045
+     |0.0045| > 0.02? NO → still within band
+
+T+10: BTC at 100,500 — CE delta=-0.72, PE delta=+0.02
+     Portfolio delta = (-0.72×10 + 0.02×10) × 0.001 × (-1) = +0.007
+     Plus 6 new PE @ 98000 (delta=-0.15): +0.0009
+     Total portfolio delta = +0.0079
+     |0.0079| > 0.02? NO → still within band
+
+T+20: BTC at 101,500 — CE delta=-0.88 (deep ITM)
+     Portfolio delta = +0.025 (significant long bias from short calls)
+     |0.025| > 0.02? YES → HEDGE!
+     target = -0.025 × 1.0 = -0.025 (need to go SHORT perp)
+     lots = round(0.025 / 0.001) = 25 lots SHORT BTCUSD
+     → Place: SELL 25 BTCUSD perp
+     effective_delta = 0.025 - 0.025 = ~0 ✔️
+
+T+25: BTC reverses to 99,000 — CE delta=-0.30, PE delta=+0.25
+     Portfolio delta = -0.020 (now short bias as calls lose ITM)
+     Perp still SHORT 25 lots → effective_delta = -0.020 - 0.025 = -0.045
+     |0.045| > 0.02? YES → DIRECTION FLIP!
+     target = +0.020 × 1.0 = +0.020 (need to go LONG)
+     lots = 20 lots LONG BTCUSD
+     → Close SHORT 25 (realize P&L) → Open LONG 20
+     effective_delta ≈ 0 ✔️
+```
+
+---
+
+## SECTION 24: REGIME CONTROLS (Added Feb 20, 2026)
+
+Pre-adjustment checks that block option sells during adverse market conditions. Three independent controls with an aggregate action.
+
+### 24.1 Volatility Regime Filter
+
+Monitors implied volatility of the underlying BTC options:
+
+```
+compute IV percentile from recent history
+
+IF iv_percentile ≥ regime_vol_high_threshold (90):
+    vol_state = HIGH → ACTION_BLOCK
+ELIF iv_percentile ≥ regime_vol_elevated_threshold (70):
+    vol_state = ELEVATED → ACTION_WARN
+ELSE:
+    vol_state = NORMAL → ACTION_NORMAL
+```
+
+**Rationale:** High IV means premiums are inflated by fear. Selling into an IV spike risks the spike continuing (vega risk). Better to wait for IV mean-reversion.
+
+### 24.2 Portfolio Gamma Cap
+
+Computes portfolio-level gamma exposure:
+
+$$\gamma_{\text{portfolio}} = \sum_{i} |\gamma_i \times N_i \times \text{LOT\_SIZE\_BTC}|$$
+
+```
+IF gamma > regime_gamma_emergency (0.005):
+    gamma_state = EMERGENCY → ACTION_EMERGENCY (close all)
+ELIF gamma > regime_gamma_hard_cap (0.003):
+    gamma_state = HARD → ACTION_BLOCK
+ELIF gamma > regime_gamma_soft_cap (0.001):
+    gamma_state = SOFT → ACTION_WARN
+ELSE:
+    gamma_state = NORMAL → ACTION_NORMAL
+```
+
+**Rationale:** High gamma near expiry means delta changes rapidly with small BTC moves. New adjustments add gamma and make the portfolio harder to manage.
+
+### 24.3 Trend Detection Guard
+
+Looks for sustained directional BTC moves:
+
+```
+price_change_pct = (btc_now - btc_N_minutes_ago) / btc_N_minutes_ago × 100
+
+IF |price_change_pct| > regime_trend_threshold_pct (2.0):
+    trend_state = TREND_UP or TREND_DOWN → ACTION_BLOCK
+ELSE:
+    trend_state = NORMAL → ACTION_NORMAL
+```
+
+**Rationale:** In a strong trend, adjustments compound losses because each new sell adds exposure in the wrong direction. Better to let the perp hedge absorb directionality.
+
+### 24.4 Aggregate Action
+
+```
+aggregate = max(vol_action, gamma_action, trend_action)
+
+ACTION_NORMAL    → proceed normally
+ACTION_WARN      → emit mmm_regime event, proceed with caution
+ACTION_BLOCK     → skip adjustment this heartbeat
+ACTION_EMERGENCY → close all positions, stop session
+```
+
+**Key rule:** Regime controls block NEW adjustments but do NOT force-close existing options positions (that's the margin guardian's job). Close-at-5 and wind-down still run regardless.
+
+**Perp hedge exception:** Perp hedge runs regardless of regime state. When regime blocks adjustments, the perp hedge is the primary defense.
+
+---
+
+## SECTION 25: MARGIN GUARDIAN (Added Feb 20, 2026)
+
+Queries Delta Exchange for real-time margin utilization and enforces tier-based defense.
+
+### 25.1 Margin Utilization Calculation
+
+$$\text{utilization} = \frac{\text{position\_margin} + \text{order\_margin}}{\text{net\_equity}} \times 100\%$$
+
+All values from the exchange's actual margin API (not estimated).
+
+### 25.2 Tier Escalation
+
+| Tier | Threshold | Action |
+|------|-----------|--------|
+| GREEN | < 60% | Normal operations |
+| YELLOW | ≥ 60% | Warn, block new option sells |
+| ORANGE | ≥ 75% | Trigger wind-down (close positions at elevated threshold) |
+| RED | ≥ 85% | Emergency close (close positions at market) |
+| CRITICAL | ≥ 95% | Session STOP (all positions closed, session terminated) |
+
+Thresholds are user-configurable via hot-reload.
+
+### 25.3 Tier Severity
+
+```python
+tier_severity = {GREEN: 0, YELLOW: 1, ORANGE: 2, RED: 3, CRITICAL: 4}
+```
+
+On tier escalation (severity increases), emits Telegram alert via `mmm_telegram.py`.
+
+### 25.4 Interaction with Other Systems
+
+- Margin guardian runs AFTER safety checks, BEFORE trigger evaluation
+- At YELLOW+: blocks `mmm_executor.py` from placing new sell orders
+- At ORANGE: triggers wind-down regardless of time to expiry
+- At RED/CRITICAL: overrides all other logic — priority is capital preservation

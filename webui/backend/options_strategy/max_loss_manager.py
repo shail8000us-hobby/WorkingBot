@@ -861,8 +861,7 @@ class MaxLossMonitor:
                                 self._positions_cache = positions
                                 self._cache_time = now
                         finally:
-                            if should_close_loop:
-                                loop.close()
+                            pass  # Don't close loop - may be reused by Flask/async context
                             
                     except Exception as e:
                         logger.error(f"❌ Error fetching positions from Delta Exchange: {e}")
@@ -1388,8 +1387,7 @@ class MaxLossMonitor:
                     raise Exception(f"Close order failed: {error_msg}")
                 
             finally:
-                if should_close_loop:
-                    loop.close()
+                pass  # Don't close loop - may be reused by Flask/async context
                 
         except Exception as e:
             logger.error(f"❌ Error closing position for max loss: {e}", exc_info=True)
@@ -1441,8 +1439,7 @@ class MaxLossMonitor:
                 self.manager.mark_expiry_triggered(expiry_code, actual_loss, closed_positions)
                 
             finally:
-                if should_close_loop:
-                    loop.close()
+                pass  # Don't close loop - may be reused by Flask/async context
                 
         except Exception as e:
             logger.error(f"Error closing expiry positions for max loss: {e}", exc_info=True)

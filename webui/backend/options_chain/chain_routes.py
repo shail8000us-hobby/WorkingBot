@@ -331,18 +331,15 @@ def place_chain_order():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        try:
-            result = loop.run_until_complete(
-                order_service.place_order(
-                    symbol=symbol,
-                    side=side,
-                    size=int(size),
-                    order_type=order_type,
-                    limit_price=float(limit_price) if limit_price else None
-                )
+        result = loop.run_until_complete(
+            order_service.place_order(
+                symbol=symbol,
+                side=side,
+                size=int(size),
+                order_type=order_type,
+                limit_price=float(limit_price) if limit_price else None
             )
-        finally:
-            loop.close()
+        )
         
         # Update rate limit time on success
         if result.get('success'):
@@ -385,12 +382,9 @@ def cancel_order(order_id, product_id):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        try:
-            result = loop.run_until_complete(
-                order_service.cancel_order(order_id, product_id)
-            )
-        finally:
-            loop.close()
+        result = loop.run_until_complete(
+            order_service.cancel_order(order_id, product_id)
+        )
         
         return jsonify(result), 200 if result.get('success') else 400
         
@@ -423,12 +417,9 @@ def get_open_orders():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        try:
-            result = loop.run_until_complete(
-                order_service.get_open_orders()
-            )
-        finally:
-            loop.close()
+        result = loop.run_until_complete(
+            order_service.get_open_orders()
+        )
         
         return jsonify(result)
         

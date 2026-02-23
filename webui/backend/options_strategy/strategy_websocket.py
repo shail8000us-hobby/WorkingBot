@@ -177,7 +177,7 @@ class StrategyWebSocketHandler:
             pnl_result = loop.run_until_complete(
                 manager.calculate_strategy_pnl(strategy_id)
             )
-            loop.close()
+            pass  # Keep loop open for httpx clients
             
             return pnl_result
             

@@ -1,9 +1,11 @@
 # AI_MMM_CONTEXT.md — Complete MMM Algorithm Reference for AI Agents
 
-> **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation.
+> **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
 > **Last Updated:** February 22, 2026
-> **Status:** All phases complete. Production-ready. Verified against actual codebase. Includes all modules through February 2026.
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Production-ready.
+> **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
+> **Remaining Hardening:** See `MMM_10_OF_10_PRODUCTION_PLAN.md` for 19 additional issues found in post-robustv2 audit.
 
 ---
 
@@ -24,7 +26,7 @@ MMM is a **BTC 0DTE options premium selling algorithm** with automatic adjustmen
 11. **Margin guardian** monitors real exchange margin utilization and enforces tier-based defense
 12. **Circuit breaker** isolates exchange API failures gracefully without terminating sessions
 
-The complete calculation logic is defined in `MONEY_POWER_CALCULATION_LOGIC.md` (22 sections). The development plan is in `MMM_DEVELOPMENT_PLAN.md` (all phases complete).
+The complete calculation logic is defined in `MONEY_POWER_CALCULATION_LOGIC.md` (22 sections). The development plan is in `MMM_DEVELOPMENT_PLAN.md` (all phases complete). The comprehensive audit is in `MMM_robustv2.md` (26 items, all implemented). The remaining hardening plan is in `MMM_10_OF_10_PRODUCTION_PLAN.md`.
 
 ---
 
@@ -246,6 +248,97 @@ CLOSED → OPEN after `FAILURE_THRESHOLD = 3` consecutive failures. OPEN → HAL
 
 **Implementation:** `mmm_circuit_breaker.py` + `mmm_monitor.py`.
 
+### 2.15 Robustv2 Hardening (Implemented February 22, 2026)
+
+A comprehensive audit (`MMM_robustv2.md`) identified and fixed 25 issues + 1 new feature across the entire backend. Key improvements:
+
+#### Critical Fixes
+| # | Fix | Impact |
+|---|-----|--------|
+| 1 | **P&L Incomplete Guard** — If >50% of position premium fetches fail, session is PAUSED instead of continuing with partial data | Prevents stale P&L from letting the session trade when it should hard-stop |
+| 2 | **Calculation Incomplete Flag** — `calculate_standard_loss()` and `calculate_reversal_loss()` now return `(value, incomplete_bool)` tuples. Monitor emits `mmm_safety` event with `type='calculation_incomplete'` | UI warns user when calculations use partial data |
+| 3 | **Partial Fill Rejection** — Missing `unfilled_size` returns failure instead of assuming full fill. Added NaN/Inf/negative guards | No more phantom positions from API quirks |
+
+#### High Fixes
+| # | Fix | Impact |
+|---|-----|--------|
+| 5 | **Position Cap Hard-Block** — `check_position_cap()` action changed from `'warn'` to `'stop_adjustments'` | Safety check actually stops adjustments at cap |
+| 6 | **Trigger Snapshot Validation** — Before `evaluate_triggers()`, validates active strike key exists in snapshot. If missing/zero, initializes from exchange | No false trigger fires after restart or shift |
+| 7 | **Decaying Peak P&L** — Peak decays as `0.9 * old + 0.1 * current` when P&L is below peak. Hard-resets on reversal | No stale trailing stop alerts |
+| 8 | **ID-Based Position Removal** — Removed index-based removal; uses `_pos_id` for O(1) lookup or content-match fallback | Safe, performant position removal after close-at-5 |
+| 9 | **Original Strike Defensive** — `scan_closeable_positions()` uses `original_strike` not `active_strike` for original lots | Future-proof against strike decoupling |
+| 10 | **Reversal Case-Insensitive** — `last.upper() == 'NONE'` with type guard | No false reversals from serialization variants |
+| 11 | **Re-evaluate After Close-at-5** — When close-at-5 closes positions on aggressor side, triggers re-evaluated before adjustment | Prevents over-hedging when close-at-5 relieves pressure |
+
+#### Medium Fixes
+| # | Fix | Impact |
+|---|-----|--------|
+| 12 | **Per-Side Premium Fallback** — One side's failure falls back to cache for that side only; other side uses fresh data | Healthy side keeps operating when one side has API issues |
+| 13 | **Canonical `strike_key()`** — `mmm_constants.py` exports `strike_key(float) -> str` via `str(int(round(float(strike))))` | No trigger snapshot key mismatches |
+| 14 | **Timezone-Aware UTC** — All `datetime.utcnow()` → `datetime.now(timezone.utc)`. Timestamps now include `+00:00` suffix | Correct wind-down/expiry timing; no IST offset bugs |
+| 15 | **Param Interdependency Validation** — Validates relationships: `wind_down ≥ close_at`, margin tier ordering, `max_adj ≥ whipsaw`, etc. | Bad config combos rejected on hot-reload |
+| 16 | **Atomic Activity Log** — Write `.tmp` → `fsync()` → `os.rename()`. Buffer increased to 500. Throttle reduced to 1-in-2 | Crash-safe log, more data preserved |
+| 17 | **WebSocket Failure Counter** — `_consecutive_failures` counter, `get_ws_health()` function. CRITICAL log at 10 consecutive failures | Detects stale UI condition |
+| 18 | **Both-Sides Fresh Re-Fetch** — Re-fetches premiums before auto-decision instead of using 30s-stale data | Auto-decision hedges the correct side |
+
+#### Low/Architectural Fixes
+| # | Fix | Impact |
+|---|-----|--------|
+| 19 | **Decimal Arithmetic** — `_D(x)` helper converts via `str(x)` to avoid IEEE 754 errors. Used in all P&L accumulation paths | Eliminates $0.50-$1.00 drift over session lifetime |
+| 20 | **Session ID Fallback** — UUID hex[:8] (4.3B combinations) instead of [:4] (65K) | No session ID collisions |
+| 21 | **Theta Acceleration Cap** — `min(base * 2, 80.0)` hard cap | Triggers can still fire even near expiry |
+| 22 | **fill_price Guard** — `try/except (ValueError, TypeError)` + `isnan`/`isinf` | No crash on malformed API response |
+| 23 | **Unified Position Ledger** — `positions[]` list is authoritative source. `recompute_side_lots()` rebuilds all computed views. Auto-migration. ID-based removal | Single source of truth for positions; 50+ read sites unchanged |
+| 24 | **Derived State Consistency** — Assertion at heartbeat start verifies `total_lots == computed total`. Auto-repairs on mismatch | Catches any mutation that forgot `recompute_side_lots()` |
+
+### 2.16 Perpetual Futures Delta Hedge (Implemented February 22, 2026)
+
+**New File:** `mmm_perp_hedge.py` (441 lines)
+
+Hedges directional risk with BTC perpetual futures (BTCUSD). Perps are linear (zero gamma) — they absorb directional moves without adding gamma exposure.
+
+**How it works:**
+1. Every heartbeat, `_calculate_portfolio_delta()` computes net portfolio delta across ALL positions
+2. If `|effective_delta| > perp_hedge_delta_threshold` (default 0.02), hedge is needed
+3. Calculates target perp lots to bring effective delta to zero (or ratio-adjusted target)
+4. Executes via existing `rest_client.place_order_by_symbol()` (BTCUSD perp)
+5. Rebalances when drift exceeds `perp_hedge_rebalance_band` (default 0.005)
+6. Direction flips (long↔short) are single atomic operations
+
+**Parameters (all hot-reload):**
+
+| Parameter | Default | Range |
+|-----------|---------|-------|
+| `perp_hedge_enabled` | false | bool |
+| `perp_hedge_delta_threshold` | 0.02 | 0.005–0.10 |
+| `perp_hedge_ratio` | 1.0 | 0.3–1.0 |
+| `perp_hedge_rebalance_band` | 0.005 | 0.001–0.02 |
+| `perp_hedge_max_lots` | 50 | 5–200 |
+| `perp_hedge_cooldown_sec` | 30 | 10–300 |
+
+**Safety Guards:**
+- Max lots cap, cooldown timer, session-stop auto-close, orphan protection
+- Delta sanity check (skips if `_pnl_calculation_incomplete`)
+- Perp P&L included in max-loss and trailing-stop total
+- Stale-delta guard — skips hedge when P&L calculation is incomplete
+
+**Interaction with MMM:** Both work simultaneously (institutional approach). Adjustments collect theta, perp hedges delta. Regime may block adjustments but NOT perp hedge — it's the primary defense when regime blocks.
+
+**WebSocket Events:** `mmm_perp_hedge_update` (every heartbeat), `mmm_perp_hedge_execution` (on trade), `mmm_perp_hedge_flip` (on direction flip)
+
+**Exit:** Perp closes on wind-down, max-loss, trailing stop, all-positions-closed, manual stop, or expiry.
+
+### 2.17 Frontend Timezone-Aware Date Parsing (Fixed February 22, 2026)
+
+Fix #14 changed backend timestamps from `datetime.utcnow()` (naive UTC, no suffix) to `datetime.now(timezone.utc)` (timezone-aware, `+00:00` suffix). This caused a cascading frontend crash — all 11 locations that appended `'Z'` to timestamps now created invalid strings like `2026-02-22T13:07:22+00:00Z`.
+
+**Fix:** Added `parseUTC(ts)` utility in `mmmFormatters.js` and `MMMStatusBanner.js`:
+- Checks if timestamp `endsWith('Z')` or matches `/[+-]\d{2}:\d{2}$/`
+- If timezone-aware → parse directly
+- If naive UTC → append 'Z' then parse
+- Returns null for invalid
+- Fixed 6 frontend files, 11 locations total
+
 ---
 
 ## 3. ARCHITECTURE
@@ -286,6 +379,7 @@ webui/
 │           ├── mmm_telegram.py               ← Telegram alert notifications (added Feb 20, 2026)
 │           ├── mmm_walkthrough.py            ← Algo walkthrough generator (added Feb 16, 2026)
 │           ├── mmm_watchdog.py               ← Monitor watchdog/auto-restart (added Feb 18, 2026)
+│           ├── mmm_perp_hedge.py             ← Perpetual futures delta hedge (added Feb 22, 2026, ~441 lines)
 │           ├── mmm_sessions.db               ← SQLite session data (replaces mmm_sessions.json)
 │           └── tests/                        ← Unit tests (6 files)
 │
@@ -320,6 +414,7 @@ webui/
 │               ├── MMMEducation.js           ← Educational tooltips and guides
 │               ├── MMMMarginGuardianPanel.js ← Margin utilization & tier display
 │               ├── MMMRegimePanel.js         ← Regime status (vol/gamma/trend)
+│               ├── MMMPerpHedgePanel.js      ← Perpetual futures delta hedge UI (added Feb 22, 2026)
 │               ├── MMMSettingsDialog.js      ← Hot-reload params dialog (~448 lines)
 │               ├── hooks/
 │               │   ├── useMMMParams.js       ← Parameter dirty tracking
@@ -466,7 +561,15 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 | `GET` | `/api/mmm/analytics/history` | Analytics history (all sessions) |
 | `GET` | `/api/mmm/analytics/aggregated` | Aggregated institutional analytics |
 
-### 4.11 WebSocket Events (17 total)
+### 4.11 Perpetual Futures Delta Hedge
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/mmm/session/<id>/hedge/status` | Current perp hedge state (delta, lots, direction, P&L) |
+| `POST` | `/api/mmm/session/<id>/hedge/toggle` | Enable/disable perp hedge |
+| `POST` | `/api/mmm/session/<id>/hedge/close` | Close perp hedge position immediately |
+
+### 4.12 WebSocket Events (20 total)
 
 | Event | When | Key Payload Fields |
 |-------|------|-------------------|
@@ -486,6 +589,9 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 | `mmm_activity` | New activity log entry | activity dict (type, message, session_id, timestamp) |
 | `mmm_activities_updated` | Activity log refresh | refresh: true |
 | `mmm_regime` | Regime status update | session_id, regime_status (vol/gamma/trend/aggregate) |
+| `mmm_perp_hedge_update` | Every heartbeat (when enabled) | session_id, effective_delta, hedge_lots, direction, unrealized_pnl |
+| `mmm_perp_hedge_execution` | On perp trade placed | session_id, action (open/rebalance/close), lots, price, side |
+| `mmm_perp_hedge_flip` | On direction flip (long↔short) | session_id, old_direction, new_direction, lots |
 
 ---
 
@@ -539,6 +645,18 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
     'params': {},                   # All configurable parameters
     '_atm_wind_down_triggered': bool,  # Set once when ATM wind-down fires; persists session
     '_watchdog_restarts': int,      # Count of monitor auto-restarts by watchdog
+    'perp_hedge': {                 # Perpetual futures delta hedge state
+        'enabled': bool,            # Whether perp hedge is active
+        'direction': str,           # 'LONG' | 'SHORT' | 'FLAT'
+        'lots': int,                # Current perp position lots
+        'entry_price': float,       # Average entry price
+        'effective_delta': float,   # Current portfolio delta
+        'unrealized_pnl': float,    # Mark-to-market P&L on perp
+        'realized_pnl': float,      # Closed P&L from perp trades
+        'last_rebalance': str,      # ISO timestamp of last rebalance
+        'trade_count': int,         # Total perp trades this session
+        'cooldown_until': str,      # ISO timestamp when cooldown expires
+    },
 }
 ```
 
@@ -732,6 +850,20 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Does **NOT** restart PAUSED sessions — only RUNNING sessions whose threads died
 - Config: `WATCHDOG_POLL_INTERVAL`, `BEAT_TIMEOUT_MULTIPLIER = 3`
 
+### 6.30 mmm_perp_hedge.py (Added Feb 22, 2026, ~441 lines)
+- `PerpHedgeManager` class — one instance per session, managed by monitor
+- `_calculate_portfolio_delta(session, premiums)` → net delta across ALL open positions (uses Greeks from options chain)
+- `_compute_hedge_lots(effective_delta)` → target perp lots to neutralize delta (ratio-adjusted)
+- `check_and_rebalance(session)` → main entry point called from monitor heartbeat
+  - Computes delta, checks threshold (`perp_hedge_delta_threshold`), checks cooldown
+  - Places/adjusts/closes perp position via `rest_client.place_order_by_symbol()` (BTCUSD)
+  - Direction flips are atomic: close existing → open opposite in one heartbeat
+- `close_hedge(session)` → graceful close (wind-down, stop, max-loss)
+- `get_hedge_status(session)` → returns current state dict for API/WebSocket
+- Safety: max lots cap, cooldown timer, stale-delta skip (when `_pnl_calculation_incomplete`)
+- Perp P&L included in session total for max-loss and trailing-stop checks
+- Emits: `mmm_perp_hedge_update`, `mmm_perp_hedge_execution`, `mmm_perp_hedge_flip`
+
 ---
 
 ## 7. FRONTEND COMPONENT DETAILS
@@ -739,7 +871,7 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 ### 7.1 MMMDashboard.js (Main Container)
 - **Header:** Title, BTC 0DTE badge, health indicator, connection status, New Session + Refresh buttons
 - **Left Panel:** Session list with 3 tabs (Active/Idle/History), session cards with controls
-- **Right Panel:** Session detail with multiple tabs (Overview/Positions/Triggers/Adjustments/P&L/Safety/Strike Map/Algo Calculations/Consolidated/Greeks & IV/Activity/Regime/Margin/Analytics)
+- **Right Panel:** Session detail with multiple tabs (Overview/Positions/Triggers/Adjustments/P&L/Safety/Strike Map/Algo Calculations/Consolidated/Greeks & IV/Activity/Regime/Margin/Perp Hedge/Analytics)
 - **Dialogs:** CreateSessionDialog (expiry dropdown, mode: Fresh/Import/Adopt), BothSidesAlert, MMMSettingsDialog
 - **State:** Uses `useMMM()` from MMMContext + `useMMMWebSocket(sessionId)` for live data
 
@@ -799,36 +931,44 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Aggregate action badge (NORMAL / WARN / BLOCK / EMERGENCY)
 - Updates via `mmm_regime` WebSocket events
 
-### 7.11 MMMConsolidatedPositions.js
+### 7.13 MMMPerpHedgePanel.js (Added Feb 22, 2026)
+- Displays perp hedge state from `GET /api/mmm/session/<id>/hedge/status`
+- Shows: direction (LONG/SHORT/FLAT), lots, entry price, effective delta, unrealized/realized P&L
+- Toggle button to enable/disable perp hedge
+- Close button to exit perp position immediately
+- Updates via `mmm_perp_hedge_update`, `mmm_perp_hedge_execution`, `mmm_perp_hedge_flip` WebSocket events
+- Parameter display for delta threshold, ratio, rebalance band, max lots, cooldown
+
+### 7.12 MMMConsolidatedPositions.js
 - Groups scattered individual fills by (side, strike) into consolidated rows
 - Shows: Side, Strike, Total Lots, Notional BTC, Weighted Avg Entry, Current Premium, P&L
 - Pure frontend aggregation — reuses `buildPositionRows()` from MMMPositionsTable
 
-### 7.12 MMMGreeksPanel.js
+### 7.14 MMMGreeksPanel.js
 - Fetches live Greeks (δ, γ, θ, ν) and IV from `/greeks-iv` endpoint
 - Portfolio-weighted totals row (lots × per-contract greek)
 - Color-coded: blue δ, purple γ, green θ, orange ν, red IV
 - Auto-refreshes every 60s, manual refresh button with timestamp
 - Greeks converted from per-1-BTC ticker values to per-lot position Greeks (× LOT_SIZE_BTC × -1 for short)
 
-### 7.13 MMMEducation.js
+### 7.15 MMMEducation.js
 - Educational tooltips, explanations, and guides embedded in the dashboard
 - Explains core concepts (trigger, shift, reversal, etc.) in plain language
 
-### 7.14 Key UI Patterns
+### 7.16 Key UI Patterns
 - **Socket prop flow:** App.js `connectionManagerRef.current?.socket` → `<MMMProvider socket={socket}>` → MMMContext attaches listeners
 - **Lazy loading:** `MMMDashboard` loaded via `React.lazy()` with `Suspense` fallback
 - **Error isolation:** `MMMErrorBoundary` wraps everything, prevents MMM crashes from affecting main app
 - **Status colors:** IDLE=gray, RUNNING=green, PAUSED=orange, BOTH_SIDES_UP=red, STOPPED=dark gray
 - **Data flow:** REST API for initial load + actions, WebSocket for real-time updates
 
-### 7.15 MMMSettingsDialog.js (~448 lines)
+### 7.17 MMMSettingsDialog.js (~448 lines)
 - 6 parameter groups: Core, Triggers, Safety, Expiry, Adaptive, Wind-Down
 - Rich `PARAM_TOOLTIPS` map (28 entries) with `?` help icons for every parameter
 - `DialogContent` with `maxHeight: '75vh'` + `overflowY: 'auto'` for scrollability
 - Select input for `wind_down_floor_action` (close_all / stop_adjustments / alert)
 
-### 7.16 MMMStatusBanner.js
+### 7.18 MMMStatusBanner.js
 - Adaptive tier badge (`⚡ 10-20h`) showing current heartbeat interval range
 - Wind-down badge (`🌙 Wind-Down`) when wind-down mode is active
 - Regime warning badge when regime action is WARN or BLOCK
@@ -866,7 +1006,8 @@ Running → every interval:
   → Pending order guard checks in-flight orders
   → Evaluates triggers
   → If adjustment needed → executes, updates state, records walkthrough + activity
-  → Emits WebSocket events → frontend updates in real-time
+  → Perp hedge: check_and_rebalance() if enabled (after trigger evaluation)
+  → Emits WebSocket events (incl. perp hedge updates) → frontend updates in real-time
   → Heartbeat health tracker records beat outcome
 
 User can: Pause/Resume/Stop/Change params/Force heartbeat/Reduce position
@@ -1067,6 +1208,12 @@ python3 -c "from webui.backend.routes.mmm import mmm_bp, init_mmm; print('OK')"
 
 13. **Regime controls are pre-adjustment only:** They block NEW adjustments but do NOT force close existing positions (that is the margin guardian's job). Close-at-5 and wind-down run regardless of regime state.
 
+14. **Perp hedge runs independently of regime:** Regime may block option adjustments, but the perp hedge always runs because it IS the defense when regime blocks. This is the institutional approach — perps absorb directional risk while options collect theta.
+
+15. **Decimal arithmetic for P&L accumulation:** All P&L computations use `Decimal` via `_D(x)` helper (converts through `str(x)` to avoid IEEE 754 float artifacts). Eliminates $0.50–$1.00 drift over session lifetime.
+
+16. **Unified Position Ledger:** `positions[]` list is the single authoritative source for all position data. All computed views (`active_lots`, `total_lots`, `frozen_total_lots`, etc.) are derived via `recompute_side_lots()`. ID-based removal via `_pos_id`. Auto-migration adds `_pos_id` and `position_type` to legacy data.
+
 ---
 
 ## 13. TESTING
@@ -1101,9 +1248,10 @@ mmm_monitor.py (orchestrator — 3838 lines)
   ├── mmm_circuit_breaker.py     wraps exchange API calls
   ├── mmm_pending_orders.py      guards before executor
   ├── mmm_executor.py            order placement
+  ├── mmm_perp_hedge.py          perpetual futures delta hedge
   ├── mmm_walkthrough.py         logs calculation steps
   ├── mmm_activity.py            logs background events
-  ├── mmm_websocket.py           emits all 17 events
+  ├── mmm_websocket.py           emits all 20 events
   ├── mmm_heartbeat_health.py    beat telemetry (pure observability)
   └── mmm_margin_guardian.py     tier-based margin enforcement
         └── mmm_telegram.py        alert notifications
@@ -1120,11 +1268,11 @@ mmm_api.py (REST layer — 3398 lines)
 mmm_watchdog.py (supervisor thread, started by __init__.py)
   └── monitors all MMMMonitor instances; restarts on death/timeout/inconsistency
 
-mmm_constants.py ← imported by: engine, adopter, walkthrough, regime
+mmm_constants.py ← imported by: engine, adopter, walkthrough, regime, perp_hedge
 mmm_state.py     ← imported by: api, monitor, initializer
-mmm_config.py    ← imported by: api, state, engine
+mmm_config.py    ← imported by: api, state, engine, perp_hedge
 ```
 
 ---
 
-*This document is the single source of truth for any AI agent working on the MMM algorithm. All file paths, module names, API endpoints, WebSocket events, and state fields above have been verified against the actual codebase as of February 22, 2026. Reference `MONEY_POWER_CALCULATION_LOGIC.md` for the sealed mathematical logic.*
+*This document is the single source of truth for any AI agent working on the MMM algorithm. All file paths, module names, API endpoints, WebSocket events, and state fields above have been verified against the actual codebase as of February 22, 2026. Backend: 30 Python files (29 modules + 1 DB). Frontend: 28 React components + 2 hooks + 2 utils. Reference `MONEY_POWER_CALCULATION_LOGIC.md` for the sealed mathematical logic. Reference `MMM_10_OF_10_PRODUCTION_PLAN.md` for the remaining 19 hardening tasks.*

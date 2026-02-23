@@ -25,6 +25,7 @@ import asyncio
 import logging
 import sys
 import os
+import threading
 import time
 from typing import Dict, Optional, Any, Tuple
 from datetime import datetime
@@ -47,13 +48,17 @@ def _log_activity(activity_type, message, session_id=None, severity='info', deta
     try:
         from .mmm_activity import log_activity
         log_activity(activity_type, message, session_id, severity, details)
-    except Exception:
-        pass  # Never let logging interfere with execution
+    except Exception as e:
+        # M-1 fix: log at debug instead of silently swallowing — helps diagnose
+        # activity system issues without blocking execution path
+        logging.debug(f"Activity log suppressed: {e}")
 
 # Execution constants
 FILL_CHECK_INTERVAL = 3       # Check fill status every 3 seconds
 FILL_TIMEOUT = 60             # Wait 60 seconds before repricing
-MAX_REPRICE_ATTEMPTS = 10     # Maximum total reprice attempts (10 minutes total worst case)
+# L-3 fix: reduced from 10 to 4 (4 × 60s = 4-minute max block instead of 10-min).
+# Configurable per-session via 'max_reprice_attempts' param (see mmm_config.py).
+MAX_REPRICE_ATTEMPTS = 4      # Maximum total reprice attempts (4 minutes total worst case)
 POST_ONLY_RETRIES = 5         # Max retries when post-only order is rejected (price crosses book)
 POST_ONLY_RETRY_DELAY = 1.5   # Seconds to wait between post-only retries
 INITIAL_PLACEMENT_RETRIES = 3 # Max retries for initial order placement
@@ -1294,15 +1299,18 @@ class MMMExecutor:
 
 
 # =============================================================================
-# Singleton
+# Singleton (M-4 fix: double-checked locking prevents TOCTOU race)
 # =============================================================================
 
 _executor_instance = None
+_executor_lock = threading.Lock()
 
 
 def get_executor() -> MMMExecutor:
     """Get or create the singleton MMM executor."""
     global _executor_instance
     if _executor_instance is None:
-        _executor_instance = MMMExecutor()
+        with _executor_lock:
+            if _executor_instance is None:
+                _executor_instance = MMMExecutor()
     return _executor_instance

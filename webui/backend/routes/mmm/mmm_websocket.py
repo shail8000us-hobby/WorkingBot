@@ -8,6 +8,7 @@ Created: February 15, 2026
 """
 
 import logging
+import threading
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -21,6 +22,10 @@ _consecutive_failures = 0
 _last_successful_emit = None
 _FAILURE_THRESHOLD = 10  # After N consecutive failures, flag as stale
 
+# M-2 fix: lock protecting _consecutive_failures and _last_successful_emit
+# which are read/written from multiple monitor threads concurrently.
+_ws_lock = threading.Lock()
+
 
 def init_websocket(socketio):
     """Initialize WebSocket with the Flask-SocketIO instance."""
@@ -33,13 +38,15 @@ def get_ws_health() -> Dict:
     """
     Return WebSocket health metrics. Fix #17.
     Called by safety checks or API to detect UI staleness.
+    M-2 fix: reads counters under lock for thread-safe snapshot.
     """
-    return {
-        'consecutive_failures': _consecutive_failures,
-        'last_successful_emit': _last_successful_emit.isoformat() if _last_successful_emit else None,
-        'is_stale': _consecutive_failures >= _FAILURE_THRESHOLD,
-        'socketio_initialized': _socketio is not None,
-    }
+    with _ws_lock:
+        return {
+            'consecutive_failures': _consecutive_failures,
+            'last_successful_emit': _last_successful_emit.isoformat() if _last_successful_emit else None,
+            'is_stale': _consecutive_failures >= _FAILURE_THRESHOLD,
+            'socketio_initialized': _socketio is not None,
+        }
 
 
 def _emit(event: str, data: Dict[str, Any]):
@@ -56,29 +63,32 @@ def _emit(event: str, data: Dict[str, Any]):
     global _consecutive_failures, _last_successful_emit
 
     if _socketio is None:
-        _consecutive_failures += 1
-        log.debug(f"WebSocket not initialized, skipping emit: {event}")
-        if 'price_tick' in event:
-            import sys
-            print(f"[MMM WS] _socketio is None! Cannot emit {event}", flush=True, file=sys.stderr)
+        # H-2 fix: replaced print() with log.error() (no sys.stderr, no flush= I/O block)
+        # M-2 fix: counter update under lock
+        with _ws_lock:
+            _consecutive_failures += 1
+        log.error(f"_socketio is None! Cannot emit {event}")
         return
 
     try:
         data['timestamp'] = datetime.now(timezone.utc).isoformat()
         _socketio.emit(event, data, namespace='/')
-        _consecutive_failures = 0
-        _last_successful_emit = datetime.now(timezone.utc)
+        # M-2 fix: success resets under lock
+        with _ws_lock:
+            _consecutive_failures = 0
+            _last_successful_emit = datetime.now(timezone.utc)
     except Exception as e:
-        _consecutive_failures += 1
-        log.error(f"Failed to emit {event}: {e} (consecutive_failures={_consecutive_failures})")
-        if _consecutive_failures == _FAILURE_THRESHOLD:
+        # M-2 fix: failure increment under lock; read count for logging outside lock
+        with _ws_lock:
+            _consecutive_failures += 1
+            current_failures = _consecutive_failures
+        # H-2 fix: replaced print() with log.error()
+        log.error(f"Failed to emit {event}: {e} (consecutive_failures={current_failures})")
+        if current_failures == _FAILURE_THRESHOLD:
             log.critical(
                 f"WebSocket stale! {_FAILURE_THRESHOLD} consecutive emission failures. "
                 "UI may be out of sync with algo state."
             )
-        if 'price_tick' in event:
-            import sys
-            print(f"[MMM WS] Failed to emit {event}: {e}", flush=True, file=sys.stderr)
 
 
 def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
@@ -280,6 +290,28 @@ def emit_session_deleted(session_id: str):
 def emit_activity(activity: Dict):
     """Emit a background activity event for real-time UI updates."""
     _emit('mmm_activity', activity)
+
+
+def emit_heartbeat_summary(session_id: str, summary: Dict):
+    """Emit a compact heartbeat summary for the live monitor panel.
+
+    This replaces the flood of per-heartbeat log_activity calls with a single
+    structured event the frontend can render as a live status dashboard.
+
+    Args:
+        session_id: Session identifier
+        summary: Dict with keys:
+            heartbeat_num, latency_ms, health_grade, status,
+            ce_strike, ce_premium, ce_trigger_pct, pe_strike, pe_premium,
+            pe_trigger_pct, net_pnl, realized_pnl, unrealized_pnl,
+            portfolio_delta, next_interval, next_heartbeat,
+            wind_down_active, regime_action, margin_tier,
+            adaptive_tier, outcome, circuit_state
+    """
+    _emit('mmm_heartbeat_summary', {
+        'session_id': session_id,
+        **summary,
+    })
 
 
 def emit_regime(session_id: str, regime_status: Dict):

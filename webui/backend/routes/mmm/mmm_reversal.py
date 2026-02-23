@@ -15,7 +15,7 @@ Updated: February 16, 2026 — Fix infinite reversal detection loop
 
 import logging
 from typing import Dict, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .mmm_trigger import update_trigger_snapshots
 
@@ -71,8 +71,13 @@ def is_cooldown_active(session: Dict) -> bool:
         return False
 
     try:
+        # Fix #14: parse stored timestamp as timezone-aware UTC (handles both
+        # naive strings from old sessions and aware strings from new ones).
         until = datetime.fromisoformat(cooldown_until)
-        if datetime.utcnow() < until:
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        if now_utc < until:
             log.info(
                 f"Cooldown active until {cooldown_until}, "
                 f"skipping adjustment"
@@ -105,8 +110,9 @@ def activate_cooldown(session: Dict):
     interval = params.get('adjustment_interval', 300)
 
     session['cooldown_active'] = True
+    # Fix #14: use timezone-aware UTC
     session['cooldown_until'] = (
-        datetime.utcnow() + timedelta(seconds=interval)
+        datetime.now(timezone.utc) + timedelta(seconds=interval)
     ).isoformat()
 
     log.info(f"Cooldown activated for {interval}s")
@@ -159,7 +165,7 @@ def record_reversal(session: Dict, from_side: str, to_side: str):
     session.setdefault('reversal_history', []).append({
         'from': from_side.upper(),
         'to': to_side.upper(),
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'adjustment_count_at': session.get('adjustment_count', 0),
     })
 

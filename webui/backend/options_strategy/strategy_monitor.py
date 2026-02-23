@@ -138,8 +138,6 @@ class StrategyMonitor:
                 loop.run_until_complete(self._monitor_loop())
             except Exception as e:
                 log.error(f"Monitor loop error: {e}")
-            finally:
-                loop.close()
         
         thread = threading.Thread(target=run_monitor, daemon=True)
         thread.start()

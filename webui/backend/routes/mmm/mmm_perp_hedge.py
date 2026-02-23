@@ -16,9 +16,10 @@ Design (§26.2):
 Created: February 22, 2026
 """
 
+import asyncio  # M-3 fix: moved from inline imports inside retry loop to module top
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple
 
@@ -27,8 +28,8 @@ log = logging.getLogger('mmm_perp_hedge')
 # BTC perpetual contract on Delta Exchange
 BTCUSD_SYMBOL = 'BTCUSD'
 
-# Lot size: 1 lot = 0.001 BTC (same as options, §26.5)
-LOT_SIZE_BTC = 0.001
+# H-1 fix: import from canonical source instead of duplicating the constant
+from .mmm_constants import LOT_SIZE_BTC
 
 
 def _D(x) -> Decimal:
@@ -390,7 +391,6 @@ async def _execute_hedge_order(
                         f"[{sid}] Perp hedge order failed (attempt 1), retrying: "
                         f"{error_msg}"
                     )
-                    import asyncio
                     await asyncio.sleep(2)  # Brief pause before retry
                     continue
                 else:
@@ -406,7 +406,6 @@ async def _execute_hedge_order(
                     f"[{sid}] Perp hedge execution exception (attempt 1), "
                     f"retrying: {e}"
                 )
-                import asyncio
                 await asyncio.sleep(2)
                 continue
             else:
@@ -419,6 +418,49 @@ async def _execute_hedge_order(
 
     # Should not reach here, but safety fallback
     return {'success': False, 'error': 'Exhausted retries'}
+
+
+def _check_flip_rate(session: Dict, action: str, current_lots: int) -> tuple:
+    """M-8 fix: rate-limit perp hedge direction flips.
+
+    Each flip costs bid-ask spread + slippage. In choppy markets this drag
+    can exceed $0.30-0.50 per flip; 480 flips/4 hours = up to $240 drag.
+
+    Returns:
+        (allowed: bool, reason: str)
+    """
+    # A flip happens when the new action would reverse the current position
+    is_flip = (action == 'buy' and current_lots < 0) or \
+              (action == 'sell' and current_lots > 0)
+    if not is_flip:
+        return True, 'not a flip'
+
+    params = session.get('params', {})
+    max_flips = params.get('perp_hedge_max_flips_per_hour', 6)
+    perp = session.setdefault('perp_hedge', {})
+
+    # Prune timestamps older than 1 hour
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    flip_timestamps = perp.get('flip_timestamps', [])
+    recent_flips = [
+        t for t in flip_timestamps
+        if datetime.fromisoformat(t) > one_hour_ago
+    ]
+    perp['flip_timestamps'] = recent_flips  # Persist pruned list
+
+    if len(recent_flips) >= max_flips:
+        return (
+            False,
+            f"Perp hedge paused: {len(recent_flips)} flips in last hour (max {max_flips})"
+        )
+    return True, 'flip allowed'
+
+
+def _record_flip(session: Dict):
+    """M-8 fix: record a direction flip timestamp."""
+    perp = session.setdefault('perp_hedge', {})
+    timestamps = perp.setdefault('flip_timestamps', [])
+    timestamps.append(datetime.now(timezone.utc).isoformat())
 
 
 async def run_perp_hedge(
@@ -492,9 +534,28 @@ async def run_perp_hedge(
             'reason': f'Cooldown: {remaining:.1f}s remaining',
         }
 
-    # 6. Execute hedge order
+    # 5.5 M-8 fix: rate-limit perp direction flips to avoid spread drag
     action = required['action']
     lots = required['lots_to_trade']
+    current_lots = session.get('perp_hedge', {}).get('lots', 0)
+    flip_allowed, flip_reason = _check_flip_rate(session, action, current_lots)
+    if not flip_allowed:
+        log.warning(f"[{sid}] {flip_reason}")
+        try:
+            from .mmm_websocket import emit_safety
+            emit_safety(
+                sid, 'perp_hedge_flip_blocked', 'warning',
+                f'[PERP HEDGE] {flip_reason}',
+                {'action': action, 'lots': lots},
+            )
+        except Exception:
+            pass
+        return {
+            'action': 'skipped', 'lots_traded': 0, 'fill_price': 0,
+            'realized_pnl': 0, 'reason': flip_reason,
+        }
+
+    # 6. Execute hedge order
     result = await _execute_hedge_order(executor, session, action, lots)
 
     if not result.get('success'):
@@ -521,6 +582,11 @@ async def run_perp_hedge(
     realized_pnl = update_perp_state_after_fill(
         session, action, filled_lots, fill_price, required['target_lots']
     )
+
+    # M-8 fix: record flip timestamp if this was a direction flip
+    is_flip = (action == 'buy' and old_lots < 0) or (action == 'sell' and old_lots > 0)
+    if is_flip:
+        _record_flip(session)
 
     # Pass old_lots for flip detection in _emit_perp_events
     required['_old_lots'] = old_lots

@@ -671,10 +671,7 @@ class MMMMonitor:
                     f"(positions[] recompute fixed stale derived value)"
                 )
 
-        # Log heartbeat start
-        log_activity('heartbeat_start',
-                    f'Heartbeat #{session.get("_heartbeat_counter", 0) + 1}: Checking market conditions',
-                    sid, 'info')
+        # Heartbeat counter (no activity log — summary emitted at end)
         session['_heartbeat_counter'] = session.get('_heartbeat_counter', 0) + 1
 
         beat_start_mono = time.monotonic()
@@ -836,13 +833,9 @@ class MMMMonitor:
 
             return
 
-        # Log premium values
+        # Premium values (logged in heartbeat summary, not as separate activity)
         ce_strike = session.get('ce', {}).get('active_strike', 'N/A')
         pe_strike = session.get('pe', {}).get('active_strike', 'N/A')
-        log_activity('info',
-                    f'Current Premiums: CE {ce_strike} = ${ce_now:.2f}, PE {pe_strike} = ${pe_now:.2f}',
-                    sid, 'info',
-                    {'ce_premium': ce_now, 'pe_premium': pe_now, 'ce_strike': ce_strike, 'pe_strike': pe_strike})
 
         # Stale-price guard: warn if HeartbeatHealth detects frozen exchange data
         if self._health.stale_ce_detected or self._health.stale_pe_detected:
@@ -864,21 +857,7 @@ class MMMMonitor:
                        {'stale_ce': self._health.stale_ce_detected,
                         'stale_pe': self._health.stale_pe_detected})
 
-        # Log wind-down status every heartbeat so user can see if it's active or pending
-        wd_status = get_wind_down_status(session)
-        if wd_status['enabled']:
-            if wd_status['active']:
-                log_activity('wind_down',
-                             f'🌙 Wind-Down MODE ACTIVE — reducing positions '
-                             f'({wd_status.get("hours_remaining", "?"):.1f}h to expiry)',
-                             sid, 'info', wd_status)
-            else:
-                activates_in = wd_status.get('activates_in_hours')
-                if activates_in is not None:
-                    log_activity('wind_down',
-                                 f'🌙 Wind-Down PENDING — activates in {activates_in:.1f}h '
-                                 f'({wd_status.get("hours_before_expiry")}h before expiry threshold)',
-                                 sid, 'info', wd_status)
+        # Wind-down status included in heartbeat summary (no per-heartbeat activity)
 
         # Populate premium cache for sync engine calls (_make_fetch_fn)
         await self._prefetch_all_premiums(ce_now, pe_now)
@@ -1086,17 +1065,13 @@ class MMMMonitor:
             session, minutes_to_expiry
         )
 
-        # Log safety check summary
+        # Log safety events only when there are actionable ones (not "all clear")
         if safety_events:
             safety_summary = ', '.join([f"{e['type']} ({e['level']})" for e in safety_events])
             log_activity('safety_warning',
-                        f'Safety Checks: {len(safety_events)} event(s) - {safety_summary}',
+                        f'⚠️ Safety: {len(safety_events)} event(s) — {safety_summary}',
                         sid, 'warning',
                         {'event_count': len(safety_events), 'events': [e['type'] for e in safety_events]})
-        else:
-            log_activity('info',
-                        'Safety Checks: All clear ✓',
-                        sid, 'success')
 
         for event in safety_events:
             emit_safety(
@@ -1249,7 +1224,7 @@ class MMMMonitor:
                         regime_status,
                     )
                 else:
-                    log_activity('info', 'Regime Controls: All clear', sid, 'success')
+                    pass  # Regime normal — included in heartbeat summary
 
                 # Handle FORCE_REDUCE (gamma emergency — Priority 2)
                 # NOTE: only PAUSEs and warns — does NOT auto-wind-down
@@ -1364,18 +1339,12 @@ class MMMMonitor:
                         pass
 
             if self._paused and not _skip_to_pnl:
-                log_activity('info',
-                            'Session PAUSED - Monitoring only, no adjustments',
-                            sid, 'warning')
+                # Paused status shown in live heartbeat summary
                 _skip_to_pnl = True
 
         # Step 5: Cooldown check (§14.3)
         if not _skip_to_pnl and is_cooldown_active(session):
-            cooldown_until = session.get('cooldown_until', '')
-            log_activity('info',
-                        f'Cooldown Active - Skip adjustment until {cooldown_until[:19] if cooldown_until else "unknown"}',
-                        sid, 'info',
-                        {'cooldown_until': cooldown_until})
+            # Cooldown status shown in live heartbeat summary
             _skip_to_pnl = True
 
         # ── Skip trigger evaluation + adjustments when safety blocks ──
@@ -1416,29 +1385,21 @@ class MMMMonitor:
             trigger_result = evaluate_triggers(session, ce_now, pe_now)
             outcome = trigger_result['outcome']
 
-            # Log trigger evaluation
+            # Store trigger data for heartbeat summary (no separate activity)
             params = session.get('params', {})
             min_trigger = trigger_result.get('min_trigger_move', params.get('min_trigger_move', 10.0))
             ce_excess_pct = trigger_result.get('ce_excess_pct', 0)
             pe_excess_pct = trigger_result.get('pe_excess_pct', 0)
-        
-            log_activity('info',
-                        f'Trigger Check: CE {ce_excess_pct:+.1f}% (need >{min_trigger:.1f}%), '
-                        f'PE {pe_excess_pct:+.1f}% (need >{min_trigger:.1f}%) - '
-                        f'Result: {outcome.upper()}',
-                        sid, 'info',
-                        {
-                            'ce_excess_pct': round(ce_excess_pct, 2),
-                            'pe_excess_pct': round(pe_excess_pct, 2),
-                            'min_trigger_move': min_trigger,
-                            'outcome': outcome
-                        })
+            session['_last_trigger_result'] = {
+                'ce_excess_pct': round(ce_excess_pct, 2),
+                'pe_excess_pct': round(pe_excess_pct, 2),
+                'min_trigger_move': min_trigger,
+                'outcome': outcome,
+            }
 
             # Step 7: Process outcome (§4.7)
             if outcome == OUTCOME_NONE:
-                log_activity('info',
-                            'No triggers fired - Positions stable',
-                            sid, 'success')
+                pass  # Stable — included in heartbeat summary
 
             elif outcome == OUTCOME_BOTH:
                 # §8: Both sides up — pause and alert user
@@ -1621,26 +1582,11 @@ class MMMMonitor:
         # Track P&L for walkthrough
         self._hb_wt['pnl'] = pnl
 
-        # Log P&L summary
-        log_activity('info',
-                    f'P&L Update: Net ${pnl["net_pnl"]:.2f} '
-                    f'(Realized: ${pnl["realized"]:.2f}, Unrealized: ${pnl["unrealized"]:.2f}, '
-                    f'Fees: ${pnl["fees"]:.2f})',
-                    sid, 'info' if pnl['net_pnl'] >= 0 else 'warning',
-                    {
-                        'net_pnl': round(pnl['net_pnl'], 2),
-                        'realized': round(pnl['realized'], 2),
-                        'unrealized': round(pnl['unrealized'], 2),
-                        'fees': round(pnl['fees'], 2)
-                    })
+        # P&L and delta are included in heartbeat summary (no separate activity)
 
         # Step 9: Portfolio Delta (already computed in Step 3.5 for regime checks)
         # Reuse cached value — no duplicate API call
         portfolio_delta = session.get('portfolio_delta', 0)
-        log_activity('info',
-                    f'Portfolio Delta: {portfolio_delta:+.3f}',
-                    sid, 'info',
-                    {'portfolio_delta': round(portfolio_delta, 3)})
 
         # Update analytics tracking (zero impact on trading logic)
         self._update_analytics_exposure()
@@ -1776,16 +1722,44 @@ class MMMMonitor:
         session['_beat_health'] = self._health.summary()
         session['_circuit_state'] = self._circuit.summary()
 
-        # Log heartbeat completion with ACTUAL effective interval
+        # Emit structured heartbeat summary for frontend live monitor
         effective_iv = getattr(self, '_effective_interval', session.get('params', {}).get('adjustment_interval', 300))
-        log_activity('heartbeat_complete',
-                    f'✓ Heartbeat #{session.get("_heartbeat_counter", 0)} complete '
-                    f'[{beat_latency_ms:.0f}ms, grade={self._health.grade()}] — '
-                    f'Next check in {effective_iv}s',
-                    sid, 'success',
-                    {'next_interval': effective_iv,
-                     'latency_ms': round(beat_latency_ms, 1),
-                     'health_grade': self._health.grade()})
+        trigger_data = session.get('_last_trigger_result', {})
+        try:
+            from .mmm_websocket import emit_heartbeat_summary
+            emit_heartbeat_summary(sid, {
+                'heartbeat_num': session.get('_heartbeat_counter', 0),
+                'latency_ms': round(beat_latency_ms, 1),
+                'health_grade': self._health.grade(),
+                'status': session.get('strategy_status', 'UNKNOWN'),
+                'ce_strike': session.get('ce', {}).get('active_strike', 0),
+                'ce_premium': ce_now,
+                'ce_trigger_pct': trigger_data.get('ce_excess_pct', 0),
+                'pe_strike': session.get('pe', {}).get('active_strike', 0),
+                'pe_premium': pe_now,
+                'pe_trigger_pct': trigger_data.get('pe_excess_pct', 0),
+                'min_trigger_pct': trigger_data.get('min_trigger_move', session.get('params', {}).get('min_trigger_move_pct', 3)),
+                'trigger_outcome': trigger_data.get('outcome', 'none'),
+                'net_pnl': round(pnl['net_pnl'], 2) if pnl else 0,
+                'realized_pnl': round(pnl['realized'], 2) if pnl else 0,
+                'unrealized_pnl': round(pnl['unrealized'], 2) if pnl else 0,
+                'fees': round(pnl.get('fees', 0), 2) if pnl else 0,
+                'portfolio_delta': round(session.get('portfolio_delta', 0), 4),
+                'next_interval': effective_iv,
+                'next_heartbeat': session.get('next_heartbeat', ''),
+                'wind_down_active': is_wind_down_active(session),
+                'regime_action': session.get('_regime_action', 'NORMAL'),
+                'margin_tier': getattr(self._margin_guardian, 'last_tier', 'GREEN') if hasattr(self, '_margin_guardian') else 'GREEN',
+                'margin_util': getattr(self._margin_guardian, 'last_utilization', 0) if hasattr(self, '_margin_guardian') else 0,
+                'adaptive_tier': session.get('_adaptive_tier', ''),
+                'circuit_state': self._circuit.state.value if hasattr(self._circuit, 'state') else 'CLOSED',
+                'ce_total_lots': session.get('ce', {}).get('total_lots', 0),
+                'pe_total_lots': session.get('pe', {}).get('total_lots', 0),
+                'adjustment_count': session.get('adjustment_count', 0),
+                'safety_event_count': len(safety_events) if 'safety_events' in dir() else 0,
+            })
+        except Exception as e:
+            log.warning(f"[{sid}] Heartbeat summary emit failed: {e}")
 
     # =========================================================================
     # §5: Process Adjustment

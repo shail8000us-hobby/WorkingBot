@@ -40,11 +40,15 @@ ACTIVITY_TYPES = {
     'order_amended': 'Order Amended',
     'order_cancelled': 'Order Cancelled',
     'order_failed': 'Order Failed',
+    'order_retrying': 'Retrying Order',
 
     # Entry
     'entry_starting': 'Starting Entry',
     'entry_complete': 'Entry Complete',
     'entry_failed': 'Entry Failed',
+    'entry_rollback': 'Rolling Back Entry',
+    'entry_rollback_ok': 'Rollback Complete',
+    'entry_rollback_failed': 'Rollback Failed',
 
     # Session lifecycle
     'session_created': 'Session Created',
@@ -55,24 +59,79 @@ ACTIVITY_TYPES = {
     'session_resumed': 'Session Resumed',
     'session_stopped': 'Session Stopped',
 
-    # Heartbeat
-    'heartbeat_start': 'Heartbeat Running',
-    'heartbeat_complete': 'Heartbeat Complete',
-    'heartbeat_error': 'Heartbeat Error',
-
     # Adjustments
     'adjustment_triggered': 'Adjustment Triggered',
     'adjustment_complete': 'Adjustment Complete',
+    'trigger_cleared_by_close_at_5': 'Trigger Cleared',
 
     # Safety
     'safety_warning': 'Safety Warning',
     'safety_block': 'Safety Block',
     'trigger_stale': 'Stale Trigger',
+    'max_loss_breach': 'Max Loss Breach',
+    'adjustments_stopped': 'Adjustments Stopped',
+
+    # Close-at-5
+    'close_at_5': 'Position Closed',
+
+    # Wind-down & Margin
+    'wind_down': 'Wind-Down',
+    'atm_wind_down': 'ATM Wind-Down',
+    'atm_auto_close': 'ATM Auto-Close',
+    'margin_wind_down': 'Margin Wind-Down',
+    'margin_block_sells': 'Margin Block',
+
+    # Regime
+    'regime_control': 'Regime Control',
+    'regime_block': 'Regime Block',
+    'regime_emergency': 'Regime Emergency',
+
+    # Both sides
+    'both_sides_auto_decision': 'Both Sides Decision',
+
+    # Perp Hedge
+    'perp_hedge': 'Perp Hedge',
+
+    # Emergency
+    'emergency_order': 'Emergency Order',
+    'emergency_placing': 'Emergency Placing',
+    'emergency_filled': 'Emergency Filled',
+    'emergency_error': 'Emergency Error',
+
+    # Circuit breaker
+    'heartbeat_partial': 'Partial Heartbeat',
+    'heartbeat_miss': 'Missed Heartbeat',
+    'heartbeat_error': 'Heartbeat Error',
+
+    # Stale data
+    'stale_price_warning': 'Stale Price',
+
+    # Hot reload
+    'hot_reload': 'Hot Reload',
 
     # General
     'info': 'Info',
     'warning': 'Warning',
     'error': 'Error',
+}
+
+# Activity categories for frontend filtering
+ACTIVITY_CATEGORIES = {
+    'orders': {'order_placing', 'order_placed', 'order_waiting_fill', 'order_fill_check',
+               'order_filled', 'order_repricing', 'order_amended', 'order_cancelled',
+               'order_failed', 'order_retrying', 'entry_starting', 'entry_complete',
+               'entry_failed', 'entry_rollback', 'entry_rollback_ok', 'entry_rollback_failed',
+               'emergency_order', 'emergency_placing', 'emergency_filled', 'emergency_error'},
+    'adjustments': {'adjustment_triggered', 'adjustment_complete', 'trigger_cleared_by_close_at_5',
+                    'close_at_5', 'wind_down', 'atm_wind_down', 'atm_auto_close',
+                    'margin_wind_down', 'margin_block_sells', 'perp_hedge',
+                    'both_sides_auto_decision'},
+    'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
+               'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
+               'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error'},
+    'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
+               'session_paused', 'session_resumed', 'session_stopped', 'hot_reload',
+               'info', 'warning', 'error'},
 }
 
 # Severity levels
@@ -202,8 +261,8 @@ class MMMActivityLog:
         # Recommendation #6: Deduplicate spammy events
         # Only dedup types that fire every heartbeat; never dedup critical events
         _DEDUP_TYPES = {
-            'heartbeat_start', 'heartbeat_complete', 'info', 'warning',
-            'safety_warning', 'trigger_stale',
+            'info', 'warning', 'safety_warning', 'trigger_stale',
+            'wind_down', 'regime_control',
         }
         if activity_type in _DEDUP_TYPES:
             # Use first 80 chars of message as dedup key (ignores changing numbers)
@@ -222,11 +281,19 @@ class MMMActivityLog:
                     if (cutoff - v).total_seconds() < self._DEDUP_INTERVAL_SECS * 10
                 }
 
+        # Determine category for frontend filtering
+        category = 'system'
+        for cat, types in ACTIVITY_CATEGORIES.items():
+            if activity_type in types:
+                category = cat
+                break
+
         activity = {
             'id': f"act_{datetime.now(timezone.utc).strftime('%H%M%S')}_{len(self._activities) % 1000:03d}",
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': activity_type,
             'type_label': ACTIVITY_TYPES.get(activity_type, activity_type),
+            'category': category,
             'message': message,
             'session_id': session_id,
             'severity': severity,
@@ -252,6 +319,7 @@ class MMMActivityLog:
         limit: int = 50,
         session_id: str = None,
         severity: str = None,
+        category: str = None,
     ) -> List[Dict]:
         """
         Get recent activities, newest first.
@@ -260,6 +328,7 @@ class MMMActivityLog:
             limit: Max number to return
             session_id: Filter by session (optional)
             severity: Filter by severity (optional)
+            category: Filter by category: orders|adjustments|safety|system (optional)
 
         Returns:
             List of activity dicts
@@ -272,6 +341,8 @@ class MMMActivityLog:
             items = [a for a in items if a.get('session_id') == session_id]
         if severity:
             items = [a for a in items if a.get('severity') == severity]
+        if category:
+            items = [a for a in items if a.get('category') == category]
 
         return items[:limit]
 

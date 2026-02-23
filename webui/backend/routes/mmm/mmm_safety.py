@@ -28,7 +28,7 @@ Created: February 15, 2026
 
 import logging
 from typing import Dict, Any, List, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger('mmm_safety')
 
@@ -194,7 +194,10 @@ class MMMSafety:
 
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
-        total_pnl = realized + unrealized
+        # Fix #26: Include perp hedge P&L in total for accurate max-loss check
+        perp = session.get('perp_hedge', {})
+        perp_pnl = perp.get('realized_pnl', 0.0) + perp.get('unrealized_pnl', 0.0)
+        total_pnl = realized + unrealized + perp_pnl
 
         if total_pnl <= -max_loss:
             events.append({
@@ -246,10 +249,13 @@ class MMMSafety:
         whipsaw_paused_at = session.get('_whipsaw_paused_at')
         if whipsaw_paused_at:
             try:
+                # Fix #14: normalize to timezone-aware UTC before comparison
                 paused_time = datetime.fromisoformat(whipsaw_paused_at)
+                if paused_time.tzinfo is None:
+                    paused_time = paused_time.replace(tzinfo=timezone.utc)
                 interval = params.get('adjustment_interval', 300)
                 resume_after = interval * 2  # Resume after 2 intervals
-                elapsed = (datetime.utcnow() - paused_time).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - paused_time).total_seconds()
                 if elapsed >= resume_after:
                     session.pop('_whipsaw_paused_at', None)
                     log.info(
@@ -297,7 +303,7 @@ class MMMSafety:
                 break
 
         if alternating and len(set(sides)) > 1:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)  # Fix #14: timezone-aware UTC
             cooldown_secs = params.get('adjustment_interval', 300) * 2
             resume_at = (now + timedelta(seconds=cooldown_secs)).isoformat()
             session['_whipsaw_paused_at'] = now.isoformat()
@@ -449,7 +455,10 @@ class MMMSafety:
 
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
-        total_pnl = realized + unrealized
+        # Fix #26: Include perp hedge P&L for accurate guardrail tracking
+        perp = session.get('perp_hedge', {})
+        perp_pnl = perp.get('realized_pnl', 0.0) + perp.get('unrealized_pnl', 0.0)
+        total_pnl = realized + unrealized + perp_pnl
 
         ratio = abs(total_pnl) / max_loss if max_loss > 0 and total_pnl < 0 else 0
 
@@ -547,18 +556,26 @@ class MMMSafety:
 
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
-        current = realized + unrealized
+        # Fix #26: Include perp hedge P&L for accurate trailing stop tracking
+        perp = session.get('perp_hedge', {})
+        perp_pnl = perp.get('realized_pnl', 0.0) + perp.get('unrealized_pnl', 0.0)
+        current = realized + unrealized + perp_pnl
 
         threshold = peak * trailing_pct
         if current < threshold:
+            # H-3 fix: changed from 'warn' to 'stop_adjustments' so that
+            # should_block_adjustment() actually blocks new adjustments when
+            # the trailing floor is breached. Previously 'warn' was not in
+            # the blocking set so adjustments continued while profits evaporated.
             events.append({
                 'type': 'trailing_stop',
                 'level': 'alert',
                 'message': (
-                    f"Trailing stop: P&L dropped to ${current:.2f} "
-                    f"(peak: ${peak:.2f}, floor: ${threshold:.2f})"
+                    f'TRAILING STOP BREACHED — ADJUSTMENTS BLOCKED. '
+                    f'P&L ${current:.2f} below floor ${threshold:.2f} '
+                    f'(peak ${peak:.2f})'
                 ),
-                'action': 'warn',
+                'action': 'stop_adjustments',
                 'details': {
                     'current_pnl': current,
                     'peak_pnl': peak,
@@ -647,12 +664,16 @@ def should_pause(safety_events: List[Dict]) -> Tuple[bool, str]:
     return False, ''
 
 
-# Singleton
+# Singleton (M-4 fix: double-checked locking prevents TOCTOU race)
+import threading as _threading_safety
 _safety_instance = None
+_safety_lock = _threading_safety.Lock()
 
 
 def get_safety() -> MMMSafety:
     global _safety_instance
     if _safety_instance is None:
-        _safety_instance = MMMSafety()
+        with _safety_lock:
+            if _safety_instance is None:
+                _safety_instance = MMMSafety()
     return _safety_instance

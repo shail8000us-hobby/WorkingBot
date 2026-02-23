@@ -26,6 +26,29 @@ from pathlib import Path
 from functools import wraps
 from flask import Blueprint, jsonify, request
 
+
+def _run_async(coro):
+    """Run an async coroutine from sync Flask context.
+
+    Uses ``get_event_loop`` + ``run_until_complete`` instead of ``asyncio.run``
+    so the event loop is **not closed** after every call.  This prevents
+    "Event loop is closed" errors when httpx ``AsyncClient`` instances (or any
+    other asyncio-bound resources) are reused across successive calls within
+    the same thread.
+
+    If the current thread has no loop or its loop was closed by earlier code,
+    a new loop is created and set for the thread.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -867,10 +890,7 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                 if order_id in _active_ssr_orders:
                     del _active_ssr_orders[order_id]
     
-    try:
-        loop.run_until_complete(monitoring_loop())
-    finally:
-        loop.close()
+    loop.run_until_complete(monitoring_loop())
 
 
 async def place_ssr_order(client, symbol: str, size: float, side: str,
@@ -1262,7 +1282,7 @@ def _run_ssr_margin_monitoring_loop(client_config, symbol: str, size: int, side:
         loop.run_until_complete(monitoring_loop())
         
     finally:
-        loop.close()
+        pass  # Don't close loop - may be reused
 
 
 # Position cache to prevent repeated failures
@@ -1319,7 +1339,7 @@ def get_options_positions():
             enriched = await asyncio.gather(*[enrich_single(pos) for pos in options])
             return list(enriched)
         
-        options = asyncio.run(fetch())
+        options = _run_async(fetch())
         
         # Cache the successful result
         _positions_cache['data'] = options
@@ -1450,7 +1470,7 @@ def get_options_activity_log():
                     all_pos = await client.get_all_positions_with_options()
                     return all_pos.get('options', [])
                 
-                positions = asyncio.run(fetch_positions())
+                positions = _run_async(fetch_positions())
                 _positions_cache['data'] = positions
                 _positions_cache['time'] = time.time()
             
@@ -1638,35 +1658,29 @@ def place_ssr_order_endpoint():
             # Standard mode: use tick-based offset
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(
-                    place_ssr_order(
-                        client=client,
-                        symbol=symbol,
-                        size=quantity,
-                        side=side,
-                        tick_offset=tick_offset
-                    )
+            result = loop.run_until_complete(
+                place_ssr_order(
+                    client=client,
+                    symbol=symbol,
+                    size=quantity,
+                    side=side,
+                    tick_offset=tick_offset
                 )
-            finally:
-                loop.close()
+            )
         else:
             # Percentage-based mode: use margin pricing
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(
-                    place_ssr_order_with_margin(
-                        client=client,
-                        symbol=symbol,
-                        size=quantity,
-                        side=side,
-                        margin_percent=margin_percent,
-                        ssr_mode=ssr_mode
-                    )
+            result = loop.run_until_complete(
+                place_ssr_order_with_margin(
+                    client=client,
+                    symbol=symbol,
+                    size=quantity,
+                    side=side,
+                    margin_percent=margin_percent,
+                    ssr_mode=ssr_mode
                 )
-            finally:
-                loop.close()
+            )
         
         if result and result.get('id'):
             order_id = result.get('id')
@@ -1711,7 +1725,7 @@ def get_option_ticker(symbol):
         import asyncio
         client = get_unified_client()
         
-        ticker = asyncio.run(client.get_option_ticker(symbol))
+        ticker = _run_async(client.get_option_ticker(symbol))
         
         return jsonify({
             'success': True,
@@ -1786,7 +1800,7 @@ def close_options_position():
                     return pos
             return None
         
-        position = asyncio.run(get_position())
+        position = _run_async(get_position())
         
         if not position:
             return jsonify({
@@ -1802,7 +1816,7 @@ def close_options_position():
         try:
             async def validate():
                 await validate_order_size(client, symbol, close_size, side, is_close=True)
-            asyncio.run(validate())
+            _run_async(validate())
         except ValueError as e:
             return jsonify({
                 'success': False,
@@ -1836,7 +1850,7 @@ def close_options_position():
                 timeout_seconds=30
             )
         
-        result = asyncio.run(place_close_order())
+        result = _run_async(place_close_order())
         # Note: _last_order_time is managed by the @rate_limit decorator
         
         execution_type = result.get('execution_type', 'unknown')
@@ -1984,7 +1998,7 @@ def add_to_options_position():
         try:
             async def validate():
                 await validate_order_size(client, symbol, float(size), side, is_close=False)
-            asyncio.run(validate())
+            _run_async(validate())
         except ValueError as e:
             return jsonify({
                 'success': False,
@@ -1999,7 +2013,7 @@ def add_to_options_position():
             )
             return ticker
         
-        ticker = asyncio.run(check_liquidity())
+        ticker = _run_async(check_liquidity())
         spread_pct = float(ticker.get('spread_pct') or 0)
         quotes = ticker.get('quotes', {})
         best_bid = float(quotes.get('best_bid') or 0)
@@ -2051,7 +2065,7 @@ def add_to_options_position():
                 timeout_seconds=30
             )
         
-        result = asyncio.run(place_add_order())
+        result = _run_async(place_add_order())
         # Note: _last_order_time is managed by the @rate_limit decorator
         
         execution_type = result.get('execution_type', 'unknown')
@@ -2068,7 +2082,7 @@ def add_to_options_position():
                             return pos
                     return {}
                 
-                position = asyncio.run(get_position())
+                position = _run_async(get_position())
                 
                 trade_logger.log_trade(
                     symbol=symbol,
@@ -2110,7 +2124,7 @@ def add_to_options_position():
                                 return pos
                         return None
                     
-                    updated_pos = asyncio.run(get_updated_position())
+                    updated_pos = _run_async(get_updated_position())
                     
                     if updated_pos:
                         new_size = updated_pos.get('size', 0)
@@ -2300,7 +2314,7 @@ def test_tp_order(symbol):
                     'error_type': type(e).__name__
                 }
         
-        result = asyncio.run(test_place_tp())
+        result = _run_async(test_place_tp())
         return jsonify(result)
         
     except Exception as e:
@@ -2462,7 +2476,7 @@ def set_sl_tp():
                     }
                 
                 # Execute the async order placement with timeout
-                tp_order_result = asyncio.run(with_timeout(place_tp_order(), timeout_seconds=30))
+                tp_order_result = _run_async(with_timeout(place_tp_order(), timeout_seconds=30))
                 result['tp_order'] = tp_order_result
                 tp_order_placed = True
                 log.info(f"✅ Take profit order placed on exchange: {tp_order_result}")
@@ -2571,7 +2585,7 @@ def remove_sl_tp(symbol):
                 return {'error': str(e)}
         
         # Execute cancellation
-        cancel_result = asyncio.run(cancel_tp_orders())
+        cancel_result = _run_async(cancel_tp_orders())
         
         # Remove from database
         manager = get_sl_tp_manager()
@@ -3081,7 +3095,7 @@ def execute_close_order(symbol: str, order_preference: str = 'market_only') -> d
             }
         
         # Execute async operation
-        result = asyncio.run(fetch_and_close())
+        result = _run_async(fetch_and_close())
         log.info(f"✅ SL/TP close executed successfully: {result}")
         return result
         

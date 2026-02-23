@@ -13,9 +13,9 @@ Created: February 15, 2026
 
 import logging
 from typing import Dict, Any, Optional, Tuple, List
-from datetime import datetime
+from datetime import datetime, timezone
 
-from .mmm_state import recompute_side_lots
+from .mmm_state import recompute_side_lots, _migrate_side_to_positions
 from .mmm_constants import strike_key as _strike_key
 
 log = logging.getLogger('mmm_strike_shift')
@@ -109,41 +109,22 @@ def freeze_current_positions(
     """
     side_state = session.get(side, {})
     old_strike = side_state.get('active_strike', 0)
-    original_lots = side_state.get('original_lots', 0)
-    original_premium = side_state.get('original_premium', 0)
 
+    # Fix #23: Ensure positions[] exists (migrate if this is a legacy session)
+    if 'positions' not in side_state:
+        _migrate_side_to_positions(side_state)
+
+    # Fix #23: Set all active positions to 'shifted' status (O(n) over positions[])
+    now = datetime.now(timezone.utc).isoformat()
     frozen_lots = 0
+    for pos in side_state.get('positions', []):
+        if pos.get('status') == 'active':
+            pos['status'] = 'shifted'
+            pos['shifted_at'] = now
+            frozen_lots += pos.get('lots', 0)
 
-    # Freeze original lots
-    if original_lots > 0:
-        side_state.setdefault('frozen_positions', []).append({
-            'strike': old_strike,
-            'lots': original_lots,
-            'entry_premium': original_premium,
-            'type': 'original',
-            'frozen_at': datetime.utcnow().isoformat(),
-        })
-        frozen_lots += original_lots
-
-    # Freeze adjustment fills
-    for fill in side_state.get('adjustment_fills', []):
-        lots = fill.get('lots', 0)
-        prem = fill.get('premium', 0)
-        if lots > 0:
-            side_state['frozen_positions'].append({
-                'strike': old_strike,
-                'lots': lots,
-                'entry_premium': prem,
-                'type': 'adjustment',
-                'frozen_at': datetime.utcnow().isoformat(),
-            })
-            frozen_lots += lots
-
-    # Reset active — these will be re-established at the new strike
-    side_state['adjustment_fills'] = []
-    side_state['original_lots'] = 0
-    side_state['original_premium'] = 0.0
-
+    # recompute_side_lots() rebuilds frozen_positions view + resets
+    # original_lots/adjustment_fills to empty (no active positions remain)
     recompute_side_lots(side_state)
     session[side] = side_state
 
@@ -299,9 +280,6 @@ def activate_new_strike(
     side_state['active_strike'] = new_strike
 
     # FIX: Update symbol to match the new active strike.
-    # Without this, reconciliation checks the stale original symbol,
-    # making exchange positions at the current strike invisible.
-    # Build symbol from the new strike + session expiry.
     expiry = session.get('params', {}).get('expiry', '')
     option_type = 'call' if side == 'ce' else 'put'
     from .mmm_initializer import MMMInitializer
@@ -312,28 +290,37 @@ def activate_new_strike(
     except Exception as e:
         log.warning(f"Failed to update symbol for {side.upper()} shift: {e}")
 
-    # FIX: Shifted positions are adjustments, not original entry.
-    # This ensures calculate_reversal_loss() includes them in risk assessment.
-    side_state['original_lots'] = 0
-    side_state['original_premium'] = 0.0
-
-    side_state.setdefault('adjustment_fills', []).append({
-        'lots': lots,
-        'premium': fill_premium,
+    # Fix #23: Append new position to Unified Position Ledger
+    # Shifted positions use type='strike_shift' so calculate_reversal_loss()
+    # includes them in risk assessment (non-'original' type).
+    now = datetime.now(timezone.utc).isoformat()
+    counter = side_state.get('_pos_counter', 0) + 1
+    side_state['_pos_counter'] = counter
+    side_state.setdefault('positions', []).append({
+        'id': f"{side}_shift_{counter:03d}",
         'strike': new_strike,
-        'timestamp': datetime.utcnow().isoformat(),
+        'lots': lots,
+        'entry_premium': fill_premium,
+        'premium': fill_premium,        # backward-compat alias
         'type': 'strike_shift',
+        'status': 'active',
+        'created_at': now,
+        'shifted_at': None,
+        'closed_at': None,
+        'realized_pnl': None,
+        'timestamp': now,               # backward-compat alias
     })
 
     # Set trigger snapshot at the new strike
     side_state.setdefault('trigger_snapshot', {})[_strike_key(new_strike)] = fill_premium
 
+    # recompute_side_lots() rebuilds: original_lots=0 (no 'original' type active),
+    # adjustment_fills=[new strike_shift entry], active_lots=lots
     recompute_side_lots(side_state)
     session[side] = side_state
 
     # NOTE: shift_count is incremented by _process_strike_shift() in mmm_monitor.py
-    # Do NOT increment here to avoid double-counting.
-    session['updated_at'] = datetime.utcnow().isoformat()
+    session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
     log.info(
         f"Strike shift complete: {side.upper()} now active at "

@@ -228,10 +228,7 @@ def test_telegram():
         # Run async in sync context
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try:
-            success, message = loop.run_until_complete(notifier.send_test_message())
-        finally:
-            loop.close()
+        success, message = loop.run_until_complete(notifier.send_test_message())
         
         return jsonify({'success': success, 'message': message})
         
@@ -248,10 +245,7 @@ def test_ntfy():
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try:
-            success, message = loop.run_until_complete(service.test_ntfy())
-        finally:
-            loop.close()
+        success, message = loop.run_until_complete(service.test_ntfy())
         
         return jsonify({'success': success, 'message': message})
         
@@ -280,10 +274,7 @@ def get_telegram_chat_id():
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try:
-            chat_id = loop.run_until_complete(notifier.get_chat_id())
-        finally:
-            loop.close()
+        chat_id = loop.run_until_complete(notifier.get_chat_id())
         
         if chat_id:
             return jsonify({

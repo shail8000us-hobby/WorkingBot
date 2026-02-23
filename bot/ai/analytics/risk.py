@@ -453,7 +453,8 @@ class RiskAnalytics:
                 'position_value': position_value,
                 'total_balance': balance_data.get('total_balance', 100000),
                 'available_balance': balance_data.get('available_balance', 100000),
-                'blocked_margin': balance_data.get('margin_used', 0),
+                # Use blocked_margin field (set correctly now for Portfolio Margin mode)
+                'blocked_margin': balance_data.get('blocked_margin') or balance_data.get('margin_used', 0),
                 'unrealized_pnl': balance_data.get('unrealized_pnl', 0)
             }
         

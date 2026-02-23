@@ -27,7 +27,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Deque, Dict, Optional
 
 log = logging.getLogger('mmm_heartbeat_health')
@@ -362,5 +362,5 @@ class HeartbeatHealth:
                                        if self.seconds_since_last_beat is not None else None,
             'uptime_seconds': round(time.monotonic() - self.started_at, 0),
             'recent_outcomes': recent_outcomes,    # last 20 for sparkline
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }

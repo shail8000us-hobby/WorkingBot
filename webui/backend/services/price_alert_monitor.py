@@ -214,8 +214,6 @@ class PriceAlertMonitor:
             logger.error("Error sending notification: %s", e)
             # Log the crash to DB history too
             AlertsDB.update_alert_history(alert['id'], False, f"System Error: {str(e)}")
-        finally:
-            loop.close()
             
     def _format_alert_message(self, alert: dict) -> str:
         """Format a human-readable alert message."""

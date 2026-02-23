@@ -22,8 +22,8 @@ from typing import Dict, Any, Optional, List, Tuple
 
 log = logging.getLogger('mmm_wind_down')
 
-# Lot size constant (same as mmm_engine)
-LOT_SIZE_BTC = 0.001
+# H-1 fix: import from canonical source instead of duplicating the constant
+from .mmm_constants import LOT_SIZE_BTC
 
 
 def is_wind_down_active(session: Dict) -> bool:

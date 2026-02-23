@@ -12,6 +12,19 @@ import logging
 import asyncio
 from datetime import datetime
 
+
+def _run_async(coro):
+    """Run async coroutine without closing the event loop."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
 # Configure logging with DEBUG level
 logging.basicConfig(
     level=logging.DEBUG,
@@ -374,7 +387,7 @@ def place_order():
         
         handler = get_mv_straddle_handler()
         
-        result = asyncio.run(handler.place_order(
+        result = _run_async(handler.place_order(
             symbol=symbol,
             side=side,
             size=quantity,
@@ -474,7 +487,7 @@ def get_positions():
             return await handler.api_client.get_all_positions_with_options()
         
         # Run async function
-        result = asyncio.run(fetch_positions())
+        result = _run_async(fetch_positions())
         
         # MV positions are classified as "futures" by the API client
         # because they don't start with C- or P-
@@ -632,7 +645,7 @@ def place_ssr_order():
         logger.info(f"🏎️ SSR Price Calculation: mode={ssr_mode}, ref=${reference_price:.2f} -> SSR=${ssr_price:.2f}")
         
         # Place initial limit order
-        result = asyncio.run(handler.place_order(
+        result = _run_async(handler.place_order(
             symbol=symbol,
             side=side,
             size=quantity,
@@ -842,7 +855,7 @@ def _run_mv_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str
     except Exception as e:
         print(f"[MV-SSR THREAD] Fatal error: {e}")
     finally:
-        loop.close()
+        pass  # Don't close loop - may be reused
 
 
 @mv_straddle_bp.route('/order/ssr/<int:order_id>', methods=['GET'])
@@ -884,7 +897,7 @@ def cancel_ssr_order(order_id):
             }), 400
         
         # Cancel the order on exchange
-        result = asyncio.run(handler.api_client.cancel_order(str(order_id), product_id=product_id))
+        result = _run_async(handler.api_client.cancel_order(str(order_id), product_id=product_id))
         
         return jsonify({
             "success": True,

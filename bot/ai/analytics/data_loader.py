@@ -273,6 +273,7 @@ class RealDataLoader:
                 'total_balance': 0,
                 'available_balance': 0,
                 'margin_used': 0,
+                'blocked_margin': 0,
                 'unrealized_pnl': 0
             }
         
@@ -280,10 +281,19 @@ class RealDataLoader:
             response = self.exchange_client.get_wallet_balances()
             if response and isinstance(response, list) and len(response) > 0:
                 wallet = response[0]
+                # FIX: Use blocked_margin for Portfolio Margin mode (pos/order margin are always 0)
+                # Fallback chain: blocked_margin -> portfolio_margin -> order_margin + position_margin
+                margin_used = float(wallet.get('blocked_margin', 0) or 0)
+                if margin_used == 0:
+                    margin_used = float(wallet.get('portfolio_margin', 0) or 0)
+                if margin_used == 0:
+                    # Legacy fallback for isolated margin mode
+                    margin_used = float(wallet.get('order_margin', 0) or 0) + float(wallet.get('position_margin', 0) or 0)
                 return {
                     'total_balance': float(wallet.get('balance', 0)),
                     'available_balance': float(wallet.get('available_balance', 0)),
-                    'margin_used': float(wallet.get('order_margin', 0)) + float(wallet.get('position_margin', 0)),
+                    'margin_used': margin_used,
+                    'blocked_margin': margin_used,  # Alias for clarity
                     'unrealized_pnl': float(wallet.get('unrealized_pnl', 0))
                 }
         except Exception as e:
@@ -293,6 +303,7 @@ class RealDataLoader:
             'total_balance': 0,
             'available_balance': 0,
             'margin_used': 0,
+            'blocked_margin': 0,
             'unrealized_pnl': 0
         }
     

@@ -27,7 +27,9 @@ PARAM_RULES = {
     'premium_buffer_pct':      {'type': float, 'min': 0,    'max': 0.5,   'hot': True},
     'max_lots_per_side':       {'type': int,   'min': 1,    'max': 10000, 'hot': True},
     'max_adjustments':         {'type': int,   'min': 1,    'max': 1000,  'hot': True},
-    'max_loss_amount':         {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
+    # M-6 fix: min raised from 0 to 1 — setting to 0 triggers auto_close on
+    # any negative P&L including normal spread fluctuation (extremely dangerous).
+    'max_loss_amount':         {'type': float, 'min': 1,    'max': 1e9,   'hot': True},
     'stop_adjustment_mins':    {'type': int,   'min': 0,    'max': 1440,  'hot': True},
     'auto_close_mins':         {'type': int,   'min': 0,    'max': 1440,  'hot': True},
     'cooldown_on_reversal':    {'type': bool,  'min': None, 'max': None,  'hot': True},
@@ -78,6 +80,24 @@ PARAM_RULES = {
     'trend_ema_slope_threshold': {'type': int,   'min': 5,    'max': 100,   'hot': True},
     'trend_action':              {'type': str,   'min': None, 'max': None,  'hot': True},
     'trend_reset_beats':         {'type': int,   'min': 2,    'max': 30,    'hot': True},
+    # Perpetual Futures Delta Hedge (Fix #26)
+    'perp_hedge_enabled':        {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'perp_hedge_delta_threshold': {'type': float, 'min': 0.005, 'max': 0.10, 'hot': True},
+    'perp_hedge_ratio':          {'type': float, 'min': 0.1,  'max': 1.0,  'hot': True},
+    'perp_hedge_rebalance_band': {'type': float, 'min': 0.001, 'max': 0.02, 'hot': True},
+    'perp_hedge_max_lots':       {'type': int,   'min': 5,    'max': 200,   'hot': True},
+    'perp_hedge_cooldown_sec':   {'type': int,   'min': 10,   'max': 300,   'hot': True},
+    # M-8 fix: rate-limit perp hedge direction flips to avoid spread drag in choppy markets
+    'perp_hedge_max_flips_per_hour': {'type': int, 'min': 2,  'max': 30,   'hot': True},
+    # M-5 fix: configurable circuit breaker failure threshold
+    'circuit_breaker_threshold': {'type': int,   'min': 3,    'max': 20,   'hot': True},
+    # L-1 fix: configurable expiry time (non-hot — set at session creation only)
+    'expiry_hour_utc':           {'type': int,   'min': 0,    'max': 23,   'hot': False},
+    'expiry_minute_utc':         {'type': int,   'min': 0,    'max': 59,   'hot': False},
+    # L-3 fix: configurable max reprice attempts
+    'max_reprice_attempts':      {'type': int,   'min': 1,    'max': 10,   'hot': True},
+    # L-4 fix: configurable P&L reconciliation threshold
+    'pnl_reconciliation_threshold': {'type': float, 'min': 1.0, 'max': 1000.0, 'hot': True},
 }
 
 
@@ -201,6 +221,33 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             f"gamma_hard_limit ({gamma_hard}) must be < gamma_emergency_limit ({gamma_emrg})"
         )
 
+    # perp hedge: delta_threshold must be > rebalance_band (otherwise every
+    # heartbeat would immediately trigger a rebalance on a brand-new position)
+    perp_threshold = validated.get('perp_hedge_delta_threshold')
+    perp_band = validated.get('perp_hedge_rebalance_band')
+    if perp_threshold is not None and perp_band is not None and perp_threshold <= perp_band:
+        errors.append(
+            f"perp_hedge_delta_threshold ({perp_threshold}) must be > "
+            f"perp_hedge_rebalance_band ({perp_band}): "
+            "threshold must exceed band to avoid immediate rebalance on entry"
+        )
+
+    # M-6 fix: warn if max_loss_amount is set dangerously low
+    max_loss = validated.get('max_loss_amount')
+    if max_loss is not None and max_loss < 10:
+        errors.append(
+            f"max_loss_amount below $10 is dangerous — session may auto-close "
+            "on normal spread fluctuation. Minimum recommended value is $100."
+        )
+
+    # M-5 fix: circuit breaker threshold sanity check
+    cb_threshold = validated.get('circuit_breaker_threshold')
+    if cb_threshold is not None and cb_threshold < 3:
+        errors.append(
+            f"circuit_breaker_threshold ({cb_threshold}) below 3 is too aggressive — "
+            "normal exchange latency spikes will constantly trip the breaker"
+        )
+
 
 def get_hot_reload_params() -> Set[str]:
     """Return set of parameter names that support hot-reload."""
@@ -273,6 +320,22 @@ def get_param_info() -> Dict[str, Dict]:
         'trend_ema_slope_threshold': 'EMA slope threshold for trend confirmation — higher = less sensitive',
         'trend_action': 'Action when trend triggers: block_sells (block dangerous-side sells), pause, wind_down (also activate wind-down)',
         'trend_reset_beats': 'Must stay calm (retrace + low EMA slope) for this many beats before resetting to NORMAL',
+        # Perpetual Futures Delta Hedge
+        'perp_hedge_enabled': 'Enable BTCUSD perpetual futures delta hedge — neutralizes portfolio delta from short options positions using a linear instrument (zero gamma impact)',
+        'perp_hedge_max_flips_per_hour': 'M-8: Maximum perp hedge direction flips per hour to prevent spread drag in choppy markets (default 6)',
+        # Circuit breaker
+        'circuit_breaker_threshold': 'M-5: Consecutive failures to trip circuit breaker (default 5; raise to 10+ during volatile API periods)',
+        # Expiry time
+        'expiry_hour_utc': 'L-1: UTC hour of options expiry (default 12 = 5:30 PM IST for Delta Exchange BTC)',
+        'expiry_minute_utc': 'L-1: UTC minute of options expiry (default 0)',
+        # Reprice & reconciliation
+        'max_reprice_attempts': 'L-3: Max reprice attempts per order (default 4 = 4-min worst-case block; 10 = original 10-min)',
+        'pnl_reconciliation_threshold': 'L-4: Dollar threshold for P&L reconciliation warnings (default $10; raise for large accounts)',
+        'perp_hedge_delta_threshold': 'Minimum |portfolio delta| (in BTC) to open an initial perp hedge. Below this threshold, delta is too small to justify a hedge trade (e.g. 0.02 = 2% of 1 BTC)',
+        'perp_hedge_ratio': 'Fraction of portfolio delta to neutralize with perp (1.0 = full hedge, 0.5 = half hedge). Lower values leave residual directional exposure intentionally',
+        'perp_hedge_rebalance_band': 'Minimum |effective delta| (options + perp combined) to trigger a rebalance of an existing perp position. Prevents over-trading on tiny delta drift',
+        'perp_hedge_max_lots': 'Maximum perp position size in lots (hard cap on long or short). Prevents runaway hedging in extreme delta scenarios',
+        'perp_hedge_cooldown_sec': 'Minimum seconds between consecutive perp hedge executions. Prevents rapid flip-flop trading when delta oscillates near the threshold',
     }
 
     info = {}

@@ -124,8 +124,6 @@ class StrategyAutoEntry:
                 loop.run_until_complete(self._entry_loop())
             except Exception as e:
                 log.error(f"Auto-entry loop error: {e}")
-            finally:
-                loop.close()
         
         thread = threading.Thread(target=run_loop, daemon=True)
         thread.start()

@@ -15,12 +15,22 @@ Created: February 15, 2026
 import logging
 import math
 import asyncio
+import threading
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .mmm_state import recompute_side_lots
 from .mmm_trigger import update_trigger_snapshots
 from .mmm_constants import LOT_SIZE_BTC, strike_key
+
+# Fix #19: Decimal precision helper — converts floats/ints to Decimal
+# for all internal P&L arithmetic to avoid IEEE 754 rounding accumulation.
+def _D(x) -> Decimal:
+    """Convert a float or int to Decimal via string to avoid float representation errors."""
+    return Decimal(str(x))
+
+_LOT = _D(LOT_SIZE_BTC)  # Decimal lot size constant
 
 log = logging.getLogger('mmm_engine')
 
@@ -95,19 +105,23 @@ class MMMEngine:
         _total_positions = 0
 
         # 1. Active strike loss (trigger-based)
-        active_loss = (premium_now - trigger) * active_lots * LOT_SIZE_BTC
+        # Fix #19: Use Decimal arithmetic to prevent rounding accumulation
+        # (active_loss may be negative when aggressor premium is below trigger)
+        active_loss = (
+            (_D(premium_now) - _D(trigger)) * _D(active_lots) * _LOT
+        )
 
         log.info(
             f"Standard loss (active @ {active_strike}): "
             f"({premium_now:.2f} - {trigger:.2f}) × {active_lots} lots "
-            f"× {LOT_SIZE_BTC} = ${active_loss:.4f}"
+            f"× {LOT_SIZE_BTC} = ${float(active_loss):.4f}"
         )
 
         # 2. Shifted position losses — ALL positions at old strikes
         #    Every open position contributes to total loss. No exceptions.
         #    §5.2 Case A: Use entry_premium as baseline for frozen positions
         #    (lifetime loss). trigger_snapshot is only for the ACTIVE strike.
-        shifted_loss = 0.0
+        shifted_loss = _D(0)
         option_type = 'call' if aggressor_side == 'ce' else 'put'
 
         if fetch_premium_fn:
@@ -131,31 +145,24 @@ class MMMEngine:
                     continue
 
                 # §5.2 Case A: Use entry_premium as baseline for frozen positions.
-                # The spec computes LIFETIME loss (current vs entry) for shifted
-                # positions, NOT incremental loss vs trigger_snapshot.
-                # trigger_snapshot is only used as baseline for the ACTIVE strike.
-                # Using entry_premium ensures we only hedge when the position is
-                # actually underwater vs what we sold it for.
-                p_baseline = p_entry
-
-                # Loss = (current - entry) per lot
-                # Positive when premium rose past entry (seller losing)
-                pos_loss = (p_current - p_baseline) * p_lots * LOT_SIZE_BTC
+                # Fix #19: Decimal arithmetic for P&L accumulation
+                pos_loss = (_D(p_current) - _D(p_entry)) * _D(p_lots) * _LOT
                 if pos_loss > 0:
                     shifted_loss += pos_loss
                     log.info(
                         f"Shifted position loss @ {p_strike}: "
-                        f"({p_current:.2f} - {p_baseline:.2f}) × {p_lots} lots "
-                        f"= ${pos_loss:.4f} [baseline from entry_premium]"
+                        f"({p_current:.2f} - {p_entry:.2f}) × {p_lots} lots "
+                        f"= ${float(pos_loss):.4f} [baseline from entry_premium]"
                     )
 
-        total_loss = max(active_loss, 0) + shifted_loss
+        zero = _D(0)
+        total_loss = max(active_loss, zero) + shifted_loss
 
-        if shifted_loss > 0:
+        if shifted_loss > zero:
             log.info(
                 f"TOTAL standard loss (active + shifted): "
-                f"${max(active_loss, 0):.4f} + ${shifted_loss:.4f} "
-                f"= ${total_loss:.4f}"
+                f"${float(max(active_loss, zero)):.4f} + ${float(shifted_loss):.4f} "
+                f"= ${float(total_loss):.4f}"
             )
 
         # Robust v2 Fix #2: Flag calculation as incomplete if any fetch failed
@@ -168,7 +175,8 @@ class MMMEngine:
             )
             session['_fetch_error_count'] = session.get('_fetch_error_count', 0) + _fetch_errors
 
-        return max(total_loss, 0), calculation_incomplete
+        # Return float at API boundary (Fix #19: only internal arithmetic uses Decimal)
+        return float(max(total_loss, zero)), calculation_incomplete
 
     # =========================================================================
     # §5.2 Case B + §9: First-Reversal P&L
@@ -202,7 +210,8 @@ class MMMEngine:
         _fetch_errors = 0
         _total_positions = 0
 
-        adjustment_pnl = 0.0
+        # Fix #19: Use Decimal internally for P&L accumulation
+        adjustment_pnl = _D(0)
 
         # Check adjustment fills at active strike
         for fill in side_state.get('adjustment_fills', []):
@@ -214,12 +223,8 @@ class MMMEngine:
             try:
                 current = fetch_premium_fn(strike, option_type)
                 # §5.2 Case B / §9: Use entry_premium as baseline — ALWAYS.
-                # The reversal formula computes the ACTUAL P&L of each adjustment
-                # fill: (entry_premium - current_premium). This tells us whether
-                # the fill is profitable or underwater since it was opened.
-                # trigger_snapshot must NOT be used here — it gets updated to
-                # current price after every adjustment, making P&L appear ~0.
-                fill_pnl = (entry_prem - current) * lots * LOT_SIZE_BTC
+                # Fix #19: Decimal arithmetic for P&L accumulation
+                fill_pnl = (_D(entry_prem) - _D(current)) * _D(lots) * _LOT
                 adjustment_pnl += fill_pnl
             except Exception as e:
                 _fetch_errors += 1
@@ -228,10 +233,7 @@ class MMMEngine:
         # Check frozen ADJUSTMENT positions (exclude original entry positions).
         # §9: "The original CE and PE naturally offset each other. We only
         # need to hedge the loss on the adjustment positions."
-        # Frozen positions with type='original' are excluded — they have a
-        # natural hedge on the opposite side and are NOT naked risk.
         for frozen in side_state.get('frozen_positions', []):
-            # §9: Only include adjustment positions in reversal P&L
             if frozen.get('type') == 'original':
                 continue
 
@@ -242,20 +244,21 @@ class MMMEngine:
 
             try:
                 current = fetch_premium_fn(strike, option_type)
-                # §5.2 Case B: Use entry_premium as baseline — ALWAYS.
-                fill_pnl = (entry_prem - current) * lots * LOT_SIZE_BTC
+                # Fix #19: Decimal arithmetic
+                fill_pnl = (_D(entry_prem) - _D(current)) * _D(lots) * _LOT
                 adjustment_pnl += fill_pnl
                 log.debug(
                     f"Reversal frozen adj pos @ {strike}: entry={entry_prem:.2f}, "
-                    f"current={current:.2f}, lots={lots}, pnl={fill_pnl:.4f}"
+                    f"current={current:.2f}, lots={lots}, pnl={float(fill_pnl):.4f}"
                 )
             except Exception as e:
                 _fetch_errors += 1
                 log.warning(f"Failed to fetch premium for frozen {strike}: {e} [Robust v2 Fix #2: tracked]")
 
+        adj_pnl_float = float(adjustment_pnl)
         log.info(
             f"Reversal P&L for {aggressor_side.upper()} adjustments: "
-            f"{adjustment_pnl:.2f}"
+            f"{adj_pnl_float:.2f}"
         )
 
         # Robust v2 Fix #2: Flag calculation as incomplete
@@ -266,11 +269,11 @@ class MMMEngine:
                 f"premium fetches failed. Reversal P&L may be inaccurate."
             )
 
-        if adjustment_pnl >= 0:
-            # Adjustments still in profit → DO NOTHING
-            return 0.0, adjustment_pnl, calculation_incomplete
+        # Return float at API boundary (Fix #19: Decimal was internal only)
+        if adjustment_pnl >= _D(0):
+            return 0.0, adj_pnl_float, calculation_incomplete
         else:
-            return abs(adjustment_pnl), adjustment_pnl, calculation_incomplete
+            return float(abs(adjustment_pnl)), adj_pnl_float, calculation_incomplete
 
     # =========================================================================
     # §5.3-5.4: Determine strike and lots
@@ -506,15 +509,25 @@ class MMMEngine:
         """
         hedge_state = session.get(hedge_side, {})
 
-        # §6.1: Record the fill at the active strike
-        hedge_state.setdefault('adjustment_fills', []).append({
-            'lots': lots,
-            'premium': fill_price,
+        # §6.1: Record the fill — Fix #23: append to positions[] (Unified Ledger)
+        now = datetime.now(timezone.utc).isoformat()
+        counter = hedge_state.get('_pos_counter', 0) + 1
+        hedge_state['_pos_counter'] = counter
+        hedge_state.setdefault('positions', []).append({
+            'id': f"{hedge_side}_adj_{counter:03d}",
             'strike': strike,
-            'timestamp': datetime.utcnow().isoformat(),
-            'type': adj_type,
+            'lots': lots,
+            'entry_premium': fill_price,
+            'premium': fill_price,          # backward-compat alias
+            'type': adj_type or 'adjustment',
+            'status': 'active',
+            'created_at': now,
+            'shifted_at': None,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': now,               # backward-compat alias
         })
-        recompute_side_lots(hedge_state)
+        recompute_side_lots(hedge_state)    # rebuilds adjustment_fills view
         session[hedge_side] = hedge_state
 
         # §6.2: Update BOTH trigger snapshots (incl. frozen positions)
@@ -533,13 +546,13 @@ class MMMEngine:
             'lots_sold': lots,
             'premium': fill_price,
             'strike': strike,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': adj_type,
             'premium_collected': premium_collected,
             'adjustment_number': session['adjustment_count'],
         })
 
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         log.info(
             f"State updated: adj #{session['adjustment_count']}, "
@@ -565,7 +578,8 @@ class MMMEngine:
         Robust v2 Fix #2: Tracks fetch failures and stores _pnl_fetch_errors
         in session state. If >50% of positions fail, sets _pnl_calculation_incomplete.
         """
-        total_unrealized = 0.0
+        # Fix #19: Use Decimal internally to prevent float rounding accumulation
+        total_unrealized = _D(0)
         _fetch_errors = 0
         _total_positions = 0
 
@@ -582,7 +596,7 @@ class MMMEngine:
                 _total_positions += 1
                 try:
                     current = fetch_premium_fn(active_strike, option_type)
-                    total_unrealized += (orig_prem - current) * orig_lots * LOT_SIZE_BTC
+                    total_unrealized += (_D(orig_prem) - _D(current)) * _D(orig_lots) * _LOT
                 except Exception as e:
                     _fetch_errors += 1
                     log.warning(f"Failed to fetch {side_key} premium at {active_strike}: {e}")
@@ -596,7 +610,7 @@ class MMMEngine:
                     _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
-                        total_unrealized += (prem - current) * lots * LOT_SIZE_BTC
+                        total_unrealized += (_D(prem) - _D(current)) * _D(lots) * _LOT
                     except Exception as e:
                         _fetch_errors += 1
                         log.warning(f"Failed to fetch {side_key} adj premium at {strike}: {e}")
@@ -610,7 +624,7 @@ class MMMEngine:
                     _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
-                        total_unrealized += (prem - current) * lots * LOT_SIZE_BTC
+                        total_unrealized += (_D(prem) - _D(current)) * _D(lots) * _LOT
                     except Exception as e:
                         _fetch_errors += 1
                         log.warning(f"Failed to fetch {side_key} frozen premium at {strike}: {e}")
@@ -626,7 +640,8 @@ class MMMEngine:
         else:
             session.pop('_pnl_calculation_incomplete', None)
 
-        return total_unrealized
+        # Fix #19: Return float at API boundary (Decimal was internal only)
+        return float(total_unrealized)
 
     def compute_total_pnl(self, session: Dict, fetch_premium_fn) -> Dict[str, float]:
         """
@@ -656,14 +671,21 @@ class MMMEngine:
         self,
         session: Dict,
         fetch_premium_fn,
-        threshold: float = 10.0,
+        threshold: float = None,
     ) -> bool:
         """
         §14.5: Every 5 adjustments, verify tracked P&L matches computed P&L.
 
+        L-4 fix: threshold is now read from session params so it can be tuned
+        per-session (small accounts need $1-5, large accounts may use $50+).
+        Defaults to the 'pnl_reconciliation_threshold' param (default $10.0).
+
         Returns:
             True if reconciliation was needed (discrepancy found)
         """
+        if threshold is None:
+            threshold = session.get('params', {}).get('pnl_reconciliation_threshold', 10.0)
+
         pnl = self.compute_total_pnl(session, fetch_premium_fn)
         tracked = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0)
         actual = pnl['net_pnl']
@@ -685,11 +707,15 @@ class MMMEngine:
 # Singleton
 # =============================================================================
 
+# M-4 fix: double-checked locking prevents TOCTOU race on singleton creation
 _engine_instance = None
+_engine_lock = threading.Lock()
 
 
 def get_engine() -> MMMEngine:
     global _engine_instance
     if _engine_instance is None:
-        _engine_instance = MMMEngine()
+        with _engine_lock:
+            if _engine_instance is None:
+                _engine_instance = MMMEngine()
     return _engine_instance

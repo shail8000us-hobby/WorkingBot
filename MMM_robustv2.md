@@ -853,9 +853,9 @@ for side_key in ['ce', 'pe']:
 
 ## 26. NEW FEATURE: Perpetual Futures Delta Hedge Module
 
-> **Status:** PLANNED — implement immediately after Fix #23 (Unified Position Ledger)
+> **Status:** ✅ IMPLEMENTED — February 22, 2026
 > **Priority:** HIGH — primary directional risk defense
-> **New File:** `mmm_perp_hedge.py` (~400–500 lines)
+> **New File:** `mmm_perp_hedge.py` (441 lines)
 > **Design Decisions Confirmed:** February 22, 2026
 
 ### 26.1 Overview & Rationale
@@ -1379,9 +1379,9 @@ PERP_HEDGE_PARAMS = {
 | 22 | fill_price parse guard | LOW | ✅ Implemented |
 | 23 | Unified Position Ledger | ARCH | ✅ Implemented |
 | 24 | Derived state consistency | ARCH | ✅ Implemented |
-| 26 | Perpetual Futures Delta Hedge | NEW FEATURE | ⏳ Planned → after current algo session finishes |
+| 26 | Perpetual Futures Delta Hedge | NEW FEATURE | ✅ Implemented |
 
-**Total: 24/24 implemented, 0 deferred, 1 new feature planned**
+**Total: 25/25 implemented, 0 deferred, 0 pending**
 
 ### Files Modified:
 - `mmm_reversal.py` — Fix #10
@@ -1400,3 +1400,9 @@ PERP_HEDGE_PARAMS = {
 - `mmm_wind_down.py` — Fixes #23
 - `mmm_adopter.py` — Fix #23
 - `tests/test_mmm_engine.py` — Fix #2 (test updates)
+- `mmm_perp_hedge.py` (**NEW**) — Fix #26 core module
+- `mmm_monitor.py` — Fix #26 (Step 7.5, _auto_close_all, both-sides-closed, heartbeat)
+- `mmm_config.py` — Fix #26 (PARAM_RULES, descriptions, interdependency check)
+- `mmm_state.py` — Fix #26 (DEFAULT_PARAMS, HOT_RELOAD_PARAMS, perp_hedge dict in create_session)
+- `mmm_safety.py` — Fix #26 (perp P&L in check_max_loss, check_pnl_guardrail, check_trailing_stop)
+- `mmm_websocket.py` — Fix #26 (perp_hedge_data in emit_heartbeat, emit_perp_hedge_execution, emit_perp_hedge_update)

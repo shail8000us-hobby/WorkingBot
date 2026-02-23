@@ -12,11 +12,18 @@ Created: February 15, 2026
 """
 
 import logging
+from decimal import Decimal
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .mmm_state import recompute_side_lots
 from .mmm_constants import LOT_SIZE_BTC
+
+# Fix #19: Decimal precision helper — mirrors mmm_engine._D
+def _D(x) -> Decimal:
+    return Decimal(str(x))
+
+_LOT = _D(LOT_SIZE_BTC)
 
 log = logging.getLogger('mmm_close_at_5')
 
@@ -48,28 +55,42 @@ def scan_closeable_positions(
         option_type = 'call' if side_key == 'ce' else 'put'
         active_strike = side_state.get('active_strike', 0)
 
-        # Check original lots at active strike
+        # Fix #23: Look up original position ID from positions[] for ID-based removal
+        orig_pos_id = None
+        for _p in side_state.get('positions', []):
+            if _p.get('type') == 'original' and _p.get('status') == 'active':
+                orig_pos_id = _p.get('id')
+                break
+
+        # Check original lots at original strike (Fix #9: use original_strike, not
+        # active_strike. In current flow they're the same until a shift occurs, at
+        # which point original_lots becomes 0 anyway. Using original_strike here is
+        # the correct defensive approach — avoids premium mismatch if the two ever
+        # diverge in future code paths).
         orig_lots = side_state.get('original_lots', 0)
         orig_prem = side_state.get('original_premium', 0)
-        if orig_lots > 0 and active_strike > 0:
+        orig_strike = side_state.get('original_strike', active_strike)
+        if orig_lots > 0 and orig_strike > 0:
             try:
-                current = fetch_premium_fn(active_strike, option_type)
+                current = fetch_premium_fn(orig_strike, option_type)
                 if current <= threshold:
                     profit = (orig_prem - current) * orig_lots
                     closeable.append({
                         'side': side_key,
-                        'strike': active_strike,
+                        'strike': orig_strike,
                         'lots': orig_lots,
                         'entry_premium': orig_prem,
                         'current_premium': current,
                         'type': 'original',
                         'profit': profit,
+                        '_pos_id': orig_pos_id,  # Fix #23: ID-based removal
                     })
             except Exception as e:
                 log.warning(f"Error fetching {side_key} original premium: {e}")
 
         # Check adjustment fills at active strike
-        for i, fill in enumerate(side_state.get('adjustment_fills', [])):
+        # Fix #8: removal is content-match based (with Fix #23 ID fallback)
+        for fill in side_state.get('adjustment_fills', []):
             lots = fill.get('lots', 0)
             prem = fill.get('premium', 0)
             strike = fill.get('strike', active_strike)
@@ -85,14 +106,15 @@ def scan_closeable_positions(
                             'entry_premium': prem,
                             'current_premium': current,
                             'type': 'adjustment',
-                            'fill_index': i,
                             'profit': profit,
+                            '_pos_id': fill.get('_pos_id'),  # Fix #23: ID-based removal
                         })
                 except Exception as e:
                     log.warning(f"Error fetching adj fill premium: {e}")
 
         # Check frozen positions
-        for i, frozen in enumerate(side_state.get('frozen_positions', [])):
+        # Fix #8: removal is content-match based (with Fix #23 ID fallback)
+        for frozen in side_state.get('frozen_positions', []):
             lots = frozen.get('lots', 0)
             prem = frozen.get('entry_premium', 0)
             strike = frozen.get('strike', 0)
@@ -108,8 +130,8 @@ def scan_closeable_positions(
                             'entry_premium': prem,
                             'current_premium': current,
                             'type': 'frozen',
-                            'frozen_index': i,
                             'profit': profit,
+                            '_pos_id': frozen.get('_pos_id'),  # Fix #23: ID-based removal
                         })
                 except Exception as e:
                     log.warning(f"Error fetching frozen premium: {e}")
@@ -134,15 +156,16 @@ def scan_closeable_positions(
             f"[{session_id}] Found {len(closeable)} position(s) eligible for close-at-5 "
             f"(threshold={threshold:.1f})"
         )
-        # Bug #4 fix: sort by (side, type, index) descending so that
-        # higher indices within the SAME array are popped first,
-        # preserving correctness of lower indices.
+        # Fix #8: content-match-first removal makes index-based sorting unnecessary.
+        # Sort by profit descending — close the most profitable positions first.
+        # (Frozen > adjustment > original ordering is preserved as a secondary key
+        # so higher-premium frozen positions don't accidentally beat active strikes.)
         _type_order = {'frozen': 2, 'adjustment': 1, 'original': 0}
         closeable.sort(
             key=lambda p: (
                 p.get('side', ''),
                 _type_order.get(p.get('type', ''), -1),
-                p.get('frozen_index', p.get('fill_index', -1)),
+                p.get('profit', 0),
             ),
             reverse=True,
         )
@@ -199,7 +222,8 @@ async def close_position(
             }
 
         close_price = result.get('fill_price', 0)
-        realized_pnl = (entry_prem - close_price) * lots * LOT_SIZE_BTC
+        # Fix #19: Decimal arithmetic to prevent float rounding accumulation
+        realized_pnl = float((_D(entry_prem) - _D(close_price)) * _D(lots) * _LOT)
 
         # Update state: remove the closed position
         _remove_closed_position(session, side, position, pos_type)
@@ -207,12 +231,12 @@ async def close_position(
         # Record realized P&L
         session['realized_pnl'] = session.get('realized_pnl', 0) + realized_pnl
         session['close_at_5_count'] = session.get('close_at_5_count', 0) + 1
-        session['updated_at'] = datetime.utcnow().isoformat()
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         # Analytics: Track auto-close event (no trading logic impact)
         analytics = session.setdefault('analytics', {})
         analytics.setdefault('auto_close_events', []).append({
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'side': side,
             'strike': strike,
             'lots': lots,
@@ -249,49 +273,82 @@ def _remove_closed_position(
     position: Dict,
     pos_type: str,
 ):
-    """Remove a closed position from state."""
-    side_state = session.get(side, {})
+    """
+    Mark a position as closed in state.
 
+    Fix #23: Uses ID-based O(1) lookup in positions[] when _pos_id is available.
+    Falls back to content-match for pre-migration sessions or missing IDs.
+    """
+    side_state = session.get(side, {})
+    now = datetime.now(timezone.utc).isoformat()
+
+    pos_id = position.get('_pos_id')
+
+    # Fix #23: Primary path — ID-based lookup in positions[] (O(1), always correct)
+    if pos_id:
+        found = False
+        for pos in side_state.get('positions', []):
+            if pos.get('id') == pos_id:
+                pos['status'] = 'closed'
+                pos['closed_at'] = now
+                found = True
+                break
+        if not found:
+            log.warning(
+                f"Close-at-5 ID-based removal: pos_id={pos_id} not found in "
+                f"positions[]. Position may already be closed."
+            )
+        recompute_side_lots(side_state)
+        session[side] = side_state
+        return
+
+    # Fallback: content-match (Fix #8 logic for pre-migration sessions).
+    # After first heartbeat recompute, _pos_id is always present.
     if pos_type == 'original':
         side_state['original_lots'] = 0
         side_state['original_premium'] = 0.0
 
     elif pos_type == 'adjustment':
-        idx = position.get('fill_index')
         fills = side_state.get('adjustment_fills', [])
-        if idx is not None and 0 <= idx < len(fills):
-            # Bug #4 fix: verify the fill matches before popping
-            target = fills[idx]
-            if (target.get('lots') == position.get('lots')
-                    and abs(target.get('premium', 0) - position.get('entry_premium', 0)) < 0.01):
-                fills.pop(idx)
-            else:
-                # Index shifted — find by content match
-                log.warning(f"Fill index {idx} mismatch, searching by content")
-                for i in range(len(fills) - 1, -1, -1):
-                    f = fills[i]
-                    if (f.get('lots') == position.get('lots')
-                            and abs(f.get('premium', 0) - position.get('entry_premium', 0)) < 0.01):
-                        fills.pop(i)
-                        break
+        target_lots = position.get('lots')
+        target_prem = position.get('entry_premium', 0)
+        target_strike = position.get('strike', 0)
+        found = False
+        for i in range(len(fills) - 1, -1, -1):
+            f = fills[i]
+            if (f.get('lots') == target_lots
+                    and abs(f.get('premium', 0) - target_prem) < 0.01
+                    and (target_strike == 0 or abs(f.get('strike', 0) - target_strike) < 1)):
+                fills.pop(i)
+                found = True
+                break
+        if not found:
+            log.warning(
+                f"Close-at-5 adjustment content-match failed: "
+                f"lots={target_lots}, prem≈{target_prem:.2f}, strike={target_strike}. "
+                f"Position may already have been removed."
+            )
 
     elif pos_type == 'frozen':
-        idx = position.get('frozen_index')
         frozen = side_state.get('frozen_positions', [])
-        if idx is not None and 0 <= idx < len(frozen):
-            # Bug #4 fix: verify frozen matches before popping
-            target = frozen[idx]
-            if (target.get('lots') == position.get('lots')
-                    and abs(target.get('entry_premium', 0) - position.get('entry_premium', 0)) < 0.01):
-                frozen.pop(idx)
-            else:
-                log.warning(f"Frozen index {idx} mismatch, searching by content")
-                for i in range(len(frozen) - 1, -1, -1):
-                    f = frozen[i]
-                    if (f.get('lots') == position.get('lots')
-                            and abs(f.get('entry_premium', 0) - position.get('entry_premium', 0)) < 0.01):
-                        frozen.pop(i)
-                        break
+        target_lots = position.get('lots')
+        target_prem = position.get('entry_premium', 0)
+        target_strike = position.get('strike', 0)
+        found = False
+        for i in range(len(frozen) - 1, -1, -1):
+            f = frozen[i]
+            if (f.get('lots') == target_lots
+                    and abs(f.get('entry_premium', 0) - target_prem) < 0.01
+                    and (target_strike == 0 or abs(f.get('strike', 0) - target_strike) < 1)):
+                frozen.pop(i)
+                found = True
+                break
+        if not found:
+            log.warning(
+                f"Close-at-5 frozen content-match failed: "
+                f"lots={target_lots}, prem≈{target_prem:.2f}, strike={target_strike}. "
+                f"Position may already have been removed."
+            )
 
     recompute_side_lots(side_state)
     session[side] = side_state

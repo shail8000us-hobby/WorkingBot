@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/static/css/main.a52f49b8.css",
-    "main.js": "/static/js/main.ab830e2d.js",
+    "main.js": "/static/js/main.67466abc.js",
     "runtime.js": "/static/js/runtime.110e3fae.js",
     "static/js/8651.1db678d6.chunk.js": "/static/js/8651.1db678d6.chunk.js",
     "static/js/9578.cf7f3742.chunk.js": "/static/js/9578.cf7f3742.chunk.js",
@@ -51,7 +51,7 @@
     "static/js/6717.5dd66367.chunk.js": "/static/js/6717.5dd66367.chunk.js",
     "static/js/2688.de0f859e.chunk.js": "/static/js/2688.de0f859e.chunk.js",
     "vendor.js": "/static/js/vendor.5ff01d96.js",
-    "ui-libs.js": "/static/js/ui-libs.64f0ff05.js",
+    "ui-libs.js": "/static/js/ui-libs.2600b1b5.js",
     "charts.js": "/static/js/charts.8f797169.js",
     "icons.js": "/static/js/icons.09cd7071.js",
     "utils.js": "/static/js/utils.ac3c9611.js",
@@ -76,13 +76,13 @@
   "entrypoints": [
     "static/js/runtime.110e3fae.js",
     "static/js/vendor.5ff01d96.js",
-    "static/js/ui-libs.64f0ff05.js",
+    "static/js/ui-libs.2600b1b5.js",
     "static/js/charts.8f797169.js",
     "static/js/icons.09cd7071.js",
     "static/js/utils.ac3c9611.js",
     "static/css/vendors.d5a3d36d.css",
     "static/js/vendors.5df54b61.js",
     "static/css/main.a52f49b8.css",
-    "static/js/main.ab830e2d.js"
+    "static/js/main.67466abc.js"
   ]
 }

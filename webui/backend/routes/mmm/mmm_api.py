@@ -1325,12 +1325,14 @@ def get_activities():
         limit = min(int(request.args.get('limit', 50)), 200)
         session_id = request.args.get('session_id')
         severity = request.args.get('severity')
+        category = request.args.get('category')
 
         activity_log = get_activity_log()
         activities = activity_log.get_recent(
             limit=limit,
             session_id=session_id,
             severity=severity,
+            category=category,
         )
 
         return jsonify({

@@ -169,13 +169,15 @@ class LiquidationMonitor:
                 wallets = response['result']
                 if wallets:
                     wallet = wallets[0]  # Use first wallet
+                    # FIX: Use blocked_margin for Portfolio Margin mode (not blocked_balance)
+                    blocked = float(wallet.get('blocked_margin', 0) or wallet.get('blocked_balance', 0) or 0)
                     balance = AccountBalance(
-                        total_balance=float(wallet.get('total_balance', 0)),
+                        total_balance=float(wallet.get('balance', 0)),
                         available_balance=float(wallet.get('available_balance', 0)),
-                        blocked_balance=float(wallet.get('blocked_balance', 0)),
-                        maintenance_margin=float(wallet.get('maintenance_margin', 0))
+                        blocked_balance=blocked,
+                        maintenance_margin=float(wallet.get('maintenance_margin', 0) or blocked * 0.8)  # Estimate MM if not provided
                     )
-                    logger.info(f"Fetched account balance: Available ₹{balance.available_balance}")
+                    logger.info(f"Fetched account balance: Available ${balance.available_balance:.2f}, Blocked ${balance.blocked_balance:.2f}")
                     return balance
             
             # Return zero balance if no data
@@ -188,9 +190,14 @@ class LiquidationMonitor:
     
     def analyze_liquidation_risk(self, positions: List[Position], balance: AccountBalance) -> Dict:
         """Analyze liquidation risk for all positions"""
+        # FIX: Use wallet's blocked_balance for margin_used (not sum of per-position margins)
+        # In Portfolio Margin mode, per-position margin is always 0
+        sum_position_margin = sum(pos.margin_used for pos in positions)
+        total_margin_used = balance.blocked_balance if balance.blocked_balance > 0 else sum_position_margin
+        
         analysis = {
             'total_positions': len(positions),
-            'total_margin_used': sum(pos.margin_used for pos in positions),
+            'total_margin_used': total_margin_used,
             'total_unrealized_pnl': sum(pos.unrealized_pnl for pos in positions),
             'available_balance': balance.available_balance,
             'maintenance_margin': balance.maintenance_margin,

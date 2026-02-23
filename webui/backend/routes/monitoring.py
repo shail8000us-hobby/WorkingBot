@@ -862,8 +862,16 @@ def advanced_predictions():
                         verified_pending_buy = pending_buy
                         verified_pending_sell = pending_sell
                 
-                # Run async verification
-                asyncio.run(verify_pending_orders())
+                # Run async verification — avoid asyncio.run() which closes the loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                loop.run_until_complete(verify_pending_orders())
             
             except Exception as e:
                 log.error(f"[PREDICTION] Exchange verification failed: {e}")
@@ -1310,7 +1318,6 @@ def opportunistic_recovery():
                 state = loop.run_until_complete(
                     _bot_instance.position_actor.ask("GET_STATE", {}, timeout=3.0)
                 )
-                loop.close()
                 
                 stats = state.get("opportunistic_recovery_stats", {})
                 
@@ -1404,7 +1411,6 @@ def opportunistic_positions():
                 state = loop.run_until_complete(
                     _bot_instance.position_actor.ask("GET_STATE", {}, timeout=3.0)
                 )
-                loop.close()
                 
                 # Filter for opportunistic positions
                 all_positions = state.get("open_tranches", [])

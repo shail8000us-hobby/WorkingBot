@@ -153,8 +153,17 @@ class SLTPMonitor:
                 response = await self.api_client.get_all_positions_with_options()
                 return response.get('options', []) if response else []
             
-            # Run async function in event loop
-            positions = asyncio.run(fetch_positions())
+            # Run async function in event loop — avoid asyncio.run() which
+            # closes the loop and breaks httpx clients bound to it.
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            positions = loop.run_until_complete(fetch_positions())
             return positions
             
         except Exception as e:

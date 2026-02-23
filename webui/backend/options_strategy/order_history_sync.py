@@ -431,10 +431,7 @@ class OrderHistorySync:
             # Fetch current positions
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            try:
-                positions_response = loop.run_until_complete(client.get_all_positions_with_options())
-            finally:
-                loop.close()
+            positions_response = loop.run_until_complete(client.get_all_positions_with_options())
             
             current_positions = positions_response.get('options', [])
             current_symbols = {p.get('product_symbol') for p in current_positions if p.get('size', 0) != 0}

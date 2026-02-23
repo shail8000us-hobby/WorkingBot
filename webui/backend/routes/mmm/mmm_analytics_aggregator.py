@@ -27,9 +27,8 @@ from collections import defaultdict
 
 log = logging.getLogger('mmm_analytics_aggregator')
 
-# 1 lot = 0.001 BTC. Premium quoted in USD/BTC.
-# USD value of 1 lot at premium P = P * 0.001
-LOT_SIZE_BTC = 0.001
+# H-1 fix: import from canonical source instead of duplicating the constant
+from .mmm_constants import LOT_SIZE_BTC
 
 
 class MMMAnalyticsAggregator:

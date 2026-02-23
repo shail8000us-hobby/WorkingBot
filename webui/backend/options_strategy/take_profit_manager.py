@@ -528,16 +528,18 @@ class TakeProfitMonitor:
                     if positions_data is None:
                         print(f"🎯 DEBUG: Cache miss/expired, fetching from API...", flush=True)
                         
-                        # Proper async event loop management (match max_loss_manager)
+                        # Proper async event loop management — keep loop open
+                        # to avoid "Event loop is closed" for httpx clients
                         try:
-                            loop = asyncio.get_running_loop()
-                            should_close_loop = False
-                            print(f"🎯 DEBUG: Using existing event loop", flush=True)
+                            loop = asyncio.get_event_loop()
+                            if loop.is_closed():
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                            print(f"🎯 DEBUG: Using event loop (closed={loop.is_closed()})", flush=True)
                         except RuntimeError:
-                            # No running loop, create one
+                            # No loop for this thread yet
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
-                            should_close_loop = True
                             print(f"🎯 DEBUG: Created new event loop", flush=True)
                         
                         try:
@@ -553,10 +555,9 @@ class TakeProfitMonitor:
                                 self._cache_time = now
                                 print(f"🎯 DEBUG: Updated cache at {now}", flush=True)
                         finally:
-                            # Only close loop if we created it
-                            if should_close_loop:
-                                loop.close()
-                                print(f"🎯 DEBUG: Closed event loop", flush=True)
+                            # Do NOT close the loop — the httpx AsyncClient is
+                            # bound to it and will fail on the next call.
+                            pass
                     
                     # Extract positions from response (handle both dict and list formats)
                     # Match max_loss_manager implementation for consistency
@@ -833,9 +834,7 @@ class TakeProfitMonitor:
                     print(f"🎯 DEBUG: ORDER_EXECUTION_AVAILABLE={ORDER_EXECUTION_AVAILABLE}, place_smart_order={place_smart_order}", flush=True)
                     raise Exception("Order execution module not available")
             finally:
-                # Only close loop if we created it
-                if should_close_loop:
-                    loop.close()
+                pass  # Don't close loop - may be reused by Flask/async context
 
                 
         except Exception as e:

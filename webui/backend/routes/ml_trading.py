@@ -606,12 +606,9 @@ def scan_opportunities():
         # Run async scan
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        try:
-            opportunities = loop.run_until_complete(
-                opportunity_scanner.scan_options_chain(symbol)
-            )
-        finally:
-            loop.close()
+        opportunities = loop.run_until_complete(
+            opportunity_scanner.scan_options_chain(symbol)
+        )
         
         return jsonify({
             'success': True,
