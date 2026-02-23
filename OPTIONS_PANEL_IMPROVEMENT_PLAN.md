@@ -13,7 +13,7 @@ After auditing **22 files / ~14,560 lines** in the Options system, **1,691 lines
 
 ---
 
-## Current Architecture Snapshot  (Updated Feb 23, 2026 — Phase 4 partial)
+## Current Architecture Snapshot  (Updated Feb 23, 2026 — Phase 4 COMPLETE)
 
 ```
 App.js (1750 lines — updated)
@@ -21,18 +21,18 @@ App.js (1750 lines — updated)
 ├── Sidebar.js (138 lines — grouped rendering, complete prefetch map)
 ├── MobileNav (inline, 40 lines — grouped with dividers)
 │
-└── OptionsPanel.js (6562 lines — Phase 4 partial extraction done)
+└── OptionsPanel.js (5,095 lines — Phase 4 extraction complete)
     ├── Primary bar: Title + Status + Count + Turbo + [?] + Sound + Refresh + [▼]
     ├── Secondary toolbar: Collapsible — Poll, Custom Order, Hidden, Payoff, Adjust
     ├── Keyboard shortcuts → tooltip (was permanent 40px bar)
     ├── ExpiryMaxLossPanel → collapsible, default collapsed, shows count
-    ├── 52 useState hooks (removed pendingOrdersCollapsed)
-    ├── 27 useEffect hooks (removed pendingOrders save effect)
-    ├── Sub-components: 24 files (3 new extracted)
+    ├── Sub-components: 24 files + 5 new extracted
     │
-    ├── PendingOrdersPanel.js (185 lines) — NEW extracted
-    ├── ScalingStrategyPanel.js (295 lines) — NEW extracted
-    └── PortfolioSummaryStrip.js (175 lines) — NEW extracted
+    ├── PendingOrdersPanel.js (185 lines) — extracted
+    ├── ScalingStrategyPanel.js (295 lines) — extracted
+    ├── PortfolioSummaryStrip.js (175 lines) — extracted
+    ├── AddPositionDialog.js (709 lines) — extracted (Phase 4.5)
+    └── BatchOrderPanel.js (1005 lines) — extracted (Phase 4.2+4.3)
 ```
 
 ---
@@ -201,7 +201,7 @@ The current "Portfolio Greeks" box (~lines 6023-6161) moves into the sticky summ
 
 ---
 
-## Phase 4: Component Extraction (OptionsPanel.js Decomposition) — ✅ PARTIAL (3 of 6 extracted)
+## Phase 4: Component Extraction (OptionsPanel.js Decomposition) — ✅ COMPLETE (5 of 6 extracted)
 
 **Risk:** Medium — structural refactor, must not break any functionality  
 **Impact:** Critical — maintainability, testability, performance  
@@ -211,11 +211,17 @@ The current "Portfolio Greeks" box (~lines 6023-6161) moves into the sticky summ
 ### Problem
 OptionsPanel.js was **7,113 lines** (after Phase 2+3 additions). This is the #1 architectural debt.
 
-### Results So Far
+### Results
 - **Before Phase 4:** 7,113 lines  
-- **After 3 extractions:** 6,562 lines (−551 lines moved to dedicated components)  
-- **3 new files created:** PendingOrdersPanel.js (185 lines), ScalingStrategyPanel.js (295 lines), PortfolioSummaryStrip.js (175 lines)  
+- **After all extractions:** 5,095 lines (−2,018 lines moved to dedicated components)  
+- **5 new files created:**
+  - PendingOrdersPanel.js (185 lines)
+  - ScalingStrategyPanel.js (295 lines)
+  - PortfolioSummaryStrip.js (175 lines)
+  - AddPositionDialog.js (709 lines) — premium add/reduce position dialog
+  - BatchOrderPanel.js (1005 lines) — batch orders + auto-loop + per-expiry controls + confirm dialog  
 - Removed `pendingOrdersCollapsed` state + its useEffect from parent (PendingOrdersPanel manages its own)
+- Removed `QUICK_SIZES` and `ORDER_TYPES` constants from parent (moved to AddPositionDialog)
 
 ### Extraction Plan (ordered by isolation — easiest first)
 
@@ -226,21 +232,17 @@ OptionsPanel.js was **7,113 lines** (after Phase 2+3 additions). This is the #1 
 **Own state:** `collapsed` (persisted to localStorage)  
 **Wrapped in:** `React.memo`
 
-#### 4.2 — ⬜ TODO: Extract `BatchOrderPanel` component
+#### 4.2 — ✅ DONE: `BatchOrderPanel` component (merged with 4.3 AutoLoopController)
 
-**Lines to extract:** ~5116-5930 (the entire blue batch order box)  
-**State to move:** `selectedStrikes`, `orderQuantity`, `multiplierMode`, `executionMode`, `batchQuantities`, `batchOrderResults`, `batchExecuting`, `pendingBatchOrders`, `batchConfirmDialog`  
-**Props it needs:** `positions`, `sortedPositions`, `status`, `pollInterval`  
-**Callbacks to parent:** `onBatchExecuted()` → triggers parent refresh  
-**New file:** `components/options/BatchOrderPanel.js` (~820 lines)
+**File:** `components/options/BatchOrderPanel.js` (1005 lines)  
+**Approach:** Presentational component — receives all state + callbacks via props (36 props).  
+**Includes:** batch order controls, execution mode toggle, auto-loop toggle/progress/errors, per-expiry loop controls, order preview, results display, batch confirmation dialog.  
+**Wrapped in:** `React.memo`  
+**Note:** State remains in parent to avoid breaking position-table checkbox coupling (`selectedStrikes`, `batchQuantities`). Phase 5 hooks will consolidate state management.
 
-#### 4.3 — ⬜ TODO: Extract `AutoLoopController` component
+#### 4.3 — ✅ DONE: Merged into `BatchOrderPanel` (see 4.2)
 
-**Lines to extract:** Auto-loop state + UI from BatchOrderPanel  
-**State to move:** `autoLoopEnabled`, `autoLoopRounds`, `autoLoopRunning`, `autoLoopCurrentRound`, `autoLoopProgress`, `autoLoopError`, `autoLoopLastRun`, `expiryLoopState`  
-**Refs to move:** `autoLoopStopRef`, `expiryStopRefs`  
-**New file:** `components/options/AutoLoopController.js` (~450 lines)  
-**Note:** Extract as a custom hook `useAutoLoop` + UI component.
+Auto-loop UI is tightly embedded within the batch order panel JSX. Extracted together as a single presentational component rather than splitting into a separate AutoLoopController. The `useAutoLoop` custom hook extraction is deferred to Phase 5.
 
 #### 4.4 — ✅ DONE: `ScalingStrategyPanel` component
 
@@ -248,13 +250,13 @@ OptionsPanel.js was **7,113 lines** (after Phase 2+3 additions). This is the #1 
 **Props:** `scalingStrategy`, `setScalingStrategy`, `scalingParams`, `setScalingParams`, `indexPrices`, `scalingStrategyCollapsed`, `setScalingStrategyCollapsed`  
 **Wrapped in:** `React.memo`
 
-#### 4.5 — ⬜ TODO: Extract `AddPositionDialog` component
+#### 4.5 — ✅ DONE: `AddPositionDialog` component
 
-**Lines to extract:** ~6200-6830 (the "Add to Position" premium redesign dialog)  
-**State to move:** `addDialog`, `submittingOrder`, `lastUsedSize`  
-**Props it needs:** `position`, `status`, `scalingStrategy`, `skipConfirmStrikes`  
-**Callbacks to parent:** `onOrderPlaced()`, `onSkipConfirmUpdate()`  
-**New file:** `components/options/AddPositionDialog.js` (~640 lines)
+**File:** `components/options/AddPositionDialog.js` (709 lines)  
+**Props:** `addDialog`, `setAddDialog`, `onSubmit`, `submittingOrder`, `lastUsedSize`, `skipConfirmStrikes`  
+**Own constants:** `QUICK_SIZES`, `ORDER_TYPES` (moved from parent)  
+**Wrapped in:** `React.memo`  
+**Includes:** Premium-styled dialog with buy/sell toggle, quantity presets, order type selection (Market/Smart/Limit/SSR variants), limit price input, Quick Mode button, AI recommendation display
 
 #### 4.6 — ✅ DONE: `PortfolioSummaryStrip` component
 
@@ -262,9 +264,9 @@ OptionsPanel.js was **7,113 lines** (after Phase 2+3 additions). This is the #1 
 **Props:** `sortedPositions`, `aggregatedGreeks`, `formatPnl`, `getPnlColor`  
 **Wrapped in:** `React.memo`
 
-### Post-extraction OptionsPanel.js current: 6,562 lines (target with all 6: ~3,500-4,000)
+### Post-extraction OptionsPanel.js: 5,095 lines (down from 7,113 — 28% reduction)
 
-The remaining core handles: position table rendering, DnD ordering, expiry filtering, WebSocket integration, data fetching. Complex extractions (4.2, 4.3, 4.5) deferred — they have deep state coupling and need careful prop design.
+The remaining core handles: position table rendering, DnD ordering, expiry filtering, WebSocket integration, data fetching, state management (52 useState + 27 useEffect hooks). Phase 5 hooks will further consolidate state and reduce the remaining line count.
 
 ---
 
