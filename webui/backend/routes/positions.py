@@ -157,7 +157,10 @@ def _filter_positions_by_symbol(positions_data, filter_symbol):
             'total_notional_deployed': round(total_notional, 2),
             'data_source': positions_data.get('summary', {}).get('data_source', 'unknown'),
             'filtered_by_symbol': filter_symbol,  # v5.0: Indicate filtering applied
-            'total_all_symbols': len(all_positions)  # v5.0: Total before filtering
+            'total_all_symbols': len(all_positions),  # v5.0: Total before filtering
+            # ✅ FIX: Preserve account-level margin fields when filtering by symbol
+            'blocked_margin_usd': positions_data.get('summary', {}).get('blocked_margin_usd', 0),
+            'blocked_margin_inr': positions_data.get('summary', {}).get('blocked_margin_inr', 0),
         }
     }
     
@@ -224,9 +227,15 @@ def get_positions():
         # v6.0: Get instance filter (supports both ?instance= and ?symbol= formats)
         instance_name, filter_symbol, filter_mode = get_instance_from_request()
         
+        # Fetch account-level blocked_margin ONCE per request (fresh data from wallet API)
+        margin_data = _fetch_blocked_margin()
+        log.info(f"Fetched blocked_margin: {margin_data}")
+        
         # Strategy 1: Try Delta Exchange API
         positions_data = _get_positions_from_delta()
         if positions_data:
+            # Inject fresh margin data into summary
+            positions_data['summary'].update(margin_data)
             # v6.0: Apply symbol filter if requested
             if filter_symbol:
                 positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
@@ -235,6 +244,8 @@ def get_positions():
         # Strategy 2: Try positions file
         positions_data = _get_positions_from_file()
         if positions_data:
+            # Inject fresh margin data
+            positions_data['summary'].update(margin_data)
             # v5.0: Apply symbol filter if requested
             if filter_symbol:
                 positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
@@ -243,12 +254,16 @@ def get_positions():
         # Strategy 3: Try guardian
         positions_data = _get_positions_from_guardian()
         if positions_data:
+            # Inject fresh margin data
+            positions_data['summary'].update(margin_data)
             # v5.0: Apply symbol filter if requested
             if filter_symbol:
                 positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
             return jsonify(positions_data), 200
         
-        # No positions found
+        # No positions found - but still return wallet blocked_margin
+        usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
+        
         return jsonify({
             'positions': [],
             'summary': {
@@ -257,7 +272,10 @@ def get_positions():
                 'total_pnl_inr': 0,
                 'risk_percent': 0,
                 'total_notional_deployed': 0,
-                'filtered_by_symbol': filter_symbol  # v5.0
+                'blocked_margin_usd': margin_data.get('blocked_margin_usd', 0),
+                'blocked_margin_inr': margin_data.get('blocked_margin_inr', 0),
+                'filtered_by_symbol': filter_symbol,
+                'data_source': 'delta_exchange'
             }
         }), 200
         
@@ -368,7 +386,7 @@ def _get_positions_from_delta():
     with _positions_cache['lock']:
         if _positions_cache['data'] is not None and (now - _positions_cache['timestamp']) < _POSITIONS_CACHE_TTL:
             log.debug("Returning cached positions data")
-            return _positions_cache['data']
+            return copy.deepcopy(_positions_cache['data'])
 
     try:
         from bot.api.delta_client import DeltaClient
@@ -521,6 +539,8 @@ def _get_positions_from_delta():
             total_theta += pos_theta  # Use position-level theta
             total_notional_deployed += notional_deployed
 
+        # NOTE: blocked_margin is fetched centrally in get_positions() and injected into summary
+        # This ensures fresh margin data even when positions are cached
         result = {
             'positions': positions_data,
             'summary': {
@@ -532,6 +552,8 @@ def _get_positions_from_delta():
                 'portfolio_vega': round(total_vega, 2),
                 'portfolio_theta': round(total_theta, 2),
                 'total_notional_deployed': round(total_notional_deployed, 2),
+                'blocked_margin_usd': 0.0,  # Will be overwritten by get_positions()
+                'blocked_margin_inr': 0.0,  # Will be overwritten by get_positions()
                 'data_source': 'delta_exchange'
             }
         }
@@ -544,8 +566,50 @@ def _get_positions_from_delta():
         return result
 
     except Exception as e:
-        log.debug(f"Delta API positions fetch failed: {e}")
+        log.error(f"Delta API positions fetch failed: {e}")
         return None
+
+
+def _fetch_blocked_margin():
+    """
+    Fetch account-level blocked_margin from Delta Exchange wallet API.
+    Uses the same DeltaClient._req() approach that works in liquidation.py.
+    
+    Returns:
+        dict with keys: blocked_margin_usd, blocked_margin_inr
+    """
+    try:
+        from bot.api.delta_client import DeltaClient
+        delta_client = DeltaClient()
+        wallet_response = delta_client._req('GET', '/v2/wallet/balances')
+        
+        if wallet_response and wallet_response.get('success'):
+            wallets = wallet_response.get('result', [])
+            # Find USD wallet specifically
+            wallet_data = None
+            for wallet in wallets:
+                if wallet.get('asset_symbol') == 'USD':
+                    wallet_data = wallet
+                    break
+            if not wallet_data and wallets:
+                wallet_data = wallets[0]
+            
+            if wallet_data:
+                blocked_margin_usd = float(wallet_data.get('blocked_margin', 0) or 0)
+                if blocked_margin_usd == 0:
+                    blocked_margin_usd = float(wallet_data.get('portfolio_margin', 0) or 0)
+                if blocked_margin_usd == 0:
+                    blocked_margin_usd = float(wallet_data.get('order_margin', 0) or 0) + float(wallet_data.get('position_margin', 0) or 0)
+                
+                usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
+                return {
+                    'blocked_margin_usd': round(blocked_margin_usd, 2),
+                    'blocked_margin_inr': round(blocked_margin_usd * usd_to_inr_rate, 2)
+                }
+    except Exception as e:
+        log.error(f"Failed to fetch blocked_margin from wallet API: {e}")
+    
+    return {'blocked_margin_usd': 0.0, 'blocked_margin_inr': 0.0}
 
 
 def _get_positions_from_file():
@@ -588,10 +652,15 @@ def _get_positions_from_file():
         if 'summary' not in data:
             data['summary'] = {}
         
+        # NOTE: blocked_margin is fetched centrally in get_positions() and injected into summary
+        usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
+        
         data['summary']['total_notional_deployed'] = round(total_notional_deployed, 2)
         data['summary']['portfolio_delta'] = sum(p.get('delta', 0) for p in data['positions'])
         data['summary']['portfolio_vega'] = sum(p.get('vega', 0) for p in data['positions'])
         data['summary']['portfolio_theta'] = sum(p.get('theta', 0) for p in data['positions'])
+        data['summary']['blocked_margin_usd'] = 0.0  # Will be overwritten by get_positions()
+        data['summary']['blocked_margin_inr'] = 0.0    # Will be overwritten by get_positions()
         data['summary']['data_source'] = 'positions_file'
         
         return data
@@ -649,6 +718,8 @@ def _get_positions_from_guardian():
                 'total_pnl_usd': total_pnl_usd,
                 'total_pnl_inr': total_pnl_inr,
                 'total_notional_deployed': round(notional_deployed, 2),
+                'blocked_margin_usd': 0.0,  # Will be overwritten by get_positions()
+                'blocked_margin_inr': 0.0,  # Will be overwritten by get_positions()
                 'data_source': 'guardian'
             },
             'source': 'guardian'
