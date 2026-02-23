@@ -13,7 +13,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { io } from 'socket.io-client';
 import {
   Box,
   Card,
@@ -111,6 +110,9 @@ import TakeProfitIndicator from './TakeProfitIndicator';
 import TakeProfitDialog from './TakeProfitDialog';
 import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
 import useMarketPrices from '../../hooks/useMarketPrices';
+import usePersistedState from '../../hooks/usePersistedState';
+import useOptionsPositions from '../../hooks/useOptionsPositions';
+import useOptionsSettings from '../../hooks/useOptionsSettings';
 import SoundSettingsPanel from '../SoundSettingsPanel';
 import TradeNotification from '../TradeNotification';
 // JAN 17, 2026: Futures panel - separate file structure, minimal invasion
@@ -125,10 +127,6 @@ import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
 // Phase 3: Lazy load heavy components
 const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
 const OptionsActivityPanel = lazy(() => import('./OptionsActivityPanel'));
-
-// Phase 5 Optimization: IV cache with 60s TTL to avoid 17+ external API calls per poll
-const IV_CACHE_TTL_MS = 60000; // 60 seconds - IV doesn't change meaningfully every second
-const _ivCache = { data: {}, timestamp: 0 };
 
 // ============================================================================
 // PHASE 1 OPTIMIZATION: React.memo for SortableRow
@@ -164,157 +162,48 @@ const SortableRow = React.memo(({ pos, children }) => {
 });
 
 const OptionsPanel = () => {
-  // State
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [positions, setPositions] = useState([]);
-  const [futuresPositions, setFuturesPositions] = useState([]);
-  const [status, setStatus] = useState(null);
-  const [error, setError] = useState(null);
-  // Pending orders state (from Delta Exchange)
-  const [pendingOrders, setPendingOrders] = useState([]);
-  const [pendingOrdersError, setPendingOrdersError] = useState(null);
+  // Polling interval (default 5s)
+  const [pollInterval, setPollInterval] = usePersistedState('options_poll_interval', 5000, { parse: 'int' });
+
+  // ---- Data layer (positions, status, fetchers, polling, WebSocket) ----
+  const {
+    positions, setPositions,
+    futuresPositions, visibleFuturesPositions,
+    status,
+    loading, refreshing,
+    error, setError,
+    pendingOrders, pendingOrdersError,
+    fetchDashboard, fetchStatus, fetchPositions, fetchFuturesPositions, fetchPendingOrders,
+    handleCancelPendingOrder, handleRefresh,
+    hasPositionsRef, activeIntervalsRef,
+  } = useOptionsPositions({ pollInterval });
+
   // Phase 2: Secondary toolbar visibility (persisted)
-  const [secondaryToolbarOpen, setSecondaryToolbarOpen] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_secondary_toolbar_open');
-      return saved ? JSON.parse(saved) : false;
-    } catch {
-      return false;
-    }
-  });
+  const [secondaryToolbarOpen, setSecondaryToolbarOpen] = usePersistedState('options_secondary_toolbar_open', false);
   // Phase 2: Scaling strategy section collapsed (persisted)
-  const [scalingStrategyCollapsed, setScalingStrategyCollapsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_scaling_strategy_collapsed');
-      return saved ? JSON.parse(saved) : true; // default: collapsed
-    } catch {
-      return true;
-    }
-  });
+  const [scalingStrategyCollapsed, setScalingStrategyCollapsed] = usePersistedState('options_scaling_strategy_collapsed', true);
   // Phase 2: Expiry max loss section collapsed (persisted)
-  const [expiryMaxLossCollapsed, setExpiryMaxLossCollapsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_expiry_maxloss_collapsed');
-      return saved ? JSON.parse(saved) : true; // default: collapsed
-    } catch {
-      return true;
-    }
-  });
+  const [expiryMaxLossCollapsed, setExpiryMaxLossCollapsed] = usePersistedState('options_expiry_maxloss_collapsed', true);
   // Focus mode: hidden positions (persisted)
-  const [hiddenPositions, setHiddenPositions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_hidden_positions');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [hiddenPositions, setHiddenPositions] = usePersistedState('options_hidden_positions', []);
   // Selected positions for payoff diagram (whitelist approach - default: none selected)
-  const [selectedPositionsForPayoff, setSelectedPositionsForPayoff] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_selected_positions_payoff');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [selectedPositionsForPayoff, setSelectedPositionsForPayoff] = usePersistedState('options_selected_positions_payoff', []);
 
   // Closed positions storage - keeps squared off positions visible with size=0 and their final PnL
   // Format: { symbol: { product_symbol, realized_pnl, closed_at, entry_price, close_price, original_size } }
-  const [closedPositions, setClosedPositions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_closed_positions');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [closedPositions, setClosedPositions] = usePersistedState('options_closed_positions', {});
 
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
 
-  // ============================================================================
-  // PHASE 1 OPTIMIZATION: Debounced localStorage writes
-  // Prevents UI blocking from synchronous localStorage operations
-  // MUST BE DEFINED BEFORE useEffect hooks that reference it
-  // ============================================================================
-  
-  // Debounced localStorage saver (500ms delay)
-  const debouncedSave = useMemo(
-    () => {
-      const saveToStorage = (key, value) => {
-        try {
-          if (value === null || value === undefined) {
-            localStorage.removeItem(key);
-          } else if (typeof value === 'object') {
-            localStorage.setItem(key, JSON.stringify(value));
-          } else {
-            localStorage.setItem(key, String(value));
-          }
-        } catch (err) {
-          console.warn(`Failed to save ${key} to localStorage:`, err);
-        }
-      };
-      
-      // Create debounced function with 500ms delay
-      let timeouts = {};
-      return (key, value, immediate = false) => {
-        if (immediate) {
-          saveToStorage(key, value);
-          return;
-        }
-        
-        clearTimeout(timeouts[key]);
-        timeouts[key] = setTimeout(() => {
-          saveToStorage(key, value);
-        }, 500);
-      };
-    },
-    []
-  );
-
-  // Save hiddenPositions to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_hidden_positions', hiddenPositions);
-  }, [hiddenPositions, debouncedSave]);
-  
-  // Save closedPositions to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_closed_positions', closedPositions);
-  }, [closedPositions, debouncedSave]);
-  // Polling interval (default 5s)
-  const [pollInterval, setPollInterval] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_poll_interval');
-      return saved ? parseInt(saved) : 5000;
-    } catch {
-      return 5000;
-    }
-  });
-
   // Phase 4: Turbo Mode for expiry day ultra-fast trading
-  const [turboMode, setTurboMode] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_turbo_mode');
-      return saved === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [turboMode, setTurboMode] = usePersistedState('options_turbo_mode', false, { parse: 'bool-string' });
 
   // Phase 4: Keyboard trading - selected row index (-1 = no selection until arrow keys used)
   const [selectedRowIndex, setSelectedRowIndex] = useState(-1);
 
   // Expiry filter (persisted) - now supports multiple selection
-  const [selectedExpiries, setSelectedExpiries] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_selected_expiries');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [selectedExpiries, setSelectedExpiries] = usePersistedState('options_selected_expiries', []);
 
   // Sort state
   const [symbolSort, setSymbolSort] = useState(null); // null = no sort, 'grouped' = CE/PE grouped
@@ -324,67 +213,43 @@ const OptionsPanel = () => {
   // SL/TP Dialog state
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
   const [selectedPositionForSLTP, setSelectedPositionForSLTP] = useState(null);
-  const [slTpSettings, setSlTpSettings] = useState({}); // Map of symbol -> settings
-
-  // Max Loss Settings state (per-strike and per-expiry)
-  const [maxLossSettings, setMaxLossSettings] = useState({}); // Map of symbol -> settings
-  const [expiryMaxLossSettings, setExpiryMaxLossSettings] = useState({}); // Map of expiry_code -> settings
 
   // Take Profit Dialog state
   const [tpDialogOpen, setTpDialogOpen] = useState(false);
   const [selectedPositionForTP, setSelectedPositionForTP] = useState(null);
-  const [tpSettings, setTpSettings] = useState({}); // Map of symbol -> TP settings
+
+  // ---- Settings layer (SL/TP, Max Loss, Take Profit) ----
+  const {
+    slTpSettings, setSlTpSettings,
+    maxLossSettings, expiryMaxLossSettings, setExpiryMaxLossSettings,
+    tpSettings,
+    loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings,
+    handleMaxLossUpdate, handleTakeProfitUpdate,
+  } = useOptionsSettings();
 
   // Column visibility state (persisted)
   const [columnMenuAnchor, setColumnMenuAnchor] = useState(null);
-  const [visibleColumns, setVisibleColumns] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_visible_columns');
-      const parsed = saved ? JSON.parse(saved) : null;
-
-      // Default columns with PoP
-      const defaults = {
-        symbol: true,
-        strike: true,
-        auto: true,
-        expiry: true,
-        size: true,
-        batchQty: true,
-        cashflow: true,
-        entry: true,
-        bid: true,
-        ask: true,
-        sltp: true,
-        maxLoss: true,
-        takeProfit: true,
-        iv: true,
-        pop: true,  // Day 1 & 2: Always show PoP by default
-        pnl: true,
-        actions: true,
-      };
-
-      // Merge saved with defaults (ensures new columns appear for existing users)
-      return parsed ? { ...defaults, ...parsed } : defaults;
-    } catch {
-      return {
-        symbol: true,
-        strike: true,
-        auto: true,
-        expiry: true,
-        size: true,
-        batchQty: true,
-        cashflow: true,
-        entry: true,
-        bid: true,
-        ask: true,
-        sltp: true,
-        maxLoss: true,
-        iv: true,
-        pop: true,
-        pnl: true,
-        actions: true,
-      };
-    }
+  const DEFAULT_VISIBLE_COLUMNS = useMemo(() => ({
+    symbol: true,
+    strike: true,
+    auto: true,
+    expiry: true,
+    size: true,
+    batchQty: true,
+    cashflow: true,
+    entry: true,
+    bid: true,
+    ask: true,
+    sltp: true,
+    maxLoss: true,
+    takeProfit: true,
+    iv: true,
+    pop: true,
+    pnl: true,
+    actions: true,
+  }), []);
+  const [visibleColumns, setVisibleColumns] = usePersistedState('options_visible_columns', DEFAULT_VISIBLE_COLUMNS, {
+    transform: (parsed) => ({ ...DEFAULT_VISIBLE_COLUMNS, ...parsed }),
   });
 
   // Column definitions for the menu
@@ -408,102 +273,46 @@ const OptionsPanel = () => {
     { key: 'actions', label: 'Actions' },
   ];
 
-  // Toggle column visibility - debounced save
+  // Toggle column visibility (auto-saved by usePersistedState)
   const toggleColumn = (columnKey) => {
-    setVisibleColumns((prev) => {
-      const updated = { ...prev, [columnKey]: !prev[columnKey] };
-      debouncedSave('options_visible_columns', updated);
-      return updated;
-    });
+    setVisibleColumns((prev) => ({ ...prev, [columnKey]: !prev[columnKey] }));
   };
 
   // Skip confirmation per strike (persisted in localStorage)
   // Format: { "symbol": { enabled: true, size: 20, side: "sell" } }
-  const [skipConfirmStrikes, setSkipConfirmStrikes] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_skip_confirm_strikes');
-      if (!saved) return {};
-
-      const parsed = JSON.parse(saved);
-
+  const [skipConfirmStrikes, setSkipConfirmStrikes] = usePersistedState('options_skip_confirm_strikes', {}, {
+    transform: (parsed) => {
       // Migrate old format (symbol: true) to new format (symbol: { enabled, size, side })
       const migrated = {};
       for (const [symbol, value] of Object.entries(parsed)) {
         if (value === true) {
-          // Old format - migrate with default size 5
           migrated[symbol] = { enabled: true, size: 5, side: 'sell' };
         } else if (typeof value === 'object' && value !== null) {
-          // New format - keep as is
           migrated[symbol] = value;
         }
       }
       return migrated;
-    } catch {
-      return {};
-    }
+    },
   });
 
   // Last used size (persisted)
-  const [lastUsedSize, setLastUsedSize] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_last_used_size');
-      return saved || '5';
-    } catch {
-      return '5';
-    }
-  });
+  const [lastUsedSize, setLastUsedSize] = usePersistedState('options_last_used_size', '5', { parse: 'string' });
 
   // Scaling strategy state (persisted)
-  const [scalingStrategy, setScalingStrategy] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_scaling_strategy');
-      return saved || 'fixed'; // fixed, profit_based, delta_neutral, volatility_based
-    } catch {
-      return 'fixed';
-    }
-  });
+  const [scalingStrategy, setScalingStrategy] = usePersistedState('options_scaling_strategy', 'fixed', { parse: 'string' });
 
-  const [scalingParams, setScalingParams] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_scaling_params');
-      return saved
-        ? JSON.parse(saved)
-        : {
-          maxPositionSize: 50, // Max contracts per position
-          profitThreshold: 10, // Scale in when profit > 10%
-          lossThreshold: -20, // Stop scaling when loss > -20%
-          deltaTarget: 0, // Target delta for delta-neutral
-          deltaTolerance: 5, // Rebalance when delta exceeds ±5
-          ivChangeThreshold: 10, // Scale based on IV change > 10%
-          stepSize: 5, // Default step size for scaling
-        };
-    } catch {
-      return {
-        maxPositionSize: 50,
-        profitThreshold: 10,
-        lossThreshold: -20,
-        deltaTarget: 0,
-        deltaTolerance: 5,
-        ivChangeThreshold: 10,
-        stepSize: 5,
-      };
-    }
+  const [scalingParams, setScalingParams] = usePersistedState('options_scaling_params', {
+    maxPositionSize: 50,
+    profitThreshold: 10,
+    lossThreshold: -20,
+    deltaTarget: 0,
+    deltaTolerance: 5,
+    ivChangeThreshold: 10,
+    stepSize: 5,
   });
 
   // Custom order for positions (persisted)
-  const [customOrder, setCustomOrder] = useState(() => {
-    try {
-      const saved = localStorage.getItem('options_custom_order');
-      const order = saved ? JSON.parse(saved) : [];
-      if (order.length > 0) {
-        console.log('[OptionsPanel] Loaded custom order from localStorage:', order);
-      }
-      return order;
-    } catch (error) {
-      console.error('[OptionsPanel] Failed to load custom order:', error);
-      return [];
-    }
-  });
+  const [customOrder, setCustomOrder, saveCustomOrderNow] = usePersistedState('options_custom_order', []);
 
   // Batch order state - strike selection and order quantity
   const [selectedStrikes, setSelectedStrikes] = useState({}); // { symbol: true/false }
@@ -515,65 +324,39 @@ const OptionsPanel = () => {
 
   // Auto-loop execution state - with localStorage persistence
   // Now supports per-expiry loops
-  const [autoLoopEnabled, setAutoLoopEnabled] = useState(() => {
-    try {
-      const saved = localStorage.getItem('autoLoopEnabled');
-      return saved ? JSON.parse(saved) : false;
-    } catch { return false; }
-  });
-  const [autoLoopRounds, setAutoLoopRounds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('autoLoopRounds');
-      return saved ? parseInt(saved, 10) : 10;
-    } catch { return 10; }
-  });
+  const [autoLoopEnabled, setAutoLoopEnabled] = usePersistedState('autoLoopEnabled', false);
+  const [autoLoopRounds, setAutoLoopRounds] = usePersistedState('autoLoopRounds', 10, { parse: 'int' });
   // Per-expiry loop state: { [expiryCode]: { running, currentRound, progress, error, stopRef } }
   // Persisted to localStorage for recovery across page refreshes
-  const [expiryLoopState, setExpiryLoopState] = useState(() => {
-    try {
-      const saved = localStorage.getItem('expiryLoopState');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // On load, mark any "running" loops as interrupted (since they couldn't have survived the refresh)
-        const restored = {};
-        for (const [expiry, state] of Object.entries(parsed)) {
-          if (state.running) {
-            // Loop was running when page was refreshed - mark as interrupted
-            restored[expiry] = {
-              ...state,
-              running: false,
-              error: `⚠️ Loop interrupted at round ${state.currentRound}/${state.totalRounds}. Page was refreshed.`,
-              interrupted: true,
-              interruptedAt: Date.now(),
-            };
-          } else {
-            // Preserve completed/errored states for user reference
-            restored[expiry] = state;
-          }
+  const [expiryLoopState, setExpiryLoopState] = usePersistedState('expiryLoopState', {}, {
+    transform: (parsed) => {
+      // On load, mark any "running" loops as interrupted (couldn't have survived refresh)
+      const restored = {};
+      for (const [expiry, state] of Object.entries(parsed)) {
+        if (state.running) {
+          restored[expiry] = {
+            ...state,
+            running: false,
+            error: `⚠️ Loop interrupted at round ${state.currentRound}/${state.totalRounds}. Page was refreshed.`,
+            interrupted: true,
+            interruptedAt: Date.now(),
+          };
+        } else {
+          restored[expiry] = state;
         }
-        return restored;
       }
-      return {};
-    } catch { return {}; }
+      return restored;
+    },
   });
   // Legacy single-loop state (kept for backward compatibility)
   const [autoLoopRunning, setAutoLoopRunning] = useState(false);
   const [autoLoopCurrentRound, setAutoLoopCurrentRound] = useState(0);
   const [autoLoopProgress, setAutoLoopProgress] = useState({}); // { symbol: { filled: bool, orderId: string } }
   const [autoLoopError, setAutoLoopError] = useState(null);
-  const [autoLoopLastRun, setAutoLoopLastRun] = useState(() => {
-    try {
-      const saved = localStorage.getItem('autoLoopLastRun');
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  }); // Stores last run info for recovery
+  const [autoLoopLastRun, setAutoLoopLastRun] = usePersistedState('autoLoopLastRun', null, { immediate: true }); // Stores last run info for recovery
   const autoLoopStopRef = useRef(false); // Flag to stop the loop
   // Per-expiry stop refs (managed as regular object, updated via expiryLoopState)
   const expiryStopRefs = useRef({});
-  // Phase 2: Persistent WebSocket connection ref
-  const socketRef = useRef(null);
-  // Phase 3: Change detection - track last modified timestamp
-  const lastModifiedRef = useRef(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -635,78 +418,22 @@ const OptionsPanel = () => {
     return filledTypes.includes(executionType);
   };
 
-  // Save skipConfirmStrikes to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_skip_confirm_strikes', skipConfirmStrikes);
-  }, [skipConfirmStrikes, debouncedSave]);
-  
-  // Save selected positions to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_selected_positions_payoff', selectedPositionsForPayoff);
-  }, [selectedPositionsForPayoff, debouncedSave]);
-  
-  // Save pollInterval to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_poll_interval', pollInterval);
-  }, [pollInterval, debouncedSave]);
-
-  // Phase 4: Save turbo mode to localStorage
-  useEffect(() => {
-    debouncedSave('options_turbo_mode', turboMode);
-  }, [turboMode, debouncedSave]);
-  
-  // Save lastUsedSize to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_last_used_size', lastUsedSize);
-  }, [lastUsedSize, debouncedSave]);
-
-  // Save customOrder to localStorage whenever it changes (debounced)
-  useEffect(() => {
-    debouncedSave('options_custom_order', customOrder);
-  }, [customOrder, debouncedSave]);
-
-  // Save auto-loop settings to localStorage (debounced)
-  useEffect(() => {
-    debouncedSave('autoLoopEnabled', autoLoopEnabled);
-  }, [autoLoopEnabled, debouncedSave]);
-  
-  useEffect(() => {
-    debouncedSave('autoLoopRounds', autoLoopRounds);
-  }, [autoLoopRounds, debouncedSave]);
-
-  // Save per-expiry loop state to localStorage for recovery (debounced)
-  useEffect(() => {
-    if (Object.keys(expiryLoopState).length > 0) {
-      debouncedSave('expiryLoopState', expiryLoopState);
-    }
-  }, [expiryLoopState, debouncedSave]);
-
-  // Save auto-loop run state for recovery (immediate - critical for recovery)
+  // Check for interrupted auto-loop on mount (autoLoopLastRun already loaded by usePersistedState)
   useEffect(() => {
     if (autoLoopLastRun) {
-      debouncedSave('autoLoopLastRun', autoLoopLastRun, true); // immediate
-    } else {
-      debouncedSave('autoLoopLastRun', null, true); // immediate
-    }
-  }, [autoLoopLastRun, debouncedSave]);
-
-  // Check for interrupted auto-loop on mount
-  useEffect(() => {
-    const savedLastRun = localStorage.getItem('autoLoopLastRun');
-    if (savedLastRun) {
       try {
-        const lastRun = JSON.parse(savedLastRun);
         // If the last run didn't complete (has currentRound but not completed)
-        if (lastRun && lastRun.currentRound < lastRun.totalRounds && !lastRun.completed) {
-          const timeSince = Date.now() - lastRun.startTime;
+        if (autoLoopLastRun.currentRound < autoLoopLastRun.totalRounds && !autoLoopLastRun.completed) {
+          const timeSince = Date.now() - autoLoopLastRun.startTime;
           const minsSince = Math.floor(timeSince / 60000);
-          console.log(`[AUTO-LOOP] Found interrupted run from ${minsSince}m ago: Round ${lastRun.currentRound}/${lastRun.totalRounds}`);
-          setAutoLoopError(`⚠️ Previous run interrupted at round ${lastRun.currentRound}/${lastRun.totalRounds} (${minsSince}m ago). Check your orders!`);
+          console.log(`[AUTO-LOOP] Found interrupted run from ${minsSince}m ago: Round ${autoLoopLastRun.currentRound}/${autoLoopLastRun.totalRounds}`);
+          setAutoLoopError(`⚠️ Previous run interrupted at round ${autoLoopLastRun.currentRound}/${autoLoopLastRun.totalRounds} (${minsSince}m ago). Check your orders!`);
         }
       } catch (e) {
         console.warn('[AUTO-LOOP] Could not parse saved run state:', e);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle drag end - save the custom order to persist across page refreshes (immediate save for UX)
@@ -722,7 +449,7 @@ const OptionsPanel = () => {
       
       // Update state and save immediately (drag operations need instant persistence)
       setCustomOrder(newOrder);
-      debouncedSave('options_custom_order', newOrder, true); // immediate save
+      saveCustomOrderNow(newOrder);
       
       // Log for debugging
       console.log('[OptionsPanel] Position order updated:', newOrder);
@@ -732,7 +459,7 @@ const OptionsPanel = () => {
   // Reset custom order (immediate save)
   const resetOrder = () => {
     setCustomOrder([]);
-    debouncedSave('options_custom_order', null, true); // immediate save
+    saveCustomOrderNow([]);
   };
 
   // Toggle symbol sort (CE/PE grouping)
@@ -870,21 +597,18 @@ const OptionsPanel = () => {
     });
   }, []);
 
-  // Toggle expiry selection (multi-select) - debounced save
+  // Toggle expiry selection (multi-select) - auto-saved by usePersistedState
   const toggleExpirySelection = (expiry) => {
     setSelectedExpiries((prev) => {
-      const newSelection = prev.includes(expiry)
-        ? prev.filter((e) => e !== expiry) // Remove if already selected
-        : [...prev, expiry]; // Add if not selected
-      debouncedSave('options_selected_expiries', newSelection);
-      return newSelection;
+      return prev.includes(expiry)
+        ? prev.filter((e) => e !== expiry)
+        : [...prev, expiry];
     });
   };
 
-  // Clear all expiry selections (show all) - debounced save
+  // Clear all expiry selections (show all)
   const clearExpirySelection = () => {
     setSelectedExpiries([]);
-    debouncedSave('options_selected_expiries', []);
   };
 
   // Sort positions by custom order or default (days to expiration)
@@ -1211,134 +935,6 @@ const OptionsPanel = () => {
     [scalingStrategy, scalingParams, aggregatedGreeks]
   );
 
-  // ============================================================================
-  // PHASE 2 OPTIMIZATION: Unified Dashboard Data Fetching
-  // Single API call instead of 4 separate calls
-  // ============================================================================
-  
-  // Unified dashboard fetch (Phase 2 optimization)
-  const fetchDashboard = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/options/dashboard');
-      
-      if (data?.success) {
-        // Phase 5: Content-hash based change detection - skip ALL state updates if unchanged
-        if (data.last_modified && data.last_modified === lastModifiedRef.current) {
-          return true; // Data unchanged - skip re-render entirely
-        }
-        lastModifiedRef.current = data.last_modified;
-
-        // Update all state from single response
-        const dashPositions = data.positions || [];
-        const dashStatus = data.status || {};
-        const dashPendingOrders = data.pending_orders || [];
-        const dashFuturesPositions = data.futures_positions || [];
-
-        // Phase 5: IV enrichment now uses 60s cache - instant on cache hit
-        const positionsWithIV = await enrichPositionsWithIV(dashPositions);
-
-        setPositions(positionsWithIV);
-        setStatus(dashStatus);
-        setPendingOrders(dashPendingOrders);
-        setFuturesPositions(dashFuturesPositions);
-
-        hasPositionsRef.current = positionsWithIV.length > 0;
-        setError(null);
-
-        return true;
-      } else {
-        throw new Error(data?.error || 'Dashboard fetch failed');
-      }
-    } catch (err) {
-      console.error('Unified dashboard fetch error:', err);
-      // Keep existing data on error
-      if (hasPositionsRef.current) {
-        setError(`⚠️ Dashboard refresh failed: ${err.message}`);
-      } else {
-        setError(`Connection error: ${err.message}`);
-      }
-      return false;
-    }
-  }, []);
-  
-  // Legacy individual fetch functions (kept for fallback compatibility)
-  // Fetch options status
-  const fetchStatus = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/options/status');
-      if (data?.success) {
-        setStatus(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch options status:', err);
-    }
-  }, []);
-
-  // Ref to track if we have positions (avoid dependency cycle)
-  const hasPositionsRef = useRef(false);
-
-  // Ref to track active batch polling intervals for cleanup
-  const activeIntervalsRef = useRef([]);
-
-  // Fetch options positions
-  const fetchPositions = useCallback(async () => {
-    try {
-      // Fetch both options and MV straddle positions in parallel
-      const [optionsResponse, mvStraddleResponse] = await Promise.all([
-        api.get('/api/options/positions'),
-        api.get('/api/mv-straddle/positions').catch(err => {
-          console.warn('MV Straddle positions unavailable:', err.message);
-          return { data: { success: false, positions: [] } };
-        })
-      ]);
-
-      const optionsData = optionsResponse?.data;
-      const mvData = mvStraddleResponse?.data;
-
-      if (optionsData?.success) {
-        const rawOptionsPositions = optionsData.positions || [];
-        const rawMVPositions = mvData?.success ? mvData.positions || [] : [];
-
-        // Merge options and MV straddle positions
-        const combinedPositions = [...rawOptionsPositions, ...rawMVPositions];
-
-        // Enrich positions with IV data from Delta Exchange
-        const positionsWithIV = await enrichPositionsWithIV(combinedPositions);
-
-        setPositions(positionsWithIV);
-        hasPositionsRef.current = positionsWithIV.length > 0;
-
-        // Only clear error if we got fresh (non-cached) data
-        if (!optionsData.cached) {
-          setError(null);
-        } else if (optionsData.warning) {
-          // Show warning for cached data
-          setError(`⚠️ ${optionsData.warning}`);
-        }
-
-        // Log MV positions count if any
-        if (rawMVPositions.length > 0) {
-          console.log(`📊 Loaded ${rawMVPositions.length} MV Straddle position(s)`);
-        }
-      } else {
-        // Keep existing positions on error, just show warning
-        if (hasPositionsRef.current) {
-          setError(`⚠️ Refresh failed: ${optionsData?.error || 'Unknown error'}`);
-        } else {
-          setError(optionsData?.error || 'Failed to fetch positions');
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch options positions:', err);
-      // Keep existing positions on error, just show warning
-      if (hasPositionsRef.current) {
-        setError(`⚠️ Connection issue: ${err.message}`);
-      } else {
-        setError(`Connection error: ${err.message}`);
-      }
-    }
-  }, []); // No dependencies - safe
-
   // Clean up closed positions when they reappear as live positions
   // This happens when user adds back to a closed position
   useEffect(() => {
@@ -1420,377 +1016,6 @@ const OptionsPanel = () => {
     // Update the ref for next comparison
     prevPositionsRef.current = positions;
   }, [positions]); // Only depend on positions, not closedPositions!
-
-  // Fetch futures positions for combined payoff diagram
-  const fetchFuturesPositions = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/futures/positions');
-      if (data?.success) {
-        setFuturesPositions(data.positions || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch futures positions:', err);
-      // Don't show error for futures, just log it
-    }
-  }, []);
-
-  // Track selected futures from localStorage (updates when FuturesPanel changes selection)
-  const [selectedFuturesState, setSelectedFuturesState] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('futures_selected_positions_payoff') || '[]');
-    } catch {
-      return [];
-    }
-  });
-
-  // Listen for localStorage changes (when FuturesPanel updates the selection)
-  useEffect(() => {
-    const handleStorageChange = () => {
-      try {
-        const selectedFutures = JSON.parse(localStorage.getItem('futures_selected_positions_payoff') || '[]');
-        setSelectedFuturesState(selectedFutures);
-      } catch {
-        setSelectedFuturesState([]);
-      }
-    };
-
-    // Listen for storage events (cross-tab) and custom events (same-tab)
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('futures_selected_changed', handleStorageChange);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('futures_selected_changed', handleStorageChange);
-    };
-  }, []);
-
-  // Filter futures positions to only selected ones
-  const visibleFuturesPositions = useMemo(() => {
-    return futuresPositions.filter((pos) => selectedFuturesState.includes(pos.product_symbol));
-  }, [futuresPositions, selectedFuturesState]);
-
-  // Enrich positions with IV data from Delta Exchange
-  // Phase 5 Optimization: Uses module-level cache with 60s TTL
-  const enrichPositionsWithIV = async (positions) => {
-    try {
-      const symbols = positions.map(pos => pos.product_symbol).filter(Boolean);
-      if (symbols.length === 0) return positions;
-
-      const now = Date.now();
-      const cacheAge = now - _ivCache.timestamp;
-
-      // Check if cache is still fresh
-      if (cacheAge < IV_CACHE_TTL_MS && Object.keys(_ivCache.data).length > 0) {
-        // Use cached IV data - only fetch for symbols not in cache
-        const uncachedSymbols = symbols.filter(s => _ivCache.data[s] === undefined);
-
-        if (uncachedSymbols.length === 0) {
-          // All symbols cached - instant return
-          return positions.map(pos => ({
-            ...pos,
-            iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null
-          }));
-        }
-
-        // Only fetch uncached symbols
-        const newIvData = await fetchIVForSymbols(uncachedSymbols);
-        Object.assign(_ivCache.data, newIvData);
-
-        return positions.map(pos => ({
-          ...pos,
-          iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null
-        }));
-      }
-
-      // Cache expired - refresh all
-      const ivMap = await fetchIVForSymbols(symbols);
-      _ivCache.data = ivMap;
-      _ivCache.timestamp = now;
-
-      return positions.map(pos => ({
-        ...pos,
-        iv: ivMap[pos.product_symbol] ?? null
-      }));
-    } catch (err) {
-      console.error('Failed to enrich positions with IV:', err);
-      return positions;
-    }
-  };
-
-  // Fetch IV for specific symbols from Delta Exchange
-  const fetchIVForSymbols = async (symbols) => {
-    const tickerPromises = symbols.map(async (symbol) => {
-      try {
-        const response = await fetch(`https://api.india.delta.exchange/v2/tickers/${symbol}`);
-        const result = await response.json();
-        if (result?.success && result?.result) {
-          const quotes = result.result.quotes || {};
-          const bidIV = parseFloat(quotes.bid_iv) || 0;
-          const askIV = parseFloat(quotes.ask_iv) || 0;
-          return { symbol, iv: bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV) };
-        }
-        return { symbol, iv: null };
-      } catch {
-        return { symbol, iv: null };
-      }
-    });
-    const ivData = await Promise.all(tickerPromises);
-    return Object.fromEntries(ivData.map(d => [d.symbol, d.iv]));
-  };
-
-  // Load SL/TP settings for all positions
-  const loadSLTPSettings = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/options/sl-tp/all');
-      if (data?.success && data.settings) {
-        // Convert array to map by symbol
-        const settingsMap = {};
-        data.settings.forEach((s) => {
-          settingsMap[s.symbol] = s;
-        });
-        setSlTpSettings(settingsMap);
-      }
-    } catch (err) {
-      console.error('Failed to load SL/TP settings:', err);
-    }
-  }, []);
-
-  // Load Max Loss settings for all positions (per-strike and per-expiry)
-  const loadMaxLossSettings = useCallback(async () => {
-    try {
-      // Fetch per-strike max loss settings
-      const { data: strikeData } = await api.get('/api/options/max-loss/strike/all');
-      if (strikeData?.success && strikeData.settings) {
-        const settingsMap = {};
-        strikeData.settings.forEach((s) => {
-          settingsMap[s.symbol] = s;
-        });
-        setMaxLossSettings(settingsMap);
-      }
-
-      // Fetch per-expiry max loss settings
-      const { data: expiryData } = await api.get('/api/options/max-loss/expiry/all');
-      if (expiryData?.success && expiryData.settings) {
-        const settingsMap = {};
-        expiryData.settings.forEach((s) => {
-          settingsMap[s.expiry_code] = s;
-        });
-        setExpiryMaxLossSettings(settingsMap);
-      }
-    } catch (err) {
-      console.error('Failed to load max loss settings:', err);
-    }
-  }, []);
-
-  // Handle max loss setting update from child component
-  const handleMaxLossUpdate = useCallback((symbol, settings) => {
-    setMaxLossSettings((prev) => {
-      if (settings === null) {
-        const next = { ...prev };
-        delete next[symbol];
-        return next;
-      }
-      return { ...prev, [symbol]: settings };
-    });
-  }, []);
-
-  // Load Take Profit settings for all positions
-  const loadTakeProfitSettings = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/options/take-profit/strike/all');
-      if (data?.success && data.settings) {
-        const settingsMap = {};
-        data.settings.forEach((s) => {
-          settingsMap[s.symbol] = s;
-        });
-        setTpSettings(settingsMap);
-      }
-    } catch (err) {
-      console.error('Failed to load take profit settings:', err);
-    }
-  }, []);
-
-  // Handle take profit setting update from child component
-  const handleTakeProfitUpdate = useCallback((symbol, settings) => {
-    setTpSettings((prev) => {
-      if (settings === null) {
-        const next = { ...prev };
-        delete next[symbol];
-        return next;
-      }
-      return { ...prev, [symbol]: settings };
-    });
-  }, []);
-
-  // Fetch pending orders from Delta Exchange
-  const fetchPendingOrders = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/positions/pending-orders');
-      if (data?.success) {
-        setPendingOrders(data.orders || []);
-        setPendingOrdersError(null);
-      } else {
-        setPendingOrdersError(data?.error || 'Failed to fetch pending orders');
-      }
-    } catch (err) {
-      console.error('Failed to fetch pending orders:', err);
-      setPendingOrdersError(err.message);
-    }
-  }, []);
-
-  // Cancel pending order
-  const handleCancelPendingOrder = useCallback(async (order) => {
-    if (!window.confirm('Cancel this order?')) {
-      return;
-    }
-
-    try {
-      const { data } = await api.delete(`/api/options-chain/order/${order.id}/${order.product_id}`);
-      if (data?.success) {
-        // Refresh pending orders list
-        await fetchPendingOrders();
-      } else {
-        console.error('Failed to cancel order:', data?.error);
-        alert(`Failed to cancel order: ${data?.error || 'Unknown error'}`);
-      }
-    } catch (err) {
-      console.error('Failed to cancel order:', err);
-      alert(`Failed to cancel order: ${err.message || 'Unknown error'}`);
-    }
-  }, [fetchPendingOrders]);
-
-  // ============================================================================
-  // PHASE 2 OPTIMIZATION: Use unified dashboard endpoint for initial load and polling
-  // ============================================================================
-  
-  // Initial load - use unified endpoint (Phase 2)
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      
-      // Try unified endpoint first (Phase 2 optimization)
-      const dashSuccess = await fetchDashboard();
-      
-      // Load auxiliary data not in unified endpoint
-      await Promise.all([
-        loadSLTPSettings(),
-        loadMaxLossSettings(),
-        loadTakeProfitSettings(),
-      ]);
-      
-      setLoading(false);
-      
-      // Fallback to individual calls if unified fails
-      if (!dashSuccess) {
-        console.warn('⚠️ Unified dashboard endpoint failed, using legacy individual calls');
-        await Promise.all([
-          fetchStatus(),
-          fetchPositions(),
-          fetchPendingOrders(),
-          fetchFuturesPositions(),
-        ]);
-      }
-    };
-    loadData();
-  }, [fetchDashboard, loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings, fetchStatus, fetchPositions, fetchPendingOrders, fetchFuturesPositions]);
-
-  // Auto-refresh every pollInterval ms - use unified endpoint (Phase 2)
-  // Phase 5 Optimization: Removed SL/TP/MaxLoss/TP settings from poll loop
-  // Those are user-configured and only change when user explicitly modifies them
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      await fetchDashboard();
-    }, pollInterval);
-    return () => clearInterval(interval);
-  }, [fetchDashboard, pollInterval]);
-
-  // ============================================================================
-  // PHASE 2 OPTIMIZATION: Persistent WebSocket Connection
-  // Single connection reused across component lifecycle, smart subscription updates
-  // ============================================================================
-  
-  // Initialize persistent WebSocket connection once
-  useEffect(() => {
-    if (!socketRef.current) {
-      socketRef.current = io({
-        path: '/socket.io',
-        transports: ['polling'],
-        upgrade: false,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 10,
-      });
-      
-      socketRef.current.on('connect', () => {
-        console.log('[OptionsPanel] ⚡ Phase 2: Persistent WebSocket connected');
-      });
-      
-      socketRef.current.on('options_ticker_update', (data) => {
-        const { symbol, best_bid, best_ask, mark_price, timestamp } = data;
-        
-        // Update positions with new bid/ask data
-        setPositions(prevPositions => 
-          prevPositions.map(pos => {
-            if (pos.product_symbol === symbol) {
-              return {
-                ...pos,
-                best_bid,
-                best_ask,
-                mark_price,
-                ws_updated: timestamp
-              };
-            }
-            return pos;
-          })
-        );
-      });
-      
-      socketRef.current.on('disconnect', () => {
-        console.log('[OptionsPanel] WebSocket disconnected (will auto-reconnect)');
-      });
-      
-      socketRef.current.on('connect_error', (error) => {
-        console.error('[OptionsPanel] WebSocket connection error:', error);
-      });
-    }
-    
-    // Cleanup only on unmount (not on every positions change)
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-  }, []); // Empty deps - run once on mount
-  
-  // Update subscriptions when positions change (without reconnecting)
-  useEffect(() => {
-    if (!socketRef.current || positions.length === 0) return;
-    
-    const symbols = positions.map(p => p.product_symbol);
-    
-    // Update subscriptions without reconnecting
-    if (socketRef.current.connected) {
-      socketRef.current.emit('subscribe_options_tickers', { symbols });
-      console.log(`[OptionsPanel] ⚡ Updated ${symbols.length} subscriptions (Phase 2: no reconnect)`);
-    } else {
-      // If not connected yet, subscribe on next connect event
-      const onConnect = () => {
-        socketRef.current.emit('subscribe_options_tickers', { symbols });
-        socketRef.current.off('connect', onConnect);
-      };
-      socketRef.current.on('connect', onConnect);
-    }
-  }, [positions.map(p => p.product_symbol).join(',')]); // Re-subscribe when positions change
-
-  // Cleanup active batch polling intervals on unmount
-  useEffect(() => {
-    return () => {
-      // Clear all active intervals on unmount
-      activeIntervalsRef.current.forEach(clearInterval);
-      activeIntervalsRef.current = [];
-    };
-  }, []);
 
   // Store latest data in refs to avoid useEffect dependency issues
   const sortedPositionsRef = React.useRef(sortedPositions);
@@ -2064,33 +1289,7 @@ const OptionsPanel = () => {
     };
   });
 
-  // Manual refresh - Phase 2: Use unified dashboard endpoint ⚡
-  const handleRefresh = async () => {
-    const refreshStart = performance.now();
-    setRefreshing(true);
-    
-    // Phase 2: Single unified API call
-    const success = await fetchDashboard();
-    
-    // Fallback to individual calls if needed
-    if (!success) {
-      await Promise.all([
-        fetchStatus(),
-        fetchPositions(),
-        fetchPendingOrders(),
-        fetchFuturesPositions()
-      ]);
-    }
-    
-    setRefreshing(false);
-    const refreshTime = performance.now() - refreshStart;
-    
-    if (refreshTime > 200) {
-      console.warn(`⚠️ Slow refresh: ${refreshTime.toFixed(2)}ms (target: <200ms)`);
-    } else {
-      console.log(`⚡ Fast refresh: ${refreshTime.toFixed(2)}ms (Phase 2 unified endpoint)`);
-    }
-  };
+  // handleRefresh — now provided by useOptionsPositions hook
 
   // Close position
   const handleClose = async (position) => {
@@ -3030,8 +2229,7 @@ const OptionsPanel = () => {
   // Clear auto-loop error/warning and persisted state
   const clearAutoLoopError = () => {
     setAutoLoopError(null);
-    setAutoLoopLastRun(null);
-    localStorage.removeItem('autoLoopLastRun');
+    setAutoLoopLastRun(null); // usePersistedState auto-removes from localStorage when set to null
   };
 
   // ==================== PER-EXPIRY AUTO-LOOP ====================
@@ -3329,12 +2527,6 @@ const OptionsPanel = () => {
           delete updated[expiryCode];
         }
       }
-      // Also update localStorage to reflect the cleared state
-      if (Object.keys(updated).length > 0) {
-        localStorage.setItem('expiryLoopState', JSON.stringify(updated));
-      } else {
-        localStorage.removeItem('expiryLoopState');
-      }
       return updated;
     });
   };
@@ -3342,8 +2534,6 @@ const OptionsPanel = () => {
   // Clear all persisted loop state (useful for cleanup)
   const clearAllLoopState = () => {
     setExpiryLoopState({});
-    localStorage.removeItem('expiryLoopState');
-    localStorage.removeItem('autoLoopLastRun');
     setAutoLoopError(null);
     setAutoLoopLastRun(null);
     console.log('[AUTO-LOOP] Cleared all persisted loop state');
@@ -3649,9 +2839,7 @@ const OptionsPanel = () => {
                 <IconButton
                   size="small"
                   onClick={() => {
-                    const next = !secondaryToolbarOpen;
-                    setSecondaryToolbarOpen(next);
-                    localStorage.setItem('options_secondary_toolbar_open', JSON.stringify(next));
+                    setSecondaryToolbarOpen(prev => !prev);
                   }}
                   sx={{ color: secondaryToolbarOpen ? 'primary.main' : 'text.secondary' }}
                 >
@@ -3817,9 +3005,7 @@ const OptionsPanel = () => {
                   '&:hover': { bgcolor: 'action.hover' },
                 }}
                 onClick={() => {
-                  const next = !expiryMaxLossCollapsed;
-                  setExpiryMaxLossCollapsed(next);
-                  localStorage.setItem('options_expiry_maxloss_collapsed', JSON.stringify(next));
+                  setExpiryMaxLossCollapsed(prev => !prev);
                 }}
               >
                 {expiryMaxLossCollapsed ? <ExpandMoreIcon sx={{ fontSize: '1rem' }} /> : <ExpandLessIcon sx={{ fontSize: '1rem' }} />}
