@@ -179,7 +179,7 @@ export const useChartData = (parsedPositions, opts) => {
 
     const weightedIV = showProbDist && parsedPos.length > 0 ? calculateWeightedIV(parsedPos) : 0.8;
     const avgYearsToExpiry = minDaysToExpiry / 365.25;
-    const distFn = showProbDist && parsedPos.length > 0 && avgYearsToExpiry > 0.001
+    const distFn = showProbDist && parsedPos.length > 0 && avgYearsToExpiry > 1e-6
       ? createPriceDistribution(spotPrice, weightedIV, avgYearsToExpiry) : null;
 
     const midDays = minDaysToExpiry * 0.5;
