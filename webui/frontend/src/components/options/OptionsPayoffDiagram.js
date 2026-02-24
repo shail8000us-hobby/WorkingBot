@@ -8,122 +8,39 @@
  * - Projected profit display at current spot
  * - Real IV calculation from market prices
  *
- * @version 3.0.0 - Sensibull Style
+ * @version 4.0.0 - Extracted math + alert dialog, fixed blue line
  */
 
-import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   ReferenceLine,
   Area,
   ComposedChart,
   Line,
   ReferenceArea,
-  Brush,
 } from 'recharts';
 import {
-  Box, Typography, Paper, Chip, Slider, Stack, Divider, IconButton, Popover,
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  RadioGroup, Radio, FormControlLabel, CircularProgress, Alert
+  Box, Typography, Paper, Chip, Slider, IconButton, Popover,
 } from '@mui/material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import NotificationsIcon from '@mui/icons-material/Notifications';
 import AlertsPanel from './AlertsPanel';
-
-// ============================================================================
-// BLACK-SCHOLES MODEL
-// ============================================================================
-
-const normalCDF = (x) => {
-  if (x === 0) return 0.5;
-  const a1 = 0.254829592,
-    a2 = -0.284496736,
-    a3 = 1.421413741;
-  const a4 = -1.453152027,
-    a5 = 1.061405429,
-    p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  const absX = Math.abs(x);
-  const t = 1.0 / (1.0 + p * absX);
-  const y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp((-absX * absX) / 2);
-  return 0.5 * (1.0 + sign * y);
-};
-
-const normalPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
-
-const blackScholesPrice = (S, K, T, r, sigma, type) => {
-  if (T <= 0) return type === 'call' ? Math.max(0, S - K) : Math.max(0, K - S);
-  if (sigma <= 0 || S <= 0 || K <= 0)
-    return type === 'call' ? Math.max(0, S - K) : Math.max(0, K - S);
-
-  const sqrtT = Math.sqrt(T);
-  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
-  const d2 = d1 - sigma * sqrtT;
-
-  return type === 'call'
-    ? S * normalCDF(d1) - K * Math.exp(-r * T) * normalCDF(d2)
-    : K * Math.exp(-r * T) * normalCDF(-d2) - S * normalCDF(-d1);
-};
-
-const calculateImpliedVolatility = (marketPrice, S, K, T, r, type) => {
-  if (T <= 0 || marketPrice <= 0) return 0.8;
-
-  let sigma = Math.sqrt((2 * Math.PI) / T) * (marketPrice / S);
-  sigma = Math.max(0.1, Math.min(3.0, sigma));
-
-  for (let i = 0; i < 50; i++) {
-    const price = blackScholesPrice(S, K, T, r, sigma, type);
-    const sqrtT = Math.sqrt(T);
-    const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
-    const vega = S * sqrtT * normalPDF(d1);
-    if (Math.abs(vega) < 1e-10) break;
-    const diff = marketPrice - price;
-    if (Math.abs(diff) < 0.0001) return sigma;
-    sigma = Math.max(0.01, Math.min(5.0, sigma + diff / vega));
-  }
-
-  let low = 0.01,
-    high = 3.0;
-  for (let i = 0; i < 100; i++) {
-    const mid = (low + high) / 2;
-    const price = blackScholesPrice(S, K, T, r, mid, type);
-    if (Math.abs(price - marketPrice) < 0.0001) return mid;
-    if (price < marketPrice) low = mid;
-    else high = mid;
-  }
-  return (low + high) / 2;
-};
-
-// ============================================================================
-// HELPER: Format date for display
-// ============================================================================
-const formatDate = (date) => {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')} PM`;
-};
+import PayoffAlertDialog from './PayoffAlertDialog';
+import {
+  blackScholesPrice,
+  calculateImpliedVolatility,
+  getContractMultiplier,
+  RISK_FREE_RATE,
+  formatDate,
+} from './payoffCalculator';
 
 // ============================================================================
 // MAIN COMPONENT
@@ -153,9 +70,6 @@ const OptionsPayoffDiagram = ({
   const [alertPrice, setAlertPrice] = useState(null);
   const [alertPnLExpiry, setAlertPnLExpiry] = useState(null);
   const [alertPnLTarget, setAlertPnLTarget] = useState(null);
-  const [alertDirection, setAlertDirection] = useState('above');
-  const [alertNote, setAlertNote] = useState('');
-  const [alertLoading, setAlertLoading] = useState(false);
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [alertsRefreshTrigger, setAlertsRefreshTrigger] = useState(0);
 
@@ -189,12 +103,12 @@ const OptionsPayoffDiagram = ({
         positions: [],
         spotPrice,
         minDaysToExpiry: 0.001,
-        riskFreeRate: 0.05,
+        riskFreeRate: RISK_FREE_RATE,
         nearestExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
       };
     }
 
-    const riskFreeRate = 0.05;
+    const riskFreeRate = RISK_FREE_RATE;
 
     const parsed = visiblePositions.map((pos) => {
       const parts = pos.product_symbol.split('-');
@@ -231,7 +145,11 @@ const OptionsPayoffDiagram = ({
         midPrice > 0 ? midPrice : parseFloat(pos.mid_price || pos.mark_price || entryPrice);
 
       let iv = 0.8;
-      if (markPrice > 0 && yearsToExpiry > 0.001 && !isClosed) {
+      // Prefer exchange-provided IV from greeks if available (most accurate)
+      const exchangeIV = pos.greeks?.iv ? parseFloat(pos.greeks.iv) : null;
+      if (exchangeIV && exchangeIV > 0.05 && exchangeIV < 4.0) {
+        iv = exchangeIV;
+      } else if (markPrice > 0 && yearsToExpiry > 0.001 && !isClosed) {
         const calculatedIV = calculateImpliedVolatility(
           markPrice,
           spotPrice,
@@ -380,14 +298,16 @@ const OptionsPayoffDiagram = ({
 
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
+        // Contract multiplier: 0.001 for BTC, 0.01 for ETH
+        const multiplier = pos.symbol?.toUpperCase().includes('ETH') ? 0.01 : 0.001;
 
         if (isShort) {
           // SHORT: profit = (premium received - intrinsic value owed) * size * multiplier
-          const pnl = (pos.entryPrice - intrinsic) * absSize * 0.001;
+          const pnl = (pos.entryPrice - intrinsic) * absSize * multiplier;
           expiryPayoff += pnl;
         } else {
           // LONG: profit = (intrinsic value - premium paid) * size * multiplier
-          const pnl = (intrinsic - pos.entryPrice) * absSize * 0.001;
+          const pnl = (intrinsic - pos.entryPrice) * absSize * multiplier;
           expiryPayoff += pnl;
         }
       });
@@ -396,7 +316,7 @@ const OptionsPayoffDiagram = ({
       futuresPositions.forEach((futPos) => {
         const size = futPos.size;
         const entryPrice = futPos.entry_price;
-        const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange
+        const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange BTC futures
 
         // P&L = (current_price - entry_price) * size * multiplier
         const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
@@ -404,12 +324,15 @@ const OptionsPayoffDiagram = ({
       });
 
       // Split into profit/loss for colored areas
-      point.expiryProfit = expiryPayoff >= 0 ? expiryPayoff : 0;
-      point.expiryLoss = expiryPayoff < 0 ? expiryPayoff : 0;
-      point.expiry = expiryPayoff;
+      // Guard against NaN/Infinity from calculation edge cases
+      const safeExpiry = isFinite(expiryPayoff) ? expiryPayoff : 0;
+      point.expiryProfit = safeExpiry >= 0 ? safeExpiry : 0;
+      point.expiryLoss = safeExpiry < 0 ? safeExpiry : 0;
+      point.expiry = safeExpiry;
 
-      // Calculate "On Target Date" payoff
-      // ANCHORED to actual current unrealized P&L, then project change using Black-Scholes
+      // Calculate "On Target Date" payoff using DIRECT Black-Scholes approach
+      // For each position: theoretical P&L = (BS_price_at_this_spot - entry_price) * sign * size * multiplier
+      // This eliminates baseline drift from IV solver inaccuracies (theoAtCurrentSpot ≠ markPrice)
       // For CLOSED positions: Add realized PnL as constant offset (no price exposure)
       let targetPayoff = 0;
       parsedPos.forEach((pos) => {
@@ -421,28 +344,12 @@ const OptionsPayoffDiagram = ({
 
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
-
-        // Current unrealized P&L (from actual market data)
-        // SHORT: profit when mark < entry (option decayed)
-        // LONG: profit when mark > entry (option gained value)
-        let currentUnrealizedPnL;
-        if (isShort) {
-          currentUnrealizedPnL = (pos.entryPrice - pos.markPrice) * absSize * 0.001;
-        } else {
-          currentUnrealizedPnL = (pos.markPrice - pos.entryPrice) * absSize * 0.001;
-        }
+        // Contract multiplier: 0.001 for BTC, 0.01 for ETH
+        const multiplier = pos.symbol?.toUpperCase().includes('ETH') ? 0.01 : 0.001;
 
         const remainingYears = Math.max(0.0001, (pos.daysToExpiry - targetDaysFromNow) / 365.25);
 
-        // Calculate theoretical prices at current spot and at this price point
-        const theoAtCurrentSpot = blackScholesPrice(
-          spotPrice,
-          pos.strike,
-          remainingYears,
-          riskFreeRate,
-          pos.iv,
-          pos.type
-        );
+        // Calculate theoretical option price at this price point and target date
         const theoAtThisPrice = blackScholesPrice(
           price,
           pos.strike,
@@ -452,31 +359,31 @@ const OptionsPayoffDiagram = ({
           pos.type
         );
 
-        // Projected change from current spot to this price point
-        // SHORT: loses money when option price goes up
-        // LONG: gains money when option price goes up
-        let projectedChange;
-        if (isShort) {
-          projectedChange = (theoAtCurrentSpot - theoAtThisPrice) * absSize * 0.001;
-        } else {
-          projectedChange = (theoAtThisPrice - theoAtCurrentSpot) * absSize * 0.001;
-        }
+        // Guard against NaN/Infinity from BS calculation
+        const safeTheo = isFinite(theoAtThisPrice) ? theoAtThisPrice : 0;
 
-        // Total P&L = current actual P&L + projected change
-        targetPayoff += currentUnrealizedPnL + projectedChange;
+        // Direct P&L calculation — no intermediate theoAtCurrentSpot subtraction
+        // SHORT: P&L = (entryPrice - theoPrice) * size * multiplier (profit when option decays)
+        // LONG:  P&L = (theoPrice - entryPrice) * size * multiplier (profit when option gains)
+        if (isShort) {
+          targetPayoff += (pos.entryPrice - safeTheo) * absSize * multiplier;
+        } else {
+          targetPayoff += (safeTheo - pos.entryPrice) * absSize * multiplier;
+        }
       });
 
       // Add FUTURES payoff for target date (same as expiry, linear)
       futuresPositions.forEach((futPos) => {
         const size = futPos.size;
         const entryPrice = futPos.entry_price;
-        const CONTRACT_MULTIPLIER = 0.001;
+        const CONTRACT_MULTIPLIER = 0.001; // BTC futures
 
         const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
         targetPayoff += pnl;
       });
 
-      point.target = targetPayoff;
+      // Guard against NaN/Infinity in final target payoff
+      point.target = isFinite(targetPayoff) ? targetPayoff : 0;
 
       data.push(point);
     }
@@ -633,8 +540,6 @@ const OptionsPayoffDiagram = ({
           setAlertPrice(payload.price);
           setAlertPnLExpiry(payload.expiry || 0);
           setAlertPnLTarget(payload.target || 0);
-          setAlertDirection(payload.expiry >= 0 ? 'below' : 'above');
-          setAlertNote('');
           setAlertDialogOpen(true);
         }
       }
@@ -1438,9 +1343,6 @@ const OptionsPayoffDiagram = ({
           })}
         </ComposedChart>
       </ResponsiveContainer>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-        Debug: {activeAlerts.length} total alerts, {filteredAlerts.length} shown for expiry ({currentExpiryStr || 'all'}).
-      </Typography>
 
       {/* Projected Profit Display */}
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: -1, mb: 2 }}>
@@ -1597,79 +1499,6 @@ const OptionsPayoffDiagram = ({
         </Box>
       </Box>
 
-      {/* Stats Row */}
-      <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: 'wrap', gap: 1 }}>
-        <Chip
-          label={`Spot: $${spotPrice.toLocaleString()}`}
-          size="small"
-          variant="outlined"
-          sx={{ borderColor: '#3b82f6', color: '#3b82f6' }}
-        />
-        <Chip
-          label={`Max Profit: $${maxProfit.toFixed(2)}`}
-          size="small"
-          sx={{ bgcolor: 'rgba(16,185,129,0.15)', color: '#10b981' }}
-        />
-        <Chip
-          label={`Max Loss: $${maxLoss.toFixed(2)}`}
-          size="small"
-          sx={{ bgcolor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}
-        />
-        {breakevens.length > 0 && (
-          <Chip
-            label={`Break-even: ${breakevens.map((b) => `$${b.toLocaleString()}`).join(', ')}`}
-            size="small"
-            variant="outlined"
-          />
-        )}
-      </Stack>
-
-      {/* Position Details */}
-      {parsedPositions?.positions && (
-        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
-            <strong>Options Positions ({parsedPositions.positions.length}):</strong>
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {parsedPositions.positions.map((pos, idx) => (
-              <Chip
-                key={idx}
-                size="small"
-                variant="outlined"
-                sx={{
-                  borderColor: pos.type === 'call' ? '#10b981' : '#ef4444',
-                  color: pos.type === 'call' ? '#10b981' : '#ef4444',
-                }}
-                label={`${pos.size > 0 ? 'Long' : 'Short'} ${Math.abs(pos.size)} ${pos.type.toUpperCase()} $${pos.strike.toLocaleString()} • IV ${Math.round(pos.iv * 100)}%`}
-              />
-            ))}
-          </Box>
-        </Box>
-      )}
-
-      {/* Futures Position Details */}
-      {futuresPositions.length > 0 && (
-        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
-            <strong>Futures Positions ({futuresPositions.length}):</strong>
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {futuresPositions.map((pos, idx) => (
-              <Chip
-                key={idx}
-                size="small"
-                variant="outlined"
-                sx={{
-                  borderColor: '#3b82f6',
-                  color: '#3b82f6',
-                }}
-                label={`${pos.size > 0 ? 'Long' : 'Short'} ${Math.abs(pos.size)} ${pos.product_symbol} @ $${parseFloat(pos.entry_price).toLocaleString()}`}
-              />
-            ))}
-          </Box>
-        </Box>
-      )}
-
       {/* Alerts Panel - Manage Price Notifications */}
       <AlertsPanel
         spotPrice={chartData?.spotPrice}
@@ -1678,121 +1507,17 @@ const OptionsPayoffDiagram = ({
         expiryDate={chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null}
       />
 
-      {/* Alert Creation Dialog - Opens when clicking on payoff graph */}
-      <Dialog
+      {/* Alert Creation Dialog - Extracted Component */}
+      <PayoffAlertDialog
         open={alertDialogOpen}
         onClose={() => setAlertDialogOpen(false)}
-        maxWidth="xs"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: 'background.paper',
-            backgroundImage: 'none',
-          }
-        }}
-      >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <NotificationsIcon sx={{ color: '#ffc107' }} />
-          Create Price Alert
-        </DialogTitle>
-        <DialogContent>
-          {alertPrice && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Click detected at <strong>${alertPrice?.toLocaleString()}</strong>
-              <br />
-              Expected P&L: <span style={{ color: alertPnLExpiry >= 0 ? '#10b981' : '#ef4444' }}>
-                ${alertPnLExpiry?.toFixed(2)}
-              </span>
-            </Alert>
-          )}
-
-          <TextField
-            label="Target Price"
-            type="number"
-            value={alertPrice || ''}
-            onChange={(e) => setAlertPrice(parseFloat(e.target.value))}
-            fullWidth
-            sx={{ mt: 1 }}
-            InputProps={{ startAdornment: <Typography sx={{ mr: 0.5 }}>$</Typography> }}
-          />
-
-          <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
-            Trigger when price:
-          </Typography>
-          <RadioGroup
-            value={alertDirection}
-            onChange={(e) => setAlertDirection(e.target.value)}
-          >
-            <FormControlLabel
-              value="above"
-              control={<Radio size="small" />}
-              label={<Typography variant="body2">Goes above ${alertPrice?.toLocaleString() || '...'}</Typography>}
-            />
-            <FormControlLabel
-              value="below"
-              control={<Radio size="small" />}
-              label={<Typography variant="body2">Drops below ${alertPrice?.toLocaleString() || '...'}</Typography>}
-            />
-            <FormControlLabel
-              value="cross"
-              control={<Radio size="small" />}
-              label={<Typography variant="body2">Crosses ${alertPrice?.toLocaleString() || '...'} (either direction)</Typography>}
-            />
-          </RadioGroup>
-
-          <TextField
-            label="Note (optional)"
-            value={alertNote}
-            onChange={(e) => setAlertNote(e.target.value)}
-            fullWidth
-            multiline
-            rows={2}
-            sx={{ mt: 2 }}
-            placeholder="e.g., Take profit at this level, or enter new position"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAlertDialogOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={!alertPrice || alertLoading}
-            onClick={async () => {
-              setAlertLoading(true);
-              try {
-                const response = await fetch('/api/alerts', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    target_price: alertPrice,
-                    direction: alertDirection,
-                    note: alertNote || undefined,
-                    expected_pnl_expiry: alertPnLExpiry,
-                    expected_pnl_target: alertPnLTarget,
-                    notification_channels: 'telegram,in_app',
-                    expiry_date: chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null,
-                  }),
-                });
-                const data = await response.json();
-                if (data.success) {
-                  setAlertDialogOpen(false);
-                  // Trigger panel refresh
-                  setAlertsRefreshTrigger((prev) => prev + 1);
-                } else {
-                  console.error('Failed to create alert:', data.error);
-                }
-              } catch (err) {
-                console.error('Failed to create alert:', err);
-              } finally {
-                setAlertLoading(false);
-              }
-            }}
-            sx={{ bgcolor: '#ffc107', color: '#000', '&:hover': { bgcolor: '#ffb300' } }}
-            startIcon={alertLoading ? <CircularProgress size={16} /> : <NotificationsIcon />}
-          >
-            {alertLoading ? 'Creating...' : 'Create Alert'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        alertPrice={alertPrice}
+        setAlertPrice={setAlertPrice}
+        alertPnLExpiry={alertPnLExpiry}
+        alertPnLTarget={alertPnLTarget}
+        expiryDate={chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null}
+        onAlertCreated={() => setAlertsRefreshTrigger((prev) => prev + 1)}
+      />
     </Paper>
   );
 };
