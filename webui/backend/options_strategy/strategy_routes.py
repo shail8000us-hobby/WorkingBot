@@ -12,6 +12,7 @@ Endpoints:
 - POST /close/<id>      - Close strategy
 - GET  /pnl/<id>        - Get strategy P&L
 - GET  /payoff/<id>     - Get payoff diagram
+- POST /payoff/calculate - Standalone payoff calculation
 - DELETE /<id>          - Delete strategy
 
 Created: January 5, 2026
@@ -602,6 +603,70 @@ def get_payoff_diagram(strategy_id):
     if 'error' in result:
         return jsonify(result), 400
     
+    return jsonify(result)
+
+
+@options_strategy_bp.route('/payoff/calculate', methods=['POST'])
+@handle_errors
+def calculate_payoff():
+    """
+    Standalone payoff calculation — accepts arbitrary legs (no saved strategy needed).
+
+    Request body:
+        {
+            "legs": [
+                {
+                    "option_type": "call"|"put",
+                    "strike": 100000,
+                    "quantity": 1,
+                    "side": "buy"|"sell",
+                    "premium": 2000,
+                    "iv": 0.8,
+                    "symbol": "BTC",
+                    "expiry_date": "2026-01-25"  // optional
+                }
+            ],
+            "spot": 102000,
+            "price_range_pct": 0.25,
+            "num_points": 200,
+            "current_time_to_expiry": null  // optional, years
+        }
+
+    Response:
+        {
+            "success": true,
+            "price_points": [...],
+            "payoff_values_expiry": [...],
+            "payoff_values_current": [...],
+            "max_profit": ...,
+            "max_loss": ...,
+            "breakeven_points": [...],
+            "current_price": ...
+        }
+    """
+    from .payoff_engine import calculate_payoff_api
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+
+    legs = data.get('legs')
+    spot = data.get('spot')
+
+    if not legs or not spot:
+        return jsonify({'error': 'legs and spot are required fields'}), 400
+
+    result = calculate_payoff_api(
+        legs=legs,
+        spot=float(spot),
+        price_range_pct=float(data.get('price_range_pct', 0.25)),
+        num_points=int(data.get('num_points', 200)),
+        current_time_to_expiry=float(data['current_time_to_expiry']) if data.get('current_time_to_expiry') else None,
+    )
+
+    if not result.get('success'):
+        return jsonify(result), 400
+
     return jsonify(result)
 
 

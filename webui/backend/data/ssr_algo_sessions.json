@@ -1359,16 +1359,16 @@
         }
       ],
       "live_greeks": {
-        "net_delta": -1.5e-05,
+        "net_delta": -1.6e-05,
         "net_gamma": 1e-06,
-        "net_theta": -0.0095,
-        "net_vega": 0.0071,
+        "net_theta": -0.0082,
+        "net_vega": 0.0074,
         "leg_count": 6
       },
       "live_pnl": {
-        "unrealized_pnl": -0.0932,
+        "unrealized_pnl": -0.1344,
         "realized_pnl": 0.0,
-        "total_pnl": -0.0932,
+        "total_pnl": -0.1344,
         "per_leg_pnl": [
           {
             "symbol": "C-BTC-67500-130326",
@@ -1376,8 +1376,8 @@
             "trigger_id": 0,
             "size": -2,
             "entry_price": 3203.04,
-            "current_price": 1507.44,
-            "pnl": 3.3912
+            "current_price": 1405.16,
+            "pnl": 3.5957
           },
           {
             "symbol": "P-BTC-67500-130326",
@@ -1385,8 +1385,8 @@
             "trigger_id": 0,
             "size": -2,
             "entry_price": 3046.03,
-            "current_price": 4740.9,
-            "pnl": -3.3897
+            "current_price": 5019.0,
+            "pnl": -3.9459
           },
           {
             "symbol": "C-BTC-72000-130326",
@@ -1394,8 +1394,8 @@
             "trigger_id": 0,
             "size": 4,
             "entry_price": 1441.1,
-            "current_price": 503.55,
-            "pnl": -3.7502
+            "current_price": 465.04,
+            "pnl": -3.9042
           },
           {
             "symbol": "P-BTC-63000-130326",
@@ -1403,8 +1403,8 @@
             "trigger_id": 0,
             "size": 4,
             "entry_price": 1493.48,
-            "current_price": 2457.06,
-            "pnl": 3.8543
+            "current_price": 2624.22,
+            "pnl": 4.5229
           },
           {
             "symbol": "C-BTC-75000-130326",
@@ -1412,8 +1412,8 @@
             "trigger_id": 0,
             "size": -2,
             "entry_price": 783.23,
-            "current_price": 255.41,
-            "pnl": 1.0556
+            "current_price": 241.03,
+            "pnl": 1.0844
           },
           {
             "symbol": "P-BTC-60000-130326",
@@ -1421,12 +1421,12 @@
             "trigger_id": 0,
             "size": -2,
             "entry_price": 938.22,
-            "current_price": 1565.42,
-            "pnl": -1.2544
+            "current_price": 1681.89,
+            "pnl": -1.4873
           }
         ]
       },
-      "greeks_updated_at": "2026-02-24T02:56:25.792189",
+      "greeks_updated_at": "2026-02-24T03:23:40.012159",
       "execution_stats": {
         "total_orders": 0,
         "total_slippage_pct": 0.0,
@@ -1438,7 +1438,7 @@
       "daily_hedge_count": 0,
       "hedge_history": [],
       "created_at": "2026-02-20T12:43:18.199331",
-      "updated_at": "2026-02-24T02:56:25.792788",
+      "updated_at": "2026-02-24T03:23:40.012902",
       "rolled_from": "ssr_001_06032026_btc_cff6",
       "cumulative_realized_pnl": -0.2687,
       "max_loss_value": -4.78529852138,

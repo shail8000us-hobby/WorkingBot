@@ -178,6 +178,112 @@ export const calculatePortfolioDelta = (S, positions, targetDaysFromNow = 0, r =
 };
 
 // ============================================================================
+// PORTFOLIO GREEKS (C2: Greeks in tooltip)
+// ============================================================================
+
+/**
+ * Calculate portfolio theta at a given spot price.
+ * Theta = rate of time-decay per day, in $ units (accounting for multiplier).
+ *
+ * @param {number} S - Spot price
+ * @param {Array} positions - Parsed positions array
+ * @param {number} targetDaysFromNow - Days from now for target date
+ * @param {number} r - Risk-free rate
+ * @returns {number} Portfolio theta ($/day)
+ */
+export const calculatePortfolioTheta = (S, positions, targetDaysFromNow = 0, r = RISK_FREE_RATE) => {
+  let totalTheta = 0;
+  positions.forEach((pos) => {
+    if (pos.isClosed) return;
+    const remainingYears = Math.max(0.0001, (pos.daysToExpiry - targetDaysFromNow) / 365.25);
+    if (pos.iv <= 0 || S <= 0 || pos.strike <= 0) return;
+
+    const sqrtT = Math.sqrt(remainingYears);
+    const d1 = (Math.log(S / pos.strike) + (r + 0.5 * pos.iv * pos.iv) * remainingYears) / (pos.iv * sqrtT);
+    const multiplier = getContractMultiplier(pos.symbol);
+
+    // Theta = -(S * N'(d1) * σ) / (2 * √T) — simplified for r=0
+    const dailyTheta = -(S * normalPDF(d1) * pos.iv) / (2 * sqrtT * 365.25);
+    const sign = pos.size < 0 ? -1 : 1;
+    totalTheta += dailyTheta * sign * Math.abs(pos.size) * multiplier;
+  });
+  return totalTheta;
+};
+
+/**
+ * Calculate portfolio gamma at a given spot price.
+ * Gamma = rate of change of delta per $1 spot move.
+ *
+ * @param {number} S - Spot price
+ * @param {Array} positions - Parsed positions array
+ * @param {number} targetDaysFromNow - Days from now for target date
+ * @param {number} r - Risk-free rate
+ * @returns {number} Portfolio gamma
+ */
+export const calculatePortfolioGamma = (S, positions, targetDaysFromNow = 0, r = RISK_FREE_RATE) => {
+  let totalGamma = 0;
+  positions.forEach((pos) => {
+    if (pos.isClosed) return;
+    const remainingYears = Math.max(0.0001, (pos.daysToExpiry - targetDaysFromNow) / 365.25);
+    if (pos.iv <= 0 || S <= 0 || pos.strike <= 0) return;
+
+    const sqrtT = Math.sqrt(remainingYears);
+    const d1 = (Math.log(S / pos.strike) + (r + 0.5 * pos.iv * pos.iv) * remainingYears) / (pos.iv * sqrtT);
+    const multiplier = getContractMultiplier(pos.symbol);
+
+    // Gamma = N'(d1) / (S * σ * √T)
+    const gamma = normalPDF(d1) / (S * pos.iv * sqrtT);
+    totalGamma += gamma * pos.size * multiplier;
+  });
+  return totalGamma;
+};
+
+// ============================================================================
+// PROBABILITY OF PROFIT (B4)
+// ============================================================================
+
+/**
+ * Calculate the Probability of Profit (PoP) for the entire portfolio.
+ * Uses Monte Carlo-like approach: sample the expiry payoff curve and find
+ * the fraction of the lognormal distribution where payoff > 0.
+ *
+ * @param {number} spotPrice - Current spot price
+ * @param {number} weightedIV - Portfolio-weighted IV
+ * @param {number} yearsToExpiry - Time to expiry in years
+ * @param {Array} chartData - The computed chart data array [{price, expiry, ...}]
+ * @returns {number} Probability of profit 0-100 (%)
+ */
+export const calculateProbabilityOfProfit = (spotPrice, weightedIV, yearsToExpiry, chartData) => {
+  if (!chartData || chartData.length === 0 || yearsToExpiry <= 0 || weightedIV <= 0) return null;
+
+  const sigma = Math.max(0.05, Math.min(5.0, weightedIV));
+  const mu = Math.log(spotPrice) + (-0.5 * sigma * sigma) * yearsToExpiry;
+  const sigmaT = sigma * Math.sqrt(yearsToExpiry);
+
+  // Calculate PoP by integrating probability where expiry payoff > 0
+  let profitProb = 0;
+  let totalProb = 0;
+
+  for (let i = 1; i < chartData.length; i++) {
+    const p = chartData[i];
+    const prevP = chartData[i - 1];
+    if (p.price <= 0) continue;
+
+    const z = (Math.log(p.price) - mu) / sigmaT;
+    const pdf = Math.exp(-0.5 * z * z) / (p.price * sigmaT * Math.sqrt(2 * Math.PI));
+    const dp = p.price - prevP.price; // price step
+    const prob = pdf * dp;
+
+    totalProb += prob;
+    if (p.expiry > 0) {
+      profitProb += prob;
+    }
+  }
+
+  return totalProb > 0 ? (profitProb / totalProb) * 100 : null;
+};
+
+// ============================================================================
 // PROBABILITY DISTRIBUTION (Phase E3)
 // ============================================================================
 

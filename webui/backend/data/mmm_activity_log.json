@@ -1,1654 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_173939_500",
-      "timestamp": "2026-02-23T17:39:39.142335+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_173939_500",
-      "timestamp": "2026-02-23T17:39:39.158607+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.19 below floor $0.00 (peak $0.01)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.19 below floor $0.00 (peak $0.01)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_173939_500",
-      "timestamp": "2026-02-23T17:39:39.818670+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": 2.2,
-          "rv_annualized": 84.22,
-          "vol_regime_score": 0.465,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -2.027,
-          "ema_slope": -16.9,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_174100_500",
-      "timestamp": "2026-02-23T17:41:00.233800+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw (alert), trailing_stop (alert)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "whipsaw",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_174100_500",
-      "timestamp": "2026-02-23T17:41:00.250342+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-2.82 below floor $0.04 (peak $0.20)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-2.82 below floor $0.04 (peak $0.20)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_174100_500",
-      "timestamp": "2026-02-23T17:41:00.262533+00:00",
-      "type": "session_paused",
-      "type_label": "Session Paused",
-      "category": "system",
-      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-23T17:51:00.",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s.",
-        "trigger": "whipsaw",
-        "resume_at": "2026-02-23T17:51:00.218900+00:00"
-      }
-    },
-    {
-      "id": "act_174440_500",
-      "timestamp": "2026-02-23T17:44:40.165091+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": 3.74,
-          "rv_annualized": 84.41,
-          "vol_regime_score": 0.497,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.946,
-          "ema_slope": -12.31,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_174440_500",
-      "timestamp": "2026-02-23T17:44:40.165605+00:00",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "category": "adjustments",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($1070.17), hedging with CE ($62.00)",
-      "session_id": "mmm25feb26-1",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 1070.16511575,
-        "hedge": "CE",
-        "hedge_premium": 62.00176654
-      }
-    },
-    {
-      "id": "act_174441_500",
-      "timestamp": "2026-02-23T17:44:41.103577+00:00",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "category": "orders",
-      "message": "SELL 11 lot(s) C-BTC-67200-250226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-67200-250226",
-        "side": "sell",
-        "size": 11
-      }
-    },
-    {
-      "id": "act_174442_500",
-      "timestamp": "2026-02-23T17:44:42.423049+00:00",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "category": "orders",
-      "message": "SELL 11 C-BTC-67200-250226 @ $177.50 (bid=$173.00, ask=$182.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1191134068",
-        "mid_price": 177.5,
-        "bid": 173.0,
-        "ask": 182.0
-      }
-    },
-    {
-      "id": "act_174537_500",
-      "timestamp": "2026-02-23T17:45:37.364052+00:00",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "category": "orders",
-      "message": "\u2705 SELL C-BTC-67200-250226 FILLED @ $177.50 in 56.3s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1191134068",
-        "fill_price": 177.5,
-        "elapsed": 56.3,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_174939_500",
-      "timestamp": "2026-02-23T17:49:39.316156+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_174939_500",
-      "timestamp": "2026-02-23T17:49:39.335993+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.16 below floor $0.41 (peak $0.82)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.16 below floor $0.41 (peak $0.82)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_174939_500",
-      "timestamp": "2026-02-23T17:49:39.503577+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": 1.98,
-          "rv_annualized": 81.43,
-          "vol_regime_score": 0.447,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.969,
-          "ema_slope": -10.5,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_175330_500",
-      "timestamp": "2026-02-23T17:53:30.137488+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "whipsaw_resume"
-        ]
-      }
-    },
-    {
-      "id": "act_175330_500",
-      "timestamp": "2026-02-23T17:53:30.137945+00:00",
-      "type": "session_resumed",
-      "type_label": "Session Resumed",
-      "category": "system",
-      "message": "Auto-resumed: Whipsaw auto-resume after 750s cooldown. Adjustments re-enabled.",
-      "session_id": "mmm24feb26-3",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_175330_500",
-      "timestamp": "2026-02-23T17:53:30.277982+00:00",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "category": "adjustments",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($145.39), hedging with CE ($14.71)",
-      "session_id": "mmm24feb26-3",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 145.38916894,
-        "hedge": "CE",
-        "hedge_premium": 14.71045716
-      }
-    },
-    {
-      "id": "act_175330_500",
-      "timestamp": "2026-02-23T17:53:30.350432+00:00",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "category": "orders",
-      "message": "SELL 109 lot(s) C-BTC-66800-240226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-66800-240226",
-        "side": "sell",
-        "size": 109
-      }
-    },
-    {
-      "id": "act_175331_500",
-      "timestamp": "2026-02-23T17:53:31.767767+00:00",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "category": "orders",
-      "message": "SELL 109 C-BTC-66800-240226 @ $58.00 (bid=$55.00, ask=$61.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1191156090",
-        "mid_price": 58.0,
-        "bid": 55.0,
-        "ask": 61.0
-      }
-    },
-    {
-      "id": "act_175345_500",
-      "timestamp": "2026-02-23T17:53:45.235370+00:00",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "category": "orders",
-      "message": "\u2705 SELL C-BTC-66800-240226 FILLED @ $58.00 in 14.9s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1191156090",
-        "fill_price": 58.0,
-        "elapsed": 14.9,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_175440_500",
-      "timestamp": "2026-02-23T17:54:40.858149+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_175440_500",
-      "timestamp": "2026-02-23T17:54:40.870311+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.23 below floor $0.31 (peak $0.62)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.23 below floor $0.31 (peak $0.62)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_175440_500",
-      "timestamp": "2026-02-23T17:54:40.994568+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": 1.7,
-          "rv_annualized": 69.92,
-          "vol_regime_score": 0.384,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.929,
-          "ema_slope": -7.84,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_175558_500",
-      "timestamp": "2026-02-23T17:55:58.667632+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_175558_500",
-      "timestamp": "2026-02-23T17:55:58.680176+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-2.94 below floor $0.87 (peak $4.33)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-2.94 below floor $0.87 (peak $4.33)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_175828_500",
-      "timestamp": "2026-02-23T17:58:28.293479+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_175828_500",
-      "timestamp": "2026-02-23T17:58:28.302960+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-2.30 below floor $0.72 (peak $3.60)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-2.30 below floor $0.72 (peak $3.60)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_175938_500",
-      "timestamp": "2026-02-23T17:59:38.826728+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_175938_500",
-      "timestamp": "2026-02-23T17:59:38.845781+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.02 below floor $0.22 (peak $0.44)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.02 below floor $0.22 (peak $0.44)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_175938_500",
-      "timestamp": "2026-02-23T17:59:38.964410+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": 0.68,
-          "rv_annualized": 72.8,
-          "vol_regime_score": 0.378,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.611,
-          "ema_slope": -0.52,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_180058_500",
-      "timestamp": "2026-02-23T18:00:58.797761+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_180058_500",
-      "timestamp": "2026-02-23T18:00:58.805523+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.04 below floor $0.60 (peak $3.01)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.04 below floor $0.60 (peak $3.01)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_180331_500",
-      "timestamp": "2026-02-23T18:03:31.142728+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_180331_500",
-      "timestamp": "2026-02-23T18:03:31.157236+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.50 below floor $0.54 (peak $2.72)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.50 below floor $0.54 (peak $2.72)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_180439_500",
-      "timestamp": "2026-02-23T18:04:39.428538+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_180439_500",
-      "timestamp": "2026-02-23T18:04:39.440382+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.85 below floor $0.15 (peak $0.29)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.85 below floor $0.15 (peak $0.29)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_180439_500",
-      "timestamp": "2026-02-23T18:04:39.626364+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -0.97,
-          "rv_annualized": 70.59,
-          "vol_regime_score": 0.372,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.377,
-          "ema_slope": 3.88,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_180603_500",
-      "timestamp": "2026-02-23T18:06:03.442392+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_180603_500",
-      "timestamp": "2026-02-23T18:06:03.449561+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.42 below floor $0.50 (peak $2.49)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.42 below floor $0.50 (peak $2.49)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_180832_500",
-      "timestamp": "2026-02-23T18:08:32.353381+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.2%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.2%)"
-      }
-    },
-    {
-      "id": "act_180940_500",
-      "timestamp": "2026-02-23T18:09:40.713126+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_180940_500",
-      "timestamp": "2026-02-23T18:09:40.729172+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.76 below floor $0.09 (peak $0.18)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.76 below floor $0.09 (peak $0.18)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_180940_500",
-      "timestamp": "2026-02-23T18:09:40.899452+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -1.54,
-          "rv_annualized": 69.39,
-          "vol_regime_score": 0.378,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.444,
-          "ema_slope": 1.94,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_181104_500",
-      "timestamp": "2026-02-23T18:11:04.330030+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_181331_500",
-      "timestamp": "2026-02-23T18:13:31.855510+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_181439_500",
-      "timestamp": "2026-02-23T18:14:39.520394+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_181439_500",
-      "timestamp": "2026-02-23T18:14:39.529000+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.75 below floor $0.04 (peak $0.08)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.75 below floor $0.04 (peak $0.08)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_181439_500",
-      "timestamp": "2026-02-23T18:14:39.688878+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -2.09,
-          "rv_annualized": 68.78,
-          "vol_regime_score": 0.386,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.513,
-          "ema_slope": 0.33,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_181601_500",
-      "timestamp": "2026-02-23T18:16:01.481800+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_181830_500",
-      "timestamp": "2026-02-23T18:18:30.135616+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.2%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.2%)"
-      }
-    },
-    {
-      "id": "act_181940_500",
-      "timestamp": "2026-02-23T18:19:40.496503+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_181940_500",
-      "timestamp": "2026-02-23T18:19:40.679111+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -2.54,
-          "rv_annualized": 69.64,
-          "vol_regime_score": 0.399,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.654,
-          "ema_slope": -2.35,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_181940_500",
-      "timestamp": "2026-02-23T18:19:40.688732+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.7%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.7%)"
-      }
-    },
-    {
-      "id": "act_182058_500",
-      "timestamp": "2026-02-23T18:20:58.994655+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.3%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.3%)"
-      }
-    },
-    {
-      "id": "act_182327_500",
-      "timestamp": "2026-02-23T18:23:27.067758+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.0%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.0%)"
-      }
-    },
-    {
-      "id": "act_182441_500",
-      "timestamp": "2026-02-23T18:24:41.100269+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_182441_500",
-      "timestamp": "2026-02-23T18:24:41.234174+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -2.13,
-          "rv_annualized": 69.17,
-          "vol_regime_score": 0.388,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.347,
-          "ema_slope": 3.75,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_182441_500",
-      "timestamp": "2026-02-23T18:24:41.245721+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.3%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.3%)"
-      }
-    },
-    {
-      "id": "act_182556_500",
-      "timestamp": "2026-02-23T18:25:56.879860+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.0%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.0%)"
-      }
-    },
-    {
-      "id": "act_182826_500",
-      "timestamp": "2026-02-23T18:28:26.741475+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_182942_500",
-      "timestamp": "2026-02-23T18:29:42.809370+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_182943_500",
-      "timestamp": "2026-02-23T18:29:43.465783+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -0.83,
-          "rv_annualized": 69.47,
-          "vol_regime_score": 0.364,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.444,
-          "ema_slope": 1.28,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_182943_500",
-      "timestamp": "2026-02-23T18:29:43.477729+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.4%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.4%)"
-      }
-    },
-    {
-      "id": "act_183056_500",
-      "timestamp": "2026-02-23T18:30:56.813818+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_183326_500",
-      "timestamp": "2026-02-23T18:33:26.049218+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_183442_500",
-      "timestamp": "2026-02-23T18:34:42.809886+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_183443_500",
-      "timestamp": "2026-02-23T18:34:43.132847+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -0.55,
-          "rv_annualized": 69.86,
-          "vol_regime_score": 0.36,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.292,
-          "ema_slope": 3.84,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_183443_500",
-      "timestamp": "2026-02-23T18:34:43.154332+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.3%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.3%)"
-      }
-    },
-    {
-      "id": "act_183554_500",
-      "timestamp": "2026-02-23T18:35:54.753080+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.9%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.9%)"
-      }
-    },
-    {
-      "id": "act_183823_500",
-      "timestamp": "2026-02-23T18:38:23.534399+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.6%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.6%)"
-      }
-    },
-    {
-      "id": "act_183943_500",
-      "timestamp": "2026-02-23T18:39:43.154669+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_183943_500",
-      "timestamp": "2026-02-23T18:39:43.271605+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": 0.13,
-          "rv_annualized": 72.93,
-          "vol_regime_score": 0.367,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.021,
-          "ema_slope": 8.12,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_183943_500",
-      "timestamp": "2026-02-23T18:39:43.285785+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.0%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.0%)"
-      }
-    },
-    {
-      "id": "act_184052_500",
-      "timestamp": "2026-02-23T18:40:53.009218+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.7%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.7%)"
-      }
-    },
-    {
-      "id": "act_184323_500",
-      "timestamp": "2026-02-23T18:43:23.280329+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.8%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.8%)"
-      }
-    },
-    {
-      "id": "act_184440_500",
-      "timestamp": "2026-02-23T18:44:40.994186+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_184441_500",
-      "timestamp": "2026-02-23T18:44:41.539389+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -0.3,
-          "rv_annualized": 75.9,
-          "vol_regime_score": 0.385,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.293,
-          "ema_slope": 1.64,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_184441_500",
-      "timestamp": "2026-02-23T18:44:41.562802+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.3%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.3%)"
-      }
-    },
-    {
-      "id": "act_184553_500",
-      "timestamp": "2026-02-23T18:45:53.879942+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_184823_500",
-      "timestamp": "2026-02-23T18:48:23.556164+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_184940_500",
-      "timestamp": "2026-02-23T18:49:40.813142+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_184940_500",
-      "timestamp": "2026-02-23T18:49:40.951760+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -0.57,
-          "rv_annualized": 75.8,
-          "vol_regime_score": 0.39,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.403,
-          "ema_slope": -0.68,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_184940_500",
-      "timestamp": "2026-02-23T18:49:40.967029+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.4%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.4%)"
-      }
-    },
-    {
-      "id": "act_185053_500",
-      "timestamp": "2026-02-23T18:50:53.613340+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_185324_500",
-      "timestamp": "2026-02-23T18:53:24.163282+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.1%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.1%)"
-      }
-    },
-    {
-      "id": "act_185439_500",
-      "timestamp": "2026-02-23T18:54:39.708160+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_185439_500",
-      "timestamp": "2026-02-23T18:54:39.899093+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -1.25,
-          "rv_annualized": 63.93,
-          "vol_regime_score": 0.345,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.523,
-          "ema_slope": -2.76,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_185439_500",
-      "timestamp": "2026-02-23T18:54:39.916488+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.5%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.5%)"
-      }
-    },
-    {
-      "id": "act_185552_500",
-      "timestamp": "2026-02-23T18:55:52.725197+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.2%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.2%)"
-      }
-    },
-    {
-      "id": "act_185822_500",
-      "timestamp": "2026-02-23T18:58:22.710627+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.3%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.3%)"
-      }
-    },
-    {
-      "id": "act_185940_500",
-      "timestamp": "2026-02-23T18:59:40.904675+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_185941_500",
-      "timestamp": "2026-02-23T18:59:41.069624+00:00",
-      "type": "regime_control",
-      "type_label": "Regime Control",
-      "category": "safety",
-      "message": "Regime: BLOCK_PE_SELLS (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "vol_regime": "NORMAL",
-        "gamma_regime": "NORMAL",
-        "trend_regime": "TREND_DOWN",
-        "regime_action": "BLOCK_PE_SELLS",
-        "details": {
-          "iv_change_pct": -1.91,
-          "rv_annualized": 62.97,
-          "vol_regime_score": 0.353,
-          "dollar_gamma": 6.81,
-          "gamma_soft_limit": 2500.0,
-          "gamma_hard_limit": 5000.0,
-          "spot_move_pct": -1.687,
-          "ema_slope": -5.3,
-          "trend_anchor": 65729.07021247
-        }
-      }
-    },
-    {
-      "id": "act_185941_500",
-      "timestamp": "2026-02-23T18:59:41.087377+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -1.7%)",
-      "session_id": "mmm25feb26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -1.7%)"
-      }
-    },
-    {
-      "id": "act_190052_500",
-      "timestamp": "2026-02-23T19:00:52.303592+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.3%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.3%)"
-      }
-    },
-    {
-      "id": "act_190322_500",
-      "timestamp": "2026-02-23T19:03:22.971825+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: PE sells blocked \u2014 Trend DOWN (spot -2.2%)",
-      "session_id": "mmm24feb26-3",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "PE sells blocked \u2014 Trend DOWN (spot -2.2%)"
-      }
-    },
-    {
       "id": "act_190439_500",
       "timestamp": "2026-02-23T19:04:39.490775+00:00",
       "type": "safety_warning",
@@ -8442,7 +6794,1446 @@
     },
     {
       "id": "act_025619_500",
-      "timestamp": "2026-02-24T02:56:19.435841+00:00",
+      "timestamp": "2026-02-24T02:56:19.449120+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_025750_500",
+      "timestamp": "2026-02-24T02:57:50.302558+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_025919_500",
+      "timestamp": "2026-02-24T02:59:19.036142+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_025939_500",
+      "timestamp": "2026-02-24T02:59:39.170107+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030049_500",
+      "timestamp": "2026-02-24T03:00:49.242140+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030219_500",
+      "timestamp": "2026-02-24T03:02:19.126849+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030229_500",
+      "timestamp": "2026-02-24T03:02:29.448923+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030229_500",
+      "timestamp": "2026-02-24T03:02:29.467763+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.20 below floor $0.36 (peak $0.73)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.20 below floor $0.36 (peak $0.73)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030350_500",
+      "timestamp": "2026-02-24T03:03:50.173203+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030400_500",
+      "timestamp": "2026-02-24T03:04:00.825202+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw_resume (info), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "whipsaw_resume",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030400_500",
+      "timestamp": "2026-02-24T03:04:00.842388+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.88 below floor $0.34 (peak $0.68)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.88 below floor $0.34 (peak $0.68)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030400_500",
+      "timestamp": "2026-02-24T03:04:00.842635+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 630s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_030439_500",
+      "timestamp": "2026-02-24T03:04:39.372775+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), trailing_stop (alert)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030439_500",
+      "timestamp": "2026-02-24T03:04:39.386958+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.44 below floor $0.47 (peak $0.93)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.44 below floor $0.47 (peak $0.93)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030512_500",
+      "timestamp": "2026-02-24T03:05:13.056659+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030514_500",
+      "timestamp": "2026-02-24T03:05:14.856299+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw (alert), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "whipsaw",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030514_500",
+      "timestamp": "2026-02-24T03:05:14.974727+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.47 below floor $0.26 (peak $0.52)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.47 below floor $0.26 (peak $0.52)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030514_500",
+      "timestamp": "2026-02-24T03:05:15.043440+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s. Will auto-resume at 2026-02-24T03:15:14.",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-24T03:15:14.756539+00:00"
+      }
+    },
+    {
+      "id": "act_030515_500",
+      "timestamp": "2026-02-24T03:05:15.824586+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.2 \u2192 0.5",
+      "session_id": "mmm24feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.2,
+        "new_value": 0.5
+      }
+    },
+    {
+      "id": "act_030518_500",
+      "timestamp": "2026-02-24T03:05:18.501225+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030536_500",
+      "timestamp": "2026-02-24T03:05:36.265089+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030537_500",
+      "timestamp": "2026-02-24T03:05:37.507786+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030537_500",
+      "timestamp": "2026-02-24T03:05:37.524410+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.59 below floor $0.21 (peak $0.42)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.59 below floor $0.21 (peak $0.42)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030626_500",
+      "timestamp": "2026-02-24T03:06:26.233006+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030626_500",
+      "timestamp": "2026-02-24T03:06:26.251307+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.5 \u2192 0.0",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.5,
+        "new_value": 0.0
+      }
+    },
+    {
+      "id": "act_030626_500",
+      "timestamp": "2026-02-24T03:06:26.973608+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030626_500",
+      "timestamp": "2026-02-24T03:06:26.990480+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.05 below floor $0.00 (peak $0.32)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.05 below floor $0.00 (peak $0.32)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030643_500",
+      "timestamp": "2026-02-24T03:06:43.309357+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030643_500",
+      "timestamp": "2026-02-24T03:06:44.113929+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.88 below floor $0.00 (peak $0.18)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.88 below floor $0.00 (peak $0.18)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030648_500",
+      "timestamp": "2026-02-24T03:06:48.623030+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030707_500",
+      "timestamp": "2026-02-24T03:07:07.058452+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030707_500",
+      "timestamp": "2026-02-24T03:07:07.061441+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.0 \u2192 1.0",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.0,
+        "new_value": 1.0
+      }
+    },
+    {
+      "id": "act_030708_500",
+      "timestamp": "2026-02-24T03:07:08.342872+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030708_500",
+      "timestamp": "2026-02-24T03:07:08.356548+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.79 below floor $0.08 (peak $0.08)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.79 below floor $0.08 (peak $0.08)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_030722_500",
+      "timestamp": "2026-02-24T03:07:22.741687+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030723_500",
+      "timestamp": "2026-02-24T03:07:23.448767+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($226.00), hedging with CE ($20.19)",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 226.00049656,
+        "hedge": "CE",
+        "hedge_premium": 20.19474739
+      }
+    },
+    {
+      "id": "act_030723_500",
+      "timestamp": "2026-02-24T03:07:23.475148+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 13 lot(s) C-BTC-65400-240226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-65400-240226",
+        "side": "sell",
+        "size": 13
+      }
+    },
+    {
+      "id": "act_030724_500",
+      "timestamp": "2026-02-24T03:07:24.817602+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 13 C-BTC-65400-240226 @ $19.50 (bid=$18.00, ask=$21.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1191566406",
+        "mid_price": 19.5,
+        "bid": 18.0,
+        "ask": 21.0
+      }
+    },
+    {
+      "id": "act_030741_500",
+      "timestamp": "2026-02-24T03:07:41.512395+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-65400-240226 FILLED @ $19.50 in 18.0s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1191566406",
+        "fill_price": 19.5,
+        "elapsed": 18.0,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_030741_500",
+      "timestamp": "2026-02-24T03:07:41.512771+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 13 lots CE @ 65400.0 for $19.50 (Type: first_reversal)",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 65400.0,
+        "lots": 13,
+        "fill_price": 19.5,
+        "type": "first_reversal",
+        "adjustment_number": 4
+      }
+    },
+    {
+      "id": "act_030817_500",
+      "timestamp": "2026-02-24T03:08:17.671762+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030917_500",
+      "timestamp": "2026-02-24T03:09:17.669752+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030936_500",
+      "timestamp": "2026-02-24T03:09:36.760032+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-3",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_030937_500",
+      "timestamp": "2026-02-24T03:09:37.348057+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_030937_500",
+      "timestamp": "2026-02-24T03:09:37.993778+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), trailing_stop (alert)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_030937_500",
+      "timestamp": "2026-02-24T03:09:38.008372+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.38 below floor $0.44 (peak $0.88)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.38 below floor $0.44 (peak $0.88)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_031109_500",
+      "timestamp": "2026-02-24T03:11:09.417315+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_031114_500",
+      "timestamp": "2026-02-24T03:11:14.086419+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_031239_500",
+      "timestamp": "2026-02-24T03:12:39.916680+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_031411_500",
+      "timestamp": "2026-02-24T03:14:11.367908+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_031411_500",
+      "timestamp": "2026-02-24T03:14:11.496104+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($59.77), hedging with CE ($1.69)",
+      "session_id": "mmm24feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 59.76560115,
+        "hedge": "CE",
+        "hedge_premium": 1.68779294
+      }
+    },
+    {
+      "id": "act_031412_500",
+      "timestamp": "2026-02-24T03:14:12.449079+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 10 lot(s) C-BTC-64800-240226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-64800-240226",
+        "side": "sell",
+        "size": 10
+      }
+    },
+    {
+      "id": "act_031413_500",
+      "timestamp": "2026-02-24T03:14:13.436460+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 10 C-BTC-64800-240226 @ $62.50 (bid=$60.00, ask=$65.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1191573930",
+        "mid_price": 62.5,
+        "bid": 60.0,
+        "ask": 65.0
+      }
+    },
+    {
+      "id": "act_031417_500",
+      "timestamp": "2026-02-24T03:14:17.853173+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-64800-240226 FILLED @ $62.50 in 5.4s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1191573930",
+        "fill_price": 62.5,
+        "elapsed": 5.4,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_031419_500",
+      "timestamp": "2026-02-24T03:14:19.878657+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($278.83), hedging with CE ($12.44)",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 278.8319499,
+        "hedge": "CE",
+        "hedge_premium": 12.44414272
+      }
+    },
+    {
+      "id": "act_031419_500",
+      "timestamp": "2026-02-24T03:14:19.900059+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 55 lot(s) C-BTC-65000-240226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-65000-240226",
+        "side": "sell",
+        "size": 55
+      }
+    },
+    {
+      "id": "act_031421_500",
+      "timestamp": "2026-02-24T03:14:21.273076+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 55 C-BTC-65000-240226 @ $37.00 (bid=$35.00, ask=$39.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1191574282",
+        "mid_price": 37.0,
+        "bid": 35.0,
+        "ask": 39.0
+      }
+    },
+    {
+      "id": "act_031425_500",
+      "timestamp": "2026-02-24T03:14:25.135247+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-65000-240226 FILLED @ $37.00 in 5.2s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1191574282",
+        "fill_price": 37.0,
+        "elapsed": 5.2,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_031436_500",
+      "timestamp": "2026-02-24T03:14:36.881413+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), trailing_stop (alert)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_031436_500",
+      "timestamp": "2026-02-24T03:14:36.899107+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.05 below floor $0.42 (peak $0.83)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.05 below floor $0.42 (peak $0.83)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_031540_500",
+      "timestamp": "2026-02-24T03:15:40.114306+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_031540_500",
+      "timestamp": "2026-02-24T03:15:40.228710+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($67.02), hedging with PE ($61.86)",
+      "session_id": "mmm24feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 67.02122036,
+        "hedge": "PE",
+        "hedge_premium": 61.86240756
+      }
+    },
+    {
+      "id": "act_031540_500",
+      "timestamp": "2026-02-24T03:15:40.253126+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) P-BTC-61600-240226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-61600-240226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_031541_500",
+      "timestamp": "2026-02-24T03:15:41.574824+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 P-BTC-61600-240226 @ $62.50 (bid=$60.00, ask=$65.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1191576545",
+        "mid_price": 62.5,
+        "bid": 60.0,
+        "ask": 65.0
+      }
+    },
+    {
+      "id": "act_031545_500",
+      "timestamp": "2026-02-24T03:15:45.963441+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-61600-240226 FILLED @ $62.50 in 5.7s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1191576545",
+        "fill_price": 62.5,
+        "elapsed": 5.7,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_031545_500",
+      "timestamp": "2026-02-24T03:15:45.963675+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots PE @ 61600.0 for $62.50 (Type: first_reversal)",
+      "session_id": "mmm24feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 61600.0,
+        "lots": 1,
+        "fill_price": 62.5,
+        "type": "first_reversal",
+        "adjustment_number": 7
+      }
+    },
+    {
+      "id": "act_031546_500",
+      "timestamp": "2026-02-24T03:15:46.892462+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 4 event(s) \u2014 position_cap (alert), whipsaw_resume (info), asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 4,
+        "events": [
+          "position_cap",
+          "whipsaw_resume",
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_031546_500",
+      "timestamp": "2026-02-24T03:15:47.059944+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_031709_500",
+      "timestamp": "2026-02-24T03:17:09.222317+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_031717_500",
+      "timestamp": "2026-02-24T03:17:17.577901+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (alert), asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_031717_500",
+      "timestamp": "2026-02-24T03:17:17.720318+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_031840_500",
+      "timestamp": "2026-02-24T03:18:40.283577+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_031848_500",
+      "timestamp": "2026-02-24T03:18:48.550923+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (alert), asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_031848_500",
+      "timestamp": "2026-02-24T03:18:48.913419+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_031935_500",
+      "timestamp": "2026-02-24T03:19:35.435534+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), trailing_stop (alert)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_031935_500",
+      "timestamp": "2026-02-24T03:19:35.449463+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.21 below floor $0.38 (peak $0.76)",
+      "session_id": "mmm25feb26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.21 below floor $0.38 (peak $0.76)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_032008_500",
+      "timestamp": "2026-02-24T03:20:08.481082+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_032016_500",
+      "timestamp": "2026-02-24T03:20:16.046257+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: margin_monitor_enabled updated False \u2192 True",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "margin_monitor_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_032016_500",
+      "timestamp": "2026-02-24T03:20:16.087657+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: regime_enabled updated False \u2192 True",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "regime_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_032016_500",
+      "timestamp": "2026-02-24T03:20:16.087856+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: perp_hedge_enabled updated False \u2192 True",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "perp_hedge_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_032017_500",
+      "timestamp": "2026-02-24T03:20:17.697524+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (alert), asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 3,
+        "events": [
+          "position_cap",
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_032017_500",
+      "timestamp": "2026-02-24T03:20:17.965841+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_032054_500",
+      "timestamp": "2026-02-24T03:20:54.515453+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm24feb26-4",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_032054_500",
+      "timestamp": "2026-02-24T03:20:54.518995+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: max_lots_per_side updated 100 \u2192 250",
+      "session_id": "mmm24feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "max_lots_per_side",
+        "old_value": 100,
+        "new_value": 250
+      }
+    },
+    {
+      "id": "act_032055_500",
+      "timestamp": "2026-02-24T03:20:55.356352+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_032055_500",
+      "timestamp": "2026-02-24T03:20:55.368723+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.96 below floor $0.20 (peak $0.20)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.96 below floor $0.20 (peak $0.20)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_032139_500",
+      "timestamp": "2026-02-24T03:21:39.756471+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm24feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_032139_500",
+      "timestamp": "2026-02-24T03:21:39.862239+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($79.53), hedging with PE ($41.47)",
+      "session_id": "mmm24feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 79.52656937,
+        "hedge": "PE",
+        "hedge_premium": 41.47011804
+      }
+    },
+    {
+      "id": "act_032139_500",
+      "timestamp": "2026-02-24T03:21:39.903777+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 4 lot(s) P-BTC-61600-240226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-61600-240226",
+        "side": "sell",
+        "size": 4
+      }
+    },
+    {
+      "id": "act_032141_500",
+      "timestamp": "2026-02-24T03:21:41.239741+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 4 P-BTC-61600-240226 @ $43.00 (bid=$41.00, ask=$45.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1191583691",
+        "mid_price": 43.0,
+        "bid": 41.0,
+        "ask": 45.0
+      }
+    },
+    {
+      "id": "act_032224_500",
+      "timestamp": "2026-02-24T03:22:24.215458+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_032224_500",
+      "timestamp": "2026-02-24T03:22:24.231487+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.00 below floor $0.08 (peak $0.08)",
+      "session_id": "mmm24feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.00 below floor $0.08 (peak $0.08)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_032242_500",
+      "timestamp": "2026-02-24T03:22:43.000090+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1191583691 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1191583691",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_032249_500",
+      "timestamp": "2026-02-24T03:22:49.050689+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-61600-240226 FILLED @ $42.00 in 69.2s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1191583691",
+        "fill_price": 42.0,
+        "elapsed": 69.2,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_032249_500",
+      "timestamp": "2026-02-24T03:22:49.196400+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 4 lots PE @ 61600.0 for $42.00 (Type: standard)",
+      "session_id": "mmm24feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 61600.0,
+        "lots": 4,
+        "fill_price": 42.0,
+        "type": "standard",
+        "adjustment_number": 8
+      }
+    },
+    {
+      "id": "act_032310_500",
+      "timestamp": "2026-02-24T03:23:10.527613+00:00",
       "type": "safety_warning",
       "type_label": "Safety Warning",
       "category": "safety",
@@ -8457,5 +8248,5 @@
       }
     }
   ],
-  "updated_at": "2026-02-24T02:56:19.436334+00:00"
+  "updated_at": "2026-02-24T03:23:10.527876+00:00"
 }

@@ -11,7 +11,7 @@
  * @version 4.0.0 - Extracted math + alert dialog, fixed blue line
  */
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   XAxis,
   YAxis,
@@ -25,24 +25,21 @@ import {
   ReferenceArea,
 } from 'recharts';
 import {
-  Box, Typography, Paper, Chip, Slider, IconButton, Popover, Switch, FormControlLabel,
+  Box, Typography, Paper, Chip, IconButton, Popover, Switch, FormControlLabel,
 } from '@mui/material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import AlertsPanel from './AlertsPanel';
 import PayoffAlertDialog from './PayoffAlertDialog';
+import PayoffControls from './PayoffControls';
 import {
-  blackScholesPrice,
-  calculateImpliedVolatility,
-  getContractMultiplier,
-  RISK_FREE_RATE,
-  formatDate,
-  createPriceDistribution,
-  calculateWeightedIV,
+  calculatePortfolioDelta,
+  calculatePortfolioTheta,
+  calculatePortfolioGamma,
 } from './payoffCalculator';
+import { useParsedPositions, useChartData } from './usePayoffData';
+import usePayoffAlerts from './usePayoffAlerts';
 
 // ============================================================================
 // MAIN COMPONENT
@@ -79,418 +76,57 @@ const OptionsPayoffDiagram = ({
   const [showMultiDate, setShowMultiDate] = useState(true);
   const [showProbDist, setShowProbDist] = useState(true);
 
-  // Fetch alerts when expiry changes or on trigger
-
+  // E5: Scenario comparison — snapshot baseline, overlay on future changes
+  const [scenarioCompare, setScenarioCompare] = useState(false);
+  const baselineRef = useRef(null);
 
   // ========================================================================
+  // D2: Data computation via extracted hooks (usePayoffData.js)
+  // ========================================================================
+  const parsedPositions = useParsedPositions(positions, selectedPositions, futuresPositions);
+  const chartData = useChartData(parsedPositions, {
+    priceRangePercent, targetDaysFromNow, targetPricePercent,
+    showMultiDate, showProbDist, futuresPositions,
+  });
 
-  const parsedPositions = useMemo(() => {
-    if (!positions || positions.length === 0) return null;
-
-    // Filter to only selected positions (whitelist approach)
-    const visiblePositions = positions.filter((p) => selectedPositions.includes(p.product_symbol));
-
-    // Get spot price from first position, or from futures, or default
-    let spotPrice = 90000;
-    if (visiblePositions.length > 0 && visiblePositions[0]?.greeks?.spot) {
-      spotPrice = parseFloat(visiblePositions[0].greeks.spot);
-    } else if (futuresPositions.length > 0 && futuresPositions[0]?.mark_price) {
-      spotPrice = parseFloat(futuresPositions[0].mark_price);
-    }
-
-    // If no selected options AND no visible futures, return null
-    if (visiblePositions.length === 0 && futuresPositions.length === 0) {
-      return null;
-    }
-
-    // If no selected options but have futures, return minimal data structure
-    if (visiblePositions.length === 0) {
-      return {
-        positions: [],
-        spotPrice,
-        minDaysToExpiry: 0.001,
-        riskFreeRate: RISK_FREE_RATE,
-        nearestExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
-      };
-    }
-
-    const riskFreeRate = RISK_FREE_RATE;
-
-    const parsed = visiblePositions.map((pos) => {
-      const parts = pos.product_symbol.split('-');
-      const optionType = parts[0] === 'C' ? 'call' : 'put';
-      const strike = parseFloat(parts[2]);
-
-      const expiryStr = parts[3];
-      const day = parseInt(expiryStr.substring(0, 2));
-      const month = parseInt(expiryStr.substring(2, 4)) - 1;
-      const year = 2000 + parseInt(expiryStr.substring(4, 6));
-      // BTC/ETH options on Delta Exchange expire at 5:30 PM IST (12:00 UTC)
-      // IST = UTC + 5:30, so 5:30 PM IST = 12:00 PM UTC
-      // Create date in UTC then convert - using local time equivalent of 5:30 PM IST
-      const expiryDate = new Date(Date.UTC(year, month, day, 12, 0, 0)); // 12:00 UTC = 5:30 PM IST
-
-      const now = new Date();
-      const msToExpiry = expiryDate - now;
-      const daysToExpiry = Math.max(0, msToExpiry / (1000 * 60 * 60 * 24));
-      const yearsToExpiry = daysToExpiry / 365.25;
-
-      const size = parseFloat(pos.size || 0);
-      const entryPrice = parseFloat(pos.entry_price || 0);
-
-      // Check if this is a closed position (size=0 with realized PnL)
-      const isClosed = pos.is_closed === true || size === 0;
-      const realizedPnl = parseFloat(pos.realized_pnl || 0);
-
-      // Use mid_price (bid+ask)/2 for accurate current value, fallback to mark_price
-      // This matches how PnL is calculated in the backend
-      const bestBid = parseFloat(pos.best_bid || 0);
-      const bestAsk = parseFloat(pos.best_ask || 0);
-      const midPrice = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : 0;
-      const markPrice =
-        midPrice > 0 ? midPrice : parseFloat(pos.mid_price || pos.mark_price || entryPrice);
-
-      let iv = 0.8;
-      // Prefer exchange-provided IV from greeks if available (most accurate)
-      const exchangeIV = pos.greeks?.iv ? parseFloat(pos.greeks.iv) : null;
-      if (exchangeIV && exchangeIV > 0.05 && exchangeIV < 4.0) {
-        iv = exchangeIV;
-      } else if (markPrice > 0 && yearsToExpiry > 0.001 && !isClosed) {
-        const calculatedIV = calculateImpliedVolatility(
-          markPrice,
-          spotPrice,
-          strike,
-          yearsToExpiry,
-          riskFreeRate,
-          optionType
-        );
-        if (calculatedIV > 0.05 && calculatedIV < 4.0) iv = calculatedIV;
+  // E5: Capture baseline snapshot when compare mode is toggled on
+  useEffect(() => {
+    if (scenarioCompare && chartData?.data?.length > 0 && !baselineRef.current) {
+      // Take a snapshot: map price → { expiry, target }
+      const snap = {};
+      for (const pt of chartData.data) {
+        snap[pt.price] = {
+          expiry: (pt.expiryGreen ?? pt.expiryRed ?? 0),
+          target: pt.target ?? 0,
+        };
       }
+      baselineRef.current = snap;
+    }
+    if (!scenarioCompare) {
+      baselineRef.current = null;
+    }
+  }, [scenarioCompare, chartData]);
 
-      return {
-        symbol: pos.product_symbol,
-        type: optionType,
-        strike,
-        expiryDate,
-        daysToExpiry,
-        yearsToExpiry,
-        size,
-        entryPrice,
-        markPrice,
-        iv,
-        isClosed,    // Flag for closed positions
-        realizedPnl, // Realized PnL from closed position
-      };
+  // Merge baseline into chart data
+  const enrichedData = useMemo(() => {
+    if (!chartData?.data || !scenarioCompare || !baselineRef.current) {
+      return chartData?.data;
+    }
+    const snap = baselineRef.current;
+    return chartData.data.map((pt) => {
+      const base = snap[pt.price];
+      if (base) {
+        return { ...pt, baselineExpiry: base.expiry, baselineTarget: base.target };
+      }
+      return pt;
     });
+  }, [chartData, scenarioCompare]);
 
-    // Calculate actual time to nearest expiry (can be fractional days)
-    // Filter out closed positions for expiry calculation if there are non-closed ones
-    const nonClosedPositions = parsed.filter(p => !p.isClosed);
-    const positionsForExpiry = nonClosedPositions.length > 0 ? nonClosedPositions : parsed;
-
-    const nearestExpiry = positionsForExpiry.length > 0
-      ? positionsForExpiry.reduce(
-        (min, p) => (p.expiryDate < min ? p.expiryDate : min),
-        positionsForExpiry[0].expiryDate
-      )
-      : new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    const now = new Date();
-    const actualDaysToExpiry = Math.max(0, (nearestExpiry - now) / (1000 * 60 * 60 * 24));
-    // Use actual time to expiry (not ceiling) so slider can't go beyond 5:30 PM IST on expiry day
-    const minDaysToExpiry = Math.max(0.001, actualDaysToExpiry);
-
-    return { positions: parsed, spotPrice, minDaysToExpiry, riskFreeRate, nearestExpiry };
-  }, [positions, selectedPositions, futuresPositions]);
-
-  // ========================================================================
-  // CALCULATE PAYOFF DATA WITH BOTH LINES
-  // ========================================================================
-
-  const chartData = useMemo(() => {
-    if (!parsedPositions) return null;
-
-    const {
-      positions: parsedPos,
-      spotPrice,
-      minDaysToExpiry,
-      riskFreeRate,
-      nearestExpiry,
-    } = parsedPositions;
-
-    // Calculate X-axis range: ±6000 from ATM by default (user requested)
-    // For zooming out, allow up to ±30000 range
-    const DEFAULT_RANGE = 6000; // ±6000 from ATM
-    const MAX_ZOOM_RANGE = 30000; // Maximum range for zooming out
-
-    // Default: ±6000 from spot price
-    let optimalMinPrice = spotPrice - DEFAULT_RANGE;
-    let optimalMaxPrice = spotPrice + DEFAULT_RANGE;
-
-    // If positions have strikes outside this range, extend to include them
-    if (parsedPos.length > 0) {
-      const strikes = parsedPos.map(p => p.strike);
-      const minStrike = Math.min(...strikes);
-      const maxStrike = Math.max(...strikes);
-
-      // Extend range if needed to include all strikes + 2000 buffer
-      const strikeBuffer = 2000;
-      if (minStrike - strikeBuffer < optimalMinPrice) {
-        optimalMinPrice = minStrike - strikeBuffer;
-      }
-      if (maxStrike + strikeBuffer > optimalMaxPrice) {
-        optimalMaxPrice = maxStrike + strikeBuffer;
-      }
-
-      // Make symmetric around spot
-      const spotToMin = spotPrice - optimalMinPrice;
-      const spotToMax = optimalMaxPrice - spotPrice;
-      const maxOffset = Math.max(spotToMin, spotToMax);
-      optimalMinPrice = spotPrice - maxOffset;
-      optimalMaxPrice = spotPrice + maxOffset;
-    }
-
-    // Apply user zoom override if priceRangePercent was manually changed (non-default)
-    // Allow up to MAX_ZOOM_RANGE for zooming out
-    const isDefaultRange = priceRangePercent === 20;
-    let minPrice, maxPrice;
-    if (isDefaultRange) {
-      minPrice = optimalMinPrice;
-      maxPrice = optimalMaxPrice;
-    } else {
-      // User changed the range - use their setting but cap at MAX_ZOOM_RANGE
-      const userRange = Math.min(spotPrice * (priceRangePercent / 100), MAX_ZOOM_RANGE);
-      minPrice = spotPrice - userRange;
-      maxPrice = spotPrice + userRange;
-    }
-
-    const numPoints = 200; // More points for smoother curves
-    const priceStep = (maxPrice - minPrice) / numPoints;
-
-    // Calculate target date based on slider (supports fractional days for hourly precision)
-    const now = new Date();
-    const targetDate = new Date(now.getTime() + targetDaysFromNow * 24 * 60 * 60 * 1000);
-
-    // Target price for projection (user-adjustable)
-    const targetPrice = spotPrice * (1 + targetPricePercent / 100);
-    const daysToExpiryFromTarget = Math.max(
-      0,
-      (nearestExpiry - targetDate) / (1000 * 60 * 60 * 24)
-    );
-
-    // ── Helper: calculate portfolio P&L at any day-offset from now ──
-    // Used for target, today, and mid-expiry lines (DRY)
-    const calcProjectedPayoff = (price, daysFromNow) => {
-      let payoff = 0;
-      parsedPos.forEach((pos) => {
-        if (pos.isClosed) { payoff += pos.realizedPnl || 0; return; }
-        const absSize = Math.abs(pos.size);
-        const isShort = pos.size < 0;
-        const multiplier = getContractMultiplier(pos.symbol);
-        const remainingYears = Math.max(0.0001, (pos.daysToExpiry - daysFromNow) / 365.25);
-        const theo = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
-        const safeTheo = isFinite(theo) ? theo : 0;
-        if (isShort) payoff += (pos.entryPrice - safeTheo) * absSize * multiplier;
-        else payoff += (safeTheo - pos.entryPrice) * absSize * multiplier;
-      });
-      futuresPositions.forEach((futPos) => {
-        payoff += (price - futPos.entry_price) * futPos.size * 0.001;
-      });
-      return isFinite(payoff) ? payoff : 0;
-    };
-
-    // ── Probability distribution function (E3) ──
-    const weightedIV = showProbDist && parsedPos.length > 0
-      ? calculateWeightedIV(parsedPos)
-      : 0.8;
-    const avgYearsToExpiry = minDaysToExpiry / 365.25;
-    const distFn = showProbDist && parsedPos.length > 0 && avgYearsToExpiry > 0.001
-      ? createPriceDistribution(spotPrice, weightedIV, avgYearsToExpiry)
-      : null;
-
-    // Mid-expiry day offset for multi-date overlay
-    const midDays = minDaysToExpiry * 0.5;
-
-    const data = [];
-
-    for (let i = 0; i <= numPoints; i++) {
-      const price = minPrice + i * priceStep;
-      const point = { price: Math.round(price) };
-
-      // Calculate "On Expiry" payoff for OPTIONS
-      // For SHORT positions (size < 0): You SOLD the option, received premium
-      //   P&L = (entryPrice - intrinsicAtExpiry) * |size| * multiplier
-      //   If OTM at expiry (intrinsic=0): P&L = entryPrice * |size| * 0.001 (keep full premium)
-      // For LONG positions (size > 0): You BOUGHT the option, paid premium
-      //   P&L = (intrinsicAtExpiry - entryPrice) * size * multiplier
-      // For CLOSED positions (size = 0, isClosed = true): Add realized PnL as constant offset
-      let expiryPayoff = 0;
-      parsedPos.forEach((pos) => {
-        // Handle closed positions - add realized PnL as constant offset (no price exposure)
-        if (pos.isClosed) {
-          expiryPayoff += pos.realizedPnl || 0;
-          return;
-        }
-
-        const intrinsic =
-          pos.type === 'call' ? Math.max(0, price - pos.strike) : Math.max(0, pos.strike - price);
-
-        const absSize = Math.abs(pos.size);
-        const isShort = pos.size < 0;
-        // Contract multiplier: 0.001 for BTC, 0.01 for ETH
-        const multiplier = pos.symbol?.toUpperCase().includes('ETH') ? 0.01 : 0.001;
-
-        if (isShort) {
-          // SHORT: profit = (premium received - intrinsic value owed) * size * multiplier
-          const pnl = (pos.entryPrice - intrinsic) * absSize * multiplier;
-          expiryPayoff += pnl;
-        } else {
-          // LONG: profit = (intrinsic value - premium paid) * size * multiplier
-          const pnl = (intrinsic - pos.entryPrice) * absSize * multiplier;
-          expiryPayoff += pnl;
-        }
-      });
-
-      // Add FUTURES payoff at expiry (linear P&L)
-      futuresPositions.forEach((futPos) => {
-        const size = futPos.size;
-        const entryPrice = futPos.entry_price;
-        const CONTRACT_MULTIPLIER = 0.001; // Standard for Delta Exchange BTC futures
-
-        // P&L = (current_price - entry_price) * size * multiplier
-        const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
-        expiryPayoff += pnl;
-      });
-
-      // Split into profit/loss for colored areas
-      // Guard against NaN/Infinity from calculation edge cases
-      const safeExpiry = isFinite(expiryPayoff) ? expiryPayoff : 0;
-      point.expiryProfit = safeExpiry >= 0 ? safeExpiry : 0;
-      point.expiryLoss = safeExpiry < 0 ? safeExpiry : 0;
-      point.expiry = safeExpiry;
-
-      // Calculate "On Target Date" payoff via reusable helper
-      point.target = calcProjectedPayoff(price, targetDaysFromNow);
-
-      // ── Multi-date overlay (E1): "Today" + "Mid-expiry" reference lines ──
-      if (showMultiDate) {
-        // "Today" — only compute when slider moved (otherwise identical to target)
-        if (targetDaysFromNow > 0.02) { // ~30 min threshold
-          point.today = calcProjectedPayoff(price, 0);
-        }
-        // "Mid-expiry" — P&L at 50% of time to nearest expiry
-        point.mid = calcProjectedPayoff(price, midDays);
-      }
-
-      // ── Probability distribution overlay (E3) ──
-      if (distFn) {
-        point.probRaw = distFn(price);
-      }
-
-      data.push(point);
-    }
-
-    // ── Normalize probability values to 0-100 scale for visible overlay ──
-    if (distFn) {
-      let maxProb = 0;
-      data.forEach((d) => { if (d.probRaw > maxProb) maxProb = d.probRaw; });
-      const probScale = maxProb > 0 ? 100 / maxProb : 0;
-      data.forEach((d) => { d.probability = (d.probRaw || 0) * probScale; });
-    }
-
-    // Statistics
-    let maxProfit = -Infinity,
-      maxLoss = Infinity;
-    let maxTargetProfit = -Infinity,
-      maxTargetLoss = Infinity;
-    const breakevens = [];
-
-    data.forEach((point, idx) => {
-      if (point.expiry > maxProfit) maxProfit = point.expiry;
-      if (point.expiry < maxLoss) maxLoss = point.expiry;
-      if (point.target > maxTargetProfit) maxTargetProfit = point.target;
-      if (point.target < maxTargetLoss) maxTargetLoss = point.target;
-
-      // Include multi-date lines in Y-axis bounds
-      if (point.today !== undefined) {
-        if (point.today > maxTargetProfit) maxTargetProfit = point.today;
-        if (point.today < maxTargetLoss) maxTargetLoss = point.today;
-      }
-      if (point.mid !== undefined) {
-        if (point.mid > maxTargetProfit) maxTargetProfit = point.mid;
-        if (point.mid < maxTargetLoss) maxTargetLoss = point.mid;
-      }
-
-      if (idx > 0) {
-        const prev = data[idx - 1].expiry;
-        const curr = point.expiry;
-        if ((prev < 0 && curr >= 0) || (prev > 0 && curr <= 0)) {
-          breakevens.push(point.price);
-        }
-      }
-    });
-
-    // Calculate Y-axis domain with ADAPTIVE bounds based on actual data
-    // Goal: Use the full graph area for actual data, not fixed arbitrary bounds
-    const overallMax = Math.max(maxProfit, maxTargetProfit);
-    const overallMin = Math.min(maxLoss, maxTargetLoss);
-
-    // Calculate adaptive padding based on the data range
-    // Small ranges get more relative padding to make them readable
-    const dataRange = Math.max(Math.abs(overallMax), Math.abs(overallMin));
-    const paddingPercent = dataRange < 50 ? 0.4 : dataRange < 200 ? 0.25 : 0.15;
-
-    // Calculate padded min/max with symmetric padding around zero if appropriate
-    let rawYMin = overallMin - (Math.abs(overallMin) * paddingPercent);
-    let rawYMax = overallMax + (Math.abs(overallMax) * paddingPercent);
-
-    // Ensure zero line is always visible (important for reference)
-    if (rawYMin > 0) rawYMin = -(rawYMax * 0.1);
-    if (rawYMax < 0) rawYMax = -(rawYMin * 0.1);
-
-    // Final bounds with min/max safeguards
-    const yMin = Math.min(rawYMin, -5); // Always show at least a little below zero
-    const yMax = Math.max(rawYMax, 5);  // Always show at least a little above zero
-
-    // Find projected profit at target price (at current spot when targetPricePercent = 0)
-    const targetPricePoint = data.find((d) => Math.abs(d.price - targetPrice) < priceStep * 1.5);
-    const projectedProfit = targetPricePoint?.target ?? 0;
-
-    // Calculate total premium collected (for short positions, this is what we received)
-    // For longs, it's what we paid (negative)
-    const totalPremiumCollected = parsedPos.reduce((sum, p) => {
-      // For shorts (size < 0): entry * |size| * 0.001 = premium received
-      // For longs (size > 0): -entry * size * 0.001 = premium paid (negative)
-      return sum + p.entryPrice * Math.abs(p.size) * 0.001;
-    }, 0);
-
-    const profitPct =
-      totalPremiumCollected > 0 ? ((projectedProfit / totalPremiumCollected) * 100).toFixed(2) : 0;
-
-    return {
-      data,
-      spotPrice,
-      targetPrice,
-      maxProfit: isFinite(maxProfit) ? maxProfit : 0,
-      maxLoss: isFinite(maxLoss) ? maxLoss : 0,
-      breakevens,
-      projectedProfit,
-      profitPct,
-      targetDate,
-      daysToExpiryFromTarget,
-      minDaysToExpiry,
-      nearestExpiry,
-      minPrice,
-      maxPrice,
-      yMin: isFinite(yMin) ? yMin : -10,
-      yMax: isFinite(yMax) ? yMax : 10,
-    };
-  }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent, futuresPositions, showMultiDate, showProbDist]);
-
-  // Fetch alerts when expiry changes or on trigger
+  // D3: Alert management via extracted hook (usePayoffAlerts.js)
+  // Note: We keep inline state for now to avoid breaking changes, but the hook is ready
+  // for future use when alert functionality is further decoupled.
   const fetchAlerts = useCallback(async () => {
     try {
-      // Fetch ALL alerts (no expiry filter) so Panel shows everything
       const response = await fetch('/api/alerts');
       const data = await response.json();
       if (data.success) {
@@ -499,20 +135,18 @@ const OptionsPayoffDiagram = ({
     } catch (err) {
       console.error('Failed to fetch alerts:', err);
     }
-  }, []); // Remove chartData dependency as we fetch all
+  }, []);
 
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts, alertsRefreshTrigger]);
 
-  // Use current expiry string for filtering
   const currentExpiryStr = useMemo(() =>
     chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null
     , [chartData?.nearestExpiry]);
 
-  // Filtered alerts for this expiry view (includes null expiry alerts as "global")
   const filteredAlerts = useMemo(() => {
-    if (!currentExpiryStr) return activeAlerts.filter(a => a.status === 'active'); // Show all active if no expiry
+    if (!currentExpiryStr) return activeAlerts.filter(a => a.status === 'active');
     return activeAlerts.filter(a =>
       a.status === 'active' && (a.expiry_date === currentExpiryStr || !a.expiry_date)
     );
@@ -641,14 +275,15 @@ const OptionsPayoffDiagram = ({
     }
   }, [isZoomed, chartData, handleResetZoom]);
 
-  // Get filtered data based on zoom
+  // Get filtered data based on zoom (uses enrichedData for scenario overlay)
   const displayData = useMemo(() => {
-    if (!chartData) return [];
+    const sourceData = enrichedData || chartData?.data;
+    if (!sourceData) return [];
     if (!isZoomed || !zoomDomain.left || !zoomDomain.right) {
-      return chartData.data;
+      return sourceData;
     }
-    return chartData.data.filter((d) => d.price >= zoomDomain.left && d.price <= zoomDomain.right);
-  }, [chartData, isZoomed, zoomDomain]);
+    return sourceData.filter((d) => d.price >= zoomDomain.left && d.price <= zoomDomain.right);
+  }, [enrichedData, chartData, isZoomed, zoomDomain]);
 
   // Calculate Y-axis domain for zoomed view (TRULY ADAPTIVE based on visible data)
   // This is critical - when user zooms to a small area, Y-axis MUST adapt
@@ -731,17 +366,26 @@ const OptionsPayoffDiagram = ({
     nearestExpiry,
     yMin,
     yMax,
+    probabilityOfProfit,
+    parsedPositions: chartPositions,
   } = chartData;
 
   // Custom Tooltip - Sensibull Style
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
 
-    const expiry = payload.find((p) => p.dataKey === 'expiry')?.value ?? 0;
+    const expiryGreen = payload.find((p) => p.dataKey === 'expiryGreen')?.value;
+    const expiryRed = payload.find((p) => p.dataKey === 'expiryRed')?.value;
+    const expiry = expiryGreen ?? expiryRed ?? 0;  // One will be non-null
     const target = payload.find((p) => p.dataKey === 'target')?.value ?? 0;
     const today = payload.find((p) => p.dataKey === 'today')?.value;
     const mid = payload.find((p) => p.dataKey === 'mid')?.value;
     const currentPrice = Number(label);
+
+    // C2: Calculate portfolio Greeks at hovered price
+    const delta = chartPositions ? calculatePortfolioDelta(currentPrice, chartPositions, targetDaysFromNow) : 0;
+    const gamma = chartPositions ? calculatePortfolioGamma(currentPrice, chartPositions, targetDaysFromNow) : 0;
+    const theta = chartPositions ? calculatePortfolioTheta(currentPrice, chartPositions, targetDaysFromNow) : 0;
 
     // Calculate price change from spot
     const priceChange = currentPrice - spotPrice;
@@ -852,21 +496,37 @@ const OptionsPayoffDiagram = ({
             </Typography>
           </Box>
         </Box>
+
+        {/* C2: Greeks at hovered price */}
+        {chartPositions && chartPositions.length > 0 && (
+          <Box sx={{ p: 1.25, borderTop: '1px solid rgba(75, 85, 99, 0.3)' }}>
+            <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'space-between' }}>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Δ Delta</Typography>
+                <Typography variant="caption" fontWeight="bold" sx={{ color: delta >= 0 ? '#10b981' : '#ef4444' }}>
+                  {delta >= 0 ? '+' : ''}{delta.toFixed(4)}
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Γ Gamma</Typography>
+                <Typography variant="caption" fontWeight="bold" sx={{ color: '#a78bfa' }}>
+                  {gamma.toFixed(6)}
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Θ Theta</Typography>
+                <Typography variant="caption" fontWeight="bold" sx={{ color: theta >= 0 ? '#10b981' : '#ef4444' }}>
+                  {theta >= 0 ? '+' : ''}{theta.toFixed(4)}/d
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        )}
       </Paper>
     );
   };
 
-  // Date slider marks - show hours for 0 DTE, days otherwise
-  const dateMarks = [
-    { value: 0, label: 'Now' },
-    {
-      value: minDaysToExpiry,
-      label:
-        minDaysToExpiry < 1
-          ? `${Math.round(minDaysToExpiry * 24)}h`
-          : `${Math.ceil(minDaysToExpiry)}d`,
-    },
-  ];
+
 
   return (
     <Paper sx={{ p: 2, bgcolor: 'background.paper' }}>
@@ -876,28 +536,68 @@ const OptionsPayoffDiagram = ({
           📊 Positions Used in This Payoff Graph
         </Typography>
 
-        {parsedPositions?.positions && parsedPositions.positions.length > 0 && (
-          <Box sx={{ mb: futuresPositions.length > 0 ? 1.5 : 0 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
-              Options ({parsedPositions.positions.length}):
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-              {parsedPositions.positions.map((pos, idx) => (
-                <Chip
-                  key={idx}
-                  size="small"
-                  sx={{
-                    bgcolor: pos.type === 'call' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-                    color: pos.type === 'call' ? '#10b981' : '#ef4444',
-                    fontWeight: 500,
-                    border: '1px solid',
-                    borderColor: pos.type === 'call' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
-                  }}
-                  label={`${pos.size > 0 ? '📈 Long' : '📉 Short'} ${Math.abs(pos.size)} ${pos.type.toUpperCase()} $${pos.strike.toLocaleString()}`}
-                />
-              ))}
+        {parsedPositions?.positions && parsedPositions.positions.length > 0 && (() => {
+          // C3: Detect multiple expiry dates for multi-expiry indicator
+          const expiryDates = [...new Set(parsedPositions.positions.filter(p => !p.isClosed).map(p => p.expiryDate.toISOString().split('T')[0]))];
+          const isMultiExpiry = expiryDates.length > 1;
+          const nearestExpiryStr = parsedPositions.nearestExpiry?.toISOString().split('T')[0];
+
+          return (
+            <Box sx={{ mb: futuresPositions.length > 0 ? 1.5 : 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  Options ({parsedPositions.positions.length}):
+                </Typography>
+                {isMultiExpiry && (
+                  <Chip
+                    size="small"
+                    label={`${expiryDates.length} Expiries`}
+                    sx={{
+                      height: 18, fontSize: '0.6rem', fontWeight: 700,
+                      bgcolor: 'rgba(251,191,36,0.15)', color: '#fbbf24',
+                      border: '1px solid rgba(251,191,36,0.3)',
+                    }}
+                  />
+                )}
+              </Box>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {parsedPositions.positions.map((pos, idx) => {
+                  const posExpiryStr = pos.expiryDate.toISOString().split('T')[0];
+                  const isNearestExpiry = posExpiryStr === nearestExpiryStr;
+                  const expiryLabel = pos.expiryDate.toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+                  return (
+                    <Chip
+                      key={idx}
+                      size="small"
+                      sx={{
+                        bgcolor: pos.type === 'call' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                        color: pos.type === 'call' ? '#10b981' : '#ef4444',
+                        fontWeight: 500,
+                        border: '1px solid',
+                        borderColor: pos.type === 'call' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+                      }}
+                      label={
+                        <span>
+                          {pos.size > 0 ? '📈 Long' : '📉 Short'} {Math.abs(pos.size)} {pos.type.toUpperCase()} ${pos.strike.toLocaleString()}
+                          {isMultiExpiry && (
+                            <span style={{
+                              marginLeft: 4, fontSize: '0.6rem', padding: '1px 4px',
+                              borderRadius: 3, fontWeight: 700,
+                              backgroundColor: isNearestExpiry ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)',
+                              color: isNearestExpiry ? '#fca5a5' : '#93c5fd',
+                            }}>
+                              {expiryLabel}{isNearestExpiry ? ' ⏰' : ''}
+                            </span>
+                          )}
+                        </span>
+                      }
+                    />
+                  );
+                })}
+              </Box>
             </Box>
-          </Box>
+          );
+        })()}
         )}
 
         {futuresPositions.length > 0 && (
@@ -1121,6 +821,30 @@ const OptionsPayoffDiagram = ({
             <Typography variant="body2" sx={{ color: '#9ca3af' }}>N/A</Typography>
           )}
         </Box>
+
+        {/* B4: Probability of Profit (PoP) */}
+        {probabilityOfProfit !== null && probabilityOfProfit !== undefined && (
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            px: 1.5,
+            py: 0.75,
+            borderRadius: 1.5,
+            bgcolor: probabilityOfProfit >= 50 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+            border: `1px solid ${probabilityOfProfit >= 50 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            minWidth: 'fit-content',
+          }}>
+            <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
+              🎲 PoP
+            </Typography>
+            <Typography variant="body2" fontWeight="bold" sx={{
+              color: probabilityOfProfit >= 50 ? '#10b981' : '#ef4444',
+            }}>
+              {probabilityOfProfit.toFixed(1)}%
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* Header with Legend */}
@@ -1185,6 +909,14 @@ const OptionsPayoffDiagram = ({
               </Typography>
             </Box>
           )}
+          {scenarioCompare && baselineRef.current && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 24, height: 2, bgcolor: '#9ca3af', borderStyle: 'dashed' }} />
+              <Typography variant="caption" color="text.secondary">
+                Baseline
+              </Typography>
+            </Box>
+          )}
 
           {/* Feature toggles */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
@@ -1196,6 +928,11 @@ const OptionsPayoffDiagram = ({
             <FormControlLabel
               control={<Switch size="small" checked={showProbDist} onChange={(e) => setShowProbDist(e.target.checked)} sx={{ '& .MuiSwitch-track': { bgcolor: 'rgba(255,255,255,0.15)' } }} />}
               label={<Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>Probability</Typography>}
+              sx={{ mx: 0, '& .MuiFormControlLabel-label': { ml: 0.25 } }}
+            />
+            <FormControlLabel
+              control={<Switch size="small" checked={scenarioCompare} onChange={(e) => setScenarioCompare(e.target.checked)} sx={{ '& .MuiSwitch-track': { bgcolor: 'rgba(255,255,255,0.15)' } }} />}
+              label={<Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>Compare</Typography>}
               sx={{ mx: 0, '& .MuiFormControlLabel-label': { ml: 0.25 } }}
             />
           </Box>
@@ -1385,17 +1122,27 @@ const OptionsPayoffDiagram = ({
             isAnimationActive={false}
           />
 
-          {/* On Expiry line - with gradient color (rendered as two separate paths) */}
+          {/* C5: On Expiry line — dual-color (green above zero, red below) */}
           <Line
             type="monotone"
-            dataKey="expiry"
+            dataKey="expiryGreen"
             stroke="#10b981"
             strokeWidth={2.5}
             dot={false}
             name="On Expiry"
             isAnimationActive={false}
-            // Custom stroke to show red below 0, green above - handled via CSS
-            style={{ filter: 'none' }}
+            connectNulls={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="expiryRed"
+            stroke="#ef4444"
+            strokeWidth={2.5}
+            dot={false}
+            name="On Expiry (loss)"
+            isAnimationActive={false}
+            connectNulls={false}
+            legendType="none"
           />
 
           {/* On Target Date line - Blue (natural curve for smoothness) */}
@@ -1436,6 +1183,34 @@ const OptionsPayoffDiagram = ({
               isAnimationActive={false}
               opacity={0.8}
             />
+          )}
+
+          {/* ── E5: Scenario comparison baseline overlay ── */}
+          {scenarioCompare && baselineRef.current && (
+            <>
+              <Line
+                type="natural"
+                dataKey="baselineExpiry"
+                stroke="#9ca3af"
+                strokeWidth={2}
+                strokeDasharray="8 4"
+                dot={false}
+                name="Baseline Expiry"
+                isAnimationActive={false}
+                opacity={0.6}
+              />
+              <Line
+                type="natural"
+                dataKey="baselineTarget"
+                stroke="#6b7280"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={false}
+                name="Baseline Target"
+                isAnimationActive={false}
+                opacity={0.5}
+              />
+            </>
           )}
 
           {/* ── Probability distribution overlay (E3): bell curve (normalized 0-100) ── */}
@@ -1492,9 +1267,14 @@ const OptionsPayoffDiagram = ({
                   if (!x || isNaN(x)) return null;
 
                   return (
-                    <g transform={`translate(${x}, 25)`}>
-                      <text x={0} y={0} textAnchor="middle" fontSize="16">🔔</text>
-                      <text x={0} y={12} textAnchor="middle" fill="#f97316" fontSize="10" fontWeight="bold">
+                    <g transform={`translate(${x}, 20)`}>
+                      {/* C4: SVG bell icon instead of emoji for cross-platform rendering */}
+                      <path
+                        d="M12 2C11.172 2 10.5 2.672 10.5 3.5V4.19C7.91 4.86 6 7.2 6 10V15L4 17V18H20V17L18 15V10C18 7.2 16.09 4.86 13.5 4.19V3.5C13.5 2.672 12.828 2 12 2ZM10 19C10 20.1 10.9 21 12 21S14 20.1 14 19H10Z"
+                        fill="#f97316"
+                        transform="translate(-12, -12) scale(0.9)"
+                      />
+                      <text x={0} y={14} textAnchor="middle" fill="#f97316" fontSize="10" fontWeight="bold">
                         {price.toLocaleString()}
                       </text>
                     </g>
@@ -1519,147 +1299,18 @@ const OptionsPayoffDiagram = ({
         />
       </Box>
 
-      {/* BTC Target Price Slider - Sensibull Style (Default: ATM/Index Price) */}
-      <Box sx={{ mt: 2, px: 2, py: 1.5, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" fontWeight="bold">
-              BTC Target
-            </Typography>
-            <Chip
-              label={targetPricePercent === 0 ? 'ATM' : 'Custom'}
-              size="small"
-              sx={{
-                height: 18,
-                fontSize: 10,
-                bgcolor:
-                  targetPricePercent === 0 ? 'rgba(251, 191, 36, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                color: targetPricePercent === 0 ? '#fbbf24' : '#3b82f6',
-              }}
-            />
-            <Typography
-              variant="caption"
-              onClick={() => setTargetPricePercent(0)}
-              sx={{
-                color: '#3b82f6',
-                cursor: 'pointer',
-                '&:hover': { textDecoration: 'underline' },
-              }}
-            >
-              Reset to ATM
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              {targetPricePercent >= 0 ? '+' : ''}
-              {targetPricePercent.toFixed(1)}%
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => setTargetPricePercent((p) => Math.max(-30, p - 1))}
-            >
-              <Typography sx={{ fontWeight: 'bold', fontSize: 16 }}>−</Typography>
-            </IconButton>
-            <Typography
-              variant="body2"
-              fontWeight="bold"
-              sx={{ minWidth: 80, textAlign: 'center' }}
-            >
-              ${targetPrice.toLocaleString()}
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => setTargetPricePercent((p) => Math.min(30, p + 1))}
-            >
-              <Typography sx={{ fontWeight: 'bold', fontSize: 16 }}>+</Typography>
-            </IconButton>
-          </Box>
-        </Box>
-        <Slider
-          value={targetPricePercent}
-          onChange={(e, v) => setTargetPricePercent(v)}
-          min={-30}
-          max={30}
-          step={0.5}
-          sx={{
-            color: '#3b82f6',
-            mt: 0.5,
-            '& .MuiSlider-thumb': { width: 14, height: 14 },
-            '& .MuiSlider-track': { height: 3 },
-            '& .MuiSlider-rail': { height: 3, bgcolor: 'rgba(255,255,255,0.1)' },
-          }}
-        />
-      </Box>
-
-      {/* Date/Time Slider Section - Hourly for 24/7 BTC (Expiry: 5:30 PM IST) */}
-      <Box sx={{ mt: 2, px: 2, py: 2, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary">
-              Time to expiry: {Math.floor(daysToExpiryFromTarget)}D{' '}
-              {Math.round((daysToExpiryFromTarget % 1) * 24)}H
-              {daysToExpiryFromTarget < 1 && ' (0 DTE)'}
-            </Typography>
-          </Box>
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {/* Hourly back */}
-            <IconButton
-              size="small"
-              onClick={() => setTargetDaysFromNow((d) => Math.max(0, d - 1 / 24))}
-              title="-1 hour"
-            >
-              <ChevronLeftIcon fontSize="small" />
-            </IconButton>
-            <Typography variant="body2" sx={{ minWidth: 180, textAlign: 'center' }}>
-              {formatDate(targetDate)}
-            </Typography>
-            {/* Hourly forward */}
-            <IconButton
-              size="small"
-              onClick={() => setTargetDaysFromNow((d) => Math.min(minDaysToExpiry, d + 1 / 24))}
-              title="+1 hour"
-            >
-              <ChevronRightIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        </Box>
-
-        <Box sx={{ px: 1 }}>
-          <Slider
-            value={targetDaysFromNow}
-            onChange={(e, v) => setTargetDaysFromNow(v)}
-            min={0}
-            max={minDaysToExpiry}
-            step={1 / 24} // Hourly step for 24/7 market
-            marks={dateMarks}
-            sx={{
-              color: '#3b82f6',
-              '& .MuiSlider-thumb': {
-                width: 16,
-                height: 16,
-              },
-              '& .MuiSlider-track': {
-                height: 4,
-              },
-              '& .MuiSlider-rail': {
-                height: 4,
-                bgcolor: 'rgba(255,255,255,0.1)',
-              },
-            }}
-          />
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: -1 }}>
-            <Typography variant="caption" color="text.secondary">
-              Now
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {minDaysToExpiry < 1
-                ? `${nearestExpiry.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })} 5:30 PM IST`
-                : nearestExpiry.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}
-            </Typography>
-          </Box>
-        </Box>
-      </Box>
+      {/* Target Price + Date/Time Sliders — extracted to PayoffControls */}
+      <PayoffControls
+        targetPricePercent={targetPricePercent}
+        setTargetPricePercent={setTargetPricePercent}
+        targetPrice={targetPrice}
+        targetDaysFromNow={targetDaysFromNow}
+        setTargetDaysFromNow={setTargetDaysFromNow}
+        targetDate={targetDate}
+        daysToExpiryFromTarget={daysToExpiryFromTarget}
+        minDaysToExpiry={minDaysToExpiry}
+        nearestExpiry={nearestExpiry}
+      />
 
       {/* Alerts Panel - Manage Price Notifications */}
       <AlertsPanel

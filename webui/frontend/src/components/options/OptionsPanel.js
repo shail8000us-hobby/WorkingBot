@@ -123,6 +123,7 @@ import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
 // JAN 31, 2026: Position Adjustment Panel - Sensibull-like position adjustment system
 // FEB 1, 2026: Updated to use SensibullStyleAdjustmentPage (full page layout)
 import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
+import PayoffErrorBoundary from './PayoffErrorBoundary';
 
 // Phase 3: Lazy load heavy components
 const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
@@ -4156,13 +4157,15 @@ const OptionsPanel = () => {
       {/* Payoff Diagram */}
       {positions.length > 0 && !turboMode && (
         <Box sx={{ mt: 2 }}>
-          <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
-            <OptionsPayoffDiagram
-              positions={sortedPositions}
-              selectedPositions={selectedPositionsForPayoff}
-              futuresPositions={visibleFuturesPositions}
-            />
-          </Suspense>
+          <PayoffErrorBoundary>
+            <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
+              <OptionsPayoffDiagram
+                positions={sortedPositions}
+                selectedPositions={selectedPositionsForPayoff}
+                futuresPositions={visibleFuturesPositions}
+              />
+            </Suspense>
+          </PayoffErrorBoundary>
         </Box>
       )}
 

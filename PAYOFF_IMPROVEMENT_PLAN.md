@@ -179,8 +179,8 @@ const multiplier = getMultiplier(pos.symbol);
 | E1 | Multi-target-date overlay | "Today" (cyan dashed) + "Mid-Expiry" (indigo dotted) lines alongside main blue target line | ✅ Done |
 | E2 | Weighted IV for probability | Notional-weighted average IV used for probability distribution (more accurate than simple average) | ✅ Done |
 | E3 | Probability distribution overlay | Faint violet bell curve (lognormal density) behind payoff lines with hidden secondary Y-axis | ✅ Done |
-| E4 | Backend-computed payoff | API endpoint returning payoff curves (single source of truth) | 🔜 Future |
-| E5 | Scenario comparison mode | Compare current portfolio vs "what if I add X" | 🔜 Future |
+| E4 | Backend-computed payoff | `POST /payoff/calculate` endpoint accepting arbitrary legs, calling `calculate_payoff_api()` | ✅ Done |
+| E5 | Scenario comparison mode | "Compare" toggle snapshots current P&L as baseline, overlays dashed gray lines when positions change | ✅ Done |
 
 **E1 Details:** Two additional time-horizon lines rendered via reusable `calcProjectedPayoff` helper:
 - **Today line** (cyan `#06b6d4`, dashed) — P&L if price moved to each level right now
@@ -204,7 +204,10 @@ const multiplier = getMultiplier(pos.symbol);
 | D | **NEW** `usePayoffData.js` | Extract data hook |
 | D | **NEW** `usePayoffAlerts.js` | Extract alert hook |
 | E | `payoffCalculator.js` | Add `createPriceDistribution`, `calculateWeightedIV` |
-| E | `OptionsPayoffDiagram.js` | Multi-date lines, probability overlay, toggle switches |
+| E | `OptionsPayoffDiagram.js` | Multi-date lines, probability overlay, toggle switches, scenario compare |
+| E | **NEW** `PayoffControls.js` | Target price + date/time sliders |
+| E | **NEW** `PayoffErrorBoundary.js` | React error boundary wrapping chart |
+| E | `strategy_routes.py` | `POST /payoff/calculate` standalone endpoint |
 
 ---
 
@@ -252,6 +255,6 @@ cd webui/frontend && npm run build 2>&1 | tail -5
 - [x] Phase B approved — robustness ✅
 - [x] Phase C approved — UX polish ✅
 - [x] Phase D approved — extraction ✅
-- [x] Phase E — E1/E2/E3 implemented ✅ (E4/E5 deferred)
+- [x] Phase E — E1/E2/E3/E4/E5 all implemented ✅
 
-**All phases A–E complete.**
+**All phases A–E 100% complete. No remaining items.**
