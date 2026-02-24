@@ -374,18 +374,28 @@ const OptionsPayoffDiagram = ({
 
       // ── Multi-date overlay (E1): "Today" + "Mid-expiry" reference lines ──
       if (showMultiDate) {
-        // "Today" — P&L if price jumped here right now (full time remaining)
-        point.today = calcProjectedPayoff(price, 0);
+        // "Today" — only compute when slider moved (otherwise identical to target)
+        if (targetDaysFromNow > 0.02) { // ~30 min threshold
+          point.today = calcProjectedPayoff(price, 0);
+        }
         // "Mid-expiry" — P&L at 50% of time to nearest expiry
         point.mid = calcProjectedPayoff(price, midDays);
       }
 
       // ── Probability distribution overlay (E3) ──
       if (distFn) {
-        point.probability = distFn(price);
+        point.probRaw = distFn(price);
       }
 
       data.push(point);
+    }
+
+    // ── Normalize probability values to 0-100 scale for visible overlay ──
+    if (distFn) {
+      let maxProb = 0;
+      data.forEach((d) => { if (d.probRaw > maxProb) maxProb = d.probRaw; });
+      const probScale = maxProb > 0 ? 100 / maxProb : 0;
+      data.forEach((d) => { d.probability = (d.probRaw || 0) * probScale; });
     }
 
     // Statistics
@@ -1151,19 +1161,29 @@ const OptionsPayoffDiagram = ({
           </Box>
           {showMultiDate && (
             <>
+              {targetDaysFromNow > 0.02 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 24, height: 2, bgcolor: '#06b6d4' }} />
+                  <Typography variant="caption" color="text.secondary">
+                    Today
+                  </Typography>
+                </Box>
+              )}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 24, height: 2, bgcolor: '#06b6d4', opacity: 0.7 }} />
-                <Typography variant="caption" color="text.secondary">
-                  Today
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 24, height: 2, bgcolor: '#818cf8', opacity: 0.5 }} />
+                <Box sx={{ width: 24, height: 2, bgcolor: '#818cf8', opacity: 0.8 }} />
                 <Typography variant="caption" color="text.secondary">
                   Mid-Expiry
                 </Typography>
               </Box>
             </>
+          )}
+          {showProbDist && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 24, height: 8, bgcolor: '#a78bfa', opacity: 0.3, borderRadius: 0.5 }} />
+              <Typography variant="caption" color="text.secondary">
+                Prob. Zone
+              </Typography>
+            </Box>
           )}
 
           {/* Feature toggles */}
@@ -1276,10 +1296,10 @@ const OptionsPayoffDiagram = ({
               <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
               <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.1} />
             </linearGradient>
-            {/* Probability distribution overlay (E3) */}
+            {/* Probability distribution overlay (E3) — visible gradient */}
             <linearGradient id="probGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#a78bfa" stopOpacity={0.05} />
+              <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity={0.08} />
             </linearGradient>
           </defs>
 
@@ -1390,42 +1410,43 @@ const OptionsPayoffDiagram = ({
           />
 
           {/* ── Multi-date overlay (E1): Today + Mid-expiry reference lines ── */}
-          {showMultiDate && (
+          {/* "Today" line — only when slider moved so it's not hidden behind Target */}
+          {showMultiDate && targetDaysFromNow > 0.02 && (
             <Line
               type="natural"
               dataKey="today"
               stroke="#06b6d4"
-              strokeWidth={1.5}
+              strokeWidth={2}
               strokeDasharray="6 3"
               dot={false}
               name="Today"
               isAnimationActive={false}
-              opacity={0.7}
             />
           )}
+          {/* Mid-expiry line — always distinct from both Target and Expiry */}
           {showMultiDate && (
             <Line
               type="natural"
               dataKey="mid"
               stroke="#818cf8"
-              strokeWidth={1.5}
+              strokeWidth={2}
               strokeDasharray="4 4"
               dot={false}
               name="Mid-Expiry"
               isAnimationActive={false}
-              opacity={0.5}
+              opacity={0.8}
             />
           )}
 
-          {/* ── Probability distribution overlay (E3): faint bell curve ── */}
+          {/* ── Probability distribution overlay (E3): bell curve (normalized 0-100) ── */}
           {showProbDist && (
             <Area
               yAxisId="prob"
               type="monotone"
               dataKey="probability"
               stroke="#a78bfa"
-              strokeWidth={1}
-              strokeOpacity={0.3}
+              strokeWidth={1.5}
+              strokeOpacity={0.5}
               fill="url(#probGradient)"
               fillOpacity={1}
               isAnimationActive={false}

@@ -183,12 +183,13 @@ export const calculatePortfolioDelta = (S, positions, targetDaysFromNow = 0, r =
 
 /**
  * Create a lognormal price distribution function for a given time horizon.
- * Returns a function price → probability density, suitable for probability overlay.
+ * Returns a function price → raw probability density.
+ * Caller should normalize values (e.g. 0-100) for chart overlay.
  *
  * @param {number} spot - Current spot price
  * @param {number} volatility - Annualized IV (e.g. 0.8 for 80%)
  * @param {number} T - Time horizon in years
- * @returns {Function} price → density (call with each price point)
+ * @returns {Function} price → density (raw PDF value)
  */
 export const createPriceDistribution = (spot, volatility, T) => {
   if (T <= 0 || volatility <= 0 || spot <= 0) return () => 0;
