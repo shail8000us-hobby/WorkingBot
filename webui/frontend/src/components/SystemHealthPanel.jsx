@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogActions,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import {
   Activity,
@@ -38,6 +39,7 @@ import {
   Minus,
   Eye,
   X,
+  Power,
 } from 'lucide-react';
 
 /**
@@ -68,6 +70,67 @@ const SystemHealthPanel = () => {
   // Dialog state
   const [alertHistoryDialogOpen, setAlertHistoryDialogOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
+
+  // Restart state
+  const [restarting, setRestarting] = useState(false);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+  const [launchdManaged, setLaunchdManaged] = useState(null);
+
+  // Check launchd status on mount
+  useEffect(() => {
+    fetch('/api/system/launchd-status')
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.success) setLaunchdManaged(data.managed);
+      })
+      .catch(() => setLaunchdManaged(false));
+  }, []);
+
+  // Restart backend handler
+  const handleRestartBackend = async () => {
+    setRestartConfirmOpen(false);
+    setRestarting(true);
+    setError(null);
+
+    try {
+      await fetch('/api/system/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'User clicked Restart Backend in WebUI' }),
+      });
+    } catch {
+      // Expected: request may fail as backend dies
+    }
+
+    // Poll /api/health until backend comes back (max 30s)
+    const startTime = Date.now();
+    const maxWait = 30000;
+    const pollInterval = 2000;
+
+    const poll = () => {
+      if (Date.now() - startTime > maxWait) {
+        setRestarting(false);
+        setError('Backend did not come back within 30s. Check launchd status.');
+        return;
+      }
+
+      fetch('/api/system/status')
+        .then((res) => {
+          if (res.ok) {
+            setRestarting(false);
+            fetchHealthData(); // Refresh all data
+          } else {
+            setTimeout(poll, pollInterval);
+          }
+        })
+        .catch(() => {
+          setTimeout(poll, pollInterval);
+        });
+    };
+
+    // Wait 3s before starting to poll (give backend time to shut down)
+    setTimeout(poll, 3000);
+  };
 
   // Fetch all health data
   const fetchHealthData = async () => {
@@ -324,11 +387,61 @@ const SystemHealthPanel = () => {
               Last update: {lastUpdate.toLocaleTimeString()}
             </Typography>
           )}
-          <IconButton onClick={fetchHealthData} color="primary">
-            <RefreshCw size={20} />
-          </IconButton>
+          <Tooltip title="Refresh health data">
+            <IconButton onClick={fetchHealthData} color="primary">
+              <RefreshCw size={20} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={restarting ? 'Restarting...' : 'Restart Backend (launchd auto-recovers)'}>
+            <span>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                disabled={restarting}
+                onClick={() => setRestartConfirmOpen(true)}
+                startIcon={restarting ? <CircularProgress size={16} /> : <Power size={16} />}
+                sx={{ ml: 1 }}
+              >
+                {restarting ? 'Restarting…' : 'Restart Backend'}
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
+
+      {/* Restart overlay */}
+      {restarting && (
+        <Alert severity="info" sx={{ mb: 3 }} icon={<CircularProgress size={20} />}>
+          <AlertTitle>Backend Restarting</AlertTitle>
+          The backend is restarting via launchd. This typically takes ~10 seconds.
+          The page will auto-refresh when the backend is back.
+        </Alert>
+      )}
+
+      {/* Restart confirmation dialog */}
+      <Dialog open={restartConfirmOpen} onClose={() => setRestartConfirmOpen(false)}>
+        <DialogTitle>Restart Backend?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            This will restart the WebUI backend server.
+            {launchdManaged
+              ? ' launchd will automatically relaunch it within ~10 seconds.'
+              : ' ⚠️ WARNING: launchd is NOT managing this process. The backend will stop and NOT restart automatically.'}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRestartConfirmOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleRestartBackend}
+            color="warning"
+            variant="contained"
+            startIcon={<Power size={16} />}
+          >
+            Restart Now
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Overall Health Status */}
       {summary && (

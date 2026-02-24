@@ -8,7 +8,7 @@
     
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>/Users/ssr/Projects/WorkingBot/.venv/bin/python</string>
         <string>/Users/ssr/Projects/WorkingBot/webui/backend/app.py</string>
     </array>
     
@@ -26,23 +26,20 @@
         <key>PYTHONPATH</key>
         <string>/Users/ssr/Projects/WorkingBot</string>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/Users/ssr/Projects/WorkingBot/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
-        <key>PROJECT_NAME</key>
-        <string>WorkingBot-Production</string>
+        <key>PYTHONDONTWRITEBYTECODE</key>
+        <string>1</string>
+        <key>VIRTUAL_ENV</key>
+        <string>/Users/ssr/Projects/WorkingBot/.venv</string>
     </dict>
     
     <key>RunAtLoad</key>
     <true/>
     
     <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-        <key>Crashed</key>
-        <true/>
-    </dict>
+    <true/>
     
     <key>ThrottleInterval</key>
     <integer>10</integer>

@@ -20,6 +20,7 @@ Date: 2025-10-31
 import os
 import logging
 import sys
+import signal
 from pathlib import Path
 from datetime import datetime
 import time
@@ -472,3 +473,88 @@ def _atomic_write_text(filepath: Path, content: str):
         if temp_file.exists():
             temp_file.unlink()
         raise
+
+
+# ============================================================================
+# Backend Restart (launchd auto-restarts the process)
+# ============================================================================
+
+@system_bp.route('/api/system/restart', methods=['POST'])
+def restart_backend():
+    """
+    Restart the backend server.
+    
+    The process exits with code 0. launchd (KeepAlive: true) detects the exit
+    and relaunches within ThrottleInterval (10s).
+    
+    POST /api/system/restart
+    Body (optional): { "reason": "user clicked restart" }
+    
+    Returns 200 immediately, then terminates after a short delay.
+    """
+    import threading
+
+    reason = 'WebUI restart button'
+    if request.json and request.json.get('reason'):
+        reason = request.json['reason']
+
+    log.warning(f'🔄 Backend restart requested: {reason}')
+
+    def _do_restart():
+        """Wait briefly for the HTTP response to flush, then exit."""
+        import time
+        time.sleep(1.0)  # Let Flask send the 200 response
+        log.warning('🔄 Backend shutting down for restart...')
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+
+    return jsonify({
+        'success': True,
+        'message': 'Backend restarting... will be back in ~10 seconds',
+        'reason': reason,
+    })
+
+
+@system_bp.route('/api/system/launchd-status', methods=['GET'])
+def get_launchd_status():
+    """
+    Check if the backend is managed by launchd.
+    
+    GET /api/system/launchd-status
+    
+    Returns whether launchd KeepAlive is active (auto-restart enabled).
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ['launchctl', 'list'],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = result.stdout.strip().split('\n')
+        for line in lines:
+            if 'com.gridbot.production.webui' in line:
+                parts = line.split('\t')
+                pid = parts[0].strip() if len(parts) > 0 else '-'
+                return jsonify({
+                    'success': True,
+                    'managed': True,
+                    'running_pid': int(pid) if pid != '-' else None,
+                    'label': 'com.gridbot.production.webui',
+                    'auto_restart': True,
+                })
+
+        return jsonify({
+            'success': True,
+            'managed': False,
+            'auto_restart': False,
+            'message': 'Backend is NOT managed by launchd. Restart will stop the server permanently.',
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'managed': False,
+        })
+
