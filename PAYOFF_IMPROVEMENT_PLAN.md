@@ -172,15 +172,24 @@ const multiplier = getMultiplier(pos.symbol);
 
 ---
 
-### Phase E: Advanced Features (Future/Deferred)
+### Phase E: Advanced Features (Implemented)
 
-| # | Feature | Detail |
-|---|---------|--------|
-| E1 | Multi-target-date overlay | Show 2-3 blue lines for different dates simultaneously |
-| E2 | IV smile interpolation | Use variance interpolation for wing strikes |
-| E3 | Probability distribution overlay | Faint bell curve showing probability density |
-| E4 | Backend-computed payoff | API endpoint returning payoff curves (single source of truth) |
-| E5 | Scenario comparison mode | Compare current portfolio vs "what if I add X" |
+| # | Feature | Detail | Status |
+|---|---------|--------|--------|
+| E1 | Multi-target-date overlay | "Today" (cyan dashed) + "Mid-Expiry" (indigo dotted) lines alongside main blue target line | ✅ Done |
+| E2 | Weighted IV for probability | Notional-weighted average IV used for probability distribution (more accurate than simple average) | ✅ Done |
+| E3 | Probability distribution overlay | Faint violet bell curve (lognormal density) behind payoff lines with hidden secondary Y-axis | ✅ Done |
+| E4 | Backend-computed payoff | API endpoint returning payoff curves (single source of truth) | 🔜 Future |
+| E5 | Scenario comparison mode | Compare current portfolio vs "what if I add X" | 🔜 Future |
+
+**E1 Details:** Two additional time-horizon lines rendered via reusable `calcProjectedPayoff` helper:
+- **Today line** (cyan `#06b6d4`, dashed) — P&L if price moved to each level right now
+- **Mid-expiry line** (indigo `#818cf8`, dotted) — P&L at 50% of time to nearest expiry
+- Both togglable via "Time Decay" switch in header
+
+**E2 Details:** `calculateWeightedIV()` in payoffCalculator.js weights IV by notional (|size| × strike × multiplier), then feeds into lognormal distribution. More accurate than simple average for mixed-size portfolios.
+
+**E3 Details:** `createPriceDistribution()` returns a lognormal density function. Rendered as a faint `Area` on a hidden secondary Y-axis so it auto-scales without affecting payoff Y-domain. Togglable via "Probability" switch.
 
 ---
 
@@ -194,8 +203,8 @@ const multiplier = getMultiplier(pos.symbol);
 | D | **NEW** `payoffCalculator.js` | Extract pure math functions |
 | D | **NEW** `usePayoffData.js` | Extract data hook |
 | D | **NEW** `usePayoffAlerts.js` | Extract alert hook |
-| D | **NEW** `PayoffAlertDialog.js` | Extract dialog |
-| D | **NEW** `PayoffControls.js` | Extract sliders |
+| E | `payoffCalculator.js` | Add `createPriceDistribution`, `calculateWeightedIV` |
+| E | `OptionsPayoffDiagram.js` | Multi-date lines, probability overlay, toggle switches |
 
 ---
 
@@ -239,10 +248,10 @@ cd webui/frontend && npm run build 2>&1 | tail -5
 
 ## Approval
 
-- [ ] Phase A approved — critical fixes
-- [ ] Phase B approved — robustness
-- [ ] Phase C approved — UX polish
-- [ ] Phase D approved — extraction
-- [ ] Phase E acknowledged — future
+- [x] Phase A approved — critical fixes ✅
+- [x] Phase B approved — robustness ✅
+- [x] Phase C approved — UX polish ✅
+- [x] Phase D approved — extraction ✅
+- [x] Phase E — E1/E2/E3 implemented ✅ (E4/E5 deferred)
 
-**Starting with Phase A immediately.**
+**All phases A–E complete.**

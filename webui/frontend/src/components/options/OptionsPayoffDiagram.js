@@ -25,7 +25,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import {
-  Box, Typography, Paper, Chip, Slider, IconButton, Popover,
+  Box, Typography, Paper, Chip, Slider, IconButton, Popover, Switch, FormControlLabel,
 } from '@mui/material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
@@ -40,6 +40,8 @@ import {
   getContractMultiplier,
   RISK_FREE_RATE,
   formatDate,
+  createPriceDistribution,
+  calculateWeightedIV,
 } from './payoffCalculator';
 
 // ============================================================================
@@ -72,6 +74,10 @@ const OptionsPayoffDiagram = ({
   const [alertPnLTarget, setAlertPnLTarget] = useState(null);
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [alertsRefreshTrigger, setAlertsRefreshTrigger] = useState(0);
+
+  // Phase E: Advanced feature toggles
+  const [showMultiDate, setShowMultiDate] = useState(true);
+  const [showProbDist, setShowProbDist] = useState(true);
 
   // Fetch alerts when expiry changes or on trigger
 
@@ -272,6 +278,39 @@ const OptionsPayoffDiagram = ({
       (nearestExpiry - targetDate) / (1000 * 60 * 60 * 24)
     );
 
+    // ── Helper: calculate portfolio P&L at any day-offset from now ──
+    // Used for target, today, and mid-expiry lines (DRY)
+    const calcProjectedPayoff = (price, daysFromNow) => {
+      let payoff = 0;
+      parsedPos.forEach((pos) => {
+        if (pos.isClosed) { payoff += pos.realizedPnl || 0; return; }
+        const absSize = Math.abs(pos.size);
+        const isShort = pos.size < 0;
+        const multiplier = getContractMultiplier(pos.symbol);
+        const remainingYears = Math.max(0.0001, (pos.daysToExpiry - daysFromNow) / 365.25);
+        const theo = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
+        const safeTheo = isFinite(theo) ? theo : 0;
+        if (isShort) payoff += (pos.entryPrice - safeTheo) * absSize * multiplier;
+        else payoff += (safeTheo - pos.entryPrice) * absSize * multiplier;
+      });
+      futuresPositions.forEach((futPos) => {
+        payoff += (price - futPos.entry_price) * futPos.size * 0.001;
+      });
+      return isFinite(payoff) ? payoff : 0;
+    };
+
+    // ── Probability distribution function (E3) ──
+    const weightedIV = showProbDist && parsedPos.length > 0
+      ? calculateWeightedIV(parsedPos)
+      : 0.8;
+    const avgYearsToExpiry = minDaysToExpiry / 365.25;
+    const distFn = showProbDist && parsedPos.length > 0 && avgYearsToExpiry > 0.001
+      ? createPriceDistribution(spotPrice, weightedIV, avgYearsToExpiry)
+      : null;
+
+    // Mid-expiry day offset for multi-date overlay
+    const midDays = minDaysToExpiry * 0.5;
+
     const data = [];
 
     for (let i = 0; i <= numPoints; i++) {
@@ -330,60 +369,21 @@ const OptionsPayoffDiagram = ({
       point.expiryLoss = safeExpiry < 0 ? safeExpiry : 0;
       point.expiry = safeExpiry;
 
-      // Calculate "On Target Date" payoff using DIRECT Black-Scholes approach
-      // For each position: theoretical P&L = (BS_price_at_this_spot - entry_price) * sign * size * multiplier
-      // This eliminates baseline drift from IV solver inaccuracies (theoAtCurrentSpot ≠ markPrice)
-      // For CLOSED positions: Add realized PnL as constant offset (no price exposure)
-      let targetPayoff = 0;
-      parsedPos.forEach((pos) => {
-        // Handle closed positions - add realized PnL as constant offset (no price exposure)
-        if (pos.isClosed) {
-          targetPayoff += pos.realizedPnl || 0;
-          return;
-        }
+      // Calculate "On Target Date" payoff via reusable helper
+      point.target = calcProjectedPayoff(price, targetDaysFromNow);
 
-        const absSize = Math.abs(pos.size);
-        const isShort = pos.size < 0;
-        // Contract multiplier: 0.001 for BTC, 0.01 for ETH
-        const multiplier = pos.symbol?.toUpperCase().includes('ETH') ? 0.01 : 0.001;
+      // ── Multi-date overlay (E1): "Today" + "Mid-expiry" reference lines ──
+      if (showMultiDate) {
+        // "Today" — P&L if price jumped here right now (full time remaining)
+        point.today = calcProjectedPayoff(price, 0);
+        // "Mid-expiry" — P&L at 50% of time to nearest expiry
+        point.mid = calcProjectedPayoff(price, midDays);
+      }
 
-        const remainingYears = Math.max(0.0001, (pos.daysToExpiry - targetDaysFromNow) / 365.25);
-
-        // Calculate theoretical option price at this price point and target date
-        const theoAtThisPrice = blackScholesPrice(
-          price,
-          pos.strike,
-          remainingYears,
-          riskFreeRate,
-          pos.iv,
-          pos.type
-        );
-
-        // Guard against NaN/Infinity from BS calculation
-        const safeTheo = isFinite(theoAtThisPrice) ? theoAtThisPrice : 0;
-
-        // Direct P&L calculation — no intermediate theoAtCurrentSpot subtraction
-        // SHORT: P&L = (entryPrice - theoPrice) * size * multiplier (profit when option decays)
-        // LONG:  P&L = (theoPrice - entryPrice) * size * multiplier (profit when option gains)
-        if (isShort) {
-          targetPayoff += (pos.entryPrice - safeTheo) * absSize * multiplier;
-        } else {
-          targetPayoff += (safeTheo - pos.entryPrice) * absSize * multiplier;
-        }
-      });
-
-      // Add FUTURES payoff for target date (same as expiry, linear)
-      futuresPositions.forEach((futPos) => {
-        const size = futPos.size;
-        const entryPrice = futPos.entry_price;
-        const CONTRACT_MULTIPLIER = 0.001; // BTC futures
-
-        const pnl = (price - entryPrice) * size * CONTRACT_MULTIPLIER;
-        targetPayoff += pnl;
-      });
-
-      // Guard against NaN/Infinity in final target payoff
-      point.target = isFinite(targetPayoff) ? targetPayoff : 0;
+      // ── Probability distribution overlay (E3) ──
+      if (distFn) {
+        point.probability = distFn(price);
+      }
 
       data.push(point);
     }
@@ -400,6 +400,16 @@ const OptionsPayoffDiagram = ({
       if (point.expiry < maxLoss) maxLoss = point.expiry;
       if (point.target > maxTargetProfit) maxTargetProfit = point.target;
       if (point.target < maxTargetLoss) maxTargetLoss = point.target;
+
+      // Include multi-date lines in Y-axis bounds
+      if (point.today !== undefined) {
+        if (point.today > maxTargetProfit) maxTargetProfit = point.today;
+        if (point.today < maxTargetLoss) maxTargetLoss = point.today;
+      }
+      if (point.mid !== undefined) {
+        if (point.mid > maxTargetProfit) maxTargetProfit = point.mid;
+        if (point.mid < maxTargetLoss) maxTargetLoss = point.mid;
+      }
 
       if (idx > 0) {
         const prev = data[idx - 1].expiry;
@@ -465,7 +475,7 @@ const OptionsPayoffDiagram = ({
       yMin: isFinite(yMin) ? yMin : -10,
       yMax: isFinite(yMax) ? yMax : 10,
     };
-  }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent, futuresPositions]);
+  }, [parsedPositions, priceRangePercent, targetDaysFromNow, targetPricePercent, futuresPositions, showMultiDate, showProbDist]);
 
   // Fetch alerts when expiry changes or on trigger
   const fetchAlerts = useCallback(async () => {
@@ -644,6 +654,15 @@ const OptionsPayoffDiagram = ({
       if (d.expiry > maxY) maxY = d.expiry;
       if (d.target < minY) minY = d.target;
       if (d.target > maxY) maxY = d.target;
+      // Include multi-date overlay lines in zoom bounds
+      if (d.today !== undefined) {
+        if (d.today < minY) minY = d.today;
+        if (d.today > maxY) maxY = d.today;
+      }
+      if (d.mid !== undefined) {
+        if (d.mid < minY) minY = d.mid;
+        if (d.mid > maxY) maxY = d.mid;
+      }
     });
 
     // Handle edge case where min/max are the same or very close
@@ -710,6 +729,8 @@ const OptionsPayoffDiagram = ({
 
     const expiry = payload.find((p) => p.dataKey === 'expiry')?.value ?? 0;
     const target = payload.find((p) => p.dataKey === 'target')?.value ?? 0;
+    const today = payload.find((p) => p.dataKey === 'today')?.value;
+    const mid = payload.find((p) => p.dataKey === 'mid')?.value;
     const currentPrice = Number(label);
 
     // Calculate price change from spot
@@ -774,6 +795,38 @@ const OptionsPayoffDiagram = ({
               {target >= 0 ? '+' : ''}{target.toFixed(2)}
             </Typography>
           </Box>
+
+          {/* Today P&L (multi-date overlay) */}
+          {today !== undefined && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+              <Typography variant="body2" sx={{ color: '#06b6d4' }}>
+                Today
+              </Typography>
+              <Typography
+                variant="body2"
+                fontWeight="bold"
+                sx={{ color: today >= 0 ? '#10b981' : '#ef4444' }}
+              >
+                {today >= 0 ? '+' : ''}{today.toFixed(2)}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Mid-expiry P&L (multi-date overlay) */}
+          {mid !== undefined && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+              <Typography variant="body2" sx={{ color: '#818cf8' }}>
+                Mid-expiry
+              </Typography>
+              <Typography
+                variant="body2"
+                fontWeight="bold"
+                sx={{ color: mid >= 0 ? '#10b981' : '#ef4444' }}
+              >
+                {mid >= 0 ? '+' : ''}{mid.toFixed(2)}
+              </Typography>
+            </Box>
+          )}
 
           {/* Expiry P&L */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1075,7 +1128,7 @@ const OptionsPayoffDiagram = ({
           Payoff Graph
         </Typography>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           {/* Legend */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box
@@ -1095,6 +1148,36 @@ const OptionsPayoffDiagram = ({
             <Typography variant="caption" color="text.secondary">
               On Target Date
             </Typography>
+          </Box>
+          {showMultiDate && (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Box sx={{ width: 24, height: 2, bgcolor: '#06b6d4', opacity: 0.7 }} />
+                <Typography variant="caption" color="text.secondary">
+                  Today
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Box sx={{ width: 24, height: 2, bgcolor: '#818cf8', opacity: 0.5 }} />
+                <Typography variant="caption" color="text.secondary">
+                  Mid-Expiry
+                </Typography>
+              </Box>
+            </>
+          )}
+
+          {/* Feature toggles */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1 }}>
+            <FormControlLabel
+              control={<Switch size="small" checked={showMultiDate} onChange={(e) => setShowMultiDate(e.target.checked)} sx={{ '& .MuiSwitch-track': { bgcolor: 'rgba(255,255,255,0.15)' } }} />}
+              label={<Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>Time Decay</Typography>}
+              sx={{ mx: 0, '& .MuiFormControlLabel-label': { ml: 0.25 } }}
+            />
+            <FormControlLabel
+              control={<Switch size="small" checked={showProbDist} onChange={(e) => setShowProbDist(e.target.checked)} sx={{ '& .MuiSwitch-track': { bgcolor: 'rgba(255,255,255,0.15)' } }} />}
+              label={<Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>Probability</Typography>}
+              sx={{ mx: 0, '& .MuiFormControlLabel-label': { ml: 0.25 } }}
+            />
           </Box>
 
           {/* Zoom Controls - Improved */}
@@ -1193,6 +1276,11 @@ const OptionsPayoffDiagram = ({
               <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
               <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.1} />
             </linearGradient>
+            {/* Probability distribution overlay (E3) */}
+            <linearGradient id="probGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.25} />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity={0.05} />
+            </linearGradient>
           </defs>
 
           <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.3} />
@@ -1223,6 +1311,15 @@ const OptionsPayoffDiagram = ({
               fontSize: 12,
             }}
           />
+          {/* Hidden secondary Y-axis for probability distribution — auto-scales independently */}
+          {showProbDist && (
+            <YAxis
+              yAxisId="prob"
+              orientation="right"
+              hide={true}
+              domain={[0, 'dataMax']}
+            />
+          )}
 
           <Tooltip content={<CustomTooltip />} />
 
@@ -1291,6 +1388,50 @@ const OptionsPayoffDiagram = ({
             name="On Target Date"
             isAnimationActive={false}
           />
+
+          {/* ── Multi-date overlay (E1): Today + Mid-expiry reference lines ── */}
+          {showMultiDate && (
+            <Line
+              type="natural"
+              dataKey="today"
+              stroke="#06b6d4"
+              strokeWidth={1.5}
+              strokeDasharray="6 3"
+              dot={false}
+              name="Today"
+              isAnimationActive={false}
+              opacity={0.7}
+            />
+          )}
+          {showMultiDate && (
+            <Line
+              type="natural"
+              dataKey="mid"
+              stroke="#818cf8"
+              strokeWidth={1.5}
+              strokeDasharray="4 4"
+              dot={false}
+              name="Mid-Expiry"
+              isAnimationActive={false}
+              opacity={0.5}
+            />
+          )}
+
+          {/* ── Probability distribution overlay (E3): faint bell curve ── */}
+          {showProbDist && (
+            <Area
+              yAxisId="prob"
+              type="monotone"
+              dataKey="probability"
+              stroke="#a78bfa"
+              strokeWidth={1}
+              strokeOpacity={0.3}
+              fill="url(#probGradient)"
+              fillOpacity={1}
+              isAnimationActive={false}
+              name="Probability"
+            />
+          )}
 
           {/* Target price vertical line (dashed yellow) - Always visible at ATM/target */}
           <ReferenceLine

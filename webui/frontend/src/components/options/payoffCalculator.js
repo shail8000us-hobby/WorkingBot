@@ -178,6 +178,62 @@ export const calculatePortfolioDelta = (S, positions, targetDaysFromNow = 0, r =
 };
 
 // ============================================================================
+// PROBABILITY DISTRIBUTION (Phase E3)
+// ============================================================================
+
+/**
+ * Create a lognormal price distribution function for a given time horizon.
+ * Returns a function price → probability density, suitable for probability overlay.
+ *
+ * @param {number} spot - Current spot price
+ * @param {number} volatility - Annualized IV (e.g. 0.8 for 80%)
+ * @param {number} T - Time horizon in years
+ * @returns {Function} price → density (call with each price point)
+ */
+export const createPriceDistribution = (spot, volatility, T) => {
+  if (T <= 0 || volatility <= 0 || spot <= 0) return () => 0;
+
+  const sigma = Math.max(0.05, Math.min(5.0, volatility));
+  // Drift: μ = ln(S) + (r - ½σ²)T, with r=0 for crypto
+  const mu = Math.log(spot) + (-0.5 * sigma * sigma) * T;
+  const sigmaT = sigma * Math.sqrt(T);
+  const coeff = 1 / (sigmaT * Math.sqrt(2 * Math.PI));
+
+  return (price) => {
+    if (price <= 0) return 0;
+    const z = (Math.log(price) - mu) / sigmaT;
+    return coeff * Math.exp(-0.5 * z * z) / price;
+  };
+};
+
+/**
+ * Calculate weighted average IV from portfolio positions.
+ * Weights by notional value (|size| × strike × multiplier) so larger
+ * positions have proportionally more influence on the distribution.
+ *
+ * @param {Array} positions - Parsed positions array
+ * @returns {number} Weighted average IV (fallback 0.8)
+ */
+export const calculateWeightedIV = (positions) => {
+  if (!positions || positions.length === 0) return 0.8;
+
+  const nonClosed = positions.filter((p) => !p.isClosed && p.iv > 0);
+  if (nonClosed.length === 0) return 0.8;
+
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  nonClosed.forEach((pos) => {
+    const multiplier = getContractMultiplier(pos.symbol);
+    const weight = Math.abs(pos.size) * pos.strike * multiplier;
+    weightedSum += pos.iv * weight;
+    totalWeight += weight;
+  });
+
+  return totalWeight > 0 ? weightedSum / totalWeight : 0.8;
+};
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 
