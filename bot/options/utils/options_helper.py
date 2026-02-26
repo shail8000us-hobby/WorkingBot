@@ -14,17 +14,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def get_contract_multiplier(symbol: str) -> float:
+    """
+    Return the USD contract multiplier for a given product symbol.
+    Delta Exchange India specs (verified):
+      BTC options/futures: 0.001 BTC per contract
+      ETH options/futures: 0.001 ETH per contract
+      All others default to 0.001 (override when new assets are listed)
+    """
+    if not symbol:
+        return 0.001
+    parts = symbol.split('-')
+    underlying = parts[1].upper() if len(parts) >= 2 else symbol.upper()
+    return {
+        'BTC': 0.001,
+        'ETH': 0.001,
+    }.get(underlying, 0.001)
+
+
 def calculate_unrealized_pnl(position: Dict, mid_price: float) -> float:
     """
     Calculate unrealized PnL for options position using mid price (bid+ask)/2.
-    
+
     For SHORT (size < 0): profit when price drops (mid < entry)
     For LONG (size > 0): profit when price rises (mid > entry)
-    
+
     Args:
-        position: Position dict with size, entry_price
+        position: Position dict with size, entry_price, product_symbol
         mid_price: Mid price calculated as (bid+ask)/2
-        
+
     Returns:
         float: Unrealized PnL in USD (positive = profit, negative = loss)
     """
@@ -32,8 +50,9 @@ def calculate_unrealized_pnl(position: Dict, mid_price: float) -> float:
     size = float(position.get('size', 0))
     entry_price = float(position.get('entry_price', 0))
     mid_price = float(mid_price)
-    contract_value = 0.001  # BTC contracts = 0.001 BTC each
-    
+    # BUG-1/BUG-2 FIX: use symbol-aware multiplier instead of hardcoded 0.001
+    contract_value = get_contract_multiplier(position.get('product_symbol', ''))
+
     # For SHORT: size is negative, so (mid - entry) * negative_size = positive when mid < entry (profit)
     # For LONG: size is positive, so (mid - entry) * positive_size = positive when mid > entry (profit)
     pnl = (mid_price - entry_price) * size * contract_value
@@ -213,8 +232,10 @@ def enrich_position_data(position: Dict, ticker: Dict) -> Dict:
     mid_price = (best_bid + best_ask) / 2.0 if (best_bid > 0 and best_ask > 0) else mark_price
     
     # Cashflow in USD = total premium paid/received
-    # Formula: |contracts| * entry_price / 1000
-    cashflow_usd = abs(size) * float(position.get('entry_price', 0)) / 1000.0
+    # BUG-1 FIX: use symbol-aware multiplier instead of hardcoded /1000
+    symbol = position.get('product_symbol', '')
+    contract_multiplier = get_contract_multiplier(symbol)
+    cashflow_usd = abs(size) * float(position.get('entry_price', 0)) * contract_multiplier
     
     enriched = position.copy()
     enriched.update({
@@ -225,15 +246,35 @@ def enrich_position_data(position: Dict, ticker: Dict) -> Dict:
         'size': size,
         'entry_price': float(position.get('entry_price', 0)),
         'unrealized_pnl': calculate_unrealized_pnl(position, mid_price),
+        # pnl_percentage = option price % change (can be extreme for small premiums, capped ±200% in UI)
         'pnl_percentage': calculate_pnl_percentage(position, mid_price),
+        # BUG-19 FIX: add return_on_cashflow = PnL / cash outlay, more meaningful for risk tracking
+        # For shorts (cashflow_usd = premium received): shows return vs premium collected
+        'return_on_cashflow': (calculate_unrealized_pnl(position, mid_price) / cashflow_usd * 100)
+            if cashflow_usd != 0 else 0.0,
         'spread_pct': spread_pct,
         'is_liquid': spread_pct < 10.0 if spread_pct > 0 else True,
         'greeks': ticker.get('greeks', {}),
         'cashflow': cashflow_usd,  # Cashflow in USD
     })
     
-    # Add expiry warning if settlement time exists
-    if 'settlement_time' in position:
-        enriched['expiry_warning'] = check_expiry_warning(position['settlement_time'])
+    # BUG-27 FIX: settlement_time is a product field, not a position field in the Delta Exchange API.
+    # If not present on the position, derive it from the symbol's DDMMYY expiry code.
+    settlement_time = position.get('settlement_time') or ticker.get('settlement_time')
+    if not settlement_time:
+        # Parse from symbol: C-BTC-95000-310125 → day=31, month=01, year=2025
+        parts = symbol.split('-')
+        if len(parts) >= 4:
+            expiry = parts[3]  # DDMMYY
+            try:
+                day = int(expiry[0:2])
+                month = int(expiry[2:4])
+                year = 2000 + int(expiry[4:6])
+                # 09:30 IST = 04:00 UTC
+                settlement_time = f"{year:04d}-{month:02d}-{day:02d}T04:00:00Z"
+            except (ValueError, IndexError):
+                pass
+    if settlement_time:
+        enriched['expiry_warning'] = check_expiry_warning(settlement_time)
     
     return enriched

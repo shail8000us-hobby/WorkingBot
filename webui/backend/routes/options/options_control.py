@@ -3219,3 +3219,278 @@ def place_limit_order():
     except Exception as e:
         log.exception("Limit order endpoint error")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ================================================================
+# CONDITIONAL EXIT ENDPOINTS - FEB 25, 2026
+# BTC price-triggered partial position exits
+# ================================================================
+
+from webui.backend.services.conditional_exit_monitor import get_conditional_exit_monitor
+
+
+def _get_btc_price_for_monitor() -> float:
+    """Fetch BTC spot price for the conditional exit monitor.
+    
+    Priority: WebSocket → REST API fallback
+    """
+    import requests as req_lib
+    
+    # Try WebSocket first
+    try:
+        from webui.backend.services.delta_price_websocket import get_price_websocket
+        ws = get_price_websocket()
+        if ws and ws.is_connected():
+            price = ws.get_price('BTC')
+            if price and price > 0:
+                return float(price)
+    except Exception:
+        pass
+    
+    # Fallback to REST
+    try:
+        resp = req_lib.get('http://127.0.0.1:5000/api/market/spot-price?symbol=BTC', timeout=5)
+        data = resp.json()
+        if data.get('price'):
+            return float(data['price'])
+    except Exception:
+        pass
+    
+    return 0.0
+
+
+@options_bp.route('/conditional-exit/status', methods=['GET'])
+def conditional_exit_status():
+    """Get conditional exit monitor status and all rules."""
+    try:
+        monitor = get_conditional_exit_monitor()
+        return jsonify({
+            "success": True,
+            "monitor": monitor.get_status(),
+            "rules": monitor.get_all_rules(),
+        })
+    except Exception as e:
+        log.error(f"conditional-exit status error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/conditional-exit/start', methods=['POST'])
+def conditional_exit_start():
+    """Start the conditional exit monitor."""
+    try:
+        monitor = get_conditional_exit_monitor()
+        
+        # Set dependencies if not already set
+        if not monitor._api_client:
+            api_client = get_unified_client()
+            monitor.set_dependencies(api_client, _get_btc_price_for_monitor)
+        
+        started = monitor.start()
+        return jsonify({
+            "success": True,
+            "message": "Monitor started" if started else "Monitor already running",
+            "monitor": monitor.get_status(),
+        })
+    except Exception as e:
+        log.error(f"conditional-exit start error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/conditional-exit/stop', methods=['POST'])
+def conditional_exit_stop():
+    """Stop the conditional exit monitor."""
+    try:
+        monitor = get_conditional_exit_monitor()
+        monitor.stop()
+        return jsonify({"success": True, "message": "Monitor stopped"})
+    except Exception as e:
+        log.error(f"conditional-exit stop error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/conditional-exit/rule', methods=['POST'])
+def conditional_exit_add_rule():
+    """
+    Add a conditional exit rule.
+    
+    Request body:
+    {
+        trigger_type: "lower" | "upper",
+        trigger_price: float,
+        exit_pct: int (1-100),
+        exit_mode: "fixed" | "proportional",   // optional, default "fixed"
+        symbols: [str],                         // optional, empty = all positions
+        name: str,                              // optional
+        order_preference: str                   // optional, default "maker_first"
+    }
+    """
+    try:
+        data = request.get_json()
+        monitor = get_conditional_exit_monitor()
+        
+        # Auto-start monitor if not running
+        if not monitor.running:
+            if not monitor._api_client:
+                api_client = get_unified_client()
+                monitor.set_dependencies(api_client, _get_btc_price_for_monitor)
+            monitor.start()
+        
+        rule = monitor.add_rule(
+            trigger_type=data.get('trigger_type', 'lower'),
+            trigger_price=float(data.get('trigger_price', 0)),
+            exit_pct=int(data.get('exit_pct', 50)),
+            exit_mode=data.get('exit_mode', 'fixed'),
+            symbols=data.get('symbols', []),
+            name=data.get('name', ''),
+            order_preference=data.get('order_preference', 'maker_first'),
+        )
+        
+        return jsonify({"success": True, "rule": rule})
+    except (ValueError, TypeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        log.error(f"conditional-exit add rule error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/conditional-exit/rule/<rule_id>', methods=['DELETE'])
+def conditional_exit_remove_rule(rule_id):
+    """Remove/cancel a conditional exit rule."""
+    try:
+        monitor = get_conditional_exit_monitor()
+        removed = monitor.remove_rule(rule_id)
+        if removed:
+            return jsonify({"success": True, "message": f"Rule {rule_id} removed"})
+        return jsonify({"success": False, "error": "Rule not found"}), 404
+    except Exception as e:
+        log.error(f"conditional-exit remove rule error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/conditional-exit/rule/<rule_id>/cancel', methods=['POST'])
+def conditional_exit_cancel_rule(rule_id):
+    """Cancel an executing rule (stops gracefully)."""
+    try:
+        monitor = get_conditional_exit_monitor()
+        cancelled = monitor.cancel_rule(rule_id)
+        if cancelled:
+            return jsonify({"success": True, "message": f"Rule {rule_id} cancelled"})
+        return jsonify({"success": False, "error": "Rule not found"}), 404
+    except Exception as e:
+        log.error(f"conditional-exit cancel error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/conditional-exit/clear', methods=['POST'])
+def conditional_exit_clear():
+    """Clear all completed/cancelled rules."""
+    try:
+        monitor = get_conditional_exit_monitor()
+        count = monitor.clear_completed()
+        return jsonify({"success": True, "cleared": count})
+    except Exception as e:
+        log.error(f"conditional-exit clear error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# AUTO-LOOP (SERVER-SIDE) ROUTES
+# Runs auto-loop in a backend thread so it survives page refreshes.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _ensure_auto_loop_deps():
+    """Lazy-init dependencies for the auto-loop service."""
+    from webui.backend.services.auto_loop_service import get_auto_loop_service
+    svc = get_auto_loop_service()
+    if svc._api_client_factory is None:
+        svc.set_dependencies(
+            api_client_factory=get_unified_client,
+            check_guardian_fn=check_guardian_signal,
+        )
+    return svc
+
+
+@options_bp.route('/auto-loop/start', methods=['POST'])
+def auto_loop_start():
+    """
+    Start a server-side auto-loop.
+
+    Body: {
+        loop_id: str (default 'main'),
+        orders: [{symbol, size, side}, ...],
+        total_rounds: int,
+        order_preference: str ('maker_first' | 'market_only')
+    }
+    """
+    try:
+        data = request.get_json()
+        loop_id = data.get('loop_id', 'main')
+        orders = data.get('orders', [])
+        total_rounds = int(data.get('total_rounds', 1))
+        order_preference = data.get('order_preference', ORDER_TYPE_MAKER_FIRST)
+
+        if not orders:
+            return jsonify({"success": False, "error": "No orders provided"}), 400
+        if total_rounds < 1:
+            return jsonify({"success": False, "error": "total_rounds must be >= 1"}), 400
+
+        # Validate order fields
+        for i, o in enumerate(orders):
+            if not all([o.get('symbol'), o.get('size'), o.get('side')]):
+                return jsonify({"success": False, "error": f"Order {i+1} missing required fields"}), 400
+
+        # Guardian check
+        signal = check_guardian_signal()
+        if signal != 'GO':
+            return jsonify({"success": False, "error": f"Guardian signal is {signal}. Trading disabled."}), 403
+
+        svc = _ensure_auto_loop_deps()
+        state = svc.start_loop(loop_id, orders, total_rounds, order_preference)
+        return jsonify({"success": True, "loop": state})
+
+    except ValueError as ve:
+        return jsonify({"success": False, "error": str(ve)}), 409
+    except Exception as e:
+        log.error(f"auto-loop start error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/auto-loop/stop', methods=['POST'])
+def auto_loop_stop():
+    """Stop a running server-side auto-loop."""
+    try:
+        data = request.get_json() or {}
+        loop_id = data.get('loop_id', 'main')
+        svc = _ensure_auto_loop_deps()
+        stopped = svc.stop_loop(loop_id)
+        return jsonify({"success": True, "stopped": stopped})
+    except Exception as e:
+        log.error(f"auto-loop stop error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/auto-loop/status', methods=['GET'])
+def auto_loop_status():
+    """
+    Get auto-loop status. Optional ?loop_id=main (default returns all loops).
+    """
+    try:
+        loop_id = request.args.get('loop_id')
+        svc = _ensure_auto_loop_deps()
+        status = svc.get_status(loop_id)
+        return jsonify({"success": True, "loops": status if not loop_id else {loop_id: status}})
+    except Exception as e:
+        log.error(f"auto-loop status error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/auto-loop/clear', methods=['POST'])
+def auto_loop_clear():
+    """Clear finished loops."""
+    try:
+        svc = _ensure_auto_loop_deps()
+        count = svc.clear_finished()
+        return jsonify({"success": True, "cleared": count})
+    except Exception as e:
+        log.error(f"auto-loop clear error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500

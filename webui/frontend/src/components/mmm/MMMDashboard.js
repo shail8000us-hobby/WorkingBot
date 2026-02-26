@@ -1135,6 +1135,51 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
     setDetailTab(0);
   }, [session?.session_id]);
 
+  // Session duration calculation — must be before early return (hooks rule)
+  const sessionCreatedAt = session?.created_at || session?.entry_time;
+  const [sessionDuration, setSessionDuration] = React.useState('');
+  React.useEffect(() => {
+    if (!sessionCreatedAt) { setSessionDuration('—'); return; }
+    const calcDuration = () => {
+      try {
+        const ts = sessionCreatedAt.endsWith('Z') ? sessionCreatedAt : sessionCreatedAt + 'Z';
+        const start = new Date(ts);
+        if (isNaN(start.getTime())) { setSessionDuration('—'); return; }
+        const diff = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000));
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+        if (h > 0) setSessionDuration(`${h}h ${m}m`);
+        else if (m > 0) setSessionDuration(`${m}m ${s}s`);
+        else setSessionDuration(`${s}s`);
+      } catch { setSessionDuration('—'); }
+    };
+    calcDuration();
+    const iv = setInterval(calcDuration, 10000);
+    return () => clearInterval(iv);
+  }, [sessionCreatedAt]);
+
+  // Expiry countdown for detail header — must be before early return
+  const [expiryCountdown, setExpiryCountdown] = React.useState('');
+  React.useEffect(() => {
+    const calc = () => {
+      const et = session?.expiry_time;
+      if (!et) { setExpiryCountdown(''); return; }
+      try {
+        const ts = et.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(et) ? et : et + 'Z';
+        const diff = new Date(ts).getTime() - Date.now();
+        if (diff <= 0) { setExpiryCountdown('EXPIRED'); return; }
+        const totalMin = Math.floor(diff / 60000);
+        const h = Math.floor(totalMin / 60);
+        const m = totalMin % 60;
+        setExpiryCountdown(h > 0 ? `${h}h ${m}m left` : `${m}m left`);
+      } catch { setExpiryCountdown(''); }
+    };
+    calc();
+    const iv = setInterval(calc, 30000);
+    return () => clearInterval(iv);
+  }, [session?.expiry_time]);
+
   if (!session) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1162,6 +1207,10 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
 
   // C-9 fix: safe reference to heartbeat data (may be undefined on initial load/reconnect)
   const heartbeat = wsData?.heartbeat || null;
+
+  // Current premium from heartbeat for CE/PE cards
+  const ceLivePremium = heartbeat?.ce_premium ?? null;
+  const peLivePremium = heartbeat?.pe_premium ?? null;
 
   return (
     <Box sx={{ p: 2 }}>
@@ -1202,7 +1251,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
 
           {/* Session ID + Status Header */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
               <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
                 {session.session_id}
               </Typography>
@@ -1212,6 +1261,26 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                   size="small"
                   variant="outlined"
                   sx={{ fontFamily: 'monospace' }}
+                />
+              )}
+              {expiryCountdown && (
+                <Chip
+                  label={`⏱ ${expiryCountdown}`}
+                  size="small"
+                  sx={{
+                    fontFamily: 'monospace',
+                    fontWeight: 600,
+                    bgcolor: expiryCountdown === 'EXPIRED' ? 'rgba(244,67,54,0.15)' : 'rgba(255,152,0,0.12)',
+                    color: expiryCountdown === 'EXPIRED' ? '#f44336' : '#ff9800',
+                  }}
+                />
+              )}
+              {sessionDuration && sessionDuration !== '—' && (
+                <Chip
+                  label={`Running: ${sessionDuration}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'text.secondary' }}
                 />
               )}
             </Box>
@@ -1264,12 +1333,12 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                 border: 'rgba(171,71,188,0.3)',
               },
               {
-                label: 'Fees',
-                help: 'fees',
-                value: `$${fees.toFixed(2)}`,
-                color: '#ff9800',
-                bg: 'rgba(255,152,0,0.08)',
-                border: 'rgba(255,152,0,0.3)',
+                label: 'Duration',
+                help: 'session_duration',
+                value: sessionDuration || '—',
+                color: '#78909c',
+                bg: 'rgba(120,144,156,0.08)',
+                border: 'rgba(120,144,156,0.3)',
               },
             ].map(({ label, help, value, sub, color, bg, border }) => (
               <Grid item xs={4} sm={2} key={label}>
@@ -1360,6 +1429,62 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
                         <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
                           ${(data.entry_fill_price || data.original_premium)?.toFixed(2) || '—'}
                         </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Box sx={{ mb: 1 }}>
+                        {(() => {
+                          const livePremium = key === 'CE' ? ceLivePremium : peLivePremium;
+                          const entryPremium = data.entry_fill_price || data.original_premium || 0;
+                          const hasLive = livePremium != null && livePremium > 0;
+                          // For short sellers: profit when current < entry
+                          const pctChange = hasLive && entryPremium > 0
+                            ? ((livePremium - entryPremium) / entryPremium * 100)
+                            : null;
+                          // Green = current dropped (good for shorts), Red = current rose (bad)
+                          const premColor = pctChange != null
+                            ? (pctChange <= 0 ? '#4caf50' : '#f44336')
+                            : 'text.primary';
+                          return (
+                            <>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>Current Premium</Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', color: premColor }}>
+                                  {hasLive ? `$${livePremium.toFixed(2)}` : '—'}
+                                </Typography>
+                                {pctChange != null && (
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', color: premColor, fontSize: '0.75rem' }}>
+                                    {pctChange <= 0 ? '▼' : '▲'}{Math.abs(pctChange).toFixed(1)}%
+                                  </Typography>
+                                )}
+                              </Box>
+                            </>
+                          );
+                        })()}
+                      </Box>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Box sx={{ mb: 1 }}>
+                        {(() => {
+                          const livePremium = key === 'CE' ? ceLivePremium : peLivePremium;
+                          const entryPremium = data.entry_fill_price || data.original_premium || 0;
+                          const totalLots = data.total_lots || 0;
+                          const LOT_SIZE = 0.001;
+                          const hasLive = livePremium != null && livePremium > 0 && entryPremium > 0;
+                          const sidePnl = hasLive ? (entryPremium - livePremium) * totalLots * LOT_SIZE : null;
+                          return (
+                            <>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>Side P&L</Typography>
+                              <Typography variant="body2" sx={{
+                                fontWeight: 700,
+                                fontFamily: 'monospace',
+                                color: sidePnl != null ? (sidePnl >= 0 ? '#4caf50' : '#f44336') : 'text.secondary',
+                              }}>
+                                {sidePnl != null ? `${sidePnl >= 0 ? '+' : ''}$${sidePnl.toFixed(2)}` : '—'}
+                              </Typography>
+                            </>
+                          );
+                        })()}
                       </Box>
                     </Grid>
                     <Grid item xs={4}>

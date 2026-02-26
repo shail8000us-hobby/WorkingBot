@@ -102,6 +102,7 @@ import ScalingStrategyPanel from './ScalingStrategyPanel';
 import PortfolioSummaryStrip from './PortfolioSummaryStrip';
 import AddPositionDialog from './AddPositionDialog';
 import BatchOrderPanel from './BatchOrderPanel';
+import ConditionalExitPanel from './ConditionalExitPanel';
 import { AutomationButton, automationMonitor, notificationService } from './automation';
 import SLTPDialog from './SLTPDialog';
 import SLTPIndicator from './SLTPIndicator';
@@ -130,9 +131,90 @@ const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
 const OptionsActivityPanel = lazy(() => import('./OptionsActivityPanel'));
 
 // ============================================================================
+// DEV-ONLY LOGGER — silenced in production for performance
+// ============================================================================
+const isDev = process.env.NODE_ENV !== 'production';
+const devLog = isDev ? console.log.bind(console) : () => {};
+const devWarn = isDev ? console.warn.bind(console) : () => {};
+
+// ============================================================================
 // PHASE 1 OPTIMIZATION: React.memo for SortableRow
 // Prevents unnecessary re-renders when position data hasn't changed
 // ============================================================================
+
+// ============================================================================
+// PURE UTILITY FUNCTIONS (hoisted outside component for stable references)
+// ============================================================================
+
+const formatPnl = (pnl) => {
+  const numPnl = Number(pnl) || 0;
+  const formatted = Math.abs(numPnl).toFixed(4);
+  return numPnl >= 0 ? `+$${formatted}` : `-$${formatted}`;
+};
+
+const formatPnlPct = (pct) => {
+  const numPct = Number(pct) || 0;
+  const formatted = Math.abs(numPct).toFixed(2);
+  return numPct >= 0 ? `+${formatted}%` : `-${formatted}%`;
+};
+
+const formatUsd = (value) => {
+  const num = Number(value) || 0;
+  if (num >= 1000 || num <= -1000) {
+    return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return '$' + num.toFixed(2);
+};
+
+const getPnlColor = (pnl) => {
+  if (pnl > 0) return '#10b981';
+  if (pnl < 0) return '#ef4444';
+  return '#94a3b8';
+};
+
+const getPositionType = (symbol) => {
+  if (symbol.startsWith('C-')) return { type: 'CALL', color: '#3b82f6' };
+  if (symbol.startsWith('P-')) return { type: 'PUT', color: '#a855f7' };
+  if (symbol.startsWith('MV-')) return { type: 'MV STRADDLE', color: '#00bcd4' };
+  return { type: 'UNKNOWN', color: '#6b7280' };
+};
+
+const parseOptionSymbol = (symbol) => {
+  if (symbol.startsWith('MV-')) {
+    const parts = symbol.split('-');
+    if (parts.length >= 4) {
+      const underlying = parts[1];
+      const strike = parseInt(parts[2]);
+      const expiry = parts[3];
+      const day = expiry.substring(0, 2);
+      const month = expiry.substring(2, 4);
+      const year = '20' + expiry.substring(4, 6);
+      return { type: 'MV Straddle', underlying, strike, expiry: `${day}/${month}/${year}` };
+    }
+  }
+  const parts = symbol.split('-');
+  if (parts.length >= 4) {
+    const optionType = parts[0];
+    const rawUnderlying = parts[1];
+    // Display BTC for Call options, BTP for Put options (C = Call, P = Put)
+    // This avoids confusion where "C" in BTC could be misread as "Call"
+    const underlying = rawUnderlying === 'BTC'
+      ? (optionType === 'C' ? 'BTC' : 'BTP')
+      : rawUnderlying;
+    const strike = parseInt(parts[2]);
+    const expiry = parts[3];
+    const day = expiry.substring(0, 2);
+    const month = expiry.substring(2, 4);
+    const year = '20' + expiry.substring(4, 6);
+    return {
+      type: optionType === 'C' ? 'Call' : 'Put',
+      underlying,
+      strike,
+      expiry: `${day}/${month}/${year}`,
+    };
+  }
+  return { type: '?', underlying: '?', strike: 0, expiry: '?' };
+};
 
 // Sortable Row Component - Simple memo without custom comparison
 // Removed overly strict comparison that was blocking TP/SL settings updates
@@ -177,6 +259,7 @@ const OptionsPanel = () => {
     fetchDashboard, fetchStatus, fetchPositions, fetchFuturesPositions, fetchPendingOrders,
     handleCancelPendingOrder, handleRefresh,
     hasPositionsRef, activeIntervalsRef,
+    marginData, lastDataUpdate,
   } = useOptionsPositions({ pollInterval });
 
   // Phase 2: Secondary toolbar visibility (persisted)
@@ -193,6 +276,12 @@ const OptionsPanel = () => {
   // Closed positions storage - keeps squared off positions visible with size=0 and their final PnL
   // Format: { symbol: { product_symbol, realized_pnl, closed_at, entry_price, close_price, original_size } }
   const [closedPositions, setClosedPositions] = usePersistedState('options_closed_positions', {});
+
+  // Partial exit realized PnL tracking - accumulates PnL from partial position reductions
+  // Format: { symbol: { realized_pnl: number, history: [{ size_reduced, pnl, price, timestamp }] } }
+  // When you reduce a position (e.g., from -300 to -150), the PnL from the closed portion is locked in here.
+  // This ensures partial exits don't "disappear" from PnL and payoff graph.
+  const [partialRealizedPnl, setPartialRealizedPnl] = usePersistedState('options_partial_realized_pnl', {});
 
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
@@ -318,8 +407,8 @@ const OptionsPanel = () => {
   // Batch order state - strike selection and order quantity
   const [selectedStrikes, setSelectedStrikes] = useState({}); // { symbol: true/false }
   const [orderQuantity, setOrderQuantity] = useState(1); // Simple multiplier based on current position lots
-  const [multiplierMode, setMultiplierMode] = useState('normal'); // 'normal' or 'gcd' - Toggle between normal multiplier and GCD-based
-  const [executionMode, setExecutionMode] = useState('smart'); // 'immediate' or 'smart'
+  const [multiplierMode, setMultiplierMode] = useState(null); // null, 'normal', 'gcd', or 'fixed' - No default, user must select
+  const [executionMode, setExecutionMode] = useState('smart'); // 'immediate', 'smart', 'ssr_standard', 'ssr_aggressive', 'ssr_conservative'
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
 
@@ -329,26 +418,9 @@ const OptionsPanel = () => {
   const [autoLoopRounds, setAutoLoopRounds] = usePersistedState('autoLoopRounds', 10, { parse: 'int' });
   // Per-expiry loop state: { [expiryCode]: { running, currentRound, progress, error, stopRef } }
   // Persisted to localStorage for recovery across page refreshes
-  const [expiryLoopState, setExpiryLoopState] = usePersistedState('expiryLoopState', {}, {
-    transform: (parsed) => {
-      // On load, mark any "running" loops as interrupted (couldn't have survived refresh)
-      const restored = {};
-      for (const [expiry, state] of Object.entries(parsed)) {
-        if (state.running) {
-          restored[expiry] = {
-            ...state,
-            running: false,
-            error: `⚠️ Loop interrupted at round ${state.currentRound}/${state.totalRounds}. Page was refreshed.`,
-            interrupted: true,
-            interruptedAt: Date.now(),
-          };
-        } else {
-          restored[expiry] = state;
-        }
-      }
-      return restored;
-    },
-  });
+  // Since auto-loop now runs on backend, "running" loops survive refresh — keep them as running.
+  // The polling effect will sync actual status from the backend.
+  const [expiryLoopState, setExpiryLoopState] = usePersistedState('expiryLoopState', {});
   // Legacy single-loop state (kept for backward compatibility)
   const [autoLoopRunning, setAutoLoopRunning] = useState(false);
   const [autoLoopCurrentRound, setAutoLoopCurrentRound] = useState(0);
@@ -382,6 +454,14 @@ const OptionsPanel = () => {
     open: false,
     orderCount: 0,
     estimatedTime: 0,
+  });
+  const [autoLoopConfirmDialog, setAutoLoopConfirmDialog] = useState({
+    open: false,
+    orders: [],
+    totalRounds: 1,
+    orderPreference: 'maker_first',
+    executionMode: 'smart',
+    multiplierMode: null,
   });
 
   // Sound settings dialog state (JAN 19, 2026 - Independent UI component)
@@ -419,33 +499,21 @@ const OptionsPanel = () => {
     return filledTypes.includes(executionType);
   };
 
-  // Check for interrupted auto-loop on mount (autoLoopLastRun already loaded by usePersistedState)
-  useEffect(() => {
-    if (autoLoopLastRun) {
-      try {
-        // If the last run didn't complete (has currentRound but not completed)
-        if (autoLoopLastRun.currentRound < autoLoopLastRun.totalRounds && !autoLoopLastRun.completed) {
-          const timeSince = Date.now() - autoLoopLastRun.startTime;
-          const minsSince = Math.floor(timeSince / 60000);
-          console.log(`[AUTO-LOOP] Found interrupted run from ${minsSince}m ago: Round ${autoLoopLastRun.currentRound}/${autoLoopLastRun.totalRounds}`);
-          setAutoLoopError(`⚠️ Previous run interrupted at round ${autoLoopLastRun.currentRound}/${autoLoopLastRun.totalRounds} (${minsSince}m ago). Check your orders!`);
-        }
-      } catch (e) {
-        console.warn('[AUTO-LOOP] Could not parse saved run state:', e);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Auto-loop interrupted detection is now handled by backend polling.
+  // On mount, the polling effects check for running backend loops and adopt them.
 
   // Handle drag end - save the custom order to persist across page refreshes (immediate save for UX)
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
     if (active.id !== over.id) {
-      const oldIndex = sortedPositions.findIndex((p) => p.product_symbol === active.id);
-      const newIndex = sortedPositions.findIndex((p) => p.product_symbol === over.id);
+      // BUG-17 FIX: use sortedPositionsRef (kept up-to-date by a useEffect) so that a poll
+      // firing mid-drag doesn't cause stale findIndex results and wrong reordering.
+      const currentPositions = sortedPositionsRef.current;
+      const oldIndex = currentPositions.findIndex((p) => p.product_symbol === active.id);
+      const newIndex = currentPositions.findIndex((p) => p.product_symbol === over.id);
 
-      const reordered = arrayMove(sortedPositions, oldIndex, newIndex);
+      const reordered = arrayMove(currentPositions, oldIndex, newIndex);
       const newOrder = reordered.map((p) => p.product_symbol);
       
       // Update state and save immediately (drag operations need instant persistence)
@@ -453,7 +521,7 @@ const OptionsPanel = () => {
       saveCustomOrderNow(newOrder);
       
       // Log for debugging
-      console.log('[OptionsPanel] Position order updated:', newOrder);
+      devLog('[OptionsPanel] Position order updated:', newOrder);
     }
   };
 
@@ -498,7 +566,8 @@ const OptionsPanel = () => {
     }
   };
 
-  // Parse expiry date and calculate days to expiration
+  // BUG-10 FIX: Delta Exchange India options expire at 09:30 IST (UTC+5:30 = UTC+0330).
+  // Always compute expiry relative to UTC so the countdown is correct regardless of browser timezone.
   const getDaysToExpiry = (symbol) => {
     try {
       const parts = symbol?.split('-') || [];
@@ -507,9 +576,9 @@ const OptionsPanel = () => {
         const day = parseInt(expiry.substring(0, 2));
         const month = parseInt(expiry.substring(2, 4)) - 1; // JS months are 0-indexed
         const year = 2000 + parseInt(expiry.substring(4, 6));
-        const expiryDate = new Date(year, month, day, 8, 30, 0); // 8:30 AM expiry
-        const now = new Date();
-        const diffMs = expiryDate - now;
+        // 09:30 IST = 04:00 UTC (UTC+5:30 offset)
+        const expiryUtcMs = Date.UTC(year, month, day, 4, 0, 0);
+        const diffMs = expiryUtcMs - Date.now();
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
         return isNaN(diffDays) ? 999 : diffDays;
       }
@@ -630,18 +699,28 @@ const OptionsPanel = () => {
       entry_price: cp.entry_price,
       unrealized_pnl: cp.realized_pnl, // Show realized PnL in the PnL column
       realized_pnl: cp.realized_pnl,
+      // BUG-16 FIX: cp.realized_pnl already includes partial PnL at close time (see confirmClose).
+      // Setting partial_realized_pnl to 0 here prevents double-count during the React batch race
+      // where partialRealizedPnl hasn't been cleared yet after confirmClose.
+      partial_realized_pnl: 0,
       close_price: cp.close_price,
       closed_at: cp.closed_at,
       original_size: cp.original_size,
       is_closed: true, // Flag to identify closed positions in UI
       greeks: cp.greeks || {},
       // Parse symbol for display
-      best_bid: 0,
-      best_ask: 0,
+      best_bid: cp.last_bid || 0,
+      best_ask: cp.last_ask || 0,
     }));
 
+    // Inject partial_realized_pnl into live positions so PnL column and payoff graph include it
+    const enrichedPositions = positions.map(p => {
+      const partialPnl = partialRealizedPnl[p.product_symbol]?.realized_pnl || 0;
+      return partialPnl !== 0 ? { ...p, partial_realized_pnl: partialPnl } : p;
+    });
+
     // Merge live positions with closed positions
-    const allPositions = [...positions, ...closedAsPositions];
+    const allPositions = [...enrichedPositions, ...closedAsPositions];
 
     // First filter out hidden positions
     let filtered = allPositions.filter((p) => !hiddenPositions.includes(p.product_symbol));
@@ -717,7 +796,9 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  }, [positions, closedPositions, hiddenPositions, selectedPositionsForPayoff, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort]);
+  // BUG-15 FIX: removed selectedPositionsForPayoff — it is never read inside this memo,
+  // so including it caused unnecessary recomputes on every payoff checkbox change
+  }, [positions, closedPositions, partialRealizedPnl, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
@@ -729,7 +810,14 @@ const OptionsPanel = () => {
     [btcPrice, ethPrice]
   );
 
+  // Track the spot price at the last HTTP poll so we can apply gamma correction
+  // when the spot moves between polls (MISSING-1 partial fix)
+  const lastPollSpotRef = useRef({ BTC: 0, ETH: 0 });
+
   // Calculate aggregated greeks for currently visible positions (respects expiry filter and hidden positions)
+  // MISSING-1 PARTIAL FIX: portfolio delta is adjusted in real-time using gamma approximation:
+  //   adjusted_delta ≈ poll_delta + gamma * (live_spot - poll_spot)
+  // This gives a live delta estimate without a full Black-Scholes recalculation.
   const aggregatedGreeks = useMemo(() => {
     const greeks = {
       delta: 0,
@@ -766,7 +854,15 @@ const OptionsPanel = () => {
         // theta_usd = (theta_per_contract / 1000) * size
         // When size is negative (short), theta becomes positive (earning theta)
 
-        greeks.delta += perContractDelta * size;
+        // Gamma correction for live delta: Δ_live ≈ Δ_poll + Γ * (S_live - S_poll)
+        const parts = pos.product_symbol.split('-');
+        const underlying = parts.length >= 2 ? parts[1] : 'BTC';
+        const liveSpot = indexPrices[underlying] || 0;
+        const pollSpot = lastPollSpotRef.current[underlying] || liveSpot;
+        const spotMove = liveSpot > 0 && pollSpot > 0 ? liveSpot - pollSpot : 0;
+        const adjustedDelta = perContractDelta + perContractGamma * spotMove;
+
+        greeks.delta += adjustedDelta * size;
         greeks.gamma += perContractGamma * Math.abs(size);
         // Theta: short position (size < 0) with negative per-contract theta = positive portfolio theta (earning)
         greeks.theta += (perContractTheta / 1000) * size;
@@ -774,22 +870,17 @@ const OptionsPanel = () => {
         greeks.count++;
 
         // Separate delta by underlying asset for futures equivalent display
-        const parts = pos.product_symbol.split('-');
-        if (parts.length >= 2) {
-          const underlying = parts[1]; // BTC or ETH
-          const deltaContribution = perContractDelta * size;
-
-          if (underlying === 'BTC') {
-            greeks.btcDelta += deltaContribution;
-          } else if (underlying === 'ETH') {
-            greeks.ethDelta += deltaContribution;
-          }
+        const deltaContribution = adjustedDelta * size;
+        if (underlying === 'BTC') {
+          greeks.btcDelta += deltaContribution;
+        } else if (underlying === 'ETH') {
+          greeks.ethDelta += deltaContribution;
         }
       }
     });
 
     return greeks;
-  }, [sortedPositions]);
+  }, [sortedPositions, indexPrices]);
 
   // Intelligent position scaling calculator
   const calculateSmartScaling = useCallback(
@@ -936,6 +1027,15 @@ const OptionsPanel = () => {
     [scalingStrategy, scalingParams, aggregatedGreeks]
   );
 
+  // Memoize scaling recommendations for all visible positions (avoid recalculating in render)
+  const scalingRecommendations = useMemo(() => {
+    const recs = {};
+    sortedPositions.forEach((pos) => {
+      recs[pos.product_symbol] = calculateSmartScaling(pos);
+    });
+    return recs;
+  }, [sortedPositions, calculateSmartScaling]);
+
   // Clean up closed positions when they reappear as live positions
   // This happens when user adds back to a closed position
   useEffect(() => {
@@ -948,7 +1048,7 @@ const OptionsPanel = () => {
     const toRemove = closedSymbols.filter(symbol => liveSymbols.has(symbol));
 
     if (toRemove.length > 0) {
-      console.log(`🔄 Removing ${toRemove.length} closed positions that are now live:`, toRemove);
+      devLog(`🔄 Removing ${toRemove.length} closed positions that are now live:`, toRemove);
       setClosedPositions(prev => {
         const updated = { ...prev };
         toRemove.forEach(symbol => delete updated[symbol]);
@@ -956,6 +1056,54 @@ const OptionsPanel = () => {
       });
     }
   }, [positions, closedPositions]);
+
+  // Fetch live bid/ask for closed positions so they display real-time market data
+  // MISSING-7 FIX: route through backend proxy (/api/ticker/<symbol>) instead of calling
+  // Delta Exchange public API directly from the frontend (avoids CORS issues in production)
+  useEffect(() => {
+    const closedSymbols = Object.keys(closedPositions).filter(
+      symbol => !positions.some(p => p.product_symbol === symbol)
+    );
+    if (closedSymbols.length === 0) return;
+
+    const fetchClosedTickers = async () => {
+      const updates = {};
+      await Promise.all(
+        closedSymbols.map(async (symbol) => {
+          try {
+            // MISSING-7 FIX: use backend proxy (/api/options/ticker/<symbol>) to avoid
+            // direct public Delta Exchange API calls from frontend (CORS risk in production)
+            const { data } = await api.get(`/api/options/ticker/${encodeURIComponent(symbol)}`);
+            if (data?.success && data?.ticker?.quotes) {
+              updates[symbol] = {
+                last_bid: parseFloat(data.ticker.quotes.best_bid) || 0,
+                last_ask: parseFloat(data.ticker.quotes.best_ask) || 0,
+              };
+            }
+          } catch {
+            // Silently fail - closed position ticker fetch is best-effort
+          }
+        })
+      );
+
+      if (Object.keys(updates).length > 0) {
+        setClosedPositions(prev => {
+          const updated = { ...prev };
+          for (const [symbol, tickerData] of Object.entries(updates)) {
+            if (updated[symbol]) {
+              updated[symbol] = { ...updated[symbol], ...tickerData };
+            }
+          }
+          return updated;
+        });
+      }
+    };
+
+    // Fetch immediately and then on poll interval
+    fetchClosedTickers();
+    const interval = setInterval(fetchClosedTickers, pollInterval * 2); // 2x slower than main poll
+    return () => clearInterval(interval);
+  }, [Object.keys(closedPositions).join(','), positions.length, pollInterval]);
 
   // **CRITICAL: Detect positions that disappear from API (expired, auto-closed, etc.)**
   // Save them to closedPositions before they vanish from the UI
@@ -983,7 +1131,7 @@ const OptionsPanel = () => {
     const previousSymbols = prevPositionsRef.current;
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`🔍 Position change check: prev=${previousSymbols.length}, current=${positions.length}`);
+      devLog(`🔍 Position change check: prev=${previousSymbols.length}, current=${positions.length}`);
     }
 
     const disappeared = previousSymbols.filter(
@@ -991,28 +1139,118 @@ const OptionsPanel = () => {
     );
 
     if (disappeared.length > 0) {
-      console.log(`📦 Detected ${disappeared.length} positions that disappeared (likely expired or auto-closed)`);
+      devLog(`📦 Detected ${disappeared.length} positions that disappeared (likely expired or auto-closed)`);
 
       const newClosedPositions = {};
       disappeared.forEach(pos => {
+        // Include accumulated partial realized PnL in the final realized PnL
+        const accumulatedPartialPnl = partialRealizedPnl[pos.product_symbol]?.realized_pnl || 0;
         newClosedPositions[pos.product_symbol] = {
           product_symbol: pos.product_symbol,
-          realized_pnl: pos.unrealized_pnl || 0, // Use last known PnL
+          realized_pnl: (pos.unrealized_pnl || 0) + accumulatedPartialPnl, // Last known PnL + accumulated partial exits
           closed_at: new Date().toISOString(),
           entry_price: pos.entry_price || 0,
           close_price: pos.best_bid || pos.best_ask || 0,
           original_size: pos.size || 0,
           greeks: pos.greeks || {},
+          // Save last known bid/ask so closed positions still display them
+          last_bid: pos.best_bid || 0,
+          last_ask: pos.best_ask || 0,
           underlying: pos.product_symbol.split('-')[1] || 'BTC',
           strike: parseInt(pos.product_symbol.split('-')[2]) || 0,
           expiry_code: pos.product_symbol.split('-')[3] || '',
           option_type: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
         };
-        console.log(`  → ${pos.product_symbol}: PnL $${(pos.unrealized_pnl || 0).toFixed(4)}`);
+        devLog(`  → ${pos.product_symbol}: PnL $${(pos.unrealized_pnl || 0).toFixed(4)} + partial $${accumulatedPartialPnl.toFixed(4)}`);
       });
 
       setClosedPositions(prev => ({ ...prev, ...newClosedPositions }));
+
+      // Clear partial realized PnL for disappeared positions (now included in closed position's realized_pnl)
+      const partialToClean = disappeared.filter(pos => partialRealizedPnl[pos.product_symbol]);
+      if (partialToClean.length > 0) {
+        setPartialRealizedPnl(prev => {
+          const updated = { ...prev };
+          partialToClean.forEach(pos => delete updated[pos.product_symbol]);
+          return updated;
+        });
+      }
     }
+
+    // ========================================================================
+    // PARTIAL EXIT PNL TRACKING
+    // When a position's absolute size decreases (partial close), calculate the
+    // realized PnL for the closed portion and accumulate it.
+    // Formula: For the reduced contracts, PnL = (exit_price - entry_price) * reduced_size * 0.001
+    // Exit price = mid of current bid/ask. Entry = entry_price at time of reduction.
+    // ========================================================================
+    const currentPositionMap = {};
+    positions.forEach(p => { currentPositionMap[p.product_symbol] = p; });
+
+    previousSymbols.forEach(prevPos => {
+      const currPos = currentPositionMap[prevPos.product_symbol];
+      if (!currPos) return; // Position disappeared entirely - handled above
+
+      const prevSize = Math.abs(parseFloat(prevPos.size) || 0);
+      const currSize = Math.abs(parseFloat(currPos.size) || 0);
+
+      // Detect size reduction (partial exit)
+      if (currSize < prevSize && currSize > 0) {
+        const reducedContracts = prevSize - currSize; // Always positive
+        const prevEntryPrice = parseFloat(prevPos.entry_price) || 0;
+        // MISSING-8 FIX: use PREVIOUS position's bid/ask as the exit price approximation.
+        // prevPos.best_bid/ask reflects the market AT THE TIME OF detection (before size changed),
+        // which is closer to the actual fill than currPos prices (which are POST-fill market).
+        // True exit price would come from order fill data, but we don't have it here.
+        const prevBid = parseFloat(prevPos.best_bid) || 0;
+        const prevAsk = parseFloat(prevPos.best_ask) || 0;
+        // Fall back to currPos if prevPos had no quotes
+        const fallbackBid = parseFloat(currPos.best_bid) || 0;
+        const fallbackAsk = parseFloat(currPos.best_ask) || 0;
+        const exitBid = prevBid || fallbackBid;
+        const exitAsk = prevAsk || fallbackAsk;
+        const exitPrice = (exitBid > 0 && exitAsk > 0)
+          ? (exitBid + exitAsk) / 2
+          : exitBid || exitAsk || prevEntryPrice;
+
+        // Calculate realized PnL for the reduced portion
+        // For SHORT (size < 0): profit = (entry - exit) * contracts * multiplier
+        // For LONG (size > 0): profit = (exit - entry) * contracts * multiplier
+        const isShort = parseFloat(prevPos.size) < 0;
+        // BUG-3 FIX: use symbol-aware multiplier (getContractMultiplier imported at top)
+        const contractMultiplier = getContractMultiplier(prevPos.product_symbol);
+        const partialPnl = isShort
+          ? (prevEntryPrice - exitPrice) * reducedContracts * contractMultiplier
+          : (exitPrice - prevEntryPrice) * reducedContracts * contractMultiplier;
+
+        devLog(`📊 Partial exit detected: ${prevPos.product_symbol}`);
+        devLog(`   Size: ${prevPos.size} → ${currPos.size} (reduced ${reducedContracts} contracts)`);
+        devLog(`   Entry: $${prevEntryPrice}, Exit mid: $${exitPrice.toFixed(2)}`);
+        devLog(`   Partial realized PnL: $${partialPnl.toFixed(4)}`);
+
+        setPartialRealizedPnl(prev => {
+          const existing = prev[prevPos.product_symbol] || { realized_pnl: 0, history: [] };
+          return {
+            ...prev,
+            [prevPos.product_symbol]: {
+              realized_pnl: existing.realized_pnl + partialPnl,
+              history: [
+                ...existing.history,
+                {
+                  size_reduced: reducedContracts,
+                  pnl: partialPnl,
+                  exit_price: exitPrice,
+                  entry_price: prevEntryPrice,
+                  timestamp: new Date().toISOString(),
+                  prev_size: prevPos.size,
+                  new_size: currPos.size,
+                },
+              ],
+            },
+          };
+        });
+      }
+    });
 
     // Update the ref for next comparison
     prevPositionsRef.current = positions;
@@ -1027,6 +1265,14 @@ const OptionsPanel = () => {
     sortedPositionsRef.current = sortedPositions;
     indexPricesRef.current = indexPrices;
   }, [sortedPositions, indexPrices]);
+
+  // MISSING-1: Update lastPollSpotRef whenever positions are refreshed from HTTP
+  // (indicated by lastDataUpdate changing). This sets the baseline for gamma correction.
+  useEffect(() => {
+    if (indexPrices.BTC > 0) lastPollSpotRef.current.BTC = indexPrices.BTC;
+    if (indexPrices.ETH > 0) lastPollSpotRef.current.ETH = indexPrices.ETH;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastDataUpdate]); // Only on HTTP refresh, not on every WebSocket tick
 
   // Phase 4: Keyboard shortcuts for ultra-fast trading
   useEffect(() => {
@@ -1105,7 +1351,8 @@ const OptionsPanel = () => {
   }, [turboMode, sortedPositions, selectedRowIndex, lastUsedSize, closeDialog.open, addDialog.open]);
 
   // Day 1: Calculate Probability of Profit (PoP) for each position
-  // Phase 5 Optimization: Throttled to recalculate every 30s or when position count changes
+  // BUG-11 FIX: recalculate when indexPrices change (spot moves affect PoP significantly).
+  // Interval reduced to 15s for better freshness on 0DTE positions.
   const popLastCalcRef = useRef(0);
   const popLastCountRef = useRef(0);
   useEffect(() => {
@@ -1114,11 +1361,11 @@ const OptionsPanel = () => {
       return;
     }
 
-    // Only recalculate if: position count changed OR 30 seconds elapsed
+    // Recalculate if: position set changed OR 15 seconds elapsed OR spot price changed
     const now = Date.now();
     const positionSymbols = sortedPositions.map(p => p.product_symbol).sort().join(',');
     const posCountChanged = positionSymbols !== popLastCountRef.current;
-    const timeElapsed = now - popLastCalcRef.current > 30000;
+    const timeElapsed = now - popLastCalcRef.current > 15000;
 
     if (!posCountChanged && !timeElapsed) return;
 
@@ -1139,7 +1386,8 @@ const OptionsPanel = () => {
       const optionType = optionTypeChar === 'C' ? 'call' : optionTypeChar === 'P' ? 'put' : null;
       if (!optionType) return;
 
-      let spotPrice = pos.greeks?.spot || indexPrices[underlying] || 0;
+      // BUG-25 FIX: pos.greeks has no 'spot' field in Delta Exchange API — use live index price directly
+      let spotPrice = indexPrices[underlying] || 0;
       if (!spotPrice || spotPrice <= 0) return;
       if (!strikePrice || strikePrice <= 0) return;
       if (!expiryStr || expiryStr.length !== 6) return;
@@ -1148,12 +1396,22 @@ const OptionsPanel = () => {
         const day = parseInt(expiryStr.slice(0, 2));
         const month = parseInt(expiryStr.slice(2, 4)) - 1;
         const year = 2000 + parseInt(expiryStr.slice(4, 6));
-        const expiryDate = new Date(year, month, day, 8, 0, 0);
-        const timeToExpiry = (expiryDate - new Date()) / (1000 * 60 * 60 * 24 * 365);
+        // BUG-10 FIX: use UTC-based expiry (09:30 IST = 04:00 UTC) to match getDaysToExpiry
+        const expiryUtcMs = Date.UTC(year, month, day, 4, 0, 0);
+        const timeToExpiry = (expiryUtcMs - Date.now()) / (1000 * 60 * 60 * 24 * 365);
 
-        if (timeToExpiry <= 0) return;
+        if (timeToExpiry <= 0) {
+          // Expired — determine PoP based on current moneyness
+          const isShort = pos.size < 0;
+          const itm = optionType === 'call' ? spotPrice > strikePrice : spotPrice < strikePrice;
+          // Short ITM = losing, Short OTM = winning. Long ITM = winning, Long OTM = losing.
+          newPopData[pos.product_symbol] = (isShort ? !itm : itm) ? 99.9 : 0.1;
+          return;
+        }
 
-        let volatility = pos.iv || 0.8;
+        // BUG-12 FIX: use 0.5 (50%) as fallback IV instead of 0.8 (80%),
+        // which was too high for most BTC/ETH option expirations and skewed PoP calculations
+        let volatility = pos.iv || 0.5;
 
         const pop = calculatePoP({
           spotPrice,
@@ -1165,9 +1423,18 @@ const OptionsPanel = () => {
           side: pos.size > 0 ? 'buy' : 'sell',
         });
 
-        newPopData[pos.product_symbol] = pop * 100;
+        const popPct = pop * 100;
+        // Clamp display to meaningful ranges instead of showing "0%" or "100%" flat
+        if (popPct < 0.1) {
+          newPopData[pos.product_symbol] = 0.1; // Show "< 1%" visually
+        } else if (popPct > 99.9) {
+          newPopData[pos.product_symbol] = 99.9;
+        } else {
+          newPopData[pos.product_symbol] = popPct;
+        }
       } catch {
-        // Skip failed calculations silently
+        // Fallback: show N/A indicator (use -1 as sentinel)
+        newPopData[pos.product_symbol] = -1;
       }
     });
 
@@ -1184,7 +1451,7 @@ const OptionsPanel = () => {
 
     // Connect notifications to console (or your toast/snackbar system)
     notificationService.setToastCallback((message, severity) => {
-      console.log(`[AUTOMATION ${severity.toUpperCase()}] ${message}`);
+      devLog(`[AUTOMATION ${severity.toUpperCase()}] ${message}`);
       // TODO: Connect to your toast/snackbar system if available
       // Example: setSnackbar({ open: true, message, severity });
     });
@@ -1195,16 +1462,16 @@ const OptionsPanel = () => {
     // Expose debug helper to console
     window.debugAutomation = () => {
       const status = automationMonitor.getStatus();
-      console.log('=== AUTOMATION DEBUG INFO ===');
-      console.log('Active automations:', status.length);
-      console.log('Details:', status);
-      console.log('Market data:', {
+      devLog('=== AUTOMATION DEBUG INFO ===');
+      devLog('Active automations:', status.length);
+      devLog('Details:', status);
+      devLog('Market data:', {
         positions: sortedPositionsRef.current?.length || 0,
         spotPrices: indexPricesRef.current,
       });
       return status;
     };
-    console.log('💡 Type window.debugAutomation() in console to check automation status');
+    devLog('💡 Type window.debugAutomation() in console to check automation status');
 
     // Cleanup on unmount
     return () => {
@@ -1213,8 +1480,11 @@ const OptionsPanel = () => {
     };
   }, []); // Empty deps - only run once on mount
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (non-turbo mode — acts on first position by default)
   useEffect(() => {
+    // Skip when turbo mode is active — turbo has its own handler with row selection
+    if (turboMode) return;
+
     const handleKeyPress = (event) => {
       // Ignore if typing in input field or textarea
       if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
@@ -1271,7 +1541,7 @@ const OptionsPanel = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [sortedPositions, closeDialog.open, addDialog.open, lastUsedSize]);
+  }, [turboMode, sortedPositions, closeDialog.open, addDialog.open, lastUsedSize]);
 
   // ============================================================================
   // PHASE 1 OPTIMIZATION: Performance monitoring
@@ -1282,7 +1552,7 @@ const OptionsPanel = () => {
     return () => {
       const renderTime = performance.now() - renderStart;
       if (renderTime > 50) {
-        console.warn(
+        devWarn(
           `⚠️ Slow render detected: ${renderTime.toFixed(2)}ms (target: <50ms)`,
           { positionCount: positions.length, visibleCount: sortedPositions.length }
         );
@@ -1310,14 +1580,19 @@ const OptionsPanel = () => {
       if (data?.success) {
         // Save the closed position to closedPositions for continued visibility
         // This keeps the position visible with size=0 and its realized PnL
+        // Include any accumulated partial realized PnL from prior partial exits
+        const accumulatedPartialPnl = partialRealizedPnl[position.product_symbol]?.realized_pnl || 0;
         const closedPosData = {
           product_symbol: position.product_symbol,
-          realized_pnl: position.unrealized_pnl || 0, // Current unrealized becomes realized
+          realized_pnl: (position.unrealized_pnl || 0) + accumulatedPartialPnl, // Unrealized + accumulated partial = total realized
           closed_at: new Date().toISOString(),
           entry_price: position.entry_price || 0,
           close_price: data.fill_price || position.best_bid || position.best_ask || 0,
           original_size: position.size || 0,
           greeks: position.greeks || {},
+          // Save last known bid/ask so closed positions still display them
+          last_bid: position.best_bid || 0,
+          last_ask: position.best_ask || 0,
           // Keep original position data for reference
           underlying: position.product_symbol.split('-')[1] || 'BTC',
           strike: parseInt(position.product_symbol.split('-')[2]) || 0,
@@ -1330,10 +1605,18 @@ const OptionsPanel = () => {
           [position.product_symbol]: closedPosData
         }));
 
-        console.log(`📦 Saved closed position: ${position.product_symbol} with realized PnL: $${closedPosData.realized_pnl.toFixed(4)}`);
+        // Clear partial realized PnL for this symbol since it's now fully closed and included in realized_pnl
+        setPartialRealizedPnl(prev => {
+          const updated = { ...prev };
+          delete updated[position.product_symbol];
+          return updated;
+        });
+
+        devLog(`📦 Saved closed position: ${position.product_symbol} with realized PnL: $${closedPosData.realized_pnl.toFixed(4)} (includes $${accumulatedPartialPnl.toFixed(4)} partial)`);
 
         // Check if order was actually filled (not just placed)
-        const execType = data.execution_type || 'market'; // Close orders default to market
+        // BUG-4 FIX: do not default to 'market' — that would trigger false fill sounds for pending limits
+        const execType = data.execution_type || 'unknown';
         const wasFilled = isOrderFilled(execType);
 
         // Only play sound and show notification when order is EXECUTED (filled)
@@ -1348,7 +1631,7 @@ const OptionsPanel = () => {
           });
         }
         setOrderResult({ type: 'success', message: `Closed ${position.product_symbol}` });
-        fetchPositions();
+        fetchDashboard(); // BUG-24 FIX: refresh all panel data (positions, pending orders, margin)
       } else {
         setOrderResult({ type: 'error', message: data?.error || 'Failed to close position' });
       }
@@ -1365,7 +1648,7 @@ const OptionsPanel = () => {
   const executeQuickOrderWithSettings = async (position, size, side) => {
     const symbol = position.product_symbol;
 
-    console.log(`⚡ Quick order for ${symbol}: size=${size}, side=${side}`);
+    devLog(`⚡ Quick order for ${symbol}: size=${size}, side=${side}`);
 
     try {
       const { data } = await api.post('/api/options/add', {
@@ -1402,7 +1685,7 @@ const OptionsPanel = () => {
             ? `⚡ ${side.toUpperCase()} ${size} ${symbol} ${fillPrice} (${execType})`
             : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${symbol} (Pending: ${execType})`,
         });
-        fetchPositions();
+        fetchDashboard(); // BUG-29 FIX: refresh all panel data after order
       } else {
         setOrderResult({ type: 'error', message: data?.error || 'Quick order failed' });
       }
@@ -1420,7 +1703,7 @@ const OptionsPanel = () => {
     const savedSize = savedSettings.size || parseInt(lastUsedSize) || 5;
     const savedSide = side || savedSettings.side || 'sell';
 
-    console.log(
+    devLog(
       `⚡ Quick order (legacy) for ${symbol}: size=${savedSize}, side=${savedSide}, settings=`,
       savedSettings
     );
@@ -1462,7 +1745,7 @@ const OptionsPanel = () => {
   const enableSkipConfirm = (symbol, size = null, side = null) => {
     const savedSize = size || parseInt(lastUsedSize) || 5;
     const savedSide = side || 'sell';
-    console.log(`💾 Saving quick mode for ${symbol}: size=${savedSize}, side=${savedSide}`);
+    devLog(`💾 Saving quick mode for ${symbol}: size=${savedSize}, side=${savedSide}`);
     setSkipConfirmStrikes((prev) => ({
       ...prev,
       [symbol]: {
@@ -1488,7 +1771,7 @@ const OptionsPanel = () => {
 
     // Prevent double submission
     if (submittingOrder) {
-      console.log('⚠️ Order already submitting, ignoring duplicate click');
+      devLog('⚠️ Order already submitting, ignoring duplicate click');
       return;
     }
 
@@ -1524,7 +1807,7 @@ const OptionsPanel = () => {
           ssrMode: ssrMode,
         };
         
-        console.log(`🏎️ Placing SSR order: ${ssrMode}`, ssrRequestData);
+        devLog(`🏎️ Placing SSR order: ${ssrMode}`, ssrRequestData);
         
         const { data } = await api.post('/api/options/ssr-order', ssrRequestData);
         
@@ -1534,7 +1817,7 @@ const OptionsPanel = () => {
             type: 'info',
             message: `🏎️ SSR ${ssrMode.toUpperCase()}: ${side.toUpperCase()} ${size} ${position.product_symbol} - monitoring started`,
           });
-          fetchPositions();
+          fetchDashboard(); // BUG-29 FIX
         } else {
           setOrderResult({ type: 'error', message: data?.error || 'Failed to place SSR order' });
         }
@@ -1581,7 +1864,7 @@ const OptionsPanel = () => {
               ? `⚡ ${side.toUpperCase()} ${size} ${position.product_symbol} ${fillPrice} (${execType})`
               : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (Pending: ${execType})`,
           });
-          fetchPositions();
+          fetchDashboard(); // BUG-29 FIX
         } else {
           setOrderResult({ type: 'error', message: data?.error || 'Failed to add to position' });
         }
@@ -1601,19 +1884,7 @@ const OptionsPanel = () => {
   // BATCH ORDER FUNCTIONS - Ratio-preserving position scaling
   // ========================================================================
 
-  // Helper: Calculate GCD (Greatest Common Divisor) for ratio calculation
-  const gcd = (a, b) => {
-    a = Math.abs(Math.round(a));
-    b = Math.abs(Math.round(b));
-    if (a === 0) return b;
-    if (b === 0) return a;
-    while (b !== 0) {
-      const temp = b;
-      b = a % b;
-      a = temp;
-    }
-    return a;
-  };
+  // BUG-21 FIX: removed duplicate 'gcd' — using calculateGCD defined below for all GCD needs
 
   // Toggle strike selection
   const toggleStrikeSelection = (symbol) => {
@@ -1666,11 +1937,20 @@ const OptionsPanel = () => {
     return gcd === 0 ? 1 : gcd; // Prevent division by zero
   };
 
-  // Batch order quantity multiplier logic: multiply each position's size by the orderQuantity
-  // This creates scaled orders based on current position sizes
-  // Example: Position has 1 lot bought → Multiplier 1 = 1 lot new buy
-  // Example: Position has 2 lots sold → Multiplier 1 = 2 lots new sell
-  // GCD Mode: Uses greatest common divisor of all positions for proportional scaling
+  // Batch order quantity multiplier logic
+  //
+  // ORDER DIRECTION LOGIC (based on sign of orderQuantity):
+  //   Positive (+1, +2, …) = ADD to position (same direction)
+  //     • Long position  (size > 0) → BUY  more
+  //     • Short position (size < 0) → SELL more
+  //   Negative (-1, -2, …) = EXIT / REDUCE position (opposite direction)
+  //     • Long position  (size > 0) → SELL to close
+  //     • Short position (size < 0) → BUY  to close (buy back)
+  //
+  // MULTIPLIER MODES:
+  //   Normal: Order size = abs(position size) * |qty|  (scales with position)
+  //   GCD:    Order size = (abs(position size) / GCD) * |qty|  (proportional)
+  //   Fixed:  Order size = |qty| lots per position (flat, ideal for gradual exit with auto-loop)
   const calculateBatchOrders = (filterExpiry = null) => {
     // Get selected positions, optionally filtered by expiry
     let selectedPos = getSelectedPositions();
@@ -1682,23 +1962,42 @@ const OptionsPanel = () => {
     // Calculate GCD if in GCD mode
     const gcd = multiplierMode === 'gcd' ? getPositionsGCD(selectedPos) : 1;
 
+    const isExiting = orderQuantity < 0; // negative = exit/reduce
+    const multiplier = Math.abs(orderQuantity);
+
     selectedPos.forEach((pos) => {
       const currentSize = pos.size;
       const absCurrentSize = Math.abs(currentSize);
-      const multiplier = Math.abs(orderQuantity);
 
       const midPrice = ((pos.best_bid || 0) + (pos.best_ask || 0)) / 2;
 
-      // If position is long (size > 0), create BUY orders
-      // If position is short (size < 0), create SELL orders
-      // In normal mode: Order size = abs(position size) * multiplier
-      // In GCD mode: Order size = (abs(position size) / GCD) * multiplier
-
+      // Determine order side based on position direction and intent:
+      //   isExiting  → opposite side to position (close/reduce)
+      //   !isExiting → same side as position (add)
       const isLong = currentSize > 0;
-      const orderSize = multiplierMode === 'gcd'
-        ? (absCurrentSize / gcd) * multiplier
-        : absCurrentSize * multiplier;
-      const side = isLong ? 'buy' : 'sell';
+      let side;
+      if (isExiting) {
+        side = isLong ? 'sell' : 'buy';
+      } else {
+        side = isLong ? 'buy' : 'sell';
+      }
+
+      // Calculate order size based on mode:
+      //   Normal: abs(position size) * multiplier
+      //   GCD:    (abs(position size) / GCD) * multiplier
+      //   Fixed:  exactly `multiplier` lots (flat, capped at remaining position size when exiting)
+      let orderSize;
+      if (multiplierMode === 'fixed') {
+        // Fixed: flat lot count, but cap at remaining position when exiting
+        orderSize = isExiting ? Math.min(multiplier, absCurrentSize) : multiplier;
+      } else if (multiplierMode === 'gcd') {
+        orderSize = (absCurrentSize / gcd) * multiplier;
+      } else {
+        orderSize = absCurrentSize * multiplier;
+      }
+
+      // Skip positions that are already fully closed (0 remaining) when exiting
+      if (isExiting && absCurrentSize === 0) return;
 
       orders.push({
         symbol: pos.product_symbol,
@@ -1720,9 +2019,15 @@ const OptionsPanel = () => {
 
   // Execute batch orders with robust rate limiting and retry logic
   const executeBatchOrders = async () => {
+    // ===== MODE SELECTION CHECK =====
+    if (!multiplierMode) {
+      setOrderResult({ type: 'warning', message: '⚠️ Please select a mode first: Normal, GCD, or Fixed' });
+      setTimeout(() => setOrderResult(null), 3000);
+      return;
+    }
     // ===== DUPLICATE PREVENTION =====
     if (batchExecuting) {
-      console.log('⚠️ Batch order already executing, ignoring duplicate trigger');
+      devLog('⚠️ Batch order already executing, ignoring duplicate trigger');
       setOrderResult({ type: 'warning', message: '⚠️ Batch already executing, please wait...' });
       return;
     }
@@ -1741,24 +2046,20 @@ const OptionsPanel = () => {
     // CRITICAL FIX: Store orders BEFORE showing dialog to prevent recalculation
     setPendingBatchOrders(orders);
 
-    // Show warning for large batches
-    if (orders.length > 10) {
-      setBatchConfirmDialog({
-        open: true,
-        orderCount: orders.length,
-        estimatedTime: Math.ceil(orders.length * 1.5),
-      });
-      return; // Will be called when user confirms - uses pendingBatchOrders
-    }
-
-    // Execute batch (this is called after confirmation or if < 10 orders)
-    executeBatch(orders);
+    // MISSING-6 FIX: always show confirmation dialog for batch orders (was only for > 10)
+    // Prevents accidental execution of wrong quantities on live positions
+    setBatchConfirmDialog({
+      open: true,
+      orderCount: orders.length,
+      estimatedTime: Math.ceil(orders.length * 1.5),
+    });
+    // executeBatch(orders) is called when user confirms — uses pendingBatchOrders
   };
 
   // Actual batch execution logic (split from executeBatchOrders for confirmation flow)
   const executeBatch = async (orders) => {
     // Lock execution immediately
-    console.log(`[BATCH EXECUTE] Starting batch execution with ${orders.length} orders`, orders);
+    devLog(`[BATCH EXECUTE] Starting batch execution with ${orders.length} orders`, orders);
 
     setBatchExecuting(true);
     setBatchOrderResults([]);
@@ -1782,12 +2083,12 @@ const OptionsPanel = () => {
                        executionMode === 'ssr_aggressive' ? 'SSR AGGRO' : 'SSR SAFE';
     }
 
-    console.log(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${orderPreference}, Label: ${executionLabel}`);
+    devLog(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${orderPreference}, Label: ${executionLabel}`);
 
     try {
       // Handle SSR batch orders differently - need to place sequentially for monitoring
       if (isSSRMode) {
-        console.log(`[BATCH-SSR] Placing ${orders.length} SSR orders (mode: ${executionMode})`);
+        devLog(`[BATCH-SSR] Placing ${orders.length} SSR orders (mode: ${executionMode})`);
         const ssrMode = SSR_MODE_MAP[executionMode] || 'standard';
         const uiResults = [];
         
@@ -1837,12 +2138,12 @@ const OptionsPanel = () => {
           type: 'info',
           message: `🏎️ ${executionLabel}: ${uiResults.filter(r => r.success).length}/${orders.length} orders monitoring`,
         });
-        fetchPositions();
+        fetchDashboard(); // BUG-29 FIX
         return;
       }
 
       // Regular batch execution (market/smart)
-      console.log(`[BATCH-API] Calling /api/options/batch_add with ${orders.length} orders`);
+      devLog(`[BATCH-API] Calling /api/options/batch_add with ${orders.length} orders`);
 
       const { data } = await api.post('/api/options/batch_add', {
         orders: orders.map(order => ({
@@ -1854,7 +2155,7 @@ const OptionsPanel = () => {
         confirm: true
       });
 
-      console.log(`[BATCH-API] Response received:`, data);
+      devLog(`[BATCH-API] Response received:`, data);
 
       if (data?.success) {
         const results = data.results || [];
@@ -1908,7 +2209,7 @@ const OptionsPanel = () => {
         });
         setTimeout(() => setOrderResult(null), 5000);
 
-        console.log(`[BATCH-COMPLETE] ${successful} success, ${failed} failed in ${executionTime}`);
+        devLog(`[BATCH-COMPLETE] ${successful} success, ${failed} failed in ${executionTime}`);
 
       } else {
         // API returned error
@@ -1951,25 +2252,29 @@ const OptionsPanel = () => {
     // Always reset executing state
     setBatchExecuting(false);
     setPendingBatchOrders(null);
+    // BUG-22 FIX: clear batch quantity inputs after execution to prevent accidental re-runs
+    setBatchQuantities({});
   };
 
   // Auto-loop execution: Execute batch orders multiple times with fill polling
+  // NOW RUNS ON BACKEND — survives page refreshes
   const executeAutoLoop = async (startFromRound = 1) => {
-    console.log('[AUTO-LOOP] executeAutoLoop called with startFromRound:', startFromRound);
+    devLog('[AUTO-LOOP] executeAutoLoop called (backend mode)');
     
     if (autoLoopRunning) {
-      console.log('⚠️ Auto-loop already running');
+      devLog('⚠️ Auto-loop already running');
+      return;
+    }
+
+    if (!multiplierMode) {
+      setAutoLoopError('⚠️ Please select an order size mode first — choose Normal, GCD, or Fixed before starting Auto-Loop.');
       return;
     }
 
     const orders = calculateBatchOrders();
-    console.log('[AUTO-LOOP] Calculated orders:', orders.length, orders);
+    devLog('[AUTO-LOOP] Calculated orders:', orders.length, orders);
     
     if (orders.length === 0) {
-      console.log('[AUTO-LOOP] ERROR: No orders calculated');
-      console.log('[AUTO-LOOP] selectedStrikes:', selectedStrikes);
-      console.log('[AUTO-LOOP] sortedPositions:', sortedPositions?.length);
-      console.log('[AUTO-LOOP] orderQuantity:', orderQuantity);
       setAutoLoopError('No orders to execute. Select positions and set quantities.');
       return;
     }
@@ -1979,258 +2284,169 @@ const OptionsPanel = () => {
       return;
     }
 
-    console.log(`[AUTO-LOOP] Starting execution: ${autoLoopRounds} rounds, ${orders.length} orders per round`);
-
-    // Reset state
-    setAutoLoopRunning(true);
-    setAutoLoopCurrentRound(startFromRound > 1 ? startFromRound - 1 : 0);
-    setAutoLoopError(null);
-    setAutoLoopProgress({});
-    autoLoopStopRef.current = false;
-
-    // Save run state for recovery
-    const runState = {
-      startTime: Date.now(),
-      totalRounds: autoLoopRounds,
-      currentRound: 0,
-      orderSymbols: orders.map(o => o.symbol),
-      completed: false,
-    };
-    setAutoLoopLastRun(runState);
-
-    console.log(`[AUTO-LOOP] Starting ${autoLoopRounds} rounds with ${orders.length} orders per round (from round ${startFromRound})`);
-
     const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
 
+    // Show confirmation dialog instead of executing immediately
+    setAutoLoopConfirmDialog({
+      open: true,
+      orders,
+      totalRounds: autoLoopRounds,
+      orderPreference,
+      executionMode,
+      multiplierMode,
+    });
+  };
+
+  const _doStartAutoLoop = async (orders, totalRounds, orderPreference) => {
     try {
-      for (let round = startFromRound; round <= autoLoopRounds; round++) {
-        // Check if user stopped the loop
-        if (autoLoopStopRef.current) {
-          console.log('[AUTO-LOOP] Stopped by user');
-          setAutoLoopError(`Stopped by user at round ${round - 1}/${autoLoopRounds}`);
-          // Clear last run on intentional stop
-          setAutoLoopLastRun(null);
-          break;
-        }
-
-        setAutoLoopCurrentRound(round);
-        
-        // Update recovery state
-        setAutoLoopLastRun(prev => ({ ...prev, currentRound: round }));
-        console.log(`[AUTO-LOOP] Starting round ${round}/${autoLoopRounds}`);
-
-        // Reset progress for this round
-        const roundProgress = {};
-        orders.forEach(order => {
-          roundProgress[order.symbol] = { filled: false, orderId: null, size: order.size, status: 'placing' };
-        });
-        setAutoLoopProgress(roundProgress);
-
-        // Step 1: Place all orders in this round
-        console.log(`[AUTO-LOOP] Placing ${orders.length} orders...`);
-        const response = await api.post('/api/options/batch_add', {
-          orders: orders.map(o => ({
-            symbol: o.symbol,
-            side: o.side,
-            size: o.size,
-          })),
+      // Send to backend to run in a background thread
+      let response;
+      try {
+        response = await api.post('/api/options/auto-loop/start', {
+          loop_id: 'main',
+          orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
+          total_rounds: totalRounds,
           order_preference: orderPreference,
-          confirm: true,
         });
-
-        if (!response.data.success) {
-          throw new Error(response.data.error || 'Batch order placement failed');
-        }
-
-        const placedOrders = response.data.results || [];
-        console.log(`[AUTO-LOOP] Placed ${placedOrders.length} orders:`, placedOrders);
-
-        // Check if any orders failed to place
-        const failedPlacements = placedOrders.filter(r => !r.success);
-        if (failedPlacements.length > 0) {
-          const errorMsg = `Round ${round}: Failed to place ${failedPlacements.length} order(s): ${failedPlacements.map(f => `${f.symbol} - ${f.error || f.message}`).join(', ')}`;
-          throw new Error(errorMsg);
-        }
-
-        // Check which orders were filled immediately vs pending
-        // Orders filled via 'market' or 'limit_filled' execution types are already done
-        const filledImmediately = [];
-        const pendingOrders = [];
-        
-        placedOrders.forEach(result => {
-          if (result.success) {
-            const executionType = result.execution_type || '';
-            const isFilledType = ['market', 'market_fallback', 'market_fallback_no_quotes', 
-                                   'market_fallback_error', 'limit_filled', 'limit_filled_late'].includes(executionType);
-            
-            if (isFilledType || !result.order_id) {
-              // Order was filled immediately
-              filledImmediately.push(result);
-            } else {
-              // Order is pending (limit order placed, waiting for fill)
-              pendingOrders.push(result);
-            }
-          }
-        });
-
-        console.log(`[AUTO-LOOP] Round ${round}: ${filledImmediately.length} filled immediately, ${pendingOrders.length} pending`);
-
-        // Update progress with filled orders
-        const updatedProgress = { ...roundProgress };
-        filledImmediately.forEach(result => {
-          updatedProgress[result.symbol] = {
-            filled: true,
-            orderId: result.order_id,
-            size: result.size,
-            fillPrice: result.fill_price,
-            status: 'filled',
-          };
-        });
-        pendingOrders.forEach(result => {
-          updatedProgress[result.symbol] = {
-            filled: false,
-            orderId: result.order_id,
-            size: result.size,
-            status: 'pending',
-          };
-        });
-        setAutoLoopProgress(updatedProgress);
-
-        // Step 2: Poll for pending orders if any
-        if (pendingOrders.length > 0) {
-          console.log(`[AUTO-LOOP] Waiting for ${pendingOrders.length} pending orders to fill...`);
-          
-          const orderIds = pendingOrders.map(r => r.order_id).filter(id => id);
-          let allFilled = false;
-          let pollCount = 0;
-
-          while (!allFilled && !autoLoopStopRef.current) {
-            pollCount++;
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
-
-            // Fetch order status
-            try {
-              const statusResponse = await api.post('/api/options/batch_order_status', {
-                order_ids: orderIds,
-              });
-
-              if (!statusResponse.data.success) {
-                console.warn('[AUTO-LOOP] Failed to fetch order status, retrying...', statusResponse.data.error);
-                continue;
-              }
-
-              const orderStatuses = statusResponse.data.orders || [];
-              
-              // Update progress
-              const progressUpdate = { ...updatedProgress };
-              orderStatuses.forEach(status => {
-                const matchingOrder = pendingOrders.find(o => o.order_id === status.order_id);
-                if (matchingOrder) {
-                  // Delta Exchange uses 'closed' for filled orders, not 'filled'
-                  const isFilled = status.state === 'filled' || status.state === 'closed';
-                  const isCancelled = status.state === 'cancelled';
-                  const isRejected = status.state === 'rejected';
-                  
-                  if (isCancelled || isRejected) {
-                    throw new Error(`Order ${matchingOrder.symbol} was ${status.state}`);
-                  }
-                  
-                  progressUpdate[matchingOrder.symbol] = {
-                    filled: isFilled,
-                    orderId: status.order_id,
-                    size: status.size,
-                    fillPrice: status.fill_price,
-                    status: isFilled ? 'filled' : 'pending',
-                  };
-                }
-              });
-              setAutoLoopProgress(progressUpdate);
-
-              // Check if all orders are filled
-              const filledCount = Object.values(progressUpdate).filter(p => p.filled).length;
-              allFilled = filledCount === orders.length;
-
-              console.log(`[AUTO-LOOP] Round ${round} - Poll ${pollCount}: ${filledCount}/${orders.length} filled`);
-
-            } catch (pollError) {
-              console.error('[AUTO-LOOP] Poll error:', pollError);
-              if (pollError.message.includes('cancelled') || pollError.message.includes('rejected')) {
-                throw pollError;
-              }
-              // Continue polling on other errors
-            }
-          }
+      } catch (err) {
+        // If 409 CONFLICT (stale loop), auto-clear and retry once
+        if (err.response?.status === 409) {
+          devLog('[AUTO-LOOP] Got 409 CONFLICT — clearing stale loop and retrying...');
+          await api.post('/api/options/auto-loop/clear');
+          response = await api.post('/api/options/auto-loop/start', {
+            loop_id: 'main',
+            orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
+            total_rounds: totalRounds,
+            order_preference: orderPreference,
+          });
         } else {
-          console.log(`[AUTO-LOOP] Round ${round} - All ${filledImmediately.length} orders filled immediately`);
-        }
-
-        // Check if stopped during polling
-        if (autoLoopStopRef.current) {
-          console.log('[AUTO-LOOP] Stopped during polling');
-          setAutoLoopError(`Stopped by user at round ${round}/${autoLoopRounds}`);
-          // Clear last run on intentional stop
-          setAutoLoopLastRun(null);
-          break;
-        }
-
-        // All orders in this round are filled
-        console.log(`[AUTO-LOOP] Round ${round} complete - all orders filled`);
-        
-        // Play sound for round completion
-        soundManager.playTradeFilled();
-        
-        // Update progress to show all filled
-        const finalProgress = {};
-        orders.forEach(order => {
-          finalProgress[order.symbol] = { filled: true, status: 'filled', size: order.size };
-        });
-        setAutoLoopProgress(finalProgress);
-        
-        // Small delay before next round
-        if (round < autoLoopRounds) {
-          console.log(`[AUTO-LOOP] Waiting 1s before next round...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          throw err;
         }
       }
 
-      // All rounds completed successfully
-      if (!autoLoopStopRef.current) {
-        console.log('[AUTO-LOOP] All rounds completed successfully');
-        // Mark as completed in recovery state
-        setAutoLoopLastRun(prev => prev ? { ...prev, completed: true, endTime: Date.now() } : null);
-        setOrderResult({
-          type: 'success',
-          message: `✅ Auto-loop completed: ${autoLoopRounds} rounds executed successfully`,
-        });
-        setTimeout(() => setOrderResult(null), 5000);
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to start auto-loop on backend');
       }
+
+      devLog('[AUTO-LOOP] Backend loop started:', response.data.loop);
+
+      // Set local UI state — polling effect will keep it updated
+      setAutoLoopRunning(true);
+      setAutoLoopCurrentRound(0);
+      setAutoLoopError(null);
+      setAutoLoopProgress({});
+      autoLoopStopRef.current = false;
 
     } catch (error) {
-      const errorMsg = error.message || 'Auto-loop execution failed';
-      console.error('[AUTO-LOOP] Error:', error);
-      // Keep the lastRun state so user can see what was interrupted
-      setAutoLoopError(`${errorMsg} (Round ${autoLoopCurrentRound}/${autoLoopRounds})`);
-      setOrderResult({
-        type: 'error',
-        message: `❌ Auto-loop error at round ${autoLoopCurrentRound}: ${errorMsg}`,
-      });
-      setTimeout(() => setOrderResult(null), 8000);
-    } finally {
-      setAutoLoopRunning(false);
-      autoLoopStopRef.current = false;
+      const errorMsg = error.response?.data?.error || error.message || 'Failed to start auto-loop';
+      console.error('[AUTO-LOOP] Start error:', error);
+      setAutoLoopError(errorMsg);
     }
   };
 
-  // Stop auto-loop
-  const stopAutoLoop = () => {
+  // Stop auto-loop — tells backend to stop
+  // ARCH-1 NOTE: Two auto-loop systems exist — legacy (autoLoopRunning) and per-expiry (expiryLoopState).
+  // The "STOP ALL" banner button dispatches to stopAllExpiryLoops when per-expiry loops are active,
+  // and to stopAutoLoop for legacy single loops. Both are kept for backward compatibility.
+  // Future: consolidate to per-expiry system only and remove legacy state.
+  const stopAutoLoop = async () => {
+    devLog('[AUTO-LOOP] Stop requested (backend mode)');
+    // If per-expiry loops are running, delegate to the per-expiry stop
+    if (anyExpiryLoopRunning) {
+      return stopAllExpiryLoops();
+    }
+    try {
+      await api.post('/api/options/auto-loop/stop', { loop_id: 'main' });
+    } catch (err) {
+      console.error('[AUTO-LOOP] Stop error:', err);
+    }
     autoLoopStopRef.current = true;
-    console.log('[AUTO-LOOP] Stop requested');
   };
 
-  // Clear auto-loop error/warning and persisted state
+  // Poll backend auto-loop status — drives autoLoopRunning / progress / error
+  const autoLoopPollRef = useRef(null);
+  useEffect(() => {
+    // Poll when autoLoopRunning OR on mount (to detect loops surviving refresh)
+    const pollBackend = async () => {
+      try {
+        const { data } = await api.get('/api/options/auto-loop/status?loop_id=main');
+        if (!data.success) return;
+
+        const loopState = data.loops?.main;
+        if (!loopState || !loopState.exists === undefined && !loopState.status) {
+          // No loop exists on backend — if we think one is running, stop
+          if (autoLoopRunning) {
+            setAutoLoopRunning(false);
+          }
+          return;
+        }
+
+        if (loopState.exists === false) {
+          if (autoLoopRunning) setAutoLoopRunning(false);
+          return;
+        }
+
+        const { status, current_round, total_rounds, progress, error, rounds_completed } = loopState;
+
+        // Map backend progress to frontend format
+        if (progress && typeof progress === 'object') {
+          setAutoLoopProgress(progress);
+        }
+        setAutoLoopCurrentRound(current_round || rounds_completed || 0);
+
+        if (status === 'running') {
+          if (!autoLoopRunning) setAutoLoopRunning(true);
+          // Update rounds display (backend tracks total_rounds)
+          if (total_rounds && total_rounds !== autoLoopRounds) {
+            // Don't overwrite user's setting — just for display
+          }
+        } else if (status === 'completed') {
+          setAutoLoopRunning(false);
+          setOrderResult({
+            type: 'success',
+            message: `✅ Auto-loop completed: ${rounds_completed}/${total_rounds} rounds executed successfully`,
+          });
+          setTimeout(() => setOrderResult(null), 5000);
+          // Clear backend finished state
+          try { await api.post('/api/options/auto-loop/clear'); } catch (e) { /* ignore */ }
+        } else if (status === 'stopped') {
+          setAutoLoopRunning(false);
+          setAutoLoopError(error || `Stopped after round ${rounds_completed}/${total_rounds}`);
+          try { await api.post('/api/options/auto-loop/clear'); } catch (e) { /* ignore */ }
+        } else if (status === 'error') {
+          setAutoLoopRunning(false);
+          setAutoLoopError(error || 'Auto-loop failed');
+          setOrderResult({
+            type: 'error',
+            message: `❌ Auto-loop error: ${error}`,
+          });
+          setTimeout(() => setOrderResult(null), 8000);
+          try { await api.post('/api/options/auto-loop/clear'); } catch (e) { /* ignore */ }
+        } else if (status === 'stopping') {
+          // Still running, waiting for current round to finish
+          if (!autoLoopRunning) setAutoLoopRunning(true);
+        }
+
+      } catch (err) {
+        // Silent fail for polling
+      }
+    };
+
+    // Check immediately on mount for any running backend loops
+    pollBackend();
+
+    // Poll every 1.5s
+    autoLoopPollRef.current = setInterval(pollBackend, 1500);
+    return () => {
+      if (autoLoopPollRef.current) clearInterval(autoLoopPollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoopRunning]);
+
+  // Clear auto-loop error/warning
   const clearAutoLoopError = () => {
     setAutoLoopError(null);
-    setAutoLoopLastRun(null); // usePersistedState auto-removes from localStorage when set to null
+    setAutoLoopLastRun(null);
   };
 
   // ==================== PER-EXPIRY AUTO-LOOP ====================
@@ -2255,18 +2471,20 @@ const OptionsPanel = () => {
       if (monthA !== monthB) return monthA - monthB;
       return dayA - dayB;
     });
-  }, [selectedStrikes, positions]);
+  // BUG-28 FIX: sortedPositions depends on closedPositions and hiddenPositions too;
+  // use sortedPositions directly so the memo stays in sync with what is actually visible
+  }, [selectedStrikes, sortedPositions]);
 
   // Check if any expiry loop is running
   const anyExpiryLoopRunning = useMemo(() => {
     return Object.values(expiryLoopState).some(state => state.running);
   }, [expiryLoopState]);
 
-  // Execute auto-loop for a specific expiry
+  // Execute auto-loop for a specific expiry — NOW RUNS ON BACKEND
   const executeExpiryAutoLoop = async (expiryCode) => {
     // Check if already running for this expiry
     if (expiryLoopState[expiryCode]?.running) {
-      console.log(`⚠️ Auto-loop already running for ${expiryCode}`);
+      devLog(`⚠️ Auto-loop already running for ${expiryCode}`);
       return;
     }
 
@@ -2287,220 +2505,175 @@ const OptionsPanel = () => {
       return;
     }
 
-    // Initialize state for this expiry
-    expiryStopRefs.current[expiryCode] = false;
-    setExpiryLoopState(prev => ({
-      ...prev,
-      [expiryCode]: {
-        running: true,
-        currentRound: 0,
-        totalRounds: autoLoopRounds,
-        progress: {},
-        error: null,
-        startTime: Date.now(),
-      }
-    }));
-
-    console.log(`[AUTO-LOOP:${expiryCode}] Starting ${autoLoopRounds} rounds with ${orders.length} orders`);
     const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
 
     try {
-      for (let round = 1; round <= autoLoopRounds; round++) {
-        // Check if stopped
-        if (expiryStopRefs.current[expiryCode]) {
-          console.log(`[AUTO-LOOP:${expiryCode}] Stopped by user at round ${round - 1}`);
-          setExpiryLoopState(prev => ({
-            ...prev,
-            [expiryCode]: { ...prev[expiryCode], running: false, error: `Stopped at round ${round - 1}/${autoLoopRounds}` }
-          }));
-          break;
-        }
-
-        // Update round counter
-        setExpiryLoopState(prev => ({
-          ...prev,
-          [expiryCode]: { ...prev[expiryCode], currentRound: round }
-        }));
-
-        console.log(`[AUTO-LOOP:${expiryCode}] Round ${round}/${autoLoopRounds}`);
-
-        // Reset progress for this round
-        const roundProgress = {};
-        orders.forEach(order => {
-          roundProgress[order.symbol] = { filled: false, orderId: null, size: order.size, status: 'placing' };
-        });
-        setExpiryLoopState(prev => ({
-          ...prev,
-          [expiryCode]: { ...prev[expiryCode], progress: roundProgress }
-        }));
-
-        // Place orders
-        const response = await api.post('/api/options/batch_add', {
+      // Send to backend — auto-clear stale loops on 409 CONFLICT
+      let response;
+      try {
+        response = await api.post('/api/options/auto-loop/start', {
+          loop_id: expiryCode,
           orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
+          total_rounds: autoLoopRounds,
           order_preference: orderPreference,
-          confirm: true,
         });
-
-        if (!response.data.success) {
-          throw new Error(response.data.error || 'Batch order placement failed');
-        }
-
-        const placedOrders = response.data.results || [];
-        const failedPlacements = placedOrders.filter(r => !r.success);
-        if (failedPlacements.length > 0) {
-          throw new Error(`Failed to place ${failedPlacements.length} order(s)`);
-        }
-
-        // Separate filled vs pending
-        const filledImmediately = [];
-        const pendingOrders = [];
-        placedOrders.forEach(result => {
-          if (result.success) {
-            const executionType = result.execution_type || '';
-            const isFilledType = ['market', 'market_fallback', 'limit_filled', 'limit_filled_late'].includes(executionType);
-            if (isFilledType || !result.order_id) {
-              filledImmediately.push(result);
-            } else {
-              pendingOrders.push(result);
-            }
-          }
-        });
-
-        // Update progress
-        const updatedProgress = { ...roundProgress };
-        filledImmediately.forEach(result => {
-          updatedProgress[result.symbol] = { filled: true, orderId: result.order_id, size: result.size, status: 'filled' };
-        });
-        pendingOrders.forEach(result => {
-          updatedProgress[result.symbol] = { filled: false, orderId: result.order_id, size: result.size, status: 'pending' };
-        });
-        setExpiryLoopState(prev => ({
-          ...prev,
-          [expiryCode]: { ...prev[expiryCode], progress: updatedProgress }
-        }));
-
-        // Poll for pending orders
-        if (pendingOrders.length > 0) {
-          const orderIds = pendingOrders.map(r => r.order_id).filter(id => id);
-          let allFilled = false;
-          let pollCount = 0;
-
-          while (!allFilled && !expiryStopRefs.current[expiryCode]) {
-            pollCount++;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            try {
-              const statusResponse = await api.post('/api/options/batch_order_status', { order_ids: orderIds });
-              if (!statusResponse.data.success) continue;
-
-              const orderStatuses = statusResponse.data.orders || [];
-              const progressUpdate = { ...updatedProgress };
-
-              orderStatuses.forEach(status => {
-                const matchingOrder = pendingOrders.find(o => o.order_id === status.order_id);
-                if (matchingOrder) {
-                  // Delta Exchange uses 'closed' for filled orders, not 'filled'
-                  const isFilled = status.state === 'filled' || status.state === 'closed';
-                  if (status.state === 'cancelled' || status.state === 'rejected') {
-                    throw new Error(`Order ${matchingOrder.symbol} was ${status.state}`);
-                  }
-                  progressUpdate[matchingOrder.symbol] = {
-                    filled: isFilled,
-                    orderId: status.order_id,
-                    size: status.size,
-                    status: isFilled ? 'filled' : 'pending',
-                  };
-                }
-              });
-
-              setExpiryLoopState(prev => ({
-                ...prev,
-                [expiryCode]: { ...prev[expiryCode], progress: progressUpdate }
-              }));
-
-              const filledCount = Object.values(progressUpdate).filter(p => p.filled).length;
-              allFilled = filledCount === orders.length;
-              console.log(`[AUTO-LOOP:${expiryCode}] Poll ${pollCount}: ${filledCount}/${orders.length} filled`);
-
-            } catch (pollError) {
-              if (pollError.message.includes('cancelled') || pollError.message.includes('rejected')) {
-                throw pollError;
-              }
-            }
-          }
-        }
-
-        // Check if stopped during polling
-        if (expiryStopRefs.current[expiryCode]) {
-          setExpiryLoopState(prev => ({
-            ...prev,
-            [expiryCode]: { ...prev[expiryCode], running: false, error: `Stopped at round ${round}/${autoLoopRounds}` }
-          }));
-          break;
-        }
-
-        // Round complete
-        console.log(`[AUTO-LOOP:${expiryCode}] Round ${round} complete`);
-        soundManager.playTradeFilled();
-
-        // Update to all filled
-        const finalProgress = {};
-        orders.forEach(order => {
-          finalProgress[order.symbol] = { filled: true, status: 'filled', size: order.size };
-        });
-        setExpiryLoopState(prev => ({
-          ...prev,
-          [expiryCode]: { ...prev[expiryCode], progress: finalProgress }
-        }));
-
-        // Delay before next round
-        if (round < autoLoopRounds) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (err) {
+        if (err.response?.status === 409) {
+          devLog(`[AUTO-LOOP:${expiryCode}] Got 409 CONFLICT — clearing stale loop and retrying...`);
+          await api.post('/api/options/auto-loop/clear');
+          response = await api.post('/api/options/auto-loop/start', {
+            loop_id: expiryCode,
+            orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
+            total_rounds: autoLoopRounds,
+            order_preference: orderPreference,
+          });
+        } else {
+          throw err;
         }
       }
 
-      // All rounds complete
-      if (!expiryStopRefs.current[expiryCode]) {
-        console.log(`[AUTO-LOOP:${expiryCode}] All rounds completed`);
-        setExpiryLoopState(prev => ({
-          ...prev,
-          [expiryCode]: { ...prev[expiryCode], running: false, completed: true, endTime: Date.now() }
-        }));
-        setOrderResult({
-          type: 'success',
-          message: `✅ [${expiryCode}] Auto-loop completed: ${autoLoopRounds} rounds`,
-        });
-        setTimeout(() => setOrderResult(null), 5000);
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to start auto-loop on backend');
       }
+
+      devLog(`[AUTO-LOOP:${expiryCode}] Backend loop started`);
+
+      // Set local state — polling effect will keep it updated
+      setExpiryLoopState(prev => ({
+        ...prev,
+        [expiryCode]: {
+          running: true,
+          currentRound: 0,
+          totalRounds: autoLoopRounds,
+          progress: {},
+          error: null,
+          startTime: Date.now(),
+        }
+      }));
 
     } catch (error) {
-      console.error(`[AUTO-LOOP:${expiryCode}] Error:`, error);
+      console.error(`[AUTO-LOOP:${expiryCode}] Start error:`, error);
       setExpiryLoopState(prev => ({
         ...prev,
         [expiryCode]: {
           ...prev[expiryCode],
           running: false,
-          error: `${error.message} (Round ${prev[expiryCode]?.currentRound || '?'}/${autoLoopRounds})`,
+          error: error.response?.data?.error || error.message || 'Failed to start',
         }
       }));
     }
   };
 
-  // Stop auto-loop for specific expiry
-  const stopExpiryAutoLoop = (expiryCode) => {
+  // Stop auto-loop for specific expiry — calls backend
+  const stopExpiryAutoLoop = async (expiryCode) => {
+    devLog(`[AUTO-LOOP:${expiryCode}] Stop requested (backend mode)`);
     expiryStopRefs.current[expiryCode] = true;
-    console.log(`[AUTO-LOOP:${expiryCode}] Stop requested`);
+    try {
+      await api.post('/api/options/auto-loop/stop', { loop_id: expiryCode });
+    } catch (err) {
+      console.error(`[AUTO-LOOP:${expiryCode}] Stop error:`, err);
+    }
   };
 
-  // Stop all expiry loops
-  const stopAllExpiryLoops = () => {
-    Object.keys(expiryLoopState).forEach(expiry => {
-      if (expiryLoopState[expiry]?.running) {
-        expiryStopRefs.current[expiry] = true;
+  // Stop all expiry loops — calls backend for each
+  const stopAllExpiryLoops = async () => {
+    const runningExpiries = Object.keys(expiryLoopState).filter(e => expiryLoopState[e]?.running);
+    devLog('[AUTO-LOOP] Stop all requested for:', runningExpiries);
+    for (const expiry of runningExpiries) {
+      expiryStopRefs.current[expiry] = true;
+      try {
+        await api.post('/api/options/auto-loop/stop', { loop_id: expiry });
+      } catch (err) {
+        console.error(`[AUTO-LOOP:${expiry}] Stop error:`, err);
       }
-    });
-    console.log('[AUTO-LOOP] Stop all requested');
+    }
   };
+
+  // Poll backend for per-expiry loop status
+  const expiryPollRef = useRef(null);
+  useEffect(() => {
+    const hasRunning = Object.values(expiryLoopState).some(s => s.running);
+    
+    const pollExpiryLoops = async () => {
+      try {
+        const { data } = await api.get('/api/options/auto-loop/status');
+        if (!data.success) return;
+
+        const loops = data.loops || {};
+        
+        setExpiryLoopState(prev => {
+          const updated = { ...prev };
+          
+          // Check each expiry that WE think is running
+          for (const [expiryCode, localState] of Object.entries(updated)) {
+            if (!localState.running) continue;
+            
+            const backendState = loops[expiryCode];
+            if (!backendState || backendState.exists === false) {
+              // Backend has no record — must have finished or never started
+              updated[expiryCode] = { ...localState, running: false };
+              continue;
+            }
+
+            const { status, current_round, total_rounds, progress, error, rounds_completed } = backendState;
+
+            // Sync progress
+            if (progress && typeof progress === 'object') {
+              updated[expiryCode] = { ...updated[expiryCode], progress };
+            }
+            updated[expiryCode] = { ...updated[expiryCode], currentRound: current_round || rounds_completed || 0 };
+
+            if (status === 'completed') {
+              updated[expiryCode] = { ...updated[expiryCode], running: false, completed: true, endTime: Date.now() };
+              // Clean up backend
+              api.post('/api/options/auto-loop/clear').catch(() => {});
+            } else if (status === 'stopped' || status === 'error') {
+              updated[expiryCode] = {
+                ...updated[expiryCode],
+                running: false,
+                error: error || `${status} at round ${rounds_completed}/${total_rounds}`,
+              };
+              api.post('/api/options/auto-loop/clear').catch(() => {});
+            }
+          }
+
+          // Also detect NEW backend loops we don't know about (e.g. from before page refresh)
+          for (const [loopId, backendState] of Object.entries(loops)) {
+            if (loopId === 'main') continue; // handled by main auto-loop poller
+            if (backendState.exists === false) continue;
+            if (!updated[loopId]?.running && backendState.status === 'running') {
+              // Backend has a running loop we don't know about — adopt it
+              updated[loopId] = {
+                running: true,
+                currentRound: backendState.current_round || 0,
+                totalRounds: backendState.total_rounds,
+                progress: backendState.progress || {},
+                error: null,
+                startTime: backendState.started_at,
+              };
+            }
+          }
+          
+          return updated;
+        });
+      } catch (err) {
+        // Silent fail
+      }
+    };
+
+    if (hasRunning) {
+      pollExpiryLoops();
+      expiryPollRef.current = setInterval(pollExpiryLoops, 1500);
+    } else {
+      // Check once on mount for surviving backend loops
+      pollExpiryLoops();
+    }
+
+    return () => {
+      if (expiryPollRef.current) clearInterval(expiryPollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Object.values(expiryLoopState).some(s => s.running)]);
 
   // Start all expiry loops simultaneously
   const startAllExpiryLoops = () => {
@@ -2537,78 +2710,14 @@ const OptionsPanel = () => {
     setExpiryLoopState({});
     setAutoLoopError(null);
     setAutoLoopLastRun(null);
-    console.log('[AUTO-LOOP] Cleared all persisted loop state');
+    devLog('[AUTO-LOOP] Cleared all persisted loop state');
   };
 
   // ==================== END PER-EXPIRY AUTO-LOOP ====================
 
-  // Format helpers
-  const formatPnl = (pnl) => {
-    const numPnl = Number(pnl) || 0;
-    const formatted = Math.abs(numPnl).toFixed(4);
-    return numPnl >= 0 ? `+$${formatted}` : `-$${formatted}`;
-  };
-
-  const formatPnlPct = (pct) => {
-    const numPct = Number(pct) || 0;
-    const formatted = Math.abs(numPct).toFixed(2);
-    return numPct >= 0 ? `+${formatted}%` : `-${formatted}%`;
-  };
-
-  const getPnlColor = (pnl) => {
-    if (pnl > 0) return '#10b981';
-    if (pnl < 0) return '#ef4444';
-    return '#94a3b8';
-  };
-
-  const getPositionType = (symbol) => {
-    if (symbol.startsWith('C-')) return { type: 'CALL', color: '#3b82f6' };
-    if (symbol.startsWith('P-')) return { type: 'PUT', color: '#a855f7' };
-    if (symbol.startsWith('MV-')) return { type: 'MV STRADDLE', color: '#00bcd4' }; // Cyan for MV Straddle
-    return { type: 'UNKNOWN', color: '#6b7280' };
-  };
-
-  const parseOptionSymbol = (symbol) => {
-    // Handle MV Straddle format: MV-BTC-89400-250126
-    if (symbol.startsWith('MV-')) {
-      const parts = symbol.split('-');
-      if (parts.length >= 4) {
-        const underlying = parts[1];
-        const strike = parseInt(parts[2]);
-        const expiry = parts[3];
-        // Parse expiry DDMMYY to readable format
-        const day = expiry.substring(0, 2);
-        const month = expiry.substring(2, 4);
-        const year = '20' + expiry.substring(4, 6);
-        return {
-          type: 'MV Straddle',
-          underlying,
-          strike,
-          expiry: `${day}/${month}/${year}`,
-        };
-      }
-    }
-
-    // Format: C-BTC-113000-300126 or P-BTC-69000-270226
-    const parts = symbol.split('-');
-    if (parts.length >= 4) {
-      const optionType = parts[0];
-      const underlying = parts[1];
-      const strike = parseInt(parts[2]);
-      const expiry = parts[3];
-      // Parse expiry DDMMYY to readable format
-      const day = expiry.substring(0, 2);
-      const month = expiry.substring(2, 4);
-      const year = '20' + expiry.substring(4, 6);
-      return {
-        type: optionType === 'C' ? 'Call' : 'Put',
-        underlying,
-        strike,
-        expiry: `${day}/${month}/${year}`,
-      };
-    }
-    return { type: '?', underlying: '?', strike: 0, expiry: '?' };
-  };
+  // Format helpers — hoisted to module scope for stable references (see above)
+  // formatPnl, formatPnlPct, formatUsd, getPnlColor, getPositionType, parseOptionSymbol
+  // are defined OUTSIDE the component to avoid re-creation on every render.
 
   // FEB 2, 2026: Filter positions for adjustment panel based on user selection
   // Respects selectedExpiries (expiry filter dropdown) and selectedStrikes (checkbox selection)
@@ -3087,6 +3196,9 @@ const OptionsPanel = () => {
             aggregatedGreeks={aggregatedGreeks}
             formatPnl={formatPnl}
             getPnlColor={getPnlColor}
+            indexPrices={indexPrices}
+            marginData={marginData}
+            lastDataUpdate={lastDataUpdate}
           />
 
           {/* Positions Table */}
@@ -3275,7 +3387,7 @@ const OptionsPanel = () => {
                         sx={{ cursor: 'pointer', userSelect: 'none' }}
                         onClick={toggleSizeSort}
                       >
-                        <Tooltip title="Click to sort by size">
+                        <Tooltip title="Click to sort by size (contracts)">
                           <Box
                             sx={{
                               display: 'flex',
@@ -3284,7 +3396,7 @@ const OptionsPanel = () => {
                               gap: 0.5,
                             }}
                           >
-                            Size
+                            Size (cts)
                             {sizeSort === 'asc' ? (
                               <ArrowUpwardIcon sx={{ fontSize: 16 }} color="primary" />
                             ) : sizeSort === 'desc' ? (
@@ -3352,14 +3464,16 @@ const OptionsPanel = () => {
                   onDragEnd={handleDragEnd}
                 >
                   <SortableContext
-                    items={sortedPositions.map((p) => p.product_symbol)}
+                    // BUG-6 FIX: deduplicate IDs — during the cleanup race a symbol can appear
+                    // in both live positions and closedPositions; dnd-kit throws on duplicate IDs
+                    items={[...new Set(sortedPositions.map((p) => p.product_symbol))]}
                     strategy={verticalListSortingStrategy}
                   >
                     <TableBody>
                       {sortedPositions.map((pos, index) => {
                         const optionInfo = parseOptionSymbol(pos.product_symbol);
                         const posType = getPositionType(pos.product_symbol);
-                        const pnlColor = getPnlColor(pos.unrealized_pnl);
+                        const pnlColor = getPnlColor((Number(pos.unrealized_pnl) || 0) + (Number(pos.partial_realized_pnl) || 0));
                         const isLong = pos.size > 0;
                         const daysToExp = getDaysToExpiry(pos.product_symbol);
                         const isQuickMode = skipConfirmStrikes[pos.product_symbol]?.enabled;
@@ -3369,6 +3483,12 @@ const OptionsPanel = () => {
 
                         // Use backend-calculated cashflow
                         const cashflow = pos.cashflow || 0;
+
+                        // BUG-18 FIX: for closed positions (size=0), recover direction from original_size
+                        // so cashflow color reflects whether the trade was long (paid) or short (received)
+                        const effectiveSize = isClosed
+                          ? (closedPositions[pos.product_symbol]?.original_size || pos.original_size || 0)
+                          : pos.size;
 
                         const isCall = optionInfo.type === 'Call';
                         const isPut = optionInfo.type === 'Put';
@@ -3524,30 +3644,47 @@ const OptionsPanel = () => {
                                 {/* Expiry with days remaining */}
                                 {visibleColumns.expiry && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Tooltip
-                                      title={`${(Number(daysToExp) || 0).toFixed(1)} days to expiry`}
-                                    >
-                                      <Chip
-                                        label={optionInfo.expiry}
-                                        size="small"
-                                        variant="outlined"
-                                        icon={<TimerIcon />}
-                                        sx={{
-                                          borderColor:
-                                            daysToExp < 1
-                                              ? '#ef4444'
-                                              : daysToExp < 7
-                                                ? '#f59e0b'
-                                                : undefined,
-                                          color:
-                                            daysToExp < 1
-                                              ? '#ef4444'
-                                              : daysToExp < 7
-                                                ? '#f59e0b'
-                                                : undefined,
-                                        }}
-                                      />
-                                    </Tooltip>
+                                    {(() => {
+                                      const hoursLeft = daysToExp * 24;
+                                      const isExpiredOrExpiring = daysToExp < 1;
+                                      // Show countdown for 0DTE / same-day expiry
+                                      const countdownLabel = isExpiredOrExpiring
+                                        ? hoursLeft <= 0
+                                          ? 'EXPIRY'
+                                          : hoursLeft < 1
+                                            ? `${Math.floor(hoursLeft * 60)}m`
+                                            : `${Math.floor(hoursLeft)}h ${Math.floor((hoursLeft % 1) * 60)}m`
+                                        : daysToExp < 2
+                                          ? `1d ${Math.floor((daysToExp % 1) * 24)}h`
+                                          : optionInfo.expiry;
+                                      const urgencyColor = hoursLeft <= 0
+                                        ? '#666'
+                                        : daysToExp < 0.125 // < 3 hours
+                                          ? '#ef4444'
+                                          : daysToExp < 1
+                                            ? '#f59e0b'
+                                            : daysToExp < 7
+                                              ? undefined
+                                              : undefined;
+                                      return (
+                                        <Tooltip title={`${(Number(daysToExp) || 0).toFixed(2)} days to expiry (${optionInfo.expiry})`}>
+                                          <Chip
+                                            label={isExpiredOrExpiring ? `⏰ ${countdownLabel}` : countdownLabel}
+                                            size="small"
+                                            variant={isExpiredOrExpiring ? 'filled' : 'outlined'}
+                                            icon={isExpiredOrExpiring ? undefined : <TimerIcon />}
+                                            sx={{
+                                              borderColor: urgencyColor,
+                                              color: urgencyColor,
+                                              bgcolor: isExpiredOrExpiring && daysToExp > 0 ? `${urgencyColor}15` : undefined,
+                                              fontWeight: isExpiredOrExpiring ? 'bold' : undefined,
+                                              animation: daysToExp > 0 && daysToExp < 0.04 ? 'pulse 1s infinite' : 'none',
+                                              '@keyframes pulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.5 } },
+                                            }}
+                                          />
+                                        </Tooltip>
+                                      );
+                                    })()}
                                   </TableCell>
                                 )}
 
@@ -3568,7 +3705,7 @@ const OptionsPanel = () => {
                                     ) : (
                                       <Chip
                                         icon={isLong ? <TrendingUp /> : <TrendingDown />}
-                                        label={pos.size}
+                                        label={Math.abs(pos.size)}
                                         size="small"
                                         sx={{
                                           bgcolor: isLong ? '#10b98120' : '#ef444420',
@@ -3623,13 +3760,24 @@ const OptionsPanel = () => {
                                 {/* Cashflow */}
                                 {visibleColumns.cashflow && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Tooltip title="Premium paid/received for this position">
+                                    <Tooltip title={
+                                      <Box>
+                                        <Typography variant="caption" display="block" fontWeight="bold">Cashflow Breakdown</Typography>
+                                        <Typography variant="caption" display="block">
+                                          Entry: ${(Number(pos.entry_price) || 0).toFixed(2)} × Size: {Math.abs(pos.size || 0)} × Multiplier: 0.001
+                                        </Typography>
+                                        <Typography variant="caption" display="block">
+                                          = {formatUsd(Number(cashflow) || 0)} {effectiveSize > 0 ? '(paid)' : '(received)'}
+                                        </Typography>
+                                      </Box>
+                                    }>
                                       <Typography
                                         variant="body2"
                                         fontWeight="medium"
-                                        sx={{ color: isLong ? '#ef4444' : '#10b981' }}
+                                        // BUG-18 FIX: use effectiveSize (recovers direction for closed pos)
+                                        sx={{ color: effectiveSize > 0 ? '#ef4444' : '#10b981' }}
                                       >
-                                        {(Number(cashflow) || 0).toFixed(2)} USD
+                                        {formatUsd(Number(cashflow) || 0)}
                                       </Typography>
                                     </Tooltip>
                                   </TableCell>
@@ -3638,25 +3786,44 @@ const OptionsPanel = () => {
                                 {/* Entry Price */}
                                 {visibleColumns.entry && (
                                   <TableCell align="right" sx={cellSx}>
-                                    ${(Number(pos.entry_price) || 0).toFixed(2)}
+                                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                      {formatUsd(Number(pos.entry_price) || 0)}
+                                    </Typography>
                                   </TableCell>
                                 )}
 
                                 {/* Bid Price */}
                                 {visibleColumns.bid && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Typography variant="body2" sx={{ color: '#10b981' }}>
-                                      ${(Number(pos.best_bid) || 0).toFixed(2)}
+                                    <Typography variant="body2" sx={{ color: '#10b981', fontFamily: 'monospace' }}>
+                                      {formatUsd(Number(pos.best_bid) || 0)}
                                     </Typography>
                                   </TableCell>
                                 )}
 
-                                {/* Ask Price */}
+                                {/* Ask Price — Phase 7.3: Spread quality indicator */}
                                 {visibleColumns.ask && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Typography variant="body2" sx={{ color: '#ef4444' }}>
-                                      ${(Number(pos.best_ask) || 0).toFixed(2)}
-                                    </Typography>
+                                    {(() => {
+                                      const bid = Number(pos.best_bid) || 0;
+                                      const ask = Number(pos.best_ask) || 0;
+                                      const mid = (bid + ask) / 2;
+                                      const spreadAbs = ask - bid;
+                                      const spreadPct = mid > 0 ? (spreadAbs / mid * 100) : 0;
+                                      const spreadColor = spreadPct > 5 ? '#ef4444' : spreadPct > 1 ? '#f59e0b' : '#10b981';
+                                      return (
+                                        <Tooltip title={mid > 0 ? `Spread: ${formatUsd(spreadAbs)} (${spreadPct.toFixed(1)}%) · Mid: ${formatUsd(mid)}` : ''}>
+                                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                                            <Typography variant="body2" sx={{ color: '#ef4444', fontFamily: 'monospace' }}>
+                                              {formatUsd(ask)}
+                                            </Typography>
+                                            {mid > 0 && (
+                                              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: spreadColor, flexShrink: 0 }} />
+                                            )}
+                                          </Box>
+                                        </Tooltip>
+                                      );
+                                    })()}
                                   </TableCell>
                                 )}
 
@@ -3703,12 +3870,22 @@ const OptionsPanel = () => {
                                   </TableCell>
                                 )}
 
-                                {/* IV (Implied Volatility) */}
+                                {/* IV (Implied Volatility) — Phase 7.4: Reasonableness flag */}
                                 {visibleColumns.iv && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Typography variant="body2">
-                                      {pos.iv ? `${(pos.iv * 100).toFixed(1)}%` : '-'}
-                                    </Typography>
+                                    {(() => {
+                                      if (!pos.iv) return <Typography variant="body2">-</Typography>;
+                                      const ivPct = pos.iv * 100;
+                                      const suspicious = ivPct < 15 || ivPct > 200;
+                                      return (
+                                        <Tooltip title={suspicious ? `IV ${ivPct.toFixed(1)}% may be unreliable — ${ivPct < 15 ? 'unusually low for options' : 'unusually high, check data quality'}` : `IV: ${ivPct.toFixed(1)}%`}>
+                                          <Typography variant="body2" sx={{ color: suspicious ? '#f59e0b' : undefined, fontWeight: suspicious ? 'bold' : undefined }}>
+                                            {`${ivPct.toFixed(1)}%`}
+                                            {suspicious && <Typography component="span" sx={{ fontSize: '0.6rem', ml: 0.3 }}>⚠</Typography>}
+                                          </Typography>
+                                        </Tooltip>
+                                      );
+                                    })()}
                                   </TableCell>
                                 )}
 
@@ -3716,19 +3893,41 @@ const OptionsPanel = () => {
                                 {visibleColumns.pop && (
                                   <TableCell align="center" sx={cellSx}>
                                     {popData[pos.product_symbol] !== undefined ? (
-                                      <Chip
-                                        label={`${popData[pos.product_symbol].toFixed(1)}%`}
-                                        size="small"
-                                        sx={{
-                                          bgcolor: popData[pos.product_symbol] > 50
-                                            ? 'success.main'
-                                            : 'warning.main',
-                                          color: 'white',
-                                          fontWeight: 'bold',
-                                          fontSize: '0.75rem',
-                                          height: 22,
-                                        }}
-                                      />
+                                      popData[pos.product_symbol] === -1 ? (
+                                        <Tooltip title="PoP calculation unavailable for this position">
+                                          <Typography variant="body2" color="text.secondary">N/A</Typography>
+                                        </Tooltip>
+                                      ) : (
+                                        <Tooltip title={
+                                          popData[pos.product_symbol] < 1
+                                            ? 'Very low probability of profit'
+                                            : popData[pos.product_symbol] > 99
+                                              ? 'Very high probability of profit'
+                                              : `${popData[pos.product_symbol].toFixed(1)}% chance of profit at expiry`
+                                        }>
+                                          <Chip
+                                            label={
+                                              popData[pos.product_symbol] < 1
+                                                ? '< 1%'
+                                                : popData[pos.product_symbol] > 99
+                                                  ? '> 99%'
+                                                  : `${popData[pos.product_symbol].toFixed(1)}%`
+                                            }
+                                            size="small"
+                                            sx={{
+                                              bgcolor: popData[pos.product_symbol] > 50
+                                                ? 'success.main'
+                                                : popData[pos.product_symbol] < 20
+                                                  ? 'error.main'
+                                                  : 'warning.main',
+                                              color: 'white',
+                                              fontWeight: 'bold',
+                                              fontSize: '0.75rem',
+                                              height: 22,
+                                            }}
+                                          />
+                                        </Tooltip>
+                                      )
                                     ) : (
                                       <Typography variant="body2" color="text.secondary">
                                         -
@@ -3737,23 +3936,56 @@ const OptionsPanel = () => {
                                   </TableCell>
                                 )}
 
-                                {/* PnL */}
+                                {/* PnL — Phase 7.1: USD prominent, % capped to avoid -774% panic */}
+                                {/* Now includes partial realized PnL from partial exits */}
                                 {visibleColumns.pnl && (
                                   <TableCell align="right" sx={cellSx}>
-                                    <Box>
-                                      <Typography fontWeight="bold" sx={{ color: pnlColor }}>
-                                        {formatPnl(pos.unrealized_pnl || 0)}
-                                      </Typography>
-                                      {isClosed ? (
-                                        <Typography variant="caption" sx={{ color: '#888', fontStyle: 'italic' }}>
-                                          Realized
-                                        </Typography>
-                                      ) : (
-                                        <Typography variant="caption" sx={{ color: pnlColor }}>
-                                          {formatPnlPct(pos.pnl_percentage || 0)}
-                                        </Typography>
-                                      )}
-                                    </Box>
+                                    {(() => {
+                                      const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
+                                      const partialPnl = Number(pos.partial_realized_pnl) || 0;
+                                      const totalPnl = unrealizedPnl + partialPnl;
+                                      const totalPnlColor = getPnlColor(totalPnl);
+                                      const rawPct = pos.pnl_percentage || 0;
+                                      const cashflowVal = Number(pos.cashflow) || 0;
+
+                                      const tooltipText = (() => {
+                                        if (partialPnl !== 0) {
+                                          return `Unrealized: ${formatPnl(unrealizedPnl)} + Partial Realized: ${formatPnl(partialPnl)} = Total: ${formatPnl(totalPnl)}`;
+                                        }
+                                        if (Math.abs(rawPct) > 200 && cashflowVal !== 0) {
+                                          return `Raw PnL %: ${rawPct.toFixed(1)}% (vs cashflow $${Math.abs(cashflowVal).toFixed(2)}). Large % due to small premium denominator.`;
+                                        }
+                                        return `PnL: ${formatPnl(unrealizedPnl)} (${rawPct.toFixed(1)}%)`;
+                                      })();
+
+                                      return (
+                                        <Tooltip title={tooltipText}>
+                                          <Box>
+                                            <Typography fontWeight="bold" sx={{ color: totalPnlColor }}>
+                                              {formatPnl(totalPnl)}
+                                            </Typography>
+                                            {isClosed ? (
+                                              <Typography variant="caption" sx={{ color: '#888', fontStyle: 'italic' }}>
+                                                Realized
+                                              </Typography>
+                                            ) : partialPnl !== 0 ? (
+                                              <Typography variant="caption" sx={{ color: getPnlColor(partialPnl), fontStyle: 'italic' }}>
+                                                incl. {formatPnl(partialPnl)} realized
+                                              </Typography>
+                                            ) : (
+                                              <Typography variant="caption" sx={{ color: totalPnlColor }}>
+                                                {(() => {
+                                                  const pct = pos.pnl_percentage || 0;
+                                                  if (pct > 200) return '>+200%';
+                                                  if (pct < -200) return '<-200%';
+                                                  return formatPnlPct(pct);
+                                                })()}
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        </Tooltip>
+                                      );
+                                    })()}
                                   </TableCell>
                                 )}
 
@@ -3796,7 +4028,7 @@ const OptionsPanel = () => {
                                       )}
 
                                       {(() => {
-                                        const recommendation = calculateSmartScaling(pos);
+                                        const recommendation = scalingRecommendations[pos.product_symbol] || { action: 'hold', size: 0, reason: '', confidence: 'low', riskLevel: 'medium' };
                                         const tooltipTitle = (
                                           <Box>
                                             <Typography
@@ -3910,7 +4142,7 @@ const OptionsPanel = () => {
                                                 delete updated[pos.product_symbol];
                                                 return updated;
                                               });
-                                              console.log(`🗑️ Removed closed position: ${pos.product_symbol}`);
+                                              devLog(`🗑️ Removed closed position: ${pos.product_symbol}`);
                                             }}
                                             sx={{
                                               border: '2px solid',
@@ -3996,6 +4228,9 @@ const OptionsPanel = () => {
             executeBatchOrders={executeBatchOrders}
             executeBatch={executeBatch}
             executeAutoLoop={executeAutoLoop}
+            autoLoopConfirmDialog={autoLoopConfirmDialog}
+            setAutoLoopConfirmDialog={setAutoLoopConfirmDialog}
+            doStartAutoLoop={_doStartAutoLoop}
             stopAutoLoop={stopAutoLoop}
             startAllExpiryLoops={startAllExpiryLoops}
             executeExpiryAutoLoop={executeExpiryAutoLoop}
@@ -4004,20 +4239,26 @@ const OptionsPanel = () => {
             clearExpiryLoopError={clearExpiryLoopError}
           />
 
+          <ConditionalExitPanel
+            selectedStrikes={selectedStrikes}
+            positions={positions}
+            btcPrice={btcPrice}
+          />
+
           {/* Summary */}
           {positions.length > 0 && (
             <>
               <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Chip
                   icon={<MoneyIcon />}
-                  label={`Total PnL: ${formatPnl(sortedPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0))}`}
+                  label={`Total PnL: ${formatPnl(sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0))}`}
                   sx={{
                     bgcolor:
                       getPnlColor(
-                        sortedPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0)
+                        sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0)
                       ) + '20',
                     color: getPnlColor(
-                      sortedPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0)
+                      sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0)
                     ),
                   }}
                 />

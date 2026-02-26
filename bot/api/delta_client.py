@@ -418,8 +418,40 @@ class DeltaClient:
         return None
     
     def close_position(self, product_id: int):
-        """Close a position (market order)"""
-        return self._req("POST", "/v2/positions/close", json_body={"product_id": product_id})
+        """Close a position by placing a market order on the opposite side.
+        
+        Delta Exchange India does not have /v2/positions/close endpoint,
+        so we close by placing a market order in the opposite direction.
+        """
+        # 1. Get current position to determine size and side
+        pos = self.get_position(product_id)
+        if not pos:
+            return {'success': False, 'error': f'No open position found for product_id {product_id}'}
+        
+        size = int(pos.get('size', 0))
+        if size == 0:
+            return {'success': True, 'result': {}, 'message': 'Position already closed (size=0)'}
+        
+        # 2. Determine closing side: if long (size > 0) -> sell, if short (size < 0) -> buy
+        close_side = 'sell' if size > 0 else 'buy'
+        abs_size = abs(size)
+        
+        # 3. Place market order to close
+        payload = {
+            "product_id": int(product_id),
+            "side": close_side,
+            "size": abs_size,
+            "order_type": "market_order",
+            "reduce_only": True,
+        }
+        
+        log.info(f"Closing position: product_id={product_id}, side={close_side}, size={abs_size}")
+        result = self._req("POST", "/v2/orders", json_body=payload)
+        
+        # Wrap in success format if the API returned order data
+        if isinstance(result, dict) and 'result' in result:
+            return {'success': True, 'result': result.get('result', {})}
+        return result
     
     # ---------- margins ----------
     def get_margins(self):

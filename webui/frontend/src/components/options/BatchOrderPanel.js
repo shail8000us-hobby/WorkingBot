@@ -75,6 +75,9 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
   executeBatchOrders,
   executeBatch,
   executeAutoLoop,
+  autoLoopConfirmDialog,
+  setAutoLoopConfirmDialog,
+  doStartAutoLoop,
   stopAutoLoop,
   startAllExpiryLoops,
   executeExpiryAutoLoop,
@@ -132,7 +135,11 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               <IconButton
                 size="small"
                 onClick={() =>
-                  setOrderQuantity((q) => (q > 0 ? Math.max(1, q - 1) : Math.max(-10, q - 1)))
+                  setOrderQuantity((q) => {
+                    if (q === 1) return -1;  // skip 0: +1 → -1
+                    if (q > 1) return q - 1;
+                    return Math.max(-10, q - 1);
+                  })
                 }
                 sx={{
                   bgcolor: 'rgba(255,255,255,0.1)',
@@ -160,9 +167,11 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               <IconButton
                 size="small"
                 onClick={() =>
-                  setOrderQuantity((q) =>
-                    q >= 0 ? Math.min(10, q + 1) : Math.min(-1, q + 1)
-                  )
+                  setOrderQuantity((q) => {
+                    if (q === -1) return 1;  // skip 0: -1 → +1
+                    if (q < -1) return q + 1;
+                    return Math.min(10, q + 1);
+                  })
                 }
                 sx={{
                   bgcolor: 'rgba(255,255,255,0.1)',
@@ -174,14 +183,22 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
             </Box>
             <Tooltip
               title={
-                multiplierMode === 'normal'
-                  ? `Simple multiplier based on current position lots. If position has 1 lot bought and 2 lots sold, multiplier ${Math.abs(orderQuantity)} = ${Math.abs(orderQuantity)} lot buy + ${Math.abs(orderQuantity) * 2} lots sell.`
-                  : `GCD-based multiplier: positions scaled proportionally using their greatest common divisor (GCD=${getPositionsGCD(getSelectedPositions())}). This allows for smaller, proportional batch sizes.`
+                multiplierMode === 'fixed'
+                  ? orderQuantity > 0
+                    ? `FIXED ADD: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual entry.`
+                    : `FIXED EXIT: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual exit with minimal slippage.`
+                  : multiplierMode === 'normal'
+                  ? orderQuantity > 0
+                    ? `ADD to positions: x${orderQuantity} multiplier. Scales with position size.`
+                    : `EXIT positions: x${Math.abs(orderQuantity)} multiplier. Exits full position size × multiplier.`
+                  : `GCD-based multiplier (GCD=${getPositionsGCD(getSelectedPositions())}). ${orderQuantity > 0 ? 'ADD to' : 'EXIT'} positions proportionally.`
               }
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="caption" color="text.secondary">
-                  (x{Math.abs(orderQuantity)} {multiplierMode === 'gcd' ? 'GCD' : 'multiplier'})
+                <Typography variant="caption" color={multiplierMode ? "text.secondary" : "warning.main"}>
+                  {multiplierMode 
+                    ? `(${multiplierMode === 'fixed' ? `${Math.abs(orderQuantity)} lot${Math.abs(orderQuantity) > 1 ? 's' : ''} each` : `x${Math.abs(orderQuantity)}`} ${orderQuantity > 0 ? 'add' : 'exit'}${multiplierMode === 'gcd' ? ' GCD' : multiplierMode === 'fixed' ? ' fixed' : ''})`
+                    : '⚠ select mode →'}
                 </Typography>
                 <Box
                   sx={{
@@ -194,10 +211,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   <Button
                     size="small"
                     variant={multiplierMode === 'normal' ? 'contained' : 'outlined'}
-                    onClick={() => setMultiplierMode('normal')}
+                    onClick={() => setMultiplierMode(prev => prev === 'normal' ? null : 'normal')}
                     sx={{
                       borderRadius: 0,
-                      minWidth: 60,
+                      minWidth: 55,
                       fontSize: '0.7rem',
                       py: 0.25,
                       bgcolor:
@@ -220,10 +237,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   <Button
                     size="small"
                     variant={multiplierMode === 'gcd' ? 'contained' : 'outlined'}
-                    onClick={() => setMultiplierMode('gcd')}
+                    onClick={() => setMultiplierMode(prev => prev === 'gcd' ? null : 'gcd')}
                     sx={{
                       borderRadius: 0,
-                      minWidth: 60,
+                      minWidth: 45,
                       fontSize: '0.7rem',
                       py: 0.25,
                       bgcolor:
@@ -240,6 +257,30 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     }}
                   >
                     GCD
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={multiplierMode === 'fixed' ? 'contained' : 'outlined'}
+                    onClick={() => setMultiplierMode(prev => prev === 'fixed' ? null : 'fixed')}
+                    sx={{
+                      borderRadius: 0,
+                      minWidth: 50,
+                      fontSize: '0.7rem',
+                      py: 0.25,
+                      bgcolor:
+                        multiplierMode === 'fixed' ? 'rgba(16, 185, 129, 0.8)' : 'transparent',
+                      color: multiplierMode === 'fixed' ? '#fff' : 'rgba(16, 185, 129, 0.8)',
+                      borderColor: 'transparent',
+                      '&:hover': {
+                        bgcolor:
+                          multiplierMode === 'fixed'
+                            ? 'rgba(16, 185, 129, 1)'
+                            : 'rgba(16, 185, 129, 0.1)',
+                        borderColor: 'transparent',
+                      },
+                    }}
+                  >
+                    Fixed
                   </Button>
                 </Box>
               </Box>
@@ -947,6 +988,108 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
           </Box>
         )}
       </Box>
+
+      {/* Auto-Loop Confirmation Dialog */}
+      <Dialog
+        open={autoLoopConfirmDialog?.open || false}
+        onClose={() => setAutoLoopConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1a1f2e', border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ bgcolor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', fontWeight: 'bold', borderBottom: '1px solid rgba(251, 191, 36, 0.3)' }}>
+          🔁 Confirm Auto-Loop Execution
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+            <AlertTitle sx={{ fontWeight: 'bold' }}>Review before starting</AlertTitle>
+            This will place orders repeatedly for <strong>{autoLoopConfirmDialog?.totalRounds} rounds</strong>.
+          </Alert>
+
+          {/* Summary stats */}
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ flex: 1, p: 1.5, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1, border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+              <Typography variant="h5" fontWeight="bold" sx={{ color: '#fbbf24' }}>{autoLoopConfirmDialog?.orders?.length || 0}</Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.8)' }}>orders per round</Typography>
+            </Box>
+            <Box sx={{ flex: 1, p: 1.5, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1, border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+              <Typography variant="h5" fontWeight="bold" sx={{ color: '#fbbf24' }}>×{autoLoopConfirmDialog?.totalRounds}</Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.8)' }}>rounds</Typography>
+            </Box>
+            <Box sx={{ flex: 1, p: 1.5, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 1, border: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+              <Typography variant="h5" fontWeight="bold" sx={{ color: '#10b981' }}>{(autoLoopConfirmDialog?.orders?.length || 0) * (autoLoopConfirmDialog?.totalRounds || 0)}</Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.8)' }}>total placements</Typography>
+            </Box>
+          </Box>
+
+          {/* Settings info */}
+          <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1, border: '1px solid rgba(255,255,255,0.08)', mb: 2 }}>
+            <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)', display: 'block', mb: 1 }}>SETTINGS</Typography>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              <Box>
+                <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)' }}>Order type</Typography>
+                <Typography variant="body2" fontWeight="bold" sx={{ color: '#e2e8f0' }}>
+                  {autoLoopConfirmDialog?.executionMode === 'immediate' ? '🚀 Market'
+                    : autoLoopConfirmDialog?.executionMode === 'smart' ? '🧠 Smart'
+                    : autoLoopConfirmDialog?.executionMode === 'ssr_standard' ? '🏎️ SSR'
+                    : autoLoopConfirmDialog?.executionMode === 'ssr_aggressive' ? '🔥 Aggro'
+                    : autoLoopConfirmDialog?.executionMode === 'ssr_conservative' ? '🛡️ Safe'
+                    : autoLoopConfirmDialog?.executionMode}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)' }}>Size mode</Typography>
+                <Typography variant="body2" fontWeight="bold" sx={{ color: '#e2e8f0' }}>
+                  {autoLoopConfirmDialog?.multiplierMode === 'normal' ? 'Normal'
+                    : autoLoopConfirmDialog?.multiplierMode === 'gcd' ? 'GCD'
+                    : autoLoopConfirmDialog?.multiplierMode === 'fixed' ? 'Fixed'
+                    : autoLoopConfirmDialog?.multiplierMode}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Order list */}
+          <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)', display: 'block', mb: 1 }}>ORDERS PER ROUND</Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+            {(autoLoopConfirmDialog?.orders || []).map((o, i) => (
+              <Chip
+                key={i}
+                size="small"
+                label={`${o.side?.toUpperCase()} ${o.size} × ${o.symbol}`}
+                sx={{
+                  bgcolor: o.side === 'buy' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+                  color: o.side === 'buy' ? '#10b981' : '#ef4444',
+                  border: `1px solid ${o.side === 'buy' ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+                  fontWeight: 600,
+                  fontSize: '0.7rem',
+                }}
+              />
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <Button
+            onClick={() => setAutoLoopConfirmDialog(prev => ({ ...prev, open: false }))}
+            variant="outlined"
+            sx={{ color: 'rgba(148,163,184,0.8)', borderColor: 'rgba(148,163,184,0.3)' }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              const { orders, totalRounds, orderPreference } = autoLoopConfirmDialog;
+              setAutoLoopConfirmDialog(prev => ({ ...prev, open: false }));
+              doStartAutoLoop(orders, totalRounds, orderPreference);
+            }}
+            variant="contained"
+            autoFocus
+            sx={{ bgcolor: 'rgba(251,191,36,0.9)', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#fbbf24' } }}
+          >
+            🚀 Start {autoLoopConfirmDialog?.totalRounds} Round{autoLoopConfirmDialog?.totalRounds !== 1 ? 's' : ''}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Batch Order Confirmation Dialog */}
       <Dialog

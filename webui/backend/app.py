@@ -490,6 +490,18 @@ except Exception as e:
     print(f"⚠️ Could not register mmm blueprint: {e}")
     log.warning(f"MMM routes not available: {e}")
 
+# Register Claude AI blueprint (FEB 2026: Claude API integration for trading analysis)
+try:
+    try:
+        from webui.backend.routes.claude import claude_bp
+    except ImportError:
+        from routes.claude import claude_bp
+    app.register_blueprint(claude_bp)
+    print(f"✅ Registered claude blueprint (Claude AI integration)")
+except Exception as e:
+    print(f"⚠️ Could not register claude blueprint: {e}")
+    log.warning(f"Claude AI routes not available: {e}")
+
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
 
@@ -1321,7 +1333,10 @@ if __name__ == '__main__':
     # ============================================================================
     try:
         print("\n🎯 Starting Take Profit Monitor...")
-        from webui.backend.options_strategy.take_profit_manager import init_take_profit_monitoring, get_take_profit_manager
+        from webui.backend.options_strategy.take_profit_manager import init_take_profit_monitoring, get_take_profit_manager, init_socketio as init_tp_socketio
+        # MISSING-3 FIX: give take-profit manager a socketio reference so it can push
+        # 'options_settings_updated' events to the frontend when TP/max-loss auto-triggers
+        init_tp_socketio(socketio)
         # Use the same api_client as above
         take_profit_manager = get_take_profit_manager()
         take_profit_monitor = init_take_profit_monitoring(api_client, take_profit_manager, auto_start=True)

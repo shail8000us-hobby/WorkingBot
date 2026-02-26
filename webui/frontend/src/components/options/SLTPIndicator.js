@@ -13,10 +13,11 @@ import { TrendingDown, TrendingUp, ShowChart, Edit } from '@mui/icons-material';
 
 export default function SLTPIndicator({ settings, position, onEdit }) {
   if (!settings) {
+    // No manual SL/TP override set — normal for algo-managed positions
     return (
-      <Tooltip title="Set SL/TP">
-        <IconButton size="small" onClick={onEdit} sx={{ opacity: 0.5 }}>
-          <ShowChart fontSize="small" />
+      <Tooltip title="No manual SL/TP override. Click to set for extra safety.">
+        <IconButton size="small" onClick={onEdit} sx={{ opacity: 0.3, '&:hover': { opacity: 0.7 } }}>
+          <ShowChart fontSize="small" sx={{ color: 'text.disabled' }} />
         </IconButton>
       </Tooltip>
     );
@@ -26,8 +27,15 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
   const hasTakeProfit = settings.take_profit_price || settings.take_profit_pct;
   const hasTrailingStop = settings.trailing_stop_enabled;
 
-  const currentPrice = position?.mid_price || position?.mark_price || 0;
+  // BUG-8 FIX: prefer live mid computed from bid/ask over stale backend mid_price
+  const liveBid = position?.best_bid || 0;
+  const liveAsk = position?.best_ask || 0;
+  const currentPrice = (liveBid > 0 && liveAsk > 0)
+    ? (liveBid + liveAsk) / 2
+    : position?.mid_price || position?.mark_price || 0;
   const entryPrice = position?.entry_price || 0;
+  // BUG-5 FIX: is this a short position? Distance direction is inverted for shorts
+  const isShort = (position?.size || 0) < 0;
 
   // Calculate stop-loss display
   const getStopLossDisplay = () => {
@@ -50,14 +58,21 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
   };
 
   // Calculate distance to SL/TP
+  // BUG-5 FIX: for short positions SL triggers when price RISES (distance = slPrice - currentPrice for shorts)
   const getStopLossDistance = () => {
     if (!currentPrice || !entryPrice) return null;
 
     if (settings.stop_loss_price) {
-      const distance = ((currentPrice - settings.stop_loss_price) / currentPrice) * 100;
+      // For longs: SL below current price  → distance = (current - sl) / current * 100  (positive = safe)
+      // For shorts: SL above current price → distance = (sl - current) / current * 100  (positive = safe)
+      const distance = isShort
+        ? ((settings.stop_loss_price - currentPrice) / currentPrice) * 100
+        : ((currentPrice - settings.stop_loss_price) / currentPrice) * 100;
       return distance.toFixed(1);
     } else if (settings.stop_loss_pct) {
-      const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+      // pnlPct relative to entry — for shorts, invert the sign
+      const rawPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+      const pnlPct = isShort ? -rawPct : rawPct;
       const distance = pnlPct - settings.stop_loss_pct;
       return distance.toFixed(1);
     }
@@ -68,10 +83,15 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
     if (!currentPrice || !entryPrice) return null;
 
     if (settings.take_profit_price) {
-      const distance = ((settings.take_profit_price - currentPrice) / currentPrice) * 100;
+      // For longs: TP above current price  → distance = (tp - current) / current * 100
+      // For shorts: TP below current price → distance = (current - tp) / current * 100
+      const distance = isShort
+        ? ((currentPrice - settings.take_profit_price) / currentPrice) * 100
+        : ((settings.take_profit_price - currentPrice) / currentPrice) * 100;
       return distance.toFixed(1);
     } else if (settings.take_profit_pct) {
-      const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+      const rawPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+      const pnlPct = isShort ? -rawPct : rawPct;
       const distance = settings.take_profit_pct - pnlPct;
       return distance.toFixed(1);
     }
@@ -83,17 +103,19 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
   const slDistance = getStopLossDistance();
   const tpDistance = getTakeProfitDistance();
 
-  // Check if close to trigger
-  const isCloseToSL = slDistance !== null && parseFloat(slDistance) < 5;
-  const isCloseToTP = tpDistance !== null && parseFloat(tpDistance) < 5;
+  // BUG-5 FIX: only pulse when distance is positive (not yet triggered) and < 5%
+  // Negative distance means SL/TP already breached — don't pulse indefinitely
+  const isCloseToSL = slDistance !== null && parseFloat(slDistance) >= 0 && parseFloat(slDistance) < 5;
+  const isCloseToTP = tpDistance !== null && parseFloat(tpDistance) >= 0 && parseFloat(tpDistance) < 5;
 
   return (
+    // BUG-23 FIX: removed onClick from outer Box — the Edit IconButton below handles the click.
+    // Having both caused two overlapping click regions for the same action.
     <Box
       display="flex"
       gap={0.5}
       alignItems="center"
-      onClick={onEdit}
-      sx={{ cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+      sx={{ '&:hover': { opacity: 0.8 } }}
     >
       {hasStopLoss && (
         <Tooltip
@@ -214,9 +236,9 @@ export default function SLTPIndicator({ settings, position, onEdit }) {
         </Tooltip>
       )}
 
-      {/* Edit button */}
+      {/* Edit button — sole click target for editing */}
       <Tooltip title="Edit SL/TP">
-        <IconButton size="small" sx={{ p: 0.25, ml: 0.25 }}>
+        <IconButton size="small" onClick={onEdit} sx={{ p: 0.25, ml: 0.25, cursor: 'pointer' }}>
           <Edit sx={{ fontSize: 12 }} />
         </IconButton>
       </Tooltip>

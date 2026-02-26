@@ -17,9 +17,8 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { TrendingUp, CheckCircle, Close } from '@mui/icons-material';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '' });
+// BUG-14 FIX: use shared apiShim (handles auth headers, base URL, interceptors)
+import api from '../../utils/apiShim';
 
 export default function TakeProfitIndicator({
   symbol,
@@ -30,6 +29,7 @@ export default function TakeProfitIndicator({
   onUpdate = () => {},
 }) {
   const [saving, setSaving] = useState(false);
+  const [removeError, setRemoveError] = useState(null); // MISSING-4 FIX
   const [localSettings, setLocalSettings] = useState(settings);
 
   // Update local settings when prop changes
@@ -68,6 +68,7 @@ export default function TakeProfitIndicator({
 
   const handleRemove = async () => {
     setSaving(true);
+    setRemoveError(null);
     try {
       const { data } = await api.post('/api/options/take-profit/strike/remove', {
         symbol,
@@ -76,9 +77,13 @@ export default function TakeProfitIndicator({
       if (data.success) {
         setLocalSettings(null);
         onUpdate(symbol, null);
+      } else {
+        // MISSING-4 FIX: show error inline instead of silently swallowing it
+        setRemoveError(data.error || 'Remove failed');
       }
     } catch (err) {
       console.error('Failed to remove take profit:', err);
+      setRemoveError(err.message || 'Network error');
     } finally {
       setSaving(false);
     }
@@ -196,12 +201,19 @@ export default function TakeProfitIndicator({
     );
   }
 
-  // No take profit set - show add button
+  // No take profit set - show add button (with inline error if remove recently failed)
   return (
-    <Tooltip title="Click to set target (profit or loss limit)">
-      <IconButton size="small" onClick={onEdit} sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}>
-        <TrendingUp sx={{ fontSize: 16, color: 'success.main' }} />
-      </IconButton>
-    </Tooltip>
+    <Box display="flex" flexDirection="column" alignItems="center" gap={0.25}>
+      {removeError && (
+        <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.65rem' }}>
+          {removeError}
+        </Typography>
+      )}
+      <Tooltip title="Click to set target (profit or loss limit)">
+        <IconButton size="small" onClick={onEdit} sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}>
+          <TrendingUp sx={{ fontSize: 16, color: 'success.main' }} />
+        </IconButton>
+      </Tooltip>
+    </Box>
   );
 }

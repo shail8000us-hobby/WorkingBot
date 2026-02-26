@@ -32,6 +32,10 @@ class AIAdvisor:
         self.workspace_root = Path(__file__).parent.parent.parent
         # API keys stay in environment for security
         self.api_key = os.getenv('OPENAI_API_KEY', '')
+        # allow overriding base URL (FreeAPIKey, self‑hosted, etc.)
+        self.api_base = os.getenv('OPENAI_API_BASE', "https://api.openai.com/v1")
+        # default model can also be overridden (e.g. claude-opus-4.5)
+        self.default_model = os.getenv('OPENAI_API_MODEL', "gpt-4")
         self.use_openai = bool(self.api_key)
         
         # Context about the bot
@@ -113,13 +117,18 @@ class AIAdvisor:
         try:
             import openai
             openai.api_key = self.api_key
+            # respect custom base URL if provided (FreeAI, proxy, etc.)
+            openai.api_base = self.api_base
             
             # Build context prompt
             system_prompt = self._build_system_prompt()
             
-            # Call OpenAI
+            # choose model from environment or default
+            model = self.default_model
+            
+            # Call OpenAI-compatible API
             response = openai.ChatCompletion.create(
-                model="gpt-4",
+                model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": question}
@@ -138,8 +147,8 @@ class AIAdvisor:
                 'source': 'openai'
             }
         
-        except Exception as e:
-            # Fallback to rule-based
+        except Exception:
+            # Fallback to rule-based on any error
             return self._ask_rule_based(question)
     
     def _ask_rule_based(self, question: str) -> Dict[str, Any]:

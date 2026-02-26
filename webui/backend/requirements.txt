@@ -6,4 +6,5 @@ python-dotenv==1.0.0
 watchdog==3.0.0
 websocket-client==1.7.0
 flask-compress==1.14
+openai==0.28.0
 

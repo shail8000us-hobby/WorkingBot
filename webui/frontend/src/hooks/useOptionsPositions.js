@@ -6,9 +6,79 @@ import api from '../utils/apiShim';
 const IV_CACHE_TTL_MS = 60000;
 let _ivCache = { data: {}, timestamp: 0 };
 
+// BUG-26 FIX: moved IV helper functions to MODULE LEVEL (outside the hook).
+// Previously they were re-created each render, causing fetchDashboard's useCallback([]deps)
+// to capture a stale first-render instance. Module-level = stable reference forever.
+const fetchIVForSymbols = async (symbols) => {
+  const tickerPromises = symbols.map(async (symbol) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout per call
+    try {
+      const response = await fetch(
+        `https://api.india.delta.exchange/v2/tickers/${symbol}`,
+        { signal: controller.signal },
+      );
+      clearTimeout(timeoutId);
+      const result = await response.json();
+      if (result?.success && result?.result) {
+        const quotes = result.result.quotes || {};
+        const bidIV = parseFloat(quotes.bid_iv) || 0;
+        const askIV = parseFloat(quotes.ask_iv) || 0;
+        return { symbol, iv: bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV) };
+      }
+      return { symbol, iv: null };
+    } catch {
+      clearTimeout(timeoutId);
+      return { symbol, iv: null };
+    }
+  });
+  const ivData = await Promise.all(tickerPromises);
+  return Object.fromEntries(ivData.map((d) => [d.symbol, d.iv]));
+};
+
+const enrichPositionsWithIV = async (positionsList) => {
+  try {
+    const symbols = positionsList.map((pos) => pos.product_symbol).filter(Boolean);
+    if (symbols.length === 0) return positionsList;
+
+    const now = Date.now();
+    const cacheAge = now - _ivCache.timestamp;
+
+    if (cacheAge < IV_CACHE_TTL_MS && Object.keys(_ivCache.data).length > 0) {
+      const uncachedSymbols = symbols.filter((s) => _ivCache.data[s] === undefined);
+
+      if (uncachedSymbols.length === 0) {
+        return positionsList.map((pos) => ({
+          ...pos,
+          iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null,
+        }));
+      }
+
+      const newIvData = await fetchIVForSymbols(uncachedSymbols);
+      Object.assign(_ivCache.data, newIvData);
+
+      return positionsList.map((pos) => ({
+        ...pos,
+        iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null,
+      }));
+    }
+
+    const ivMap = await fetchIVForSymbols(symbols);
+    _ivCache.data = ivMap;
+    _ivCache.timestamp = now;
+
+    return positionsList.map((pos) => ({
+      ...pos,
+      iv: ivMap[pos.product_symbol] ?? null,
+    }));
+  } catch (err) {
+    console.error('Failed to enrich positions with IV:', err);
+    return positionsList;
+  }
+};
+
 /**
  * Custom hook for options position data fetching, polling, and WebSocket subscriptions.
- * Extracts the entire data layer from OptionsPanel.
  *
  * @param {Object} options
  * @param {number} options.pollInterval - Polling interval in ms
@@ -24,81 +94,14 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   const [error, setError] = useState(null);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [pendingOrdersError, setPendingOrdersError] = useState(null);
+  const [marginData, setMarginData] = useState(null);
+  const [lastDataUpdate, setLastDataUpdate] = useState(Date.now());
 
   // ---- Refs ----
   const hasPositionsRef = useRef(false);
   const activeIntervalsRef = useRef([]);
   const socketRef = useRef(null);
   const lastModifiedRef = useRef(null);
-
-  // ---- IV enrichment ----
-  const fetchIVForSymbols = async (symbols) => {
-    const tickerPromises = symbols.map(async (symbol) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout per call
-      try {
-        const response = await fetch(
-          `https://api.india.delta.exchange/v2/tickers/${symbol}`,
-          { signal: controller.signal },
-        );
-        clearTimeout(timeoutId);
-        const result = await response.json();
-        if (result?.success && result?.result) {
-          const quotes = result.result.quotes || {};
-          const bidIV = parseFloat(quotes.bid_iv) || 0;
-          const askIV = parseFloat(quotes.ask_iv) || 0;
-          return { symbol, iv: bidIV && askIV ? (bidIV + askIV) / 2 : (bidIV || askIV) };
-        }
-        return { symbol, iv: null };
-      } catch {
-        clearTimeout(timeoutId);
-        return { symbol, iv: null };
-      }
-    });
-    const ivData = await Promise.all(tickerPromises);
-    return Object.fromEntries(ivData.map((d) => [d.symbol, d.iv]));
-  };
-
-  const enrichPositionsWithIV = async (positionsList) => {
-    try {
-      const symbols = positionsList.map((pos) => pos.product_symbol).filter(Boolean);
-      if (symbols.length === 0) return positionsList;
-
-      const now = Date.now();
-      const cacheAge = now - _ivCache.timestamp;
-
-      if (cacheAge < IV_CACHE_TTL_MS && Object.keys(_ivCache.data).length > 0) {
-        const uncachedSymbols = symbols.filter((s) => _ivCache.data[s] === undefined);
-
-        if (uncachedSymbols.length === 0) {
-          return positionsList.map((pos) => ({
-            ...pos,
-            iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null,
-          }));
-        }
-
-        const newIvData = await fetchIVForSymbols(uncachedSymbols);
-        Object.assign(_ivCache.data, newIvData);
-
-        return positionsList.map((pos) => ({
-          ...pos,
-          iv: _ivCache.data[pos.product_symbol] ?? pos.iv ?? null,
-        }));
-      }
-
-      const ivMap = await fetchIVForSymbols(symbols);
-      _ivCache.data = ivMap;
-      _ivCache.timestamp = now;
-
-      return positionsList.map((pos) => ({
-        ...pos,
-        iv: ivMap[pos.product_symbol] ?? null,
-      }));
-    } catch (err) {
-      console.error('Failed to enrich positions with IV:', err);
-      return positionsList;
-    }
-  };
 
   // ---- Fetch functions ----
   const fetchDashboard = useCallback(async () => {
@@ -123,6 +126,12 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         setFuturesPositions(dashFuturesPositions);
         hasPositionsRef.current = dashPositions.length > 0;
         setError(null);
+        setLastDataUpdate(Date.now());
+
+        // Phase 6.2: Margin utilization data
+        if (data.margin) {
+          setMarginData(data.margin);
+        }
 
         // Enrich IV in background (non-blocking)
         enrichPositionsWithIV(dashPositions).then((enriched) => {
@@ -369,7 +378,35 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         setPositions((prevPositions) =>
           prevPositions.map((pos) => {
             if (pos.product_symbol === symbol) {
-              return { ...pos, best_bid, best_ask, mark_price, ws_updated: timestamp };
+              // BUG-7 / MISSING-2 FIX: recalculate unrealized PnL from live bid/ask
+              // so the PnL column updates in real-time (not just on the 5s HTTP poll)
+              const liveBid = parseFloat(best_bid) || 0;
+              const liveAsk = parseFloat(best_ask) || 0;
+              const liveMid = (liveBid > 0 && liveAsk > 0)
+                ? (liveBid + liveAsk) / 2
+                : parseFloat(mark_price) || pos.mid_price || 0;
+              const entryPrice = parseFloat(pos.entry_price) || 0;
+              const size = parseFloat(pos.size) || 0;
+              // Use 0.001 per contract (Delta Exchange India standard for BTC & ETH)
+              const parts = symbol.split('-');
+              const multiplierMap = { BTC: 0.001, ETH: 0.001 };
+              const multiplier = multiplierMap[(parts[1] || '').toUpperCase()] || 0.001;
+              const liveUnrealizedPnl = entryPrice > 0
+                ? (liveMid - entryPrice) * size * multiplier
+                : pos.unrealized_pnl;
+              const pnlPctRaw = entryPrice > 0 ? ((liveMid - entryPrice) / entryPrice) * 100 : 0;
+              const livePnlPct = size < 0 ? -pnlPctRaw : pnlPctRaw;
+
+              return {
+                ...pos,
+                best_bid: liveBid,
+                best_ask: liveAsk,
+                mark_price: parseFloat(mark_price) || pos.mark_price,
+                mid_price: liveMid,
+                unrealized_pnl: liveUnrealizedPnl,
+                pnl_percentage: livePnlPct,
+                ws_updated: timestamp,
+              };
             }
             return pos;
           }),
@@ -435,6 +472,8 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     setError,
     pendingOrders,
     pendingOrdersError,
+    marginData,
+    lastDataUpdate,
 
     // Fetchers
     fetchDashboard,

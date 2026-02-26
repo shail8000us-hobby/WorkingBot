@@ -62,6 +62,9 @@ ACTIVITY_TYPES = {
     # Adjustments
     'adjustment_triggered': 'Adjustment Triggered',
     'adjustment_complete': 'Adjustment Complete',
+    'adjustment_skipped': 'Adjustment Skipped',
+    'strike_shift': 'Strike Shift',
+    'shift_post_fill_error': 'Shift Post-Fill Error',
     'trigger_cleared_by_close_at_5': 'Trigger Cleared',
 
     # Safety
@@ -122,7 +125,9 @@ ACTIVITY_CATEGORIES = {
                'order_failed', 'order_retrying', 'entry_starting', 'entry_complete',
                'entry_failed', 'entry_rollback', 'entry_rollback_ok', 'entry_rollback_failed',
                'emergency_order', 'emergency_placing', 'emergency_filled', 'emergency_error'},
-    'adjustments': {'adjustment_triggered', 'adjustment_complete', 'trigger_cleared_by_close_at_5',
+    'adjustments': {'adjustment_triggered', 'adjustment_complete', 'adjustment_skipped',
+                    'strike_shift', 'shift_post_fill_error',
+                    'trigger_cleared_by_close_at_5',
                     'close_at_5', 'wind_down', 'atm_wind_down', 'atm_auto_close',
                     'margin_wind_down', 'margin_block_sells', 'perp_hedge',
                     'both_sides_auto_decision'},

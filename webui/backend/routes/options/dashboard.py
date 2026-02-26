@@ -12,6 +12,7 @@ Created: February 4, 2026 (Phase 2 Optimization)
 
 import sys
 import time
+import hashlib
 import logging
 from pathlib import Path
 from flask import Blueprint, jsonify
@@ -136,6 +137,37 @@ def get_dashboard():
         status_response = get_options_status()
         status_response = status_response[0] if isinstance(status_response, tuple) else status_response
         status_data = status_response.get_json() if hasattr(status_response, 'get_json') else status_response
+
+        # Phase 6.2: Fetch margin utilization data
+        margin_data = {'blocked_margin_usd': 0, 'available_balance_usd': 0, 'wallet_balance_usd': 0}
+        try:
+            from bot.api.delta_client import DeltaClient
+            delta_client = DeltaClient()
+            wallet_response = delta_client._req('GET', '/v2/wallet/balances')
+            if wallet_response and wallet_response.get('success'):
+                wallets = wallet_response.get('result', [])
+                wallet_data = None
+                for wallet in wallets:
+                    if wallet.get('asset_symbol') == 'USD':
+                        wallet_data = wallet
+                        break
+                if not wallet_data and wallets:
+                    wallet_data = wallets[0]
+                if wallet_data:
+                    blocked = float(wallet_data.get('blocked_margin', 0) or 0)
+                    if blocked == 0:
+                        blocked = float(wallet_data.get('portfolio_margin', 0) or 0)
+                    if blocked == 0:
+                        blocked = float(wallet_data.get('order_margin', 0) or 0) + float(wallet_data.get('position_margin', 0) or 0)
+                    available = float(wallet_data.get('available_balance', 0) or 0)
+                    balance = float(wallet_data.get('balance', 0) or 0)
+                    margin_data = {
+                        'blocked_margin_usd': round(blocked, 2),
+                        'available_balance_usd': round(available, 2),
+                        'wallet_balance_usd': round(balance, 2),
+                    }
+        except Exception as e:
+            log.warning(f"Failed to fetch margin data for dashboard: {e}")
         
         # Extract positions for Greeks calculation
         positions = positions_data.get('positions', []) if isinstance(positions_data, dict) else []
@@ -151,7 +183,10 @@ def get_dashboard():
             for p in positions
         )
         pending_orders_list = pending_data.get('orders', []) if isinstance(pending_data, dict) else []
-        content_hash = hash(pos_fingerprint + str(len(pending_orders_list)))
+        # ARCH-4 FIX: use md5 hex digest — deterministic across restarts, safe JS integer range
+        content_hash = hashlib.md5(
+            (pos_fingerprint + str(len(pending_orders_list))).encode()
+        ).hexdigest()
 
         # Response time tracking
         response_time_ms = (time.time() - start_time) * 1000
@@ -164,7 +199,9 @@ def get_dashboard():
             'futures_positions': futures_data.get('positions', []) if isinstance(futures_data, dict) else [],
             'status': status_data if isinstance(status_data, dict) else {},
             'portfolio_greeks': portfolio_greeks,
+            'margin': margin_data,
             'last_modified': content_hash,
+            'server_timestamp': int(time.time() * 1000),
             'response_time_ms': round(response_time_ms, 2),
             'optimization': 'phase_5_content_hash'
         }

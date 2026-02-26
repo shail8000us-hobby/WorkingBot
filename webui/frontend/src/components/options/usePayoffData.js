@@ -73,6 +73,8 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
       const entryPrice = parseFloat(pos.entry_price || 0);
       const isClosed = pos.is_closed === true || size === 0;
       const realizedPnl = parseFloat(pos.realized_pnl || 0);
+      // Partial realized PnL from partial exits (accumulated in OptionsPanel)
+      const partialRealizedPnl = parseFloat(pos.partial_realized_pnl || 0);
 
       const bestBid = parseFloat(pos.best_bid || 0);
       const bestAsk = parseFloat(pos.best_ask || 0);
@@ -88,7 +90,7 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
         if (calculatedIV > 0.05 && calculatedIV < 4.0) iv = calculatedIV;
       }
 
-      return { symbol: pos.product_symbol, type: optionType, strike, expiryDate, daysToExpiry, yearsToExpiry, size, entryPrice, markPrice, iv, isClosed, realizedPnl };
+      return { symbol: pos.product_symbol, type: optionType, strike, expiryDate, daysToExpiry, yearsToExpiry, size, entryPrice, markPrice, iv, isClosed, realizedPnl, partialRealizedPnl };
     });
 
     const nonClosedPositions = parsed.filter(p => !p.isClosed);
@@ -161,6 +163,8 @@ export const useChartData = (parsedPositions, opts) => {
     const calcProjectedPayoff = (price, daysFromNow) => {
       let payoff = 0;
       parsedPos.forEach((pos) => {
+        // Always include partial realized PnL from partial exits
+        payoff += pos.partialRealizedPnl || 0;
         if (pos.isClosed) { payoff += pos.realizedPnl || 0; return; }
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
@@ -191,6 +195,8 @@ export const useChartData = (parsedPositions, opts) => {
 
       let expiryPayoff = 0;
       parsedPos.forEach((pos) => {
+        // Always include partial realized PnL from partial exits
+        expiryPayoff += pos.partialRealizedPnl || 0;
         if (pos.isClosed) { expiryPayoff += pos.realizedPnl || 0; return; }
         const intrinsic = pos.type === 'call' ? Math.max(0, price - pos.strike) : Math.max(0, pos.strike - price);
         const absSize = Math.abs(pos.size);
@@ -280,10 +286,12 @@ export const useChartData = (parsedPositions, opts) => {
     const paddingPercent = dataRange < 50 ? 0.4 : dataRange < 200 ? 0.25 : 0.15;
     let rawYMin = overallMin - (Math.abs(overallMin) * paddingPercent);
     let rawYMax = overallMax + (Math.abs(overallMax) * paddingPercent);
+    // Always include zero so the breakeven line is visible
     if (rawYMin > 0) rawYMin = -(rawYMax * 0.1);
     if (rawYMax < 0) rawYMax = -(rawYMin * 0.1);
-    const yMin = Math.min(rawYMin, -5);
-    const yMax = Math.max(rawYMax, 5);
+    // Ensure minimum visible range around zero
+    const yMin = Math.min(rawYMin, -2);
+    const yMax = Math.max(rawYMax, 2);
 
     const targetPricePoint = data.find((d) => Math.abs(d.price - targetPrice) < priceStep * 1.5);
     const projectedProfit = targetPricePoint?.target ?? 0;

@@ -41,6 +41,30 @@ except ImportError as e:
 _take_profit_manager = None
 _take_profit_monitor = None
 
+# MISSING-3 FIX: WebSocket reference — set via init_socketio() called from app.py startup
+# Enables real-time push to frontend when TP/Max Loss auto-triggers, so the UI
+# reflects the triggered state immediately without waiting for the 30s settings poll.
+_socketio = None
+
+def init_socketio(socketio):
+    """Store the Flask-SocketIO instance for emitting trigger events to the frontend."""
+    global _socketio
+    _socketio = socketio
+
+def _emit_settings_updated(event_type: str, symbol: str, details: dict = None):
+    """Emit a 'options_settings_updated' WebSocket event to all connected clients."""
+    if _socketio is None:
+        return
+    try:
+        _socketio.emit('options_settings_updated', {
+            'event': event_type,
+            'symbol': symbol,
+            'details': details or {},
+            'timestamp': datetime.now().isoformat(),
+        }, namespace='/')
+    except Exception as e:
+        logger.warning(f"Failed to emit settings_updated event: {e}")
+
 # Activity Log Ring Buffer - stores real-time monitoring events
 _activity_log = []
 _activity_log_lock = threading.Lock()
@@ -698,6 +722,13 @@ class TakeProfitMonitor:
                                 # Mark as triggered in database
                                 self.manager.mark_strike_triggered(symbol, actual_pnl, exit_quantity)
                                 self._metrics["total_triggers"] += 1
+                                # MISSING-3 FIX: push to frontend so the TP indicator
+                                # updates immediately (instead of waiting for 30s poll)
+                                _emit_settings_updated('take_profit_triggered', symbol, {
+                                    'pnl': actual_pnl,
+                                    'exit_quantity': exit_quantity,
+                                    'target_profit': target_profit,
+                                })
                             else:
                                 print(f"🎯 DEBUG: Failed! Removing from recently_closed", flush=True)
                                 # Remove from recently closed if failed
@@ -748,12 +779,18 @@ class TakeProfitMonitor:
             print(f"🎯 DEBUG: Getting positions for order placement...", flush=True)
             # Get position details using async API - proper event loop management
             try:
-                loop = asyncio.get_running_loop()
+                # Use the thread's current event loop (keeps httpx AsyncClient on the same loop
+                # as _check_take_profit). get_running_loop() would ALWAYS raise RuntimeError here
+                # because we are in a synchronous thread — no loop is *running*, only *set*.
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                 should_close_loop = False
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                should_close_loop = True
+                should_close_loop = False
             
             try:
                 positions_data = loop.run_until_complete(
@@ -805,7 +842,7 @@ class TakeProfitMonitor:
                                 symbol=symbol,
                                 size=close_size,
                                 side=close_side,
-                                order_preference="smart",  # Use smart order with limit
+                                order_preference=ORDER_TYPE_MAKER_FIRST,  # Limit at mid-price, post-only
                                 reduce_only=True
                             )
                         )

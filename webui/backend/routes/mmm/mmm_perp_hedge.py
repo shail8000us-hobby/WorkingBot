@@ -98,6 +98,25 @@ def compute_required_hedge(
     hedge_ratio = params.get('perp_hedge_ratio', 1.0)
     max_lots = params.get('perp_hedge_max_lots', 50)
 
+    # BUG-5 FIX: Auto-widen rebalance band when position cap is active.
+    # When options adjustments are capped, the perp is the only remaining
+    # hedge tool. But a tight rebalance band causes excessive flipping on
+    # every tiny delta tick. Widen to 3× the configured band to reduce
+    # spread drag from unnecessary rebalances.
+    _cap_pct_threshold = 0.80  # 80% of cap utilization
+    _max_lots_per_side = params.get('max_lots_per_side', 300)
+    for _s in ('ce', 'pe'):
+        _side_lots = session.get(_s, {}).get('total_lots', 0)
+        if _max_lots_per_side > 0 and _side_lots >= _max_lots_per_side * _cap_pct_threshold:
+            _widened = rebalance_band * 3.0
+            log.debug(
+                f"Perp rebalance band widened: {_s.upper()} at "
+                f"{_side_lots}/{_max_lots_per_side} lots (>={_cap_pct_threshold*100:.0f}%). "
+                f"Band: {rebalance_band:.4f} → {_widened:.4f}"
+            )
+            rebalance_band = _widened
+            break  # Only need to widen once
+
     perp = get_perp_state(session)
     current_lots = perp.get('lots', 0)
 
@@ -426,6 +445,10 @@ def _check_flip_rate(session: Dict, action: str, current_lots: int) -> tuple:
     Each flip costs bid-ask spread + slippage. In choppy markets this drag
     can exceed $0.30-0.50 per flip; 480 flips/4 hours = up to $240 drag.
 
+    BUG-5 FIX: Strictly count each BUY→SELL or SELL→BUY directional change.
+    Also enforce that the flip counter is never reset or bypassed by retries
+    (400 error retries go through _execute_hedge_order, not through _check_flip_rate).
+
     Returns:
         (allowed: bool, reason: str)
     """
@@ -442,16 +465,37 @@ def _check_flip_rate(session: Dict, action: str, current_lots: int) -> tuple:
     # Prune timestamps older than 1 hour
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
     flip_timestamps = perp.get('flip_timestamps', [])
-    recent_flips = [
-        t for t in flip_timestamps
-        if datetime.fromisoformat(t) > one_hour_ago
-    ]
+    recent_flips = []
+    for t in flip_timestamps:
+        try:
+            _ts = datetime.fromisoformat(t)
+            if _ts.tzinfo is None:
+                _ts = _ts.replace(tzinfo=timezone.utc)
+            if _ts > one_hour_ago:
+                recent_flips.append(t)
+        except (ValueError, TypeError):
+            pass  # Corrupted timestamp — discard
     perp['flip_timestamps'] = recent_flips  # Persist pruned list
 
     if len(recent_flips) >= max_flips:
+        # BUG-5 FIX: Include actionable info — how long until a slot frees up
+        oldest_ts = recent_flips[0] if recent_flips else None
+        wait_msg = ''
+        if oldest_ts:
+            try:
+                _oldest = datetime.fromisoformat(oldest_ts)
+                if _oldest.tzinfo is None:
+                    _oldest = _oldest.replace(tzinfo=timezone.utc)
+                _free_at = _oldest + timedelta(hours=1)
+                _wait_secs = (_free_at - datetime.now(timezone.utc)).total_seconds()
+                if _wait_secs > 0:
+                    wait_msg = f' Next slot frees in {_wait_secs:.0f}s.'
+            except (ValueError, TypeError):
+                pass
         return (
             False,
-            f"Perp hedge paused: {len(recent_flips)} flips in last hour (max {max_flips})"
+            f"Perp hedge paused: {len(recent_flips)} direction flips in last hour "
+            f"(max {max_flips}).{wait_msg}"
         )
     return True, 'flip allowed'
 

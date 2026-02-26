@@ -333,7 +333,7 @@ const OptionsPayoffDiagram = ({
     // If data is all negative but close to zero, show some positive  
     if (maxY <= 0 && maxY > -5) yMax = Math.max(2, yMax);
 
-    // NO FIXED CAPS - let Y-axis be fully adaptive to actual data
+    // Adaptive: fit tightly around data, always include zero
     return [yMin, yMax];
   }, [displayData, chartData]);
 
@@ -860,6 +860,11 @@ const OptionsPayoffDiagram = ({
       >
         <Typography variant="h6" fontWeight="bold">
           Payoff Graph
+          {futuresPositions.length > 0 && (
+            <Typography component="span" variant="caption" sx={{ ml: 1, color: '#3b82f6', fontWeight: 600 }}>
+              (Options + Futures Combined)
+            </Typography>
+          )}
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>

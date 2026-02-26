@@ -250,6 +250,13 @@ export const userPreferences = {
   set autoRefresh(value: boolean) {
     storage.set('autoRefresh', value);
   },
+
+  get selectedSection(): string | null {
+    return storage.get<string>('selectedSection', null);
+  },
+  set selectedSection(value: string) {
+    storage.set('selectedSection', value);
+  },
 };
 
 export default storage;

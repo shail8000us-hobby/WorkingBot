@@ -70,6 +70,40 @@ function formatTime(timestamp) {
   }
 }
 
+function formatDateTime(timestamp) {
+  if (!timestamp) return '--';
+  try {
+    const d = parseUTC(timestamp);
+    if (!d || isNaN(d.getTime())) return '--';
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return '--';
+  }
+}
+
+function timeAgo(timestamp) {
+  if (!timestamp) return '';
+  try {
+    const d = parseUTC(timestamp);
+    if (!d || isNaN(d.getTime())) return '';
+    const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (sec < 5) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+    return `${Math.floor(sec / 86400)}d ago`;
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Human-readable label for adjustment type
  */
@@ -170,25 +204,25 @@ function AdjustmentEntry({ entry, number }) {
               }}
             />
           </Tooltip>
-          <Tooltip
-            title={
-              entry.timestamp
-                ? parseUTC(entry.timestamp)?.toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                  hour12: true,
-                }) || ''
-                : ''
-            }
-            placement="top"
-          >
-            <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help' }}>
-              {formatTime(entry.timestamp)}
+          {/* Spacer to push timestamp to the right */}
+          <Box sx={{ flex: 1 }} />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+              {formatDateTime(entry.timestamp)}
             </Typography>
-          </Tooltip>
+            {entry.timestamp && timeAgo(entry.timestamp) && (
+              <Chip
+                label={timeAgo(entry.timestamp)}
+                size="small"
+                sx={{
+                  height: 16,
+                  fontSize: '0.7rem',
+                  bgcolor: 'rgba(255,255,255,0.06)',
+                  color: 'text.secondary',
+                }}
+              />
+            )}
+          </Box>
         </Box>
 
         {/* Main description — varies by type */}

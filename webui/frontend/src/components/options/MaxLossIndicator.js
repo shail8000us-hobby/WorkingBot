@@ -18,9 +18,8 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { Warning, Check, Close, Edit, Shield, ShieldOutlined } from '@mui/icons-material';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '' });
+// BUG-14 FIX: use shared apiShim (handles auth headers, base URL, interceptors)
+import api from '../../utils/apiShim';
 
 export default function MaxLossIndicator({
   symbol,
@@ -31,6 +30,7 @@ export default function MaxLossIndicator({
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null); // MISSING-4 FIX: show inline error
   const [localSettings, setLocalSettings] = useState(settings);
 
   // Update local settings when prop changes
@@ -59,6 +59,7 @@ export default function MaxLossIndicator({
     }
 
     setSaving(true);
+    setSaveError(null);
     try {
       const { data } = await api.post('/api/options/max-loss/strike/set', {
         symbol,
@@ -73,17 +74,22 @@ export default function MaxLossIndicator({
           triggered: false,
         });
         onUpdate(symbol, { max_loss: value, enabled: true });
+        setIsEditing(false);
+      } else {
+        // MISSING-4 FIX: show API-level error inline
+        setSaveError(data.error || 'Save failed');
       }
     } catch (err) {
       console.error('Failed to save max loss:', err);
+      setSaveError(err.message || 'Network error');
     } finally {
       setSaving(false);
-      setIsEditing(false);
     }
   };
 
   const handleRemove = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const { data } = await api.delete(`/api/options/max-loss/strike/remove/${symbol}`);
 
@@ -91,12 +97,15 @@ export default function MaxLossIndicator({
         setLocalSettings(null);
         setInputValue('');
         onUpdate(symbol, null);
+        setIsEditing(false);
+      } else {
+        setSaveError(data.error || 'Remove failed');
       }
     } catch (err) {
       console.error('Failed to remove max loss:', err);
+      setSaveError(err.message || 'Network error');
     } finally {
       setSaving(false);
-      setIsEditing(false);
     }
   };
 
@@ -121,6 +130,12 @@ export default function MaxLossIndicator({
   // Editing mode
   if (isEditing) {
     return (
+      <Box display="flex" flexDirection="column" gap={0.25}>
+      {saveError && (
+        <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.65rem' }}>
+          {saveError}
+        </Typography>
+      )}
       <Box display="flex" alignItems="center" gap={0.5}>
         <TextField
           size="small"
@@ -152,6 +167,7 @@ export default function MaxLossIndicator({
             </IconButton>
           </Tooltip>
         )}
+      </Box>
       </Box>
     );
   }

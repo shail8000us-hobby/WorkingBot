@@ -3,6 +3,61 @@ import { Box, Typography, IconButton } from '@mui/material';
 import { Minimize2 } from 'lucide-react';
 import useMarketPrices from '../hooks/useMarketPrices';
 
+// ---- 5:30 PM IST daily session helpers ----
+// IST is UTC+5:30, so 5:30 PM IST = 12:00 PM UTC
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+const SESSION_RESET_HOUR = 17; // 5 PM
+const SESSION_RESET_MINUTE = 30; // :30
+
+/** Get current time in IST as a Date object */
+const getISTNow = () => {
+  const now = new Date();
+  return new Date(now.getTime() + IST_OFFSET_MS + now.getTimezoneOffset() * 60000);
+};
+
+/**
+ * Returns the session key string (YYYY-MM-DD) for the current IST session.
+ * A session runs from 5:30 PM IST day-N to 5:30 PM IST day-N+1.
+ * The key is the date of the session START (i.e. the 5:30 PM date).
+ */
+const getSessionKey = () => {
+  const istTime = getISTNow();
+  const h = istTime.getHours();
+  const m = istTime.getMinutes();
+
+  // If before 5:30 PM IST, session started yesterday at 5:30 PM
+  if (h < SESSION_RESET_HOUR || (h === SESSION_RESET_HOUR && m < SESSION_RESET_MINUTE)) {
+    const yesterday = new Date(istTime);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().slice(0, 10);
+  }
+  return istTime.toISOString().slice(0, 10);
+};
+
+/** Format the session start date for display, e.g. "Since 24-Feb 5:30 PM" */
+const formatSessionLabel = (sessionKey) => {
+  if (!sessionKey) return '';
+  const [y, m, d] = sessionKey.split('-').map(Number);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `Since ${d}-${months[m - 1]} 5:30 PM`;
+};
+
+const STORAGE_KEY = 'floatingPriceWidget_sessionRef';
+
+const loadSessionRef = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return null;
+};
+
+const saveSessionRef = (data) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (_) {}
+};
+
 const FloatingPriceWidget = () => {
   const [position, setPosition] = useState({
     x: window.innerWidth - 280,
@@ -12,37 +67,90 @@ const FloatingPriceWidget = () => {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const widgetRef = useRef(null);
   const dragHandleRef = useRef(null);
-  const prevPricesRef = useRef({ btc: null, eth: null });
 
   // Use WebSocket-based market prices hook
   const { btcPrice, ethPrice, source, wsConnected } = useMarketPrices();
 
-  // Track price changes for delta display
-  const [btcChange, setBtcChange] = useState(0);
-  const [ethChange, setEthChange] = useState(0);
+  // Session-based reference prices (set at 5:30 PM IST, persist in localStorage)
+  const [btcRef, setBtcRef] = useState(null);
+  const [ethRef, setEthRef] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [sessionLabel, setSessionLabel] = useState('');
+  const sessionKeyRef = useRef(null);
+  // Use refs to avoid stale closures when saving to localStorage
+  const btcRefLatest = useRef(null);
+  const ethRefLatest = useRef(null);
 
-  // Update changes when prices update
+  // Keep refs in sync with state
+  useEffect(() => { btcRefLatest.current = btcRef; }, [btcRef]);
+  useEffect(() => { ethRefLatest.current = ethRef; }, [ethRef]);
+
+  // Initialise reference prices from localStorage on mount
   useEffect(() => {
-    if (btcPrice !== null) {
-      const prevBtc = prevPricesRef.current.btc;
-      if (prevBtc !== null && prevBtc !== btcPrice) {
-        setBtcChange(btcPrice - prevBtc);
-      }
-      prevPricesRef.current.btc = btcPrice;
-      setLastUpdate(new Date());
+    const currentSession = getSessionKey();
+    const stored = loadSessionRef();
+    if (stored && stored.session === currentSession) {
+      setBtcRef(stored.btcRef);
+      setEthRef(stored.ethRef);
+      btcRefLatest.current = stored.btcRef;
+      ethRefLatest.current = stored.ethRef;
     }
+    sessionKeyRef.current = currentSession;
+    setSessionLabel(formatSessionLabel(currentSession));
+  }, []);
+
+  // Check for session rollover every 5 seconds (fast near 5:30 PM IST)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentSession = getSessionKey();
+      if (sessionKeyRef.current && currentSession !== sessionKeyRef.current) {
+        // New session – snapshot current live prices as new reference
+        sessionKeyRef.current = currentSession;
+        setSessionLabel(formatSessionLabel(currentSession));
+        // Force null so the next price tick captures the new session reference
+        setBtcRef(null);
+        setEthRef(null);
+        btcRefLatest.current = null;
+        ethRefLatest.current = null;
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Update BTC reference when price arrives and ref is not yet set for this session
+  useEffect(() => {
+    if (btcPrice === null) return;
+    const currentSession = getSessionKey();
+    // Reset if session changed (safety net in case interval didn't catch it)
+    if (sessionKeyRef.current !== currentSession) {
+      sessionKeyRef.current = currentSession;
+      setSessionLabel(formatSessionLabel(currentSession));
+      setBtcRef(btcPrice);
+      btcRefLatest.current = btcPrice;
+      setEthRef(null);
+      ethRefLatest.current = null;
+      saveSessionRef({ session: currentSession, btcRef: btcPrice, ethRef: null });
+    } else if (btcRefLatest.current === null) {
+      // First BTC price in this session (e.g. page reload without stored ref)
+      setBtcRef(btcPrice);
+      btcRefLatest.current = btcPrice;
+      saveSessionRef({ session: currentSession, btcRef: btcPrice, ethRef: ethRefLatest.current });
+    }
+    setLastUpdate(new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [btcPrice]);
 
+  // Update ETH reference when price arrives and ref is not yet set for this session
   useEffect(() => {
-    if (ethPrice !== null) {
-      const prevEth = prevPricesRef.current.eth;
-      if (prevEth !== null && prevEth !== ethPrice) {
-        setEthChange(ethPrice - prevEth);
-      }
-      prevPricesRef.current.eth = ethPrice;
-      setLastUpdate(new Date());
+    if (ethPrice === null) return;
+    const currentSession = getSessionKey();
+    if (ethRefLatest.current === null) {
+      setEthRef(ethPrice);
+      ethRefLatest.current = ethPrice;
+      saveSessionRef({ session: currentSession, btcRef: btcRefLatest.current, ethRef: ethPrice });
     }
+    setLastUpdate(new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ethPrice]);
 
   // Dragging logic
@@ -100,6 +208,12 @@ const FloatingPriceWidget = () => {
     return '#64748b';
   };
 
+  // Compute session-based deltas
+  const btcAbsChange = btcPrice && btcRef ? btcPrice - btcRef : 0;
+  const ethAbsChange = ethPrice && ethRef ? ethPrice - ethRef : 0;
+  const btcPctChange = btcPrice && btcRef && btcRef !== 0 ? ((btcPrice - btcRef) / btcRef) * 100 : 0;
+  const ethPctChange = ethPrice && ethRef && ethRef !== 0 ? ((ethPrice - ethRef) / ethRef) * 100 : 0;
+
   return (
     <Box
       ref={widgetRef}
@@ -136,17 +250,30 @@ const FloatingPriceWidget = () => {
           },
         }}
       >
-        <Typography
-          sx={{
-            fontSize: '11px',
-            fontWeight: 600,
-            color: '#94a3b8',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}
-        >
-          Live Prices {lastUpdate && `• ${lastUpdate.toLocaleTimeString()}`}
-        </Typography>
+        <Box>
+          <Typography
+            sx={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: '#94a3b8',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Live Prices {lastUpdate && `• ${lastUpdate.toLocaleTimeString()}`}
+          </Typography>
+          {sessionLabel && (
+            <Typography
+              sx={{
+                fontSize: '9px',
+                color: '#64748b',
+                mt: '1px',
+              }}
+            >
+              {sessionLabel}
+            </Typography>
+          )}
+        </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <Box
             sx={{
@@ -191,7 +318,7 @@ const FloatingPriceWidget = () => {
               BTC SPOT
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
             <Typography
               sx={{
                 fontSize: '24px',
@@ -202,17 +329,17 @@ const FloatingPriceWidget = () => {
             >
               ${formatPrice(btcPrice)}
             </Typography>
-            {btcChange !== 0 && (
+            {btcRef !== null && (
               <Typography
                 sx={{
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: getChangeColor(btcChange),
+                  color: getChangeColor(btcAbsChange),
                   fontFamily: 'monospace',
                 }}
               >
-                {btcChange > 0 ? '+' : ''}
-                {btcChange.toFixed(2)}
+                {btcAbsChange >= 0 ? '+' : ''}{btcAbsChange.toFixed(0)}{' '}
+                ({btcPctChange >= 0 ? '+' : ''}{btcPctChange.toFixed(2)}%)
               </Typography>
             )}
           </Box>
@@ -239,7 +366,7 @@ const FloatingPriceWidget = () => {
               ETH SPOT
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
             <Typography
               sx={{
                 fontSize: '24px',
@@ -250,17 +377,17 @@ const FloatingPriceWidget = () => {
             >
               ${formatPrice(ethPrice)}
             </Typography>
-            {ethChange !== 0 && (
+            {ethRef !== null && (
               <Typography
                 sx={{
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: getChangeColor(ethChange),
+                  color: getChangeColor(ethAbsChange),
                   fontFamily: 'monospace',
                 }}
               >
-                {ethChange > 0 ? '+' : ''}
-                {ethChange.toFixed(2)}
+                {ethAbsChange >= 0 ? '+' : ''}{ethAbsChange.toFixed(2)}{' '}
+                ({ethPctChange >= 0 ? '+' : ''}{ethPctChange.toFixed(2)}%)
               </Typography>
             )}
           </Box>

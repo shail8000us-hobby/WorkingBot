@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { io } from 'socket.io-client';
 import api from '../utils/apiShim';
 
 /**
@@ -94,9 +95,44 @@ export default function useOptionsSettings() {
     });
   }, []);
 
-  // Initial load on mount
+  // BUG-13 FIX: Initial load + polling every 30s so backend auto-triggered states
+  // (SL hit, TP hit, max loss triggered) are reflected without requiring page reload.
+  // MISSING-3 FIX: also subscribe to 'options_settings_updated' WebSocket event pushed
+  // by take_profit_manager.py when an auto-trigger fires — gives immediate UI feedback.
   useEffect(() => {
     Promise.all([loadSLTPSettings(), loadMaxLossSettings(), loadTakeProfitSettings()]);
+
+    const interval = setInterval(() => {
+      Promise.all([loadSLTPSettings(), loadMaxLossSettings(), loadTakeProfitSettings()]);
+    }, 30000);
+
+    // WebSocket listener for immediate auto-trigger notifications
+    const socket = io({
+      path: '/socket.io',
+      transports: ['polling'],
+      upgrade: false,
+      reconnection: true,
+      reconnectionDelay: 2000,
+      reconnectionAttempts: 5,
+    });
+
+    socket.on('options_settings_updated', (data) => {
+      // Backend pushed a settings change (TP triggered, max loss triggered, etc.)
+      // Re-fetch the relevant settings immediately instead of waiting 30s
+      if (data?.event === 'take_profit_triggered' || data?.event === 'tp_settings_changed') {
+        loadTakeProfitSettings();
+      } else if (data?.event === 'max_loss_triggered' || data?.event === 'max_loss_changed') {
+        loadMaxLossSettings();
+      } else {
+        // Generic: reload all settings
+        Promise.all([loadSLTPSettings(), loadMaxLossSettings(), loadTakeProfitSettings()]);
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      socket.disconnect();
+    };
   }, [loadSLTPSettings, loadMaxLossSettings, loadTakeProfitSettings]);
 
   return {

@@ -233,6 +233,29 @@ const FuturesPanel = ({ pollInterval = 15000 }) => {
     loadData();
   }, [fetchPositions, fetchOrders]);
 
+  // Auto-select new futures positions for payoff graph (merge futures into payoff by default)
+  // Also clean up stale selections when positions are closed
+  useEffect(() => {
+    if (positions.length === 0) {
+      // All positions closed — clear selections
+      if (selectedFuturesForPayoff.length > 0) {
+        setSelectedFuturesForPayoff([]);
+      }
+      return;
+    }
+    const currentSymbols = positions.map(p => p.product_symbol);
+    // Add new positions automatically
+    const newSymbols = currentSymbols.filter(s => !selectedFuturesForPayoff.includes(s));
+    // Remove stale selections for closed positions
+    const staleSymbols = selectedFuturesForPayoff.filter(s => !currentSymbols.includes(s));
+    if (newSymbols.length > 0 || staleSymbols.length > 0) {
+      setSelectedFuturesForPayoff(prev => {
+        const cleaned = prev.filter(s => currentSymbols.includes(s));
+        return [...new Set([...cleaned, ...newSymbols])];
+      });
+    }
+  }, [positions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-refresh with visibility-aware polling
   useEffect(() => {
     let interval = null;
