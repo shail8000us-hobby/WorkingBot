@@ -1525,9 +1525,18 @@ All "Hot Reload = Yes" parameters can be changed via WebUI while the algo is run
 | `regime_gamma_soft_cap` | Gamma level for SOFT state (warn) | 0.001 | **Yes** |
 | `regime_gamma_hard_cap` | Gamma level for HARD state (block) | 0.003 | **Yes** |
 | `regime_gamma_emergency` | Gamma level for EMERGENCY (close all) | 0.005 | **Yes** |
-| `regime_trend_enabled` | Enable trend detection guard | true | **Yes** |
-| `regime_trend_window_minutes` | Lookback window for trend calculation | 30 | **Yes** |
-| `regime_trend_threshold_pct` | BTC move % to classify as trending | 2.0 | **Yes** |
+| `regime_trend_enabled` | Enable tiered trend detection guard | true | **Yes** |
+| `regime_trend_tier1_pct` | Tier 1 (Alert) — % move from anchor. Requires EMA or acceleration. Reduces lots. | 0.5 | **Yes** |
+| `regime_trend_tier2_pct` | Tier 2 (Guard) — % move. Blocks dangerous-side sells. No EMA needed. | 1.0 | **Yes** |
+| `regime_trend_tier3_pct` | Tier 3 (Block) — % move. Blocks ALL sells. | 1.5 | **Yes** |
+| `regime_trend_tier4_pct` | Tier 4 (Wind-Down) — % move. Auto-triggers wind-down. | 2.0 | **Yes** |
+| `regime_trend_tier1_lot_reduction` | Lot reduction fraction at Tier 1 (0.30 = 30% fewer lots) | 0.30 | **Yes** |
+| `regime_trend_acceleration_window_s` | Seconds lookback for acceleration check | 600 | **Yes** |
+| `regime_trend_acceleration_pct` | Fast move % threshold within window (bypasses EMA for Tier 1) | 0.5 | **Yes** |
+| `regime_trend_retrace_pct` | Retracement fraction required for reset | 0.30 | **Yes** |
+| `regime_trend_ema_period` | EMA period in heartbeats (for Tier 1 confirmation) | 20 | **Yes** |
+| `regime_trend_ema_slope_threshold` | EMA slope threshold (for Tier 1 confirmation) | 25 | **Yes** |
+| `regime_trend_reset_beats` | Calm beats required before tier reset | 5 | **Yes** |
 
 **Margin Guardian Parameters (Added Feb 20, 2026):**
 
@@ -1723,8 +1732,8 @@ Shows the perpetual futures delta hedge state:
 Shows the three regime controls and their current states:
 - Volatility: NORMAL / ELEVATED / HIGH — with IV percentile
 - Gamma: NORMAL / SOFT / HARD / EMERGENCY — with portfolio gamma value
-- Trend: NORMAL / TREND_UP / TREND_DOWN — with price change %
-- Aggregate action badge: NORMAL / WARN / BLOCK / EMERGENCY
+- Trend: 4-tier display — Tier 0 (Normal) / Tier 1 (Alert) / Tier 2 (Guard) / Tier 3 (Block) / Tier 4 (Wind-Down) — with spot move %, direction, acceleration %, EMA slope, anchor price, tier progress bar
+- Aggregate action badge: NORMAL / WARN / BLOCK_CE_SELLS / BLOCK_PE_SELLS / BLOCK_ALL_SELLS / FORCE_REDUCE
 - Updates via `mmm_regime` WebSocket events
 
 ### 22.7 Margin Tab (Tab 13, Added Feb 20, 2026)
@@ -1884,33 +1893,88 @@ ELSE:
 
 **Rationale:** High gamma near expiry means delta changes rapidly with small BTC moves. New adjustments add gamma and make the portfolio harder to manage.
 
-### 24.3 Trend Detection Guard
+### 24.3 Trend Detection Guard (4-Tier Graduated Response)
 
-Looks for sustained directional BTC moves:
+Detects directional BTC moves from session anchor using a 4-tier escalation system. Tiers only escalate (never de-escalate within a trend). Reset is binary — all tiers clear at once.
+
+**Tier thresholds:**
+
+| Tier | Name | Default | Action | EMA Required? |
+|------|------|---------|--------|---------------|
+| 0 | NORMAL | — | No action | — |
+| 1 | ALERT | 0.5% | Reduce lot size by `trend_tier1_lot_reduction` (30%) | Yes (or acceleration bypass) |
+| 2 | GUARD | 1.0% | Block dangerous-side sells (CE up-trend, PE down-trend) | No |
+| 3 | BLOCK | 1.5% | Block ALL new sell orders | No |
+| 4 | WIND-DOWN | 2.0% | Auto-trigger wind-down (no operator confirmation) | No |
+
+**Tier computation pseudocode:**
 
 ```
-price_change_pct = (btc_now - btc_N_minutes_ago) / btc_N_minutes_ago × 100
+move_pct = abs((spot - anchor) / anchor × 100)
+direction = 'up' if spot > anchor else 'down'
 
-IF |price_change_pct| > regime_trend_threshold_pct (2.0):
-    trend_state = TREND_UP or TREND_DOWN → ACTION_BLOCK
-ELSE:
-    trend_state = NORMAL → ACTION_NORMAL
+IF move_pct >= trend_tier4_pct → new_tier = 4  (WIND-DOWN)
+ELIF move_pct >= trend_tier3_pct → new_tier = 3  (BLOCK)
+ELIF move_pct >= trend_tier2_pct → new_tier = 2  (GUARD)
+ELIF move_pct >= trend_tier1_pct → new_tier = 1  (ALERT)
+ELSE → new_tier = 0  (NORMAL)
+
+# Tier 1 requires EMA confirmation OR acceleration bypass
+IF new_tier == 1:
+    ema_ok = abs(ema_slope) >= threshold AND ema direction matches
+    accel_ok = _check_acceleration()  # fast move within window
+    IF NOT ema_ok AND NOT accel_ok → new_tier = 0
+
+# Tiers only escalate within same direction
+IF new_tier > current_tier AND direction matches:
+    current_tier = new_tier
 ```
 
-**Rationale:** In a strong trend, adjustments compound losses because each new sell adds exposure in the wrong direction. Better to let the perp hedge absorb directionality.
+**Acceleration check** (fast-move bypass for Tier 1):
+
+```
+Look back trend_acceleration_window_s (600s) in _vol_spot_history ring buffer
+IF price moved >= trend_acceleration_pct (0.5%) within that window:
+    → bypass EMA requirement for Tier 1
+```
+
+**Lot reduction at Tier 1:**
+
+```
+IF trend_tier >= 1:
+    multiplier = 1.0 - trend_tier1_lot_reduction  # e.g., 0.70
+    raw_lots = floor(raw_lots × multiplier)
+    IF raw_lots < 1: raw_lots = max(1, floor(original × 0.10))
+```
+
+**Reset logic (simple binary):**
+
+```
+IF price crosses anchor (opposite side):
+    → Immediate reset to Tier 0
+
+IF move_pct retraced by trend_retrace_pct AND ema_slope calmed:
+    calm_beats += 1
+    IF calm_beats >= trend_reset_beats:
+        → Reset ALL tiers to Tier 0  (binary: all or nothing)
+```
+
+**Rationale:** In a strong trend, adjustments compound losses because each new sell adds exposure in the wrong direction. The 4-tier system provides graduated response: early warning with lot reduction, then directional blocking, then full blocking, then automatic wind-down. Better to let the perp hedge absorb directionality.
 
 ### 24.4 Aggregate Action
 
 ```
 aggregate = max(vol_action, gamma_action, trend_action)
 
-ACTION_NORMAL    → proceed normally
-ACTION_WARN      → emit mmm_regime event, proceed with caution
-ACTION_BLOCK     → skip adjustment this heartbeat
-ACTION_EMERGENCY → close all positions, stop session
+ACTION_NORMAL         → proceed normally
+ACTION_WARN           → Tier 1 lot reduction active, log enhanced, proceed
+ACTION_BLOCK_CE_SELLS → Tier 2 up-trend, CE sells blocked, PE allowed
+ACTION_BLOCK_PE_SELLS → Tier 2 down-trend, PE sells blocked, CE allowed
+ACTION_BLOCK_ALL_SELLS → Tier 3 or gamma hard, all sells blocked
+ACTION_FORCE_REDUCE   → Tier 4 or gamma emergency, auto wind-down
 ```
 
-**Key rule:** Regime controls block NEW adjustments but do NOT force-close existing options positions (that's the margin guardian's job). Close-at-5 and wind-down still run regardless.
+**Key rule:** Regime controls block NEW adjustments but do NOT force-close existing options positions (that's the margin guardian's job). Close-at-5 and wind-down still run regardless. Exception: Tier 4 WIND-DOWN auto-triggers wind-down flag.
 
 **Perp hedge exception:** Perp hedge runs regardless of regime state. When regime blocks adjustments, the perp hedge is the primary defense.
 

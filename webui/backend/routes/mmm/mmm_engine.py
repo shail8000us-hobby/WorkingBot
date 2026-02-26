@@ -311,6 +311,23 @@ class MMMEngine:
         raw_lots = loss_to_cover / (hedge_premium * LOT_SIZE_BTC) * (1 + buffer_pct)
         lots_to_sell = max(math.ceil(raw_lots), 1)
 
+        # ── IMP-2: Trend Tier 1 lot reduction ──────────────────────────────
+        # When trend guard is at Tier 1 (ALERT), reduce lots by configurable %
+        # Tier 2+ blocks sells entirely (handled in regime engine), so this
+        # only applies to the "soft warning" zone.
+        trend_tier = session.get('_trend_tier', 0)
+        if trend_tier >= 1:
+            lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
+            multiplier = max(1.0 - lot_reduction, 0.1)  # Floor at 10% to avoid zero
+            original_lots = lots_to_sell
+            lots_to_sell = max(math.ceil(lots_to_sell * multiplier), 1)
+            if lots_to_sell < original_lots:
+                constraint_msg = (
+                    f"Trend Tier {trend_tier} lot reduction: {original_lots} → "
+                    f"{lots_to_sell} ({lot_reduction:.0%} reduction)"
+                )
+        # ── END IMP-2 ─────────────────────────────────────────────────────
+
         # §13.1: Position cap
         hedge_state = session.get(hedge_side, {})
         current_total = hedge_state.get('total_lots', 0)

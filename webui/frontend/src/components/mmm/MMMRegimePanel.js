@@ -63,6 +63,23 @@ const REGIME_COLORS = {
   TREND_DOWN: '#ff5722',
 };
 
+// Trend tier display names and colors
+const TREND_TIER_NAMES = {
+  0: 'NORMAL',
+  1: 'ALERT',
+  2: 'GUARD',
+  3: 'BLOCK',
+  4: 'WIND-DOWN',
+};
+
+const TREND_TIER_COLORS = {
+  0: '#4caf50',   // green  — normal
+  1: '#ff9800',   // orange — alert
+  2: '#ff5722',   // deep orange — guard
+  3: '#f44336',   // red — block
+  4: '#d32f2f',   // dark red — wind-down
+};
+
 const ACTION_LABELS = {
   NORMAL: 'All Clear',
   WARN: 'Elevated Risk',
@@ -74,11 +91,11 @@ const ACTION_LABELS = {
 
 const ACTION_DESCRIPTIONS = {
   NORMAL: 'All regime controls clear. Normal adjustment behavior.',
-  WARN: 'Gamma approaching soft limit. Adjustments allowed with enhanced logging.',
-  BLOCK_CE_SELLS: 'Trend guard detected upward move. CE sells blocked (PE adjustments still allowed).',
-  BLOCK_PE_SELLS: 'Trend guard detected downward move. PE sells blocked (CE adjustments still allowed).',
-  BLOCK_ALL_SELLS: 'Multiple regime controls active. All new sell orders blocked. Risk-reducing trades continue.',
-  FORCE_REDUCE: 'Gamma emergency. Forcing position reduction via wind-down buybacks.',
+  WARN: 'Trend Tier 1 (Alert) or Gamma approaching soft limit. Lot sizes reduced, adjustments allowed with enhanced logging.',
+  BLOCK_CE_SELLS: 'Trend guard Tier 2+ detected upward move. CE sells blocked (PE adjustments still allowed).',
+  BLOCK_PE_SELLS: 'Trend guard Tier 2+ detected downward move. PE sells blocked (CE adjustments still allowed).',
+  BLOCK_ALL_SELLS: 'Trend Tier 3 (Block) or multiple regime controls active. All new sell orders blocked. Risk-reducing trades continue.',
+  FORCE_REDUCE: 'Gamma emergency or Trend Tier 4 (Wind-Down). Forcing position reduction via wind-down buybacks.',
 };
 
 
@@ -261,15 +278,21 @@ function GammaRegimeCard({ gammaRegime, details }) {
 }
 
 
-function TrendRegimeCard({ trendRegime, details }) {
-  const color = REGIME_COLORS[trendRegime] || '#4caf50';
+function TrendRegimeCard({ trendRegime, details, trendTier, trendDirection }) {
+  const tier = trendTier || details?.trend_tier || 0;
+  const direction = trendDirection || details?.trend_direction || 'none';
+  const tierName = TREND_TIER_NAMES[tier] || 'UNKNOWN';
+  const color = TREND_TIER_COLORS[tier] || '#4caf50';
   const movePct = details?.spot_move_pct || 0;
   const emaSlope = details?.ema_slope || 0;
   const anchor = details?.trend_anchor || 0;
+  const accelPct = details?.trend_acceleration_move_pct || 0;
 
-  const trendIcon = trendRegime === 'TREND_UP' ? <TrendUpIcon sx={{ color: '#f44336' }} /> :
-                    trendRegime === 'TREND_DOWN' ? <TrendDownIcon sx={{ color: '#f44336' }} /> :
+  const trendIcon = direction === 'up' ? <TrendUpIcon sx={{ color: tier > 0 ? '#f44336' : '#4caf50' }} /> :
+                    direction === 'down' ? <TrendDownIcon sx={{ color: tier > 0 ? '#f44336' : '#4caf50' }} /> :
                     <ChartIcon sx={{ color: '#4caf50' }} />;
+
+  const chipLabel = tier === 0 ? 'NORMAL' : `T${tier} ${tierName}${direction !== 'none' ? ` ${direction.toUpperCase()}` : ''}`;
 
   return (
     <Paper sx={{ p: 2, border: `1px solid ${color}40`, backgroundColor: `${color}08` }}>
@@ -281,7 +304,7 @@ function TrendRegimeCard({ trendRegime, details }) {
           </Typography>
         </Box>
         <Chip
-          label={trendRegime === 'NORMAL' ? 'NORMAL' : trendRegime.replace('TREND_', '')}
+          label={chipLabel}
           size="small"
           sx={{
             fontWeight: 700,
@@ -293,23 +316,48 @@ function TrendRegimeCard({ trendRegime, details }) {
         />
       </Box>
 
+      {/* Tier progress indicator */}
+      {tier > 0 && (
+        <Box sx={{ display: 'flex', gap: 0.5, mb: 1 }}>
+          {[1, 2, 3, 4].map((t) => (
+            <Box
+              key={t}
+              sx={{
+                flex: 1, height: 4, borderRadius: 1,
+                backgroundColor: t <= tier ? TREND_TIER_COLORS[t] : '#e0e0e0',
+                opacity: t <= tier ? 1 : 0.3,
+              }}
+            />
+          ))}
+        </Box>
+      )}
+
       <Grid container spacing={1}>
-        <Grid item xs={4}>
+        <Grid item xs={3}>
           <Typography variant="caption" sx={{ opacity: 0.6 }}>Spot Move</Typography>
           <Typography variant="body2" sx={{
             fontFamily: 'monospace', fontWeight: 600,
-            color: Math.abs(movePct) > 1.5 ? '#ff5722' : 'inherit',
+            color: Math.abs(movePct) > 1.0 ? '#ff5722' : 'inherit',
           }}>
             {movePct >= 0 ? '+' : ''}{movePct.toFixed(2)}%
           </Typography>
         </Grid>
-        <Grid item xs={4}>
+        <Grid item xs={3}>
           <Typography variant="caption" sx={{ opacity: 0.6 }}>EMA Slope</Typography>
           <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
             {emaSlope >= 0 ? '+' : ''}{emaSlope.toFixed(1)}
           </Typography>
         </Grid>
-        <Grid item xs={4}>
+        <Grid item xs={3}>
+          <Typography variant="caption" sx={{ opacity: 0.6 }}>Accel</Typography>
+          <Typography variant="body2" sx={{
+            fontFamily: 'monospace', fontWeight: 600,
+            color: Math.abs(accelPct) > 0.3 ? '#ff9800' : 'inherit',
+          }}>
+            {accelPct >= 0 ? '+' : ''}{accelPct.toFixed(2)}%
+          </Typography>
+        </Grid>
+        <Grid item xs={3}>
           <Typography variant="caption" sx={{ opacity: 0.6 }}>Anchor</Typography>
           <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
             ${anchor > 0 ? anchor.toFixed(0) : '-'}
@@ -388,6 +436,8 @@ export default function MMMRegimePanel({ session, regimeData, heartbeat }) {
     vol_regime = 'NORMAL',
     gamma_regime = 'NORMAL',
     trend_regime = 'NORMAL',
+    trend_tier = 0,
+    trend_direction = 'none',
     details = {},
     observation_mode = false,
   } = effectiveRegime;
@@ -424,7 +474,7 @@ export default function MMMRegimePanel({ session, regimeData, heartbeat }) {
           <GammaRegimeCard gammaRegime={gamma_regime} details={details} />
         </Grid>
         <Grid item xs={12} md={4}>
-          <TrendRegimeCard trendRegime={trend_regime} details={details} />
+          <TrendRegimeCard trendRegime={trend_regime} details={details} trendTier={trend_tier} trendDirection={trend_direction} />
         </Grid>
       </Grid>
 

@@ -332,7 +332,13 @@ class MMMMonitor:
         log.info(f"Monitor paused for {self.session_id}: {reason}")
 
     def resume(self, reason: str = 'User requested'):
-        """Resume from paused state."""
+        """Resume from paused state.
+
+        BUG-3 FIX: If whipsaw cooldown is still active, log a warning.
+        The heartbeat's Step 4.5 whipsaw gate will still block adjustments
+        even after resume, so the resume is safe — but the operator should
+        know the cooldown is still enforced.
+        """
         old_status = self.session.get('strategy_status', 'PAUSED')
         self._paused = False
         # C-2 fix: write critical status fields under lock
@@ -353,6 +359,30 @@ class MMMMonitor:
             self.session_id, old_status, 'RUNNING', reason
         )
         log.info(f"Monitor resumed for {self.session_id}: {reason}")
+
+        # BUG-3 FIX: Warn if whipsaw cooldown is still active after resume.
+        # Adjustments will still be blocked by Step 4.5 whipsaw gate.
+        _whipsaw_at = self.session.get('_whipsaw_paused_at')
+        if _whipsaw_at:
+            try:
+                _wp = datetime.fromisoformat(_whipsaw_at)
+                if _wp.tzinfo is None:
+                    _wp = _wp.replace(tzinfo=timezone.utc)
+                _interval = self.session.get('params', {}).get('adjustment_interval', 300)
+                _remaining = (_interval * 2) - (datetime.now(timezone.utc) - _wp).total_seconds()
+                if _remaining > 0:
+                    log.warning(
+                        f"[{self.session_id}] BUG-3: Session resumed but whipsaw "
+                        f"cooldown still active ({_remaining:.0f}s remaining). "
+                        f"Adjustments will remain blocked until cooldown expires."
+                    )
+                    log_activity('info',
+                                f'⚠️ Whipsaw cooldown still active ({_remaining:.0f}s remaining). '
+                                f'Heartbeat resumed but adjustments blocked until cooldown expires.',
+                                self.session_id, 'warning',
+                                {'whipsaw_remaining': round(_remaining)})
+            except (ValueError, TypeError):
+                pass
 
     @property
     def is_running(self) -> bool:
@@ -1213,10 +1243,14 @@ class MMMMonitor:
                     vol_r = session.get('_vol_regime', 'NORMAL')
                     gamma_r = session.get('_gamma_regime', 'NORMAL')
                     trend_r = session.get('_trend_regime', 'NORMAL')
+                    trend_tier = session.get('_trend_tier', 0)
+                    tier_names = {0: 'NONE', 1: 'ALERT', 2: 'GUARD', 3: 'BLOCK', 4: 'WIND_DOWN'}
+                    tier_name = tier_names.get(trend_tier, str(trend_tier))
                     log_activity('regime_control',
                                 f'Regime: {regime_action} '
-                                f'(vol={vol_r}, gamma={gamma_r}, trend={trend_r})',
-                                sid, 'warning',
+                                f'(vol={vol_r}, gamma={gamma_r}, trend={trend_r}, '
+                                f'trend_tier={tier_name})',
+                                sid, 'warning' if trend_tier < 3 else 'error',
                                 regime_status)
                     emit_safety(
                         sid, 'regime', 'alert' if 'BLOCK' in regime_action else 'warning',
@@ -1341,6 +1375,50 @@ class MMMMonitor:
             if self._paused and not _skip_to_pnl:
                 # Paused status shown in live heartbeat summary
                 _skip_to_pnl = True
+
+        # Step 4.5 (BUG-3 FIX): Whipsaw cooldown gate — independent of _paused.
+        # If user manually resumes during whipsaw cooldown, _paused becomes False
+        # but _whipsaw_paused_at is still active. We must respect the cooldown
+        # regardless of how the session got unpaused.
+        if not _skip_to_pnl:
+            _whipsaw_paused_at = session.get('_whipsaw_paused_at')
+            if _whipsaw_paused_at:
+                try:
+                    _wp_time = datetime.fromisoformat(_whipsaw_paused_at)
+                    if _wp_time.tzinfo is None:
+                        _wp_time = _wp_time.replace(tzinfo=timezone.utc)
+                    _wp_interval = params.get('adjustment_interval', 300)
+                    _wp_resume_after = _wp_interval * 2
+                    _wp_elapsed = (datetime.now(timezone.utc) - _wp_time).total_seconds()
+                    if _wp_elapsed < _wp_resume_after:
+                        _wp_remaining = _wp_resume_after - _wp_elapsed
+                        log.info(
+                            f"[{sid}] BUG-3: Whipsaw cooldown still active "
+                            f"({_wp_elapsed:.0f}s / {_wp_resume_after}s) — "
+                            f"{_wp_remaining:.0f}s remaining. Blocking adjustments."
+                        )
+                        log_activity('adjustment_skipped',
+                                    f'⏸️ Whipsaw cooldown active — {_wp_remaining:.0f}s remaining. '
+                                    f'Adjustments blocked.',
+                                    sid, 'warning',
+                                    {
+                                        'reason': 'whipsaw_cooldown',
+                                        'elapsed': round(_wp_elapsed),
+                                        'remaining': round(_wp_remaining),
+                                        'resume_after': _wp_resume_after,
+                                    })
+                        _skip_to_pnl = True
+                    else:
+                        # Cooldown expired — clean up the flag
+                        session.pop('_whipsaw_paused_at', None)
+                        log.info(
+                            f"[{sid}] Whipsaw cooldown expired "
+                            f"({_wp_elapsed:.0f}s >= {_wp_resume_after}s) — "
+                            f"adjustments re-enabled"
+                        )
+                except (ValueError, TypeError):
+                    # Corrupted timestamp — clear it
+                    session.pop('_whipsaw_paused_at', None)
 
         # Step 5: Cooldown check (§14.3)
         if not _skip_to_pnl and is_cooldown_active(session):
@@ -1551,24 +1629,73 @@ class MMMMonitor:
             perp_btc_mark = session.get('_regime_spot_price', 0.0)
             perp_delta = session.get('portfolio_delta', 0.0)
             if perp_btc_mark > 0:
-                perp_result = await run_perp_hedge(
-                    session, self.executor, perp_delta, perp_btc_mark
-                )
-                if perp_result.get('action') not in ('none', 'skipped'):
-                    log_activity(
-                        'perp_hedge',
-                        f"Perp hedge: {perp_result.get('action', '?').upper()} "
-                        f"{perp_result.get('lots_traded', 0)} lots @ "
-                        f"{perp_result.get('fill_price', 0):.2f} — "
-                        f"{perp_result.get('reason', '')}",
-                        sid, 'info',
-                        {
-                            'action': perp_result.get('action'),
-                            'lots': perp_result.get('lots_traded', 0),
-                            'fill_price': perp_result.get('fill_price', 0),
-                            'realized_pnl': perp_result.get('realized_pnl', 0),
-                        },
+                # Fix #26.2: ATM-only mode — only hedge when ORIGINAL strike is near ATM
+                # Uses the same original_strike concept as wind_down_on_atm / close_at_atm:
+                # original_strike is set once at session creation and never changes on shifts.
+                perp_mode = params.get('perp_hedge_mode', 'atm_only')
+                atm_gate_passed = True  # default: always hedge in 'full' mode
+                if perp_mode == 'atm_only':
+                    atm_gate_passed = False
+                    atm_threshold_pct = params.get('perp_hedge_atm_threshold_pct', 1.5)
+                    # Check ORIGINAL entry strikes against spot (not active/shifted strikes)
+                    ce_orig_strike = float(session.get('ce', {}).get('original_strike', 0) or 0)
+                    pe_orig_strike = float(session.get('pe', {}).get('original_strike', 0) or 0)
+                    ce_total_lots = session.get('ce', {}).get('total_lots', 0)
+                    pe_total_lots = session.get('pe', {}).get('total_lots', 0)
+                    atm_triggered_side = None
+
+                    if ce_orig_strike > 0 and ce_total_lots > 0 and perp_btc_mark > 0:
+                        dist_pct = abs(ce_orig_strike - perp_btc_mark) / perp_btc_mark * 100
+                        if dist_pct <= atm_threshold_pct:
+                            atm_gate_passed = True
+                            atm_triggered_side = 'CE'
+                            log.info(
+                                f"[{sid}] Perp ATM gate: CE ORIGINAL strike "
+                                f"{ce_orig_strike:.0f} is {dist_pct:.1f}% "
+                                f"from spot {perp_btc_mark:.0f} (threshold {atm_threshold_pct}%)"
+                            )
+
+                    if not atm_gate_passed and pe_orig_strike > 0 and pe_total_lots > 0 and perp_btc_mark > 0:
+                        dist_pct = abs(pe_orig_strike - perp_btc_mark) / perp_btc_mark * 100
+                        if dist_pct <= atm_threshold_pct:
+                            atm_gate_passed = True
+                            atm_triggered_side = 'PE'
+                            log.info(
+                                f"[{sid}] Perp ATM gate: PE ORIGINAL strike "
+                                f"{pe_orig_strike:.0f} is {dist_pct:.1f}% "
+                                f"from spot {perp_btc_mark:.0f} (threshold {atm_threshold_pct}%)"
+                            )
+
+                    if not atm_gate_passed:
+                        log.debug(
+                            f"[{sid}] Perp ATM-only mode: original strikes "
+                            f"CE={ce_orig_strike:.0f} PE={pe_orig_strike:.0f} not within "
+                            f"{atm_threshold_pct}% of spot {perp_btc_mark:.0f} — skipping hedge"
+                        )
+
+                if atm_gate_passed:
+                    perp_result = await run_perp_hedge(
+                        session, self.executor, perp_delta, perp_btc_mark
                     )
+                    if perp_result.get('action') not in ('none', 'skipped'):
+                        log_activity(
+                            'perp_hedge',
+                            f"Perp hedge: {perp_result.get('action', '?').upper()} "
+                            f"{perp_result.get('lots_traded', 0)} lots @ "
+                            f"{perp_result.get('fill_price', 0):.2f} — "
+                            f"{perp_result.get('reason', '')}",
+                            sid, 'info',
+                            {
+                                'action': perp_result.get('action'),
+                                'lots': perp_result.get('lots_traded', 0),
+                                'fill_price': perp_result.get('fill_price', 0),
+                                'realized_pnl': perp_result.get('realized_pnl', 0),
+                            },
+                        )
+                else:
+                    # Still update mark P&L for display even when ATM gate blocks
+                    from .mmm_perp_hedge import update_perp_mark_pnl
+                    update_perp_mark_pnl(session, perp_btc_mark)
             else:
                 log.debug(f"[{sid}] Perp hedge skipped: BTC mark price not available")
 
@@ -2284,6 +2411,18 @@ class MMMMonitor:
                 )
 
         if loss <= 0:
+            # BUG-2 FIX: Log when trigger fires but loss is zero/negative
+            log_activity('adjustment_skipped',
+                        f'⏭️ Adjustment skipped: {aggressor.upper()} triggered but '
+                        f'calculated loss ≤ 0 (${loss:.2f}) — no hedge needed',
+                        sid, 'info',
+                        {
+                            'reason': 'loss_zero_or_negative',
+                            'aggressor': aggressor.upper(),
+                            'hedge': hedge.upper(),
+                            'loss': loss,
+                            'adj_type': adj_type,
+                        })
             return
 
         # §10: Check if strike shift needed on hedge side
@@ -2367,6 +2506,19 @@ class MMMMonitor:
         )
 
         if lots <= 0:
+            # BUG-2 FIX: Always log when trigger fires but lots=0
+            skip_reason = constraint_msg or 'lot_calculation_zero'
+            log_activity('adjustment_skipped',
+                        f'⏭️ Adjustment skipped: {hedge.upper()} lots=0 — {skip_reason}',
+                        sid, 'warning',
+                        {
+                            'reason': 'position_cap' if constraint_msg else 'lot_calculation_zero',
+                            'aggressor': aggressor.upper(),
+                            'hedge': hedge.upper(),
+                            'loss': loss,
+                            'hedge_premium': hedge_premium,
+                            'constraint_msg': constraint_msg,
+                        })
             if constraint_msg:
                 emit_safety(
                     sid, 'position_cap', 'alert', constraint_msg,
@@ -2425,6 +2577,26 @@ class MMMMonitor:
                 loss, adj_type,
                 session.get('adjustment_count', 0),
             )
+        else:
+            # BUG-2 FIX: Log when adjustment execution fails
+            error_msg = result.get('error', 'unknown') if result else 'no result'
+            log.error(
+                f"[{sid}] Adjustment execution FAILED: "
+                f"SELL {lots} {hedge.upper()} @ {hedge_strike}: {error_msg}"
+            )
+            log_activity('adjustment_skipped',
+                        f'❌ Adjustment Failed: SELL {lots} {hedge.upper()} @ {hedge_strike} '
+                        f'— execution error: {error_msg}',
+                        sid, 'error',
+                        {
+                            'reason': 'execution_error',
+                            'aggressor': aggressor.upper(),
+                            'hedge': hedge.upper(),
+                            'strike': hedge_strike,
+                            'lots': lots,
+                            'adj_type': adj_type,
+                            'error': error_msg,
+                        })
 
     # =========================================================================
     # §10: Strike Shift
@@ -2544,64 +2716,181 @@ class MMMMonitor:
 
         if result.get('success'):
             fill_price = result.get('fill_price', 0)
-            activate_new_strike(
-                session, side, new_strike, fill_price, lots,
-            )
 
-            # Clear pending after state is updated
+            # BUG-1 FIX: Wrap entire post-fill sequence in try/except.
+            # Each step is individually exception-safe so a failure in one
+            # (e.g. frozen position snapshot) cannot abort the critical
+            # trigger snapshot update or adjustment_complete event.
+            _shift_errors = []
+
+            # Step 1: Activate new strike (sets trigger_snapshot to fill_price)
+            try:
+                activate_new_strike(
+                    session, side, new_strike, fill_price, lots,
+                )
+            except Exception as _e:
+                _shift_errors.append(f'activate_new_strike: {_e}')
+                log.exception(f"[{sid}] CRITICAL: activate_new_strike failed after strike shift fill: {_e}")
+
+            # Step 2: Clear pending after state is updated
             try:
                 clear_pending(sid, side)
             except Exception:
                 pass
 
-            # Update triggers at new strike
-            update_trigger_snapshots(session, ce_now, pe_now,
-                                     fetch_premium_fn=self._make_fetch_fn())
+            # Step 3: Update triggers (frozen positions etc.)
+            try:
+                update_trigger_snapshots(session, ce_now, pe_now,
+                                         fetch_premium_fn=self._make_fetch_fn())
+            except Exception as _e:
+                _shift_errors.append(f'update_trigger_snapshots: {_e}')
+                log.exception(f"[{sid}] update_trigger_snapshots failed after strike shift: {_e}")
 
-            # Bug #8 fix: update tracking fields that _process_adjustment
-            # normally handles via engine._update_state_after_adjustment
-            premium_collected = fill_price * lots * LOT_SIZE_BTC
-            aggressor_side = 'pe' if side == 'ce' else 'ce'
-            session['last_aggressor'] = aggressor_side.upper()
-            session['adjustment_count'] = session.get('adjustment_count', 0) + 1
-            session['shift_count'] = session.get('shift_count', 0) + 1
-            session['total_premium_collected'] = (
-                session.get('total_premium_collected', 0) + premium_collected
-            )
-            
-            # Analytics: Track shift event (no trading logic impact)
-            analytics = session.setdefault('analytics', {})
-            analytics.setdefault('shift_timestamps', []).append({
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'side': side.upper(),
-                'old_strike': old_strike,
-                'new_strike': new_strike,
-                'frozen_lots': freeze_result['frozen_lots'],
-            })
-            
-            session.setdefault('adjustment_history', []).append({
-                'side': side.upper(),
-                'aggressor': aggressor_side.upper(),
-                'lots_sold': lots,
-                'premium': fill_price,
-                'strike': new_strike,
-                'old_strike': old_strike,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'type': 'strike_shift',
-                'premium_collected': premium_collected,
-                'adjustment_number': session['adjustment_count'],
-            })
-            session['updated_at'] = datetime.now(timezone.utc).isoformat()
+            # BUG-1 FIX: After update_trigger_snapshots, FORCE the new strike's
+            # trigger snapshot to fill_price. update_trigger_snapshots uses the
+            # stale ce_now/pe_now (fetched for the OLD strike), which overwrites
+            # the correct fill_price that activate_new_strike set. This caused
+            # PE[new_strike] trigger to be wrong, leading to false triggers.
+            try:
+                side_state = session.get(side, {})
+                side_state.setdefault('trigger_snapshot', {})[_strike_key(new_strike)] = fill_price
+                session[side] = side_state
+                log.info(
+                    f"[{sid}] Trigger snapshot force-set: {side.upper()}[{_strike_key(new_strike)}] = "
+                    f"${fill_price:.2f} (fill price after strike shift)"
+                )
+            except Exception as _e:
+                _shift_errors.append(f'trigger_snapshot_force_set: {_e}')
+                log.exception(f"[{sid}] CRITICAL: Failed to force trigger snapshot after shift: {_e}")
 
-            emit_strike_shift(
-                sid, side.upper(), old_strike, new_strike,
-                freeze_result['frozen_lots'], fill_price,
-            )
+            # Step 4: Update tracking fields (Bug #8 fix)
+            try:
+                premium_collected = fill_price * lots * LOT_SIZE_BTC
+                aggressor_side = 'pe' if side == 'ce' else 'ce'
+                session['last_aggressor'] = aggressor_side.upper()
+                session['adjustment_count'] = session.get('adjustment_count', 0) + 1
+                session['shift_count'] = session.get('shift_count', 0) + 1
+                session['total_premium_collected'] = (
+                    session.get('total_premium_collected', 0) + premium_collected
+                )
+            except Exception as _e:
+                _shift_errors.append(f'tracking_update: {_e}')
+                log.exception(f"[{sid}] tracking update failed after strike shift: {_e}")
+                # Ensure these exist for downstream code
+                premium_collected = fill_price * lots * LOT_SIZE_BTC
+                aggressor_side = 'pe' if side == 'ce' else 'ce'
+
+            # Step 5: Analytics
+            try:
+                analytics = session.setdefault('analytics', {})
+                analytics.setdefault('shift_timestamps', []).append({
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'side': side.upper(),
+                    'old_strike': old_strike,
+                    'new_strike': new_strike,
+                    'frozen_lots': freeze_result['frozen_lots'],
+                })
+            except Exception as _e:
+                _shift_errors.append(f'analytics: {_e}')
+                log.warning(f"[{sid}] analytics tracking failed after strike shift: {_e}")
+
+            # Step 6: Adjustment history
+            try:
+                session.setdefault('adjustment_history', []).append({
+                    'side': side.upper(),
+                    'aggressor': aggressor_side.upper(),
+                    'lots_sold': lots,
+                    'premium': fill_price,
+                    'strike': new_strike,
+                    'old_strike': old_strike,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'type': 'strike_shift',
+                    'premium_collected': premium_collected,
+                    'adjustment_number': session.get('adjustment_count', 0),
+                })
+                session['updated_at'] = datetime.now(timezone.utc).isoformat()
+            except Exception as _e:
+                _shift_errors.append(f'adjustment_history: {_e}')
+                log.warning(f"[{sid}] adjustment_history append failed: {_e}")
+
+            # Step 7: Emit events
+            try:
+                emit_strike_shift(
+                    sid, side.upper(), old_strike, new_strike,
+                    freeze_result['frozen_lots'], fill_price,
+                )
+            except Exception as _e:
+                _shift_errors.append(f'emit_strike_shift: {_e}')
+                log.warning(f"[{sid}] emit_strike_shift failed: {_e}")
+
+            # BUG-1 & BUG-4 FIX: Log strike_shift event for observability
+            log_activity('strike_shift',
+                        f'🔀 Strike Shift: {side.upper()} {old_strike} → {new_strike} '
+                        f'(frozen {freeze_result["frozen_lots"]} lots at old strike)',
+                        sid, 'info',
+                        {
+                            'side': side.upper(),
+                            'old_strike': old_strike,
+                            'new_strike': new_strike,
+                            'frozen_lots': freeze_result['frozen_lots'],
+                            'fill_price': fill_price,
+                        })
+
+            # BUG-1 FIX: Log adjustment_complete — this was MISSING for strike
+            # shifts, causing the trigger snapshot update + history record to
+            # appear incomplete in the activity log.
+            log_activity('adjustment_complete',
+                        f'✓ Strike Shift Complete: SELL {lots} lots {side.upper()} @ {new_strike} '
+                        f'for ${fill_price:.2f} (shifted from {old_strike})',
+                        sid, 'success',
+                        {
+                            'side': side.upper(),
+                            'strike': new_strike,
+                            'old_strike': old_strike,
+                            'lots': lots,
+                            'fill_price': fill_price,
+                            'type': 'strike_shift',
+                            'adjustment_number': session.get('adjustment_count', 0),
+                        })
+
+            # BUG-1 FIX: If any step failed, log explicitly so failures are
+            # never silent. The fill itself succeeded — state may be partially
+            # updated but the operator has full visibility.
+            if _shift_errors:
+                log.error(
+                    f"[{sid}] Strike shift post-fill had {len(_shift_errors)} error(s): "
+                    f"{'; '.join(_shift_errors)}"
+                )
+                log_activity('shift_post_fill_error',
+                            f'⚠️ Strike shift {side.upper()} {old_strike}→{new_strike} '
+                            f'filled OK but post-fill had {len(_shift_errors)} error(s): '
+                            f'{"; ".join(_shift_errors)}',
+                            sid, 'warning',
+                            {'errors': _shift_errors, 'side': side.upper(),
+                             'old_strike': old_strike, 'new_strike': new_strike})
 
             log.info(
                 f"Strike shift complete: {side.upper()} "
                 f"{old_strike} → {new_strike}"
             )
+        else:
+            # Strike shift order FAILED — log explicitly for observability
+            error_msg = result.get('error', 'unknown')
+            log.error(
+                f"[{sid}] Strike shift order FAILED: {side.upper()} "
+                f"{old_strike} → {new_strike}: {error_msg}"
+            )
+            log_activity('adjustment_skipped',
+                        f'❌ Strike Shift Failed: {side.upper()} {old_strike} → {new_strike} '
+                        f'order not filled: {error_msg}',
+                        sid, 'error',
+                        {
+                            'reason': 'execution_error',
+                            'side': side.upper(),
+                            'old_strike': old_strike,
+                            'new_strike': new_strike,
+                            'error': error_msg,
+                        })
 
     # =========================================================================
     # §10b: Strike Shift Fallback — sell at current strike when no new strike
@@ -4502,8 +4791,12 @@ class MMMMonitor:
                 greek_gamma = _safe_greek(greeks.get('gamma', 0))
 
                 lots = int(position_map.get((strike, opt), 0))
-                # multiplier: short CE = -1, short PE = +1
-                multiplier = 1 if opt == 'put' else -1
+                # multiplier: ALWAYS -1 for short positions (we are the seller)
+                # Fix #26.1: short CE delta = -(+call_delta), short PE delta = -(-put_delta) = +
+                # Old bug: put multiplier was +1, which preserved the negative put delta
+                # instead of flipping it. This made portfolio_delta too negative,
+                # causing the perp to BUY (go long) when it should have SOLD (gone short).
+                multiplier = -1  # short position always negates the exchange delta
                 position_delta = greek_delta * lots * LOT_SIZE_BTC * multiplier
                 portfolio_delta += position_delta
 

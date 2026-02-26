@@ -211,9 +211,21 @@ Three pre-adjustment controls checked every heartbeat BEFORE trigger evaluation:
 
 **B. Portfolio Gamma Cap** — enforces dollar-gamma limits. States: `NORMAL`, `SOFT`, `HARD`, `EMERGENCY`. Blocks adjustments when gamma exposure is too large.
 
-**C. Trend Detection Guard** — detects strong directional BTC moves. States: `NORMAL`, `TREND_UP`, `TREND_DOWN`. Blocks adjustments into trending markets.
+**C. Trend Detection Guard (Tiered — 4-tier graduated response)** — detects directional BTC moves from session anchor using a 4-tier escalation system:
 
-Aggregate actions: `NORMAL` (proceed), `WARN` (log), `BLOCK` (skip adjustment), `EMERGENCY` (close positions).
+| Tier | Name | Threshold | Action | EMA Required? |
+|------|------|-----------|--------|---------------|
+| 0 | NORMAL | — | No action | — |
+| 1 | ALERT | `trend_tier1_pct` (0.5%) | Lot reduction by `trend_tier1_lot_reduction` (30%) | Yes (or acceleration bypass) |
+| 2 | GUARD | `trend_tier2_pct` (1.0%) | Block dangerous-side sells (CE in up-trend, PE in down-trend) | No |
+| 3 | BLOCK | `trend_tier3_pct` (1.5%) | Block ALL new sell orders | No |
+| 4 | WIND-DOWN | `trend_tier4_pct` (2.0%) | Auto-trigger wind-down (no operator confirmation) | No |
+
+**Tier behavior:** Tiers only escalate (never de-escalate within a trend). Reset is binary — retracement + calm beats → Tier 0. Price crossing anchor → immediate reset.
+
+**Acceleration check:** If BTC moves `trend_acceleration_pct` within `trend_acceleration_window_s`, Tier 1 can fire without EMA confirmation (fast-move bypass). Reuses existing `_vol_spot_history` ring buffer.
+
+Aggregate actions: `NORMAL` (proceed), `WARN` (Tier 1 — lot reduction), `BLOCK_CE/PE_SELLS` (Tier 2 — directional block), `BLOCK_ALL_SELLS` (Tier 3), `FORCE_REDUCE` (Tier 4 — auto wind-down).
 
 **Implementation:** `mmm_regime.py` + monitor heartbeat + `MMMRegimePanel.js` (frontend).
 
@@ -820,12 +832,14 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Orders stale after `_STALE_SECONDS = 900` (15 minutes)
 - Filled states: `filled`, `closed`, `completed` — Dead states: `cancelled`, `rejected`, `expired`
 
-### 6.26 mmm_regime.py (Added Feb 20, 2026, ~737 lines)
+### 6.26 mmm_regime.py (Added Feb 20, 2026, updated with Tiered Trend Guard)
 - `RegimeEngine` class — no I/O; receives data, returns decisions
-- Three controls: Volatility Regime Filter, Portfolio Gamma Cap, Trend Detection Guard
+- Three controls: Volatility Regime Filter, Portfolio Gamma Cap, Trend Detection Guard (4-tier)
 - Vol states: `NORMAL`, `ELEVATED`, `HIGH` — Gamma states: `NORMAL`, `SOFT`, `HARD`, `EMERGENCY`
-- Trend states: `NORMAL`, `TREND_UP`, `TREND_DOWN`
-- Aggregate actions: `ACTION_NORMAL`, `ACTION_WARN`, `ACTION_BLOCK`, `ACTION_EMERGENCY`
+- Trend tiers: `TIER_NONE(0)`, `TIER_ALERT(1)`, `TIER_GUARD(2)`, `TIER_BLOCK(3)`, `TIER_WIND_DOWN(4)`
+- Legacy trend states still set for backward compat: `NORMAL`, `TREND_UP`, `TREND_DOWN`
+- Aggregate actions: `ACTION_NORMAL`, `ACTION_WARN`, `ACTION_BLOCK_CE/PE_SELLS`, `ACTION_BLOCK_ALL_SELLS`, `ACTION_FORCE_REDUCE`
+- Key functions: `_check_acceleration()`, `_compute_trend_tier()`, `_update_trend_guard()`
 - Called by monitor heartbeat between safety checks and trigger evaluation
 
 ### 6.27 mmm_telegram.py (Added Feb 20, 2026)

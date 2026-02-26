@@ -45,6 +45,13 @@ TREND_NORMAL = 'NORMAL'
 TREND_UP = 'TREND_UP'
 TREND_DOWN = 'TREND_DOWN'
 
+# Trend Tier levels (graduated response — IMP-2)
+TREND_TIER_NONE = 0       # No trend detected
+TREND_TIER_ALERT = 1      # Alert + lot reduction
+TREND_TIER_GUARD = 2      # Block aggressor-side sells
+TREND_TIER_BLOCK = 3      # Block ALL sells
+TREND_TIER_WIND_DOWN = 4  # Auto-trigger wind-down
+
 # Aggregate regime actions
 ACTION_NORMAL = 'NORMAL'
 ACTION_WARN = 'WARN'
@@ -362,15 +369,95 @@ def compute_projected_gamma(
 # Section C: Trend Detection Guard
 # =============================================================================
 
+def _check_acceleration(session: Dict, spot_price: float, params: Dict) -> Tuple[bool, float]:
+    """
+    Check if BTC moved fast enough in a short window to bypass EMA confirmation.
+
+    Uses the existing _vol_spot_history ring buffer (timestamp, spot) tuples.
+
+    Returns:
+        (is_fast_move: bool, acceleration_move_pct: float)
+    """
+    window_s = params.get('trend_acceleration_window_s', 600)
+    accel_threshold = params.get('trend_acceleration_pct', 0.5)
+
+    raw_spot = session.get('_vol_spot_history')
+    if not raw_spot or len(raw_spot) < 2:
+        return False, 0.0
+
+    now = datetime.now(timezone.utc)
+    cutoff = now.timestamp() - window_s
+
+    # Walk backward to find the oldest price within the window
+    oldest_price = None
+    for ts_str, price in raw_spot:
+        try:
+            ts = datetime.fromisoformat(ts_str).timestamp()
+        except (ValueError, TypeError):
+            continue
+        if ts >= cutoff and price > 0:
+            oldest_price = price
+            break  # First one in buffer that's within window
+
+    if oldest_price is None or oldest_price <= 0:
+        return False, 0.0
+
+    accel_move_pct = ((spot_price - oldest_price) / oldest_price) * 100
+    is_fast = abs(accel_move_pct) >= accel_threshold
+
+    return is_fast, round(accel_move_pct, 3)
+
+
+def _compute_trend_tier(
+    abs_move_pct: float,
+    ema_slope_confirms: bool,
+    is_fast_move: bool,
+    params: Dict,
+) -> int:
+    """
+    Compute the trend tier (0–4) based on % move from anchor.
+
+    Tier 1 requires EMA confirmation OR fast-move bypass.
+    Tiers 2–4 fire on absolute % move alone (no EMA needed).
+
+    Returns:
+        Tier level: 0 (none), 1 (alert), 2 (guard), 3 (block), 4 (wind-down)
+    """
+    tier4_pct = params.get('trend_tier4_pct', 2.0)
+    tier3_pct = params.get('trend_tier3_pct', 1.5)
+    tier2_pct = params.get('trend_tier2_pct', 1.0)
+    tier1_pct = params.get('trend_tier1_pct', 0.5)
+
+    if abs_move_pct >= tier4_pct:
+        return TREND_TIER_WIND_DOWN
+    elif abs_move_pct >= tier3_pct:
+        return TREND_TIER_BLOCK
+    elif abs_move_pct >= tier2_pct:
+        return TREND_TIER_GUARD
+    elif abs_move_pct >= tier1_pct and (ema_slope_confirms or is_fast_move):
+        return TREND_TIER_ALERT
+    else:
+        return TREND_TIER_NONE
+
+
 def _update_trend_guard(session: Dict, spot_price: float) -> str:
     """
     Update trend detection guard based on spot price movement.
 
-    Uses two-signal confirmation:
-      1. Percentage move from session anchor
-      2. Maximum adverse excursion without retracement
+    Uses a TIERED response system (IMP-2):
+      Tier 0: NORMAL — no intervention
+      Tier 1: ALERT — log warning, reduce hedge lot size by configurable %
+      Tier 2: GUARD — block sells on the aggressor side (CE in rally)
+      Tier 3: BLOCK — block ALL new option sells (both CE and PE)
+      Tier 4: WIND_DOWN — auto-trigger wind-down mode
 
-    Plus optional EMA slope confirmation.
+    EMA slope confirmation required only for Tier 1 entry.
+    Tiers 2–4 fire on absolute % move from anchor alone.
+    Fast acceleration bypass: if BTC moves trend_acceleration_pct within
+    trend_acceleration_window_s, bypasses EMA requirement for Tier 1.
+
+    Tier reset: simple binary — when retracement + calm beats condition is met,
+    reset straight to Tier 0 / NORMAL.
 
     Args:
         session: MMM session dict (mutated in place)
@@ -382,6 +469,8 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     params = session.get('params', {})
     if not params.get('trend_enabled', True):
         session['_trend_regime'] = TREND_NORMAL
+        session['_trend_tier'] = TREND_TIER_NONE
+        session['_trend_direction'] = 'none'
         return TREND_NORMAL
 
     if spot_price <= 0:
@@ -398,6 +487,8 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
         session['_trend_ema'] = spot_price
         session['_trend_ema_prev'] = spot_price
         session['_trend_regime'] = TREND_NORMAL
+        session['_trend_tier'] = TREND_TIER_NONE
+        session['_trend_direction'] = 'none'
         return TREND_NORMAL
 
     # ── Update high/low tracking ──
@@ -412,17 +503,12 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     session['_trend_high'] = trend_high
     session['_trend_low'] = trend_low
 
-    # ── Signal 1: Percentage move from anchor (Section C.1.1) ──
+    # ── Signal 1: Percentage move from anchor ──
     move_pct = ((spot_price - anchor) / anchor) * 100
-    move_threshold = params.get('trend_move_pct', 1.5)
+    abs_move = abs(move_pct)
 
-    # ── Signal 2: Max excursion without retracement (Section C.1.2) ──
+    # ── Signal 2: Max excursion without retracement ──
     retrace_threshold_pct = params.get('trend_retrace_pct', 30)
-
-    # Rally: how much has spot risen from the low?
-    rally_from_low = 0
-    if trend_low > 0:
-        rally_from_low = ((trend_high - trend_low) / trend_low) * 100
 
     # Check retracement from high (for rally scenario)
     retrace_from_high = 0
@@ -434,7 +520,7 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     if trend_high > trend_low and trend_high > 0:
         retrace_from_low = ((spot_price - trend_low) / (trend_high - trend_low)) * 100 if (trend_high - trend_low) > 0 else 0
 
-    # ── Signal 3: EMA Slope (Section C.1.3) ──
+    # ── Signal 3: EMA Slope ──
     ema_period = params.get('trend_ema_period', 10)
     ema_prev = session.get('_trend_ema', spot_price)
     ema_slope_threshold = params.get('trend_ema_slope_threshold', 25)
@@ -453,81 +539,148 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     session['_trend_ema_slope'] = round(ema_slope, 2)
     session['_trend_move_pct'] = round(move_pct, 3)
 
-    # ── Determine new regime ──
+    # ── Acceleration check (rate-of-change bypass) ──
+    is_fast_move, accel_move_pct = _check_acceleration(session, spot_price, params)
+    session['_trend_acceleration_move_pct'] = accel_move_pct
+
+    # ── Determine direction ──
+    direction = 'none'
+    if move_pct > 0:
+        direction = 'up'
+        ema_confirms = ema_slope > 0
+    elif move_pct < 0:
+        direction = 'down'
+        ema_confirms = ema_slope < 0
+    else:
+        ema_confirms = False
+
+    # ── Determine new regime and tier ──
     current_regime = session.get('_trend_regime', TREND_NORMAL)
-    new_regime = current_regime  # Default: stay in current state
+    current_tier = session.get('_trend_tier', TREND_TIER_NONE)
 
-    if current_regime == TREND_NORMAL:
-        # Check for new trend detection
-        if move_pct >= move_threshold and ema_slope > 0:
-            # Rally detected
+    new_tier = _compute_trend_tier(abs_move, ema_confirms, is_fast_move, params)
+
+    # ── Tier only ESCALATES within a trend, never de-escalates ──
+    # (de-escalation only happens via full reset)
+    if current_regime != TREND_NORMAL:
+        new_tier = max(new_tier, current_tier)
+
+    # ── Map tier + direction to regime ──
+    if new_tier >= TREND_TIER_ALERT:
+        if direction == 'up':
             new_regime = TREND_UP
-        elif move_pct <= -move_threshold and ema_slope < 0:
-            # Drop detected
+        elif direction == 'down':
             new_regime = TREND_DOWN
-
-    elif current_regime == TREND_UP:
-        # ── Reset conditions (Section C.5) ──
-        # Spot must retrace at least trend_retrace_pct of the move
-        has_retrace = retrace_from_high >= retrace_threshold_pct
-        ema_calmed = abs(ema_slope) < ema_slope_threshold
-
-        if has_retrace and ema_calmed:
-            calm_beats = session.get('_trend_calm_beats', 0) + 1
-            session['_trend_calm_beats'] = calm_beats
-            if calm_beats >= params.get('trend_reset_beats', 5):
-                new_regime = TREND_NORMAL
-                # Reset anchor and high/low
-                session['_trend_anchor_spot'] = spot_price
-                session['_trend_high'] = spot_price
-                session['_trend_low'] = spot_price
-                session['_trend_calm_beats'] = 0
         else:
-            session['_trend_calm_beats'] = 0
+            new_regime = current_regime  # Keep current if direction unclear
+    else:
+        new_regime = TREND_NORMAL
 
-        # Check for trend reversal (was going up, now going down)
-        if move_pct <= -move_threshold and ema_slope < -ema_slope_threshold:
-            new_regime = TREND_DOWN
+    # ── Reset conditions (simple binary reset) ──
+    if current_regime in (TREND_UP, TREND_DOWN):
+        # Check if spot retraced past anchor → immediate reset
+        if current_regime == TREND_UP and move_pct <= 0:
+            # Price dropped below anchor — trend clearly over
+            new_regime = TREND_NORMAL
+            new_tier = TREND_TIER_NONE
             session['_trend_anchor_spot'] = spot_price
             session['_trend_high'] = spot_price
             session['_trend_low'] = spot_price
             session['_trend_calm_beats'] = 0
-
-    elif current_regime == TREND_DOWN:
-        # ── Reset conditions ──
-        has_retrace = retrace_from_low >= retrace_threshold_pct
-        ema_calmed = abs(ema_slope) < ema_slope_threshold
-
-        if has_retrace and ema_calmed:
-            calm_beats = session.get('_trend_calm_beats', 0) + 1
-            session['_trend_calm_beats'] = calm_beats
-            if calm_beats >= params.get('trend_reset_beats', 5):
-                new_regime = TREND_NORMAL
-                session['_trend_anchor_spot'] = spot_price
-                session['_trend_high'] = spot_price
-                session['_trend_low'] = spot_price
-                session['_trend_calm_beats'] = 0
-        else:
-            session['_trend_calm_beats'] = 0
-
-        # Check for trend reversal (was going down, now going up)
-        if move_pct >= move_threshold and ema_slope > ema_slope_threshold:
-            new_regime = TREND_UP
+        elif current_regime == TREND_DOWN and move_pct >= 0:
+            # Price rose above anchor — trend clearly over
+            new_regime = TREND_NORMAL
+            new_tier = TREND_TIER_NONE
             session['_trend_anchor_spot'] = spot_price
             session['_trend_high'] = spot_price
             session['_trend_low'] = spot_price
             session['_trend_calm_beats'] = 0
+        else:
+            # Check gradual retracement + calm beats
+            if current_regime == TREND_UP:
+                has_retrace = retrace_from_high >= retrace_threshold_pct
+            else:
+                has_retrace = retrace_from_low >= retrace_threshold_pct
 
-    # ── Log transition ──
-    if new_regime != current_regime:
+            ema_calmed = abs(ema_slope) < ema_slope_threshold
+
+            if has_retrace and ema_calmed:
+                calm_beats = session.get('_trend_calm_beats', 0) + 1
+                session['_trend_calm_beats'] = calm_beats
+                if calm_beats >= params.get('trend_reset_beats', 5):
+                    new_regime = TREND_NORMAL
+                    new_tier = TREND_TIER_NONE
+                    session['_trend_anchor_spot'] = spot_price
+                    session['_trend_high'] = spot_price
+                    session['_trend_low'] = spot_price
+                    session['_trend_calm_beats'] = 0
+            else:
+                session['_trend_calm_beats'] = 0
+
+            # Check for trend reversal (was up, now strongly down or vice versa)
+            tier1_pct = params.get('trend_tier1_pct', 0.5)
+            if current_regime == TREND_UP and move_pct <= -tier1_pct and ema_slope < -ema_slope_threshold:
+                new_regime = TREND_DOWN
+                new_tier = _compute_trend_tier(abs_move, True, is_fast_move, params)
+                session['_trend_anchor_spot'] = spot_price
+                session['_trend_high'] = spot_price
+                session['_trend_low'] = spot_price
+                session['_trend_calm_beats'] = 0
+            elif current_regime == TREND_DOWN and move_pct >= tier1_pct and ema_slope > ema_slope_threshold:
+                new_regime = TREND_UP
+                new_tier = _compute_trend_tier(abs_move, True, is_fast_move, params)
+                session['_trend_anchor_spot'] = spot_price
+                session['_trend_high'] = spot_price
+                session['_trend_low'] = spot_price
+                session['_trend_calm_beats'] = 0
+
+    # ── Log tier transitions ──
+    if new_tier != current_tier or new_regime != current_regime:
         session['_trend_since'] = now
-        log.info(
-            f"Trend regime transition: {current_regime} → {new_regime} "
-            f"(move={move_pct:+.2f}%, EMA_slope={ema_slope:+.1f}, "
-            f"anchor=${anchor:.0f}, spot=${spot_price:.0f})"
-        )
+        tier_names = {
+            TREND_TIER_NONE: 'NONE',
+            TREND_TIER_ALERT: 'T1:ALERT',
+            TREND_TIER_GUARD: 'T2:GUARD',
+            TREND_TIER_BLOCK: 'T3:BLOCK',
+            TREND_TIER_WIND_DOWN: 'T4:WIND_DOWN',
+        }
+        old_tier_name = tier_names.get(current_tier, str(current_tier))
+        new_tier_name = tier_names.get(new_tier, str(new_tier))
 
+        if new_tier > current_tier:
+            log.warning(
+                f"Trend ESCALATION: {current_regime}(tier={old_tier_name}) → "
+                f"{new_regime}(tier={new_tier_name}) "
+                f"(move={move_pct:+.2f}%, EMA_slope={ema_slope:+.1f}, "
+                f"accel={accel_move_pct:+.2f}%, anchor=${anchor:.0f}, spot=${spot_price:.0f})"
+            )
+        elif new_tier < current_tier:
+            log.info(
+                f"Trend RESET: {current_regime}(tier={old_tier_name}) → "
+                f"{new_regime}(tier={new_tier_name}) "
+                f"(move={move_pct:+.2f}%, retracement sufficient, anchor reset to ${spot_price:.0f})"
+            )
+        else:
+            log.info(
+                f"Trend regime transition: {current_regime} → {new_regime} "
+                f"(tier={new_tier_name}, move={move_pct:+.2f}%, "
+                f"EMA_slope={ema_slope:+.1f}, anchor=${anchor:.0f}, spot=${spot_price:.0f})"
+            )
+
+    # ── Auto-trigger wind-down at Tier 4 ──
+    if new_tier >= TREND_TIER_WIND_DOWN:
+        if not session.get('_trend_wind_down_triggered'):
+            session['_trend_wind_down_triggered'] = True
+            log.warning(
+                f"TREND TIER 4: Auto-triggering wind-down mode "
+                f"(move={move_pct:+.2f}% from anchor=${anchor:.0f})"
+            )
+
+    # ── Store all state ──
     session['_trend_regime'] = new_regime
+    session['_trend_tier'] = new_tier
+    session['_trend_direction'] = direction if new_tier > TREND_TIER_NONE else 'none'
+
     return new_regime
 
 
@@ -580,31 +733,41 @@ def _compute_regime_action(session: Dict) -> str:
     if gamma_regime == GAMMA_HARD:
         return ACTION_BLOCK_ALL_SELLS
 
-    # Priority 5: Trend detection (directional blocking)
+    # Priority 5: Trend detection — tiered response (IMP-2)
     # + Vol ELEVATED compounds with trend
+    trend_tier = session.get('_trend_tier', TREND_TIER_NONE)
+
     if trend_regime == TREND_UP and vol_regime == VOL_ELEVATED:
-        # Both: block all sells (conservative — Section D.3)
         return ACTION_BLOCK_ALL_SELLS
     if trend_regime == TREND_DOWN and vol_regime == VOL_ELEVATED:
         return ACTION_BLOCK_ALL_SELLS
 
     if vol_regime == VOL_ELEVATED:
-        # Vol ELEVATED alone → block new sells
         return ACTION_BLOCK_ALL_SELLS
 
-    if trend_regime == TREND_UP:
-        # Block CE sells (adding short calls into rally = dangerous)
-        # PE adjustments still allowed
-        if trend_action_cfg == 'wind_down':
-            session['_trend_wind_down_triggered'] = True
-        return ACTION_BLOCK_CE_SELLS
+    # Tier 4: wind-down + block all sells
+    if trend_tier >= TREND_TIER_WIND_DOWN:
+        session['_trend_wind_down_triggered'] = True
+        return ACTION_BLOCK_ALL_SELLS
 
-    if trend_regime == TREND_DOWN:
-        # Block PE sells (adding short puts into drop = dangerous)
-        # CE adjustments still allowed
-        if trend_action_cfg == 'wind_down':
-            session['_trend_wind_down_triggered'] = True
-        return ACTION_BLOCK_PE_SELLS
+    # Tier 3: block ALL sells (both CE and PE)
+    if trend_tier >= TREND_TIER_BLOCK:
+        return ACTION_BLOCK_ALL_SELLS
+
+    # Tier 2: block aggressor-side sells only
+    if trend_tier >= TREND_TIER_GUARD:
+        if trend_regime == TREND_UP:
+            if trend_action_cfg == 'wind_down':
+                session['_trend_wind_down_triggered'] = True
+            return ACTION_BLOCK_CE_SELLS
+        if trend_regime == TREND_DOWN:
+            if trend_action_cfg == 'wind_down':
+                session['_trend_wind_down_triggered'] = True
+            return ACTION_BLOCK_PE_SELLS
+
+    # Tier 1: warn only (lot reduction handled in engine)
+    if trend_tier >= TREND_TIER_ALERT:
+        return ACTION_WARN
 
     # Priority 6: Gamma soft → warn only
     if gamma_regime == GAMMA_SOFT:
@@ -674,6 +837,8 @@ class MMMRegimeEngine:
             'vol_regime': session.get('_vol_regime', VOL_NORMAL),
             'gamma_regime': session.get('_gamma_regime', GAMMA_NORMAL),
             'trend_regime': session.get('_trend_regime', TREND_NORMAL),
+            'trend_tier': session.get('_trend_tier', TREND_TIER_NONE),
+            'trend_direction': session.get('_trend_direction', 'none'),
             'regime_action': session.get('_regime_action', ACTION_NORMAL),
             'details': {
                 'iv_change_pct': session.get('_vol_iv_change_pct', 0),
@@ -685,6 +850,9 @@ class MMMRegimeEngine:
                 'spot_move_pct': session.get('_trend_move_pct', 0),
                 'ema_slope': session.get('_trend_ema_slope', 0),
                 'trend_anchor': session.get('_trend_anchor_spot', 0),
+                'trend_tier': session.get('_trend_tier', TREND_TIER_NONE),
+                'trend_direction': session.get('_trend_direction', 'none'),
+                'trend_acceleration_move_pct': session.get('_trend_acceleration_move_pct', 0),
             },
         }
 
@@ -723,10 +891,12 @@ class MMMRegimeEngine:
             return True, ' + '.join(reasons) if reasons else 'Regime block'
 
         if action == ACTION_BLOCK_CE_SELLS and sell_side.lower() == 'ce':
-            return True, f'CE sells blocked — Trend UP (spot +{session.get("_trend_move_pct", 0):.1f}%)'
+            tier = session.get('_trend_tier', 0)
+            return True, f'CE sells blocked — Trend UP Tier {tier} (spot +{session.get("_trend_move_pct", 0):.1f}%)'
 
         if action == ACTION_BLOCK_PE_SELLS and sell_side.lower() == 'pe':
-            return True, f'PE sells blocked — Trend DOWN (spot {session.get("_trend_move_pct", 0):.1f}%)'
+            tier = session.get('_trend_tier', 0)
+            return True, f'PE sells blocked — Trend DOWN Tier {tier} (spot {session.get("_trend_move_pct", 0):.1f}%)'
 
         return False, ''
 

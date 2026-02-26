@@ -353,22 +353,32 @@ DEFAULT_PARAMS = {
     'gamma_emergency_limit': 10000.0,     # dollar gamma emergency (force reduce) — BTC-scaled
     'gamma_near_expiry_multiplier': 0.5,  # tighten limits by this factor in last 30 min
 
-    # Section C: Trend Detection Guard
+    # Section C: Trend Detection Guard — Tiered Response (IMP-2)
     'trend_enabled': True,                 # master switch for trend guard
-    'trend_move_pct': 1.5,               # % move from anchor to trigger
+    'trend_tier1_pct': 0.5,              # % move from anchor → Tier 1 (alert + lot reduction)
+    'trend_tier2_pct': 1.0,              # % move from anchor → Tier 2 (block aggressor-side sells)
+    'trend_tier3_pct': 1.5,              # % move from anchor → Tier 3 (block ALL sells)
+    'trend_tier4_pct': 2.0,              # % move from anchor → Tier 4 (auto wind-down)
+    'trend_tier1_lot_reduction': 0.30,   # lot reduction at Tier 1 (0.30 = reduce by 30%)
+    'trend_move_pct': 1.5,               # DEPRECATED — kept for backward compat, use tier2_pct
     'trend_retrace_pct': 30,             # % retracement required to reset
     'trend_ema_period': 10,              # EMA period in beats
-    'trend_ema_slope_threshold': 25,     # EMA slope threshold
+    'trend_ema_slope_threshold': 25,     # EMA slope threshold (Tier 1 confirmation only)
     'trend_action': 'block_sells',       # action: block_sells / pause / wind_down
     'trend_reset_beats': 5,              # beats calm required before reset
+    'trend_acceleration_window_s': 600,  # acceleration window in seconds (10 min)
+    'trend_acceleration_pct': 0.5,       # fast-move % to bypass EMA (within accel window)
 
     # Perpetual Futures Delta Hedge (Fix #26)
     'perp_hedge_enabled': False,           # master switch — disabled until user opts in
+    'perp_hedge_mode': 'atm_only',         # 'full' = always hedge, 'atm_only' = hedge only when original strike ≈ ATM
+    'perp_hedge_atm_threshold_pct': 1.5,   # ATM proximity %: perp activates when original strike is within this % of spot
     'perp_hedge_delta_threshold': 0.02,    # min |Δ| to open initial hedge (BTC units)
     'perp_hedge_ratio': 1.0,              # fraction of delta to neutralize (0.3–1.0)
     'perp_hedge_rebalance_band': 0.005,   # min |effective_Δ| to trigger rebalance
     'perp_hedge_max_lots': 50,            # hard cap on perp position size (lots)
     'perp_hedge_cooldown_sec': 30,        # minimum seconds between hedge executions
+    'perp_hedge_max_flips_per_hour': 6,   # M-8: max direction flips per hour
 }
 
 # Which parameters can be changed while algo is running
@@ -395,12 +405,16 @@ HOT_RELOAD_PARAMS = {
     'vol_regime_cooldown_beats',
     'gamma_cap_enabled', 'gamma_soft_limit', 'gamma_hard_limit',
     'gamma_emergency_limit', 'gamma_near_expiry_multiplier',
-    'trend_enabled', 'trend_move_pct', 'trend_retrace_pct',
+    'trend_enabled', 'trend_tier1_pct', 'trend_tier2_pct',
+    'trend_tier3_pct', 'trend_tier4_pct', 'trend_tier1_lot_reduction',
+    'trend_move_pct', 'trend_retrace_pct',
     'trend_ema_period', 'trend_ema_slope_threshold', 'trend_action',
-    'trend_reset_beats',
+    'trend_reset_beats', 'trend_acceleration_window_s', 'trend_acceleration_pct',
     # Perpetual Futures Delta Hedge
-    'perp_hedge_enabled', 'perp_hedge_delta_threshold', 'perp_hedge_ratio',
+    'perp_hedge_enabled', 'perp_hedge_mode', 'perp_hedge_atm_threshold_pct',
+    'perp_hedge_delta_threshold', 'perp_hedge_ratio',
     'perp_hedge_rebalance_band', 'perp_hedge_max_lots', 'perp_hedge_cooldown_sec',
+    'perp_hedge_max_flips_per_hour',
 }
 
 
@@ -568,6 +582,8 @@ def create_session(
         '_gamma_data_incomplete': False,
 
         '_trend_regime': 'NORMAL',
+        '_trend_tier': 0,                # Tiered trend level: 0=none, 1=alert, 2=guard, 3=block, 4=wind_down
+        '_trend_direction': 'none',      # 'up', 'down', 'none'
         '_trend_since': None,
         '_trend_anchor_spot': 0.0,
         '_trend_high': 0.0,
@@ -577,6 +593,7 @@ def create_session(
         '_trend_ema_prev': 0.0,
         '_trend_ema_slope': 0.0,
         '_trend_move_pct': 0.0,
+        '_trend_acceleration_move_pct': 0.0,  # Rolling fast-move %
 
         '_regime_action': 'NORMAL',
 

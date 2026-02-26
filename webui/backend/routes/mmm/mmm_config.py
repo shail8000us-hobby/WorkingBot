@@ -72,16 +72,28 @@ PARAM_RULES = {
     'gamma_hard_limit':          {'type': float, 'min': 1,    'max': 50000, 'hot': True},
     'gamma_emergency_limit':     {'type': float, 'min': 1,    'max': 50000, 'hot': True},
     'gamma_near_expiry_multiplier': {'type': float, 'min': 0.1, 'max': 1.0, 'hot': True},
-    # Regime Controls — Trend Detection Guard
+    # Regime Controls — Trend Detection Guard (Tiered — IMP-2)
     'trend_enabled':             {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'trend_tier1_pct':           {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
+    'trend_tier2_pct':           {'type': float, 'min': 0.2,  'max': 8.0,   'hot': True},
+    'trend_tier3_pct':           {'type': float, 'min': 0.5,  'max': 10.0,  'hot': True},
+    'trend_tier4_pct':           {'type': float, 'min': 0.5,  'max': 15.0,  'hot': True},
+    'trend_tier1_lot_reduction': {'type': float, 'min': 0.05, 'max': 0.90,  'hot': True},
     'trend_move_pct':            {'type': float, 'min': 0.5,  'max': 10,    'hot': True},
     'trend_retrace_pct':         {'type': int,   'min': 10,   'max': 80,    'hot': True},
     'trend_ema_period':          {'type': int,   'min': 5,    'max': 50,    'hot': True},
     'trend_ema_slope_threshold': {'type': int,   'min': 5,    'max': 100,   'hot': True},
     'trend_action':              {'type': str,   'min': None, 'max': None,  'hot': True},
     'trend_reset_beats':         {'type': int,   'min': 2,    'max': 30,    'hot': True},
+    'trend_acceleration_window_s': {'type': int, 'min': 60,   'max': 3600,  'hot': True},
+    'trend_acceleration_pct':    {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
     # Perpetual Futures Delta Hedge (Fix #26)
     'perp_hedge_enabled':        {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # Fix #26.2: Perp hedge mode — 'full' hedges entire portfolio delta every heartbeat,
+    # 'atm_only' activates perp ONLY when any strike is within atm_threshold_pct of spot,
+    # letting OTM positions benefit from theta decay undisturbed.
+    'perp_hedge_mode':           {'type': str,   'min': None, 'max': None,  'hot': True},
+    'perp_hedge_atm_threshold_pct': {'type': float, 'min': 0.5, 'max': 5.0, 'hot': True},
     'perp_hedge_delta_threshold': {'type': float, 'min': 0.005, 'max': 0.10, 'hot': True},
     'perp_hedge_ratio':          {'type': float, 'min': 0.1,  'max': 1.0,  'hot': True},
     'perp_hedge_rebalance_band': {'type': float, 'min': 0.001, 'max': 0.02, 'hot': True},
@@ -240,6 +252,19 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             "on normal spread fluctuation. Minimum recommended value is $100."
         )
 
+    # IMP-2: Trend tier ordering: tier1 < tier2 < tier3 < tier4
+    tier_keys = ['trend_tier1_pct', 'trend_tier2_pct', 'trend_tier3_pct', 'trend_tier4_pct']
+    tier_vals = [(k, validated.get(k)) for k in tier_keys]
+    tier_vals = [(k, v) for k, v in tier_vals if v is not None]
+    for i in range(len(tier_vals) - 1):
+        k1, v1 = tier_vals[i]
+        k2, v2 = tier_vals[i + 1]
+        if v1 >= v2:
+            errors.append(
+                f"Trend tier ordering violated: {k1} ({v1}) must be < {k2} ({v2}). "
+                "Each tier threshold must be strictly higher than the previous."
+            )
+
     # M-5 fix: circuit breaker threshold sanity check
     cb_threshold = validated.get('circuit_breaker_threshold')
     if cb_threshold is not None and cb_threshold < 3:
@@ -312,16 +337,25 @@ def get_param_info() -> Dict[str, Dict]:
         'gamma_hard_limit': 'Dollar gamma hard limit — block all new sell orders when exceeded',
         'gamma_emergency_limit': 'Dollar gamma emergency — force wind-down buybacks to reduce gamma below hard limit',
         'gamma_near_expiry_multiplier': 'Tighten gamma limits by this factor in last 30 minutes (gamma explodes near expiry for ATM strikes)',
-        # Regime Controls — Trend Detection Guard
-        'trend_enabled': 'Enable trend detection guard — blocks exposure-increasing sells into strong directional moves',
-        'trend_move_pct': 'Percentage move from session anchor to trigger trend guard (1.5% = ~$1,500 at BTC $100K)',
-        'trend_retrace_pct': 'Spot must retrace this % of the move before trend guard resets (30 = need 30% retracement)',
-        'trend_ema_period': 'EMA period in beats for slope calculation — confirms sustained directional drift',
-        'trend_ema_slope_threshold': 'EMA slope threshold for trend confirmation — higher = less sensitive',
-        'trend_action': 'Action when trend triggers: block_sells (block dangerous-side sells), pause, wind_down (also activate wind-down)',
-        'trend_reset_beats': 'Must stay calm (retrace + low EMA slope) for this many beats before resetting to NORMAL',
+        # Regime Controls — Trend Detection Guard (Tiered — IMP-2)
+        'trend_enabled': 'Master switch for the tiered trend detection guard. Detects strong directional BTC moves and responds with graduated actions: lot reduction → directional block → full block → wind-down.',
+        'trend_tier1_pct': 'Tier 1 (ALERT): % move from session anchor to start reducing hedge lots. At this level, the algo logs a warning and reduces new hedge lot sizes by trend_tier1_lot_reduction %. Recommended: 0.5% (~$500 at BTC $100K). This is the earliest "soft" response.',
+        'trend_tier2_pct': 'Tier 2 (GUARD): % move from session anchor to block sells on the aggressor side. In a rally, CE sells are blocked (no more short calls into a rising market). PE adjustments still allowed. Recommended: 1.0% (~$1,000 at BTC $100K).',
+        'trend_tier3_pct': 'Tier 3 (BLOCK): % move from session anchor to block ALL new option sells (both CE and PE). Existing positions are protected — no new risk added. This is a full freeze on the book. Recommended: 1.5% (~$1,500 at BTC $100K).',
+        'trend_tier4_pct': 'Tier 4 (WIND-DOWN): % move from session anchor to automatically activate wind-down mode without operator confirmation. The algo starts buying back the most exposed side. Recommended: 2.0% (~$2,000 at BTC $100K).',
+        'trend_tier1_lot_reduction': 'At Tier 1, reduce calculated hedge lot size by this fraction. 0.30 = reduce lots by 30% (sell 70% of what the formula calculates). Higher = more conservative at early trend stages.',
+        'trend_move_pct': 'DEPRECATED — Legacy single-threshold trend trigger. Kept for backward compatibility. The tiered system (tier1–tier4) supersedes this. If tier params are not set, this is used as fallback for Tier 2.',
+        'trend_retrace_pct': 'Spot must retrace this percentage of the move before the trend guard resets to Tier 0. 30% means if BTC moved $2K up, it needs to pull back $600 before the guard clears. Prevents premature reset.',
+        'trend_ema_period': 'EMA period in heartbeats for slope calculation. Used for Tier 1 confirmation only — confirms sustained directional drift vs a one-time spike. Tiers 2-4 fire on absolute % move alone (no EMA needed).',
+        'trend_ema_slope_threshold': 'EMA slope threshold for Tier 1 confirmation only. Higher = less sensitive. Tiers 2-4 do not require EMA confirmation — large moves speak for themselves.',
+        'trend_action': 'Action when trend triggers: block_sells (block dangerous-side sells), pause, wind_down (also activate wind-down). At Tier 4, wind-down is auto-triggered regardless of this setting.',
+        'trend_reset_beats': 'Must stay calm (retrace + low EMA slope) for this many beats before resetting to Tier 0 (NORMAL). Simple binary reset — goes from any tier straight to 0.',
+        'trend_acceleration_window_s': 'Rate-of-change window in seconds. If BTC moves trend_acceleration_pct within this window, bypasses EMA confirmation for Tier 1. Catches sharp spikes that EMA would lag behind. Default: 600s (10 min).',
+        'trend_acceleration_pct': 'Fast-move threshold: if BTC moves this % within the acceleration window, bypass EMA and enter Tier 1+. Catches sudden spikes vs slow drift. Default: 0.5% (~$500 at BTC $100K in 10 min).',
         # Perpetual Futures Delta Hedge
         'perp_hedge_enabled': 'Enable BTCUSD perpetual futures delta hedge — neutralizes portfolio delta from short options positions using a linear instrument (zero gamma impact)',
+        'perp_hedge_mode': 'Hedge mode: "full" = hedge entire portfolio delta every heartbeat, "atm_only" = activate perp ONLY when a strike is near ATM (lets OTM theta profit run undisturbed)',
+        'perp_hedge_atm_threshold_pct': 'ATM proximity threshold (%). In "atm_only" mode, perp activates only when any strike is within this % of spot price. E.g., 1.5 = strike must be within 1.5% of spot. Only used when mode is "atm_only".',
         'perp_hedge_max_flips_per_hour': 'M-8: Maximum perp hedge direction flips per hour to prevent spread drag in choppy markets (default 6)',
         # Circuit breaker
         'circuit_breaker_threshold': 'M-5: Consecutive failures to trip circuit breaker (default 5; raise to 10+ during volatile API periods)',
