@@ -35,7 +35,21 @@ def detect_reversal(session: Dict, current_aggressor: str) -> bool:
 
     Returns:
         True if this is a reversal
+
+    Audit fix: Returns False during wind-down mode. Wind-down changes the
+    aggressor side as part of the buy-back logic, which can look like a
+    direction change. Treating it as a reversal would fire a false reversal
+    event and incorrectly reset the cooldown / trigger snapshots.
     """
+    # Audit fix: no reversal detection during wind-down
+    from .mmm_wind_down import is_wind_down_active
+    if is_wind_down_active(session):
+        log.debug(
+            f"detect_reversal: wind-down active — suppressing reversal check "
+            f"(aggressor={current_aggressor.upper()})"
+        )
+        return False
+
     last = session.get('last_aggressor', 'NONE')
 
     # First-ever adjustment is NOT a reversal
@@ -162,12 +176,19 @@ def record_reversal(session: Dict, from_side: str, to_side: str):
             return
 
     session['reversal_count'] = session.get('reversal_count', 0) + 1
-    session.setdefault('reversal_history', []).append({
+    history = session.setdefault('reversal_history', [])
+    history.append({
         'from': from_side.upper(),
         'to': to_side.upper(),
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'adjustment_count_at': session.get('adjustment_count', 0),
     })
+    # Audit fix: cap reversal_history to prevent unbounded memory growth
+    # in long-running sessions (100s of reversals in volatile markets).
+    # Keep the most recent 50 for display — older history isn't actionable.
+    _MAX_REVERSAL_HISTORY = 50
+    if len(history) > _MAX_REVERSAL_HISTORY:
+        del history[:-_MAX_REVERSAL_HISTORY]
 
 
 def handle_reversal_skip_transition(

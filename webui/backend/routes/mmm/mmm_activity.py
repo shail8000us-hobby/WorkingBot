@@ -293,8 +293,10 @@ class MMMActivityLog:
                 category = cat
                 break
 
+        # Audit fix: monotonic _id_counter guarantees uniqueness (collision with same-second + same-index is fixed)
+        self._id_counter = getattr(self, '_id_counter', 0) + 1
         activity = {
-            'id': f"act_{datetime.now(timezone.utc).strftime('%H%M%S')}_{len(self._activities) % 1000:03d}",
+            'id': f"act_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{self._id_counter:06d}",
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'type': activity_type,
             'type_label': ACTIVITY_TYPES.get(activity_type, activity_type),

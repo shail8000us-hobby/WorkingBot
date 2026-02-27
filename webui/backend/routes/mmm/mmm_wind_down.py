@@ -307,6 +307,11 @@ def apply_lifo_removals(
     Fix #23: Uses ID-based lookup in positions[] (Unified Ledger).
     Fully closes positions whose lots reach 0; partially reduces others.
 
+    Audit fix (rollback safety): Operates on a deep copy of positions[].
+    If any exception occurs mid-removal, the original positions[] is restored
+    atomically so the session is never left in a half-removed state. Only
+    commits the mutation if all records are applied successfully.
+
     Args:
         side_state: Session side state (mutated in place)
         close_records: From get_lifo_close_fills()
@@ -315,34 +320,51 @@ def apply_lifo_removals(
         Weighted average entry premium of closed lots
     """
     from datetime import datetime, timezone
+    from copy import deepcopy
     from .mmm_state import recompute_side_lots
 
     total_lots_closed = 0
     weighted_premium_sum = 0.0
     now = datetime.now(timezone.utc).isoformat()
 
-    positions = side_state.get('positions', [])
-    pos_index = {p['id']: p for p in positions}   # O(1) lookup by ID
+    # Audit fix: operate on a COPY so we can rollback on error
+    original_positions = side_state.get('positions', [])
+    positions_copy = deepcopy(original_positions)
+    pos_index = {p['id']: p for p in positions_copy}   # O(1) lookup by ID
 
-    for record in close_records:
-        lots = record['lots']
-        premium = record['premium']
-        weighted_premium_sum += premium * lots
-        total_lots_closed += lots
+    try:
+        for record in close_records:
+            lots = record['lots']
+            premium = record['premium']
+            weighted_premium_sum += premium * lots
+            total_lots_closed += lots
 
-        pos_id = record.get('_pos_id')
-        if pos_id and pos_id in pos_index:
-            pos = pos_index[pos_id]
-            pos['lots'] = max(0, pos['lots'] - lots)
-            if pos['lots'] == 0:
-                pos['status'] = 'closed'
-                pos['closed_at'] = now
+            pos_id = record.get('_pos_id')
+            if pos_id and pos_id in pos_index:
+                pos = pos_index[pos_id]
+                pos['lots'] = max(0, pos['lots'] - lots)
+                if pos['lots'] == 0:
+                    pos['status'] = 'closed'
+                    pos['closed_at'] = now
+
+        # Success: atomically commit the mutated copy
+        side_state['positions'] = positions_copy
+
+    except Exception as e:
+        # Rollback: restore original positions (no partial state)
+        side_state['positions'] = original_positions
+        log.error(
+            f"apply_lifo_removals: Exception during removal, rolled back to "
+            f"original positions. Error: {e}"
+        )
+        raise
 
     # Recompute derived views and scalars from updated positions[]
     recompute_side_lots(side_state)
 
     avg_entry = weighted_premium_sum / total_lots_closed if total_lots_closed > 0 else 0
     return avg_entry
+
 
 
 def get_wind_down_close_threshold(session: Dict) -> float:

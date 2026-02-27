@@ -35,7 +35,26 @@ def _migrate_side_to_positions(side_state: Dict) -> None:
     frozen_positions[]) into a single positions[] list with unique IDs and
     lifecycle status. Called automatically by recompute_side_lots() when
     positions[] key is absent. Idempotent.
+
+    Audit fix (crash-safety): Two-phase flag prevents double-migration on restart:
+      1. '_positions_migrating' set at START of work (blocks re-entry if crash occurs
+         mid-function — on next restart we log a warning and do a clean fresh migration
+         since positions[] was not written yet).
+      2. On success: '_positions_migrating' removed and '_positions_migrated' set.
     """
+    # Guard: already fully migrated — nothing to do
+    if side_state.get('_positions_migrated'):
+        return
+
+    # Crash-recovery: a previous migration started but never finished
+    if side_state.get('_positions_migrating'):
+        log.warning(
+            f"[{side_state.get('side', 'XX')}] Incomplete prior migration detected "
+            "(_positions_migrating). Re-running clean migration to recover."
+        )
+
+    # Phase 1: Mark in-progress BEFORE any mutations
+    side_state['_positions_migrating'] = True
     now = datetime.now(timezone.utc).isoformat()
     positions = []
     counter = 0
@@ -106,8 +125,11 @@ def _migrate_side_to_positions(side_state: Dict) -> None:
             'source': frozen.get('source', ''),
         })
 
+    # Phase 2: Atomically write results and swap flags
     side_state['positions'] = positions
     side_state['_pos_counter'] = counter
+    side_state.pop('_positions_migrating', None)   # Remove in-progress flag
+    side_state['_positions_migrated'] = True        # Set permanent completion flag
     log.debug(
         f"[Fix #23] Migrated {side} to Unified Position Ledger: "
         f"{len(positions)} position(s)"

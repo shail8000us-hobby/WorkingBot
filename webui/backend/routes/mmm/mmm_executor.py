@@ -65,6 +65,37 @@ INITIAL_PLACEMENT_RETRIES = 3 # Max retries for initial order placement
 ORDER_STATES_FILLED = {'filled', 'closed', 'completed'}
 ORDER_STATES_DEAD = {'cancelled', 'canceled', 'rejected'}
 
+import math as _math  # Module-level — audit fix: was imported per-scope 3× inside smart/emergency_execute
+
+
+def _parse_fill_price(raw_fill) -> float:
+    """
+    Audit fix: Deduplicated fill-price parser (was copy-pasted 4× in smart_execute
+    and emergency_execute with slight variations that could diverge on future edits).
+
+    Validates and converts the raw average_fill_price from the Delta API:
+      - Must not be None, empty string, or '0'
+      - Must be a valid finite float
+      - Must be > 0 and < $1,000,000 (sanity check)
+
+    Raises ValueError with a descriptive message on any invalid value.
+    Returns the parsed float fill price on success.
+    """
+    if raw_fill is None or str(raw_fill).strip() in ('', '0'):
+        raise ValueError(f"average_fill_price is missing or zero: {raw_fill!r}")
+    try:
+        price = float(raw_fill)
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Cannot parse average_fill_price {raw_fill!r}: {e}") from e
+    if _math.isnan(price) or _math.isinf(price):
+        raise ValueError(f"average_fill_price is NaN or Inf: {raw_fill!r}")
+    if price <= 0 or price > 1_000_000:
+        raise ValueError(f"average_fill_price out of range: {price}")
+    return price
+
+
+
+
 
 class MMMExecutor:
     """
@@ -269,44 +300,18 @@ class MMMExecutor:
                 
                 # CRITICAL: Extract ONLY actual fill price, never limit price
                 raw_fill = final_order_data.get('average_fill_price')
-                
-                if not raw_fill or str(raw_fill).strip() == '' or str(raw_fill) == '0':
-                    # NEVER fall back to limit price - that's the ORDER price, not FILL price
-                    log.error(
-                        f"❌ Order {order_id} marked as filled but average_fill_price is missing/zero! "
-                        f"Order data: state={final_order_data.get('state')}, "
-                        f"avg_fill={raw_fill}, price={final_order_data.get('price')}"
-                    )
-                    return self._failure(
-                        f"Order filled but average_fill_price is invalid ({raw_fill})",
-                        symbol, side, size,
-                        order_id=order_id, attempts=attempts,
-                        total_time=round(elapsed, 2),
-                    )
-                
-                # API returns prices as STRINGS — must cast to float
-                # Robust v2 Fix #22: Guard against NaN, Inf, and other non-numeric strings
-                import math as _math  # noqa: cached after first call
+
+                # Audit fix: using _parse_fill_price() helper (deduplicates 4 copies of this logic)
                 try:
-                    fill_price = float(raw_fill)
-                    if _math.isnan(fill_price) or _math.isinf(fill_price):
-                        raise ValueError(f"Invalid numeric value: {raw_fill}")
-                except (ValueError, TypeError) as _parse_err:
+                    fill_price = _parse_fill_price(raw_fill)
+                except ValueError as _parse_err:
                     log.error(
-                        f"❌ Order {order_id} has unparseable fill_price: {raw_fill!r} ({_parse_err})"
+                        f"❌ Order {order_id} fill price invalid: {_parse_err}. "
+                        f"Order data: state={final_order_data.get('state')}, "
+                        f"raw_fill={raw_fill!r}"
                     )
                     return self._failure(
-                        f"Cannot parse fill_price: {raw_fill}",
-                        symbol, side, size,
-                        order_id=order_id, attempts=attempts,
-                        total_time=round(elapsed, 2),
-                    )
-                
-                # Sanity check: fill price should be reasonable
-                if fill_price <= 0 or fill_price > 1000000:
-                    log.error(f"❌ Order {order_id} has invalid fill_price: {fill_price}")
-                    return self._failure(
-                        f"Invalid fill_price: {fill_price}",
+                        f"Invalid fill_price: {_parse_err}",
                         symbol, side, size,
                         order_id=order_id, attempts=attempts,
                         total_time=round(elapsed, 2),

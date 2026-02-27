@@ -1,272 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_120625_500",
-      "timestamp": "2026-02-26T12:06:25.673252+00:00",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "category": "orders",
-      "message": "\u2705 SELL P-BTC-64800-270226 FILLED @ $91.80 in 132.4s",
-      "session_id": "mmm27feb26-1",
-      "severity": "success",
-      "details": {
-        "order_id": "1195913086",
-        "fill_price": 91.8,
-        "elapsed": 132.4,
-        "attempts": 3
-      }
-    },
-    {
-      "id": "act_120625_500",
-      "timestamp": "2026-02-26T12:06:25.674242+00:00",
-      "type": "entry_complete",
-      "type_label": "Entry Complete",
-      "category": "orders",
-      "message": "\u2705 Entry filled: CE@$96.50 + PE@$91.80 = $9415.00 total premium",
-      "session_id": "mmm27feb26-1",
-      "severity": "success",
-      "details": {
-        "ce_fill": 96.5,
-        "pe_fill": 91.8,
-        "total_premium": 9415.0
-      }
-    },
-    {
-      "id": "act_120625_500",
-      "timestamp": "2026-02-26T12:06:25.693447+00:00",
-      "type": "entry_complete",
-      "type_label": "Entry Complete",
-      "category": "orders",
-      "message": "Entry filled: CE@$96.50 + PE@$91.80 = $9.42 total",
-      "session_id": "mmm27feb26-1",
-      "severity": "success",
-      "details": {
-        "ce_fill": 96.5,
-        "pe_fill": 91.8,
-        "total_premium": 9.415000000000001
-      }
-    },
-    {
-      "id": "act_120625_496",
-      "timestamp": "2026-02-26T12:06:25.728300+00:00",
-      "type": "session_started",
-      "type_label": "Session Started",
-      "category": "system",
-      "message": "Session mmm27feb26-1 is now RUNNING \u2014 heartbeat monitor active",
-      "session_id": "mmm27feb26-1",
-      "severity": "success",
-      "details": {}
-    },
-    {
-      "id": "act_140253_497",
-      "timestamp": "2026-02-26T14:02:53.554122+00:00",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "category": "adjustments",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($102.25), hedging with CE ($76.28)",
-      "session_id": "mmm27feb26-1",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 102.24627432,
-        "hedge": "CE",
-        "hedge_premium": 76.28029216
-      }
-    },
-    {
-      "id": "act_140253_498",
-      "timestamp": "2026-02-26T14:02:53.590682+00:00",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "category": "orders",
-      "message": "SELL 6 lot(s) C-BTC-71500-270226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-71500-270226",
-        "side": "sell",
-        "size": 6
-      }
-    },
-    {
-      "id": "act_140254_499",
-      "timestamp": "2026-02-26T14:02:54.899338+00:00",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "category": "orders",
-      "message": "SELL 6 C-BTC-71500-270226 @ $75.50 (bid=$74.00, ask=$77.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1196042986",
-        "mid_price": 75.5,
-        "bid": 74.0,
-        "ask": 77.0
-      }
-    },
-    {
-      "id": "act_140331_500",
-      "timestamp": "2026-02-26T14:03:31.993805+00:00",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "category": "orders",
-      "message": "\u2705 SELL C-BTC-71500-270226 FILLED @ $75.50 in 38.4s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1196042986",
-        "fill_price": 75.5,
-        "elapsed": 38.4,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_140331_500",
-      "timestamp": "2026-02-26T14:03:31.994396+00:00",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "category": "adjustments",
-      "message": "\u2713 Adjustment Complete: SELL 6 lots CE @ 71500.0 for $75.50 (Type: standard)",
-      "session_id": "mmm27feb26-1",
-      "severity": "success",
-      "details": {
-        "side": "CE",
-        "strike": 71500.0,
-        "lots": 6,
-        "fill_price": 75.5,
-        "type": "standard",
-        "adjustment_number": 1
-      }
-    },
-    {
-      "id": "act_141524_500",
-      "timestamp": "2026-02-26T14:15:24.858320+00:00",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "category": "adjustments",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($88.07), hedging with PE ($77.77)",
-      "session_id": "mmm27feb26-1",
-      "severity": "info",
-      "details": {
-        "aggressor": "CE",
-        "aggressor_premium": 88.07333281,
-        "hedge": "PE",
-        "hedge_premium": 77.76637591
-      }
-    },
-    {
-      "id": "act_141524_500",
-      "timestamp": "2026-02-26T14:15:24.866632+00:00",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "category": "orders",
-      "message": "SELL 2 lot(s) P-BTC-64800-270226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "P-BTC-64800-270226",
-        "side": "sell",
-        "size": 2
-      }
-    },
-    {
-      "id": "act_141526_500",
-      "timestamp": "2026-02-26T14:15:26.169601+00:00",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "category": "orders",
-      "message": "SELL 2 P-BTC-64800-270226 @ $81.00 (bid=$79.00, ask=$83.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1196067522",
-        "mid_price": 81.0,
-        "bid": 79.0,
-        "ask": 83.0
-      }
-    },
-    {
-      "id": "act_141543_500",
-      "timestamp": "2026-02-26T14:15:43.577675+00:00",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "category": "orders",
-      "message": "\u2705 SELL P-BTC-64800-270226 FILLED @ $81.00 in 18.7s",
-      "session_id": null,
-      "severity": "success",
-      "details": {
-        "order_id": "1196067522",
-        "fill_price": 81.0,
-        "elapsed": 18.7,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_141543_500",
-      "timestamp": "2026-02-26T14:15:43.908886+00:00",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "category": "adjustments",
-      "message": "\u2713 Adjustment Complete: SELL 2 lots PE @ 64800.0 for $81.00 (Type: first_reversal)",
-      "session_id": "mmm27feb26-1",
-      "severity": "success",
-      "details": {
-        "side": "PE",
-        "strike": 64800.0,
-        "lots": 2,
-        "fill_price": 81.0,
-        "type": "first_reversal",
-        "adjustment_number": 2
-      }
-    },
-    {
-      "id": "act_144025_500",
-      "timestamp": "2026-02-26T14:40:25.626026+00:00",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "category": "adjustments",
-      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($87.29), hedging with CE ($72.44)",
-      "session_id": "mmm27feb26-1",
-      "severity": "info",
-      "details": {
-        "aggressor": "PE",
-        "aggressor_premium": 87.29469039,
-        "hedge": "CE",
-        "hedge_premium": 72.43907436
-      }
-    },
-    {
-      "id": "act_144025_500",
-      "timestamp": "2026-02-26T14:40:25.658837+00:00",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "category": "orders",
-      "message": "SELL 1 lot(s) C-BTC-71500-270226 \u2014 fetching prices...",
-      "session_id": null,
-      "severity": "progress",
-      "details": {
-        "symbol": "C-BTC-71500-270226",
-        "side": "sell",
-        "size": 1
-      }
-    },
-    {
-      "id": "act_144026_500",
-      "timestamp": "2026-02-26T14:40:26.807296+00:00",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "category": "orders",
-      "message": "SELL 1 C-BTC-71500-270226 @ $74.00 (bid=$71.00, ask=$77.00)",
-      "session_id": null,
-      "severity": "info",
-      "details": {
-        "order_id": "1196115770",
-        "mid_price": 74.0,
-        "bid": 71.0,
-        "ask": 77.0
-      }
-    },
-    {
       "id": "act_144033_500",
       "timestamp": "2026-02-26T14:40:33.935611+00:00",
       "type": "order_filled",
@@ -8948,7 +8682,7 @@
     },
     {
       "id": "act_024245_500",
-      "timestamp": "2026-02-27T02:42:45.124764+00:00",
+      "timestamp": "2026-02-27T02:42:45.141177+00:00",
       "type": "watchdog",
       "type_label": "watchdog",
       "category": "system",
@@ -8956,7 +8690,290 @@
       "session_id": "mmm27feb26-3",
       "severity": "warning",
       "details": {}
+    },
+    {
+      "id": "act_024333_500",
+      "timestamp": "2026-02-27T02:43:33.827453+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1196919029 not filled after 60s, repricing (attempt 4/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1196919029",
+        "attempt": 4
+      }
+    },
+    {
+      "id": "act_024336_500",
+      "timestamp": "2026-02-27T02:43:36.176890+00:00",
+      "type": "adjustment_skipped",
+      "type_label": "Adjustment Skipped",
+      "category": "adjustments",
+      "message": "\u274c Adjustment Failed: SELL 2 CE @ 68600.0 \u2014 execution error: Max reprice attempts exhausted after 252s",
+      "session_id": "mmm27feb26-3",
+      "severity": "error",
+      "details": {
+        "reason": "execution_error",
+        "aggressor": "PE",
+        "hedge": "CE",
+        "strike": 68600.0,
+        "lots": 2,
+        "adj_type": "first_reversal",
+        "error": "Max reprice attempts exhausted after 252s"
+      }
+    },
+    {
+      "id": "act_024339_500",
+      "timestamp": "2026-02-27T02:43:39.976868+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($71.16), hedging with CE ($17.49)",
+      "session_id": "mmm27feb26-1",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 71.16489534,
+        "hedge": "CE",
+        "hedge_premium": 17.4908424
+      }
+    },
+    {
+      "id": "act_024358_500",
+      "timestamp": "2026-02-27T02:43:58.681849+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm27feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_024528_500",
+      "timestamp": "2026-02-27T02:45:28.452376+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm27feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_024544_500",
+      "timestamp": "2026-02-27T02:45:44.685043+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($26.44), hedging with CE ($27.59)",
+      "session_id": "mmm27feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 26.43940322,
+        "hedge": "CE",
+        "hedge_premium": 27.58807753
+      }
+    },
+    {
+      "id": "act_024544_500",
+      "timestamp": "2026-02-27T02:45:44.689831+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 2 lot(s) C-BTC-68600-270226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-68600-270226",
+        "side": "sell",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_024546_500",
+      "timestamp": "2026-02-27T02:45:46.063626+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 2 C-BTC-68600-270226 @ $27.50 (bid=$27.00, ask=$28.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1196923394",
+        "mid_price": 27.5,
+        "bid": 27.0,
+        "ask": 28.0
+      }
+    },
+    {
+      "id": "act_024621_500",
+      "timestamp": "2026-02-27T02:46:21.777071+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-68600-270226 FILLED @ $27.50 in 37.1s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1196923394",
+        "fill_price": 27.5,
+        "elapsed": 37.1,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_024621_500",
+      "timestamp": "2026-02-27T02:46:21.797110+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 2 lots CE @ 68600.0 for $27.50 (Type: first_reversal)",
+      "session_id": "mmm27feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 68600.0,
+        "lots": 2,
+        "fill_price": 27.5,
+        "type": "first_reversal",
+        "adjustment_number": 4
+      }
+    },
+    {
+      "id": "act_024639_500",
+      "timestamp": "2026-02-27T02:46:39.803029+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "category": "system",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE active @ 66500.0: session=4 vs exchange=6.0 (other sessions=0)",
+      "session_id": "mmm27feb26-1",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "SIZE_MISMATCH",
+        "detail": "PE active @ 66500.0: session=4 vs exchange=6.0 (other sessions=0)",
+        "symbol": "P-BTC-66500-270226",
+        "session_lots": 4,
+        "exchange_size": 6.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_024639_500",
+      "timestamp": "2026-02-27T02:46:39.821733+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "category": "system",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE frozen @ 65800.0: session=10 vs exchange=75.0",
+      "session_id": "mmm27feb26-1",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 65800.0: session=10 vs exchange=75.0",
+        "symbol": "P-BTC-65800-270226",
+        "session_lots": 10,
+        "exchange_size": 75.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_024658_500",
+      "timestamp": "2026-02-27T02:46:58.660106+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm27feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_024828_500",
+      "timestamp": "2026-02-27T02:48:28.235530+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm27feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_024841_500",
+      "timestamp": "2026-02-27T02:48:41.894784+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "category": "system",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE active @ 65800.0: session=64 vs exchange=75.0 (other sessions=10)",
+      "session_id": "mmm27feb26-3",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "SIZE_MISMATCH",
+        "detail": "PE active @ 65800.0: session=64 vs exchange=75.0 (other sessions=10)",
+        "symbol": "P-BTC-65800-270226",
+        "session_lots": 64,
+        "exchange_size": 75.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_024943_500",
+      "timestamp": "2026-02-27T02:49:43.303839+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($20.10), hedging with PE ($60.85)",
+      "session_id": "mmm27feb26-1",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 20.09583838,
+        "hedge": "PE",
+        "hedge_premium": 60.85399366
+      }
+    },
+    {
+      "id": "act_024956_500",
+      "timestamp": "2026-02-27T02:49:56.942659+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm27feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
     }
   ],
-  "updated_at": "2026-02-27T02:42:45.127682+00:00"
+  "updated_at": "2026-02-27T02:49:56.943070+00:00"
 }

@@ -278,14 +278,28 @@ class MMMStorage:
             if not row:
                 return None
             session = self._row_to_session(row)
-            # Validate checksum (logs warning on mismatch, doesn't fail)
-            self._validate_checksum(session)
+            # Audit fix: checksum mismatch now marks the session with a warning flag
+            # so callers (monitor startup, API) can emit a WebSocket safety alert.
+            # We still return the session for backward compatibility — a mismatch
+            # could be a legitimate manual DB edit or a format change, not always
+            # corruption. The _checksum_warning flag lets the monitor decide the
+            # right action (pause, alert, or continue).
+            if not self._validate_checksum(session):
+                session['_checksum_warning'] = True
+                log.critical(
+                    f"[CORRUPTION RISK] Session {session_id} checksum mismatch — "
+                    f"data may have been corrupted. Session loaded with warning flag. "
+                    f"Monitor will emit safety alert on next heartbeat."
+                )
+            else:
+                session.pop('_checksum_warning', None)
             return session
         except Exception as e:
             log.error(f"Failed to get session {session_id}: {e}")
             return None
         finally:
             conn.close()
+
 
     def list_sessions(self, active_only: bool = False) -> List[Dict]:
         """

@@ -228,6 +228,27 @@ class MMMMonitor:
         except Exception as _we:
             log.error(f"[{self.session_id}] Watchdog registration failed — session may not auto-restart: {_we}")  # L-1 fix
 
+        # Audit fix: emit WebSocket safety alert if storage detected a checksum mismatch
+        # on load. This makes data corruption visible to the operator in the UI.
+        if self.session.get('_checksum_warning'):
+            try:
+                emit_safety(
+                    self.session_id, 'data_integrity', 'critical',
+                    f'[{self.session_id}] Checksum mismatch on session load — '
+                    f'data may have been corrupted or manually edited. '
+                    f'Verify positions match exchange before trading.',
+                    {'session_id': self.session_id},
+                )
+                log_activity(
+                    'safety_warning',
+                    f'⚠️ Data integrity: Checksum mismatch on session load — '
+                    f'verify positions before trading.',
+                    self.session_id, 'error',
+                )
+            except Exception:
+                pass
+
+
     def stop(self, reason: str = 'User requested'):
         """Stop the heartbeat monitor."""
         if not self._running:
@@ -393,14 +414,21 @@ class MMMMonitor:
         return self._paused
 
     def get_session_snapshot(self) -> Dict:
-        """Return a shallow copy of session under lock — safe for API reads.
+        """Return a deep copy of session under lock — safe for API reads.
 
         C-2 fix: API endpoints must call this instead of accessing monitor.session
         directly to avoid torn reads during the heartbeat's session pointer swap.
+
+        Audit fix: Previously used copy.copy() (shallow), which still shared nested
+        dict references (ce, pe, positions[]) with the heartbeat thread. A concurrent
+        heartbeat modifying session['ce']['total_lots'] while an API thread reads the
+        snapshot would cause a torn read. deepcopy() eliminates this race entirely.
+        The cost (~0.5ms for <50KB session dict) is negligible vs the data integrity
+        guarantee.
         """
         import copy
         with self._session_lock:
-            return copy.copy(self.session)
+            return copy.deepcopy(self.session)
 
     def _save_my_session(self, session: Dict = None):
         """Convenience wrapper that passes this monitor's generation to _save_session.

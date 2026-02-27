@@ -56,10 +56,13 @@ def scan_closeable_positions(
         active_strike = side_state.get('active_strike', 0)
 
         # Fix #23: Look up original position ID from positions[] for ID-based removal
+        # Audit fix: skip positions marked _being_closed (in-flight guard)
         orig_pos_id = None
+        orig_being_closed = False
         for _p in side_state.get('positions', []):
             if _p.get('type') == 'original' and _p.get('status') == 'active':
                 orig_pos_id = _p.get('id')
+                orig_being_closed = _p.get('_being_closed', False)
                 break
 
         # Check original lots at original strike (Fix #9: use original_strike, not
@@ -70,7 +73,7 @@ def scan_closeable_positions(
         orig_lots = side_state.get('original_lots', 0)
         orig_prem = side_state.get('original_premium', 0)
         orig_strike = side_state.get('original_strike', active_strike)
-        if orig_lots > 0 and orig_strike > 0:
+        if orig_lots > 0 and orig_strike > 0 and not orig_being_closed:
             try:
                 current = fetch_premium_fn(orig_strike, option_type)
                 if current <= threshold:
@@ -87,6 +90,7 @@ def scan_closeable_positions(
                     })
             except Exception as e:
                 log.warning(f"Error fetching {side_key} original premium: {e}")
+
 
         # Check adjustment fills at active strike
         # Fix #8: removal is content-match based (with Fix #23 ID fallback)
@@ -190,12 +194,39 @@ async def close_position(
 
     Returns:
         {success, realized_pnl, close_premium, lots_closed}
+
+    Audit fix (double-close guard): Sets _being_closed=True on the position in
+    positions[] BEFORE placing the exchange order. If the order fills but
+    _remove_closed_position() crashes, the position stays in-state but is marked
+    as in-flight. scan_closeable_positions() skips '_being_closed' positions, so
+    the next heartbeat will NOT place a duplicate buy order on the exchange.
+    On failure, the flag is cleared to allow retry on the next scan cycle.
     """
     side = position['side']
     strike = position['strike']
     lots = position['lots']
     entry_prem = position['entry_premium']
     pos_type = position['type']
+    pos_id = position.get('_pos_id')
+
+    # Audit fix: Mark position as in-flight in the ledger BEFORE placing order.
+    # This prevents a duplicate buy order if the state-removal crashes post-fill.
+    side_state = session.get(side, {})
+    if pos_id:
+        for pos in side_state.get('positions', []):
+            if pos.get('id') == pos_id:
+                if pos.get('_being_closed'):
+                    log.warning(
+                        f"Close-at-5: Skipping {side.upper()} pos_id={pos_id} — "
+                        f"already marked _being_closed (in-flight guard). "
+                        f"Previous close may have partially succeeded."
+                    )
+                    return {
+                        'success': False,
+                        'error': 'Position already being closed (in-flight guard)',
+                    }
+                pos['_being_closed'] = True
+                break
 
     # Build symbol
     expiry = session.get('params', {}).get('expiry', '')
@@ -216,6 +247,12 @@ async def close_position(
         )
 
         if not result.get('success'):
+            # Clear in-flight flag so position can be retried next heartbeat
+            if pos_id:
+                for pos in side_state.get('positions', []):
+                    if pos.get('id') == pos_id:
+                        pos.pop('_being_closed', None)
+                        break
             return {
                 'success': False,
                 'error': result.get('error', 'Buy-back not filled'),
@@ -226,6 +263,8 @@ async def close_position(
         realized_pnl = float((_D(entry_prem) - _D(close_price)) * _D(lots) * _LOT)
 
         # Update state: remove the closed position
+        # Note: _being_closed flag is removed by _remove_closed_position since it
+        # sets status='closed' on the position or removes it entirely.
         _remove_closed_position(session, side, position, pos_type)
 
         # Record realized P&L
@@ -260,11 +299,19 @@ async def close_position(
         }
 
     except Exception as e:
+        # Clear in-flight flag on unexpected exception so position can be retried
+        if pos_id:
+            for pos in side_state.get('positions', []):
+                if pos.get('id') == pos_id:
+                    pos.pop('_being_closed', None)
+                    break
         log.exception(f"Close-at-5 execution failed: {e}")
         return {
             'success': False,
             'error': str(e),
         }
+
+
 
 
 def _remove_closed_position(
