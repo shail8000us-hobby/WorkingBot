@@ -115,62 +115,24 @@ def get_dashboard():
     start_time = time.time()
     
     try:
-        # Reuse existing route functions - no circular deps since we call them as functions, not through routes
-        from .options_control import get_options_positions, get_options_status
-        from ..positions import get_pending_orders
-        from ..futures.futures_api import get_futures_positions
+        # ARCH-3 FIX: use service layer functions that return plain dicts
+        # instead of calling Flask route handlers and parsing their response objects.
+        from .dashboard_service import (
+            fetch_options_positions_data,
+            fetch_pending_orders_data,
+            fetch_futures_positions_data,
+            fetch_options_status_data,
+            fetch_margin_data,
+        )
         
-        # Call the existing route handlers directly (avoids HTTP overhead)
-        # These functions return (response, status_code) tuples
-        positions_response = get_options_positions()
-        positions_response = positions_response[0] if isinstance(positions_response, tuple) else positions_response
-        positions_data = positions_response.get_json() if hasattr(positions_response, 'get_json') else positions_response
-        
-        pending_response = get_pending_orders()
-        pending_response = pending_response[0] if isinstance(pending_response, tuple) else pending_response
-        pending_data = pending_response.get_json() if hasattr(pending_response, 'get_json') else pending_response
-        
-        futures_response = get_futures_positions()
-        futures_response = futures_response[0] if isinstance(futures_response, tuple) else futures_response
-        futures_data = futures_response.get_json() if hasattr(futures_response, 'get_json') else futures_response
-        
-        status_response = get_options_status()
-        status_response = status_response[0] if isinstance(status_response, tuple) else status_response
-        status_data = status_response.get_json() if hasattr(status_response, 'get_json') else status_response
-
-        # Phase 6.2: Fetch margin utilization data
-        margin_data = {'blocked_margin_usd': 0, 'available_balance_usd': 0, 'wallet_balance_usd': 0}
-        try:
-            from bot.api.delta_client import DeltaClient
-            delta_client = DeltaClient()
-            wallet_response = delta_client._req('GET', '/v2/wallet/balances')
-            if wallet_response and wallet_response.get('success'):
-                wallets = wallet_response.get('result', [])
-                wallet_data = None
-                for wallet in wallets:
-                    if wallet.get('asset_symbol') == 'USD':
-                        wallet_data = wallet
-                        break
-                if not wallet_data and wallets:
-                    wallet_data = wallets[0]
-                if wallet_data:
-                    blocked = float(wallet_data.get('blocked_margin', 0) or 0)
-                    if blocked == 0:
-                        blocked = float(wallet_data.get('portfolio_margin', 0) or 0)
-                    if blocked == 0:
-                        blocked = float(wallet_data.get('order_margin', 0) or 0) + float(wallet_data.get('position_margin', 0) or 0)
-                    available = float(wallet_data.get('available_balance', 0) or 0)
-                    balance = float(wallet_data.get('balance', 0) or 0)
-                    margin_data = {
-                        'blocked_margin_usd': round(blocked, 2),
-                        'available_balance_usd': round(available, 2),
-                        'wallet_balance_usd': round(balance, 2),
-                    }
-        except Exception as e:
-            log.warning(f"Failed to fetch margin data for dashboard: {e}")
+        positions_data = fetch_options_positions_data()
+        pending_data = fetch_pending_orders_data()
+        futures_data = fetch_futures_positions_data()
+        status_data = fetch_options_status_data()
+        margin_data = fetch_margin_data()
         
         # Extract positions for Greeks calculation
-        positions = positions_data.get('positions', []) if isinstance(positions_data, dict) else []
+        positions = positions_data.get('positions', [])
 
         # Calculate portfolio Greeks server-side (Phase 2 optimization)
         portfolio_greeks = calculate_portfolio_greeks(positions)

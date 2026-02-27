@@ -849,12 +849,56 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Credentials from `config.loader.get_config().telegram.*` (live_bot_token, live_chat_id)
 - Disabled by default — requires valid Telegram bot token + chat ID
 
-### 6.28 mmm_walkthrough.py (Added Feb 16, 2026, ~629 lines)
+### 6.28 mmm_walkthrough.py (Added Feb 16, 2026, ~907 lines as of Feb 2026 enhancement)
 - `generate_entry_walkthrough(session)` → T=0 entry block in human-readable format
-- `generate_heartbeat_walkthrough(session, ce_now, pe_now, ...)` → per-heartbeat log step
+- `generate_heartbeat_walkthrough(session, ce_now, pe_now, ..., regime_info=None, margin_info=None, perp_hedge_info=None)` → per-heartbeat log step
+  - Signature backward-compatible; new kwargs default to `None`
+  - `regime_info`: dict from `mmm_monitor._hb_wt['regime']` — contains `action`, `vol_regime`, `gamma_regime`, `trend_tier`, `trend_move_pct`, `observation_mode`, etc.
+  - `margin_info`: dict from `mmm_monitor._hb_wt['margin']` — contains `tier`, `utilization_pct`, `blocked`, `wind_down`, `net_equity`, `position_margin`
+  - `perp_hedge_info`: dict from `mmm_monitor._hb_wt['perp_hedge']` — contains `enabled`, `direction`, `lots`, `entry_price`, `effective_delta`, `unrealized_pnl`, `realized_pnl`, `trade_count`, `last_rebalance`, `btc_spot`
 - All timestamps in IST (UTC+5:30) via `_to_ist()` / `_to_ist_short()` helpers
 - Mirrors format of `MONEY_POWER_CALCULATION_LOGIC.md` Section 16
 - Output consumed by `GET /api/mmm/session/<id>/walkthrough` and frontend `MMMAlgoCalculations.js`
+
+**Walkthrough entry returned dict now includes these additional top-level keys:**
+```python
+{
+  'type': str,                # entry type (standard/reversal/shift/close_at_5/none/…)
+  'summary': str,             # one-line summary
+  'calculation': str,         # \n-joined trigger check section
+  'details': list[str],       # all other section lines
+  'triggers': {               # enriched trigger dict now includes:
+    'ce_excess_pct': float,   #   how far CE is above threshold (% excess)
+    'pe_excess_pct': float,   #   how far PE is above threshold (% excess)
+    'ce_threshold_abs': float,#   absolute BTC threshold for CE
+    'pe_threshold_abs': float,#   absolute BTC threshold for PE
+    'min_trigger_move_pct': float,  # param value
+  },
+  'state': dict,              # session snapshot including circuit_state, net_pnl, etc.
+  'regime': dict | None,      # regime_info passed in (vol/gamma/trend state)
+  'margin': dict | None,      # margin_info passed in (tier/utilization)
+  'perp_hedge': dict | None,  # perp_hedge_info passed in (delta hedge state)
+  'wind_down_active': bool,   # whether wind-down mode was active this heartbeat
+  'adaptive_tier': str | None,# adaptive interval tier name
+  'interval': int | None,     # effective heartbeat interval in seconds
+}
+```
+
+**Sections emitted per heartbeat (all shown in frontend `MMMAlgoCalculations.js`):**
+1. `── Heartbeat Interval ──` — effective interval, adaptive tier name, flags (theta-accel, margin-rapid-check)
+2. `── Trigger Check (§7) ──` — full threshold formula with absolute values and excess %, YES/NO per side
+3. `── Reversal Check (§9) ──` — Case A vs Case B, per-fill comparison, loss P&L check
+4. `── Loss Calculation (§5.2) ──` — active_lots breakdown (orig+adj+shifted), formula with values
+5. `── Strike Check (§5.3) ──` — old_premium vs shift_threshold, shift_target if triggered
+6. `── Lots Calculation (§5.4) ──` — raw→buffer→ceil→cap chain
+7. `── Execution & Verification (§5.5) ──` — fill price, premium_collected formula, ✓/⚠ vs loss_to_cover
+8. `── Regime Controls (§24) ──` — vol/gamma/trend sub-states, action, observation mode
+9. `── Margin Guardian (§25) ──` — tier icon, utilization%, net_equity, blocking status
+10. `── Wind-Down Mode (§4.2) ──` — ATM vs time-based trigger, threshold%, floor action
+11. `── Perp Delta Hedge (§23) ──` — direction, lots, entry, delta, threshold, mode, P&L
+12. `── Close-at-5 (§11) ──` — per-position: entry→close price, lots, realized P&L
+13. `── Safety Checks (§13-14) ──` — per-event with level icon ⚠/❌/ℹ
+14. `── State After Heartbeat ──` — CE/PE lots, triggers, adj_count, total_premium, P&L, circuit_state
 
 ### 6.29 mmm_watchdog.py (Added Feb 18, 2026, ~369 lines)
 - External supervisor thread watching all active `MMMMonitor` instances
@@ -923,10 +967,20 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - User selects CE/PE positions → `POST /api/mmm/session/<id>/adopt`
 - Shows: symbol, strike, lots, entry price, mark price, unrealized P&L
 
-### 7.7 MMMAlgoCalculations.js
+### 7.7 MMMAlgoCalculations.js (Enhanced — Feb 2026)
 - Displays the algo walkthrough log from `GET /api/mmm/session/<id>/walkthrough`
 - Shows per-heartbeat calculation steps in human-readable format (IST timestamps)
 - Dashboard "Algo Calculations" tab
+- **New features added in Feb 2026 enhancement:**
+  - **Collapsible cards** — each entry is collapsed by default (click header to expand); latest entry auto-expanded
+  - **Filter chips** — click any type chip to filter to only that entry type (ENTRY/STANDARD/REVERSAL/etc.); multiple filters are OR-combined; "Clear filters" chip resets
+  - **Search box** — full-text search across calculation + details; matches highlighted
+  - **Stats bar** — shows Net P&L, Realized, Total Premium (BTC), Adj Count, Last Aggressor, CE/PE lots from the most recent entry's `state` field; regime/margin alerts shown if non-GREEN
+  - **Export button** — downloads all visible (filtered) entries as a `.txt` file
+  - **Section-aware line coloring** — lines starting with `──` are colored by section type (Trigger=blue, Regime=orange, Margin=pink, Perp=cyan, Safety=red, etc.)
+  - **Rich entry card headers** — show regime action badge (orange/red when not NORMAL), margin tier badge (yellow/red when not GREEN), wind-down badge (teal when active), perp hedge direction badge, adaptive interval tier badge
+  - **New TYPE_COLORS entries**: `wind_down` (teal), `regime_blocked` (orange-brown)
+  - **`useMemo`-based filtering** — entries filtered+searched without re-fetching
 
 ### 7.8 MMMAnalyticsPanel.js + MMMAnalyticsSummary.js + MMMAnalyticsTable.js
 - Three-part analytics view: summary cards + aggregated stats + historical table

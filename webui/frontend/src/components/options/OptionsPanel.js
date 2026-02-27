@@ -125,6 +125,11 @@ import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
 // FEB 1, 2026: Updated to use SensibullStyleAdjustmentPage (full page layout)
 import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
 import PayoffErrorBoundary from './PayoffErrorBoundary';
+// ARCH-2: Extracted sub-components to reduce monolith size and enable per-component React.memo
+import PositionRow from './PositionRow';
+import PortfolioGreeksSummary from './PortfolioGreeksSummary';
+import AutoLoopBanner from './AutoLoopBanner';
+import ClosePositionDialog from './ClosePositionDialog';
 
 // Phase 3: Lazy load heavy components
 const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
@@ -134,8 +139,8 @@ const OptionsActivityPanel = lazy(() => import('./OptionsActivityPanel'));
 // DEV-ONLY LOGGER — silenced in production for performance
 // ============================================================================
 const isDev = process.env.NODE_ENV !== 'production';
-const devLog = isDev ? console.log.bind(console) : () => {};
-const devWarn = isDev ? console.warn.bind(console) : () => {};
+const devLog = isDev ? console.log.bind(console) : () => { };
+const devWarn = isDev ? console.warn.bind(console) : () => { };
 
 // ============================================================================
 // PHASE 1 OPTIMIZATION: React.memo for SortableRow
@@ -515,11 +520,11 @@ const OptionsPanel = () => {
 
       const reordered = arrayMove(currentPositions, oldIndex, newIndex);
       const newOrder = reordered.map((p) => p.product_symbol);
-      
+
       // Update state and save immediately (drag operations need instant persistence)
       setCustomOrder(newOrder);
       saveCustomOrderNow(newOrder);
-      
+
       // Log for debugging
       devLog('[OptionsPanel] Position order updated:', newOrder);
     }
@@ -566,7 +571,7 @@ const OptionsPanel = () => {
     }
   };
 
-  // BUG-10 FIX: Delta Exchange India options expire at 09:30 IST (UTC+5:30 = UTC+0330).
+  // BUG-10 FIX: Delta Exchange India options expire at 17:30 IST (UTC+5:30 = 12:00 UTC).
   // Always compute expiry relative to UTC so the countdown is correct regardless of browser timezone.
   const getDaysToExpiry = (symbol) => {
     try {
@@ -576,8 +581,8 @@ const OptionsPanel = () => {
         const day = parseInt(expiry.substring(0, 2));
         const month = parseInt(expiry.substring(2, 4)) - 1; // JS months are 0-indexed
         const year = 2000 + parseInt(expiry.substring(4, 6));
-        // 09:30 IST = 04:00 UTC (UTC+5:30 offset)
-        const expiryUtcMs = Date.UTC(year, month, day, 4, 0, 0);
+        // 17:30 IST = 12:00 UTC (UTC+5:30 offset)
+        const expiryUtcMs = Date.UTC(year, month, day, 12, 0, 0);
         const diffMs = expiryUtcMs - Date.now();
         const diffDays = diffMs / (1000 * 60 * 60 * 24);
         return isNaN(diffDays) ? 999 : diffDays;
@@ -796,8 +801,8 @@ const OptionsPanel = () => {
     }
 
     return sorted;
-  // BUG-15 FIX: removed selectedPositionsForPayoff — it is never read inside this memo,
-  // so including it caused unnecessary recomputes on every payoff checkbox change
+    // BUG-15 FIX: removed selectedPositionsForPayoff — it is never read inside this memo,
+    // so including it caused unnecessary recomputes on every payoff checkbox change
   }, [positions, closedPositions, partialRealizedPnl, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
@@ -1271,7 +1276,7 @@ const OptionsPanel = () => {
   useEffect(() => {
     if (indexPrices.BTC > 0) lastPollSpotRef.current.BTC = indexPrices.BTC;
     if (indexPrices.ETH > 0) lastPollSpotRef.current.ETH = indexPrices.ETH;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastDataUpdate]); // Only on HTTP refresh, not on every WebSocket tick
 
   // Phase 4: Keyboard shortcuts for ultra-fast trading
@@ -1396,8 +1401,8 @@ const OptionsPanel = () => {
         const day = parseInt(expiryStr.slice(0, 2));
         const month = parseInt(expiryStr.slice(2, 4)) - 1;
         const year = 2000 + parseInt(expiryStr.slice(4, 6));
-        // BUG-10 FIX: use UTC-based expiry (09:30 IST = 04:00 UTC) to match getDaysToExpiry
-        const expiryUtcMs = Date.UTC(year, month, day, 4, 0, 0);
+        // BUG-10 FIX: use UTC-based expiry (17:30 IST = 12:00 UTC) to match getDaysToExpiry
+        const expiryUtcMs = Date.UTC(year, month, day, 12, 0, 0);
         const timeToExpiry = (expiryUtcMs - Date.now()) / (1000 * 60 * 60 * 24 * 365);
 
         if (timeToExpiry <= 0) {
@@ -1796,7 +1801,7 @@ const OptionsPanel = () => {
     try {
       // Check if this is an SSR order type
       const isSSROrder = orderType?.startsWith('ssr_');
-      
+
       if (isSSROrder) {
         // Route SSR orders to dedicated endpoint
         const ssrMode = SSR_MODE_MAP[orderType] || 'standard';
@@ -1806,11 +1811,11 @@ const OptionsPanel = () => {
           quantity: parseFloat(size),
           ssrMode: ssrMode,
         };
-        
+
         devLog(`🏎️ Placing SSR order: ${ssrMode}`, ssrRequestData);
-        
+
         const { data } = await api.post('/api/options/ssr-order', ssrRequestData);
-        
+
         if (data?.success) {
           soundManager.play('orderPlaced');
           setOrderResult({
@@ -2066,11 +2071,11 @@ const OptionsPanel = () => {
 
     // Check if this is an SSR execution mode
     const isSSRMode = executionMode?.startsWith('ssr_');
-    
+
     // Determine order preference based on execution mode
     let orderPreference = 'maker_first'; // default
     let executionLabel = 'SMART';
-    
+
     if (executionMode === 'immediate') {
       orderPreference = 'market_only';
       executionLabel = 'MARKET';
@@ -2079,8 +2084,8 @@ const OptionsPanel = () => {
       executionLabel = 'SMART';
     } else if (isSSRMode) {
       orderPreference = executionMode; // pass the SSR mode directly
-      executionLabel = executionMode === 'ssr_standard' ? 'SSR' : 
-                       executionMode === 'ssr_aggressive' ? 'SSR AGGRO' : 'SSR SAFE';
+      executionLabel = executionMode === 'ssr_standard' ? 'SSR' :
+        executionMode === 'ssr_aggressive' ? 'SSR AGGRO' : 'SSR SAFE';
     }
 
     devLog(`[BATCH EXECUTE] Execution mode: ${executionMode}, Preference: ${orderPreference}, Label: ${executionLabel}`);
@@ -2091,7 +2096,7 @@ const OptionsPanel = () => {
         devLog(`[BATCH-SSR] Placing ${orders.length} SSR orders (mode: ${executionMode})`);
         const ssrMode = SSR_MODE_MAP[executionMode] || 'standard';
         const uiResults = [];
-        
+
         for (const order of orders) {
           try {
             const { data } = await api.post('/api/options/ssr-order', {
@@ -2100,7 +2105,7 @@ const OptionsPanel = () => {
               quantity: order.size,
               ssrMode: ssrMode,
             });
-            
+
             if (data?.success) {
               uiResults.push({
                 symbol: order.symbol,
@@ -2131,7 +2136,7 @@ const OptionsPanel = () => {
             });
           }
         }
-        
+
         setBatchOrderResults(uiResults);
         soundManager.play('orderPlaced');
         setOrderResult({
@@ -2260,7 +2265,7 @@ const OptionsPanel = () => {
   // NOW RUNS ON BACKEND — survives page refreshes
   const executeAutoLoop = async (startFromRound = 1) => {
     devLog('[AUTO-LOOP] executeAutoLoop called (backend mode)');
-    
+
     if (autoLoopRunning) {
       devLog('⚠️ Auto-loop already running');
       return;
@@ -2273,7 +2278,7 @@ const OptionsPanel = () => {
 
     const orders = calculateBatchOrders();
     devLog('[AUTO-LOOP] Calculated orders:', orders.length, orders);
-    
+
     if (orders.length === 0) {
       setAutoLoopError('No orders to execute. Select positions and set quantities.');
       return;
@@ -2284,7 +2289,17 @@ const OptionsPanel = () => {
       return;
     }
 
-    const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
+    // Map executionMode to order_preference for backend
+    let orderPreference;
+    if (executionMode === 'immediate') {
+      orderPreference = 'market_only';
+    } else if (executionMode === 'smart') {
+      orderPreference = 'maker_first';
+    } else if (executionMode?.startsWith('ssr_')) {
+      orderPreference = executionMode; // pass 'ssr_standard', 'ssr_aggressive', 'ssr_conservative' directly
+    } else {
+      orderPreference = 'maker_first';
+    }
 
     // Show confirmation dialog instead of executing immediately
     setAutoLoopConfirmDialog({
@@ -2450,7 +2465,7 @@ const OptionsPanel = () => {
   };
 
   // ==================== PER-EXPIRY AUTO-LOOP ====================
-  
+
   // Get unique expiries from selected positions
   const selectedExpiriesForLoop = useMemo(() => {
     const selected = getSelectedPositions();
@@ -2471,8 +2486,8 @@ const OptionsPanel = () => {
       if (monthA !== monthB) return monthA - monthB;
       return dayA - dayB;
     });
-  // BUG-28 FIX: sortedPositions depends on closedPositions and hiddenPositions too;
-  // use sortedPositions directly so the memo stays in sync with what is actually visible
+    // BUG-28 FIX: sortedPositions depends on closedPositions and hiddenPositions too;
+    // use sortedPositions directly so the memo stays in sync with what is actually visible
   }, [selectedStrikes, sortedPositions]);
 
   // Check if any expiry loop is running
@@ -2505,7 +2520,17 @@ const OptionsPanel = () => {
       return;
     }
 
-    const orderPreference = executionMode === 'immediate' ? 'market_only' : 'maker_first';
+    // Map executionMode to order_preference for backend
+    let orderPreference;
+    if (executionMode === 'immediate') {
+      orderPreference = 'market_only';
+    } else if (executionMode === 'smart') {
+      orderPreference = 'maker_first';
+    } else if (executionMode?.startsWith('ssr_')) {
+      orderPreference = executionMode; // pass 'ssr_standard', 'ssr_aggressive', 'ssr_conservative' directly
+    } else {
+      orderPreference = 'maker_first';
+    }
 
     try {
       // Send to backend — auto-clear stale loops on 409 CONFLICT
@@ -2593,21 +2618,21 @@ const OptionsPanel = () => {
   const expiryPollRef = useRef(null);
   useEffect(() => {
     const hasRunning = Object.values(expiryLoopState).some(s => s.running);
-    
+
     const pollExpiryLoops = async () => {
       try {
         const { data } = await api.get('/api/options/auto-loop/status');
         if (!data.success) return;
 
         const loops = data.loops || {};
-        
+
         setExpiryLoopState(prev => {
           const updated = { ...prev };
-          
+
           // Check each expiry that WE think is running
           for (const [expiryCode, localState] of Object.entries(updated)) {
             if (!localState.running) continue;
-            
+
             const backendState = loops[expiryCode];
             if (!backendState || backendState.exists === false) {
               // Backend has no record — must have finished or never started
@@ -2626,14 +2651,14 @@ const OptionsPanel = () => {
             if (status === 'completed') {
               updated[expiryCode] = { ...updated[expiryCode], running: false, completed: true, endTime: Date.now() };
               // Clean up backend
-              api.post('/api/options/auto-loop/clear').catch(() => {});
+              api.post('/api/options/auto-loop/clear').catch(() => { });
             } else if (status === 'stopped' || status === 'error') {
               updated[expiryCode] = {
                 ...updated[expiryCode],
                 running: false,
                 error: error || `${status} at round ${rounds_completed}/${total_rounds}`,
               };
-              api.post('/api/options/auto-loop/clear').catch(() => {});
+              api.post('/api/options/auto-loop/clear').catch(() => { });
             }
           }
 
@@ -2653,7 +2678,7 @@ const OptionsPanel = () => {
               };
             }
           }
-          
+
           return updated;
         });
       } catch (err) {
@@ -2690,11 +2715,11 @@ const OptionsPanel = () => {
       const updated = { ...prev };
       if (updated[expiryCode]) {
         // Clear error and interrupted flags
-        updated[expiryCode] = { 
-          ...updated[expiryCode], 
-          error: null, 
+        updated[expiryCode] = {
+          ...updated[expiryCode],
+          error: null,
           interrupted: false,
-          interruptedAt: null 
+          interruptedAt: null
         };
         // If the loop is not running and has no useful state, remove it entirely
         if (!updated[expiryCode].running && !updated[expiryCode].completed) {
@@ -2762,115 +2787,20 @@ const OptionsPanel = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Persistent Auto-Loop Status Banner - Always visible at top */}
-      {/* Shows per-expiry loop status when any expiry loop is running */}
-      {(autoLoopRunning || anyExpiryLoopRunning) && (
-        <Box sx={{ 
-          position: 'sticky',
-          top: 0,
-          zIndex: 1100,
-          bgcolor: 'rgba(251, 191, 36, 0.95)',
-          color: '#000',
-          py: 1,
-          px: 2,
-          mb: 1,
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(251, 191, 36, 0.4)',
-          animation: 'pulse-banner 2s infinite',
-          '@keyframes pulse-banner': {
-            '0%, 100%': { boxShadow: '0 4px 12px rgba(251, 191, 36, 0.4)' },
-            '50%': { boxShadow: '0 4px 20px rgba(251, 191, 36, 0.7)' },
-          },
-        }}>
-          {/* Header row */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: anyExpiryLoopRunning ? 1 : 0 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <CircularProgress size={20} thickness={5} sx={{ color: '#000' }} />
-              <Typography variant="body1" fontWeight="bold">
-                🔁 AUTO-LOOP ACTIVE
-              </Typography>
-              {!anyExpiryLoopRunning && autoLoopRunning && (
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                  Round {autoLoopCurrentRound}/{autoLoopRounds} • {Object.values(autoLoopProgress).filter(p => p.status === 'filled').length}/{Object.keys(autoLoopProgress).length} filled
-                </Typography>
-              )}
-            </Box>
-            <Button
-              variant="contained"
-              size="small"
-              color="error"
-              onClick={anyExpiryLoopRunning ? stopAllExpiryLoops : stopAutoLoop}
-              startIcon={<BlockIcon />}
-              sx={{ fontWeight: 'bold', bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}
-            >
-              STOP ALL
-            </Button>
-          </Box>
-          
-          {/* Per-expiry detailed status */}
-          {anyExpiryLoopRunning && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {Object.entries(expiryLoopState)
-                .filter(([_, state]) => state.running)
-                .map(([expiry, state]) => {
-                  const filledCount = Object.values(state.progress || {}).filter(p => p.filled).length;
-                  const totalCount = Object.keys(state.progress || {}).length;
-                  const pendingCount = totalCount - filledCount;
-                  return (
-                    <Box key={expiry} sx={{ bgcolor: 'rgba(0,0,0,0.15)', p: 1, borderRadius: '6px' }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                            📅 {expiry}
-                          </Typography>
-                          <Chip
-                            size="small"
-                            label={`Round ${state.currentRound}/${state.totalRounds}`}
-                            sx={{ bgcolor: 'rgba(0,0,0,0.2)', height: 20, fontSize: '0.7rem' }}
-                          />
-                          <Typography variant="caption" sx={{ color: 'rgba(0,0,0,0.7)' }}>
-                            ✅ {filledCount} filled • ⏳ {pendingCount} pending
-                          </Typography>
-                        </Box>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => { e.stopPropagation(); stopExpiryAutoLoop(expiry); }}
-                          sx={{ p: 0.5, color: '#ef4444', bgcolor: 'rgba(239,68,68,0.2)', '&:hover': { bgcolor: 'rgba(239,68,68,0.3)' } }}
-                        >
-                          <BlockIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Box>
-                      {/* Per-symbol progress chips */}
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {Object.entries(state.progress || {}).map(([symbol, prog]) => {
-                          const parts = symbol.split('-');
-                          const optType = parts[0];
-                          const strike = parts[2];
-                          return (
-                            <Chip
-                              key={symbol}
-                              size="small"
-                              label={`${prog.filled ? '✅' : '⏳'} ${optType}${strike}`}
-                              sx={{
-                                bgcolor: prog.filled ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.2)',
-                                color: prog.filled ? '#065f46' : '#000',
-                                fontSize: '0.65rem',
-                                height: 18,
-                              }}
-                            />
-                          );
-                        })}
-                      </Box>
-                    </Box>
-                  );
-                })}
-            </Box>
-          )}
-        </Box>
-      )}
-      
+      {/* ARCH-2: Extracted AutoLoopBanner component */}
+      <AutoLoopBanner
+        autoLoopRunning={autoLoopRunning}
+        anyExpiryLoopRunning={anyExpiryLoopRunning}
+        autoLoopCurrentRound={autoLoopCurrentRound}
+        autoLoopRounds={autoLoopRounds}
+        autoLoopProgress={autoLoopProgress}
+        expiryLoopState={expiryLoopState}
+        stopAutoLoop={stopAutoLoop}
+        stopAllExpiryLoops={stopAllExpiryLoops}
+        stopExpiryAutoLoop={stopExpiryAutoLoop}
+      />
 
-      
+
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
           {/* ═══ Phase 2: Primary Header Bar ═══ */}
@@ -2997,7 +2927,7 @@ const OptionsPanel = () => {
 
               {/* Custom order indicator */}
               {customOrder.length > 0 && (
-                <Chip 
+                <Chip
                   icon={<DragIcon />}
                   label="Custom Order"
                   size="small"
@@ -3525,663 +3455,80 @@ const OptionsPanel = () => {
                         return (
                           <SortableRow key={pos.product_symbol} pos={pos}>
                             {(attributes, listeners) => (
-                              <>
-                                {/* Selection Checkbox */}
-                                <TableCell
-                                  padding="checkbox"
-                                  sx={{
-                                    backgroundColor: `${rowBgColor} !important`,
-                                  }}
-                                >
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <Checkbox
-                                      checked={!!selectedStrikes[pos.product_symbol]}
-                                      onChange={() => toggleStrikeSelection(pos.product_symbol)}
-                                      sx={{
-                                        color: isCall ? '#10b981' : '#ef4444',
-                                        '&.Mui-checked': { color: isCall ? '#10b981' : '#ef4444' },
-                                      }}
-                                    />
-                                  </Box>
-                                </TableCell>
-
-                                {/* Drag Handle - with tooltip to explain persistence */}
-                                <TableCell
-                                  sx={{
-                                    backgroundColor: `${rowBgColor} !important`,
-                                    borderLeft: `3px solid ${posType.color}`,
-                                    cursor: 'grab',
-                                    '&:active': { cursor: 'grabbing' },
-                                  }}
-                                  {...attributes}
-                                  {...listeners}
-                                >
-                                  <Tooltip title="Drag to reorder positions. Your custom order will be saved and persist across page refreshes.">
-                                    <DragIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-                                  </Tooltip>
-                                </TableCell>
-
-                                {/* Symbol */}
-                                {visibleColumns.symbol && (
-                                  <TableCell
-                                    sx={{
-                                      backgroundColor: `${rowBgColor} !important`,
-                                      '&:hover': { backgroundColor: `${rowHoverColor} !important` },
-                                    }}
-                                  >
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                      <Tooltip
-                                        title={
-                                          selectedPositionsForPayoff.includes(pos.product_symbol)
-                                            ? 'Selected for payoff graph'
-                                            : 'Click to include in payoff graph'
-                                        }
-                                      >
-                                        <Checkbox
-                                          checked={selectedPositionsForPayoff.includes(pos.product_symbol)}
-                                          onChange={() => {
-                                            setSelectedPositionsForPayoff((prev) =>
-                                              prev.includes(pos.product_symbol)
-                                                ? prev.filter((s) => s !== pos.product_symbol)
-                                                : [...prev, pos.product_symbol]
-                                            );
-                                          }}
-                                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
-                                        />
-                                      </Tooltip>
-                                      <Chip
-                                        label={optionInfo.type}
-                                        size="small"
-                                        sx={{
-                                          bgcolor: posType.color + '20',
-                                          color: posType.color,
-                                          fontWeight: 'bold',
-                                          minWidth: 50,
-                                        }}
-                                      />
-                                      <Typography variant="body2" fontWeight="medium">
-                                        {optionInfo.underlying}
-                                      </Typography>
-                                    </Box>
-                                  </TableCell>
-                                )}
-
-                                {/* Hide/Show Button - between Symbol and Strike */}
-                                <TableCell align="center" sx={cellSx} width="50px">
-                                  <Tooltip title="Hide from table and payoff graph">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => {
-                                        setHiddenPositions((prev) =>
-                                          prev.includes(pos.product_symbol)
-                                            ? prev.filter((s) => s !== pos.product_symbol)
-                                            : [...prev, pos.product_symbol]
-                                        );
-                                      }}
-                                      sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
-                                    >
-                                      <VisibilityIcon sx={{ fontSize: 18 }} />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-
-                                {/* Strike */}
-                                {visibleColumns.strike && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    <Typography fontWeight="bold">
-                                      ${optionInfo.strike.toLocaleString()}
-                                    </Typography>
-                                  </TableCell>
-                                )}
-
-                                {/* Automation */}
-                                {visibleColumns.auto && (
-                                  <TableCell align="center" sx={{ ...cellSx, p: 0.5 }}>
-                                    <AutomationButton position={pos} />
-                                  </TableCell>
-                                )}
-
-                                {/* Expiry with days remaining */}
-                                {visibleColumns.expiry && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    {(() => {
-                                      const hoursLeft = daysToExp * 24;
-                                      const isExpiredOrExpiring = daysToExp < 1;
-                                      // Show countdown for 0DTE / same-day expiry
-                                      const countdownLabel = isExpiredOrExpiring
-                                        ? hoursLeft <= 0
-                                          ? 'EXPIRY'
-                                          : hoursLeft < 1
-                                            ? `${Math.floor(hoursLeft * 60)}m`
-                                            : `${Math.floor(hoursLeft)}h ${Math.floor((hoursLeft % 1) * 60)}m`
-                                        : daysToExp < 2
-                                          ? `1d ${Math.floor((daysToExp % 1) * 24)}h`
-                                          : optionInfo.expiry;
-                                      const urgencyColor = hoursLeft <= 0
-                                        ? '#666'
-                                        : daysToExp < 0.125 // < 3 hours
-                                          ? '#ef4444'
-                                          : daysToExp < 1
-                                            ? '#f59e0b'
-                                            : daysToExp < 7
-                                              ? undefined
-                                              : undefined;
-                                      return (
-                                        <Tooltip title={`${(Number(daysToExp) || 0).toFixed(2)} days to expiry (${optionInfo.expiry})`}>
-                                          <Chip
-                                            label={isExpiredOrExpiring ? `⏰ ${countdownLabel}` : countdownLabel}
-                                            size="small"
-                                            variant={isExpiredOrExpiring ? 'filled' : 'outlined'}
-                                            icon={isExpiredOrExpiring ? undefined : <TimerIcon />}
-                                            sx={{
-                                              borderColor: urgencyColor,
-                                              color: urgencyColor,
-                                              bgcolor: isExpiredOrExpiring && daysToExp > 0 ? `${urgencyColor}15` : undefined,
-                                              fontWeight: isExpiredOrExpiring ? 'bold' : undefined,
-                                              animation: daysToExp > 0 && daysToExp < 0.04 ? 'pulse 1s infinite' : 'none',
-                                              '@keyframes pulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.5 } },
-                                            }}
-                                          />
-                                        </Tooltip>
-                                      );
-                                    })()}
-                                  </TableCell>
-                                )}
-
-                                {/* Size */}
-                                {visibleColumns.size && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    {isClosed ? (
-                                      <Chip
-                                        label="CLOSED"
-                                        size="small"
-                                        sx={{
-                                          bgcolor: 'rgba(100, 100, 100, 0.2)',
-                                          color: '#888',
-                                          fontWeight: 'bold',
-                                          fontSize: '0.65rem',
-                                        }}
-                                      />
-                                    ) : (
-                                      <Chip
-                                        icon={isLong ? <TrendingUp /> : <TrendingDown />}
-                                        label={Math.abs(pos.size)}
-                                        size="small"
-                                        sx={{
-                                          bgcolor: isLong ? '#10b98120' : '#ef444420',
-                                          color: isLong ? '#10b981' : '#ef4444',
-                                        }}
-                                      />
-                                    )}
-                                  </TableCell>
-                                )}
-
-                                {/* Batch Quantity Input */}
-                                {visibleColumns.batchQty && (
-                                  <TableCell align="center" sx={cellSx}>
-                                    <TextField
-                                      size="small"
-                                      type="number"
-                                      placeholder="±qty"
-                                      value={batchQuantities[pos.product_symbol] || ''}
-                                      onChange={(e) => {
-                                        const value =
-                                          e.target.value === '' ? 0 : parseInt(e.target.value);
-                                        setBatchQuantities((prev) => ({
-                                          ...prev,
-                                          [pos.product_symbol]: value,
-                                        }));
-                                        // Auto-select when quantity entered
-                                        if (value !== 0) {
-                                          setSelectedStrikes((prev) => ({
-                                            ...prev,
-                                            [pos.product_symbol]: true,
-                                          }));
-                                        }
-                                      }}
-                                      sx={{
-                                        width: '70px',
-                                        '& .MuiInputBase-input': {
-                                          textAlign: 'center',
-                                          fontSize: '0.875rem',
-                                          padding: '4px 8px',
-                                          color:
-                                            batchQuantities[pos.product_symbol] > 0
-                                              ? '#10b981'
-                                              : batchQuantities[pos.product_symbol] < 0
-                                                ? '#ef4444'
-                                                : 'inherit',
-                                        },
-                                      }}
-                                    />
-                                  </TableCell>
-                                )}
-
-                                {/* Cashflow */}
-                                {visibleColumns.cashflow && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    <Tooltip title={
-                                      <Box>
-                                        <Typography variant="caption" display="block" fontWeight="bold">Cashflow Breakdown</Typography>
-                                        <Typography variant="caption" display="block">
-                                          Entry: ${(Number(pos.entry_price) || 0).toFixed(2)} × Size: {Math.abs(pos.size || 0)} × Multiplier: 0.001
-                                        </Typography>
-                                        <Typography variant="caption" display="block">
-                                          = {formatUsd(Number(cashflow) || 0)} {effectiveSize > 0 ? '(paid)' : '(received)'}
-                                        </Typography>
-                                      </Box>
-                                    }>
-                                      <Typography
-                                        variant="body2"
-                                        fontWeight="medium"
-                                        // BUG-18 FIX: use effectiveSize (recovers direction for closed pos)
-                                        sx={{ color: effectiveSize > 0 ? '#ef4444' : '#10b981' }}
-                                      >
-                                        {formatUsd(Number(cashflow) || 0)}
-                                      </Typography>
-                                    </Tooltip>
-                                  </TableCell>
-                                )}
-
-                                {/* Entry Price */}
-                                {visibleColumns.entry && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                                      {formatUsd(Number(pos.entry_price) || 0)}
-                                    </Typography>
-                                  </TableCell>
-                                )}
-
-                                {/* Bid Price */}
-                                {visibleColumns.bid && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    <Typography variant="body2" sx={{ color: '#10b981', fontFamily: 'monospace' }}>
-                                      {formatUsd(Number(pos.best_bid) || 0)}
-                                    </Typography>
-                                  </TableCell>
-                                )}
-
-                                {/* Ask Price — Phase 7.3: Spread quality indicator */}
-                                {visibleColumns.ask && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    {(() => {
-                                      const bid = Number(pos.best_bid) || 0;
-                                      const ask = Number(pos.best_ask) || 0;
-                                      const mid = (bid + ask) / 2;
-                                      const spreadAbs = ask - bid;
-                                      const spreadPct = mid > 0 ? (spreadAbs / mid * 100) : 0;
-                                      const spreadColor = spreadPct > 5 ? '#ef4444' : spreadPct > 1 ? '#f59e0b' : '#10b981';
-                                      return (
-                                        <Tooltip title={mid > 0 ? `Spread: ${formatUsd(spreadAbs)} (${spreadPct.toFixed(1)}%) · Mid: ${formatUsd(mid)}` : ''}>
-                                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                                            <Typography variant="body2" sx={{ color: '#ef4444', fontFamily: 'monospace' }}>
-                                              {formatUsd(ask)}
-                                            </Typography>
-                                            {mid > 0 && (
-                                              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: spreadColor, flexShrink: 0 }} />
-                                            )}
-                                          </Box>
-                                        </Tooltip>
-                                      );
-                                    })()}
-                                  </TableCell>
-                                )}
-
-                                {/* SL/TP Indicator */}
-                                {visibleColumns.sltp && (
-                                  <TableCell align="center" sx={cellSx}>
-                                    <SLTPIndicator
-                                      settings={slTpSettings[pos.product_symbol]}
-                                      position={pos}
-                                      onEdit={() => {
-                                        setSelectedPositionForSLTP(pos);
-                                        setSlTpDialogOpen(true);
-                                      }}
-                                    />
-                                  </TableCell>
-                                )}
-
-                                {/* Max Loss Indicator */}
-                                {visibleColumns.maxLoss && (
-                                  <TableCell align="center" sx={cellSx}>
-                                    <MaxLossIndicator
-                                      symbol={pos.product_symbol}
-                                      currentPnl={pos.unrealized_pnl || 0}
-                                      settings={maxLossSettings[pos.product_symbol]}
-                                      onUpdate={handleMaxLossUpdate}
-                                    />
-                                  </TableCell>
-                                )}
-
-                                {/* Take Profit Indicator */}
-                                {visibleColumns.takeProfit && (
-                                  <TableCell align="center" sx={cellSx}>
-                                    <TakeProfitIndicator
-                                      symbol={pos.product_symbol}
-                                      currentPnl={pos.unrealized_pnl || 0}
-                                      currentSize={Math.abs(pos.size || 0)}
-                                      settings={tpSettings[pos.product_symbol]}
-                                      onEdit={() => {
-                                        setSelectedPositionForTP(pos);
-                                        setTpDialogOpen(true);
-                                      }}
-                                      onUpdate={handleTakeProfitUpdate}
-                                    />
-                                  </TableCell>
-                                )}
-
-                                {/* IV (Implied Volatility) — Phase 7.4: Reasonableness flag */}
-                                {visibleColumns.iv && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    {(() => {
-                                      if (!pos.iv) return <Typography variant="body2">-</Typography>;
-                                      const ivPct = pos.iv * 100;
-                                      const suspicious = ivPct < 15 || ivPct > 200;
-                                      return (
-                                        <Tooltip title={suspicious ? `IV ${ivPct.toFixed(1)}% may be unreliable — ${ivPct < 15 ? 'unusually low for options' : 'unusually high, check data quality'}` : `IV: ${ivPct.toFixed(1)}%`}>
-                                          <Typography variant="body2" sx={{ color: suspicious ? '#f59e0b' : undefined, fontWeight: suspicious ? 'bold' : undefined }}>
-                                            {`${ivPct.toFixed(1)}%`}
-                                            {suspicious && <Typography component="span" sx={{ fontSize: '0.6rem', ml: 0.3 }}>⚠</Typography>}
-                                          </Typography>
-                                        </Tooltip>
-                                      );
-                                    })()}
-                                  </TableCell>
-                                )}
-
-                                {/* PoP (Probability of Profit) - Day 1 */}
-                                {visibleColumns.pop && (
-                                  <TableCell align="center" sx={cellSx}>
-                                    {popData[pos.product_symbol] !== undefined ? (
-                                      popData[pos.product_symbol] === -1 ? (
-                                        <Tooltip title="PoP calculation unavailable for this position">
-                                          <Typography variant="body2" color="text.secondary">N/A</Typography>
-                                        </Tooltip>
-                                      ) : (
-                                        <Tooltip title={
-                                          popData[pos.product_symbol] < 1
-                                            ? 'Very low probability of profit'
-                                            : popData[pos.product_symbol] > 99
-                                              ? 'Very high probability of profit'
-                                              : `${popData[pos.product_symbol].toFixed(1)}% chance of profit at expiry`
-                                        }>
-                                          <Chip
-                                            label={
-                                              popData[pos.product_symbol] < 1
-                                                ? '< 1%'
-                                                : popData[pos.product_symbol] > 99
-                                                  ? '> 99%'
-                                                  : `${popData[pos.product_symbol].toFixed(1)}%`
-                                            }
-                                            size="small"
-                                            sx={{
-                                              bgcolor: popData[pos.product_symbol] > 50
-                                                ? 'success.main'
-                                                : popData[pos.product_symbol] < 20
-                                                  ? 'error.main'
-                                                  : 'warning.main',
-                                              color: 'white',
-                                              fontWeight: 'bold',
-                                              fontSize: '0.75rem',
-                                              height: 22,
-                                            }}
-                                          />
-                                        </Tooltip>
-                                      )
-                                    ) : (
-                                      <Typography variant="body2" color="text.secondary">
-                                        -
-                                      </Typography>
-                                    )}
-                                  </TableCell>
-                                )}
-
-                                {/* PnL — Phase 7.1: USD prominent, % capped to avoid -774% panic */}
-                                {/* Now includes partial realized PnL from partial exits */}
-                                {visibleColumns.pnl && (
-                                  <TableCell align="right" sx={cellSx}>
-                                    {(() => {
-                                      const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
-                                      const partialPnl = Number(pos.partial_realized_pnl) || 0;
-                                      const totalPnl = unrealizedPnl + partialPnl;
-                                      const totalPnlColor = getPnlColor(totalPnl);
-                                      const rawPct = pos.pnl_percentage || 0;
-                                      const cashflowVal = Number(pos.cashflow) || 0;
-
-                                      const tooltipText = (() => {
-                                        if (partialPnl !== 0) {
-                                          return `Unrealized: ${formatPnl(unrealizedPnl)} + Partial Realized: ${formatPnl(partialPnl)} = Total: ${formatPnl(totalPnl)}`;
-                                        }
-                                        if (Math.abs(rawPct) > 200 && cashflowVal !== 0) {
-                                          return `Raw PnL %: ${rawPct.toFixed(1)}% (vs cashflow $${Math.abs(cashflowVal).toFixed(2)}). Large % due to small premium denominator.`;
-                                        }
-                                        return `PnL: ${formatPnl(unrealizedPnl)} (${rawPct.toFixed(1)}%)`;
-                                      })();
-
-                                      return (
-                                        <Tooltip title={tooltipText}>
-                                          <Box>
-                                            <Typography fontWeight="bold" sx={{ color: totalPnlColor }}>
-                                              {formatPnl(totalPnl)}
-                                            </Typography>
-                                            {isClosed ? (
-                                              <Typography variant="caption" sx={{ color: '#888', fontStyle: 'italic' }}>
-                                                Realized
-                                              </Typography>
-                                            ) : partialPnl !== 0 ? (
-                                              <Typography variant="caption" sx={{ color: getPnlColor(partialPnl), fontStyle: 'italic' }}>
-                                                incl. {formatPnl(partialPnl)} realized
-                                              </Typography>
-                                            ) : (
-                                              <Typography variant="caption" sx={{ color: totalPnlColor }}>
-                                                {(() => {
-                                                  const pct = pos.pnl_percentage || 0;
-                                                  if (pct > 200) return '>+200%';
-                                                  if (pct < -200) return '<-200%';
-                                                  return formatPnlPct(pct);
-                                                })()}
-                                              </Typography>
-                                            )}
-                                          </Box>
-                                        </Tooltip>
-                                      );
-                                    })()}
-                                  </TableCell>
-                                )}
-
-                                {/* Actions */}
-                                {visibleColumns.actions && (
-                                  <TableCell align="center" sx={cellSx}>
-                                    <Box
-                                      sx={{
-                                        display: 'flex',
-                                        gap: 0.5,
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        minWidth: 180,
-                                        flexWrap: 'nowrap',
-                                      }}
-                                    >
-                                      {/* Quick Execute Mode Indicator */}
-                                      {isQuickMode && (
-                                        <Tooltip
-                                          title={`Quick mode: Click C+/P+ to instantly ${skipConfirmStrikes[pos.product_symbol]?.side || 'sell'} ${skipConfirmStrikes[pos.product_symbol]?.size || DEFAULT_SIZE} lots. Click ⚡ to disable.`}
-                                        >
-                                          <Chip
-                                            label={`⚡${skipConfirmStrikes[pos.product_symbol]?.size || DEFAULT_SIZE}`}
-                                            size="small"
-                                            onClick={() => disableSkipConfirm(pos.product_symbol)}
-                                            sx={{
-                                              cursor: 'pointer',
-                                              bgcolor: '#fbbf24',
-                                              color: '#000',
-                                              fontWeight: 'bold',
-                                              minWidth: 32,
-                                              maxHeight: 24,
-                                              fontSize: '0.75rem',
-                                              '&:hover': {
-                                                bgcolor: '#f59e0b',
-                                              }
-                                            }}
-                                          />
-                                        </Tooltip>
-                                      )}
-
-                                      {(() => {
-                                        const recommendation = scalingRecommendations[pos.product_symbol] || { action: 'hold', size: 0, reason: '', confidence: 'low', riskLevel: 'medium' };
-                                        const tooltipTitle = (
-                                          <Box>
-                                            <Typography
-                                              variant="body2"
-                                              sx={{ fontWeight: 'bold', mb: 0.5 }}
-                                            >
-                                              Smart Scaling Recommendation
-                                            </Typography>
-                                            <Typography
-                                              variant="caption"
-                                              sx={{ display: 'block', mb: 0.5 }}
-                                            >
-                                              Action:{' '}
-                                              {recommendation.action === 'scale'
-                                                ? '✅ Scale In'
-                                                : recommendation.action === 'reduce'
-                                                  ? '⚠️ Reduce'
-                                                  : '⏸️ Hold'}
-                                            </Typography>
-                                            {recommendation.size > 0 && (
-                                              <Typography
-                                                variant="caption"
-                                                sx={{ display: 'block', mb: 0.5 }}
-                                              >
-                                                Size: {recommendation.size} contracts
-                                              </Typography>
-                                            )}
-                                            <Typography
-                                              variant="caption"
-                                              sx={{ display: 'block', mb: 0.5 }}
-                                            >
-                                              {recommendation.reason}
-                                            </Typography>
-                                            <Typography
-                                              variant="caption"
-                                              sx={{
-                                                display: 'block',
-                                                color:
-                                                  recommendation.riskLevel === 'high'
-                                                    ? '#ef4444'
-                                                    : recommendation.riskLevel === 'low'
-                                                      ? '#10b981'
-                                                      : '#f59e0b',
-                                              }}
-                                            >
-                                              Risk: {recommendation.riskLevel.toUpperCase()} |
-                                              Confidence: {recommendation.confidence.toUpperCase()}
-                                            </Typography>
-                                          </Box>
-                                        );
-
-                                        return (
-                                          <Tooltip title={tooltipTitle}>
-                                            <IconButton
-                                              size="medium"
-                                              color="primary"
-                                              onClick={() => handleAdd(pos)}
-                                              disabled={!status?.trading_allowed}
-                                              sx={{
-                                                bgcolor:
-                                                  recommendation.action === 'scale'
-                                                    ? isCall
-                                                      ? '#10b981'
-                                                      : '#ef4444'
-                                                    : recommendation.action === 'reduce'
-                                                      ? '#ef4444'
-                                                      : '#6b7280',
-                                                color: 'white',
-                                                fontWeight: 'bold',
-                                                fontSize: 14,
-                                                minWidth: 36,
-                                                '&:hover': {
-                                                  bgcolor:
-                                                    recommendation.action === 'scale'
-                                                      ? isCall
-                                                        ? '#059669'
-                                                        : '#dc2626'
-                                                      : '#4b5563',
-                                                },
-                                                '&:disabled': {
-                                                  bgcolor: 'action.disabledBackground',
-                                                },
-                                              }}
-                                            >
-                                              {isCall ? 'C' : 'P'}+
-                                            </IconButton>
-                                          </Tooltip>
-                                        );
-                                      })()}
-
-                                      {/* Visual Separator */}
-                                      <Box
-                                        sx={{
-                                          width: '2px',
-                                          height: '32px',
-                                          bgcolor: 'divider',
-                                          mx: 0.25,
-                                        }}
-                                      />
-
-                                      {isClosed ? (
-                                        /* For closed positions: Show Remove button to remove from tracking */
-                                        <Tooltip title="🗑️ Remove from display - This removes the closed position from tracking">
-                                          <IconButton
-                                            size="medium"
-                                            color="default"
-                                            onClick={() => {
-                                              // Remove from closedPositions
-                                              setClosedPositions(prev => {
-                                                const updated = { ...prev };
-                                                delete updated[pos.product_symbol];
-                                                return updated;
-                                              });
-                                              devLog(`🗑️ Removed closed position: ${pos.product_symbol}`);
-                                            }}
-                                            sx={{
-                                              border: '2px solid',
-                                              borderColor: 'text.secondary',
-                                              color: 'text.secondary',
-                                              '&:hover': {
-                                                bgcolor: 'action.hover',
-                                                borderColor: 'error.main',
-                                                color: 'error.main',
-                                              },
-                                            }}
-                                          >
-                                            <CloseIcon fontSize="small" />
-                                          </IconButton>
-                                        </Tooltip>
-                                      ) : (
-                                        <Tooltip title="⚠️ CLOSE POSITION - This will exit your entire position!">
-                                          <IconButton
-                                            size="medium"
-                                            color="error"
-                                            onClick={() => handleClose(pos)}
-                                            disabled={!status?.trading_allowed}
-                                            sx={{
-                                              border: '2px solid',
-                                              borderColor: 'error.main',
-                                              '&:hover': {
-                                                bgcolor: 'error.main',
-                                                color: 'white',
-                                              },
-                                            }}
-                                          >
-                                            <CloseIcon fontSize="small" />
-                                          </IconButton>
-                                        </Tooltip>
-                                      )}
-                                    </Box>
-                                  </TableCell>
-                                )}
-                              </>
+                              <PositionRow
+                                pos={pos}
+                                index={index}
+                                optionInfo={optionInfo}
+                                posType={posType}
+                                daysToExp={daysToExp}
+                                isClosed={isClosed}
+                                effectiveSize={effectiveSize}
+                                cashflow={cashflow}
+                                cellSx={cellSx}
+                                rowBgColor={rowBgColor}
+                                rowHoverColor={rowHoverColor}
+                                isCall={isCall}
+                                isPut={isPut}
+                                isLong={isLong}
+                                isQuickMode={isQuickMode}
+                                visibleColumns={visibleColumns}
+                                isSelected={selectedStrikes[pos.product_symbol]}
+                                isPayoffSelected={selectedPositionsForPayoff.includes(pos.product_symbol)}
+                                batchQty={batchQuantities[pos.product_symbol]}
+                                slTpSetting={slTpSettings[pos.product_symbol]}
+                                maxLossSetting={maxLossSettings[pos.product_symbol]}
+                                tpSetting={tpSettings[pos.product_symbol]}
+                                popValue={popData[pos.product_symbol]}
+                                skipConfirmStrike={skipConfirmStrikes[pos.product_symbol]}
+                                scalingRecommendation={scalingRecommendations[pos.product_symbol]}
+                                onToggleStrikeSelection={toggleStrikeSelection}
+                                onTogglePayoffSelection={(symbol) => {
+                                  setSelectedPositionsForPayoff((prev) =>
+                                    prev.includes(symbol)
+                                      ? prev.filter((s) => s !== symbol)
+                                      : [...prev, symbol]
+                                  );
+                                }}
+                                onToggleHidden={(symbol) => {
+                                  setHiddenPositions((prev) =>
+                                    prev.includes(symbol)
+                                      ? prev.filter((s) => s !== symbol)
+                                      : [...prev, symbol]
+                                  );
+                                }}
+                                onBatchQtyChange={(symbol, value) => {
+                                  setBatchQuantities((prev) => ({ ...prev, [symbol]: value }));
+                                  if (value !== 0) {
+                                    setSelectedStrikes((prev) => ({ ...prev, [symbol]: true }));
+                                  }
+                                }}
+                                onSetSLTP={(position) => {
+                                  setSelectedPositionForSLTP(position);
+                                  setSlTpDialogOpen(true);
+                                }}
+                                onSetTP={(position) => {
+                                  setSelectedPositionForTP(position);
+                                  setTpDialogOpen(true);
+                                }}
+                                onMaxLossUpdate={handleMaxLossUpdate}
+                                onTakeProfitUpdate={handleTakeProfitUpdate}
+                                onHandleAdd={handleAdd}
+                                onHandleClose={handleClose}
+                                onDisableSkipConfirm={disableSkipConfirm}
+                                onRemoveClosedPosition={(symbol) => {
+                                  setClosedPositions(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[symbol];
+                                    return updated;
+                                  });
+                                  devLog(`🗑️ Removed closed position: ${symbol}`);
+                                }}
+                                status={status}
+                                closedPositionData={closedPositions[pos.product_symbol]}
+                                DEFAULT_SIZE={DEFAULT_SIZE}
+                                attributes={attributes}
+                                listeners={listeners}
+                              />
                             )}
                           </SortableRow>
                         );
@@ -4192,7 +3539,6 @@ const OptionsPanel = () => {
               </Table>
             </TableContainer>
           )}
-
 
           <BatchOrderPanel
             positions={positions}
@@ -4245,215 +3591,53 @@ const OptionsPanel = () => {
             btcPrice={btcPrice}
           />
 
-          {/* Summary */}
-          {positions.length > 0 && (
-            <>
-              <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Chip
-                  icon={<MoneyIcon />}
-                  label={`Total PnL: ${formatPnl(sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0))}`}
-                  sx={{
-                    bgcolor:
-                      getPnlColor(
-                        sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0)
-                      ) + '20',
-                    color: getPnlColor(
-                      sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0)
-                    ),
-                  }}
-                />
-                <Chip
-                  label={`Calls: ${sortedPositions.filter((p) => p.product_symbol.startsWith('C-')).length}`}
-                  sx={{ bgcolor: '#3b82f620', color: '#3b82f6' }}
-                />
-                <Chip
-                  label={`Puts: ${sortedPositions.filter((p) => p.product_symbol.startsWith('P-')).length}`}
-                  sx={{ bgcolor: '#a855f720', color: '#a855f7' }}
-                />
-              </Box>
-
-              {/* Greeks Summary - Only for visible positions - COMPACT */}
-              {aggregatedGreeks.count > 0 && (
-                <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary" fontWeight="bold">
-                      Portfolio Greeks ({sortedPositions.length} visible positions)
-                    </Typography>
-                    {/* Delta Neutral / High Delta Badge - Inline */}
-                    {Math.abs(aggregatedGreeks.delta) < 0.1 && (
-                      <Chip
-                        label="Delta Neutral ✅"
-                        size="small"
-                        color="info"
-                        sx={{ height: 18, fontSize: '0.65rem' }}
-                      />
-                    )}
-                    {Math.abs(aggregatedGreeks.delta) > 10 && (
-                      <Chip
-                        label="High Delta ⚠️"
-                        size="small"
-                        color="warning"
-                        sx={{ height: 18, fontSize: '0.65rem' }}
-                      />
-                    )}
-                  </Box>
-
-                  {/* Futures Equivalent & Greeks in single row */}
-                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {/* Futures Equivalent - Compact */}
-                    {(aggregatedGreeks.btcDelta !== 0 || aggregatedGreeks.ethDelta !== 0) && (
-                      <>
-                        <Typography variant="caption" color="text.secondary" sx={{ mr: -1 }}>
-                          Futures Equiv:
-                        </Typography>
-                        {aggregatedGreeks.btcDelta !== 0 && (
-                          <Tooltip
-                            title={`Your BTC options have the same directional exposure as ${Math.abs(Number(aggregatedGreeks.btcDelta) || 0).toFixed(4)} BTC futures contracts`}
-                          >
-                            <Chip
-                              size="small"
-                              label={`${aggregatedGreeks.btcDelta >= 0 ? 'Long' : 'Short'} ${Math.abs(Number(aggregatedGreeks.btcDelta) || 0).toFixed(4)} BTC`}
-                              icon={aggregatedGreeks.btcDelta >= 0 ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
-                              sx={{
-                                height: 22,
-                                bgcolor: aggregatedGreeks.btcDelta >= 0 ? '#10b98120' : '#ef444420',
-                                color: aggregatedGreeks.btcDelta >= 0 ? '#10b981' : '#ef4444',
-                                fontWeight: 'bold',
-                                fontSize: '0.7rem'
-                              }}
-                            />
-                          </Tooltip>
-                        )}
-                        {aggregatedGreeks.ethDelta !== 0 && (
-                          <Tooltip
-                            title={`Your ETH options have the same directional exposure as ${Math.abs(Number(aggregatedGreeks.ethDelta) || 0).toFixed(4)} ETH futures contracts`}
-                          >
-                            <Chip
-                              size="small"
-                              label={`${aggregatedGreeks.ethDelta >= 0 ? 'Long' : 'Short'} ${Math.abs(Number(aggregatedGreeks.ethDelta) || 0).toFixed(4)} ETH`}
-                              icon={aggregatedGreeks.ethDelta >= 0 ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
-                              sx={{
-                                height: 22,
-                                bgcolor: aggregatedGreeks.ethDelta >= 0 ? '#10b98120' : '#ef444420',
-                                color: aggregatedGreeks.ethDelta >= 0 ? '#10b981' : '#ef4444',
-                                fontWeight: 'bold',
-                                fontSize: '0.7rem'
-                              }}
-                            />
-                          </Tooltip>
-                        )}
-                        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-                      </>
-                    )}
-
-                    {/* Greek Values - Compact */}
-                    <Tooltip title="Portfolio delta - sensitivity to underlying price change">
-                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">Delta:</Typography>
-                        <Typography
-                          variant="caption"
-                          fontWeight="bold"
-                          sx={{ color: (Number(aggregatedGreeks.delta) || 0) >= 0 ? '#10b981' : '#ef4444' }}
-                        >
-                          {(Number(aggregatedGreeks.delta) || 0) >= 0 ? '+' : ''}{(Number(aggregatedGreeks.delta) || 0).toFixed(4)}
-                        </Typography>
-                      </Box>
-                    </Tooltip>
-                    <Tooltip title="Portfolio gamma - rate of delta change">
-                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">Gamma:</Typography>
-                        <Typography variant="caption" fontWeight="bold">
-                          {(Number(aggregatedGreeks.gamma) || 0).toFixed(6)}
-                        </Typography>
-                      </Box>
-                    </Tooltip>
-                    <Tooltip title="Portfolio theta - daily time decay (P&L change per day)">
-                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">Theta:</Typography>
-                        <Typography
-                          variant="caption"
-                          fontWeight="bold"
-                          sx={{ color: (Number(aggregatedGreeks.theta) || 0) >= 0 ? '#10b981' : '#ef4444' }}
-                        >
-                          {(Number(aggregatedGreeks.theta) || 0) >= 0 ? '+' : ''}{(Number(aggregatedGreeks.theta) || 0).toFixed(2)}
-                        </Typography>
-                      </Box>
-                    </Tooltip>
-                    <Tooltip title="Portfolio vega - sensitivity to 1% IV change">
-                      <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">Vega:</Typography>
-                        <Typography variant="caption" fontWeight="bold">
-                          {(Number(aggregatedGreeks.vega) || 0).toFixed(2)}
-                        </Typography>
-                      </Box>
-                    </Tooltip>
-                  </Box>
-                </Box>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+          {/* ARCH-2: Extracted PortfolioGreeksSummary component */}
+          {
+            positions.length > 0 && (
+              <PortfolioGreeksSummary
+                sortedPositions={sortedPositions}
+                aggregatedGreeks={aggregatedGreeks}
+              />
+            )
+          }
+        </CardContent >
+      </Card >
 
       {/* Payoff Diagram */}
-      {positions.length > 0 && !turboMode && (
-        <Box sx={{ mt: 2 }}>
-          <PayoffErrorBoundary>
-            <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
-              <OptionsPayoffDiagram
-                positions={sortedPositions}
-                selectedPositions={selectedPositionsForPayoff}
-                futuresPositions={visibleFuturesPositions}
-              />
-            </Suspense>
-          </PayoffErrorBoundary>
-        </Box>
-      )}
+      {
+        positions.length > 0 && !turboMode && (
+          <Box sx={{ mt: 2 }}>
+            <PayoffErrorBoundary>
+              <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
+                <OptionsPayoffDiagram
+                  positions={sortedPositions}
+                  selectedPositions={selectedPositionsForPayoff}
+                  futuresPositions={visibleFuturesPositions}
+                />
+              </Suspense>
+            </PayoffErrorBoundary>
+          </Box>
+        )
+      }
 
       {/* Options Trading Activity Monitor */}
-      {!turboMode && (
-        <Box sx={{ mt: 2 }}>
-          <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading activity panel...</Box>}>
-            <OptionsActivityPanel refreshTrigger={0} />
-          </Suspense>
-        </Box>
-      )}
-
-      {/* Close Confirmation Dialog */}
-      <Dialog
-        open={closeDialog.open}
-        onClose={() => setCloseDialog({ open: false, position: null })}
-        disableRestoreFocus
-      >
-        <DialogTitle>Close Position</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to close your position in{' '}
-            <strong>{closeDialog.position?.product_symbol}</strong>?
-          </Typography>
+      {
+        !turboMode && (
           <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Size: {closeDialog.position?.size}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Current PnL: {formatPnl(closeDialog.position?.unrealized_pnl || 0)}
-            </Typography>
+            <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading activity panel...</Box>}>
+              <OptionsActivityPanel refreshTrigger={0} />
+            </Suspense>
           </Box>
-          {!closeDialog.position?.is_liquid && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              Warning: This position has a wide spread (
-              {(Number(closeDialog.position?.spread_pct) || 0).toFixed(1)}%). You may get
-              unfavorable fill prices.
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCloseDialog({ open: false, position: null })}>Cancel</Button>
-          <Button onClick={confirmClose} color="error" variant="contained">
-            Close Position
-          </Button>
-        </DialogActions>
-      </Dialog>
+        )
+      }
+
+      {/* ARCH-2: Extracted ClosePositionDialog component */}
+      <ClosePositionDialog
+        open={closeDialog.open}
+        position={closeDialog.position}
+        onClose={() => setCloseDialog({ open: false, position: null })}
+        onConfirm={confirmClose}
+      />
 
       <AddPositionDialog
         addDialog={addDialog}
@@ -4463,7 +3647,6 @@ const OptionsPanel = () => {
         lastUsedSize={lastUsedSize}
         skipConfirmStrikes={skipConfirmStrikes}
       />
-
 
       {/* SL/TP Configuration Dialog */}
       <SLTPDialog
@@ -4492,20 +3675,19 @@ const OptionsPanel = () => {
         onUpdate={handleTakeProfitUpdate}
       />
 
-      {/* Sound Settings Panel (JAN 19, 2026 - Independent UI component) */}
+      {/* Sound Settings Panel */}
       <SoundSettingsPanel
         open={soundSettingsOpen}
         onClose={() => setSoundSettingsOpen(false)}
       />
 
-      {/* Trade Notification (JAN 19, 2026 - Visual feedback) */}
+      {/* Trade Notification */}
       <TradeNotification
         notification={tradeNotification}
         onDismiss={() => setTradeNotification(null)}
       />
 
-      {/* Position Adjustment Page (FEB 1, 2026 - Sensibull-like full page layout) */}
-      {/* FEB 2, 2026: Now uses filteredPositionsForAdjustment based on expiry/strike selection */}
+      {/* Position Adjustment Page */}
       <SensibullStyleAdjustmentPage
         open={adjustmentPanelOpen}
         onClose={() => setAdjustmentPanelOpen(false)}
@@ -4517,7 +3699,7 @@ const OptionsPanel = () => {
           handleRefresh();
         }}
       />
-    </motion.div>
+    </motion.div >
   );
 };
 

@@ -188,15 +188,15 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     ? `FIXED ADD: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual entry.`
                     : `FIXED EXIT: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual exit with minimal slippage.`
                   : multiplierMode === 'normal'
-                  ? orderQuantity > 0
-                    ? `ADD to positions: x${orderQuantity} multiplier. Scales with position size.`
-                    : `EXIT positions: x${Math.abs(orderQuantity)} multiplier. Exits full position size × multiplier.`
-                  : `GCD-based multiplier (GCD=${getPositionsGCD(getSelectedPositions())}). ${orderQuantity > 0 ? 'ADD to' : 'EXIT'} positions proportionally.`
+                    ? orderQuantity > 0
+                      ? `ADD to positions: x${orderQuantity} multiplier. Scales with position size.`
+                      : `EXIT positions: x${Math.abs(orderQuantity)} multiplier. Exits full position size × multiplier.`
+                    : `GCD-based multiplier (GCD=${getPositionsGCD(getSelectedPositions())}). ${orderQuantity > 0 ? 'ADD to' : 'EXIT'} positions proportionally.`
               }
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography variant="caption" color={multiplierMode ? "text.secondary" : "warning.main"}>
-                  {multiplierMode 
+                  {multiplierMode
                     ? `(${multiplierMode === 'fixed' ? `${Math.abs(orderQuantity)} lot${Math.abs(orderQuantity) > 1 ? 's' : ''} each` : `x${Math.abs(orderQuantity)}`} ${orderQuantity > 0 ? 'add' : 'exit'}${multiplierMode === 'gcd' ? ' GCD' : multiplierMode === 'fixed' ? ' fixed' : ''})`
                     : '⚠ select mode →'}
                 </Typography>
@@ -565,7 +565,17 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     🔁 Auto-Loop Active
                   </Typography>
                   <Typography variant="caption" sx={{ color: 'rgba(251, 191, 36, 0.7)' }}>
-                    Placing orders with Smart execution (Limit @ Mid-Price)
+                    {executionMode === 'immediate'
+                      ? 'Placing orders with Market execution (Instant Fill)'
+                      : executionMode === 'smart'
+                        ? 'Placing orders with Smart execution (Limit @ Mid-Price)'
+                        : executionMode === 'ssr_standard'
+                          ? 'Placing orders with SSR execution (Bid+2t / Ask-2t, auto-adjusting)'
+                          : executionMode === 'ssr_aggressive'
+                            ? 'Placing orders with SSR Aggro execution (5% inside spread, auto-adjusting)'
+                            : executionMode === 'ssr_conservative'
+                              ? 'Placing orders with SSR Safe execution (1.5% inside spread, auto-adjusting)'
+                              : 'Placing orders with Smart execution (Limit @ Mid-Price)'}
                   </Typography>
                 </Box>
               </Box>
@@ -865,10 +875,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     🔄 How it works:
                   </Typography>
                   <Typography variant="caption" sx={{ color: 'rgba(148, 163, 184, 0.9)', display: 'block', mt: 0.5, lineHeight: 1.6 }}>
-                    1️⃣ Place all {calculateBatchOrders().length} orders at mid-price (limit orders)<br/>
-                    2️⃣ Wait indefinitely until ALL orders are filled<br/>
-                    3️⃣ Once all filled → automatically place next batch<br/>
-                    4️⃣ Repeat until all {autoLoopRounds} rounds complete<br/>
+                    1️⃣ Place all {calculateBatchOrders().length} orders at mid-price (limit orders)<br />
+                    2️⃣ Wait indefinitely until ALL orders are filled<br />
+                    3️⃣ Once all filled → automatically place next batch<br />
+                    4️⃣ Repeat until all {autoLoopRounds} rounds complete<br />
                     ⚠️ Press STOP anytime to halt the loop
                   </Typography>
                 </Box>
@@ -915,7 +925,15 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               Order Preview (
               {executionMode === 'immediate'
                 ? 'Market Orders - Instant Fill'
-                : 'Limit Orders @ Mid - Auto-Market after 5min'}
+                : executionMode === 'smart'
+                  ? 'Limit Orders @ Mid - Auto-Market after 5min'
+                  : executionMode === 'ssr_standard'
+                    ? 'SSR: Bid+2t / Ask-2t with continuous auto-adjust'
+                    : executionMode === 'ssr_aggressive'
+                      ? 'SSR Aggro: 5% inside spread, continuous auto-adjust'
+                      : executionMode === 'ssr_conservative'
+                        ? 'SSR Safe: 1.5% inside spread, continuous auto-adjust'
+                        : 'Limit Orders @ Mid'}
               ):
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -1031,10 +1049,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 <Typography variant="body2" fontWeight="bold" sx={{ color: '#e2e8f0' }}>
                   {autoLoopConfirmDialog?.executionMode === 'immediate' ? '🚀 Market'
                     : autoLoopConfirmDialog?.executionMode === 'smart' ? '🧠 Smart'
-                    : autoLoopConfirmDialog?.executionMode === 'ssr_standard' ? '🏎️ SSR'
-                    : autoLoopConfirmDialog?.executionMode === 'ssr_aggressive' ? '🔥 Aggro'
-                    : autoLoopConfirmDialog?.executionMode === 'ssr_conservative' ? '🛡️ Safe'
-                    : autoLoopConfirmDialog?.executionMode}
+                      : autoLoopConfirmDialog?.executionMode === 'ssr_standard' ? '🏎️ SSR'
+                        : autoLoopConfirmDialog?.executionMode === 'ssr_aggressive' ? '🔥 Aggro'
+                          : autoLoopConfirmDialog?.executionMode === 'ssr_conservative' ? '🛡️ Safe'
+                            : autoLoopConfirmDialog?.executionMode}
                 </Typography>
               </Box>
               <Box>
@@ -1042,8 +1060,8 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 <Typography variant="body2" fontWeight="bold" sx={{ color: '#e2e8f0' }}>
                   {autoLoopConfirmDialog?.multiplierMode === 'normal' ? 'Normal'
                     : autoLoopConfirmDialog?.multiplierMode === 'gcd' ? 'GCD'
-                    : autoLoopConfirmDialog?.multiplierMode === 'fixed' ? 'Fixed'
-                    : autoLoopConfirmDialog?.multiplierMode}
+                      : autoLoopConfirmDialog?.multiplierMode === 'fixed' ? 'Fixed'
+                        : autoLoopConfirmDialog?.multiplierMode}
                 </Typography>
               </Box>
             </Box>

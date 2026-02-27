@@ -104,7 +104,10 @@ ORDER_TYPE_MARKET_ONLY = 'market_only'    # Only market orders (fastest)
 ORDER_TYPE_SSR = 'ssr'                    # SSR Order: Competitive pricing (2 ticks below best ask)
 
 # Valid order types set for validation
-VALID_ORDER_TYPES = {ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY, ORDER_TYPE_SSR}
+VALID_ORDER_TYPES = {
+    ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY, ORDER_TYPE_SSR,
+    'ssr_standard', 'ssr_aggressive', 'ssr_conservative',  # Frontend SSR mode variants
+}
 
 # SSR Order tracking - stores active SSR monitoring tasks
 # Format: {order_id: {'symbol': str, 'status': str, 'adjustments': int, 'current_price': float, 'start_time': float}}
@@ -554,9 +557,30 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         return order
     
     # SSR order - competitive pricing with monitoring
-    if order_preference == ORDER_TYPE_SSR:
+    # Handle both legacy 'ssr' and the three frontend SSR sub-modes
+    if order_preference == ORDER_TYPE_SSR or order_preference == 'ssr_standard':
+        # Standard: 2 ticks inside the best bid/ask
         return await place_ssr_order(
             client, symbol, size, side,
+            reduce_only=reduce_only,
+            tick_offset=2
+        )
+    
+    if order_preference == 'ssr_aggressive':
+        # Aggressive: 5% inside the best ask (for sells) / best bid (for buys)
+        return await place_ssr_order_with_margin(
+            client, symbol, size, side,
+            margin_percent=5.0,
+            ssr_mode='aggressive',
+            reduce_only=reduce_only
+        )
+    
+    if order_preference == 'ssr_conservative':
+        # Conservative: 1.5% inside the best ask (for sells) / best bid (for buys)
+        return await place_ssr_order_with_margin(
+            client, symbol, size, side,
+            margin_percent=1.5,
+            ssr_mode='conservative',
             reduce_only=reduce_only
         )
     
@@ -779,39 +803,28 @@ def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
                         print(f"[SSR THREAD] Empty orderbook, skipping...")
                         continue
                     
-                    # Find second-best price (excluding our own order)
-                    # For SELL orders: we want to be 1 tick below the second-best ask (best competing seller)
-                    # For BUY orders: we want to be 1 tick above the second-best bid (best competing buyer)
+                    # Re-derive best bid / ask from fresh orderbook
+                    # Strategy (consistent with initial placement):
+                    #   SELL: target = best_ask - (tick_offset * tick_size)  → most competitive ask
+                    #   BUY:  target = best_bid + (tick_offset * tick_size)  → most competitive bid
+                    # This guarantees we are always tick_offset ticks inside the spread,
+                    # matching the initial placement logic and the user's design requirement.
+                    
+                    best_bid_now = float(buy_orders[0]['price']) if buy_orders else 0
+                    best_ask_now = float(sell_orders[0]['price']) if sell_orders else 0
+                    
+                    if best_bid_now == 0 or best_ask_now == 0:
+                        print(f"[SSR THREAD] Could not read best bid/ask from orderbook, skipping...")
+                        continue
                     
                     if side == 'sell':
-                        # Filter out our own order from asks, then find best remaining ask
-                        # L2 orderbook format: {'price': '340.0', 'size': '5'}
-                        other_asks = [float(ask['price']) for ask in sell_orders 
-                                     if abs(float(ask['price']) - current_price) >= new_tick * 0.5]
-                        
-                        if other_asks:
-                            second_best_ask = min(other_asks)  # Best competing ask
-                            new_target = second_best_ask - new_tick  # Be 1 tick better
-                            print(f"[SSR THREAD] SELL: second_best_ask=${second_best_ask}, our_target=${new_target}, current=${current_price}")
-                        else:
-                            # No other asks - stay at current price
-                            print(f"[SSR THREAD] SELL: No competing asks, staying at ${current_price}")
-                            continue
-                            
+                        new_target = best_ask_now - (tick_offset * new_tick)
+                        new_target = max(new_target, best_bid_now + new_tick)  # Never cross the spread
+                        print(f"[SSR THREAD] SELL: best_ask=${best_ask_now}, target=${new_target} ({tick_offset} ticks inside), current=${current_price}")
                     else:  # buy
-                        # Filter out our own order from bids, then find best remaining bid
-                        # L2 orderbook format: {'price': '20.0', 'size': '10'}
-                        other_bids = [float(bid['price']) for bid in buy_orders 
-                                     if abs(float(bid['price']) - current_price) >= new_tick * 0.5]
-                        
-                        if other_bids:
-                            second_best_bid = max(other_bids)  # Best competing bid
-                            new_target = second_best_bid + new_tick  # Be 1 tick better
-                            print(f"[SSR THREAD] BUY: second_best_bid=${second_best_bid}, our_target=${new_target}, current=${current_price}")
-                        else:
-                            # No other bids - stay at current price
-                            print(f"[SSR THREAD] BUY: No competing bids, staying at ${current_price}")
-                            continue
+                        new_target = best_bid_now + (tick_offset * new_tick)
+                        new_target = min(new_target, best_ask_now - new_tick)  # Never cross the spread
+                        print(f"[SSR THREAD] BUY: best_bid=${best_bid_now}, target=${new_target} ({tick_offset} ticks inside), current=${current_price}")
                     
                     new_price = round(new_target / new_tick) * new_tick
                     
@@ -1091,22 +1104,22 @@ async def place_ssr_order_with_margin(client, symbol: str, size: float, side: st
         
         # Calculate price based on percentage margin
         if side == 'sell':
-            # Sell: margin% ABOVE best ask (more competitive for seller)
+            # Sell: margin% BELOW best ask (more competitive - lower limit sell gets filled first)
             reference_price = best_ask
-            target_price = reference_price * (1 + margin_percent / 100)
-        else:  # buy
-            # Buy: margin% BELOW best bid (more competitive for buyer)
-            reference_price = best_bid
             target_price = reference_price * (1 - margin_percent / 100)
+        else:  # buy
+            # Buy: margin% ABOVE best bid (more competitive - higher limit buy gets filled first)
+            reference_price = best_bid
+            target_price = reference_price * (1 + margin_percent / 100)
         
         # Round to tick size
         initial_price = round(target_price / tick_size) * tick_size
         
         # Ensure we don't cross the spread
         if side == 'sell':
-            initial_price = max(initial_price, best_ask)
+            initial_price = max(initial_price, best_bid + tick_size)  # Don't go below bid
         else:
-            initial_price = min(initial_price, best_bid)
+            initial_price = min(initial_price, best_ask - tick_size)  # Don't go above ask
         
         log.info(f"📊 SSR {ssr_mode} initial price: ${initial_price:.2f} ({margin_percent}% margin) [bid:${best_bid:.2f} ask:${best_ask:.2f}]")
         
@@ -1208,10 +1221,18 @@ def _run_ssr_margin_monitoring_loop(client_config, symbol: str, size: int, side:
         global _active_ssr_orders
         
         async def monitoring_loop():
-            from API.async_delta_client import AsyncDeltaClient
+            from bot.api.async_delta_client import AsyncDeltaClient
+            from config.loader import get_api_credentials
             
-            testnet = client_config.get('testnet', True)
-            async_client = AsyncDeltaClient(testnet=testnet)
+            creds = get_api_credentials()
+            testnet = client_config.get('testnet', creds.get('testnet', False))
+            if testnet is None:
+                testnet = False
+            async_client = AsyncDeltaClient(
+                api_key=creds.get('api_key', ''),
+                api_secret=creds.get('api_secret', ''),
+                testnet=testnet
+            )
             
             adjustments = 0
             current_price = initial_price
@@ -1239,12 +1260,12 @@ def _run_ssr_margin_monitoring_loop(client_config, symbol: str, size: int, side:
                     # Recalculate target price
                     if side == 'sell':
                         reference_price = best_ask
-                        new_target = reference_price * (1 + margin_percent / 100)
-                        new_target = max(new_target, best_ask)
+                        new_target = reference_price * (1 - margin_percent / 100)
+                        new_target = max(new_target, best_bid + tick_size)  # Don't cross spread
                     else:
                         reference_price = best_bid
-                        new_target = reference_price * (1 - margin_percent / 100)
-                        new_target = min(new_target, best_bid)
+                        new_target = reference_price * (1 + margin_percent / 100)
+                        new_target = min(new_target, best_ask - tick_size)  # Don't cross spread
                     
                     new_price = round(new_target / tick_size) * tick_size
                     
