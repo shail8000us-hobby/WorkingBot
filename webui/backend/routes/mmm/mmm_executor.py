@@ -30,7 +30,17 @@ import time
 from typing import Dict, Optional, Any, Tuple
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
+# P2 Audit fix (#16): sys.path.insert() is guarded to be idempotent.
+# This is required because mmm_executor lazily imports from 'bot.api.*' and
+# 'config.loader', which live outside the webui package tree. Until the
+# codebase is installed as a proper package (pip install -e .), this path
+# manipulation is necessary. The guard prevents duplicate entries on module
+# re-imports (Flask hot-reload, pytest collection, etc.).
+# TODO: Remove when root package is installable: https://docs.python.org/3/installing/
+_BOT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+if _BOT_ROOT not in sys.path:
+    sys.path.insert(0, _BOT_ROOT)
+
 
 # Configure logger to output to stderr (picked up by LaunchAgent)
 log = logging.getLogger('mmm_executor')

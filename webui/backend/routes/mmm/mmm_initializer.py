@@ -26,8 +26,13 @@ import math
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta, timezone
 
-# Add parent paths for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+# P2 Audit fix (#16): sys.path.insert() is guarded to be idempotent.
+# Required for lazy imports inside MMMInitializer methods (e.g. chain_service).
+# TODO: Remove when root package is installable (pip install -e .).
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
+
 
 log = logging.getLogger('mmm_initializer')
 
@@ -730,7 +735,21 @@ class MMMInitializer:
         base_lots: int,
         buffer_pct: float = 0.05,
     ) -> int:
-        """Section 14.1: Premium buffer — add extra lots for slippage protection."""
+        """Section 14.1: Premium buffer — add extra lots for slippage protection.
+
+        P2 Audit (#20): This method is NOT called anywhere in the MMM codebase.
+        It may have been intended for future use. Keeping the implementation
+        but emitting a DeprecationWarning so callers are alerted.
+        If it's still unused in the next audit cycle, remove it.
+        """
+        import warnings
+        warnings.warn(
+            "calculate_lots_with_buffer() is unused in the MMM algorithm. "
+            "If you are calling this externally, update your integration — "
+            "it will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return math.ceil(base_lots * (1 + buffer_pct))
 
 
@@ -738,12 +757,21 @@ class MMMInitializer:
 # Singleton
 # =============================================================================
 
+import threading as _threading
 _initializer_instance = None
+_initializer_lock = _threading.Lock()
 
 
 def get_initializer(chain_service=None) -> MMMInitializer:
-    """Get singleton initializer instance."""
+    """Get or create the singleton MMMInitializer.
+
+    P2 Audit fix: Previously lacked a lock — concurrent first-calls (e.g.
+    from two Flask request threads during startup) could create multiple
+    instances. Now thread-safe via double-checked locking.
+    """
     global _initializer_instance
     if _initializer_instance is None:
-        _initializer_instance = MMMInitializer(chain_service)
+        with _initializer_lock:
+            if _initializer_instance is None:
+                _initializer_instance = MMMInitializer(chain_service)
     return _initializer_instance

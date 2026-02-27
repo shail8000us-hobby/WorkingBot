@@ -30,10 +30,17 @@ log = logging.getLogger('mmm_trigger')
 TRIGGER_PCT_FLOOR = 1.0
 
 # Trigger outcomes (maps to §4.7)
-OUTCOME_NONE = 'none'           # A: Neither triggered
-OUTCOME_CE = 'ce_triggered'     # B: CE aggressor → sell PE
-OUTCOME_PE = 'pe_triggered'     # C: PE aggressor → sell CE
-OUTCOME_BOTH = 'both_triggered' # D: Both → user decides
+OUTCOME_NONE = 'none'           # A: Neither side triggered — stable market
+OUTCOME_CE = 'ce_triggered'     # B: CE aggressor → sell additional PE lots as hedge
+OUTCOME_PE = 'pe_triggered'     # C: PE aggressor → sell additional CE lots as hedge
+# D: Both sides simultaneously rose above trigger threshold.
+# HANDLED in mmm_monitor.py: session paused to BOTH_SIDES_UP status,
+# WebSocket alert emitted, human operator must decide which side to hedge.
+# NOT dead code — fires in extremely volatile markets (sharp V-shaped reversals
+# or correlated gap moves). Algorithm avoids auto-acting to prevent contradictory
+# hedges (selling both CE and PE simultaneously would be a straddle).
+OUTCOME_BOTH = 'both_triggered'
+
 
 
 def evaluate_triggers(
