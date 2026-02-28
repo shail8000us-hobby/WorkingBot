@@ -666,7 +666,7 @@ const OptionsPanel = () => {
   // Batch order state - strike selection and order quantity
   const [selectedStrikes, setSelectedStrikes] = useState({}); // { symbol: true/false }
   const [orderQuantity, setOrderQuantity] = useState(1); // Simple multiplier based on current position lots
-  const [multiplierMode, setMultiplierMode] = useState(null); // null, 'normal', 'gcd', or 'fixed' - No default, user must select
+  const [multiplierMode, setMultiplierMode] = useState(null); // null, 'normal', 'gcd', 'fixed', or 'batch' - No default, user must select
   const [executionMode, setExecutionMode] = useState('smart'); // 'immediate', 'smart', 'ssr_standard', 'ssr_aggressive', 'ssr_conservative'
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
@@ -720,7 +720,7 @@ const OptionsPanel = () => {
     totalRounds: 1,
     orderPreference: 'maker_first',
     executionMode: 'smart',
-    multiplierMode: null,
+    multiplierMode: null, // 'normal' | 'gcd' | 'fixed' | 'batch' | null
   });
 
   // Sound settings dialog state (JAN 19, 2026 - Independent UI component)
@@ -2278,6 +2278,9 @@ const OptionsPanel = () => {
   //   Normal: Order size = abs(position size) * |qty|  (scales with position)
   //   GCD:    Order size = (abs(position size) / GCD) * |qty|  (proportional)
   //   Fixed:  Order size = |qty| lots per position (flat, ideal for gradual exit with auto-loop)
+  //   Batch:  Order size = exact value from Batch Qty column per row (positive=BUY, negative=SELL)
+  //           Completely ignores the global qty multiplier — use this when you want per-strike
+  //           control without any ratio math.
   const calculateBatchOrders = (filterExpiry = null) => {
     // Must have a mode selected before calculating orders
     if (!multiplierMode) return [];
@@ -2288,6 +2291,33 @@ const OptionsPanel = () => {
       selectedPos = selectedPos.filter(pos => getExpiryCode(pos.product_symbol) === filterExpiry);
     }
     const orders = [];
+
+    // ── BATCH MODE ────────────────────────────────────────────────────────────
+    // Uses the per-row Batch Qty column values directly.
+    // Positive qty → BUY that many lots; Negative qty → SELL that many lots.
+    // The global orderQuantity multiplier is NOT used in this mode.
+    if (multiplierMode === 'batch') {
+      selectedPos.forEach((pos) => {
+        const rawQty = batchQuantities[pos.product_symbol];
+        if (!rawQty || rawQty === 0) return; // skip rows with no qty entered
+
+        const midPrice = ((pos.best_bid || 0) + (pos.best_ask || 0)) / 2;
+        const orderSize = Math.abs(rawQty);
+        const side = rawQty > 0 ? 'buy' : 'sell';
+
+        orders.push({
+          symbol: pos.product_symbol,
+          size: orderSize,
+          side: side,
+          midPrice,
+          originalSize: pos.size,
+          optionType: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
+          expiry: getExpiryCode(pos.product_symbol),
+        });
+      });
+      return orders;
+    }
+    // ── END BATCH MODE ────────────────────────────────────────────────────────
 
     // Calculate GCD if in GCD mode
     const gcd = multiplierMode === 'gcd' ? getPositionsGCD(selectedPos) : 1;
@@ -2351,7 +2381,7 @@ const OptionsPanel = () => {
   const executeBatchOrders = async () => {
     // ===== MODE SELECTION CHECK =====
     if (!multiplierMode) {
-      setOrderResult({ type: 'warning', message: '⚠️ Please select a mode first: Normal, GCD, or Fixed' });
+      setOrderResult({ type: 'warning', message: '⚠️ Please select a mode first: Normal, GCD, Fixed, or Batch' });
       setTimeout(() => setOrderResult(null), 3000);
       return;
     }
@@ -2597,7 +2627,7 @@ const OptionsPanel = () => {
     }
 
     if (!multiplierMode) {
-      setAutoLoopError('⚠️ Please select an order size mode first — choose Normal, GCD, or Fixed before starting Auto-Loop.');
+      setAutoLoopError('⚠️ Please select an order size mode first — choose Normal, GCD, Fixed, or Batch before starting Auto-Loop.');
       return;
     }
 

@@ -183,22 +183,26 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
             </Box>
             <Tooltip
               title={
-                multiplierMode === 'fixed'
-                  ? orderQuantity > 0
-                    ? `FIXED ADD: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual entry.`
-                    : `FIXED EXIT: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual exit with minimal slippage.`
-                  : multiplierMode === 'normal'
+                multiplierMode === 'batch'
+                  ? 'BATCH MODE: Uses the exact quantity you entered in the Batch Qty column for each row. Positive = BUY, Negative = SELL. The global qty multiplier is ignored.'
+                  : multiplierMode === 'fixed'
                     ? orderQuantity > 0
-                      ? `ADD to positions: x${orderQuantity} multiplier. Scales with position size.`
-                      : `EXIT positions: x${Math.abs(orderQuantity)} multiplier. Exits full position size × multiplier.`
-                    : `GCD-based multiplier (GCD=${getPositionsGCD(getSelectedPositions())}). ${orderQuantity > 0 ? 'ADD to' : 'EXIT'} positions proportionally.`
+                      ? `FIXED ADD: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual entry.`
+                      : `FIXED EXIT: Exactly ${Math.abs(orderQuantity)} lot(s) per position per round. Use with Auto-Loop for gradual exit with minimal slippage.`
+                    : multiplierMode === 'normal'
+                      ? orderQuantity > 0
+                        ? `ADD to positions: x${orderQuantity} multiplier. Scales with position size.`
+                        : `EXIT positions: x${Math.abs(orderQuantity)} multiplier. Exits full position size × multiplier.`
+                      : `GCD-based multiplier (GCD=${getPositionsGCD(getSelectedPositions())}). ${orderQuantity > 0 ? 'ADD to' : 'EXIT'} positions proportionally.`
               }
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography variant="caption" color={multiplierMode ? "text.secondary" : "warning.main"}>
-                  {multiplierMode
-                    ? `(${multiplierMode === 'fixed' ? `${Math.abs(orderQuantity)} lot${Math.abs(orderQuantity) > 1 ? 's' : ''} each` : `x${Math.abs(orderQuantity)}`} ${orderQuantity > 0 ? 'add' : 'exit'}${multiplierMode === 'gcd' ? ' GCD' : multiplierMode === 'fixed' ? ' fixed' : ''})`
-                    : '⚠ select mode →'}
+                  {multiplierMode === 'batch'
+                    ? '(per-row qty)'
+                    : multiplierMode
+                      ? `(${multiplierMode === 'fixed' ? `${Math.abs(orderQuantity)} lot${Math.abs(orderQuantity) > 1 ? 's' : ''} each` : `x${Math.abs(orderQuantity)}`} ${orderQuantity > 0 ? 'add' : 'exit'}${multiplierMode === 'gcd' ? ' GCD' : multiplierMode === 'fixed' ? ' fixed' : ''})`
+                      : '⚠ select mode →'}
                 </Typography>
                 <Box
                   sx={{
@@ -281,6 +285,30 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     }}
                   >
                     Fixed
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={multiplierMode === 'batch' ? 'contained' : 'outlined'}
+                    onClick={() => setMultiplierMode(prev => prev === 'batch' ? null : 'batch')}
+                    sx={{
+                      borderRadius: 0,
+                      minWidth: 50,
+                      fontSize: '0.7rem',
+                      py: 0.25,
+                      bgcolor:
+                        multiplierMode === 'batch' ? 'rgba(168, 85, 247, 0.8)' : 'transparent',
+                      color: multiplierMode === 'batch' ? '#fff' : 'rgba(168, 85, 247, 0.8)',
+                      borderColor: 'transparent',
+                      '&:hover': {
+                        bgcolor:
+                          multiplierMode === 'batch'
+                            ? 'rgba(168, 85, 247, 1)'
+                            : 'rgba(168, 85, 247, 0.1)',
+                        borderColor: 'transparent',
+                      },
+                    }}
+                  >
+                    Batch
                   </Button>
                 </Box>
               </Box>
