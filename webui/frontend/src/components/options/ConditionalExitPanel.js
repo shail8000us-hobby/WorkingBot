@@ -10,7 +10,8 @@
  * Created: February 25, 2026
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Button,
@@ -72,9 +73,6 @@ const ConditionalExitPanel = React.memo(function ConditionalExitPanel({
   const [formOrderPref, setFormOrderPref] = useState('maker_first');
   const [submitting, setSubmitting] = useState(false);
 
-  // Polling interval ref
-  const pollRef = useRef(null);
-
   // ── Fetch status ───────────────────────────────────────────────
   const fetchStatus = useCallback(async () => {
     try {
@@ -88,16 +86,8 @@ const ConditionalExitPanel = React.memo(function ConditionalExitPanel({
     }
   }, []);
 
-  // Poll every 3s when panel is expanded
-  useEffect(() => {
-    if (expanded) {
-      fetchStatus();
-      pollRef.current = setInterval(fetchStatus, 3000);
-      return () => clearInterval(pollRef.current);
-    } else {
-      if (pollRef.current) clearInterval(pollRef.current);
-    }
-  }, [expanded, fetchStatus]);
+  // Poll every 3s when panel is expanded — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchStatus, 3000, 30000, expanded);
 
   // ── Start/Stop monitor ─────────────────────────────────────────
   const startMonitor = async () => {

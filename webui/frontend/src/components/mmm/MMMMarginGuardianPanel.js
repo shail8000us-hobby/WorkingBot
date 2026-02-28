@@ -54,6 +54,7 @@ import {
   Visibility as VisibilityIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 
 // Tier configuration
 const TIER_CONFIG = {
@@ -463,13 +464,10 @@ export default function MMMMarginGuardianPanel({ session, sessionId }) {
     await Promise.all([fetchExchangeMargin(), fetchGuardianStatus()]);
   }, [fetchExchangeMargin, fetchGuardianStatus]);
 
-  // Auto-refresh
-  useEffect(() => {
-    fetchAll();
-    if (!autoRefresh) return;
-    const interval = setInterval(fetchAll, refreshInterval * 1000);
-    return () => clearInterval(interval);
-  }, [fetchAll, autoRefresh, refreshInterval]);
+  // Initial fetch (always, regardless of autoRefresh)
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+  // Auto-refresh — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchAll, refreshInterval * 1000, 120000, autoRefresh);
 
   // Toggle guardian defense
   const handleToggleGuardian = async (enabled) => {

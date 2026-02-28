@@ -7,7 +7,8 @@
  * Created: February 18, 2026
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Paper,
@@ -35,20 +36,20 @@ const MMMAnalyticsTable = ({ sessionId }) => {
   const [error, setError] = useState(null);
   const [source, setSource] = useState('');
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     if (!sessionId) return;
 
     try {
       setLoading(true);
       setError(null);
       const data = await mmmService.getSessionAnalytics(sessionId);
-      
+
       // The service returns data directly (not wrapped in response.data)
       if (!data) {
         setError('Invalid API response');
         return;
       }
-      
+
       if (data.success) {
         setAnalytics(data.analytics);
         setSource(data.source || 'unknown');
@@ -61,13 +62,9 @@ const MMMAnalyticsTable = ({ sessionId }) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAnalytics();
-    const interval = setInterval(fetchAnalytics, 30000); // Auto-refresh every 30s
-    return () => clearInterval(interval);
   }, [sessionId]);
+
+  useVisibilityAwarePolling(fetchAnalytics, 30000, 120000, !!sessionId);
 
   const formatDuration = (seconds) => {
     if (!seconds) return '--';

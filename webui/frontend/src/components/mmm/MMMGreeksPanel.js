@@ -16,7 +16,7 @@
  * Created: February 18, 2026
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Box,
   Table,
@@ -37,6 +37,7 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AcUnitIcon from '@mui/icons-material/AcUnit';
 import mmmService from './mmmService';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -74,7 +75,6 @@ export default function MMMGreeksPanel({ session }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastFetch, setLastFetch] = useState(null);
-  const timerRef = useRef(null);
 
   const sessionId = session?.session_id;
 
@@ -97,12 +97,8 @@ export default function MMMGreeksPanel({ session }) {
     }
   }, [sessionId]);
 
-  // Initial fetch + auto-refresh
-  useEffect(() => {
-    fetchGreeks();
-    timerRef.current = setInterval(fetchGreeks, REFRESH_INTERVAL);
-    return () => clearInterval(timerRef.current);
-  }, [fetchGreeks]);
+  // Initial fetch + auto-refresh — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchGreeks, REFRESH_INTERVAL, 120000);
 
   if (!sessionId) {
     return (

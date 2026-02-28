@@ -399,6 +399,11 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
         { value: 'normal', label: 'Normal — allow adjustments' },
         { value: 'pause', label: 'Pause — require decision' },
       ],
+      vol_regime_action: [
+        { value: 'block_sells', label: 'Block Sells — block new sell orders' },
+        { value: 'pause', label: 'Pause — pause entire session' },
+        { value: 'wind_down', label: 'Wind Down — reduce positions' },
+      ],
       trend_action: [
         { value: 'block_sells', label: 'Block Sells — block dangerous side only' },
         { value: 'pause', label: 'Pause — pause entire session' },

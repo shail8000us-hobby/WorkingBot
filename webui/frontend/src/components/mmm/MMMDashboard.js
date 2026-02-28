@@ -84,6 +84,7 @@ import MMMGreeksPanel from './MMMGreeksPanel';
 import MMMAnalyticsSummary from './MMMAnalyticsSummary';
 import MMMInstitutionalAnalytics from '../MMMInstitutionalAnalytics';
 import { HelpTooltip, SectionBlurb, StrategyExplainer } from './MMMEducation';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 
 // =============================================================================
 // Status color + label mapping
@@ -258,9 +259,35 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
             </Typography>
           )}
           {status === 'PARTIAL_ENTRY' && (
-            <Typography variant="caption" color="error" sx={{ fontWeight: 700 }}>
-              ⚠️ One leg filled, other failed! Check activities.
-            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%' }}>
+              <Typography variant="caption" color="error" sx={{ fontWeight: 700 }}>
+                ⚠️ One leg filled, other failed!
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                <Tooltip title="Auto-retry the failed leg with smart order execution">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    sx={{ fontSize: '0.65rem', py: 0.2, px: 0.8, minWidth: 0 }}
+                    onClick={(e) => { e.stopPropagation(); onControl('retry_leg', session.session_id); }}
+                  >
+                    🔄 Retry Leg
+                  </Button>
+                </Tooltip>
+                <Tooltip title="Both legs are already filled on the exchange — enter fill prices to start monitoring">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="success"
+                    sx={{ fontSize: '0.65rem', py: 0.2, px: 0.8, minWidth: 0 }}
+                    onClick={(e) => { e.stopPropagation(); onControl('resolve_partial', session.session_id); }}
+                  >
+                    ✅ Both Filled
+                  </Button>
+                </Tooltip>
+              </Box>
+            </Box>
           )}
           {status === 'IDLE' && (session.ce_original_lots > 0 || session.ce_active_lots > 0) && (
             <Tooltip title="Start">
@@ -462,7 +489,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       }
       // M-34 fix: Validate numeric fields before sending to backend
       if (isNaN(parseFloat(ce.strike)) || isNaN(parseFloat(ce.premium)) || isNaN(parseInt(ce.lots, 10)) ||
-          isNaN(parseFloat(pe.strike)) || isNaN(parseFloat(pe.premium)) || isNaN(parseInt(pe.lots, 10))) {
+        isNaN(parseFloat(pe.strike)) || isNaN(parseFloat(pe.premium)) || isNaN(parseInt(pe.lots, 10))) {
         setError('Strike, Premium, and Lots must be valid numbers');
         return;
       }
@@ -779,13 +806,9 @@ const HeartbeatHealthPanel = ({ sessionId, status }) => {
     }
   }, [sessionId]);
 
-  useEffect(() => {
-    fetchHealth();
-    if (status === 'RUNNING') {
-      const interval = setInterval(fetchHealth, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [fetchHealth, status]);
+  // Always fetch once on mount; only poll continuously when RUNNING
+  useEffect(() => { fetchHealth(); }, [fetchHealth]);
+  useVisibilityAwarePolling(fetchHealth, 30000, 120000, status === 'RUNNING');
 
   if (!health) return null;
 
@@ -1126,7 +1149,7 @@ const MMMReduceModal = ({ open, session, onClose }) => {
 /**
  * Session detail panel — tabbed live dashboard view
  */
-const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
+const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryAction }) => {
   const [detailTab, setDetailTab] = useState(0);
   const [reduceOpen, setReduceOpen] = useState(false);
 
@@ -1208,15 +1231,32 @@ const SessionDetail = ({ session, wsData, onBothSidesAction }) => {
   // C-9 fix: safe reference to heartbeat data (may be undefined on initial load/reconnect)
   const heartbeat = wsData?.heartbeat || null;
 
-  // Current premium from heartbeat for CE/PE cards
-  const ceLivePremium = heartbeat?.ce_premium ?? null;
-  const peLivePremium = heartbeat?.pe_premium ?? null;
+  // Current premium from heartbeat for CE/PE cards.
+  // Fallback to session._premium_map (persisted by backend on every heartbeat) when
+  // the WebSocket event hasn't fired yet (e.g. PAUSED/STOPPED sessions).
+  const sessionPremiumMap = session?._premium_map || {};
+  const _cePremiumFromMap = (() => {
+    const strike = ce?.active_strike;
+    if (!strike) return null;
+    const key = `${Math.round(strike)}:call`;
+    const v = sessionPremiumMap[key];
+    return (v != null && v > 0) ? v : null;
+  })();
+  const _pePremiumFromMap = (() => {
+    const strike = pe?.active_strike;
+    if (!strike) return null;
+    const key = `${Math.round(strike)}:put`;
+    const v = sessionPremiumMap[key];
+    return (v != null && v > 0) ? v : null;
+  })();
+  const ceLivePremium = heartbeat?.ce_premium ?? _cePremiumFromMap ?? null;
+  const peLivePremium = heartbeat?.pe_premium ?? _pePremiumFromMap ?? null;
 
   return (
     <Box sx={{ p: 2 }}>
       {/* Status Banner — ALWAYS shown */}
       <Box sx={{ mb: 2 }}>
-        <MMMStatusBanner session={session} heartbeat={heartbeat} onBothSidesAction={onBothSidesAction} />
+        <MMMStatusBanner session={session} heartbeat={heartbeat} onBothSidesAction={onBothSidesAction} onPartialEntryAction={onPartialEntryAction} />
       </Box>
 
       {/* Detail Tabs */}
@@ -1753,47 +1793,36 @@ const MMMDashboard = () => {
   );
 
   // Fetch full session details when selected
-  React.useEffect(() => {
-    if (!selectedSessionId) {
-      setFullSession(null);
-      return;
-    }
-
-    let cancelled = false;
-    const fetchFull = async () => {
-      try {
-        const result = await mmmService.getSession(selectedSessionId);
-        if (!cancelled && result.success) {
-          setFullSession(result.session);
-          setFetchError(null);  // H-15: clear error on success
-        }
-      } catch (err) {
-        // If 404, the session was deleted — clear selection & localStorage
-        if (err.status === 404 || err?.details?.error?.includes('not found')) {
-          if (!cancelled) {
-            setFullSession(null);
-            setFetchError(null);
-            selectSession(null);
-            localStorage.removeItem('mmm_selectedSessionId');
-          }
-          return;
-        }
-        // H-15 fix: Surface non-404 errors to user
-        if (!cancelled) {
-          setFetchError(err.message || 'Failed to fetch session data');
-        }
-        console.error('Failed to fetch full session:', err);
+  const fetchFullSession = useCallback(async () => {
+    if (!selectedSessionId) return;
+    try {
+      const result = await mmmService.getSession(selectedSessionId);
+      if (result.success) {
+        setFullSession(result.session);
+        setFetchError(null);  // H-15: clear error on success
       }
-    };
-
-    fetchFull();
-    const interval = setInterval(fetchFull, 15000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+    } catch (err) {
+      // If 404, the session was deleted — clear selection & localStorage
+      if (err.status === 404 || err?.details?.error?.includes('not found')) {
+        setFullSession(null);
+        setFetchError(null);
+        selectSession(null);
+        localStorage.removeItem('mmm_selectedSessionId');
+        return;
+      }
+      // H-15 fix: Surface non-404 errors to user
+      setFetchError(err.message || 'Failed to fetch session data');
+      console.error('Failed to fetch full session:', err);
+    }
   }, [selectedSessionId, selectSession]);
+
+  // Clear full session when no session is selected
+  useEffect(() => {
+    if (!selectedSessionId) setFullSession(null);
+  }, [selectedSessionId]);
+
+  // Poll full session details — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchFullSession, 15000, 60000, !!selectedSessionId);
 
   // Session control handler
   const handleControl = useCallback(async (action, sessionId) => {
@@ -1837,8 +1866,27 @@ const MMMDashboard = () => {
           setSettingsSessionId(sessionId);
           setSettingsOpen(true);
           return;
+        case 'retry_leg':
+          result = await mmmService.retryPartialLeg(sessionId);
+          break;
+        case 'resolve_partial': {
+          // Prompt user for both fill prices
+          const ceFillStr = window.prompt('Enter CE fill price (actual fill from exchange):');
+          if (!ceFillStr) return;
+          const peFillStr = window.prompt('Enter PE fill price (actual fill from exchange):');
+          if (!peFillStr) return;
+          const ceFill = parseFloat(ceFillStr);
+          const peFill = parseFloat(peFillStr);
+          if (isNaN(ceFill) || isNaN(peFill) || ceFill <= 0 || peFill <= 0) {
+            setSnackbar({ open: true, message: 'Invalid fill prices — must be positive numbers', severity: 'error' });
+            return;
+          }
+          result = await mmmService.resolvePartialEntry(sessionId, ceFill, peFill);
+          break;
+        }
         default:
           return;
+
       }
 
       if (result.success) {
@@ -2105,7 +2153,12 @@ const MMMDashboard = () => {
                 )}
                 {/* H-13 fix: guard against null fullSession */}
                 {fullSession ? (
-                  <SessionDetail session={fullSession} wsData={wsData} onBothSidesAction={handleBothSidesDecision} />
+                  <SessionDetail
+                    session={fullSession}
+                    wsData={wsData}
+                    onBothSidesAction={handleBothSidesDecision}
+                    onPartialEntryAction={(action) => handleControl(action, selectedSessionId)}
+                  />
                 ) : (
                   <Box sx={{ p: 4, textAlign: 'center' }}>
                     <Typography variant="body1" color="text.secondary">

@@ -15,7 +15,10 @@ import { apiCircuit } from './circuitBreaker';
 
 const MAX_RETRIES = 2; // 1 original + 2 retries = 3 total attempts
 const RETRY_DELAY_MS = 800;
-const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
+// NOTE: 429 (rate limit) is deliberately excluded — retrying a rate-limited
+// request immediately just creates more 429s and amplifies console errors.
+// The caller should handle 429 by showing the user a "please wait" message.
+const RETRYABLE_STATUS_CODES = new Set([408, 502, 503, 504]);
 
 interface RequestConfig {
   params?: Record<string, any>;

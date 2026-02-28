@@ -37,6 +37,7 @@ import {
   ErrorOutline as ErrorIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 
 
 // =============================================================================
@@ -410,12 +411,8 @@ export default function MMMRegimePanel({ session, regimeData, heartbeat }) {
     }
   }, [session?.session_id]);
 
-  // Fetch on mount and periodically
-  useEffect(() => {
-    fetchRegime();
-    const interval = setInterval(fetchRegime, 30000); // Every 30s
-    return () => clearInterval(interval);
-  }, [fetchRegime]);
+  // Fetch on mount and periodically — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchRegime, 30000, 120000);
 
   if (!effectiveRegime) {
     return (

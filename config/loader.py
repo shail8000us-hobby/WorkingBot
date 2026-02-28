@@ -139,6 +139,10 @@ _config: Optional[RootConfig] = None
 _config_loader: Optional[ConfigLoader] = None
 _reload_in_progress: bool = False  # Re-entrancy guard for reload
 
+# Cached API credentials (load_dotenv is expensive — opens a file FD every call)
+_cached_credentials: Optional[dict] = None
+_credentials_mode: Optional[str] = None  # trading mode the cache was built for
+
 
 def get_config(reload: bool = False) -> RootConfig:
     """Get global configuration instance
@@ -191,27 +195,36 @@ def save_config(config: RootConfig, path: Union[str, Path] = "config.yaml"):
 
 
 def get_api_credentials(trading_mode: Optional[str] = None):
-    """Get API credentials from environment variables
-    
-    This function loads credentials from secrets/api_keys.env and returns
-    the appropriate keys based on trading mode.
-    
+    """Get API credentials from environment variables.
+
+    Credentials are cached after the first load so that load_dotenv() is only
+    ever called ONCE per trading-mode.  Calling load_dotenv() on every request
+    opens a new file descriptor each time which quickly exhausts the OS limit
+    ([Errno 24] Too many open files) and causes 500 errors across the board.
+
     Args:
         trading_mode: 'live' or 'demo'. If None, uses config.trading_mode
-        
+
     Returns:
         dict with 'api_key' and 'api_secret'
     """
-    # Load secrets from .env file (security best practice)
-    secrets_file = Path(__file__).parent.parent / 'secrets' / 'api_keys.env'
-    if secrets_file.exists():
-        load_dotenv(secrets_file, override=True)
-    
-    # Get trading mode from config if not specified
+    global _cached_credentials, _credentials_mode
+
+    # Resolve trading mode first (cheap — uses already-cached config singleton)
     if trading_mode is None:
         config = get_config()
         trading_mode = config.trading_mode
-    
+
+    # Return cached result if trading mode hasn't changed
+    if _cached_credentials is not None and _credentials_mode == trading_mode:
+        return _cached_credentials
+
+    # Load the .env file ONCE and cache env vars into the process environment.
+    # load_dotenv() is safe to call once — subsequent os.getenv() calls are free.
+    secrets_file = Path(__file__).parent.parent / 'secrets' / 'api_keys.env'
+    if secrets_file.exists():
+        load_dotenv(secrets_file, override=True)
+
     # Get appropriate credentials based on mode
     if trading_mode == 'live':
         api_key = os.getenv('LIVE_DELTA_API_KEY') or os.getenv('DELTA_API_KEY')
@@ -219,11 +232,20 @@ def get_api_credentials(trading_mode: Optional[str] = None):
     else:  # demo/testnet
         api_key = os.getenv('DEMO_DELTA_API_KEY') or os.getenv('DELTA_API_KEY')
         api_secret = os.getenv('DEMO_DELTA_API_SECRET') or os.getenv('DELTA_API_SECRET')
-    
-    return {
-        'api_key': api_key,
-        'api_secret': api_secret
-    }
+
+    _cached_credentials = {'api_key': api_key, 'api_secret': api_secret}
+    _credentials_mode = trading_mode
+    return _cached_credentials
+
+
+def invalidate_credentials_cache():
+    """Force credentials to be reloaded on the next get_api_credentials() call.
+
+    Call this if the secrets/api_keys.env file changes at runtime.
+    """
+    global _cached_credentials, _credentials_mode
+    _cached_credentials = None
+    _credentials_mode = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

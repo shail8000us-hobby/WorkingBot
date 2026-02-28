@@ -4,7 +4,8 @@
  * Shows why automation is/isn't triggering with detailed condition checks
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Paper,
@@ -45,17 +46,8 @@ const AutomationStatus = ({ automationId, position }) => {
     }
   }, [automationId]);
 
-  useEffect(() => {
-    if (!automationId) return;
-
-    // Get initial status
-    updateStatus();
-
-    // Poll for updates every 5 seconds
-    const interval = setInterval(updateStatus, 5000);
-
-    return () => clearInterval(interval);
-  }, [automationId, updateStatus]);
+  // Poll for updates every 5 seconds — pauses when tab is hidden
+  useVisibilityAwarePolling(updateStatus, 5000, 30000, !!automationId);
 
   if (!statusData) {
     return (

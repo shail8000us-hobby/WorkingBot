@@ -98,6 +98,9 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
     const [success, setSuccess] = useState(null);
     const [warnings, setWarnings] = useState([]);
 
+    // Local expiry filter (independent of session expiry lock — adopt scans all)
+    const [localExpiryFilter, setLocalExpiryFilter] = useState('all');
+
     const mounted = useRef(true);
     useEffect(() => () => { mounted.current = false; }, []);
 
@@ -112,19 +115,48 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
         setScanned(false);
 
         try {
-            const result = await mmmService.getExchangePositions(selectedExpiry || null);
+            // Always scan ALL positions regardless of selectedExpiry lock.
+            // The session expiry lock is for auto-find/import modes (ensures correct contracts),
+            // but Adopt lets the user choose which existing exchange positions to bring under MMM.
+            const result = await mmmService.getExchangePositions(null);
 
             if (mounted.current) {
                 if (result.success) {
-                    setPositions(result.positions || []);
+                    const allPositions = result.positions || [];
+                    setPositions(allPositions);
                     setSpotPrice(result.spot_price || null);
-                    setExpiriesAvailable(result.expiries_with_positions || []);
+                    const foundExpiries = result.expiries_with_positions || [];
+                    setExpiriesAvailable(foundExpiries);
                     setScanned(true);
 
-                    // Auto-select all and auto-classify
+                    // Default filter: if session expiry matches one of the found expiries, pre-select it
+                    // Otherwise show all so the user can see what's available
+                    if (selectedExpiry && foundExpiries.includes(selectedExpiry)) {
+                        setLocalExpiryFilter(selectedExpiry);
+                    } else if (foundExpiries.length === 1) {
+                        setLocalExpiryFilter(foundExpiries[0]);
+                    } else {
+                        setLocalExpiryFilter('all');
+                    }
+
+                    // Auto-select only positions matching the effective expiry filter.
+                    // IMPORTANT: We compute effectiveFilter here (not from localExpiryFilter state
+                    // which hasn't updated yet) so we classify based on the actual filter just set.
+                    const effectiveFilter =
+                        selectedExpiry && foundExpiries.includes(selectedExpiry)
+                            ? selectedExpiry
+                            : foundExpiries.length === 1
+                                ? foundExpiries[0]
+                                : 'all';
+
                     const autoSelections = {};
-                    const cePositions = (result.positions || []).filter(p => p.side === 'CE');
-                    const pePositions = (result.positions || []).filter(p => p.side === 'PE');
+                    // Only auto-select positions for the expiry we're going to show.
+                    // Positions from other expiries are NOT selected — they belong to other algos.
+                    const visiblePositions = effectiveFilter === 'all'
+                        ? allPositions
+                        : allPositions.filter(p => p.expiry === effectiveFilter);
+                    const cePositions = visiblePositions.filter(p => p.side === 'CE');
+                    const pePositions = visiblePositions.filter(p => p.side === 'PE');
 
                     // For each side, closest to ATM = active
                     const classifySide = (sidePositions) => {
@@ -152,7 +184,7 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
                     classifySide(pePositions);
                     setSelections(autoSelections);
 
-                    if ((result.positions || []).length === 0) {
+                    if (allPositions.length === 0) {
                         setError('No open short BTC options positions found on the exchange.');
                     }
                 } else {
@@ -202,7 +234,15 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
     }, [positions]);
 
     // ----- Compute selected positions -----
-    const selectedPositions = positions.filter(p => selections[p.symbol]?.selected);
+    // filteredPositions: positions matching local expiry filter (for display in table)
+    const filteredPositions = localExpiryFilter === 'all'
+        ? positions
+        : positions.filter(p => p.expiry === localExpiryFilter);
+
+    // CRITICAL FIX: Only allow selection of positions that are currently visible
+    // (matching the expiry filter). Positions from other expiries cannot be adopted
+    // into this session — they belong to other algos.
+    const selectedPositions = filteredPositions.filter(p => selections[p.symbol]?.selected);
     const selectedCE = selectedPositions.filter(p => p.side === 'CE');
     const selectedPE = selectedPositions.filter(p => p.side === 'PE');
     const ceTotalLots = selectedCE.reduce((sum, p) => sum + p.lots, 0);
@@ -327,6 +367,43 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
                 )}
             </Box>
 
+            {/* Expiry filter — shown after scan if multiple expiries found */}
+            {scanned && expiriesAvailable.length > 1 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                        Filter by Expiry:
+                    </Typography>
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                        <Select
+                            value={localExpiryFilter}
+                            onChange={(e) => {
+                                setLocalExpiryFilter(e.target.value);
+                                setSelections({});  // Reset selections when expiry changes
+                            }}
+                            displayEmpty
+                        >
+                            <MenuItem value="all">All Expiries ({positions.length})</MenuItem>
+                            {expiriesAvailable.map(exp => (
+                                <MenuItem key={exp} value={exp}>
+                                    {formatExpiry(exp)} &nbsp;
+                                    <Typography component="span" variant="caption" color="text.secondary">
+                                        ({positions.filter(p => p.expiry === exp).length} pos)
+                                    </Typography>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    {localExpiryFilter !== 'all' && (
+                        <Chip
+                            label={`Showing ${filteredPositions.length} positions for ${formatExpiry(localExpiryFilter)}`}
+                            size="small"
+                            color="info"
+                            variant="outlined"
+                        />
+                    )}
+                </Box>
+            )}
+
             {/* Errors & success */}
             {error && (
                 <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -345,7 +422,7 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
             ))}
 
             {/* Positions table */}
-            {scanned && positions.length > 0 && (
+            {scanned && filteredPositions.length > 0 && (
                 <>
                     <TableContainer
                         component={Paper}
@@ -378,7 +455,7 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {positions.map((pos) => {
+                                {filteredPositions.map((pos) => {
                                     const sel = selections[pos.symbol] || {};
                                     const isSelected = sel.selected;
                                     const role = sel.role || 'frozen';
@@ -589,15 +666,26 @@ const MMMAdoptPanel = ({ sessionId, selectedExpiry, onAdopted }) => {
                 </>
             )}
 
-            {/* Empty state after scan */}
+            {/* Empty state after scan — no positions at all */}
             {scanned && positions.length === 0 && !error && (
                 <Paper sx={{ p: 3, textAlign: 'center', opacity: 0.6 }}>
                     <Typography variant="body2">
-                        No open short BTC options positions found on Delta Exchange
-                        {selectedExpiry ? ` for expiry ${formatExpiry(selectedExpiry)}` : ''}.
+                        No open short BTC options positions found on Delta Exchange.
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                         Make sure you have short options positions open on the exchange.
+                    </Typography>
+                </Paper>
+            )}
+
+            {/* Empty state after scan — positions exist but none for this expiry filter */}
+            {scanned && positions.length > 0 && filteredPositions.length === 0 && !error && (
+                <Paper sx={{ p: 3, textAlign: 'center', opacity: 0.7 }}>
+                    <Typography variant="body2">
+                        No positions for expiry {formatExpiry(localExpiryFilter)}.
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        {positions.length} position(s) found on other expiries. Select a different expiry above.
                     </Typography>
                 </Paper>
             )}

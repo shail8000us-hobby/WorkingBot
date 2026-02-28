@@ -74,8 +74,8 @@ const STATUS_CONTEXT = {
     icon: '🔴',
   },
   PARTIAL_ENTRY: {
-    short: 'Partial Entry!',
-    detail: 'One leg filled but the other failed. Manual intervention needed — you may need to close the filled leg or retry the failed one.',
+    short: '⚠️ Intervention Required',
+    detail: 'One entry leg filled but the other failed. Use "Retry Leg" to attempt re-execution, or "Both Filled" if you manually filled it on the exchange.',
     icon: '⚠️',
   },
   STOPPED: {
@@ -140,7 +140,7 @@ function formatCountdown(nextHeartbeat) {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction }) {
+export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction, onPartialEntryAction }) {
   const [now, setNow] = useState(Date.now());
 
   // Update every second for live countdown
@@ -193,6 +193,8 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
 
   const interval = session.params?.adjustment_interval || 300;
   const isBothSidesUp = status === 'BOTH_SIDES_UP';
+  const isPartialEntry = status === 'PARTIAL_ENTRY';
+  const partialInfo = session?.partial_entry || {};
 
   return (
     <Box>
@@ -204,11 +206,11 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
           gap: 2,
           px: 2,
           py: 1,
-          borderRadius: isBothSidesUp ? '8px 8px 0 0' : 2,
+          borderRadius: (isBothSidesUp || isPartialEntry) ? '8px 8px 0 0' : 2,
           bgcolor: 'rgba(0,0,0,0.04)',
           border: '1px solid',
           borderColor: `${color}40`,
-          borderBottom: isBothSidesUp ? 'none' : undefined,
+          borderBottom: (isBothSidesUp || isPartialEntry) ? 'none' : undefined,
           flexWrap: 'wrap',
         }}
       >
@@ -324,11 +326,11 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
         <Box sx={{ flexGrow: 1 }} />
 
         {/* Elapsed Time — only meaningful when strategy is active */}
-        <Tooltip title={['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING'].includes(status) ? 'Time since entry' : 'Strategy not started yet'}>
+        <Tooltip title={['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY'].includes(status) ? 'Time since entry' : 'Strategy not started yet'}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <TimerIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
             <Typography variant="body2" color="text.secondary">
-              {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING'].includes(status)
+              {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY'].includes(status)
                 ? elapsed
                 : 'Not started'}
             </Typography>
@@ -356,6 +358,62 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
           </Tooltip>
         )}
       </Box>
+
+      {/* Partial Entry — inline recovery panel */}
+      {isPartialEntry && (
+        <Box
+          sx={{
+            px: 2,
+            py: 1.5,
+            borderRadius: '0 0 8px 8px',
+            bgcolor: 'rgba(255,87,34,0.06)',
+            border: '1px solid',
+            borderColor: 'rgba(255,87,34,0.3)',
+            borderTop: 'none',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+            <WarningIcon sx={{ color: '#ff5722', fontSize: 20, mt: 0.25 }} />
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 600, color: '#ff5722', mb: 0.5 }}>
+                Partial Entry — One leg failed
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.5 }}>
+                {partialInfo.ce_filled && !partialInfo.pe_filled
+                  ? 'CE filled ✓ but PE failed ✗.'
+                  : partialInfo.pe_filled && !partialInfo.ce_filled
+                    ? 'PE filled ✓ but CE failed ✗.'
+                    : 'One leg failed.'}
+                {' '}Options: 1) Retry the failed leg automatically, or 2) if you already filled it manually on the exchange, click "Both Filled" and enter fill prices.
+              </Typography>
+            </Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Tooltip title="Auto-retry the failed leg using smart order execution (mid-price limit order with repricing)">
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                onClick={() => onPartialEntryAction?.('retry_leg')}
+                sx={{ fontSize: '0.88rem', py: 0.5 }}
+              >
+                🔄 Retry Failed Leg
+              </Button>
+            </Tooltip>
+            <Tooltip title="Both legs are already filled on the exchange. Enter actual fill prices to start monitoring.">
+              <Button
+                size="small"
+                variant="outlined"
+                color="success"
+                onClick={() => onPartialEntryAction?.('resolve_partial')}
+                sx={{ fontSize: '0.88rem', py: 0.5 }}
+              >
+                ✅ Both Filled — Start
+              </Button>
+            </Tooltip>
+          </Box>
+        </Box>
+      )}
 
       {/* Both Sides Up — inline decision panel */}
       {isBothSidesUp && (
@@ -468,12 +526,12 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction 
               : 'Heartbeat monitoring is paused.'}{' '}
             {session._paused_resume_at
               ? (() => {
-                  const resumeAt = parseUTC(session._paused_resume_at) || new Date();
-                  const remaining = Math.max(0, Math.round((resumeAt - now) / 1000));
-                  return remaining > 0
-                    ? `Auto-resume in ${remaining > 60 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : `${remaining}s`}.`
-                    : 'Auto-resuming shortly…';
-                })()
+                const resumeAt = parseUTC(session._paused_resume_at) || new Date();
+                const remaining = Math.max(0, Math.round((resumeAt - now) / 1000));
+                return remaining > 0
+                  ? `Auto-resume in ${remaining > 60 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : `${remaining}s`}.`
+                  : 'Auto-resuming shortly…';
+              })()
               : 'Use "Resume" to restart monitoring, or "Stop" to end the strategy.'}
           </Typography>
         </Box>

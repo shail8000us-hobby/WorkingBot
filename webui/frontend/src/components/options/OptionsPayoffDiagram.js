@@ -42,6 +42,197 @@ import { useParsedPositions, useChartData } from './usePayoffData';
 import usePayoffAlerts from './usePayoffAlerts';
 
 // ============================================================================
+// CUSTOM TOOLTIP — defined outside the parent component so the function
+// reference is stable across renders. Recharts remounts the tooltip whenever
+// it detects a new component *type*, so inlining this inside OptionsPayoffDiagram
+// (which recreates the function on every render) caused visible flickering.
+// ============================================================================
+
+const CustomTooltip = ({
+  active, payload, label,
+  displayData, targetDaysFromNow, targetDate, spotPrice, chartPositions, minDaysToExpiry,
+}) => {
+  if (!active || !payload || !payload.length) return null;
+
+  const currentPrice = Number(label);
+
+  // Read directly from the matching data point so we never miss null/hidden series
+  const dataPoint = displayData?.find((d) => d.price === currentPrice)
+    || displayData?.reduce((closest, d) =>
+      Math.abs(d.price - currentPrice) < Math.abs(closest.price - currentPrice) ? d : closest,
+      displayData[0]);
+
+  const expiryVal = dataPoint
+    ? (dataPoint.expiry ?? dataPoint.expiryGreen ?? dataPoint.expiryRed ?? 0)
+    : (payload.find((p) => p.dataKey === 'expiryGreen')?.value ?? payload.find((p) => p.dataKey === 'expiryRed')?.value ?? 0);
+
+  const targetVal = dataPoint?.target ?? payload.find((p) => p.dataKey === 'target')?.value ?? 0;
+  const todayVal = dataPoint?.today ?? payload.find((p) => p.dataKey === 'today')?.value;
+  const midVal = dataPoint?.mid ?? payload.find((p) => p.dataKey === 'mid')?.value;
+
+  // When slider = 0 (today), target IS today — avoid showing the same number twice
+  const isTargetToday = targetDaysFromNow < 0.02;
+
+  // C2: Calculate portfolio Greeks at hovered price
+  const delta = chartPositions ? calculatePortfolioDelta(currentPrice, chartPositions, targetDaysFromNow) : 0;
+  const gamma = chartPositions ? calculatePortfolioGamma(currentPrice, chartPositions, targetDaysFromNow) : 0;
+  const theta = chartPositions ? calculatePortfolioTheta(currentPrice, chartPositions, targetDaysFromNow) : 0;
+
+  // Calculate price change from spot
+  const priceChange = currentPrice - spotPrice;
+  const priceChangePct = ((priceChange / spotPrice) * 100).toFixed(2);
+  const priceChangeSign = priceChange >= 0 ? '+' : '';
+
+  // Format target date label
+  const targetDateFormatted = isTargetToday
+    ? 'Today (now)'
+    : (targetDate
+      ? targetDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+      : 'Today');
+
+  // Mid-expiry time label: show human-readable time distance instead of jargon
+  const midDays = minDaysToExpiry != null ? minDaysToExpiry * 0.5 : null;
+  const midLabel = midDays == null
+    ? 'Mid-expiry'
+    : midDays < 0.5
+      ? `In ~${Math.round(midDays * 24)}h`
+      : midDays < 1.5
+        ? 'In ~1 day'
+        : `In ~${Math.round(midDays)} days`;
+
+  // Format a P&L value with dollar sign and sign prefix
+  const fmtPnL = (v) => `${v >= 0 ? '+' : '-'}$${Math.abs(v).toFixed(2)}`;
+
+  return (
+    <Paper
+      sx={{
+        p: 0,
+        bgcolor: 'rgba(17, 24, 39, 0.95)',
+        border: '1px solid rgba(75, 85, 99, 0.5)',
+        borderRadius: 2,
+        minWidth: 190,
+        backdropFilter: 'blur(8px)',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+      }}
+    >
+      {/* Price header */}
+      <Box sx={{ p: 1.25, borderBottom: '1px solid rgba(75, 85, 99, 0.3)' }}>
+        <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.8)', display: 'block', mb: 0.25 }}>
+          If price is at
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+          <Typography variant="h6" fontWeight="bold" sx={{ color: '#fff', lineHeight: 1 }}>
+            ${currentPrice.toLocaleString()}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              color: priceChange >= 0 ? '#10b981' : '#ef4444',
+              fontWeight: 600
+            }}
+          >
+            {priceChangeSign}{priceChangePct}% ({priceChangeSign}${Math.abs(priceChange).toLocaleString(undefined, { maximumFractionDigits: 0 })})
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* P&L section — values are conditional on price staying at this level */}
+      <Box sx={{ p: 1.25 }}>
+        <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.8)', display: 'block', mb: 0.75 }}>
+          P&L at this price on
+        </Typography>
+
+        {/* Target date P&L */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+          <Typography variant="body2" sx={{ color: '#9ca3af' }}>
+            {targetDateFormatted}
+          </Typography>
+          <Typography
+            variant="body2"
+            fontWeight="bold"
+            sx={{ color: targetVal >= 0 ? '#10b981' : '#ef4444' }}
+          >
+            {fmtPnL(targetVal)}
+          </Typography>
+        </Box>
+
+        {/* Today P&L (multi-date overlay) - hide if target is already today */}
+        {!isTargetToday && todayVal !== undefined && (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+            <Typography variant="body2" sx={{ color: '#06b6d4' }}>
+              Today
+            </Typography>
+            <Typography
+              variant="body2"
+              fontWeight="bold"
+              sx={{ color: todayVal >= 0 ? '#10b981' : '#ef4444' }}
+            >
+              {fmtPnL(todayVal)}
+            </Typography>
+          </Box>
+        )}
+
+        {/* Mid-expiry P&L (multi-date overlay) — labeled with actual time distance */}
+        {midVal !== undefined && (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+            <Typography variant="body2" sx={{ color: '#818cf8' }}>
+              {midLabel}
+            </Typography>
+            <Typography
+              variant="body2"
+              fontWeight="bold"
+              sx={{ color: midVal >= 0 ? '#10b981' : '#ef4444' }}
+            >
+              {fmtPnL(midVal)}
+            </Typography>
+          </Box>
+        )}
+
+        {/* Expiry P&L */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="body2" sx={{ color: '#9ca3af' }}>
+            At expiry
+          </Typography>
+          <Typography
+            variant="body2"
+            fontWeight="bold"
+            sx={{ color: expiryVal >= 0 ? '#10b981' : '#ef4444' }}
+          >
+            {fmtPnL(expiryVal)}
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* C2: Greeks at hovered price */}
+      {chartPositions && chartPositions.length > 0 && (
+        <Box sx={{ p: 1.25, borderTop: '1px solid rgba(75, 85, 99, 0.3)' }}>
+          <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'space-between' }}>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Δ Net Delta</Typography>
+              <Typography variant="caption" fontWeight="bold" sx={{ color: delta >= 0 ? '#10b981' : '#ef4444' }}>
+                {delta >= 0 ? '+' : ''}{delta.toFixed(4)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Γ Net Gamma</Typography>
+              <Typography variant="caption" fontWeight="bold" sx={{ color: '#a78bfa' }}>
+                {gamma.toFixed(6)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Θ Net Theta</Typography>
+              <Typography variant="caption" fontWeight="bold" sx={{ color: theta >= 0 ? '#10b981' : '#ef4444' }}>
+                {theta >= 0 ? '+$' : '-$'}{Math.abs(theta).toFixed(2)}/day
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      )}
+    </Paper>
+  );
+};
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -319,22 +510,22 @@ const OptionsPayoffDiagram = ({
       return [center - smallPadding, center + smallPadding];
     }
 
-    // Add PROPORTIONAL padding - more padding for smaller ranges to make them readable
-    // Smaller ranges get larger relative padding
-    const paddingPercent = dataRange < 5 ? 0.5 : dataRange < 20 ? 0.35 : 0.2;
-    const padding = dataRange * paddingPercent;
+    // Zero-centred Y domain: keep zero in the middle so the profit region
+    // always gets meaningful screen space even when losses are much larger.
+    const profitMax = Math.max(maxY, 0);
+    const lossMin = Math.min(minY, 0);
 
-    // Ensure zero is visible if data crosses zero
-    let yMin = minY - padding;
-    let yMax = maxY + padding;
+    const profitPaddingPercent = profitMax < 5 ? 0.5 : profitMax < 20 ? 0.35 : 0.2;
+    const profitPadding = Math.max(profitMax * profitPaddingPercent, 2);
+    const rawYMax = profitMax + profitPadding;
 
-    // If data is all positive but close to zero, show some negative
-    if (minY >= 0 && minY < 5) yMin = Math.min(-2, yMin);
-    // If data is all negative but close to zero, show some positive  
-    if (maxY <= 0 && maxY > -5) yMax = Math.max(2, yMax);
+    // Mirror upper bound below zero (symmetric), then allow extension for deeper losses
+    // but cap at 3× profit extent so extreme losses don't dominate the scale
+    const actualLoss = Math.abs(lossMin);
+    const cappedLoss = Math.min(actualLoss, rawYMax * 3);
+    const rawYMin = -Math.max(cappedLoss, rawYMax); // at least symmetric
 
-    // Adaptive: fit tightly around data, always include zero
-    return [yMin, yMax];
+    return [Math.min(rawYMin, -2), Math.max(rawYMax, 2)];
   }, [displayData, chartData]);
 
   // ========================================================================
@@ -369,164 +560,6 @@ const OptionsPayoffDiagram = ({
     probabilityOfProfit,
     parsedPositions: chartPositions,
   } = chartData;
-
-  // Custom Tooltip - Sensibull Style
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload || !payload.length) return null;
-
-    const expiryGreen = payload.find((p) => p.dataKey === 'expiryGreen')?.value;
-    const expiryRed = payload.find((p) => p.dataKey === 'expiryRed')?.value;
-    const expiry = expiryGreen ?? expiryRed ?? 0;  // One will be non-null
-    const target = payload.find((p) => p.dataKey === 'target')?.value ?? 0;
-    const today = payload.find((p) => p.dataKey === 'today')?.value;
-    const mid = payload.find((p) => p.dataKey === 'mid')?.value;
-    const currentPrice = Number(label);
-
-    // C2: Calculate portfolio Greeks at hovered price
-    const delta = chartPositions ? calculatePortfolioDelta(currentPrice, chartPositions, targetDaysFromNow) : 0;
-    const gamma = chartPositions ? calculatePortfolioGamma(currentPrice, chartPositions, targetDaysFromNow) : 0;
-    const theta = chartPositions ? calculatePortfolioTheta(currentPrice, chartPositions, targetDaysFromNow) : 0;
-
-    // Calculate price change from spot
-    const priceChange = currentPrice - spotPrice;
-    const priceChangePct = ((priceChange / spotPrice) * 100).toFixed(2);
-    const priceChangeSign = priceChange >= 0 ? '+' : '';
-
-    // Format target date
-    const targetDateFormatted = targetDate ?
-      targetDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) :
-      'Today';
-
-    return (
-      <Paper
-        sx={{
-          p: 0,
-          bgcolor: 'rgba(17, 24, 39, 0.95)',
-          border: '1px solid rgba(75, 85, 99, 0.5)',
-          borderRadius: 2,
-          minWidth: 180,
-          backdropFilter: 'blur(8px)',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-        }}
-      >
-        {/* Price header */}
-        <Box sx={{ p: 1.25, borderBottom: '1px solid rgba(75, 85, 99, 0.3)' }}>
-          <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.8)', display: 'block', mb: 0.25 }}>
-            When price is at
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-            <Typography variant="h6" fontWeight="bold" sx={{ color: '#fff', lineHeight: 1 }}>
-              {currentPrice.toLocaleString()}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: priceChange >= 0 ? '#10b981' : '#ef4444',
-                fontWeight: 600
-              }}
-            >
-              {priceChangeSign}{priceChangePct}% ({priceChangeSign}{Math.abs(priceChange).toLocaleString(undefined, { maximumFractionDigits: 0 })})
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* P&L section */}
-        <Box sx={{ p: 1.25 }}>
-          <Typography variant="caption" sx={{ color: 'rgba(156, 163, 175, 0.8)', display: 'block', mb: 0.75 }}>
-            Expected P&L on
-          </Typography>
-
-          {/* Target date P&L */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-            <Typography variant="body2" sx={{ color: '#9ca3af' }}>
-              {targetDateFormatted}
-            </Typography>
-            <Typography
-              variant="body2"
-              fontWeight="bold"
-              sx={{ color: target >= 0 ? '#10b981' : '#ef4444' }}
-            >
-              {target >= 0 ? '+' : ''}{target.toFixed(2)}
-            </Typography>
-          </Box>
-
-          {/* Today P&L (multi-date overlay) */}
-          {today !== undefined && (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-              <Typography variant="body2" sx={{ color: '#06b6d4' }}>
-                Today
-              </Typography>
-              <Typography
-                variant="body2"
-                fontWeight="bold"
-                sx={{ color: today >= 0 ? '#10b981' : '#ef4444' }}
-              >
-                {today >= 0 ? '+' : ''}{today.toFixed(2)}
-              </Typography>
-            </Box>
-          )}
-
-          {/* Mid-expiry P&L (multi-date overlay) */}
-          {mid !== undefined && (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-              <Typography variant="body2" sx={{ color: '#818cf8' }}>
-                Mid-expiry
-              </Typography>
-              <Typography
-                variant="body2"
-                fontWeight="bold"
-                sx={{ color: mid >= 0 ? '#10b981' : '#ef4444' }}
-              >
-                {mid >= 0 ? '+' : ''}{mid.toFixed(2)}
-              </Typography>
-            </Box>
-          )}
-
-          {/* Expiry P&L */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2" sx={{ color: '#9ca3af' }}>
-              Expiry date
-            </Typography>
-            <Typography
-              variant="body2"
-              fontWeight="bold"
-              sx={{ color: expiry >= 0 ? '#10b981' : '#ef4444' }}
-            >
-              {expiry >= 0 ? '+' : ''}{expiry.toFixed(2)}
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* C2: Greeks at hovered price */}
-        {chartPositions && chartPositions.length > 0 && (
-          <Box sx={{ p: 1.25, borderTop: '1px solid rgba(75, 85, 99, 0.3)' }}>
-            <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'space-between' }}>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Δ Delta</Typography>
-                <Typography variant="caption" fontWeight="bold" sx={{ color: delta >= 0 ? '#10b981' : '#ef4444' }}>
-                  {delta >= 0 ? '+' : ''}{delta.toFixed(4)}
-                </Typography>
-              </Box>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Γ Gamma</Typography>
-                <Typography variant="caption" fontWeight="bold" sx={{ color: '#a78bfa' }}>
-                  {gamma.toFixed(6)}
-                </Typography>
-              </Box>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.6)', fontSize: '0.6rem', display: 'block' }}>Θ Theta</Typography>
-                <Typography variant="caption" fontWeight="bold" sx={{ color: theta >= 0 ? '#10b981' : '#ef4444' }}>
-                  {theta >= 0 ? '+' : ''}{theta.toFixed(4)}/d
-                </Typography>
-              </Box>
-            </Box>
-          </Box>
-        )}
-      </Paper>
-    );
-  };
-
-
 
   return (
     <Paper sx={{ p: 2, bgcolor: 'background.paper' }}>
@@ -1083,7 +1116,18 @@ const OptionsPayoffDiagram = ({
             />
           )}
 
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip
+            content={
+              <CustomTooltip
+                displayData={displayData}
+                targetDaysFromNow={targetDaysFromNow}
+                targetDate={targetDate}
+                spotPrice={spotPrice}
+                chartPositions={chartPositions}
+                minDaysToExpiry={minDaysToExpiry}
+              />
+            }
+          />
 
           {/* Selection area highlight */}
           {isSelecting && selectionStart !== null && selectionEnd !== null && (

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import useVisibilityAwarePolling from '../hooks/useVisibilityAwarePolling';
 import {
   Box, Paper, Typography, Grid, Alert, Divider, Chip,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -60,11 +61,7 @@ const MMMInstitutionalAnalytics = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetch();
-    const id = setInterval(fetch, 60_000);
-    return () => clearInterval(id);
-  }, [fetch]);
+  useVisibilityAwarePolling(fetch, 60000, 120000);
 
   if (loading) return (
     <Box display="flex" justifyContent="center" alignItems="center" minHeight="300px">

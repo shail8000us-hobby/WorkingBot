@@ -22,32 +22,58 @@ import sys
 import time
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from functools import wraps
 from flask import Blueprint, jsonify, request
 
 
+# ---------------------------------------------------------------------------
+# Dedicated event loop for async operations
+# ---------------------------------------------------------------------------
+# A single persistent event loop runs in a daemon thread.  ALL async work
+# (httpx calls, asyncio locks/events inside the singleton UnifiedAPIClient)
+# is submitted to this loop via ``run_coroutine_threadsafe``.  This prevents
+# the "<asyncio.locks.Event> is bound to a different event loop" errors that
+# occurred when each Flask request created / obtained a different loop.
+# ---------------------------------------------------------------------------
+_dedicated_loop: asyncio.AbstractEventLoop | None = None
+_loop_thread: threading.Thread | None = None
+_loop_lock = threading.Lock()
+
+
+def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
+    """Return (and lazily create) the single persistent event loop."""
+    global _dedicated_loop, _loop_thread
+
+    with _loop_lock:
+        if _dedicated_loop is not None and not _dedicated_loop.is_closed():
+            return _dedicated_loop
+
+        _dedicated_loop = asyncio.new_event_loop()
+        _loop_thread = threading.Thread(
+            target=_dedicated_loop.run_forever,
+            daemon=True,
+            name="options-async-loop",
+        )
+        _loop_thread.start()
+        return _dedicated_loop
+
+
 def _run_async(coro):
     """Run an async coroutine from sync Flask context.
 
-    Uses ``get_event_loop`` + ``run_until_complete`` instead of ``asyncio.run``
-    so the event loop is **not closed** after every call.  This prevents
-    "Event loop is closed" errors when httpx ``AsyncClient`` instances (or any
-    other asyncio-bound resources) are reused across successive calls within
-    the same thread.
+    Submits *coro* to a **dedicated persistent event loop** running in a
+    background daemon thread and blocks until the result is available.
 
-    If the current thread has no loop or its loop was closed by earlier code,
-    a new loop is created and set for the thread.
+    This guarantees that all asyncio-bound objects (httpx ``AsyncClient``,
+    ``asyncio.Event``, ``asyncio.Lock``, etc.) created by the singleton
+    ``UnifiedAPIClient`` always execute on the **same** loop, eliminating
+    the "bound to a different event loop" errors.
     """
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+    loop = _get_dedicated_loop()
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=60)
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -243,17 +269,30 @@ def check_guardian_signal():
         return 'GO'  # Default to GO on error
 
 
+# Singleton UnifiedAPIClient — creating a new client on every request opens
+# aiohttp connection pools and sockets that never close, rapidly exhausting
+# the OS file-descriptor limit ([Errno 24] Too many open files).
+_unified_client_singleton = None
+
 def get_unified_client():
-    """Get UnifiedAPIClient with credentials from config"""
-    from bot.api.unified_api_client import UnifiedAPIClient
-    
-    creds = get_api_credentials()
-    return UnifiedAPIClient(
-        api_key=creds['api_key'],
-        api_secret=creds['api_secret'],
-        symbol='BTCUSD',
-        enable_websocket=False
-    )
+    """Get a shared (singleton) UnifiedAPIClient with credentials from config.
+
+    The client is created once on first call and reused for all subsequent
+    requests.  This prevents runaway file-descriptor accumulation from
+    creating a new connection pool on every call.
+    """
+    global _unified_client_singleton
+    if _unified_client_singleton is None:
+        from bot.api.unified_api_client import UnifiedAPIClient
+        creds = get_api_credentials()
+        _unified_client_singleton = UnifiedAPIClient(
+            api_key=creds['api_key'],
+            api_secret=creds['api_secret'],
+            symbol='BTCUSD',
+            enable_websocket=False
+        )
+        log.info("✅ UnifiedAPIClient singleton created")
+    return _unified_client_singleton
 
 
 async def with_timeout(coro, timeout_seconds=30):

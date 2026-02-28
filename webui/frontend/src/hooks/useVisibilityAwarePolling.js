@@ -1,27 +1,29 @@
 /**
  * useVisibilityAwarePolling - Smart Polling Hook
  * ================================================
- * 
+ *
  * Performance optimization hook that:
  * - Pauses polling when tab is not visible
  * - Slows down polling when tab regains focus (to reduce burst)
  * - Automatically adjusts polling interval based on activity
  * - Prevents memory leaks with proper cleanup
- * 
+ * - Uses refs instead of state to avoid re-render spam
+ *
  * Created: January 27, 2026
+ * Updated: February 28, 2026 — eliminated re-render overhead
  * Purpose: Dramatically reduce API load and improve WebUI performance
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 /**
  * Smart polling hook that pauses when tab is hidden
- * 
+ *
  * @param {Function} fetchFn - The function to call on each poll
  * @param {number} activeInterval - Interval in ms when tab is active (default: 10000)
  * @param {number} inactiveInterval - Interval in ms when returning from inactive (default: 30000)
  * @param {boolean} enabled - Whether polling is enabled (default: true)
- * @returns {Object} - { isPolling, lastFetch, refresh, pause, resume }
+ * @returns {Object} - { refresh, pause, resume }
  */
 const useVisibilityAwarePolling = (
     fetchFn,
@@ -31,30 +33,28 @@ const useVisibilityAwarePolling = (
 ) => {
     const intervalRef = useRef(null);
     const timeoutRef = useRef(null);
-    const [isPolling, setIsPolling] = useState(false);
-    const [lastFetch, setLastFetch] = useState(null);
-    const [isPaused, setIsPaused] = useState(false);
+    const isPausedRef = useRef(false);
     const wasHiddenRef = useRef(false);
+    // Keep a ref to the latest fetchFn so the interval closure always calls the current one
+    const fetchFnRef = useRef(fetchFn);
+    fetchFnRef.current = fetchFn;
 
-    // Memoize the fetch wrapper
+    // Perform fetch using the ref (no dependency on fetchFn identity)
     const performFetch = useCallback(async () => {
-        if (typeof fetchFn === 'function') {
+        if (typeof fetchFnRef.current === 'function') {
             try {
-                await fetchFn();
-                setLastFetch(new Date());
+                await fetchFnRef.current();
             } catch (err) {
-                console.error('Polling fetch error:', err);
+                // Silently handle — individual fetch functions log their own errors
             }
         }
-    }, [fetchFn]);
+    }, []);
 
-    // Start polling
+    // Start polling at a given interval
     const startPolling = useCallback((interval) => {
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
         }
-
-        setIsPolling(true);
         intervalRef.current = setInterval(performFetch, interval);
     }, [performFetch]);
 
@@ -68,7 +68,6 @@ const useVisibilityAwarePolling = (
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
         }
-        setIsPolling(false);
     }, []);
 
     // Manual refresh
@@ -78,53 +77,51 @@ const useVisibilityAwarePolling = (
 
     // Pause polling
     const pause = useCallback(() => {
-        setIsPaused(true);
+        isPausedRef.current = true;
         stopPolling();
     }, [stopPolling]);
 
     // Resume polling
     const resume = useCallback(() => {
-        setIsPaused(false);
+        isPausedRef.current = false;
         if (enabled) {
             performFetch();
             startPolling(activeInterval);
         }
     }, [enabled, activeInterval, performFetch, startPolling]);
 
-    // Handle visibility change
+    // Handle visibility change + initial setup
     useEffect(() => {
-        if (!enabled || isPaused) return;
+        if (!enabled || isPausedRef.current) {
+            stopPolling();
+            return;
+        }
 
         const handleVisibilityChange = () => {
             if (document.hidden) {
-                // Tab became hidden - stop polling
+                // Tab became hidden — stop polling entirely
                 wasHiddenRef.current = true;
                 stopPolling();
-                console.log('📡 Polling paused (tab hidden)');
-            } else {
-                // Tab became visible
-                if (wasHiddenRef.current) {
-                    wasHiddenRef.current = false;
+            } else if (wasHiddenRef.current) {
+                // Tab became visible again
+                wasHiddenRef.current = false;
 
-                    // Immediate fetch when returning
-                    performFetch();
+                // Immediate fetch when returning
+                performFetch();
 
-                    // Start with slower interval briefly, then speed up
-                    console.log('📡 Polling resumed (tab visible) - starting slow');
-                    startPolling(inactiveInterval);
+                // Start with slower interval briefly, then speed up
+                startPolling(inactiveInterval);
 
-                    // After 10 seconds, switch to active interval
-                    timeoutRef.current = setTimeout(() => {
-                        console.log('📡 Switching to active polling interval');
-                        startPolling(activeInterval);
-                    }, 10000);
-                }
+                // After 10 seconds, switch to active interval
+                timeoutRef.current = setTimeout(() => {
+                    startPolling(activeInterval);
+                }, 10000);
             }
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        // Initial setup - only start polling if visible
+        // Initial setup — only start polling if tab is visible
         if (!document.hidden) {
             performFetch();
             startPolling(activeInterval);
@@ -134,18 +131,9 @@ const useVisibilityAwarePolling = (
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             stopPolling();
         };
-    }, [enabled, isPaused, activeInterval, inactiveInterval, performFetch, startPolling, stopPolling]);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            stopPolling();
-        };
-    }, [stopPolling]);
+    }, [enabled, activeInterval, inactiveInterval, performFetch, startPolling, stopPolling]);
 
     return {
-        isPolling,
-        lastFetch,
         refresh,
         pause,
         resume,

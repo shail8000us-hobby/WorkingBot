@@ -208,6 +208,49 @@ class OptionsChainAPI {
   }
 
   /**
+   * Get open options positions as a symbol lookup map
+   * Returns: { [symbol]: { side: 'long'|'short', size, pnl } }
+   */
+  async getOpenPositions() {
+    try {
+      // Pass symbol= (empty) to bypass the default BTCUSD filter and get ALL positions
+      // including options (C-BTC-... / P-BTC-... symbols)
+      const response = await fetch('/api/positions?symbol=');
+      if (!response.ok) return {};
+      const data = await response.json();
+      const positions = data.positions || [];
+
+      console.log('[OpenPositions] Raw positions from API:', positions.length, positions);
+
+      // Build lookup map: symbol -> position info (options only: C-/P- prefix or type='option')
+      const map = {};
+      for (const pos of positions) {
+        if (!pos.symbol) continue;
+        const sym = pos.symbol.toUpperCase();
+        // Delta Exchange options symbols start with C- (call) or P- (put)
+        const isOption =
+          sym.startsWith('C-') ||
+          sym.startsWith('P-') ||
+          (pos.product_type || '').toLowerCase() === 'put_options' ||
+          (pos.product_type || '').toLowerCase() === 'call_options' ||
+          (pos.type || '').toLowerCase() === 'option';
+        if (!isOption) continue;
+        map[sym] = {
+          side: (pos.side || '').toLowerCase(), // 'long' or 'short'
+          size: pos.size,
+          pnl: pos.unrealized_pnl,
+        };
+      }
+
+      console.log('[OpenPositions] Options map keys:', Object.keys(map));
+      return map;
+    } catch (e) {
+      console.warn('[OptionsChainAPI] getOpenPositions error:', e);
+      return {};
+    }
+  }
+
+  /**
    * Place an SSR (Stealth Sniper Repricing) order
    * @param {Object} order - SSR order details
    * @param {string} order.symbol - Option symbol (e.g., C-BTC-95000-060126)

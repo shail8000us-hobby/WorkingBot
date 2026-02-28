@@ -43,14 +43,14 @@ def is_wind_down_active(session: Dict) -> bool:
     params = session.get('params', {})
 
     # Master switch: wind_down_enabled must be True for ANY wind-down path.
-    # Previously, wind_down_on_atm bypassed this check, which was a bug —
-    # users would disable wind-down via the master switch but ATM trigger
-    # would still activate it silently.
+    # NOTE: when wind_down_on_atm fires, mmm_monitor.py auto-sets params['wind_down_enabled']=True
+    # so this check will pass — wind_down_on_atm is self-sufficient (user doesn't need to
+    # also enable the manual toggle).
     if not params.get('wind_down_enabled', False):
         return False
 
-    # ATM-triggered wind-down: if wind_down_on_atm is enabled AND wind_down_enabled
-    # is True AND the monitor detected an original strike going ATM.
+    # ATM-triggered wind-down: wind_down_on_atm + monitor set _atm_wind_down_triggered flag.
+    # wind_down_enabled is guaranteed True here (auto-set by the trigger in mmm_monitor.py).
     if params.get('wind_down_on_atm', False) and session.get('_atm_wind_down_triggered', False):
         return True
 

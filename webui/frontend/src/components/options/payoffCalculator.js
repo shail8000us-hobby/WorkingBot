@@ -202,8 +202,11 @@ export const calculatePortfolioTheta = (S, positions, targetDaysFromNow = 0, r =
     const d1 = (Math.log(S / pos.strike) + (r + 0.5 * pos.iv * pos.iv) * remainingYears) / (pos.iv * sqrtT);
     const multiplier = getContractMultiplier(pos.symbol);
 
-    // Theta = -(S * N'(d1) * σ) / (2 * √T) — simplified for r=0
-    const dailyTheta = -(S * normalPDF(d1) * pos.iv) / (2 * sqrtT * 365.25);
+    // Theta ($/day) = -(S * N'(d1) * σ) / (2 * √T)  →  divide by 365.25 to get per-day
+    // NOTE: sqrtT must NOT be in the denominator of the 365.25 factor — that causes
+    // blow-up near expiry. The annual theta is -(S·N'(d1)·σ)/(2·√T); per-day = annual/365.25
+    const annualTheta = -(S * normalPDF(d1) * pos.iv) / (2 * sqrtT);
+    const dailyTheta = annualTheta / 365.25;
     const sign = pos.size < 0 ? -1 : 1;
     totalTheta += dailyTheta * sign * Math.abs(pos.size) * multiplier;
   });
@@ -350,5 +353,8 @@ export const calculateWeightedIV = (positions) => {
 export const formatDate = (date) => {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')} PM`;
+  const hours24 = date.getHours();
+  const hours12 = hours24 % 12 || 12;
+  const ampm = hours24 < 12 ? 'AM' : 'PM';
+  return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} ${hours12}:${String(date.getMinutes()).padStart(2, '0')} ${ampm}`;
 };

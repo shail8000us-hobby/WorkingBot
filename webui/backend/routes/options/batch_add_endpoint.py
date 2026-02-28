@@ -195,15 +195,11 @@ def create_batch_add_route(options_bp, get_unified_client, check_guardian_signal
                 
                 return results, elapsed, successful, failed
             
-            # Use get_event_loop() + run_until_complete() instead of asyncio.run()
-            # to avoid closing the event loop in a Flask/SocketIO context
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            results, elapsed, successful, failed = loop.run_until_complete(execute_batch())
+            # Use the shared dedicated event loop (same one the singleton
+            # UnifiedAPIClient is bound to) to avoid "bound to a different
+            # event loop" errors.
+            from .options_control import _run_async
+            results, elapsed, successful, failed = _run_async(execute_batch())
             
             return jsonify({
                 'success': True,
@@ -320,15 +316,10 @@ def create_batch_order_status_route(options_bp, get_api_client):
                 results = await asyncio.gather(*[fetch_single(oid) for oid in order_ids])
                 return list(results)
             
-            # Use get_event_loop() + run_until_complete() instead of asyncio.run()
-            # to avoid closing the event loop in a Flask/SocketIO context
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            orders_data = loop.run_until_complete(fetch_all_order_statuses())
+            # Use the shared dedicated event loop to avoid event-loop
+            # mismatch errors with the singleton API client.
+            from .options_control import _run_async
+            orders_data = _run_async(fetch_all_order_statuses())
             
             return jsonify({
                 'success': True,

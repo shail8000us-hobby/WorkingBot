@@ -30,6 +30,7 @@ import {
     DragIndicator as DragIcon,
     Visibility as VisibilityIcon,
     Timer as TimerIcon,
+    Label as LabelIcon,
 } from '@mui/icons-material';
 import SLTPIndicator from './SLTPIndicator';
 import MaxLossIndicator from './MaxLossIndicator';
@@ -124,6 +125,8 @@ function PositionRow({
     // Drag handle props are passed through children render prop
     attributes,
     listeners,
+    // Group assignment (optional — only passed when groups exist)
+    onGroupClick,
 }) {
     return (
         <>
@@ -153,13 +156,32 @@ function PositionRow({
                     borderLeft: `3px solid ${posType.color}`,
                     cursor: 'grab',
                     '&:active': { cursor: 'grabbing' },
+                    p: '0 4px',
                 }}
                 {...attributes}
                 {...listeners}
             >
-                <Tooltip title="Drag to reorder positions. Your custom order will be saved and persist across page refreshes.">
-                    <DragIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-                </Tooltip>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                    <Tooltip title="Drag to reorder positions. Your custom order will be saved.">
+                        <DragIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    </Tooltip>
+                    {onGroupClick && (
+                        <Tooltip title="Assign to group">
+                            <IconButton
+                                size="small"
+                                onClick={onGroupClick}
+                                sx={{
+                                    p: 0.25,
+                                    color: 'text.secondary',
+                                    opacity: 0.6,
+                                    '&:hover': { opacity: 1, color: 'primary.main' },
+                                }}
+                            >
+                                <LabelIcon sx={{ fontSize: 14 }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
+                </Box>
             </TableCell>
 
             {/* Symbol */}

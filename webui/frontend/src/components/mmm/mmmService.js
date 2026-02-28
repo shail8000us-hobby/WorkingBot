@@ -105,12 +105,41 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Resolve a PARTIAL_ENTRY state by confirming both fill prices manually.
+   * Use when one leg already filled on the exchange but the algo marked it as failed.
+   * @param {string} sessionId
+   * @param {number} ceFillPrice - Actual CE fill price
+   * @param {number} peFillPrice - Actual PE fill price
+   */
+  async resolvePartialEntry(sessionId, ceFillPrice, peFillPrice) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/resolve-partial-entry`,
+      { ce_fill_price: ceFillPrice, pe_fill_price: peFillPrice }
+    );
+    return data;
+  },
+
+  /**
+   * Retry only the failed leg of a PARTIAL_ENTRY.
+   * The algo auto-detects which side failed and retries it in the background.
+   * @param {string} sessionId
+   */
+  async retryPartialLeg(sessionId) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/retry-partial-leg`
+    );
+    return data;
+  },
+
+
   // =========================================================================
   // Both-Sides-Up Decision (Section 8)
   // =========================================================================
 
   /**
    * Submit user's decision for both-sides-up scenario
+
    * @param {string} sessionId
    * @param {string} decision - 'adjust_ce' | 'adjust_pe' | 'skip'
    * @param {Object} [params] - Additional params for ADD/REDUCE actions

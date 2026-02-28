@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import { useInstanceSafe, parseInstanceName } from '../../context/InstanceContext';
 import { Chip, Box, Typography, Menu, MenuItem, IconButton, Tooltip } from '@mui/material';
 import {
@@ -90,58 +91,44 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   const [refreshing, setRefreshing] = useState(false);
 
   // Fetch market data for all symbols
-  useEffect(() => {
-    const fetchMarketData = async () => {
-      try {
-        const symbols = ['BTCUSD', 'ETHUSD'];
-        const promises = symbols.map(async (symbol) => {
-          try {
-            // Extract base symbol (BTC, ETH) for spot price API
-            const baseSymbol = symbol.replace('USD', '');
+  const fetchMarketData = useCallback(async () => {
+    try {
+      const syms = ['BTCUSD', 'ETHUSD'];
+      const promises = syms.map(async (symbol) => {
+        try {
+          const baseSymbol = symbol.replace('USD', '');
+          const [priceRes, configRes] = await Promise.all([
+            api.get(`/api/market/spot-price?symbol=${baseSymbol}`).catch(() => ({ data: {} })),
+            api.get(`/api/config/symbols/${symbol}`).catch(() => ({ data: {} })),
+          ]);
+          const price = priceRes.data?.price || null;
+          const config = configRes.data?.config || {};
+          const mode = configRes.data?.mode || null;
+          const grid = {
+            lower: config.GRIDBOT_LOWER || null,
+            upper: config.GRIDBOT_UPPER || null,
+            step: config.GRIDBOT_STEP || null,
+          };
+          return { symbol, price, grid, mode };
+        } catch (err) {
+          console.error(`Error fetching ${symbol} data:`, err);
+          return { symbol, price: null, grid: null, mode: null };
+        }
+      });
 
-            // Fetch market price from spot-price API and grid config in parallel
-            const [priceRes, configRes] = await Promise.all([
-              api.get(`/api/market/spot-price?symbol=${baseSymbol}`).catch(() => ({ data: {} })),
-              api.get(`/api/config/symbols/${symbol}`).catch(() => ({ data: {} })),
-            ]);
-
-            // Extract price from spot-price API response
-            const price = priceRes.data?.price || null;
-
-            // Extract config - API returns flat structure with GRIDBOT_* fields
-            const config = configRes.data?.config || {};
-            const mode = configRes.data?.mode || null;
-
-            const grid = {
-              lower: config.GRIDBOT_LOWER || null,
-              upper: config.GRIDBOT_UPPER || null,
-              step: config.GRIDBOT_STEP || null,
-            };
-
-            return { symbol, price, grid, mode };
-          } catch (err) {
-            console.error(`Error fetching ${symbol} data:`, err);
-            return { symbol, price: null, grid: null, mode: null };
-          }
-        });
-
-        const results = await Promise.all(promises);
-        const newMarketData = {};
-        results.forEach(({ symbol, price, grid, mode }) => {
-          newMarketData[symbol] = { price, grid, mode };
-        });
-
-        setMarketData(newMarketData);
-      } catch (err) {
-        console.error('Error fetching market data:', err);
-      }
-    };
-
-    fetchMarketData();
-    const interval = setInterval(fetchMarketData, 30000); // Update every 30 seconds
-
-    return () => clearInterval(interval);
+      const results = await Promise.all(promises);
+      const newMarketData = {};
+      results.forEach(({ symbol, price, grid, mode }) => {
+        newMarketData[symbol] = { price, grid, mode };
+      });
+      setMarketData(newMarketData);
+    } catch (err) {
+      console.error('Error fetching market data:', err);
+    }
   }, []);
+
+  // Poll market data — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchMarketData, 30000, 120000);
 
   // Don't render until symbol context is loaded
   if (loading || !selectedSymbol) {

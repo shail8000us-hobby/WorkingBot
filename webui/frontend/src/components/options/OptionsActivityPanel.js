@@ -7,7 +7,8 @@
  * Created: January 31, 2026
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Paper,
@@ -33,16 +34,15 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(true);
-  const intervalRef = useRef(null);
 
   // Fetch monitoring activity
-  const fetchActivity = async () => {
+  const fetchActivity = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await fetch('/api/options/monitoring-activity?limit=100');
-      
+
       if (response.ok) {
         const data = await response.json();
         setActivityData(data);
@@ -55,19 +55,10 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Auto-refresh every 10 seconds for monitoring
-  useEffect(() => {
-    fetchActivity();
-    intervalRef.current = setInterval(fetchActivity, 10000);
-    
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
   }, []);
+
+  // Auto-refresh every 10 seconds — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchActivity, 10000, 60000);
 
   // Manual refresh when trigger changes
   useEffect(() => {

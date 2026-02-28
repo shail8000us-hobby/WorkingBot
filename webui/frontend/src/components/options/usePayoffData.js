@@ -169,14 +169,85 @@ export const useChartData = (parsedPositions, opts) => {
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
         const multiplier = getContractMultiplier(pos.symbol);
-        const remainingYears = Math.max(0.0001, (pos.daysToExpiry - daysFromNow) / 365.25);
-        const theo = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
-        const safeTheo = isFinite(theo) ? theo : 0;
+
+        const remainingDays = pos.daysToExpiry - daysFromNow;
+
+        // At or past expiry: intrinsic value only (no time premium)
+        if (remainingDays <= 0) {
+          const intrinsic = pos.type === 'call'
+            ? Math.max(0, price - pos.strike)
+            : Math.max(0, pos.strike - price);
+          if (isShort) payoff += (pos.entryPrice - intrinsic) * absSize * multiplier;
+          else payoff += (intrinsic - pos.entryPrice) * absSize * multiplier;
+          return;
+        }
+
+        // ── Market-Calibrated BSM Pricing (Industry Standard) ──────────────
+        // Problem: for near-expiry options (< 24h), standard BSM with exchange
+        // annualised IV diverges significantly from actual market prices because
+        // the exchange IV is derived from a vol-surface model that accounts for
+        // the discrete settlement, smile, and microstructure effects that BSM ignores.
+        //
+        // Solution (used by Sensibull, Opstra, TastyWorks):
+        //   1. Anchor to the actual market price (bid/ask mid) at the current spot.
+        //   2. Use the BSM time-value RATIO to distribute the market time premium
+        //      across both the spatial (price) axis and the temporal (days) axis.
+        //   This preserves model-consistency for shape while matching market reality
+        //   at the current spot today.
+        // ─────────────────────────────────────────────────────────────────────
+
+        const nowYears        = Math.max(1e-7, pos.daysToExpiry / 365.25);
+        const remainingYears  = Math.max(1e-7, remainingDays    / 365.25);
+
+        // Intrinsic values
+        const intrinsicAtSpot = pos.type === 'call'
+          ? Math.max(0, spotPrice - pos.strike)
+          : Math.max(0, pos.strike - spotPrice);
+        const intrinsicAtPrice = pos.type === 'call'
+          ? Math.max(0, price - pos.strike)
+          : Math.max(0, pos.strike - price);
+
+        // BSM values at current spot for "now" and "future" time slices
+        const bsAtSpotNow    = blackScholesPrice(spotPrice, pos.strike, nowYears,       riskFreeRate, pos.iv, pos.type);
+        const bsAtSpotFuture = blackScholesPrice(spotPrice, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
+        const bsTVAtSpotNow    = Math.max(0, bsAtSpotNow    - intrinsicAtSpot);
+        const bsTVAtSpotFuture = Math.max(0, bsAtSpotFuture - intrinsicAtSpot);
+
+        // Actual market time value at current spot (mark price above intrinsic)
+        // Fallback to BS if markPrice is unavailable
+        const markPx = (pos.markPrice > 0) ? pos.markPrice : bsAtSpotNow;
+        const marketTV = Math.max(0, markPx - intrinsicAtSpot);
+
+        // Step 1 — Project market time value forward to the target time slice
+        //   ratio = BSforward / BSnow  (how much time value BSM says remains)
+        let calibratedTVAtSpot;
+        if (bsTVAtSpotNow > 1e-9) {
+          calibratedTVAtSpot = marketTV * (bsTVAtSpotFuture / bsTVAtSpotNow);
+        } else {
+          // BSM cannot model time value (deep OTM / essentially expired):
+          // fall back to sqrt-time decay (consistent with ATM-approximation)
+          calibratedTVAtSpot = marketTV * Math.sqrt(remainingDays / pos.daysToExpiry);
+        }
+
+        // Step 2 — Distribute calibrated time value across the price axis
+        //   using BSM time-value shape at the target time slice
+        const bsAtPriceFuture  = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
+        const bsTVAtPriceFuture = Math.max(0, bsAtPriceFuture - intrinsicAtPrice);
+
+        let theo;
+        if (bsTVAtSpotFuture > 1e-9) {
+          theo = intrinsicAtPrice + calibratedTVAtSpot * (bsTVAtPriceFuture / bsTVAtSpotFuture);
+        } else {
+          // Essentially at expiry — intrinsic only
+          theo = intrinsicAtPrice;
+        }
+
+        const safeTheo = isFinite(theo) ? Math.max(0, theo) : intrinsicAtPrice;
         if (isShort) payoff += (pos.entryPrice - safeTheo) * absSize * multiplier;
         else payoff += (safeTheo - pos.entryPrice) * absSize * multiplier;
       });
       futuresPositions.forEach((futPos) => {
-        payoff += (price - futPos.entry_price) * futPos.size * 0.001;
+        payoff += (price - futPos.entry_price) * futPos.size * getContractMultiplier(futPos.product_symbol);
       });
       return isFinite(payoff) ? payoff : 0;
     };
@@ -201,13 +272,13 @@ export const useChartData = (parsedPositions, opts) => {
         const intrinsic = pos.type === 'call' ? Math.max(0, price - pos.strike) : Math.max(0, pos.strike - price);
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
-        const multiplier = pos.symbol?.toUpperCase().includes('ETH') ? 0.01 : 0.001;
+        const multiplier = getContractMultiplier(pos.symbol);
         if (isShort) expiryPayoff += (pos.entryPrice - intrinsic) * absSize * multiplier;
         else expiryPayoff += (intrinsic - pos.entryPrice) * absSize * multiplier;
       });
 
       futuresPositions.forEach((futPos) => {
-        expiryPayoff += (price - futPos.entry_price) * futPos.size * 0.001;
+        expiryPayoff += (price - futPos.entry_price) * futPos.size * getContractMultiplier(futPos.product_symbol);
       });
 
       const safeExpiry = isFinite(expiryPayoff) ? expiryPayoff : 0;
@@ -280,24 +351,45 @@ export const useChartData = (parsedPositions, opts) => {
       }
     });
 
-    const overallMax = Math.max(maxProfit, maxTargetProfit);
-    const overallMin = Math.min(maxLoss, maxTargetLoss);
-    const dataRange = Math.max(Math.abs(overallMax), Math.abs(overallMin));
-    const paddingPercent = dataRange < 50 ? 0.4 : dataRange < 200 ? 0.25 : 0.15;
-    let rawYMin = overallMin - (Math.abs(overallMin) * paddingPercent);
-    let rawYMax = overallMax + (Math.abs(overallMax) * paddingPercent);
-    // Always include zero so the breakeven line is visible
-    if (rawYMin > 0) rawYMin = -(rawYMax * 0.1);
-    if (rawYMax < 0) rawYMax = -(rawYMin * 0.1);
-    // Ensure minimum visible range around zero
-    const yMin = Math.min(rawYMin, -2);
+    // ── Y-axis domain: keep zero at the visual centre ──────────────────────
+    // The key insight: when maxProfit is small (e.g. $30) but maxLoss is large
+    // (e.g. -$1256), the raw loss value will dominate the Y scale and squeeze the
+    // profitable region into a tiny sliver at the top. Instead we build a
+    // *symmetric* range around zero so the profit zone always gets equal screen space.
+    //
+    // Strategy:
+    //   1. Add a small padding above the max profit.
+    //   2. Mirror that same extent below zero (i.e. yMin = -yMax).
+    //   3. If the actual max loss is deeper than that mirrored extent, extend the
+    //      bottom – but never let the loss region exceed 3× the profit region, so
+    //      the profit zone still gets a meaningful slice of the chart.
+    const overallMax = Math.max(maxProfit, maxTargetProfit, 0);
+    const overallMin = Math.min(maxLoss, maxTargetLoss, 0); // negative or 0
+
+    // Padding above the peak profit (at least $2 so a flat line is still visible)
+    const profitPaddingPercent = overallMax < 50 ? 0.4 : overallMax < 200 ? 0.25 : 0.15;
+    const profitPadding = Math.max(Math.abs(overallMax) * profitPaddingPercent, 2);
+    const rawYMax = overallMax + profitPadding;
+
+    // Symmetric lower bound (zero at centre)
+    const symmetricYMin = -rawYMax;
+
+    // Actual lower bound — extend only if loss is deeper, but cap at 3× profit range
+    // so extreme losses don't dominate the scale and crush the profit zone
+    const cappedLossExtent = Math.max(Math.abs(overallMin), rawYMax);
+    const maxAllowedExtent = rawYMax * 3; // never let loss zone take >75% of the chart
+    const actualExtent = Math.min(cappedLossExtent, maxAllowedExtent);
+    const rawYMin = -actualExtent;
+
+    // Final bounds — always at least ±2 so a flat line at zero is still visible
+    const yMin = Math.min(rawYMin, symmetricYMin, -2);
     const yMax = Math.max(rawYMax, 2);
 
     const targetPricePoint = data.find((d) => Math.abs(d.price - targetPrice) < priceStep * 1.5);
     const projectedProfit = targetPricePoint?.target ?? 0;
 
     const totalPremiumCollected = parsedPos.reduce((sum, p) => {
-      return sum + p.entryPrice * Math.abs(p.size) * 0.001;
+      return sum + p.entryPrice * Math.abs(p.size) * getContractMultiplier(p.symbol);
     }, 0);
     const profitPct = totalPremiumCollected > 0 ? ((projectedProfit / totalPremiumCollected) * 100).toFixed(2) : 0;
 

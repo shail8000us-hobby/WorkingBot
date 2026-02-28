@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Paper,
@@ -230,15 +231,14 @@ const MLDecisionCenter = () => {
     Promise.all([fetchPendingDecisions(), fetchCircuitBreaker(), fetchEngineStatus()]).finally(() =>
       setLoading(false)
     );
-
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchPendingDecisions();
-      fetchCircuitBreaker();
-    }, 30000);
-
-    return () => clearInterval(interval);
   }, [fetchPendingDecisions, fetchCircuitBreaker, fetchEngineStatus]);
+
+  // Auto-refresh decisions & circuit breaker — pauses when tab is hidden
+  const refreshMLData = useCallback(() => {
+    fetchPendingDecisions();
+    fetchCircuitBreaker();
+  }, [fetchPendingDecisions, fetchCircuitBreaker]);
+  useVisibilityAwarePolling(refreshMLData, 30000, 120000);
 
   // Render circuit breaker card
   const renderCircuitBreaker = () => {

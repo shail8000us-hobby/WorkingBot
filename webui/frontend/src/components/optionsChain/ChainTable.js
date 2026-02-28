@@ -19,7 +19,6 @@ import {
   TableHead,
   TableRow,
   Typography,
-  Tooltip,
   Chip,
   FormControl,
   InputLabel,
@@ -127,6 +126,7 @@ const ChainTable = ({
   selectedLegs,
   builderMode,
   expiry,
+  openPositions = {},
 }) => {
   const [moneynessFilter, setMoneynessFilter] = useState('atm10');
 
@@ -151,6 +151,12 @@ const ChainTable = ({
   const isOptionSelected = (symbol) => {
     if (!selectedLegs) return false;
     return selectedLegs.some((leg) => leg.symbol === symbol);
+  };
+
+  // Get open position info for a given option symbol
+  const getOpenPosition = (symbol) => {
+    if (!symbol || !openPositions) return null;
+    return openPositions[symbol.toUpperCase()] || null;
   };
 
   // Filter strikes based on moneyness
@@ -361,6 +367,9 @@ const ChainTable = ({
                   ? (((put.ask - put.bid) / ((put.ask + put.bid) / 2)) * 100).toFixed(1) + '%'
                   : '-';
 
+              const callOpenPos = getOpenPosition(call.symbol);
+              const putOpenPos = getOpenPosition(put.symbol);
+
               return (
                 <TableRow
                   key={row.strike}
@@ -385,16 +394,40 @@ const ChainTable = ({
                 >
                   {/* CALL Trade */}
                   <TableCell
+                    title={callOpenPos ? `Open CALL ${callOpenPos.side === 'long' ? 'LONG (Bought)' : 'SHORT (Sold)'} · Size: ${callOpenPos.size}${callOpenPos.pnl != null ? ` · PnL: $${Number(callOpenPos.pnl).toFixed(2)}` : ''}` : undefined}
                     sx={{
-                      bgcolor:
-                        isCallSelectedBuy || isCallSelectedSell
+                      bgcolor: callOpenPos
+                        ? callOpenPos.side === 'long'
+                          ? 'rgba(76, 175, 80, 0.25) !important'
+                          : 'rgba(244, 67, 54, 0.25) !important'
+                        : isCallSelectedBuy || isCallSelectedSell
                           ? 'rgba(76, 175, 80, 0.3)'
                           : getMoneynessColor(callMoneyness),
                       borderRight: '1px solid #333',
+                      borderLeft: callOpenPos
+                        ? `4px solid ${callOpenPos.side === 'long' ? '#4caf50' : '#f44336'} !important`
+                        : undefined,
                       p: 0.5,
                       position: 'relative',
                     }}
                   >
+                    {callOpenPos && (
+                      <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        mb: 0.3,
+                      }}>
+                        <Typography variant="caption" sx={{
+                          fontSize: '0.58rem',
+                          fontWeight: 'bold',
+                          color: callOpenPos.side === 'long' ? '#4caf50' : '#f44336',
+                          lineHeight: 1,
+                          letterSpacing: 0,
+                        }}>
+                          {callOpenPos.side === 'long' ? '▲ LONG' : '▼ SHORT'}
+                        </Typography>
+                      </Box>
+                    )}
                     {(isCallSelectedBuy || isCallSelectedSell) && (
                       <Chip
                         label={isCallSelectedBuy ? 'BUY' : 'SELL'}
@@ -629,15 +662,39 @@ const ChainTable = ({
 
                   {/* PUT Trade */}
                   <TableCell
+                    title={putOpenPos ? `Open PUT ${putOpenPos.side === 'long' ? 'LONG (Bought)' : 'SHORT (Sold)'} · Size: ${putOpenPos.size}${putOpenPos.pnl != null ? ` · PnL: $${Number(putOpenPos.pnl).toFixed(2)}` : ''}` : undefined}
                     sx={{
-                      bgcolor:
-                        isPutSelectedBuy || isPutSelectedSell
+                      bgcolor: putOpenPos
+                        ? putOpenPos.side === 'long'
+                          ? 'rgba(76, 175, 80, 0.25) !important'
+                          : 'rgba(244, 67, 54, 0.25) !important'
+                        : isPutSelectedBuy || isPutSelectedSell
                           ? 'rgba(244, 67, 54, 0.3)'
                           : getMoneynessColor(putMoneyness),
+                      borderLeft: putOpenPos
+                        ? `4px solid ${putOpenPos.side === 'long' ? '#4caf50' : '#f44336'} !important`
+                        : undefined,
                       p: 0.5,
                       position: 'relative',
                     }}
                   >
+                    {putOpenPos && (
+                      <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        mb: 0.3,
+                      }}>
+                        <Typography variant="caption" sx={{
+                          fontSize: '0.58rem',
+                          fontWeight: 'bold',
+                          color: putOpenPos.side === 'long' ? '#4caf50' : '#f44336',
+                          lineHeight: 1,
+                          letterSpacing: 0,
+                        }}>
+                          {putOpenPos.side === 'long' ? '▲ LONG' : '▼ SHORT'}
+                        </Typography>
+                      </Box>
+                    )}
                     {(isPutSelectedBuy || isPutSelectedSell) && (
                       <Chip
                         label={isPutSelectedBuy ? 'BUY' : 'SELL'}
@@ -712,6 +769,14 @@ const ChainTable = ({
             <Typography variant="caption">Suggested</Typography>
           </Box>
         )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main', boxShadow: '0 0 4px 1px rgba(76,175,80,0.6)' }} />
+          <Typography variant="caption">Open Long</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'error.main', boxShadow: '0 0 4px 1px rgba(244,67,54,0.6)' }} />
+          <Typography variant="caption">Open Short</Typography>
+        </Box>
         <Typography variant="caption" color="text.secondary">
           | {strategyMode ? 'Click B/S to add leg' : 'Click Bid = Sell • Click Ask = Buy'}
         </Typography>
@@ -722,6 +787,10 @@ const ChainTable = ({
         @keyframes suggestedPulse {
           0%, 100% { background-color: rgba(33, 150, 243, 0.15); }
           50% { background-color: rgba(33, 150, 243, 0.25); }
+        }
+        @keyframes positionPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.25); }
         }
       `}</style>
     </Box>

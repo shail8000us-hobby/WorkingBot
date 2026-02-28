@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Card,
@@ -49,6 +50,7 @@ import {
   Menu,
   ListItemIcon,
   ListItemText,
+  ClickAwayListener,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -85,6 +87,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -249,6 +252,30 @@ const SortableRow = React.memo(({ pos, children }) => {
   );
 });
 
+// A droppable group header — acts as a drop zone for the entire group section.
+// id is '__GROUP__<groupId>' (or '__GROUP__UNGROUPED' for the ungrouped section).
+// handleDragEnd checks for this prefix to update group membership rather than reorder.
+const GROUP_DROP_PREFIX = '__GROUP__';
+const UNGROUPED_DROP_ID = `${GROUP_DROP_PREFIX}UNGROUPED`;
+
+const DroppableGroupHeader = React.memo(({ groupId, color, isActive: _isActive, children }) => {
+  const id = groupId ? `${GROUP_DROP_PREFIX}${groupId}` : UNGROUPED_DROP_ID;
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <TableRow
+      ref={setNodeRef}
+      sx={{
+        outline: isOver ? `2px dashed ${color || '#888'}` : 'none',
+        outlineOffset: -2,
+        transition: 'outline 0.1s',
+        bgcolor: isOver ? `${color || '#888'}1A` : undefined,
+      }}
+    >
+      {children}
+    </TableRow>
+  );
+});
+
 const OptionsPanel = () => {
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = usePersistedState('options_poll_interval', 5000, { parse: 'int' });
@@ -304,6 +331,60 @@ const OptionsPanel = () => {
   const [symbolSort, setSymbolSort] = useState(null); // null = no sort, 'grouped' = CE/PE grouped
   const [strikeSort, setStrikeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
   const [sizeSort, setSizeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
+
+  // ── Position Groups (manual labelling) ───────────────────────────────────
+  // Persisted: { [groupId]: { name: string, color: string, symbols: string[] } }
+  const GROUP_PALETTE = ['#7c3aed', '#0891b2', '#0d9488', '#d97706', '#dc2626', '#db2777', '#65a30d', '#ea580c'];
+  const [positionGroups, setPositionGroups] = usePersistedState('options_position_groups', {});
+  const [newGroupName, setNewGroupName] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = usePersistedState('options_groups_collapsed', {});
+  // Right‑click context menu
+  const [groupMenuAnchor, setGroupMenuAnchor] = useState(null); // { mouseX, mouseY, symbol }
+
+  // Create a new group
+  const handleCreateGroup = useCallback((name) => {
+    if (!name.trim()) return;
+    const id = Date.now().toString();
+    const usedCount = Object.keys(positionGroups).length;
+    const color = GROUP_PALETTE[usedCount % GROUP_PALETTE.length];
+    setPositionGroups((prev) => ({ ...prev, [id]: { name: name.trim(), color, symbols: [] } }));
+  }, [positionGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Delete a group (positions become ungrouped)
+  const handleDeleteGroup = useCallback((groupId) => {
+    setPositionGroups((prev) => {
+      const next = { ...prev };
+      delete next[groupId];
+      return next;
+    });
+  }, []);
+
+  // Assign a position symbol to a group (removes from any previous group first)
+  const handleAssignToGroup = useCallback((symbol, groupId) => {
+    setPositionGroups((prev) => {
+      const next = {};
+      for (const [id, g] of Object.entries(prev)) {
+        next[id] = { ...g, symbols: g.symbols.filter((s) => s !== symbol) };
+      }
+      if (groupId && next[groupId]) {
+        next[groupId] = { ...next[groupId], symbols: [...next[groupId].symbols, symbol] };
+      }
+      return next;
+    });
+  }, []);
+
+  // Get the groupId a symbol belongs to (or null)
+  const getSymbolGroup = useCallback((symbol) => {
+    for (const [id, g] of Object.entries(positionGroups)) {
+      if (g.symbols.includes(symbol)) return id;
+    }
+    return null;
+  }, [positionGroups]);
+
+  // Toggle collapse for a group
+  const toggleGroupCollapse = useCallback((groupId) => {
+    setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  }, []);
 
   // SL/TP Dialog state
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
@@ -510,23 +591,44 @@ const OptionsPanel = () => {
   // Handle drag end - save the custom order to persist across page refreshes (immediate save for UX)
   const handleDragEnd = (event) => {
     const { active, over } = event;
+    if (!over) return; // dropped outside any valid target
 
-    if (active.id !== over.id) {
-      // BUG-17 FIX: use sortedPositionsRef (kept up-to-date by a useEffect) so that a poll
-      // firing mid-drag doesn't cause stale findIndex results and wrong reordering.
+    const overId = over.id;
+
+    // ── Case 1: dropped onto a group HEADER (DroppableGroupHeader) ──────────
+    // id is like '__GROUP__<groupId>' or '__GROUP__UNGROUPED'
+    if (String(overId).startsWith(GROUP_DROP_PREFIX)) {
+      const rawId = String(overId).slice(GROUP_DROP_PREFIX.length);
+      const targetGroupId = rawId === 'UNGROUPED' ? null : rawId;
+      const currentGroupId = getSymbolGroup(active.id);
+      if (currentGroupId !== targetGroupId) {
+        handleAssignToGroup(active.id, targetGroupId);
+        devLog('[OptionsPanel] Drag-to-header: assigned', active.id, '->', targetGroupId);
+      }
+      return; // no reorder needed — group membership change is enough
+    }
+
+    // ── Case 2: dropped onto a position ROW (SortableRow) ───────────────────
+    if (active.id !== overId) {
+      // BUG-17 FIX: use sortedPositionsRef (visual order, matches SortableContext items)
       const currentPositions = sortedPositionsRef.current;
       const oldIndex = currentPositions.findIndex((p) => p.product_symbol === active.id);
-      const newIndex = currentPositions.findIndex((p) => p.product_symbol === over.id);
+      const newIndex = currentPositions.findIndex((p) => p.product_symbol === overId);
+
+      if (oldIndex === -1 || newIndex === -1) return; // safety guard
+
+      // DRAG-TO-ASSIGN: if dropped onto a row in a different group, reassign
+      const activeGroupId = getSymbolGroup(active.id);
+      const overGroupId = getSymbolGroup(overId);
+      if (activeGroupId !== overGroupId) {
+        handleAssignToGroup(active.id, overGroupId || null);
+      }
 
       const reordered = arrayMove(currentPositions, oldIndex, newIndex);
       const newOrder = reordered.map((p) => p.product_symbol);
-
-      // Update state and save immediately (drag operations need instant persistence)
       setCustomOrder(newOrder);
       saveCustomOrderNow(newOrder);
-
-      // Log for debugging
-      devLog('[OptionsPanel] Position order updated:', newOrder);
+      devLog('[OptionsPanel] Order updated:', newOrder, '| group:', activeGroupId, '->', overGroupId);
     }
   };
 
@@ -1065,50 +1167,47 @@ const OptionsPanel = () => {
   // Fetch live bid/ask for closed positions so they display real-time market data
   // MISSING-7 FIX: route through backend proxy (/api/ticker/<symbol>) instead of calling
   // Delta Exchange public API directly from the frontend (avoids CORS issues in production)
-  useEffect(() => {
+  const closedSymbolsKey = Object.keys(closedPositions).join(',');
+  const hasClosedSymbols = closedSymbolsKey.length > 0;
+
+  const fetchClosedTickers = useCallback(async () => {
     const closedSymbols = Object.keys(closedPositions).filter(
       symbol => !positions.some(p => p.product_symbol === symbol)
     );
     if (closedSymbols.length === 0) return;
 
-    const fetchClosedTickers = async () => {
-      const updates = {};
-      await Promise.all(
-        closedSymbols.map(async (symbol) => {
-          try {
-            // MISSING-7 FIX: use backend proxy (/api/options/ticker/<symbol>) to avoid
-            // direct public Delta Exchange API calls from frontend (CORS risk in production)
-            const { data } = await api.get(`/api/options/ticker/${encodeURIComponent(symbol)}`);
-            if (data?.success && data?.ticker?.quotes) {
-              updates[symbol] = {
-                last_bid: parseFloat(data.ticker.quotes.best_bid) || 0,
-                last_ask: parseFloat(data.ticker.quotes.best_ask) || 0,
-              };
-            }
-          } catch {
-            // Silently fail - closed position ticker fetch is best-effort
+    const updates = {};
+    await Promise.all(
+      closedSymbols.map(async (symbol) => {
+        try {
+          const { data } = await api.get(`/api/options/ticker/${encodeURIComponent(symbol)}`);
+          if (data?.success && data?.ticker?.quotes) {
+            updates[symbol] = {
+              last_bid: parseFloat(data.ticker.quotes.best_bid) || 0,
+              last_ask: parseFloat(data.ticker.quotes.best_ask) || 0,
+            };
           }
-        })
-      );
+        } catch {
+          // Silently fail - closed position ticker fetch is best-effort
+        }
+      })
+    );
 
-      if (Object.keys(updates).length > 0) {
-        setClosedPositions(prev => {
-          const updated = { ...prev };
-          for (const [symbol, tickerData] of Object.entries(updates)) {
-            if (updated[symbol]) {
-              updated[symbol] = { ...updated[symbol], ...tickerData };
-            }
+    if (Object.keys(updates).length > 0) {
+      setClosedPositions(prev => {
+        const updated = { ...prev };
+        for (const [symbol, tickerData] of Object.entries(updates)) {
+          if (updated[symbol]) {
+            updated[symbol] = { ...updated[symbol], ...tickerData };
           }
-          return updated;
-        });
-      }
-    };
+        }
+        return updated;
+      });
+    }
+  }, [closedSymbolsKey, positions.length]);
 
-    // Fetch immediately and then on poll interval
-    fetchClosedTickers();
-    const interval = setInterval(fetchClosedTickers, pollInterval * 2); // 2x slower than main poll
-    return () => clearInterval(interval);
-  }, [Object.keys(closedPositions).join(','), positions.length, pollInterval]);
+  // Poll closed tickers — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchClosedTickers, pollInterval * 2, 60000, hasClosedSymbols);
 
   // **CRITICAL: Detect positions that disappear from API (expired, auto-closed, etc.)**
   // Save them to closedPositions before they vanish from the UI
@@ -1265,11 +1364,33 @@ const OptionsPanel = () => {
   const sortedPositionsRef = React.useRef(sortedPositions);
   const indexPricesRef = React.useRef(indexPrices);
 
-  // Keep refs updated
+  // ── Visual order of positions: MUST match exactly the DOM render order ──
+  // Groups are rendered first (each group's positions in sortedPositions order),
+  // then ungrouped positions. SortableContext items and sortedPositionsRef both
+  // use this so dnd-kit indices always match the actual row positions in the DOM.
+  const visualOrderedPositions = useMemo(() => {
+    const assigned = new Set(
+      Object.values(positionGroups).flatMap((g) => g.symbols)
+    );
+    const ordered = [];
+    // 1. Each group's positions (in their sortedPositions order)
+    Object.values(positionGroups).forEach((grp) => {
+      sortedPositions.forEach((p) => {
+        if (grp.symbols.includes(p.product_symbol)) ordered.push(p);
+      });
+    });
+    // 2. Ungrouped positions
+    sortedPositions.forEach((p) => {
+      if (!assigned.has(p.product_symbol)) ordered.push(p);
+    });
+    return ordered;
+  }, [sortedPositions, positionGroups]);
+
+  // Keep refs updated — use visual order so handleDragEnd indices match DOM
   useEffect(() => {
-    sortedPositionsRef.current = sortedPositions;
+    sortedPositionsRef.current = visualOrderedPositions;
     indexPricesRef.current = indexPrices;
-  }, [sortedPositions, indexPrices]);
+  }, [visualOrderedPositions, indexPrices]);
 
   // MISSING-1: Update lastPollSpotRef whenever positions are refreshed from HTTP
   // (indicated by lastDataUpdate changing). This sets the baseline for gamma correction.
@@ -1957,6 +2078,9 @@ const OptionsPanel = () => {
   //   GCD:    Order size = (abs(position size) / GCD) * |qty|  (proportional)
   //   Fixed:  Order size = |qty| lots per position (flat, ideal for gradual exit with auto-loop)
   const calculateBatchOrders = (filterExpiry = null) => {
+    // Must have a mode selected before calculating orders
+    if (!multiplierMode) return [];
+
     // Get selected positions, optionally filtered by expiry
     let selectedPos = getSelectedPositions();
     if (filterExpiry) {
@@ -2361,21 +2485,22 @@ const OptionsPanel = () => {
 
   // Stop auto-loop — tells backend to stop
   // ARCH-1 NOTE: Two auto-loop systems exist — legacy (autoLoopRunning) and per-expiry (expiryLoopState).
-  // The "STOP ALL" banner button dispatches to stopAllExpiryLoops when per-expiry loops are active,
-  // and to stopAutoLoop for legacy single loops. Both are kept for backward compatibility.
-  // Future: consolidate to per-expiry system only and remove legacy state.
+  // The "STOP ALL" banner button stops ALL running loops (both main and per-expiry).
   const stopAutoLoop = async () => {
     devLog('[AUTO-LOOP] Stop requested (backend mode)');
-    // If per-expiry loops are running, delegate to the per-expiry stop
-    if (anyExpiryLoopRunning) {
-      return stopAllExpiryLoops();
-    }
+    // Optimistically update UI immediately so the banner responds right away
+    setAutoLoopRunning(false);
+    autoLoopStopRef.current = true;
+    // Always stop the main loop
     try {
       await api.post('/api/options/auto-loop/stop', { loop_id: 'main' });
     } catch (err) {
-      console.error('[AUTO-LOOP] Stop error:', err);
+      console.error('[AUTO-LOOP] Stop error (main):', err);
     }
-    autoLoopStopRef.current = true;
+    // Also stop any per-expiry loops that might be running concurrently
+    if (anyExpiryLoopRunning) {
+      await stopAllExpiryLoops();
+    }
   };
 
   // Poll backend auto-loop status — drives autoLoopRunning / progress / error
@@ -2388,16 +2513,13 @@ const OptionsPanel = () => {
         if (!data.success) return;
 
         const loopState = data.loops?.main;
-        if (!loopState || !loopState.exists === undefined && !loopState.status) {
+        // BUG-FIX: original condition "!loopState.exists === undefined" was always false
+        // (boolean is never === undefined). Fixed to check exists properly.
+        if (!loopState || loopState.exists === false || loopState.exists === undefined) {
           // No loop exists on backend — if we think one is running, stop
           if (autoLoopRunning) {
             setAutoLoopRunning(false);
           }
-          return;
-        }
-
-        if (loopState.exists === false) {
-          if (autoLoopRunning) setAutoLoopRunning(false);
           return;
         }
 
@@ -2450,8 +2572,10 @@ const OptionsPanel = () => {
     // Check immediately on mount for any running backend loops
     pollBackend();
 
-    // Poll every 1.5s
-    autoLoopPollRef.current = setInterval(pollBackend, 1500);
+    // Poll every 1.5s — skip when tab is hidden to reduce load
+    autoLoopPollRef.current = setInterval(() => {
+      if (!document.hidden) pollBackend();
+    }, 1500);
     return () => {
       if (autoLoopPollRef.current) clearInterval(autoLoopPollRef.current);
     };
@@ -2600,16 +2724,40 @@ const OptionsPanel = () => {
     }
   };
 
-  // Stop all expiry loops — calls backend for each
+  // Stop all expiry loops AND the main loop — calls backend for each
   const stopAllExpiryLoops = async () => {
     const runningExpiries = Object.keys(expiryLoopState).filter(e => expiryLoopState[e]?.running);
     devLog('[AUTO-LOOP] Stop all requested for:', runningExpiries);
+
+    // Optimistically clear all expiry loop running states immediately
+    if (runningExpiries.length > 0) {
+      setExpiryLoopState(prev => {
+        const updated = { ...prev };
+        runningExpiries.forEach(e => {
+          if (updated[e]) updated[e] = { ...updated[e], running: false };
+        });
+        return updated;
+      });
+    }
+
+    // Stop per-expiry loops on backend
     for (const expiry of runningExpiries) {
       expiryStopRefs.current[expiry] = true;
       try {
         await api.post('/api/options/auto-loop/stop', { loop_id: expiry });
       } catch (err) {
         console.error(`[AUTO-LOOP:${expiry}] Stop error:`, err);
+      }
+    }
+
+    // Also stop the main loop in case it's running concurrently
+    if (autoLoopRunning) {
+      setAutoLoopRunning(false);
+      autoLoopStopRef.current = true;
+      try {
+        await api.post('/api/options/auto-loop/stop', { loop_id: 'main' });
+      } catch (err) {
+        console.error('[AUTO-LOOP] Stop error (main from stopAllExpiryLoops):', err);
       }
     }
   };
@@ -2688,7 +2836,9 @@ const OptionsPanel = () => {
 
     if (hasRunning) {
       pollExpiryLoops();
-      expiryPollRef.current = setInterval(pollExpiryLoops, 1500);
+      expiryPollRef.current = setInterval(() => {
+        if (!document.hidden) pollExpiryLoops();
+      }, 1500);
     } else {
       // Check once on mount for surviving backend loops
       pollExpiryLoops();
@@ -3131,6 +3281,127 @@ const OptionsPanel = () => {
             lastDataUpdate={lastDataUpdate}
           />
 
+          {/* ── Group Manager Strip ──────────────────────────────────── */}
+          {positions.length > 0 && !turboMode && (
+            <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, fontSize: '0.7rem' }}>
+                🗂 Groups:
+              </Typography>
+              {/* Existing groups as chips */}
+              {Object.entries(positionGroups).map(([gid, grp]) => (
+                <Chip
+                  key={gid}
+                  label={`${grp.name} (${grp.symbols.filter(s => sortedPositions.some(p => p.product_symbol === s)).length})`}
+                  size="small"
+                  onDelete={() => handleDeleteGroup(gid)}
+                  sx={{
+                    bgcolor: `${grp.color}22`,
+                    borderColor: grp.color,
+                    border: '1px solid',
+                    color: grp.color,
+                    fontWeight: 600,
+                    fontSize: '0.68rem',
+                    '& .MuiChip-deleteIcon': { color: grp.color, fontSize: 14 },
+                  }}
+                />
+              ))}
+              {/* Create new group input */}
+              <Box component="form" onSubmit={(e) => { e.preventDefault(); handleCreateGroup(newGroupName); setNewGroupName(''); }}
+                sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  placeholder="New group name…"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  inputProps={{ maxLength: 30 }}
+                  sx={{ width: 145, '& .MuiInputBase-input': { fontSize: '0.72rem', py: 0.5 } }}
+                />
+                <Button type="submit" size="small" variant="outlined" disabled={!newGroupName.trim()}
+                  sx={{ fontSize: '0.68rem', py: 0.4, whiteSpace: 'nowrap' }}>
+                  ＋ Group
+                </Button>
+              </Box>
+            </Box>
+          )}
+
+          {/* ── Group assignment picker — transparent backdrop prevents ClickAway misfire ── */}
+          {groupMenuAnchor && (
+            <>
+              {/* Transparent full-page backdrop — clicking outside closes picker */}
+              <Box
+                onClick={() => setGroupMenuAnchor(null)}
+                sx={{
+                  position: 'fixed', inset: 0,
+                  zIndex: 99998,
+                  background: 'transparent',
+                }}
+              />
+              <Paper
+                elevation={12}
+                sx={{
+                  position: 'fixed',
+                  top: groupMenuAnchor.mouseY,
+                  left: groupMenuAnchor.mouseX,
+                  zIndex: 99999,
+                  minWidth: 210,
+                  py: 0.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" sx={{ px: 2, py: 0.5, display: 'block', fontWeight: 'bold', color: 'text.secondary', letterSpacing: 0.5, textTransform: 'uppercase', fontSize: '0.6rem' }}>
+                  Assign to Group
+                </Typography>
+                <Divider sx={{ mb: 0.5 }} />
+                {Object.entries(positionGroups).map(([gid, grp]) => {
+                  const isCurrent = getSymbolGroup(groupMenuAnchor.symbol) === gid;
+                  return (
+                    <Box
+                      key={gid}
+                      onClick={() => { handleAssignToGroup(groupMenuAnchor.symbol, isCurrent ? null : gid); setGroupMenuAnchor(null); }}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 1,
+                        px: 2, py: 0.75, cursor: 'pointer',
+                        bgcolor: isCurrent ? `${grp.color}15` : 'transparent',
+                        '&:hover': { bgcolor: `${grp.color}22` },
+                        borderLeft: isCurrent ? `3px solid ${grp.color}` : '3px solid transparent',
+                      }}
+                    >
+                      <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
+                      <Typography variant="body2" sx={{ flex: 1, fontSize: '0.8rem', color: isCurrent ? grp.color : 'text.primary', fontWeight: isCurrent ? 'bold' : 'normal' }}>
+                        {grp.name}
+                      </Typography>
+                      {isCurrent && <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.65rem' }}>✓ assigned</Typography>}
+                    </Box>
+                  );
+                })}
+                {Object.keys(positionGroups).length === 0 && (
+                  <Box sx={{ px: 2, py: 1 }}>
+                    <Typography variant="caption" color="text.secondary" fontStyle="italic">No groups yet — create one above</Typography>
+                  </Box>
+                )}
+                {getSymbolGroup(groupMenuAnchor.symbol) && (
+                  <>
+                    <Divider sx={{ my: 0.5 }} />
+                    <Box
+                      onClick={() => { handleAssignToGroup(groupMenuAnchor.symbol, null); setGroupMenuAnchor(null); }}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 1,
+                        px: 2, py: 0.75, cursor: 'pointer',
+                        color: 'error.main',
+                        '&:hover': { bgcolor: 'error.main', color: 'white' },
+                      }}
+                    >
+                      <CloseIcon sx={{ fontSize: 14 }} />
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>Remove from group</Typography>
+                    </Box>
+                  </>
+                )}
+              </Paper>
+            </>
+          )}
+
           {/* Positions Table */}
           {positions.length === 0 ? (
             <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'action.hover' }}>
@@ -3396,143 +3667,260 @@ const OptionsPanel = () => {
                   <SortableContext
                     // BUG-6 FIX: deduplicate IDs — during the cleanup race a symbol can appear
                     // in both live positions and closedPositions; dnd-kit throws on duplicate IDs
-                    items={[...new Set(sortedPositions.map((p) => p.product_symbol))]}
+                    // GROUP FIX: use visualOrderedPositions so logical order matches DOM render order
+                    items={[...new Set(visualOrderedPositions.map((p) => p.product_symbol))]}
                     strategy={verticalListSortingStrategy}
                   >
                     <TableBody>
-                      {sortedPositions.map((pos, index) => {
-                        const optionInfo = parseOptionSymbol(pos.product_symbol);
-                        const posType = getPositionType(pos.product_symbol);
-                        const pnlColor = getPnlColor((Number(pos.unrealized_pnl) || 0) + (Number(pos.partial_realized_pnl) || 0));
-                        const isLong = pos.size > 0;
-                        const daysToExp = getDaysToExpiry(pos.product_symbol);
-                        const isQuickMode = skipConfirmStrikes[pos.product_symbol]?.enabled;
+                      {(() => {
+                        // Build rendering order: named groups first, then ungrouped
+                        const groupEntries = Object.entries(positionGroups);
+                        const hasGroups = groupEntries.length > 0;
 
-                        // Check if this is a closed position (squared off but retained for PnL tracking)
-                        const isClosed = pos.is_closed === true || (pos.size === 0 && closedPositions[pos.product_symbol]);
+                        // Render one position row (shared helper)
+                        const renderPositionRow = (pos, index, groupColor) => {
+                          const optionInfo = parseOptionSymbol(pos.product_symbol);
+                          const posType = getPositionType(pos.product_symbol);
+                          const isLong = pos.size > 0;
+                          const daysToExp = getDaysToExpiry(pos.product_symbol);
+                          const isQuickMode = skipConfirmStrikes[pos.product_symbol]?.enabled;
+                          const isClosed = pos.is_closed === true || (pos.size === 0 && closedPositions[pos.product_symbol]);
+                          const cashflow = pos.cashflow || 0;
+                          const effectiveSize = isClosed
+                            ? (closedPositions[pos.product_symbol]?.original_size || pos.original_size || 0)
+                            : pos.size;
+                          const isCall = optionInfo.type === 'Call';
+                          const isPut = optionInfo.type === 'Put';
+                          const rowBgColor = groupColor
+                            ? `${groupColor}0a`
+                            : isClosed
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : isCall
+                                ? 'rgba(16, 185, 129, 0.03)'
+                                : isPut
+                                  ? 'rgba(239, 68, 68, 0.03)'
+                                  : 'transparent';
+                          const rowHoverColor = groupColor
+                            ? `${groupColor}18`
+                            : isClosed
+                              ? 'rgba(255, 255, 255, 0.06)'
+                              : isCall
+                                ? 'rgba(16, 185, 129, 0.06)'
+                                : isPut
+                                  ? 'rgba(239, 68, 68, 0.06)'
+                                  : 'action.hover';
+                          const isSelectedInTurbo = turboMode && selectedRowIndex >= 0 && index === selectedRowIndex;
+                          const finalBgColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.2)' : rowBgColor;
+                          const finalHoverColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.3)' : rowHoverColor;
+                          const cellSx = {
+                            backgroundColor: `${finalBgColor} !important`,
+                            '&:hover': { backgroundColor: `${finalHoverColor} !important` },
+                            opacity: isClosed ? 0.7 : 1,
+                            borderLeft: groupColor
+                              ? `3px solid ${groupColor}`
+                              : isSelectedInTurbo
+                                ? '3px solid #ffc107'
+                                : undefined,
+                          };
 
-                        // Use backend-calculated cashflow
-                        const cashflow = pos.cashflow || 0;
-
-                        // BUG-18 FIX: for closed positions (size=0), recover direction from original_size
-                        // so cashflow color reflects whether the trade was long (paid) or short (received)
-                        const effectiveSize = isClosed
-                          ? (closedPositions[pos.product_symbol]?.original_size || pos.original_size || 0)
-                          : pos.size;
-
-                        const isCall = optionInfo.type === 'Call';
-                        const isPut = optionInfo.type === 'Put';
-
-                        // Closed positions use light white/gray background for easy identification
-                        const rowBgColor = isClosed
-                          ? 'rgba(255, 255, 255, 0.03)' // Light white tint - easily identifiable
-                          : isCall
-                            ? 'rgba(16, 185, 129, 0.03)'
-                            : isPut
-                              ? 'rgba(239, 68, 68, 0.03)'
-                              : 'transparent';
-                        const rowHoverColor = isClosed
-                          ? 'rgba(255, 255, 255, 0.06)' // Slightly brighter on hover
-                          : isCall
-                            ? 'rgba(16, 185, 129, 0.06)'
-                            : isPut
-                              ? 'rgba(239, 68, 68, 0.06)'
-                              : 'action.hover';
-
-                        // Phase 4: Turbo mode selected row highlight (only if actively selected)
-                        const isSelectedInTurbo = turboMode && selectedRowIndex >= 0 && index === selectedRowIndex;
-                        const finalBgColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.2)' : rowBgColor;
-                        const finalHoverColor = isSelectedInTurbo ? 'rgba(255, 193, 7, 0.3)' : rowHoverColor;
-
-                        // Common cell style
-                        const cellSx = {
-                          backgroundColor: `${finalBgColor} !important`,
-                          '&:hover': { backgroundColor: `${finalHoverColor} !important` },
-                          opacity: isClosed ? 0.7 : 1, // Reduce opacity for closed positions
-                          borderLeft: isSelectedInTurbo ? '3px solid #ffc107' : undefined,
+                          return (
+                            <SortableRow
+                              key={pos.product_symbol}
+                              pos={pos}
+                            >
+                              {(attributes, listeners) => (
+                                <PositionRow
+                                  pos={pos}
+                                  index={index}
+                                  optionInfo={optionInfo}
+                                  posType={posType}
+                                  daysToExp={daysToExp}
+                                  isClosed={isClosed}
+                                  effectiveSize={effectiveSize}
+                                  cashflow={cashflow}
+                                  cellSx={cellSx}
+                                  rowBgColor={rowBgColor}
+                                  rowHoverColor={rowHoverColor}
+                                  isCall={isCall}
+                                  isPut={isPut}
+                                  isLong={isLong}
+                                  isQuickMode={isQuickMode}
+                                  visibleColumns={visibleColumns}
+                                  isSelected={selectedStrikes[pos.product_symbol]}
+                                  isPayoffSelected={selectedPositionsForPayoff.includes(pos.product_symbol)}
+                                  batchQty={batchQuantities[pos.product_symbol]}
+                                  slTpSetting={slTpSettings[pos.product_symbol]}
+                                  maxLossSetting={maxLossSettings[pos.product_symbol]}
+                                  tpSetting={tpSettings[pos.product_symbol]}
+                                  popValue={popData[pos.product_symbol]}
+                                  skipConfirmStrike={skipConfirmStrikes[pos.product_symbol]}
+                                  scalingRecommendation={scalingRecommendations[pos.product_symbol]}
+                                  onToggleStrikeSelection={toggleStrikeSelection}
+                                  onTogglePayoffSelection={(symbol) => {
+                                    setSelectedPositionsForPayoff((prev) =>
+                                      prev.includes(symbol)
+                                        ? prev.filter((s) => s !== symbol)
+                                        : [...prev, symbol]
+                                    );
+                                  }}
+                                  onToggleHidden={(symbol) => {
+                                    setHiddenPositions((prev) =>
+                                      prev.includes(symbol)
+                                        ? prev.filter((s) => s !== symbol)
+                                        : [...prev, symbol]
+                                    );
+                                  }}
+                                  onBatchQtyChange={(symbol, value) => {
+                                    setBatchQuantities((prev) => ({ ...prev, [symbol]: value }));
+                                    if (value !== 0) {
+                                      setSelectedStrikes((prev) => ({ ...prev, [symbol]: true }));
+                                    }
+                                  }}
+                                  onSetSLTP={(position) => {
+                                    setSelectedPositionForSLTP(position);
+                                    setSlTpDialogOpen(true);
+                                  }}
+                                  onSetTP={(position) => {
+                                    setSelectedPositionForTP(position);
+                                    setTpDialogOpen(true);
+                                  }}
+                                  onMaxLossUpdate={handleMaxLossUpdate}
+                                  onTakeProfitUpdate={handleTakeProfitUpdate}
+                                  onHandleAdd={handleAdd}
+                                  onHandleClose={handleClose}
+                                  onDisableSkipConfirm={disableSkipConfirm}
+                                  onRemoveClosedPosition={(symbol) => {
+                                    setClosedPositions(prev => {
+                                      const updated = { ...prev };
+                                      delete updated[symbol];
+                                      return updated;
+                                    });
+                                    devLog(`🗑️ Removed closed position: ${symbol}`);
+                                  }}
+                                  status={status}
+                                  closedPositionData={closedPositions[pos.product_symbol]}
+                                  DEFAULT_SIZE={DEFAULT_SIZE}
+                                  attributes={attributes}
+                                  listeners={listeners}
+                                  onGroupClick={hasGroups ? (e) => {
+                                    e.stopPropagation();
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setGroupMenuAnchor({
+                                      mouseX: rect.right,
+                                      mouseY: rect.bottom,
+                                      symbol: pos.product_symbol,
+                                    });
+                                  } : undefined}
+                                />
+                              )}
+                            </SortableRow>
+                          );
                         };
 
-                        return (
-                          <SortableRow key={pos.product_symbol} pos={pos}>
-                            {(attributes, listeners) => (
-                              <PositionRow
-                                pos={pos}
-                                index={index}
-                                optionInfo={optionInfo}
-                                posType={posType}
-                                daysToExp={daysToExp}
-                                isClosed={isClosed}
-                                effectiveSize={effectiveSize}
-                                cashflow={cashflow}
-                                cellSx={cellSx}
-                                rowBgColor={rowBgColor}
-                                rowHoverColor={rowHoverColor}
-                                isCall={isCall}
-                                isPut={isPut}
-                                isLong={isLong}
-                                isQuickMode={isQuickMode}
-                                visibleColumns={visibleColumns}
-                                isSelected={selectedStrikes[pos.product_symbol]}
-                                isPayoffSelected={selectedPositionsForPayoff.includes(pos.product_symbol)}
-                                batchQty={batchQuantities[pos.product_symbol]}
-                                slTpSetting={slTpSettings[pos.product_symbol]}
-                                maxLossSetting={maxLossSettings[pos.product_symbol]}
-                                tpSetting={tpSettings[pos.product_symbol]}
-                                popValue={popData[pos.product_symbol]}
-                                skipConfirmStrike={skipConfirmStrikes[pos.product_symbol]}
-                                scalingRecommendation={scalingRecommendations[pos.product_symbol]}
-                                onToggleStrikeSelection={toggleStrikeSelection}
-                                onTogglePayoffSelection={(symbol) => {
-                                  setSelectedPositionsForPayoff((prev) =>
-                                    prev.includes(symbol)
-                                      ? prev.filter((s) => s !== symbol)
-                                      : [...prev, symbol]
-                                  );
-                                }}
-                                onToggleHidden={(symbol) => {
-                                  setHiddenPositions((prev) =>
-                                    prev.includes(symbol)
-                                      ? prev.filter((s) => s !== symbol)
-                                      : [...prev, symbol]
-                                  );
-                                }}
-                                onBatchQtyChange={(symbol, value) => {
-                                  setBatchQuantities((prev) => ({ ...prev, [symbol]: value }));
-                                  if (value !== 0) {
-                                    setSelectedStrikes((prev) => ({ ...prev, [symbol]: true }));
-                                  }
-                                }}
-                                onSetSLTP={(position) => {
-                                  setSelectedPositionForSLTP(position);
-                                  setSlTpDialogOpen(true);
-                                }}
-                                onSetTP={(position) => {
-                                  setSelectedPositionForTP(position);
-                                  setTpDialogOpen(true);
-                                }}
-                                onMaxLossUpdate={handleMaxLossUpdate}
-                                onTakeProfitUpdate={handleTakeProfitUpdate}
-                                onHandleAdd={handleAdd}
-                                onHandleClose={handleClose}
-                                onDisableSkipConfirm={disableSkipConfirm}
-                                onRemoveClosedPosition={(symbol) => {
-                                  setClosedPositions(prev => {
-                                    const updated = { ...prev };
-                                    delete updated[symbol];
-                                    return updated;
-                                  });
-                                  devLog(`🗑️ Removed closed position: ${symbol}`);
-                                }}
-                                status={status}
-                                closedPositionData={closedPositions[pos.product_symbol]}
-                                DEFAULT_SIZE={DEFAULT_SIZE}
-                                attributes={attributes}
-                                listeners={listeners}
-                              />
-                            )}
-                          </SortableRow>
+                        // Compute column count for the header span
+                        const colCount = Object.values(visibleColumns).filter(Boolean).length + 4; // checkboxes + drag
+
+                        // Split positions into groups and ungrouped
+                        const assignedSymbols = new Set(
+                          groupEntries.flatMap(([, g]) => g.symbols)
                         );
-                      })}
+                        const rows = [];
+                        let globalIndex = 0;
+
+                        // Render named groups
+                        groupEntries.forEach(([gid, grp]) => {
+                          const groupPositions = sortedPositions.filter(
+                            (p) => grp.symbols.includes(p.product_symbol)
+                          );
+                          const isCollapsed = collapsedGroups[gid];
+                          // Net PnL for the group
+                          const groupNetPnl = groupPositions.reduce((sum, p) => {
+                            return sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
+                          }, 0);
+
+                          // Group header row — wrapped in DroppableGroupHeader so it's a valid
+                          // dnd-kit drop zone (handles drag-into-empty-group)
+                          rows.push(
+                            <DroppableGroupHeader key={`grphdr-${gid}`} groupId={gid} color={grp.color}>
+                              <TableCell
+                                colSpan={colCount}
+                                sx={{
+                                  py: 0.4,
+                                  px: 1,
+                                  bgcolor: `${grp.color}18`,
+                                  borderLeft: `3px solid ${grp.color}`,
+                                  borderBottom: `1px solid ${grp.color}40`,
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  {/* Color dot */}
+                                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
+                                  {/* Group name */}
+                                  <Typography sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: grp.color, flex: 1 }}>
+                                    {grp.name}
+                                  </Typography>
+                                  {/* Leg count */}
+                                  <Chip
+                                    label={`${groupPositions.length} leg${groupPositions.length !== 1 ? 's' : ''}`}
+                                    size="small"
+                                    sx={{ height: 16, fontSize: '0.6rem', bgcolor: `${grp.color}25`, color: grp.color }}
+                                  />
+                                  {/* Net PnL */}
+                                  <Typography sx={{
+                                    fontSize: '0.7rem', fontWeight: 'bold', minWidth: 70, textAlign: 'right',
+                                    color: groupNetPnl >= 0 ? '#10b981' : '#ef4444',
+                                  }}>
+                                    {groupNetPnl >= 0 ? '+' : ''}{formatPnl(groupNetPnl)}
+                                  </Typography>
+                                  {/* Collapse toggle */}
+                                  <Tooltip title={isCollapsed ? 'Expand group' : 'Collapse group'}>
+                                    <IconButton size="small" onClick={() => toggleGroupCollapse(gid)} sx={{ p: 0.25, color: grp.color }}>
+                                      {isCollapsed ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ExpandLessIcon sx={{ fontSize: 16 }} />}
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              </TableCell>
+                            </DroppableGroupHeader>
+                          );
+
+                          // Group position rows (hidden when collapsed)
+                          if (!isCollapsed) {
+                            groupPositions.forEach((pos) => {
+                              rows.push(renderPositionRow(pos, globalIndex++, grp.color));
+                            });
+                          } else {
+                            globalIndex += groupPositions.length;
+                          }
+                        });
+
+                        // Render ungrouped positions
+                        const ungroupedPositions = hasGroups
+                          ? sortedPositions.filter((p) => !assignedSymbols.has(p.product_symbol))
+                          : sortedPositions;
+
+                        if (hasGroups && ungroupedPositions.length > 0) {
+                          // Ungrouped header — also a DroppableGroupHeader so dragging
+                          // onto it removes the position from its current group
+                          rows.push(
+                            <DroppableGroupHeader key="grphdr-ungrouped" groupId={null} color="#888">
+                              <TableCell
+                                colSpan={colCount}
+                                sx={{ py: 0.3, px: 1, bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}
+                              >
+                                <Typography sx={{ fontSize: '0.7rem', color: 'text.secondary', fontStyle: 'italic' }}>
+                                  Ungrouped ({ungroupedPositions.length}) — drag here or click 🏷 to assign
+                                </Typography>
+                              </TableCell>
+                            </DroppableGroupHeader>
+                          );
+                        }
+
+                        ungroupedPositions.forEach((pos) => {
+                          rows.push(renderPositionRow(pos, globalIndex++, null));
+                        });
+
+                        return rows;
+                      })()}
                     </TableBody>
                   </SortableContext>
                 </DndContext>
@@ -3681,11 +4069,8 @@ const OptionsPanel = () => {
         onClose={() => setSoundSettingsOpen(false)}
       />
 
-      {/* Trade Notification */}
-      <TradeNotification
-        notification={tradeNotification}
-        onDismiss={() => setTradeNotification(null)}
-      />
+      {/* Trade Notification — DISABLED (was too intrusive, mid-screen blocking popup) */}
+      {/* <TradeNotification notification={tradeNotification} onDismiss={() => setTradeNotification(null)} /> */}
 
       {/* Position Adjustment Page */}
       <SensibullStyleAdjustmentPage

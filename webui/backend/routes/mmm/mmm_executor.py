@@ -181,6 +181,7 @@ class MMMExecutor:
         size: int,
         reduce_only: bool = False,
         session_id: str = None,
+        max_reprice_attempts: int = None,  # Override default MAX_REPRICE_ATTEMPTS
     ) -> Dict[str, Any]:
         """
         Place order at mid-price, wait 60s for fill, reprice if needed.
@@ -193,6 +194,12 @@ class MMMExecutor:
             size: Number of lots (contracts)
             reduce_only: If True, only reduces position
             session_id: Session ID for activity logging
+            max_reprice_attempts: Override global MAX_REPRICE_ATTEMPTS (default=4)
+
+        Repricing strategy:
+            - First half of attempts: limit order at mid-price (best fill)
+            - Second half of attempts: limit order at best_bid (more aggressive,
+              guaranteed queue priority for sells)
 
         Returns:
             {
@@ -209,6 +216,8 @@ class MMMExecutor:
         """
         start_time = time.time()
         attempts = 0
+        _max_attempts = max_reprice_attempts if max_reprice_attempts is not None else MAX_REPRICE_ATTEMPTS
+        _aggressive_from = (_max_attempts // 2) + 1  # Switch to best_bid after halfway
 
         log.info(f"📊 MMM Smart Execute: {side.upper()} {size} {symbol}")
 
@@ -287,7 +296,7 @@ class MMMExecutor:
                      'bid': quotes['best_bid'], 'ask': quotes['best_ask']})
 
         # Step 2: Wait + Reprice loop
-        while attempts < MAX_REPRICE_ATTEMPTS:
+        while attempts < _max_attempts:
             attempts += 1
 
             # Wait up to 60 seconds, checking fill status every 3 seconds
@@ -403,10 +412,10 @@ class MMMExecutor:
                 )
 
             # Still open — reprice with fresh quotes
-            log.info(f"⏰ Order {order_id} not filled after {FILL_TIMEOUT}s, repricing (attempt {attempts}/{MAX_REPRICE_ATTEMPTS})")
+            log.info(f"⏰ Order {order_id} not filled after {FILL_TIMEOUT}s, repricing (attempt {attempts}/{_max_attempts})")
 
             _log_activity('order_repricing',
-                f"Order {order_id} not filled after {FILL_TIMEOUT}s, repricing (attempt {attempts}/{MAX_REPRICE_ATTEMPTS})",
+                f"Order {order_id} not filled after {FILL_TIMEOUT}s, repricing (attempt {attempts}/{_max_attempts})",
                 session_id=session_id, severity='warning',
                 details={'order_id': order_id, 'attempt': attempts})
 
@@ -419,6 +428,22 @@ class MMMExecutor:
             if new_mid <= 0:
                 log.warning("Invalid new mid-price, keeping current price")
                 continue
+
+            # After halfway through attempts: switch to best_bid for sells (more aggressive)
+            # This widens our chances of a fill when mid-price is not attracting buyers
+            if side == 'sell' and attempts >= _aggressive_from:
+                best_bid = new_quotes.get('best_bid', 0)
+                if best_bid > 0 and abs(best_bid - mid_price) >= 0.01:
+                    log.info(
+                        f"🎯 Switching to aggressive fill: using best_bid ${best_bid:.2f} "
+                        f"instead of mid ${new_mid:.2f} (attempt {attempts}/{_max_attempts})"
+                    )
+                    _log_activity('order_repricing_aggressive',
+                        f"Switching to best_bid ${best_bid:.2f} for better fill odds "
+                        f"(attempt {attempts}/{_max_attempts})",
+                        session_id=session_id, severity='warning',
+                        details={'order_id': order_id, 'best_bid': best_bid, 'mid': new_mid})
+                    new_mid = best_bid
 
             if abs(new_mid - mid_price) < 0.01:
                 log.info(f"Mid-price unchanged (${new_mid:.2f}), skipping amend")
@@ -503,7 +528,11 @@ class MMMExecutor:
         elapsed = time.time() - start_time
         # Cancel any remaining order
         await self._cancel_order(order_id, product_id)
-        log.error(f"❌ Max reprice attempts ({MAX_REPRICE_ATTEMPTS}) exhausted for {symbol}")
+        log.error(f"❌ Max reprice attempts ({_max_attempts}) exhausted for {symbol} after {elapsed:.0f}s")
+        _log_activity('order_failed',
+            f"❌ {side.upper()} {symbol} NOT FILLED after {_max_attempts} attempts ({elapsed:.0f}s)",
+            session_id=session_id, severity='error',
+            details={'order_id': order_id, 'attempts': _max_attempts, 'elapsed': round(elapsed, 1)})
 
         return self._failure(
             f'Max reprice attempts exhausted after {elapsed:.0f}s',
@@ -836,11 +865,25 @@ class MMMExecutor:
             session_id=session_id, severity='progress',
             details={'ce_symbol': ce_symbol, 'pe_symbol': pe_symbol, 'lots': lots})
 
-        # Execute both legs concurrently
-        ce_task = self.smart_execute(ce_symbol, 'sell', lots, session_id=session_id)
-        pe_task = self.smart_execute(pe_symbol, 'sell', lots, session_id=session_id)
+        # Execute both legs concurrently.
+        # Use 8 reprice attempts (8×60s = 8 min max) for entry — more patient than
+        # adjustments (which use the default 4) because entry orders run concurrently
+        # and we don't want to trigger rollback due to one leg being slightly slower.
+        # After attempt 5 (halfway), pricing switches to best_bid for more aggressive fills.
+        ENTRY_REPRICE_ATTEMPTS = 8
+        ce_task = self.smart_execute(
+            ce_symbol, 'sell', lots,
+            session_id=session_id,
+            max_reprice_attempts=ENTRY_REPRICE_ATTEMPTS,
+        )
+        pe_task = self.smart_execute(
+            pe_symbol, 'sell', lots,
+            session_id=session_id,
+            max_reprice_attempts=ENTRY_REPRICE_ATTEMPTS,
+        )
 
         ce_result, pe_result = await asyncio.gather(ce_task, pe_task, return_exceptions=True)
+
 
         # Handle exceptions
         if isinstance(ce_result, Exception):
@@ -878,6 +921,7 @@ class MMMExecutor:
                 details={'ce_result': ce_result, 'pe_result': pe_result})
 
             # Bug #5 fix: rollback successful leg if the other failed
+            rollback_ok = False  # Track whether orphan position was cleaned up
             if ce_result.get('success') and not pe_result.get('success'):
                 log.warning("⚠️ Rolling back CE leg (PE failed)")
                 _log_activity('entry_rollback',
@@ -889,14 +933,15 @@ class MMMExecutor:
                         session_id=session_id,
                     )
                     if rollback.get('success'):
-                        log.info("✅ CE rollback successful")
+                        rollback_ok = True
+                        log.info("✅ CE rollback successful — positions flat")
                         _log_activity('entry_rollback_ok',
-                            f"CE rollback OK @ ${rollback.get('fill_price', 0):.2f}",
+                            f"CE rollback OK @ ${rollback.get('fill_price', 0):.2f} — no open positions",
                             session_id=session_id, severity='success')
                     else:
                         log.error(f"❌ CE rollback FAILED: {rollback.get('error')}")
                         _log_activity('entry_rollback_failed',
-                            f"CE rollback FAILED — ORPHAN POSITION: {ce_symbol}",
+                            f"CE rollback FAILED — ORPHAN POSITION: {ce_symbol}. Close manually!",
                             session_id=session_id, severity='error')
                 except Exception as e:
                     log.error(f"CE rollback exception: {e}")
@@ -912,23 +957,27 @@ class MMMExecutor:
                         session_id=session_id,
                     )
                     if rollback.get('success'):
-                        log.info("✅ PE rollback successful")
+                        rollback_ok = True
+                        log.info("✅ PE rollback successful — positions flat")
                         _log_activity('entry_rollback_ok',
-                            f"PE rollback OK @ ${rollback.get('fill_price', 0):.2f}",
+                            f"PE rollback OK @ ${rollback.get('fill_price', 0):.2f} — no open positions",
                             session_id=session_id, severity='success')
                     else:
                         log.error(f"❌ PE rollback FAILED: {rollback.get('error')}")
                         _log_activity('entry_rollback_failed',
-                            f"PE rollback FAILED — ORPHAN POSITION: {pe_symbol}",
+                            f"PE rollback FAILED — ORPHAN POSITION: {pe_symbol}. Close manually!",
                             session_id=session_id, severity='error')
                 except Exception as e:
                     log.error(f"PE rollback exception: {e}")
+            else:
+                rollback_ok = False  # Both failed — nothing to roll back
 
         return {
             'success': all_success,
             'ce': ce_result,
             'pe': pe_result,
             'total_premium': round(total_premium, 2),
+            'rollback_ok': rollback_ok if not all_success else False,
             'error': None if all_success else 'One or both legs failed',
         }
 

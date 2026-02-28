@@ -43,6 +43,7 @@ import {
   FavoriteBorder as HeartIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 
 // =============================================================================
 // Constants
@@ -437,12 +438,8 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
     }
   }, [sessionId]);
 
-  // Initial load + reduced polling (summary handles real-time now)
-  useEffect(() => {
-    fetchActivities();
-    const interval = setInterval(fetchActivities, 30000);
-    return () => clearInterval(interval);
-  }, [fetchActivities]);
+  // Initial load + reduced polling — pauses when tab is hidden
+  useVisibilityAwarePolling(fetchActivities, 30000, 120000);
 
   // WebSocket: real-time activity events
   useEffect(() => {

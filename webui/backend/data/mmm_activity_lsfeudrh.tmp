@@ -1,0 +1,2117 @@
+{
+  "activities": [
+    {
+      "id": "act_20260228_022807_000647",
+      "timestamp": "2026-02-28T02:28:08.004080+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_022937_000648",
+      "timestamp": "2026-02-28T02:29:37.099105+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023021_000649",
+      "timestamp": "2026-02-28T02:30:21.612364+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023021_000650",
+      "timestamp": "2026-02-28T02:30:21.621034+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 900s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_023108_000651",
+      "timestamp": "2026-02-28T02:31:08.092890+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023237_000652",
+      "timestamp": "2026-02-28T02:32:37.688849+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023410_000653",
+      "timestamp": "2026-02-28T02:34:10.439442+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023520_000654",
+      "timestamp": "2026-02-28T02:35:20.458151+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023520_000655",
+      "timestamp": "2026-02-28T02:35:20.478408+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T02:45:20.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T02:45:20.433744+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_023538_000656",
+      "timestamp": "2026-02-28T02:35:38.504872+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023709_000657",
+      "timestamp": "2026-02-28T02:37:09.981202+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_023841_000658",
+      "timestamp": "2026-02-28T02:38:41.559822+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024012_000659",
+      "timestamp": "2026-02-28T02:40:12.841324+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024142_000660",
+      "timestamp": "2026-02-28T02:41:42.943796+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024310_000661",
+      "timestamp": "2026-02-28T02:43:11.003933+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024441_000662",
+      "timestamp": "2026-02-28T02:44:41.048396+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024522_000663",
+      "timestamp": "2026-02-28T02:45:22.385829+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024522_000664",
+      "timestamp": "2026-02-28T02:45:22.394108+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 602s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_024610_000665",
+      "timestamp": "2026-02-28T02:46:10.859655+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024740_000666",
+      "timestamp": "2026-02-28T02:47:40.879704+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_024910_000667",
+      "timestamp": "2026-02-28T02:49:11.473410+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025021_000668",
+      "timestamp": "2026-02-28T02:50:21.085924+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025021_000669",
+      "timestamp": "2026-02-28T02:50:21.105790+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T03:00:21.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T03:00:21.062137+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_025039_000670",
+      "timestamp": "2026-02-28T02:50:39.879222+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025210_000671",
+      "timestamp": "2026-02-28T02:52:10.582985+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025338_000672",
+      "timestamp": "2026-02-28T02:53:38.497718+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025510_000673",
+      "timestamp": "2026-02-28T02:55:10.866828+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025640_000674",
+      "timestamp": "2026-02-28T02:56:41.178928+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025811_000675",
+      "timestamp": "2026-02-28T02:58:11.500057+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_025940_000676",
+      "timestamp": "2026-02-28T02:59:40.422352+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030021_000677",
+      "timestamp": "2026-02-28T03:00:21.298794+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030021_000678",
+      "timestamp": "2026-02-28T03:00:21.310453+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 600s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_030111_000679",
+      "timestamp": "2026-02-28T03:01:11.512998+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030242_000680",
+      "timestamp": "2026-02-28T03:02:43.302803+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030411_000681",
+      "timestamp": "2026-02-28T03:04:12.095816+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030522_000682",
+      "timestamp": "2026-02-28T03:05:22.629448+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030522_000683",
+      "timestamp": "2026-02-28T03:05:22.649819+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T03:15:22.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T03:15:22.604017+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_030540_000684",
+      "timestamp": "2026-02-28T03:05:41.210949+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030711_000685",
+      "timestamp": "2026-02-28T03:07:11.525943+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_030843_000686",
+      "timestamp": "2026-02-28T03:08:43.631516+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031014_000687",
+      "timestamp": "2026-02-28T03:10:14.814153+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031145_000688",
+      "timestamp": "2026-02-28T03:11:46.257542+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031314_000689",
+      "timestamp": "2026-02-28T03:13:15.005654+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031445_000690",
+      "timestamp": "2026-02-28T03:14:45.466458+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031615_000691",
+      "timestamp": "2026-02-28T03:16:15.547317+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031745_000692",
+      "timestamp": "2026-02-28T03:17:46.127921+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_031916_000693",
+      "timestamp": "2026-02-28T03:19:16.456035+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032024_000694",
+      "timestamp": "2026-02-28T03:20:24.173971+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032024_000695",
+      "timestamp": "2026-02-28T03:20:24.174121+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 902s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_032046_000696",
+      "timestamp": "2026-02-28T03:20:46.383939+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032213_000697",
+      "timestamp": "2026-02-28T03:22:13.331661+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032342_000698",
+      "timestamp": "2026-02-28T03:23:42.391168+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032513_000699",
+      "timestamp": "2026-02-28T03:25:13.672415+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032524_000700",
+      "timestamp": "2026-02-28T03:25:24.503267+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032524_000701",
+      "timestamp": "2026-02-28T03:25:24.523100+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T03:35:24.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T03:35:24.479544+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_032645_000702",
+      "timestamp": "2026-02-28T03:26:45.598153+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032814_000703",
+      "timestamp": "2026-02-28T03:28:14.305695+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_032943_000704",
+      "timestamp": "2026-02-28T03:29:43.157969+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_033114_000705",
+      "timestamp": "2026-02-28T03:31:14.667513+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_033245_000706",
+      "timestamp": "2026-02-28T03:32:45.248306+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_033417_000707",
+      "timestamp": "2026-02-28T03:34:17.579729+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_033546_000708",
+      "timestamp": "2026-02-28T03:35:46.072883+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_033717_000709",
+      "timestamp": "2026-02-28T03:37:17.897371+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_033848_000710",
+      "timestamp": "2026-02-28T03:38:48.608610+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034020_000711",
+      "timestamp": "2026-02-28T03:40:21.125614+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034022_000712",
+      "timestamp": "2026-02-28T03:40:22.548972+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034022_000713",
+      "timestamp": "2026-02-28T03:40:22.549140+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 898s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_034150_000714",
+      "timestamp": "2026-02-28T03:41:51.026710+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034318_000715",
+      "timestamp": "2026-02-28T03:43:18.783188+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034449_000716",
+      "timestamp": "2026-02-28T03:44:49.917251+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034525_000717",
+      "timestamp": "2026-02-28T03:45:25.607830+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034525_000718",
+      "timestamp": "2026-02-28T03:45:25.901382+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T03:55:25.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T03:55:25.367118+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_034620_000719",
+      "timestamp": "2026-02-28T03:46:20.155711+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034751_000720",
+      "timestamp": "2026-02-28T03:47:52.001561+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_034921_000721",
+      "timestamp": "2026-02-28T03:49:21.285497+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035049_000722",
+      "timestamp": "2026-02-28T03:50:49.198295+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035220_000723",
+      "timestamp": "2026-02-28T03:52:20.503339+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035349_000724",
+      "timestamp": "2026-02-28T03:53:49.557718+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035518_000725",
+      "timestamp": "2026-02-28T03:55:18.932775+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035648_000726",
+      "timestamp": "2026-02-28T03:56:48.850267+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035820_000727",
+      "timestamp": "2026-02-28T03:58:20.213905+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_035949_000728",
+      "timestamp": "2026-02-28T03:59:49.325087+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_040026_000729",
+      "timestamp": "2026-02-28T04:00:26.575450+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_040026_000730",
+      "timestamp": "2026-02-28T04:00:26.678228+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 901s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_040110_000731",
+      "timestamp": "2026-02-28T04:01:10.817308+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: ",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "reason": "",
+        "old_status": "RUNNING"
+      }
+    },
+    {
+      "id": "act_20260228_040522_000732",
+      "timestamp": "2026-02-28T04:05:22.597362+00:00",
+      "type": "session_initialized",
+      "type_label": "Session Initialized",
+      "category": "system",
+      "message": "Fresh init: CE 66200.0@27.66 + PE 65200.0@33.29, 10 lots, expiry=28022026",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "ce_strike": 66200.0,
+        "ce_premium": 27.66,
+        "pe_strike": 65200.0,
+        "pe_premium": 33.29,
+        "lots": 10,
+        "expiry": "28022026",
+        "total_premium": 0.6095
+      }
+    },
+    {
+      "id": "act_20260228_040524_000737",
+      "timestamp": "2026-02-28T04:05:24.517177+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 10 C-BTC-66200-280226 @ $28.00 (bid=$27.00, ask=$29.00)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "order_id": "1198743027",
+        "mid_price": 28.0,
+        "bid": 27.0,
+        "ask": 29.0
+      }
+    },
+    {
+      "id": "act_20260228_040524_000738",
+      "timestamp": "2026-02-28T04:05:24.603573+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 10 P-BTC-65200-280226 @ $32.50 (bid=$32.00, ask=$33.00)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "order_id": "1198743025",
+        "mid_price": 32.5,
+        "bid": 32.0,
+        "ask": 33.0
+      }
+    },
+    {
+      "id": "act_20260228_040526_000739",
+      "timestamp": "2026-02-28T04:05:26.107282+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_040526_000740",
+      "timestamp": "2026-02-28T04:05:26.237528+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T04:15:26.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T04:15:26.015484+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_040529_000741",
+      "timestamp": "2026-02-28T04:05:30.096313+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-65200-280226 FILLED @ $32.50 in 7.2s",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "order_id": "1198743025",
+        "fill_price": 32.5,
+        "elapsed": 7.2,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_040626_000742",
+      "timestamp": "2026-02-28T04:06:26.224153+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198743027 not filled after 60s, repricing (attempt 1/8)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "order_id": "1198743027",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_040705_000743",
+      "timestamp": "2026-02-28T04:07:05.377431+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66200-280226 FILLED @ $23.00 in 102.7s",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "order_id": "1198743027",
+        "fill_price": 23.0,
+        "elapsed": 102.7,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_040705_000744",
+      "timestamp": "2026-02-28T04:07:05.378545+00:00",
+      "type": "entry_complete",
+      "type_label": "Entry Complete",
+      "category": "orders",
+      "message": "\u2705 Entry filled: CE@$23.00 + PE@$32.50 = $555.00 total premium",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "ce_fill": 23.0,
+        "pe_fill": 32.5,
+        "total_premium": 555.0
+      }
+    },
+    {
+      "id": "act_20260228_040705_000745",
+      "timestamp": "2026-02-28T04:07:05.427709+00:00",
+      "type": "entry_complete",
+      "type_label": "Entry Complete",
+      "category": "orders",
+      "message": "Entry filled: CE@$23.00 + PE@$32.50 = $0.56 total",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "ce_fill": 23.0,
+        "pe_fill": 32.5,
+        "total_premium": 0.555
+      }
+    },
+    {
+      "id": "act_20260228_040705_000746",
+      "timestamp": "2026-02-28T04:07:05.482186+00:00",
+      "type": "session_started",
+      "type_label": "Session Started",
+      "category": "system",
+      "message": "Session mmm28feb26-3 is now RUNNING \u2014 heartbeat monitor active",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_040705_000747",
+      "timestamp": "2026-02-28T04:07:05.509632+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Data integrity: Checksum mismatch on session load \u2014 verify positions before trading.",
+      "session_id": "mmm28feb26-3",
+      "severity": "error",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_040706_000748",
+      "timestamp": "2026-02-28T04:07:06.424354+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($36.95), hedging with CE ($23.12)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 36.94760438,
+        "hedge": "CE",
+        "hedge_premium": 23.1212184
+      }
+    },
+    {
+      "id": "act_20260228_040706_000749",
+      "timestamp": "2026-02-28T04:07:06.499488+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260228_040707_000750",
+      "timestamp": "2026-02-28T04:07:07.870137+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 C-BTC-66000-280226 @ $66.50 (bid=$65.00, ask=$68.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198744501",
+        "mid_price": 66.5,
+        "bid": 65.0,
+        "ask": 68.0
+      }
+    },
+    {
+      "id": "act_20260228_040718_000751",
+      "timestamp": "2026-02-28T04:07:18.444795+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $66.50 in 11.9s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198744501",
+        "fill_price": 66.5,
+        "elapsed": 11.9,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_040718_000752",
+      "timestamp": "2026-02-28T04:07:18.475738+00:00",
+      "type": "strike_shift",
+      "type_label": "Strike Shift",
+      "category": "adjustments",
+      "message": "\ud83d\udd00 Strike Shift: CE 66200.0 \u2192 66000.0 (frozen 10 lots at old strike)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "side": "CE",
+        "old_strike": 66200.0,
+        "new_strike": 66000.0,
+        "frozen_lots": 10,
+        "fill_price": 66.5
+      }
+    },
+    {
+      "id": "act_20260228_040718_000753",
+      "timestamp": "2026-02-28T04:07:18.476022+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Strike Shift Complete: SELL 1 lots CE @ 66000.0 for $66.50 (shifted from 66200.0)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "old_strike": 66200.0,
+        "lots": 1,
+        "fill_price": 66.5,
+        "type": "strike_shift",
+        "adjustment_number": 1
+      }
+    },
+    {
+      "id": "act_20260228_040834_000754",
+      "timestamp": "2026-02-28T04:08:34.921958+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_040834_000755",
+      "timestamp": "2026-02-28T04:08:34.939751+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.08)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.08)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041004_000756",
+      "timestamp": "2026-02-28T04:10:04.738783+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041004_000757",
+      "timestamp": "2026-02-28T04:10:04.764382+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.07)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.07)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041136_000758",
+      "timestamp": "2026-02-28T04:11:36.120428+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041136_000759",
+      "timestamp": "2026-02-28T04:11:36.146958+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.03 (peak $0.06)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.03 (peak $0.06)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041304_000760",
+      "timestamp": "2026-02-28T04:13:04.904267+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041304_000761",
+      "timestamp": "2026-02-28T04:13:04.931401+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.01 below floor $0.03 (peak $0.06)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.01 below floor $0.03 (peak $0.06)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041434_000762",
+      "timestamp": "2026-02-28T04:14:34.313782+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041434_000763",
+      "timestamp": "2026-02-28T04:14:34.338448+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.02 below floor $0.03 (peak $0.05)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.02 below floor $0.03 (peak $0.05)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041603_000764",
+      "timestamp": "2026-02-28T04:16:03.598491+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041603_000765",
+      "timestamp": "2026-02-28T04:16:03.624722+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.00 below floor $0.02 (peak $0.05)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.00 below floor $0.02 (peak $0.05)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041732_000766",
+      "timestamp": "2026-02-28T04:17:32.246137+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041732_000767",
+      "timestamp": "2026-02-28T04:17:32.264694+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.02 (peak $0.04)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.02 (peak $0.04)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041807_000768",
+      "timestamp": "2026-02-28T04:18:07.741909+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_041807_000769",
+      "timestamp": "2026-02-28T04:18:07.744777+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: min_trigger_move updated 3.0 \u2192 10.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "min_trigger_move",
+        "old_value": 3.0,
+        "new_value": 10.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000770",
+      "timestamp": "2026-02-28T04:18:07.758285+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: shift_threshold updated 50.0 \u2192 15.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "shift_threshold",
+        "old_value": 50.0,
+        "new_value": 15.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000771",
+      "timestamp": "2026-02-28T04:18:07.758547+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: shift_target_premium updated 100.0 \u2192 30.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "shift_target_premium",
+        "old_value": 100.0,
+        "new_value": 30.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000772",
+      "timestamp": "2026-02-28T04:18:07.770952+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: max_loss_amount updated 50000.0 \u2192 50.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "max_loss_amount",
+        "old_value": 50000.0,
+        "new_value": 50.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000773",
+      "timestamp": "2026-02-28T04:18:07.771157+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.5 \u2192 0.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.5,
+        "new_value": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000774",
+      "timestamp": "2026-02-28T04:18:07.784107+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: wind_down_on_atm updated False \u2192 True",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "wind_down_on_atm",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260228_041808_000775",
+      "timestamp": "2026-02-28T04:18:08.762839+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041808_000776",
+      "timestamp": "2026-02-28T04:18:08.779940+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.04)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.04)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041859_000777",
+      "timestamp": "2026-02-28T04:18:59.532010+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_041902_000778",
+      "timestamp": "2026-02-28T04:19:02.492149+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($43.69), hedging with CE ($50.21)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 43.6926985,
+        "hedge": "CE",
+        "hedge_premium": 50.21110359
+      }
+    },
+    {
+      "id": "act_20260228_041902_000779",
+      "timestamp": "2026-02-28T04:19:02.503476+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 2 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_20260228_041903_000780",
+      "timestamp": "2026-02-28T04:19:03.863900+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 2 C-BTC-66000-280226 @ $53.00 (bid=$52.00, ask=$54.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198755812",
+        "mid_price": 53.0,
+        "bid": 52.0,
+        "ask": 54.0
+      }
+    },
+    {
+      "id": "act_20260228_041910_000781",
+      "timestamp": "2026-02-28T04:19:10.928829+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $53.00 in 8.4s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198755812",
+        "fill_price": 53.0,
+        "elapsed": 8.4,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_041910_000782",
+      "timestamp": "2026-02-28T04:19:10.944031+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 2 lots CE @ 66000.0 for $53.00 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 2,
+        "fill_price": 53.0,
+        "type": "standard",
+        "adjustment_number": 2
+      }
+    },
+    {
+      "id": "act_20260228_042023_000783",
+      "timestamp": "2026-02-28T04:20:23.140493+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042023_000784",
+      "timestamp": "2026-02-28T04:20:23.153261+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 897s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_042030_000785",
+      "timestamp": "2026-02-28T04:20:30.928895+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042030_000786",
+      "timestamp": "2026-02-28T04:20:31.287165+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.03)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.03)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042159_000787",
+      "timestamp": "2026-02-28T04:22:00.049683+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042200_000788",
+      "timestamp": "2026-02-28T04:22:00.161298+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.04 below floor $0.00 (peak $0.02)"

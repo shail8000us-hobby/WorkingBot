@@ -13,7 +13,8 @@
  * Created: February 18, 2026
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
   Typography,
@@ -95,33 +96,27 @@ export default function MMMAnalyticsPanel({ sessionId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const fetchAnalytics = useCallback(async () => {
     if (!sessionId) {
       setLoading(false);
       return;
     }
-
-    const fetchAnalytics = async () => {
-      try {
-        setLoading(true);
-        const response = await mmmService.getSessionAnalytics(sessionId);
-        if (response.success) {
-          setAnalytics(response.analytics);
-        } else {
-          setError(response.error || 'Failed to load analytics');
-        }
-      } catch (err) {
-        setError(err.message || 'Network error');
-      } finally {
-        setLoading(false);
+    try {
+      setLoading(true);
+      const response = await mmmService.getSessionAnalytics(sessionId);
+      if (response.success) {
+        setAnalytics(response.analytics);
+      } else {
+        setError(response.error || 'Failed to load analytics');
       }
-    };
-
-    fetchAnalytics();
-    // Refresh every 30s
-    const interval = setInterval(fetchAnalytics, 30000);
-    return () => clearInterval(interval);
+    } catch (err) {
+      setError(err.message || 'Network error');
+    } finally {
+      setLoading(false);
+    }
   }, [sessionId]);
+
+  useVisibilityAwarePolling(fetchAnalytics, 30000, 120000, !!sessionId);
 
   if (loading) {
     return (

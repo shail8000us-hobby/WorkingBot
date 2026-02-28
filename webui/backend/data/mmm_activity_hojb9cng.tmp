@@ -1,0 +1,253 @@
+{
+  "activities": [
+    {
+      "id": "act_20260228_041807_000772",
+      "timestamp": "2026-02-28T04:18:07.770952+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: max_loss_amount updated 50000.0 \u2192 50.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "max_loss_amount",
+        "old_value": 50000.0,
+        "new_value": 50.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000773",
+      "timestamp": "2026-02-28T04:18:07.771157+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.5 \u2192 0.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.5,
+        "new_value": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000774",
+      "timestamp": "2026-02-28T04:18:07.784107+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: wind_down_on_atm updated False \u2192 True",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "wind_down_on_atm",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260228_041808_000775",
+      "timestamp": "2026-02-28T04:18:08.762839+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041808_000776",
+      "timestamp": "2026-02-28T04:18:08.779940+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.04)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.04)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041859_000777",
+      "timestamp": "2026-02-28T04:18:59.532010+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_041902_000778",
+      "timestamp": "2026-02-28T04:19:02.492149+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($43.69), hedging with CE ($50.21)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 43.6926985,
+        "hedge": "CE",
+        "hedge_premium": 50.21110359
+      }
+    },
+    {
+      "id": "act_20260228_041902_000779",
+      "timestamp": "2026-02-28T04:19:02.503476+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 2 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_20260228_041903_000780",
+      "timestamp": "2026-02-28T04:19:03.863900+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 2 C-BTC-66000-280226 @ $53.00 (bid=$52.00, ask=$54.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198755812",
+        "mid_price": 53.0,
+        "bid": 52.0,
+        "ask": 54.0
+      }
+    },
+    {
+      "id": "act_20260228_041910_000781",
+      "timestamp": "2026-02-28T04:19:10.928829+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $53.00 in 8.4s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198755812",
+        "fill_price": 53.0,
+        "elapsed": 8.4,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_041910_000782",
+      "timestamp": "2026-02-28T04:19:10.944031+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 2 lots CE @ 66000.0 for $53.00 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 2,
+        "fill_price": 53.0,
+        "type": "standard",
+        "adjustment_number": 2
+      }
+    },
+    {
+      "id": "act_20260228_042023_000783",
+      "timestamp": "2026-02-28T04:20:23.140493+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042023_000784",
+      "timestamp": "2026-02-28T04:20:23.153261+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 897s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_042030_000785",
+      "timestamp": "2026-02-28T04:20:30.928895+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042030_000786",
+      "timestamp": "2026-02-28T04:20:31.287165+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.03)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.03)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042159_000787",
+      "timestamp": "2026-02-28T04:22:00.049683+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042200_000788",
+      "timestamp": "2026-02-28T04:22:00.161298+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.04 below floor $0.00 (peak $0.02)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.04 below floor $0.00 (peak $0.02)"

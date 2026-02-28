@@ -1,0 +1,3752 @@
+{
+  "activities": [
+    {
+      "id": "act_20260228_040705_000746",
+      "timestamp": "2026-02-28T04:07:05.482186+00:00",
+      "type": "session_started",
+      "type_label": "Session Started",
+      "category": "system",
+      "message": "Session mmm28feb26-3 is now RUNNING \u2014 heartbeat monitor active",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_040705_000747",
+      "timestamp": "2026-02-28T04:07:05.509632+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Data integrity: Checksum mismatch on session load \u2014 verify positions before trading.",
+      "session_id": "mmm28feb26-3",
+      "severity": "error",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_040706_000748",
+      "timestamp": "2026-02-28T04:07:06.424354+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($36.95), hedging with CE ($23.12)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 36.94760438,
+        "hedge": "CE",
+        "hedge_premium": 23.1212184
+      }
+    },
+    {
+      "id": "act_20260228_040706_000749",
+      "timestamp": "2026-02-28T04:07:06.499488+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260228_040707_000750",
+      "timestamp": "2026-02-28T04:07:07.870137+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 C-BTC-66000-280226 @ $66.50 (bid=$65.00, ask=$68.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198744501",
+        "mid_price": 66.5,
+        "bid": 65.0,
+        "ask": 68.0
+      }
+    },
+    {
+      "id": "act_20260228_040718_000751",
+      "timestamp": "2026-02-28T04:07:18.444795+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $66.50 in 11.9s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198744501",
+        "fill_price": 66.5,
+        "elapsed": 11.9,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_040718_000752",
+      "timestamp": "2026-02-28T04:07:18.475738+00:00",
+      "type": "strike_shift",
+      "type_label": "Strike Shift",
+      "category": "adjustments",
+      "message": "\ud83d\udd00 Strike Shift: CE 66200.0 \u2192 66000.0 (frozen 10 lots at old strike)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "side": "CE",
+        "old_strike": 66200.0,
+        "new_strike": 66000.0,
+        "frozen_lots": 10,
+        "fill_price": 66.5
+      }
+    },
+    {
+      "id": "act_20260228_040718_000753",
+      "timestamp": "2026-02-28T04:07:18.476022+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Strike Shift Complete: SELL 1 lots CE @ 66000.0 for $66.50 (shifted from 66200.0)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "old_strike": 66200.0,
+        "lots": 1,
+        "fill_price": 66.5,
+        "type": "strike_shift",
+        "adjustment_number": 1
+      }
+    },
+    {
+      "id": "act_20260228_040834_000754",
+      "timestamp": "2026-02-28T04:08:34.921958+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_040834_000755",
+      "timestamp": "2026-02-28T04:08:34.939751+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.08)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.08)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041004_000756",
+      "timestamp": "2026-02-28T04:10:04.738783+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041004_000757",
+      "timestamp": "2026-02-28T04:10:04.764382+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.07)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.00 below floor $0.04 (peak $0.07)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041136_000758",
+      "timestamp": "2026-02-28T04:11:36.120428+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041136_000759",
+      "timestamp": "2026-02-28T04:11:36.146958+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.03 (peak $0.06)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.03 (peak $0.06)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041304_000760",
+      "timestamp": "2026-02-28T04:13:04.904267+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041304_000761",
+      "timestamp": "2026-02-28T04:13:04.931401+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.01 below floor $0.03 (peak $0.06)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.01 below floor $0.03 (peak $0.06)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041434_000762",
+      "timestamp": "2026-02-28T04:14:34.313782+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041434_000763",
+      "timestamp": "2026-02-28T04:14:34.338448+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.02 below floor $0.03 (peak $0.05)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.02 below floor $0.03 (peak $0.05)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041603_000764",
+      "timestamp": "2026-02-28T04:16:03.598491+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041603_000765",
+      "timestamp": "2026-02-28T04:16:03.624722+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.00 below floor $0.02 (peak $0.05)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.00 below floor $0.02 (peak $0.05)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041732_000766",
+      "timestamp": "2026-02-28T04:17:32.246137+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041732_000767",
+      "timestamp": "2026-02-28T04:17:32.264694+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.02 (peak $0.04)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.02 (peak $0.04)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041807_000768",
+      "timestamp": "2026-02-28T04:18:07.741909+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_041807_000769",
+      "timestamp": "2026-02-28T04:18:07.744777+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: min_trigger_move updated 3.0 \u2192 10.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "min_trigger_move",
+        "old_value": 3.0,
+        "new_value": 10.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000770",
+      "timestamp": "2026-02-28T04:18:07.758285+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: shift_threshold updated 50.0 \u2192 15.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "shift_threshold",
+        "old_value": 50.0,
+        "new_value": 15.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000771",
+      "timestamp": "2026-02-28T04:18:07.758547+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: shift_target_premium updated 100.0 \u2192 30.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "shift_target_premium",
+        "old_value": 100.0,
+        "new_value": 30.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000772",
+      "timestamp": "2026-02-28T04:18:07.770952+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: max_loss_amount updated 50000.0 \u2192 50.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "max_loss_amount",
+        "old_value": 50000.0,
+        "new_value": 50.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000773",
+      "timestamp": "2026-02-28T04:18:07.771157+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.5 \u2192 0.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.5,
+        "new_value": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_041807_000774",
+      "timestamp": "2026-02-28T04:18:07.784107+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: wind_down_on_atm updated False \u2192 True",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "param": "wind_down_on_atm",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260228_041808_000775",
+      "timestamp": "2026-02-28T04:18:08.762839+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_041808_000776",
+      "timestamp": "2026-02-28T04:18:08.779940+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.04)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.04)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_041859_000777",
+      "timestamp": "2026-02-28T04:18:59.532010+00:00",
+      "type": "force_heartbeat",
+      "type_label": "force_heartbeat",
+      "category": "system",
+      "message": "\u26a1 Force Heartbeat \u2014 running immediately",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_041902_000778",
+      "timestamp": "2026-02-28T04:19:02.492149+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($43.69), hedging with CE ($50.21)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 43.6926985,
+        "hedge": "CE",
+        "hedge_premium": 50.21110359
+      }
+    },
+    {
+      "id": "act_20260228_041902_000779",
+      "timestamp": "2026-02-28T04:19:02.503476+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 2 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_20260228_041903_000780",
+      "timestamp": "2026-02-28T04:19:03.863900+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 2 C-BTC-66000-280226 @ $53.00 (bid=$52.00, ask=$54.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198755812",
+        "mid_price": 53.0,
+        "bid": 52.0,
+        "ask": 54.0
+      }
+    },
+    {
+      "id": "act_20260228_041910_000781",
+      "timestamp": "2026-02-28T04:19:10.928829+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $53.00 in 8.4s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198755812",
+        "fill_price": 53.0,
+        "elapsed": 8.4,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_041910_000782",
+      "timestamp": "2026-02-28T04:19:10.944031+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 2 lots CE @ 66000.0 for $53.00 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 2,
+        "fill_price": 53.0,
+        "type": "standard",
+        "adjustment_number": 2
+      }
+    },
+    {
+      "id": "act_20260228_042023_000783",
+      "timestamp": "2026-02-28T04:20:23.140493+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042023_000784",
+      "timestamp": "2026-02-28T04:20:23.153261+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 897s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_042030_000785",
+      "timestamp": "2026-02-28T04:20:30.928895+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042030_000786",
+      "timestamp": "2026-02-28T04:20:31.287165+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.03)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.03)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042159_000787",
+      "timestamp": "2026-02-28T04:22:00.049683+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042200_000788",
+      "timestamp": "2026-02-28T04:22:00.161298+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.04 below floor $0.00 (peak $0.02)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.04 below floor $0.00 (peak $0.02)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042330_000789",
+      "timestamp": "2026-02-28T04:23:30.763058+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042330_000790",
+      "timestamp": "2026-02-28T04:23:30.956201+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.03 below floor $0.00 (peak $0.02)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.03 below floor $0.00 (peak $0.02)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042458_000791",
+      "timestamp": "2026-02-28T04:24:58.976035+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042458_000792",
+      "timestamp": "2026-02-28T04:24:59.017355+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.03 below floor $0.00 (peak $0.01)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.03 below floor $0.00 (peak $0.01)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042523_000793",
+      "timestamp": "2026-02-28T04:25:23.476172+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042523_000794",
+      "timestamp": "2026-02-28T04:25:23.508969+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T04:35:23.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T04:35:23.461994+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_042628_000795",
+      "timestamp": "2026-02-28T04:26:28.785828+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042628_000796",
+      "timestamp": "2026-02-28T04:26:28.810641+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.01)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.01)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042759_000797",
+      "timestamp": "2026-02-28T04:27:59.880686+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042759_000798",
+      "timestamp": "2026-02-28T04:28:00.374551+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.01)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.01)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_042930_000799",
+      "timestamp": "2026-02-28T04:29:31.022352+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_042931_000800",
+      "timestamp": "2026-02-28T04:29:31.462030+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.00)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.00)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_043101_000801",
+      "timestamp": "2026-02-28T04:31:01.604370+00:00",
+      "type": "atm_wind_down",
+      "type_label": "ATM Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 ATM WIND-DOWN: Spot $65519 reached PE ORIGINAL strike $65200 \u2014 activating wind-down mode (gradual buyback)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "spot": 65519.22349425,
+        "ce_original_strike": 66200.0,
+        "pe_original_strike": 65200.0,
+        "triggered_side": "PE",
+        "triggered_strike": 65200.0
+      }
+    },
+    {
+      "id": "act_20260228_043102_000802",
+      "timestamp": "2026-02-28T04:31:02.958845+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($82.51), hedging with CE ($21.75)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 82.50785268,
+        "hedge": "CE",
+        "hedge_premium": 21.74877481
+      }
+    },
+    {
+      "id": "act_20260228_043102_000803",
+      "timestamp": "2026-02-28T04:31:02.986662+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 19 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 19
+      }
+    },
+    {
+      "id": "act_20260228_043105_000804",
+      "timestamp": "2026-02-28T04:31:05.745135+00:00",
+      "type": "order_retrying",
+      "type_label": "Retrying Order",
+      "category": "orders",
+      "message": "SELL C-BTC-66000-280226: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_043108_000805",
+      "timestamp": "2026-02-28T04:31:08.214062+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 19 C-BTC-66000-280226 @ $24.00 (bid=$23.00, ask=$25.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198768643",
+        "mid_price": 24.0,
+        "bid": 23.0,
+        "ask": 25.0
+      }
+    },
+    {
+      "id": "act_20260228_043112_000806",
+      "timestamp": "2026-02-28T04:31:12.090600+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $24.00 in 9.1s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198768643",
+        "fill_price": 24.0,
+        "elapsed": 9.1,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_043112_000807",
+      "timestamp": "2026-02-28T04:31:12.091080+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 19 lots CE @ 66000.0 for $24.00 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 19,
+        "fill_price": 24.0,
+        "type": "standard",
+        "adjustment_number": 3
+      }
+    },
+    {
+      "id": "act_20260228_043233_000808",
+      "timestamp": "2026-02-28T04:32:33.785080+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_043402_000809",
+      "timestamp": "2026-02-28T04:34:03.121460+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_043403_000810",
+      "timestamp": "2026-02-28T04:34:03.562395+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($29.18), hedging with PE ($68.91)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 29.17723815,
+        "hedge": "PE",
+        "hedge_premium": 68.90895163
+      }
+    },
+    {
+      "id": "act_20260228_043403_000811",
+      "timestamp": "2026-02-28T04:34:03.581762+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) P-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-65200-280226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260228_043404_000812",
+      "timestamp": "2026-02-28T04:34:04.886241+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 P-BTC-65200-280226 @ $68.50 (bid=$67.00, ask=$70.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198774063",
+        "mid_price": 68.5,
+        "bid": 67.0,
+        "ask": 70.0
+      }
+    },
+    {
+      "id": "act_20260228_043439_000813",
+      "timestamp": "2026-02-28T04:34:39.541102+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-65200-280226 FILLED @ $68.50 in 36.0s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198774063",
+        "fill_price": 68.5,
+        "elapsed": 36.0,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_043439_000814",
+      "timestamp": "2026-02-28T04:34:39.566377+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots PE @ 65200.0 for $68.50 (Type: first_reversal)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 65200.0,
+        "lots": 1,
+        "fill_price": 68.5,
+        "type": "first_reversal",
+        "adjustment_number": 4
+      }
+    },
+    {
+      "id": "act_20260228_044005_000815",
+      "timestamp": "2026-02-28T04:40:05.222303+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($35.98), hedging with PE ($55.40)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 35.97906439,
+        "hedge": "PE",
+        "hedge_premium": 55.39654628
+      }
+    },
+    {
+      "id": "act_20260228_044005_000816",
+      "timestamp": "2026-02-28T04:40:05.257432+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 3 lot(s) P-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-65200-280226",
+        "side": "sell",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260228_044006_000817",
+      "timestamp": "2026-02-28T04:40:06.652658+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 3 P-BTC-65200-280226 @ $56.00 (bid=$55.00, ask=$57.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198780859",
+        "mid_price": 56.0,
+        "bid": 55.0,
+        "ask": 57.0
+      }
+    },
+    {
+      "id": "act_20260228_044023_000818",
+      "timestamp": "2026-02-28T04:40:23.184509+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_044023_000819",
+      "timestamp": "2026-02-28T04:40:23.184969+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 900s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_044107_000820",
+      "timestamp": "2026-02-28T04:41:07.097292+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198780859 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198780859",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_044112_000821",
+      "timestamp": "2026-02-28T04:41:12.315847+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-65200-280226 FILLED @ $52.67 in 67.1s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198780859",
+        "fill_price": 52.666666666666664,
+        "elapsed": 67.1,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_044112_000822",
+      "timestamp": "2026-02-28T04:41:12.362578+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 3 lots PE @ 65200.0 for $52.67 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 65200.0,
+        "lots": 3,
+        "fill_price": 52.666666666666664,
+        "type": "standard",
+        "adjustment_number": 5
+      }
+    },
+    {
+      "id": "act_20260228_044137_000823",
+      "timestamp": "2026-02-28T04:41:37.748671+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($62.44), hedging with CE ($29.14)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 62.43586689,
+        "hedge": "CE",
+        "hedge_premium": 29.1421049
+      }
+    },
+    {
+      "id": "act_20260228_044137_000824",
+      "timestamp": "2026-02-28T04:41:37.784660+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260228_044139_000825",
+      "timestamp": "2026-02-28T04:41:39.136764+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 C-BTC-66000-280226 @ $29.50 (bid=$28.00, ask=$31.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198782289",
+        "mid_price": 29.5,
+        "bid": 28.0,
+        "ask": 31.0
+      }
+    },
+    {
+      "id": "act_20260228_044143_000826",
+      "timestamp": "2026-02-28T04:41:43.026557+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $29.50 in 5.3s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198782289",
+        "fill_price": 29.5,
+        "elapsed": 5.3,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_044143_000827",
+      "timestamp": "2026-02-28T04:41:43.027202+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots CE @ 66000.0 for $29.50 (Type: first_reversal)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 1,
+        "fill_price": 29.5,
+        "type": "first_reversal",
+        "adjustment_number": 6
+      }
+    },
+    {
+      "id": "act_20260228_044521_000828",
+      "timestamp": "2026-02-28T04:45:21.509027+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_044521_000829",
+      "timestamp": "2026-02-28T04:45:21.559936+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T04:55:21.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T04:55:21.491830+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_044909_000830",
+      "timestamp": "2026-02-28T04:49:09.097335+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($33.96), hedging with PE ($56.81)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 33.95896259,
+        "hedge": "PE",
+        "hedge_premium": 56.80915581
+      }
+    },
+    {
+      "id": "act_20260228_044909_000831",
+      "timestamp": "2026-02-28T04:49:09.111890+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 3 lot(s) P-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-65200-280226",
+        "side": "sell",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260228_044910_000832",
+      "timestamp": "2026-02-28T04:49:10.377216+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 3 P-BTC-65200-280226 @ $57.00 (bid=$56.00, ask=$58.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198788838",
+        "mid_price": 57.0,
+        "bid": 56.0,
+        "ask": 58.0
+      }
+    },
+    {
+      "id": "act_20260228_045011_000833",
+      "timestamp": "2026-02-28T04:50:11.624019+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198788838 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198788838",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_045045_000834",
+      "timestamp": "2026-02-28T04:50:45.049568+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-65200-280226 FILLED @ $51.50 in 95.9s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198788838",
+        "fill_price": 51.5,
+        "elapsed": 95.9,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_045045_000835",
+      "timestamp": "2026-02-28T04:50:45.050250+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 3 lots PE @ 65200.0 for $51.50 (Type: first_reversal)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 65200.0,
+        "lots": 3,
+        "fill_price": 51.5,
+        "type": "first_reversal",
+        "adjustment_number": 7
+      }
+    },
+    {
+      "id": "act_20260228_045046_000836",
+      "timestamp": "2026-02-28T04:50:46.308393+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_045046_000837",
+      "timestamp": "2026-02-28T04:50:46.333594+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T05:00:46.",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T05:00:46.293348+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_045522_000838",
+      "timestamp": "2026-02-28T04:55:22.681133+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_045522_000839",
+      "timestamp": "2026-02-28T04:55:22.681771+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 601s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_050024_000840",
+      "timestamp": "2026-02-28T05:00:24.908577+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_050024_000841",
+      "timestamp": "2026-02-28T05:00:24.936794+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T05:10:24.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T05:10:24.895533+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_050116_000842",
+      "timestamp": "2026-02-28T05:01:16.323498+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_050116_000843",
+      "timestamp": "2026-02-28T05:01:16.324017+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 630s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_050246_000844",
+      "timestamp": "2026-02-28T05:02:46.488721+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_050246_000845",
+      "timestamp": "2026-02-28T05:02:46.529856+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T05:12:46.",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (CE \u2192 PE \u2192 CE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T05:12:46.474466+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_051028_000846",
+      "timestamp": "2026-02-28T05:10:28.436499+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_051028_000847",
+      "timestamp": "2026-02-28T05:10:28.436810+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 604s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_051318_000848",
+      "timestamp": "2026-02-28T05:13:18.222621+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_051318_000849",
+      "timestamp": "2026-02-28T05:13:18.222907+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 632s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_051318_000850",
+      "timestamp": "2026-02-28T05:13:18.408607+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($41.88), hedging with PE ($36.82)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 41.87762009,
+        "hedge": "PE",
+        "hedge_premium": 36.82448376
+      }
+    },
+    {
+      "id": "act_20260228_051318_000851",
+      "timestamp": "2026-02-28T05:13:18.428053+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 6 lot(s) P-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-65200-280226",
+        "side": "sell",
+        "size": 6
+      }
+    },
+    {
+      "id": "act_20260228_051319_000852",
+      "timestamp": "2026-02-28T05:13:19.787107+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 6 P-BTC-65200-280226 @ $36.00 (bid=$35.00, ask=$37.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198809170",
+        "mid_price": 36.0,
+        "bid": 35.0,
+        "ask": 37.0
+      }
+    },
+    {
+      "id": "act_20260228_051323_000853",
+      "timestamp": "2026-02-28T05:13:23.680188+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-65200-280226 FILLED @ $36.00 in 5.3s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198809170",
+        "fill_price": 36.0,
+        "elapsed": 5.3,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_051323_000854",
+      "timestamp": "2026-02-28T05:13:23.710836+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 6 lots PE @ 65200.0 for $36.00 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 65200.0,
+        "lots": 6,
+        "fill_price": 36.0,
+        "type": "standard",
+        "adjustment_number": 8
+      }
+    },
+    {
+      "id": "act_20260228_051530_000855",
+      "timestamp": "2026-02-28T05:15:30.630488+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_051530_000856",
+      "timestamp": "2026-02-28T05:15:30.660445+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T05:25:30.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T05:25:30.619737+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_052219_000857",
+      "timestamp": "2026-02-28T05:22:19.428337+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($42.32), hedging with CE ($40.89)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 42.3161856,
+        "hedge": "CE",
+        "hedge_premium": 40.89055116
+      }
+    },
+    {
+      "id": "act_20260228_052534_000858",
+      "timestamp": "2026-02-28T05:25:34.706782+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_052534_000859",
+      "timestamp": "2026-02-28T05:25:34.707066+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 604s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_052822_000860",
+      "timestamp": "2026-02-28T05:28:22.653890+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($46.66), hedging with CE ($37.32)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 46.6647412,
+        "hedge": "CE",
+        "hedge_premium": 37.32013351
+      }
+    },
+    {
+      "id": "act_20260228_052822_000861",
+      "timestamp": "2026-02-28T05:28:22.673742+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 3 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260228_052824_000862",
+      "timestamp": "2026-02-28T05:28:24.034624+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 3 C-BTC-66000-280226 @ $36.50 (bid=$36.00, ask=$37.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198820731",
+        "mid_price": 36.5,
+        "bid": 36.0,
+        "ask": 37.0
+      }
+    },
+    {
+      "id": "act_20260228_052831_000863",
+      "timestamp": "2026-02-28T05:28:31.364038+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $36.50 in 8.7s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198820731",
+        "fill_price": 36.5,
+        "elapsed": 8.7,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_052831_000864",
+      "timestamp": "2026-02-28T05:28:31.396911+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 3 lots CE @ 66000.0 for $36.50 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 3,
+        "fill_price": 36.5,
+        "type": "standard",
+        "adjustment_number": 9
+      }
+    },
+    {
+      "id": "act_20260228_053035_000865",
+      "timestamp": "2026-02-28T05:30:35.480263+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_053035_000866",
+      "timestamp": "2026-02-28T05:30:35.515166+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T05:40:35.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T05:40:35.464929+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_053121_000867",
+      "timestamp": "2026-02-28T05:31:21.100106+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($56.44), hedging with CE ($24.10)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 56.44376913,
+        "hedge": "CE",
+        "hedge_premium": 24.10249079
+      }
+    },
+    {
+      "id": "act_20260228_053121_000868",
+      "timestamp": "2026-02-28T05:31:21.127684+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 10 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 10
+      }
+    },
+    {
+      "id": "act_20260228_053122_000869",
+      "timestamp": "2026-02-28T05:31:22.396935+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 10 C-BTC-66000-280226 @ $23.50 (bid=$22.00, ask=$25.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198824306",
+        "mid_price": 23.5,
+        "bid": 22.0,
+        "ask": 25.0
+      }
+    },
+    {
+      "id": "act_20260228_053224_000870",
+      "timestamp": "2026-02-28T05:32:24.215186+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198824306 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198824306",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_053229_000871",
+      "timestamp": "2026-02-28T05:32:29.381729+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $20.00 in 68.3s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198824306",
+        "fill_price": 20.0,
+        "elapsed": 68.3,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_053229_000872",
+      "timestamp": "2026-02-28T05:32:29.404280+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 10 lots CE @ 66000.0 for $20.00 (Type: standard)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 10,
+        "fill_price": 20.0,
+        "type": "standard",
+        "adjustment_number": 10
+      }
+    },
+    {
+      "id": "act_20260228_053421_000873",
+      "timestamp": "2026-02-28T05:34:21.868029+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($27.30), hedging with PE ($58.98)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 27.30184504,
+        "hedge": "PE",
+        "hedge_premium": 58.97574218
+      }
+    },
+    {
+      "id": "act_20260228_053421_000874",
+      "timestamp": "2026-02-28T05:34:21.941811+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) P-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-65200-280226",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260228_053423_000875",
+      "timestamp": "2026-02-28T05:34:23.463726+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 P-BTC-65200-280226 @ $58.00 (bid=$57.00, ask=$59.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198828309",
+        "mid_price": 58.0,
+        "bid": 57.0,
+        "ask": 59.0
+      }
+    },
+    {
+      "id": "act_20260228_053430_000876",
+      "timestamp": "2026-02-28T05:34:30.523571+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-65200-280226 FILLED @ $58.00 in 8.6s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198828309",
+        "fill_price": 58.0,
+        "elapsed": 8.6,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_053430_000877",
+      "timestamp": "2026-02-28T05:34:30.524140+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots PE @ 65200.0 for $58.00 (Type: first_reversal)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 65200.0,
+        "lots": 1,
+        "fill_price": 58.0,
+        "type": "first_reversal",
+        "adjustment_number": 11
+      }
+    },
+    {
+      "id": "act_20260228_054534_000878",
+      "timestamp": "2026-02-28T05:45:34.814640+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_054534_000879",
+      "timestamp": "2026-02-28T05:45:34.814990+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 899s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_054628_000880",
+      "timestamp": "2026-02-28T05:46:28.468305+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($72.19), hedging with CE ($19.24)",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 72.19421189,
+        "hedge": "CE",
+        "hedge_premium": 19.23900983
+      }
+    },
+    {
+      "id": "act_20260228_054628_000881",
+      "timestamp": "2026-02-28T05:46:28.486707+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 20 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "sell",
+        "size": 20
+      }
+    },
+    {
+      "id": "act_20260228_054629_000882",
+      "timestamp": "2026-02-28T05:46:29.822728+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 20 C-BTC-66000-280226 @ $19.75 (bid=$16.50, ask=$23.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198842257",
+        "mid_price": 19.75,
+        "bid": 16.5,
+        "ask": 23.0
+      }
+    },
+    {
+      "id": "act_20260228_054731_000883",
+      "timestamp": "2026-02-28T05:47:31.769170+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198842257 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198842257",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_054740_000884",
+      "timestamp": "2026-02-28T05:47:41.275921+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-66000-280226 FILLED @ $15.24 in 72.2s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198842257",
+        "fill_price": 15.24,
+        "elapsed": 72.2,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_054741_000885",
+      "timestamp": "2026-02-28T05:47:41.276372+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 20 lots CE @ 66000.0 for $15.24 (Type: first_reversal)",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 66000.0,
+        "lots": 20,
+        "fill_price": 15.24,
+        "type": "first_reversal",
+        "adjustment_number": 12
+      }
+    },
+    {
+      "id": "act_20260228_054756_000886",
+      "timestamp": "2026-02-28T05:47:56.892330+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_054756_000887",
+      "timestamp": "2026-02-28T05:47:56.921550+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T05:57:56.",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T05:57:56.874526+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_055033_000888",
+      "timestamp": "2026-02-28T05:50:33.995354+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_055033_000889",
+      "timestamp": "2026-02-28T05:50:34.060139+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T06:00:33.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T06:00:33.975140+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_055829_000890",
+      "timestamp": "2026-02-28T05:58:29.196650+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_055829_000891",
+      "timestamp": "2026-02-28T05:58:29.197281+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 632s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_055959_000892",
+      "timestamp": "2026-02-28T05:59:59.857132+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_055959_000893",
+      "timestamp": "2026-02-28T05:59:59.886155+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T06:09:59.",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T06:09:59.842620+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_060533_000894",
+      "timestamp": "2026-02-28T06:05:33.912099+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_060533_000895",
+      "timestamp": "2026-02-28T06:05:33.912455+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 900s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_060733_000896",
+      "timestamp": "2026-02-28T06:07:33.165956+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_060733_000897",
+      "timestamp": "2026-02-28T06:07:33.185712+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.09 below floor $0.00 (peak $0.04)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.09 below floor $0.00 (peak $0.04)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_060903_000898",
+      "timestamp": "2026-02-28T06:09:03.502687+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_060903_000899",
+      "timestamp": "2026-02-28T06:09:03.529013+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.03)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.01 below floor $0.00 (peak $0.03)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_061032_000900",
+      "timestamp": "2026-02-28T06:10:32.295452+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_061032_000901",
+      "timestamp": "2026-02-28T06:10:32.322940+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T06:20:32.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T06:20:32.277177+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_061033_000902",
+      "timestamp": "2026-02-28T06:10:33.917562+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw_resume (info)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw_resume"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_061033_000903",
+      "timestamp": "2026-02-28T06:10:33.917965+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 634s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm28feb26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_061206_000904",
+      "timestamp": "2026-02-28T06:12:06.259662+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 whipsaw (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "whipsaw"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_061206_000905",
+      "timestamp": "2026-02-28T06:12:06.292088+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T06:22:06.",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192 CE \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T06:22:06.235068+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_061503_000906",
+      "timestamp": "2026-02-28T06:15:03.012777+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "Close-at-5 Scan: 1 position(s) ready to close - CE @ 66200.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "closeable_count": 1,
+        "positions": "CE @ 66200.0",
+        "wind_down_elevated": false,
+        "threshold_used": 5.0,
+        "capped_at": 3
+      }
+    },
+    {
+      "id": "act_20260228_061503_000907",
+      "timestamp": "2026-02-28T06:15:03.013800+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 10 lot(s) C-BTC-66200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66200-280226",
+        "side": "buy",
+        "size": 10
+      }
+    },
+    {
+      "id": "act_20260228_061504_000908",
+      "timestamp": "2026-02-28T06:15:04.299868+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 10 C-BTC-66200-280226 @ $8.45 (bid=$6.20, ask=$10.70)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198867442",
+        "mid_price": 8.45,
+        "bid": 6.2,
+        "ask": 10.7
+      }
+    },
+    {
+      "id": "act_20260228_061522_000909",
+      "timestamp": "2026-02-28T06:15:22.162683+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66200-280226 FILLED @ $8.40 in 19.1s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198867442",
+        "fill_price": 8.4,
+        "elapsed": 19.1,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_061522_000910",
+      "timestamp": "2026-02-28T06:15:22.184863+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_061522_000911",
+      "timestamp": "2026-02-28T06:15:22.207720+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.03 below floor $0.00 (peak $0.18)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.03 below floor $0.00 (peak $0.18)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_061633_000912",
+      "timestamp": "2026-02-28T06:16:33.410055+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_061633_000913",
+      "timestamp": "2026-02-28T06:16:33.450313+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.19 below floor $0.00 (peak $0.16)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.19 below floor $0.00 (peak $0.16)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_061804_000914",
+      "timestamp": "2026-02-28T06:18:04.244235+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "Close-at-5 Scan: 7 position(s) ready to close [processing 3 of 7 this heartbeat] - CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "closeable_count": 7,
+        "positions": "CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0",
+        "wind_down_elevated": false,
+        "threshold_used": 5.0,
+        "capped_at": 3
+      }
+    },
+    {
+      "id": "act_20260228_061804_000915",
+      "timestamp": "2026-02-28T06:18:04.245958+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 19 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "buy",
+        "size": 19
+      }
+    },
+    {
+      "id": "act_20260228_061805_000916",
+      "timestamp": "2026-02-28T06:18:05.631449+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 19 C-BTC-66000-280226 @ $7.50 (bid=$7.00, ask=$8.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198877888",
+        "mid_price": 7.5,
+        "bid": 7.0,
+        "ask": 8.0
+      }
+    },
+    {
+      "id": "act_20260228_061812_000917",
+      "timestamp": "2026-02-28T06:18:12.719720+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66000-280226 FILLED @ $7.50 in 8.5s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198877888",
+        "fill_price": 7.5,
+        "elapsed": 8.5,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_061812_000918",
+      "timestamp": "2026-02-28T06:18:12.742319+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 20 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "buy",
+        "size": 20
+      }
+    },
+    {
+      "id": "act_20260228_061814_000919",
+      "timestamp": "2026-02-28T06:18:14.089504+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 20 C-BTC-66000-280226 @ $7.50 (bid=$7.00, ask=$8.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198878858",
+        "mid_price": 7.5,
+        "bid": 7.0,
+        "ask": 8.0
+      }
+    },
+    {
+      "id": "act_20260228_061825_000920",
+      "timestamp": "2026-02-28T06:18:25.776113+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66000-280226 FILLED @ $7.50 in 13.0s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198878858",
+        "fill_price": 7.5,
+        "elapsed": 13.0,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_061825_000921",
+      "timestamp": "2026-02-28T06:18:25.778056+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 10 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "buy",
+        "size": 10
+      }
+    },
+    {
+      "id": "act_20260228_061827_000922",
+      "timestamp": "2026-02-28T06:18:27.121705+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 10 C-BTC-66000-280226 @ $7.50 (bid=$7.00, ask=$8.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198881133",
+        "mid_price": 7.5,
+        "bid": 7.0,
+        "ask": 8.0
+      }
+    },
+    {
+      "id": "act_20260228_061831_000923",
+      "timestamp": "2026-02-28T06:18:31.049648+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66000-280226 FILLED @ $7.50 in 5.3s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198881133",
+        "fill_price": 7.5,
+        "elapsed": 5.3,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_061831_000924",
+      "timestamp": "2026-02-28T06:18:31.092782+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (warning), trailing_stop (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "asymmetry",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_061831_000925",
+      "timestamp": "2026-02-28T06:18:31.113839+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-5.72 below floor $0.00 (peak $0.02)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-5.72 below floor $0.00 (peak $0.02)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_061933_000926",
+      "timestamp": "2026-02-28T06:19:33.324905+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "Close-at-5 Scan: 4 position(s) ready to close [processing 3 of 4 this heartbeat] - CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0",
+      "session_id": "mmm28feb26-3",
+      "severity": "info",
+      "details": {
+        "closeable_count": 4,
+        "positions": "CE @ 66000.0, CE @ 66000.0, CE @ 66000.0, CE @ 66000.0",
+        "wind_down_elevated": false,
+        "threshold_used": 5.0,
+        "capped_at": 3
+      }
+    },
+    {
+      "id": "act_20260228_061933_000927",
+      "timestamp": "2026-02-28T06:19:33.325425+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 3 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260228_061934_000928",
+      "timestamp": "2026-02-28T06:19:34.698717+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 3 C-BTC-66000-280226 @ $7.05 (bid=$6.10, ask=$8.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198887072",
+        "mid_price": 7.05,
+        "bid": 6.1,
+        "ask": 8.0
+      }
+    },
+    {
+      "id": "act_20260228_061941_000929",
+      "timestamp": "2026-02-28T06:19:41.809721+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66000-280226 FILLED @ $7.00 in 8.5s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198887072",
+        "fill_price": 7.0,
+        "elapsed": 8.5,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_061941_000930",
+      "timestamp": "2026-02-28T06:19:41.829606+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 2 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "buy",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_20260228_061943_000931",
+      "timestamp": "2026-02-28T06:19:43.245086+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 2 C-BTC-66000-280226 @ $7.05 (bid=$6.10, ask=$8.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198887609",
+        "mid_price": 7.05,
+        "bid": 6.1,
+        "ask": 8.0
+      }
+    },
+    {
+      "id": "act_20260228_061952_000932",
+      "timestamp": "2026-02-28T06:19:52.061572+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66000-280226 FILLED @ $7.00 in 10.2s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198887609",
+        "fill_price": 7.0,
+        "elapsed": 10.2,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_061952_000933",
+      "timestamp": "2026-02-28T06:19:52.062387+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 1 lot(s) C-BTC-66000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66000-280226",
+        "side": "buy",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260228_061953_000934",
+      "timestamp": "2026-02-28T06:19:53.153495+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 1 C-BTC-66000-280226 @ $6.55 (bid=$6.10, ask=$7.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198888175",
+        "mid_price": 6.55,
+        "bid": 6.1,
+        "ask": 7.0
+      }
+    },
+    {
+      "id": "act_20260228_062000_000935",
+      "timestamp": "2026-02-28T06:20:00.213861+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66000-280226 FILLED @ $6.50 in 8.2s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198888175",
+        "fill_price": 6.5,
+        "elapsed": 8.2,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_062000_000936",
+      "timestamp": "2026-02-28T06:20:00.238217+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_062032_000937",
+      "timestamp": "2026-02-28T06:20:32.894487+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw_resume (info), trailing_stop (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "whipsaw_resume",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_062032_000938",
+      "timestamp": "2026-02-28T06:20:32.907602+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.75 below floor $0.96 (peak $1.93)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.75 below floor $0.96 (peak $1.93)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_062032_000939",
+      "timestamp": "2026-02-28T06:20:32.907919+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 601s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_062102_000940",
+      "timestamp": "2026-02-28T06:21:02.963245+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_062232_000941",
+      "timestamp": "2026-02-28T06:22:32.464253+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: ",
+      "session_id": "mmm28feb26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "",
+        "old_status": "PAUSED"
+      }
+    },
+    {
+      "id": "act_20260228_062304_000942",
+      "timestamp": "2026-02-28T06:23:04.578509+00:00",
+      "type": "session_adopted",
+      "type_label": "session_adopted",
+      "category": "system",
+      "message": "Adopted 2 positions: CE 65200\u00d721 (0 frozen), PE 65200\u00d724 (0 frozen), trigger_mode=current_prices",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "positions_adopted": 2,
+        "trigger_mode": "current_prices",
+        "validation": {
+          "valid": true,
+          "errors": [],
+          "warnings": [
+            "CE lots (21) \u2260 PE lots (24) \u2014 asymmetric position. This is allowed but may affect P&L balance."
+          ],
+          "summary": {
+            "ce_active_lots": 21,
+            "ce_frozen_lots": 0,
+            "ce_total_lots": 21,
+            "pe_active_lots": 24,
+            "pe_frozen_lots": 0,
+            "pe_total_lots": 24,
+            "ce_strikes": [
+              65200
+            ],
+            "pe_strikes": [
+              65200
+            ],
+            "total_premium_collected": 3.72
+          }
+        }
+      }
+    },
+    {
+      "id": "act_20260228_062304_000943",
+      "timestamp": "2026-02-28T06:23:04.601171+00:00",
+      "type": "session_started",
+      "type_label": "Session Started",
+      "category": "system",
+      "message": "Session mmm28feb26-4 is now RUNNING \u2014 heartbeat monitor active",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_062304_000944",
+      "timestamp": "2026-02-28T06:23:04.629175+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Data integrity: Checksum mismatch on session load \u2014 verify positions before trading.",
+      "session_id": "mmm28feb26-4",
+      "severity": "error",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_062434_000945",
+      "timestamp": "2026-02-28T06:24:34.952077+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: min_trigger_move updated 3.0 \u2192 10.0",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "min_trigger_move",
+        "old_value": 3.0,
+        "new_value": 10.0
+      }
+    },
+    {
+      "id": "act_20260228_062434_000946",
+      "timestamp": "2026-02-28T06:24:34.974779+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: max_loss_amount updated 50000.0 \u2192 50.0",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "max_loss_amount",
+        "old_value": 50000.0,
+        "new_value": 50.0
+      }
+    },
+    {
+      "id": "act_20260228_062434_000947",
+      "timestamp": "2026-02-28T06:24:34.975079+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: trailing_stop_pct updated 0.5 \u2192 0.0",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "trailing_stop_pct",
+        "old_value": 0.5,
+        "new_value": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_062434_000948",
+      "timestamp": "2026-02-28T06:24:34.993266+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: margin_monitor_enabled updated False \u2192 True",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "param": "margin_monitor_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260228_062435_000949",
+      "timestamp": "2026-02-28T06:24:35.918356+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($298.28), hedging with CE ($140.34)",
+      "session_id": "mmm28feb26-4",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 298.28374448,
+        "hedge": "CE",
+        "hedge_premium": 140.3382815
+      }
+    },
+    {
+      "id": "act_20260228_062435_000950",
+      "timestamp": "2026-02-28T06:24:35.948401+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 7 lot(s) C-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-65200-280226",
+        "side": "sell",
+        "size": 7
+      }
+    },
+    {
+      "id": "act_20260228_062437_000951",
+      "timestamp": "2026-02-28T06:24:37.282509+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 7 C-BTC-65200-280226 @ $138.50 (bid=$136.00, ask=$141.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198903637",
+        "mid_price": 138.5,
+        "bid": 136.0,
+        "ask": 141.0
+      }
+    },
+    {
+      "id": "act_20260228_062447_000952",
+      "timestamp": "2026-02-28T06:24:47.896931+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-65200-280226 FILLED @ $138.50 in 11.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198903637",
+        "fill_price": 138.5,
+        "elapsed": 11.8,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_062447_000953",
+      "timestamp": "2026-02-28T06:24:47.899099+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 7 lots CE @ 65200 for $138.50 (Type: standard)",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 65200,
+        "lots": 7,
+        "fill_price": 138.5,
+        "type": "standard",
+        "adjustment_number": 1
+      }
+    },
+    {
+      "id": "act_20260228_062535_000954",
+      "timestamp": "2026-02-28T06:25:35.633565+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw (alert), trailing_stop (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "whipsaw",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_062535_000955",
+      "timestamp": "2026-02-28T06:25:35.654724+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.88 below floor $0.91 (peak $1.81)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $0.88 below floor $0.91 (peak $1.81)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_062535_000956",
+      "timestamp": "2026-02-28T06:25:35.674170+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T06:35:35.",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s.",
+        "trigger": "whipsaw",
+        "resume_at": "2026-02-28T06:35:35.614966+00:00"
+      }
+    },
+    {
+      "id": "act_20260228_062604_000957",
+      "timestamp": "2026-02-28T06:26:04.674833+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($380.81), hedging with CE ($105.86)",
+      "session_id": "mmm28feb26-4",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 380.80806373,
+        "hedge": "CE",
+        "hedge_premium": 105.85657652
+      }
+    },
+    {
+      "id": "act_20260228_062604_000958",
+      "timestamp": "2026-02-28T06:26:04.710237+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 20 lot(s) C-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-65200-280226",
+        "side": "sell",
+        "size": 20
+      }
+    },
+    {
+      "id": "act_20260228_062606_000959",
+      "timestamp": "2026-02-28T06:26:06.039623+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 20 C-BTC-65200-280226 @ $105.00 (bid=$95.00, ask=$115.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198907924",
+        "mid_price": 105.0,
+        "bid": 95.0,
+        "ask": 115.0
+      }
+    },
+    {
+      "id": "act_20260228_062617_000960",
+      "timestamp": "2026-02-28T06:26:17.534120+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-65200-280226 FILLED @ $105.00 in 12.7s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198907924",
+        "fill_price": 105.0,
+        "elapsed": 12.7,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_062617_000961",
+      "timestamp": "2026-02-28T06:26:17.534517+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 20 lots CE @ 65200 for $105.00 (Type: standard)",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 65200,
+        "lots": 20,
+        "fill_price": 105.0,
+        "type": "standard",
+        "adjustment_number": 2
+      }
+    },
+    {
+      "id": "act_20260228_062733_000962",
+      "timestamp": "2026-02-28T06:27:33.502387+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($533.56), hedging with CE ($59.25)",
+      "session_id": "mmm28feb26-4",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 533.56073943,
+        "hedge": "CE",
+        "hedge_premium": 59.25323968
+      }
+    },
+    {
+      "id": "act_20260228_062733_000963",
+      "timestamp": "2026-02-28T06:27:33.518153+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 46 lot(s) C-BTC-65200-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-65200-280226",
+        "side": "sell",
+        "size": 46
+      }
+    },
+    {
+      "id": "act_20260228_062734_000964",
+      "timestamp": "2026-02-28T06:27:34.871521+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 46 C-BTC-65200-280226 @ $56.50 (bid=$53.00, ask=$60.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198913064",
+        "mid_price": 56.5,
+        "bid": 53.0,
+        "ask": 60.0
+      }
+    },
+    {
+      "id": "act_20260228_062752_000965",
+      "timestamp": "2026-02-28T06:27:52.288931+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-65200-280226 FILLED @ $56.50 in 18.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198913064",
+        "fill_price": 56.5,
+        "elapsed": 18.8,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_062752_000966",
+      "timestamp": "2026-02-28T06:27:52.307792+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 46 lots CE @ 65200 for $56.50 (Type: standard)",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 65200,
+        "lots": 46,
+        "fill_price": 56.5,
+        "type": "standard",
+        "adjustment_number": 3
+      }
+    },
+    {
+      "id": "act_20260228_062905_000967",
+      "timestamp": "2026-02-28T06:29:05.648740+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (warning), asymmetry (warning)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_062905_000968",
+      "timestamp": "2026-02-28T06:29:05.819734+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($717.26), hedging with CE ($37.38)",
+      "session_id": "mmm28feb26-4",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 717.25614478,
+        "hedge": "CE",
+        "hedge_premium": 37.37509865
+      }
+    },
+    {
+      "id": "act_20260228_062906_000969",
+      "timestamp": "2026-02-28T06:29:06.360926+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 6 lot(s) C-BTC-65000-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-65000-280226",
+        "side": "sell",
+        "size": 6
+      }
+    },
+    {
+      "id": "act_20260228_062907_000970",
+      "timestamp": "2026-02-28T06:29:07.637435+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 6 C-BTC-65000-280226 @ $90.00 (bid=$80.00, ask=$100.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198920233",
+        "mid_price": 90.0,
+        "bid": 80.0,
+        "ask": 100.0
+      }
+    },
+    {
+      "id": "act_20260228_062911_000971",
+      "timestamp": "2026-02-28T06:29:11.512238+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-65000-280226 FILLED @ $90.00 in 5.2s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198920233",
+        "fill_price": 90.0,
+        "elapsed": 5.2,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260228_062911_000972",
+      "timestamp": "2026-02-28T06:29:11.533678+00:00",
+      "type": "strike_shift",
+      "type_label": "Strike Shift",
+      "category": "adjustments",
+      "message": "\ud83d\udd00 Strike Shift: CE 65200 \u2192 65000.0 (frozen 94 lots at old strike)",
+      "session_id": "mmm28feb26-4",
+      "severity": "info",
+      "details": {
+        "side": "CE",
+        "old_strike": 65200,
+        "new_strike": 65000.0,
+        "frozen_lots": 94,
+        "fill_price": 90.0
+      }
+    },
+    {
+      "id": "act_20260228_062911_000973",
+      "timestamp": "2026-02-28T06:29:11.533953+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Strike Shift Complete: SELL 6 lots CE @ 65000.0 for $90.00 (shifted from 65200)",
+      "session_id": "mmm28feb26-4",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 65000.0,
+        "old_strike": 65200,
+        "lots": 6,
+        "fill_price": 90.0,
+        "type": "strike_shift",
+        "adjustment_number": 4
+      }
+    },
+    {
+      "id": "act_20260228_063034_000974",
+      "timestamp": "2026-02-28T06:30:34.823415+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_063034_000975",
+      "timestamp": "2026-02-28T06:30:34.843907+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_063036_000976",
+      "timestamp": "2026-02-28T06:30:36.173028+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_063036_000977",
+      "timestamp": "2026-02-28T06:30:36.191530+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.33 below floor $0.86 (peak $1.72)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.33 below floor $0.86 (peak $1.72)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_063203_000978",
+      "timestamp": "2026-02-28T06:32:03.206917+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_063203_000979",
+      "timestamp": "2026-02-28T06:32:03.225884+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_063331_000980",
+      "timestamp": "2026-02-28T06:33:31.968880+00:00",
+      "type": "margin_tier_change",
+      "type_label": "margin_tier_change",
+      "category": "system",
+      "message": "\u26a0\ufe0f MARGIN TIER: GREEN \u2192 YELLOW (utilization: 72.8%, equity: $1056.54)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "tier": "YELLOW",
+        "prev_tier": "GREEN",
+        "utilization_pct": 72.79,
+        "net_equity": 1056.5392578699566,
+        "position_margin": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_063334_000981",
+      "timestamp": "2026-02-28T06:33:34.123952+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_063334_000982",
+      "timestamp": "2026-02-28T06:33:34.137786+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_063503_000983",
+      "timestamp": "2026-02-28T06:35:03.805166+00:00",
+      "type": "margin_tier_change",
+      "type_label": "margin_tier_change",
+      "category": "system",
+      "message": "\u26a0\ufe0f MARGIN TIER: YELLOW \u2192 RED (utilization: 87.8%, equity: $1006.67)",
+      "session_id": "mmm28feb26-4",
+      "severity": "error",
+      "details": {
+        "tier": "RED",
+        "prev_tier": "YELLOW",
+        "utilization_pct": 87.76,
+        "net_equity": 1006.6745225699566,
+        "position_margin": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_063504_000984",
+      "timestamp": "2026-02-28T06:35:04.794195+00:00",
+      "type": "margin_red",
+      "type_label": "margin_red",
+      "category": "system",
+      "message": "\ud83d\udd34 MARGIN RED: 87.8% \u2014 emergency reduce (closing CE=44, PE=11 lots)",
+      "session_id": "mmm28feb26-4",
+      "severity": "error",
+      "details": {
+        "utilization_pct": 87.76,
+        "lots_to_close": {
+          "ce": 44,
+          "pe": 11
+        }
+      }
+    },
+    {
+      "id": "act_20260228_063505_000985",
+      "timestamp": "2026-02-28T06:35:05.790286+00:00",
+      "type": "auto_close_all",
+      "type_label": "auto_close_all",
+      "category": "system",
+      "message": "\ud83d\udea8 EMERGENCY close-all initiated: MARGIN RED: 87.8% utilization \u2014 emergency reduce",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "reason": "MARGIN RED: 87.8% utilization \u2014 emergency reduce",
+        "emergency": true
+      }
+    },
+    {
+      "id": "act_20260228_063505_000986",
+      "timestamp": "2026-02-28T06:35:05.806948+00:00",
+      "type": "emergency_order",
+      "type_label": "Emergency Order",
+      "category": "orders",
+      "message": "\ud83d\udea8 EMERGENCY BUY 6 C-BTC-65000-280226 \u2014 crash protocol active",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "symbol": "C-BTC-65000-280226",
+        "side": "buy",
+        "size": 6,
+        "max_slippage_pct": 5.0
+      }
+    },
+    {
+      "id": "act_20260228_063505_000987",
+      "timestamp": "2026-02-28T06:35:05.844757+00:00",
+      "type": "emergency_order",
+      "type_label": "Emergency Order",
+      "category": "orders",
+      "message": "\ud83d\udea8 EMERGENCY BUY 24 P-BTC-65200-280226 \u2014 crash protocol active",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "symbol": "P-BTC-65200-280226",
+        "side": "buy",
+        "size": 24,
+        "max_slippage_pct": 5.0
+      }
+    },
+    {
+      "id": "act_20260228_063506_000988",
+      "timestamp": "2026-02-28T06:35:06.101695+00:00",
+      "type": "emergency_placing",
+      "type_label": "Emergency Placing",
+      "category": "orders",
+      "message": "\ud83d\udea8 Emergency placing: BUY 6 C-BTC-65000-280226 @ $42.00 (IOC, taker allowed)",
+      "session_id": "mmm28feb26-4",
+      "severity"

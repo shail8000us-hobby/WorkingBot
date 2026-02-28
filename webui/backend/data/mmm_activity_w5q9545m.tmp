@@ -1,0 +1,266 @@
+{
+  "activities": [
+    {
+      "id": "act_20260228_020209_000602",
+      "timestamp": "2026-02-28T02:02:10.002436+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: Watchdog: beat timeout: last beat 278s ago (threshold=270s, interval=90s)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "reason": "Watchdog: beat timeout: last beat 278s ago (threshold=270s, interval=90s)",
+        "old_status": "RUNNING"
+      }
+    },
+    {
+      "id": "act_20260228_020226_000603",
+      "timestamp": "2026-02-28T02:02:26.254398+00:00",
+      "type": "watchdog",
+      "type_label": "watchdog",
+      "category": "system",
+      "message": "\ud83d\udd04 Watchdog restarted monitor (restart #2) \u2014 reason: beat timeout: last beat 278s ago (threshold=270s, interval=90s)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_020227_000604",
+      "timestamp": "2026-02-28T02:02:27.256921+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_020255_000605",
+      "timestamp": "2026-02-28T02:02:55.984306+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198659008 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198659008",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_020325_000606",
+      "timestamp": "2026-02-28T02:03:26.325357+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66800-280226 FILLED @ $5.20 in 95.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198659008",
+        "fill_price": 5.2,
+        "elapsed": 95.8,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_020326_000607",
+      "timestamp": "2026-02-28T02:03:26.596846+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm28feb26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_020357_000608",
+      "timestamp": "2026-02-28T02:03:57.283794+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "Close-at-5 Scan: 4 position(s) ready to close [processing 3 of 4 this heartbeat] - CE @ 66800.0, CE @ 66800.0, CE @ 66800.0, CE @ 66800.0",
+      "session_id": "mmm28feb26-2",
+      "severity": "info",
+      "details": {
+        "closeable_count": 4,
+        "positions": "CE @ 66800.0, CE @ 66800.0, CE @ 66800.0, CE @ 66800.0",
+        "wind_down_elevated": false,
+        "threshold_used": 5.0,
+        "capped_at": 3
+      }
+    },
+    {
+      "id": "act_20260228_020357_000609",
+      "timestamp": "2026-02-28T02:03:57.284350+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 5 lot(s) C-BTC-66800-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66800-280226",
+        "side": "buy",
+        "size": 5
+      }
+    },
+    {
+      "id": "act_20260228_020358_000610",
+      "timestamp": "2026-02-28T02:03:58.623545+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 5 C-BTC-66800-280226 @ $5.05 (bid=$4.10, ask=$6.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198660303",
+        "mid_price": 5.05,
+        "bid": 4.1,
+        "ask": 6.0
+      }
+    },
+    {
+      "id": "act_20260228_020500_000611",
+      "timestamp": "2026-02-28T02:05:00.952432+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198660303 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198660303",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_020506_000612",
+      "timestamp": "2026-02-28T02:05:06.101065+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66800-280226 FILLED @ $6.00 in 68.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198660303",
+        "fill_price": 6.0,
+        "elapsed": 68.8,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_020506_000613",
+      "timestamp": "2026-02-28T02:05:06.101778+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 5 lot(s) C-BTC-66800-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66800-280226",
+        "side": "buy",
+        "size": 5
+      }
+    },
+    {
+      "id": "act_20260228_020507_000614",
+      "timestamp": "2026-02-28T02:05:07.430907+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 5 C-BTC-66800-280226 @ $6.00 (bid=$5.00, ask=$7.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198660970",
+        "mid_price": 6.0,
+        "bid": 5.0,
+        "ask": 7.0
+      }
+    },
+    {
+      "id": "act_20260228_020609_000615",
+      "timestamp": "2026-02-28T02:06:09.796772+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1198660970 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1198660970",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_020651_000616",
+      "timestamp": "2026-02-28T02:06:52.108579+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-66800-280226 FILLED @ $6.50 in 105.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1198660970",
+        "fill_price": 6.5,
+        "elapsed": 105.8,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260228_020652_000617",
+      "timestamp": "2026-02-28T02:06:52.111580+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 4 lot(s) C-BTC-66800-280226 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-66800-280226",
+        "side": "buy",
+        "size": 4
+      }
+    },
+    {
+      "id": "act_20260228_020653_000618",
+      "timestamp": "2026-02-28T02:06:54.370364+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 4 C-BTC-66800-280226 @ $6.00 (bid=$5.00, ask=$7.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1198662001",
+        "mid_price": 6.0,
+        "bid": 5.0,
+        "ask": 7.0
+      }
+    },
+    {
+      "id": "act_20260228_020658_000619",
+      "timestamp": "2026-02-28T02:06:58.835033+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: Watchdog: beat timeout: last beat 271s ago (threshold=270s, interval=90s)"

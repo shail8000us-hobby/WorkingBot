@@ -494,13 +494,43 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
         error_msg = entry_result.get('error', 'Unknown execution error')
         ce_res = entry_result.get('ce', {})
         pe_res = entry_result.get('pe', {})
+        rollback_ok = entry_result.get('rollback_ok', False)
 
         # Check for partial fill (one leg filled, other failed)
         ce_ok = ce_res.get('success', False) if isinstance(ce_res, dict) else False
         pe_ok = pe_res.get('success', False) if isinstance(pe_res, dict) else False
 
-        if ce_ok or pe_ok:
-            # PARTIAL FILL — record what we have so it can be managed
+        if (ce_ok or pe_ok) and rollback_ok:
+            # Rollback succeeded — positions are FLAT. No manual intervention needed.
+            # The successful leg was bought back. Return to IDLE cleanly.
+            filled_side = 'CE' if ce_ok else 'PE'
+            failed_side = 'PE' if ce_ok else 'CE'
+            session = storage.get_session(session_id)
+            session['strategy_status'] = 'IDLE'
+            session.pop('partial_entry', None)
+            # Clear any fill data set during the failed attempt
+            session['ce']['entry_fill_price'] = None
+            session['ce']['entry_order_id'] = None
+            session['pe']['entry_fill_price'] = None
+            session['pe']['entry_order_id'] = None
+            session['initial_total_premium'] = 0
+            session['actual_total_premium'] = 0
+            session['total_premium_collected'] = 0
+            storage.save_session(session)
+
+            log_activity('entry_rolled_back',
+                f"Entry failed ({failed_side} did not fill) but {filled_side} was successfully "
+                f"rolled back. Positions are flat. Session reset to IDLE — re-execute when ready.",
+                session_id=session_id, severity='warning',
+                details={'ce_filled': ce_ok, 'pe_filled': pe_ok, 'rollback_ok': True})
+            emit_status_change(session_id, 'STARTING', 'IDLE',
+                f'Entry rolled back cleanly: {filled_side} bought back. Ready to retry.')
+            # Clear stale "placing order..." progress messages
+            from .mmm_activity import resolve_progress_activities
+            resolve_progress_activities(session_id)
+
+        elif ce_ok or pe_ok:
+            # Rollback FAILED — one leg is still open (orphan position). Need manual fix.
             session = storage.get_session(session_id)
             if ce_ok:
                 session['ce']['entry_fill_price'] = ce_res.get('fill_price', 0)
@@ -513,6 +543,7 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
             session['partial_entry'] = {
                 'ce_filled': ce_ok,
                 'pe_filled': pe_ok,
+                'rollback_failed': True,
                 'ce_result': str(ce_res)[:300],
                 'pe_result': str(pe_res)[:300],
                 'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -522,12 +553,14 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
             filled_side = 'CE' if ce_ok else 'PE'
             failed_side = 'PE' if ce_ok else 'CE'
             log_activity('partial_entry',
-                f"PARTIAL ENTRY: {filled_side} filled but {failed_side} failed! "
-                f"Manual intervention needed.",
+                f"PARTIAL ENTRY: {filled_side} filled, {failed_side} failed, "
+                f"AND rollback also failed — ORPHAN POSITION open! "
+                f"Use 'Retry Leg' or manually close {filled_side} on exchange.",
                 session_id=session_id, severity='error',
-                details={'ce_filled': ce_ok, 'pe_filled': pe_ok})
+                details={'ce_filled': ce_ok, 'pe_filled': pe_ok, 'rollback_ok': False})
             emit_status_change(session_id, 'STARTING', 'PARTIAL_ENTRY',
-                f'Partial entry: {filled_side} filled, {failed_side} failed')
+                f'Orphan position: {filled_side} open, rollback failed')
+
         else:
             # Both legs failed — clear premiums so UI doesn't show fake positions
             log_activity('entry_failed',
@@ -611,6 +644,318 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
     log_activity('session_started',
         f"Session {session_id} is now RUNNING — heartbeat monitor active",
         session_id=session_id, severity='success')
+
+    # Start the heartbeat monitor
+    start_session_monitor(session_id, session)
+
+
+@mmm_bp.route('/session/<session_id>/resolve-partial-entry', methods=['POST'])
+def resolve_partial_entry(session_id: str):
+    """
+    Resolve a PARTIAL_ENTRY state by manually confirming both fill prices.
+
+    Use this when one leg failed during entry but you manually filled it on the
+    exchange. Provide the fill prices for both CE and PE sides, and the algo
+    will transition to RUNNING and start the heartbeat monitor.
+
+    Body (JSON):
+        {
+            ce_fill_price: float,   # Actual fill price for CE leg
+            pe_fill_price: float,   # Actual fill price for PE leg
+        }
+
+    Returns:
+        { success: bool, status: 'RUNNING' }
+    """
+    try:
+        # Check guardian
+        signal = _check_guardian_signal()
+        if signal != 'GO':
+            return jsonify({
+                'success': False,
+                'error': f'Guardian signal is {signal}. Trading disabled.',
+            }), 403
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}',
+            }), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status != 'PARTIAL_ENTRY':
+            return jsonify({
+                'success': False,
+                'error': f"Session must be in PARTIAL_ENTRY state. Current: {status}",
+            }), 400
+
+        data = request.get_json() or {}
+        ce_fill_price = data.get('ce_fill_price')
+        pe_fill_price = data.get('pe_fill_price')
+
+        if ce_fill_price is None or pe_fill_price is None:
+            return jsonify({
+                'success': False,
+                'error': 'Both ce_fill_price and pe_fill_price are required.',
+            }), 400
+
+        try:
+            ce_fill = float(ce_fill_price)
+            pe_fill = float(pe_fill_price)
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'ce_fill_price and pe_fill_price must be valid numbers.',
+            }), 400
+
+        if ce_fill <= 0 or pe_fill <= 0:
+            return jsonify({
+                'success': False,
+                'error': 'Fill prices must be greater than zero.',
+            }), 400
+
+        from .mmm_activity import log_activity
+
+        # Update fill prices for both sides
+        session['ce']['entry_fill_price'] = ce_fill
+        session['ce']['original_premium'] = ce_fill
+        session['pe']['entry_fill_price'] = pe_fill
+        session['pe']['original_premium'] = pe_fill
+
+        # Update trigger snapshots to actual fill prices
+        ce_strike_key = strike_key(session['ce'].get('active_strike', 0))
+        pe_strike_key = strike_key(session['pe'].get('active_strike', 0))
+        session['ce']['trigger_snapshot'] = {ce_strike_key: ce_fill}
+        session['pe']['trigger_snapshot'] = {pe_strike_key: pe_fill}
+
+        lots = session.get('lots', 0) or session['ce'].get('original_lots', 0)
+        actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
+        session['actual_total_premium'] = actual_premium
+        session['total_premium_collected'] = actual_premium
+
+        # Clear partial entry state
+        session.pop('partial_entry', None)
+
+        # Transition to RUNNING
+        session['strategy_status'] = 'RUNNING'
+        session['entry_time'] = datetime.now(timezone.utc).isoformat()
+        session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
+        session['execution_timestamp'] = datetime.now(timezone.utc).isoformat()
+
+        storage.save_session(session)
+
+        emit_status_change(session_id, 'PARTIAL_ENTRY', 'RUNNING',
+                           'Partial entry resolved — both fills confirmed')
+
+        log_activity('entry_complete',
+            f"Partial entry resolved: CE@${ce_fill:.2f} + PE@${pe_fill:.2f}. "
+            f"Session transitioning to RUNNING.",
+            session_id=session_id, severity='success',
+            details={'ce_fill': ce_fill, 'pe_fill': pe_fill,
+                     'total_premium': actual_premium})
+
+        log.info(
+            f"MMM {session_id}: Partial entry resolved — "
+            f"CE@${ce_fill:.2f}, PE@${pe_fill:.2f}, starting monitor."
+        )
+
+        # Start the heartbeat monitor
+        start_session_monitor(session_id, session)
+
+        return jsonify({
+            'success': True,
+            'message': 'Partial entry resolved — session is now RUNNING',
+            'status': 'RUNNING',
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to resolve partial entry for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/retry-partial-leg', methods=['POST'])
+def retry_partial_leg(session_id: str):
+    """
+    Retry the failed leg of a PARTIAL_ENTRY state.
+
+    Launches a background thread to execute only the missing leg (CE or PE).
+    If successful, transitions to RUNNING. If it fails again, remains in
+    PARTIAL_ENTRY — the user can try again or use resolve-partial-entry to
+    manually confirm.
+
+    Returns immediately (non-blocking).
+        { success: bool, status: 'STARTING', retrying_side: 'CE'|'PE' }
+    """
+    try:
+        # Check guardian
+        signal = _check_guardian_signal()
+        if signal != 'GO':
+            return jsonify({
+                'success': False,
+                'error': f'Guardian signal is {signal}. Trading disabled.',
+            }), 403
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({
+                'success': False,
+                'error': f'Session not found: {session_id}',
+            }), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status != 'PARTIAL_ENTRY':
+            return jsonify({
+                'success': False,
+                'error': f"Session must be in PARTIAL_ENTRY state. Current: {status}",
+            }), 400
+
+        partial = session.get('partial_entry', {})
+        ce_filled = partial.get('ce_filled', False)
+        pe_filled = partial.get('pe_filled', False)
+
+        # Verify the fill prices already recorded for the filled side
+        if ce_filled and not pe_filled:
+            # PE failed — retry PE
+            retrying_side = 'PE'
+            symbol = session.get('pe', {}).get('symbol', '')
+            lots = session.get('lots', 0) or session.get('ce', {}).get('original_lots', 0)
+        elif pe_filled and not ce_filled:
+            # CE failed — retry CE
+            retrying_side = 'CE'
+            symbol = session.get('ce', {}).get('symbol', '')
+            lots = session.get('lots', 0) or session.get('pe', {}).get('original_lots', 0)
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Cannot determine which leg to retry. Use resolve-partial-entry instead.',
+            }), 400
+
+        if not symbol:
+            return jsonify({
+                'success': False,
+                'error': f'{retrying_side} symbol not found. Cannot retry.',
+            }), 400
+
+        from .mmm_activity import log_activity
+        log_activity('partial_entry_retry',
+            f"Retrying failed {retrying_side} leg: SELL {lots} {symbol}",
+            session_id=session_id, severity='progress',
+            details={'side': retrying_side, 'symbol': symbol, 'lots': lots})
+
+        # Launch background thread to retry just the missing leg
+        t = threading.Thread(
+            target=_retry_partial_leg_background,
+            args=(session_id, retrying_side.lower(), symbol, lots),
+            daemon=True,
+            name=f'mmm-retry-{session_id}',
+        )
+        t.start()
+
+        return jsonify({
+            'success': True,
+            'message': f'Retrying {retrying_side} leg in background',
+            'status': 'PARTIAL_ENTRY',
+            'retrying_side': retrying_side,
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to retry partial leg for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _retry_partial_leg_background(
+    session_id: str, side: str, symbol: str, lots: int
+):
+    """
+    Background thread: retry the failed leg of a PARTIAL_ENTRY.
+    If successful, transition to RUNNING and start the monitor.
+    """
+    from .mmm_executor import get_executor
+    from .mmm_activity import log_activity
+
+    storage = get_storage()
+    side_upper = side.upper()
+
+    try:
+        executor = get_executor()
+        result = _run_async(
+            executor.smart_execute(symbol, 'sell', lots, session_id=session_id)
+        )
+    except Exception as e:
+        log.exception(f"MMM {session_id}: Retry {side_upper} leg crashed")
+        log_activity('partial_entry_retry_failed',
+            f"Retry {side_upper} crashed: {str(e)}",
+            session_id=session_id, severity='error')
+        return
+
+    if not result.get('success'):
+        log_activity('partial_entry_retry_failed',
+            f"Retry {side_upper} failed: {result.get('error', 'Unknown error')}. "
+            f"Session remains in PARTIAL_ENTRY. Try again or use Manual Resolve.",
+            session_id=session_id, severity='error',
+            details={'error': result.get('error'), 'side': side_upper})
+        return
+
+    # Update session with new fill
+    fill_price = result.get('fill_price', 0)
+    session = storage.get_session(session_id)
+    if not session:
+        log.error(f"MMM {session_id}: Session not found after retry success")
+        return
+
+    session[side]['entry_fill_price'] = fill_price
+    session[side]['entry_order_id'] = result.get('order_id')
+    session[side]['original_premium'] = fill_price
+
+    # Update trigger snapshot for retried side
+    retried_strike_key = strike_key(session[side].get('active_strike', 0))
+    session[side]['trigger_snapshot'] = {retried_strike_key: fill_price}
+
+    # Compute total premium from both fills
+    ce_fill = session['ce'].get('entry_fill_price', 0) or 0
+    pe_fill = session['pe'].get('entry_fill_price', 0) or 0
+    lots_count = session.get('lots', 0) or session['ce'].get('original_lots', 0)
+    actual_premium = (ce_fill + pe_fill) * lots_count * LOT_SIZE_BTC
+    session['actual_total_premium'] = actual_premium
+    session['total_premium_collected'] = actual_premium
+
+    # Update trigger snapshots on both sides from their fill prices
+    ce_strike_key = strike_key(session['ce'].get('active_strike', 0))
+    pe_strike_key = strike_key(session['pe'].get('active_strike', 0))
+    if ce_fill > 0:
+        session['ce']['trigger_snapshot'] = {ce_strike_key: ce_fill}
+    if pe_fill > 0:
+        session['pe']['trigger_snapshot'] = {pe_strike_key: pe_fill}
+
+    # Clear partial entry state and transition to RUNNING
+    session.pop('partial_entry', None)
+    session['strategy_status'] = 'RUNNING'
+    session['entry_time'] = datetime.now(timezone.utc).isoformat()
+    session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
+    session['execution_timestamp'] = datetime.now(timezone.utc).isoformat()
+    storage.save_session(session)
+
+    emit_status_change(session_id, 'PARTIAL_ENTRY', 'RUNNING',
+                       f'{side_upper} retry filled — both legs now confirmed')
+
+    log_activity('entry_complete',
+        f"Retry {side_upper} leg filled @ ${fill_price:.2f}. "
+        f"CE@${ce_fill:.2f} + PE@${pe_fill:.2f} = ${actual_premium:.2f} total. "
+        f"Session now RUNNING.",
+        session_id=session_id, severity='success',
+        details={'side': side_upper, 'fill_price': fill_price,
+                 'ce_fill': ce_fill, 'pe_fill': pe_fill,
+                 'total_premium': actual_premium})
+
+    log.info(
+        f"MMM {session_id}: Retry {side_upper} filled@${fill_price:.2f} — "
+        f"total_premium=${actual_premium:.2f}. Starting monitor."
+    )
 
     # Start the heartbeat monitor
     start_session_monitor(session_id, session)

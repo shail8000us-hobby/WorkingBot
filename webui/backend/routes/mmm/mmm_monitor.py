@@ -956,6 +956,10 @@ class MMMMonitor:
                         _triggered_strike = _ce_orig if _atm_wd_side == 'CE' else _pe_orig
                         # Set guard flag BEFORE any state changes to prevent re-entry
                         session['_atm_wind_down_triggered'] = True
+                        # Auto-enable the wind_down_enabled master switch so is_wind_down_active()
+                        # returns True. wind_down_on_atm is the user's explicit opt-in — the ATM
+                        # trigger should activate wind-down without requiring the manual toggle.
+                        params['wind_down_enabled'] = True
                         log.warning(
                             f"[{sid}] ATM WIND-DOWN TRIGGERED: Spot ${_wd_spot:.0f} within "
                             f"0.5% of {_atm_wd_side} ORIGINAL strike ${_triggered_strike:.0f}. "

@@ -18,6 +18,7 @@ import React, {
   useCallback,
 } from 'react';
 import mmmService from './mmmService';
+import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 
 // =============================================================================
 // Initial State
@@ -392,24 +393,20 @@ export function MMMProvider({ children, socket }) {
     };
   }, [fetchSessions]);
 
-  // Initial load
+  // Initial load (one-time calls)
   useEffect(() => {
-    fetchSessions();
     checkHealth();
     fetchParamsInfo();
-
-    // Auto-refresh every 30s as WebSocket fallback (WS handles real-time updates)
-    const interval = setInterval(() => {
-      fetchSessions(false);
-    }, 30000);
-
     return () => {
-      clearInterval(interval);
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
     };
-  }, [fetchSessions, checkHealth, fetchParamsInfo]);
+  }, [checkHealth, fetchParamsInfo]);
+
+  // Session polling — pauses when tab is hidden, slows down on return
+  const fetchSessionsSilent = useCallback(() => fetchSessions(false), [fetchSessions]);
+  useVisibilityAwarePolling(fetchSessionsSilent, 30000, 120000);
 
   // ---------------------------------------------------------------------------
   // Exposed actions

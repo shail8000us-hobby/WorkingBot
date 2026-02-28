@@ -501,6 +501,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 startIcon={<PlayArrowIcon />}
                 onClick={() => executeAutoLoop(1)}
                 disabled={
+                  !multiplierMode ||
                   calculateBatchOrders().length === 0 ||
                   !status?.trading_allowed ||
                   !autoLoopRounds ||
@@ -530,6 +531,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 }
                 onClick={executeBatchOrders}
                 disabled={
+                  !multiplierMode ||
                   batchExecuting ||
                   calculateBatchOrders().length === 0 ||
                   !status?.trading_allowed

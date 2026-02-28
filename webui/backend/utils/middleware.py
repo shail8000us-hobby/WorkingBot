@@ -70,10 +70,15 @@ def register_middleware(app):
         
         # Add cache control for API responses
         if request.path.startswith('/api/'):
-            # Most API responses shouldn't be cached
-            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
+            if request.method == 'GET':
+                # Allow short-lived browser caching for read-only GET requests
+                # Deduplicates rapid identical requests from multiple UI components
+                response.headers['Cache-Control'] = 'private, max-age=5'
+            else:
+                # Mutations must never be cached
+                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                response.headers['Pragma'] = 'no-cache'
+                response.headers['Expires'] = '0'
         
         # Log response
         logger.api_response(
