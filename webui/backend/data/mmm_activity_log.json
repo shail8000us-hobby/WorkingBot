@@ -1,67 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_20260228_042759_000798",
-      "timestamp": "2026-02-28T04:28:00.374551+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.01)",
-      "session_id": "mmm28feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.01)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260228_042930_000799",
-      "timestamp": "2026-02-28T04:29:31.022352+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 trailing_stop (alert)",
-      "session_id": "mmm28feb26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "trailing_stop"
-        ]
-      }
-    },
-    {
-      "id": "act_20260228_042931_000800",
-      "timestamp": "2026-02-28T04:29:31.462030+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.00)",
-      "session_id": "mmm28feb26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-0.05 below floor $0.00 (peak $0.00)",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260228_043101_000801",
-      "timestamp": "2026-02-28T04:31:01.604370+00:00",
-      "type": "atm_wind_down",
-      "type_label": "ATM Wind-Down",
-      "category": "adjustments",
-      "message": "\ud83c\udf19 ATM WIND-DOWN: Spot $65519 reached PE ORIGINAL strike $65200 \u2014 activating wind-down mode (gradual buyback)",
-      "session_id": "mmm28feb26-3",
-      "severity": "warning",
-      "details": {
-        "spot": 65519.22349425,
-        "ce_original_strike": 66200.0,
-        "pe_original_strike": 65200.0,
-        "triggered_side": "PE",
-        "triggered_strike": 65200.0
-      }
-    },
-    {
       "id": "act_20260228_043102_000802",
       "timestamp": "2026-02-28T04:31:02.958845+00:00",
       "type": "adjustment_triggered",
@@ -7672,7 +7611,69 @@
     },
     {
       "id": "act_20260228_152432_000098",
-      "timestamp": "2026-02-28T15:24:32.088594+00:00",
+      "timestamp": "2026-02-28T15:24:32.096463+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_152932_000099",
+      "timestamp": "2026-02-28T15:29:32.145947+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_152932_000100",
+      "timestamp": "2026-02-28T15:29:32.146059+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_153127_000001",
+      "timestamp": "2026-02-28T15:31:27.407656+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_153127_000002",
+      "timestamp": "2026-02-28T15:31:27.407693+00:00",
       "type": "adjustments_stopped",
       "type_label": "Adjustments Stopped",
       "category": "safety",
@@ -7685,5 +7686,5 @@
       }
     }
   ],
-  "updated_at": "2026-02-28T15:24:32.089107+00:00"
+  "updated_at": "2026-02-28T15:31:27.407781+00:00"
 }

@@ -333,12 +333,76 @@ const OptionsPanel = () => {
   const [sizeSort, setSizeSort] = useState(null); // null = no sort, 'asc' = ascending, 'desc' = descending
 
   // ── Position Groups (manual labelling) ───────────────────────────────────
-  // Persisted: { [groupId]: { name: string, color: string, symbols: string[] } }
+  // Groups, collapsed state, and custom order are ALL scoped per expiry.
+  // Master storage: { [expiryKey]: { groups: {}, collapsed: {}, order: [] } }
+  // expiryKey = sorted expiry codes joined by '|', or 'ALL' when no filter.
   const GROUP_PALETTE = ['#7c3aed', '#0891b2', '#0d9488', '#d97706', '#dc2626', '#db2777', '#65a30d', '#ea580c'];
-  const [positionGroups, setPositionGroups] = usePersistedState('options_position_groups', {});
+
+  // Single master persisted object for all expiry group data
+  const [allExpiryGroupData, setAllExpiryGroupData] = usePersistedState('options_position_groups_v2', {});
+
+  // The current expiry key (derived from selectedExpiries)
+  const expiryGroupKey = useMemo(() => {
+    if (!selectedExpiries || selectedExpiries.length === 0) return 'ALL';
+    return [...selectedExpiries].sort().join('|');
+  }, [selectedExpiries]);
+
+  // Active slice for the current expiry
+  const activeExpiryData = useMemo(() => {
+    return allExpiryGroupData[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+  }, [allExpiryGroupData, expiryGroupKey]);
+
+  // Derived per-expiry state (read)
+  const positionGroups = activeExpiryData.groups || {};
+  const collapsedGroups = activeExpiryData.collapsed || {};
+  const customOrder = activeExpiryData.order || [];
+
+  // Setters that write into the correct expiry slice
+  const setPositionGroups = useCallback((updater) => {
+    setAllExpiryGroupData((prev) => {
+      const key = expiryGroupKey;
+      const slice = prev[key] || { groups: {}, collapsed: {}, order: [] };
+      const nextGroups = typeof updater === 'function' ? updater(slice.groups || {}) : updater;
+      return { ...prev, [key]: { ...slice, groups: nextGroups } };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey]);
+
+  const setCollapsedGroups = useCallback((updater) => {
+    setAllExpiryGroupData((prev) => {
+      const key = expiryGroupKey;
+      const slice = prev[key] || { groups: {}, collapsed: {}, order: [] };
+      const nextCollapsed = typeof updater === 'function' ? updater(slice.collapsed || {}) : updater;
+      return { ...prev, [key]: { ...slice, collapsed: nextCollapsed } };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey]);
+
+  // customOrder needs setCustomOrder + saveCustomOrderNow (immediate-save variant)
+  const setCustomOrder = useCallback((updater) => {
+    setAllExpiryGroupData((prev) => {
+      const key = expiryGroupKey;
+      const slice = prev[key] || { groups: {}, collapsed: {}, order: [] };
+      const nextOrder = typeof updater === 'function' ? updater(slice.order || []) : updater;
+      return { ...prev, [key]: { ...slice, order: nextOrder } };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey]);
+
+  // saveCustomOrderNow: for the per-expiry approach the write is already synchronous
+  // (usePersistedState debouncing is handled inside the hook). We expose a no-op-compatible
+  // wrapper that accepts the new order and writes it immediately via setAllExpiryGroupData.
+  const saveCustomOrderNow = useCallback((newOrder) => {
+    setAllExpiryGroupData((prev) => {
+      const key = expiryGroupKey;
+      const slice = prev[key] || { groups: {}, collapsed: {}, order: [] };
+      return { ...prev, [key]: { ...slice, order: newOrder } };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey]);
+
   const [newGroupName, setNewGroupName] = useState('');
-  const [collapsedGroups, setCollapsedGroups] = usePersistedState('options_groups_collapsed', {});
-  // Right‑click context menu
+  // Right-click / tag-button context menu
   const [groupMenuAnchor, setGroupMenuAnchor] = useState(null); // { mouseX, mouseY, symbol }
 
   // Create a new group
@@ -487,8 +551,7 @@ const OptionsPanel = () => {
     stepSize: 5,
   });
 
-  // Custom order for positions (persisted)
-  const [customOrder, setCustomOrder, saveCustomOrderNow] = usePersistedState('options_custom_order', []);
+  // (customOrder is now defined above in the per-expiry group section)
 
   // Batch order state - strike selection and order quantity
   const [selectedStrikes, setSelectedStrikes] = useState({}); // { symbol: true/false }
