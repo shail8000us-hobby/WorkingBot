@@ -3603,84 +3603,94 @@ const OptionsPanel = () => {
             </>
           )}
 
-          {/* ── Group Note editor — transparent backdrop + Paper textarea popover ── */}
+          {/* ── Group Note editor — centered modal with semi-transparent overlay ── */}
           {noteEditAnchor && (() => {
-            const { mouseX, mouseY, groupId } = noteEditAnchor;
+            const { groupId } = noteEditAnchor;
             const grp = positionGroups[groupId];
             if (!grp) return null;
             return (
               <>
-                {/* Backdrop */}
+                {/* Dark overlay */}
                 <Box
                   onClick={() => {
                     handleSaveGroupNote(groupId, noteEditValue);
                     setNoteEditAnchor(null);
                   }}
-                  sx={{ position: 'fixed', inset: 0, zIndex: 99998, background: 'transparent' }}
+                  sx={{
+                    position: 'fixed', inset: 0, zIndex: 99998,
+                    background: 'rgba(0,0,0,0.45)',
+                    backdropFilter: 'blur(2px)',
+                  }}
                 />
+                {/* Centered modal card */}
                 <Paper
-                  elevation={16}
+                  elevation={24}
                   onClick={(e) => e.stopPropagation()}
                   sx={{
                     position: 'fixed',
-                    top: mouseY,
-                    left: mouseX,
+                    top: '50%', left: '50%',
+                    transform: 'translate(-50%, -50%)',
                     zIndex: 99999,
-                    width: 340,
-                    p: 1.5,
-                    borderRadius: 2,
-                    border: `1.5px solid ${grp.color}55`,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 1,
+                    width: 420,
+                    borderRadius: 3,
+                    border: `1.5px solid ${grp.color}60`,
+                    overflow: 'hidden',
                   }}
                 >
-                  {/* Header */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  {/* Coloured title bar */}
+                  <Box sx={{
+                    px: 2, py: 1,
+                    bgcolor: `${grp.color}22`,
+                    borderBottom: `1px solid ${grp.color}33`,
+                    display: 'flex', alignItems: 'center', gap: 1,
+                  }}>
                     <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: grp.color, flex: 1 }}>
-                      {grp.name} — Notes
+                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 700, color: grp.color, flex: 1 }}>
+                      {grp.name}
                     </Typography>
-                    <Tooltip title="Close">
+                    <Typography sx={{ fontSize: '0.65rem', color: 'text.disabled', mr: 1 }}>Strategy Notes</Typography>
+                    <Tooltip title="Save & close">
                       <IconButton
-                        size="small"
-                        sx={{ p: 0.25 }}
-                        onClick={() => {
-                          handleSaveGroupNote(groupId, noteEditValue);
-                          setNoteEditAnchor(null);
-                        }}
+                        size="small" sx={{ p: 0.4, color: 'text.secondary' }}
+                        onClick={() => { handleSaveGroupNote(groupId, noteEditValue); setNoteEditAnchor(null); }}
                       >
-                        <CloseIcon sx={{ fontSize: 14 }} />
+                        <CloseIcon sx={{ fontSize: 15 }} />
                       </IconButton>
                     </Tooltip>
                   </Box>
-                  <TextField
-                    autoFocus
-                    multiline
-                    minRows={4}
-                    maxRows={10}
-                    fullWidth
-                    value={noteEditValue}
-                    onChange={(e) => {
-                      setNoteEditValue(e.target.value);
-                      handleSaveGroupNote(groupId, e.target.value); // live-save
-                    }}
-                    placeholder={`Write your notes for "${grp.name}"...\n\nWhy did you add this group? What is the strategy logic?`}
-                    variant="outlined"
-                    size="small"
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        fontSize: '0.78rem',
-                        fontFamily: 'monospace',
-                        '& fieldset': { borderColor: `${grp.color}44` },
-                        '&:hover fieldset': { borderColor: `${grp.color}88` },
-                        '&.Mui-focused fieldset': { borderColor: grp.color },
-                      },
-                    }}
-                  />
-                  <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.6rem', textAlign: 'right' }}>
-                    Auto-saved — click outside or ✕ to close
-                  </Typography>
+                  {/* Textarea body */}
+                  <Box sx={{ p: 2 }}>
+                    <TextField
+                      autoFocus
+                      multiline
+                      minRows={5}
+                      maxRows={14}
+                      fullWidth
+                      value={noteEditValue}
+                      onChange={(e) => {
+                        setNoteEditValue(e.target.value);
+                        handleSaveGroupNote(groupId, e.target.value);
+                      }}
+                      placeholder={`Why did you create "${grp.name}"?\nWhat is the strategy logic?\nWhat are the expected scenarios?`}
+                      variant="outlined"
+                      size="small"
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          fontSize: '0.82rem',
+                          lineHeight: 1.7,
+                          '& fieldset': { borderColor: `${grp.color}35` },
+                          '&:hover fieldset': { borderColor: `${grp.color}70` },
+                          '&.Mui-focused fieldset': { borderColor: grp.color },
+                        },
+                      }}
+                    />
+                    <Typography
+                      variant="caption"
+                      sx={{ mt: 0.75, display: 'block', color: 'text.disabled', fontSize: '0.62rem', textAlign: 'right' }}
+                    >
+                      Auto-saved · Press Esc or click outside to close
+                    </Typography>
+                  </Box>
                 </Paper>
               </>
             );
@@ -4147,9 +4157,8 @@ const OptionsPanel = () => {
                             return sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
                           }, 0);
 
-                          // Group header row — SortableGroupHeader makes it draggable
-                          // for whole-group reordering via the ⠇ grip on the left.
-                          // Also acts as a drop zone so positions can be dropped onto it.
+                          // Group header row — SortableGroupHeader makes it draggable.
+                          // CLEAN HEADER: compact single-line, notes in a separate row below.
                           const groupNote = grp.note || '';
                           rows.push(
                             <SortableGroupHeader key={`grphdr-${gid}`} groupId={gid} color={grp.color}>
@@ -4157,124 +4166,117 @@ const OptionsPanel = () => {
                                 <TableCell
                                   colSpan={colCount}
                                   sx={{
-                                    py: 0.4,
-                                    px: 1,
+                                    py: 0.4, px: 1,
                                     bgcolor: `${grp.color}18`,
                                     borderLeft: `3px solid ${grp.color}`,
-                                    borderBottom: groupNote ? 'none' : `1px solid ${grp.color}40`,
+                                    borderBottom: `1px solid ${grp.color}30`,
                                   }}
                                 >
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    {/* Group-level drag grip — grab this to reorder entire group */}
+                                    {/* Drag grip */}
                                     <Box
-                                      {...headerAttrs}
-                                      {...headerListeners}
+                                      {...headerAttrs} {...headerListeners}
                                       sx={{
-                                        cursor: 'grab', color: `${grp.color}99`,
-                                        display: 'flex', alignItems: 'center',
-                                        fontSize: 16, lineHeight: 1, userSelect: 'none',
-                                        flexShrink: 0, mr: 0.25,
+                                        cursor: 'grab', color: `${grp.color}70`,
+                                        fontSize: 15, lineHeight: 1, userSelect: 'none', flexShrink: 0,
                                         '&:active': { cursor: 'grabbing' },
                                       }}
                                       title="Drag to reorder group"
-                                    >
-                                      ⋯
-                                    </Box>
+                                    >⋯</Box>
                                     {/* Color dot */}
-                                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
+                                    <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
                                     {/* Group name */}
-                                    <Typography sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: grp.color, flex: 1 }}>
+                                    <Typography sx={{ fontSize: '0.73rem', fontWeight: 700, color: grp.color, flex: 1, letterSpacing: 0.3 }}>
                                       {grp.name}
                                     </Typography>
-                                    {/* Leg count */}
+                                    {/* Leg count chip */}
                                     <Chip
                                       label={`${groupPositions.length} leg${groupPositions.length !== 1 ? 's' : ''}`}
                                       size="small"
-                                      sx={{ height: 16, fontSize: '0.6rem', bgcolor: `${grp.color}25`, color: grp.color }}
+                                      sx={{ height: 15, fontSize: '0.58rem', bgcolor: `${grp.color}20`, color: grp.color, fontWeight: 600 }}
                                     />
                                     {/* Net PnL */}
                                     <Typography sx={{
-                                      fontSize: '0.7rem', fontWeight: 'bold', minWidth: 70, textAlign: 'right',
+                                      fontSize: '0.68rem', fontWeight: 700, minWidth: 65, textAlign: 'right',
                                       color: groupNetPnl >= 0 ? '#10b981' : '#ef4444',
                                     }}>
                                       {groupNetPnl >= 0 ? '+' : ''}{formatPnl(groupNetPnl)}
                                     </Typography>
-                                    {/* Notes button — highlighted when a note exists */}
-                                    <Tooltip title={groupNote ? 'Edit note' : 'Add strategy note'}>
+                                    {/* Note icon — dimmed when empty, colored when note exists */}
+                                    <Tooltip title={groupNote ? 'View / edit note' : 'Add strategy note'}>
                                       <IconButton
                                         size="small"
                                         sx={{
-                                          p: 0.25,
-                                          color: groupNote ? grp.color : `${grp.color}55`,
-                                          '&:hover': { color: grp.color },
+                                          p: 0.2,
+                                          color: groupNote ? grp.color : `${grp.color}40`,
+                                          '&:hover': { color: grp.color, bgcolor: `${grp.color}18` },
+                                          transition: 'color 0.15s',
                                         }}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          const rect = e.currentTarget.getBoundingClientRect();
                                           setNoteEditValue(groupNote);
-                                          setNoteEditAnchor({
-                                            mouseX: Math.min(rect.left, window.innerWidth - 360),
-                                            mouseY: rect.bottom + 4,
-                                            groupId: gid,
-                                          });
+                                          setNoteEditAnchor({ groupId: gid });
                                         }}
                                       >
                                         {groupNote
-                                          ? <StickyNote2Icon sx={{ fontSize: 15 }} />
-                                          : <EditNoteIcon sx={{ fontSize: 15 }} />}
+                                          ? <StickyNote2Icon sx={{ fontSize: 14 }} />
+                                          : <EditNoteIcon sx={{ fontSize: 14 }} />}
                                       </IconButton>
                                     </Tooltip>
                                     {/* Collapse toggle */}
-                                    <Tooltip title={isCollapsed ? 'Expand group' : 'Collapse group'}>
-                                      <IconButton size="small" onClick={() => toggleGroupCollapse(gid)} sx={{ p: 0.25, color: grp.color }}>
-                                        {isCollapsed ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ExpandLessIcon sx={{ fontSize: 16 }} />}
+                                    <Tooltip title={isCollapsed ? 'Expand' : 'Collapse'}>
+                                      <IconButton size="small" onClick={() => toggleGroupCollapse(gid)} sx={{ p: 0.2, color: `${grp.color}90` }}>
+                                        {isCollapsed ? <ExpandMoreIcon sx={{ fontSize: 15 }} /> : <ExpandLessIcon sx={{ fontSize: 15 }} />}
                                       </IconButton>
                                     </Tooltip>
                                   </Box>
-                                  {/* Note preview line under the header (if note exists) */}
-                                  {groupNote && (
-                                    <Box
-                                      sx={{
-                                        mt: 0.25, pt: 0.25,
-                                        borderTop: `1px dashed ${grp.color}33`,
-                                        display: 'flex', alignItems: 'flex-start', gap: 0.5, cursor: 'pointer',
-                                      }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        setNoteEditValue(groupNote);
-                                        setNoteEditAnchor({
-                                          mouseX: Math.min(rect.left, window.innerWidth - 360),
-                                          mouseY: rect.bottom + 4,
-                                          groupId: gid,
-                                        });
-                                      }}
-                                    >
-                                      <StickyNote2Icon sx={{ fontSize: 11, color: `${grp.color}88`, mt: '1px', flexShrink: 0 }} />
-                                      <Typography
-                                        sx={{
-                                          fontSize: '0.65rem',
-                                          color: `${grp.color}bb`,
-                                          fontStyle: 'italic',
-                                          lineHeight: 1.4,
-                                          whiteSpace: 'pre-wrap',
-                                          wordBreak: 'break-word',
-                                          // Show max 2 lines as preview
-                                          display: '-webkit-box',
-                                          WebkitLineClamp: 2,
-                                          WebkitBoxOrient: 'vertical',
-                                          overflow: 'hidden',
-                                        }}
-                                      >
-                                        {groupNote}
-                                      </Typography>
-                                    </Box>
-                                  )}
                                 </TableCell>
                               )}
                             </SortableGroupHeader>
                           );
 
+                          // Note preview row — separate clean row, shows only when note exists.
+                          // Clicking it opens the note editor.
+                          if (groupNote && !isCollapsed) {
+                            rows.push(
+                              <TableRow key={`grpnote-${gid}`} sx={{ bgcolor: `${grp.color}09` }}>
+                                <TableCell
+                                  colSpan={colCount}
+                                  sx={{
+                                    py: 0.4, px: 2,
+                                    borderLeft: `3px solid ${grp.color}55`,
+                                    borderBottom: `1px solid ${grp.color}20`,
+                                    cursor: 'pointer',
+                                    '&:hover': { bgcolor: `${grp.color}14` },
+                                    transition: 'background 0.12s',
+                                  }}
+                                  onClick={() => {
+                                    setNoteEditValue(groupNote);
+                                    setNoteEditAnchor({ groupId: gid });
+                                  }}
+                                >
+                                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+                                    <StickyNote2Icon sx={{ fontSize: 12, color: `${grp.color}70`, mt: '2px', flexShrink: 0 }} />
+                                    <Typography sx={{
+                                      fontSize: '0.68rem',
+                                      color: 'text.secondary',
+                                      fontStyle: 'italic',
+                                      lineHeight: 1.5,
+                                      whiteSpace: 'pre-wrap',
+                                      wordBreak: 'break-word',
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical',
+                                      overflow: 'hidden',
+                                    }}>
+                                      {groupNote}
+                                    </Typography>
+                                    <EditNoteIcon sx={{ fontSize: 12, color: 'text.disabled', ml: 'auto', flexShrink: 0, mt: '2px' }} />
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
 
                           // Group position rows (hidden when collapsed)
                           if (!isCollapsed) {
