@@ -1,0 +1,236 @@
+{
+  "activities": [
+    {
+      "id": "act_20260228_063536_001011",
+      "timestamp": "2026-02-28T06:35:36.469224+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw_resume (info), trailing_stop (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "whipsaw_resume",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_063536_001012",
+      "timestamp": "2026-02-28T06:35:36.486863+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.40 below floor $0.76 (peak $1.51)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-1.40 below floor $0.76 (peak $1.51)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_063536_001013",
+      "timestamp": "2026-02-28T06:35:36.487131+00:00",
+      "type": "session_resumed",
+      "type_label": "Session Resumed",
+      "category": "system",
+      "message": "Auto-resumed: Whipsaw auto-resume after 601s cooldown. Adjustments re-enabled.",
+      "session_id": "mmm06mar26-1",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_063537_001014",
+      "timestamp": "2026-02-28T06:35:37.746079+00:00",
+      "type": "emergency_filled",
+      "type_label": "Emergency Filled",
+      "category": "orders",
+      "message": "\ud83d\udea8 EMERGENCY FILLED: BUY C-BTC-65200-280226 @ $22.00 in 3.8s",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "order_id": "1198952379",
+        "fill_price": 22.0,
+        "filled_size": 20,
+        "elapsed": 3.8
+      }
+    },
+    {
+      "id": "act_20260228_063537_001015",
+      "timestamp": "2026-02-28T06:35:37.764221+00:00",
+      "type": "emergency_order",
+      "type_label": "Emergency Order",
+      "category": "orders",
+      "message": "\ud83d\udea8 EMERGENCY BUY 46 C-BTC-65200-280226 \u2014 crash protocol active",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "symbol": "C-BTC-65200-280226",
+        "side": "buy",
+        "size": 46,
+        "max_slippage_pct": 5.0
+      }
+    },
+    {
+      "id": "act_20260228_063538_001016",
+      "timestamp": "2026-02-28T06:35:38.030025+00:00",
+      "type": "emergency_placing",
+      "type_label": "Emergency Placing",
+      "category": "orders",
+      "message": "\ud83d\udea8 Emergency placing: BUY 46 C-BTC-65200-280226 @ $21.00 (IOC, taker allowed)",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "price": 21.0,
+        "bid": 14.0,
+        "ask": 20.0,
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260228_063541_001017",
+      "timestamp": "2026-02-28T06:35:41.261065+00:00",
+      "type": "emergency_filled",
+      "type_label": "Emergency Filled",
+      "category": "orders",
+      "message": "\ud83d\udea8 EMERGENCY FILLED: BUY C-BTC-65200-280226 @ $20.00 in 3.5s",
+      "session_id": "mmm28feb26-4",
+      "severity": "critical",
+      "details": {
+        "order_id": "1198952642",
+        "fill_price": 20.0,
+        "filled_size": 46,
+        "elapsed": 3.5
+      }
+    },
+    {
+      "id": "act_20260228_063658_001018",
+      "timestamp": "2026-02-28T06:36:58.468330+00:00",
+      "type": "reconciliation_autocorrect",
+      "type_label": "reconciliation_autocorrect",
+      "category": "system",
+      "message": "\ud83d\udd27 Auto-corrected: removed 94 phantom CE lots @ 65200 (exchange shows 0)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "strike": 65200,
+        "removed_lots": 94,
+        "reason": "frozen_exchange_shows_zero"
+      }
+    },
+    {
+      "id": "act_20260228_063658_001019",
+      "timestamp": "2026-02-28T06:36:58.490043+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "reconciliation_warning",
+      "category": "system",
+      "message": "Position reconciliation: \ud83d\udd27 AUTO-CORRECTED \u2014 CE frozen @ 65200: session=94 but exchange=0",
+      "session_id": "mmm28feb26-4",
+      "severity": "error",
+      "details": {
+        "side": "CE",
+        "type": "FROZEN_MISSING",
+        "detail": "CE frozen @ 65200: session=94 but exchange=0",
+        "symbol": "C-BTC-65200-280226",
+        "session_lots": 94,
+        "exchange_size": 0,
+        "auto_corrected": true
+      }
+    },
+    {
+      "id": "act_20260228_063658_001020",
+      "timestamp": "2026-02-28T06:36:58.844245+00:00",
+      "type": "margin_tier_change",
+      "type_label": "margin_tier_change",
+      "category": "system",
+      "message": "\u26a0\ufe0f MARGIN TIER: YELLOW \u2192 GREEN (utilization: 23.4%, equity: $849.91)",
+      "session_id": "mmm28feb26-4",
+      "severity": "error",
+      "details": {
+        "tier": "GREEN",
+        "prev_tier": "YELLOW",
+        "utilization_pct": 23.4,
+        "net_equity": 849.9146035899566,
+        "position_margin": 0.0
+      }
+    },
+    {
+      "id": "act_20260228_063659_001021",
+      "timestamp": "2026-02-28T06:36:59.388848+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: Watchdog: beat timeout: last beat 87s ago (threshold=45s, interval=15s)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "Watchdog: beat timeout: last beat 87s ago (threshold=45s, interval=15s)",
+        "old_status": "RUNNING"
+      }
+    },
+    {
+      "id": "act_20260228_063700_001022",
+      "timestamp": "2026-02-28T06:37:00.577657+00:00",
+      "type": "watchdog",
+      "type_label": "watchdog",
+      "category": "system",
+      "message": "\ud83d\udd04 Watchdog restarted monitor (restart #2) \u2014 reason: beat timeout: last beat 87s ago (threshold=45s, interval=15s)",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {}
+    },
+    {
+      "id": "act_20260228_063700_001023",
+      "timestamp": "2026-02-28T06:37:00.986636+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: Both sides fully closed \u2014 strategy complete!",
+      "session_id": "mmm28feb26-4",
+      "severity": "warning",
+      "details": {
+        "reason": "Both sides fully closed \u2014 strategy complete!",
+        "old_status": "RUNNING"
+      }
+    },
+    {
+      "id": "act_20260228_064037_001024",
+      "timestamp": "2026-02-28T06:40:37.510318+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 whipsaw (alert), trailing_stop (alert)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "whipsaw",
+          "trailing_stop"
+        ]
+      }
+    },
+    {
+      "id": "act_20260228_064037_001025",
+      "timestamp": "2026-02-28T06:40:37.537008+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-3.06 below floor $0.61 (peak $1.22)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "TRAILING STOP BREACHED \u2014 ADJUSTMENTS BLOCKED. P&L $-3.06 below floor $0.61 (peak $1.22)",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260228_064037_001026",
+      "timestamp": "2026-02-28T06:40:37.557837+00:00",
+      "type": "session_paused",
+      "type_label": "Session Paused",
+      "category": "system",
+      "message": "Auto-paused by safety: Whipsaw detected: 3 alternating adjustments (PE \u2192  \u2192 PE). Auto-pausing for 600s. Will auto-resume at 2026-02-28T06:50:37."
