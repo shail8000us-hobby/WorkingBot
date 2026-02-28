@@ -113,7 +113,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   // Build Your Own mode (free-form strategy building)
   const [builderMode, setBuilderMode] = useState(buildYourOwnMode);
   const [builderLegs, setBuilderLegs] = useState([]);
-  
+
   // Execution trigger for log panel
   const [executionRefreshTrigger, setExecutionRefreshTrigger] = useState(0);
 
@@ -351,6 +351,26 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // Open positions map: { [symbol]: { side, size, pnl } }
+  const [openPositions, setOpenPositions] = useState({});
+
+  // Fetch open positions to highlight used strikes on the chain
+  const fetchOpenPositions = useCallback(async () => {
+    try {
+      const map = await optionsChainAPI.getOpenPositions();
+      setOpenPositions(map);
+    } catch (e) {
+      console.warn('[OptionsChainPanel] Failed to fetch open positions:', e);
+    }
+  }, []);
+
+  // Load on mount and refresh every 30s
+  useEffect(() => {
+    fetchOpenPositions();
+    const interval = setInterval(fetchOpenPositions, 30000);
+    return () => clearInterval(interval);
+  }, [fetchOpenPositions]);
+
   // Trading state
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [selectedOption, setSelectedOption] = useState(null);
@@ -406,17 +426,17 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   const handleExecuteBuilderStrategy = useCallback(async (strategyData) => {
     setExecuting(true);
     try {
-      console.log('=== Executing Strategy via quick-execute ===' );
+      console.log('=== Executing Strategy via quick-execute ===');
       console.log('Strategy data:', JSON.stringify(strategyData, null, 2));
-      
+
       const requestPayload = {
         ...strategyData,
         execution_mode: 'parallel',
         order_type: 'limit'
       };
-      
+
       console.log('Full request payload:', JSON.stringify(requestPayload, null, 2));
-      
+
       // Use quick-execute endpoint - single call to create and execute
       const response = await fetch('/api/options-strategy/quick-execute', {
         method: 'POST',
@@ -425,7 +445,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
       });
 
       console.log('Response status:', response.status, response.statusText);
-      
+
       const result = await response.json();
       console.log('Quick-execute response:', JSON.stringify(result, null, 2));
 
@@ -433,7 +453,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
         // Extract detailed error info
         const errorMsg = result.error || result.message || 'Execution failed';
         const legErrors = result.execution?.leg_results?.filter(r => !r.success) || [];
-        const detailedError = legErrors.length > 0 
+        const detailedError = legErrors.length > 0
           ? `${errorMsg}: ${legErrors.map(r => r.error).join(', ')}`
           : errorMsg;
         console.error('Execution error details:', { errorMsg, legErrors, fullResult: result });
@@ -492,10 +512,11 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
         message: `Order placed successfully! ID: ${order.id}`,
         severity: 'success',
       });
-      // Refresh chain data to see updated positions/OI
+      // Refresh chain data and open positions to reflect the new trade
       fetchChainData();
+      setTimeout(fetchOpenPositions, 2000); // slight delay so exchange reflects the fill
     },
-    [fetchChainData]
+    [fetchChainData, fetchOpenPositions]
   );
 
   // Handle order error from OrderDialog
@@ -755,6 +776,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
                 strategyContext={strategyContext}
                 selectedLegs={selectedLegs}
                 expiry={expiry}
+                openPositions={openPositions}
               />
             )}
           </Grid>
@@ -778,6 +800,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
           atmStrike={chainData.atm_strike}
           onTrade={handleTrade}
           expiry={expiry}
+          openPositions={openPositions}
         />
       )}
 
@@ -794,6 +817,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
               builderMode={true}
               selectedLegs={builderLegs}
               expiry={expiry}
+              openPositions={openPositions}
             />
           </Grid>
           {builderLegs.length > 0 && (
