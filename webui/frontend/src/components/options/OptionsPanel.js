@@ -252,13 +252,53 @@ const SortableRow = React.memo(({ pos, children }) => {
   );
 });
 
-// A droppable group header — acts as a drop zone for the entire group section.
-// id is '__GROUP__<groupId>' (or '__GROUP__UNGROUPED' for the ungrouped section).
-// handleDragEnd checks for this prefix to update group membership rather than reorder.
+// Prefix for group-header dnd IDs — distinguishes them from position symbol IDs
 const GROUP_DROP_PREFIX = '__GROUP__';
 const UNGROUPED_DROP_ID = `${GROUP_DROP_PREFIX}UNGROUPED`;
 
-const DroppableGroupHeader = React.memo(({ groupId, color, isActive: _isActive, children }) => {
+// SortableGroupHeader — full drag+drop for named groups.
+// The group header itself is sortable (grab the ⠿ grip to reorder groups).
+// It is also a drop target so individual positions can be dropped onto it.
+const SortableGroupHeader = React.memo(({ groupId, color, children }) => {
+  const id = `${GROUP_DROP_PREFIX}${groupId}`;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1001 : 'auto',
+  };
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      sx={{
+        outline: isOver && !isDragging ? `2px dashed ${color || '#888'}` : 'none',
+        outlineOffset: -2,
+        transition: 'outline 0.1s, background 0.1s',
+        bgcolor: isOver && !isDragging ? `${color || '#888'}22` : undefined,
+      }}
+    >
+      {/* children receives the drag handle attrs/listeners so the grip icon
+          inside the header can initiate group-level drag */}
+      {children(attributes, listeners)}
+    </TableRow>
+  );
+});
+
+// DroppableGroupHeader — only used for the "Ungrouped" section footer
+// (cannot be reordered, only acts as a drop zone to remove a position from its group)
+const DroppableGroupHeader = React.memo(({ groupId, color, children }) => {
   const id = groupId ? `${GROUP_DROP_PREFIX}${groupId}` : UNGROUPED_DROP_ID;
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
@@ -356,6 +396,16 @@ const OptionsPanel = () => {
   const positionGroups = activeExpiryData.groups || {};
   const collapsedGroups = activeExpiryData.collapsed || {};
   const customOrder = activeExpiryData.order || [];
+  // groupOrder: array of group IDs controlling the display order of groups
+  const rawGroupOrder = activeExpiryData.groupOrder || [];
+  const groupOrder = useMemo(() => {
+    const allGroupIds = Object.keys(positionGroups);
+    // Start with persisted order, append any new groups not yet in it
+    const known = rawGroupOrder.filter((id) => positionGroups[id]);
+    const unseen = allGroupIds.filter((id) => !known.includes(id));
+    return [...known, ...unseen];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionGroups, rawGroupOrder]);
 
   // Setters that write into the correct expiry slice
   const setPositionGroups = useCallback((updater) => {
@@ -401,6 +451,17 @@ const OptionsPanel = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expiryGroupKey]);
 
+  // setGroupOrder — persists the group display order for the current expiry
+  const setGroupOrder = useCallback((updater) => {
+    setAllExpiryGroupData((prev) => {
+      const key = expiryGroupKey;
+      const slice = prev[key] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
+      const nextGroupOrder = typeof updater === 'function' ? updater(slice.groupOrder || []) : updater;
+      return { ...prev, [key]: { ...slice, groupOrder: nextGroupOrder } };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey]);
+
   const [newGroupName, setNewGroupName] = useState('');
   // Right-click / tag-button context menu
   const [groupMenuAnchor, setGroupMenuAnchor] = useState(null); // { mouseX, mouseY, symbol }
@@ -410,26 +471,29 @@ const OptionsPanel = () => {
     if (!name.trim()) return;
     const id = Date.now().toString();
     setAllExpiryGroupData((prev) => {
-      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const usedCount = Object.keys(slice.groups || {}).length;
       const color = GROUP_PALETTE[usedCount % GROUP_PALETTE.length];
+      const existingOrder = slice.groupOrder || Object.keys(slice.groups || {});
       return {
         ...prev,
         [expiryGroupKey]: {
           ...slice,
           groups: { ...(slice.groups || {}), [id]: { name: name.trim(), color, symbols: [] } },
+          groupOrder: [...existingOrder, id], // append new group at the end
         },
       };
     });
   }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Delete a group (positions become ungrouped)
+  // Delete a group (positions become ungrouped) — also removes from groupOrder
   const handleDeleteGroup = useCallback((groupId) => {
     setAllExpiryGroupData((prev) => {
-      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const nextGroups = { ...(slice.groups || {}) };
       delete nextGroups[groupId];
-      return { ...prev, [expiryGroupKey]: { ...slice, groups: nextGroups } };
+      const nextGroupOrder = (slice.groupOrder || []).filter((id) => id !== groupId);
+      return { ...prev, [expiryGroupKey]: { ...slice, groups: nextGroups, groupOrder: nextGroupOrder } };
     });
   }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -676,34 +740,60 @@ const OptionsPanel = () => {
     if (!over) return; // dropped outside any valid target
 
     const overId = over.id;
+    const activeId = active.id;
 
-    // ── Case 1: dropped onto a group HEADER (DroppableGroupHeader) ──────────
-    // id is like '__GROUP__<groupId>' or '__GROUP__UNGROUPED'
+    // ── Case 0: GROUP-HEADER to GROUP-HEADER drag ─ reorder groups ────────
+    // Both IDs start with GROUP_DROP_PREFIX but neither is UNGROUPED
+    if (
+      String(activeId).startsWith(GROUP_DROP_PREFIX) &&
+      String(overId).startsWith(GROUP_DROP_PREFIX)
+    ) {
+      const activeGid = String(activeId).slice(GROUP_DROP_PREFIX.length);
+      const overGid = String(overId).slice(GROUP_DROP_PREFIX.length);
+      if (
+        activeGid !== overGid &&
+        activeGid !== 'UNGROUPED' &&
+        overGid !== 'UNGROUPED'
+      ) {
+        setGroupOrder((prev) => {
+          // Use the live groupOrder (from useMemo above) as base if prev is empty
+          const base = prev.length > 0 ? prev : groupOrder;
+          const oldIdx = base.indexOf(activeGid);
+          const newIdx = base.indexOf(overGid);
+          if (oldIdx === -1 || newIdx === -1) return base;
+          return arrayMove([...base], oldIdx, newIdx);
+        });
+      }
+      return;
+    }
+
+    // ── Case 1: dropped onto a group HEADER (DroppableGroupHeader / SortableGroupHeader position drop) ──
+    // active is a POSITION, over is a group header
     if (String(overId).startsWith(GROUP_DROP_PREFIX)) {
       const rawId = String(overId).slice(GROUP_DROP_PREFIX.length);
       const targetGroupId = rawId === 'UNGROUPED' ? null : rawId;
-      const currentGroupId = getSymbolGroup(active.id);
+      const currentGroupId = getSymbolGroup(activeId);
       if (currentGroupId !== targetGroupId) {
-        handleAssignToGroup(active.id, targetGroupId);
-        devLog('[OptionsPanel] Drag-to-header: assigned', active.id, '->', targetGroupId);
+        handleAssignToGroup(activeId, targetGroupId);
+        devLog('[OptionsPanel] Drag-to-header: assigned', activeId, '->', targetGroupId);
       }
       return; // no reorder needed — group membership change is enough
     }
 
     // ── Case 2: dropped onto a position ROW (SortableRow) ───────────────────
-    if (active.id !== overId) {
+    if (activeId !== overId) {
       // BUG-17 FIX: use sortedPositionsRef (visual order, matches SortableContext items)
       const currentPositions = sortedPositionsRef.current;
-      const oldIndex = currentPositions.findIndex((p) => p.product_symbol === active.id);
+      const oldIndex = currentPositions.findIndex((p) => p.product_symbol === activeId);
       const newIndex = currentPositions.findIndex((p) => p.product_symbol === overId);
 
       if (oldIndex === -1 || newIndex === -1) return; // safety guard
 
       // DRAG-TO-ASSIGN: if dropped onto a row in a different group, reassign
-      const activeGroupId = getSymbolGroup(active.id);
+      const activeGroupId = getSymbolGroup(activeId);
       const overGroupId = getSymbolGroup(overId);
       if (activeGroupId !== overGroupId) {
-        handleAssignToGroup(active.id, overGroupId || null);
+        handleAssignToGroup(activeId, overGroupId || null);
       }
 
       const reordered = arrayMove(currentPositions, oldIndex, newIndex);
@@ -1455,8 +1545,10 @@ const OptionsPanel = () => {
       Object.values(positionGroups).flatMap((g) => g.symbols)
     );
     const ordered = [];
-    // 1. Each group's positions (in their sortedPositions order)
-    Object.values(positionGroups).forEach((grp) => {
+    // 1. Each group's positions in groupOrder display order
+    groupOrder.forEach((gid) => {
+      const grp = positionGroups[gid];
+      if (!grp) return;
       sortedPositions.forEach((p) => {
         if (grp.symbols.includes(p.product_symbol)) ordered.push(p);
       });
@@ -1466,7 +1558,7 @@ const OptionsPanel = () => {
       if (!assigned.has(p.product_symbol)) ordered.push(p);
     });
     return ordered;
-  }, [sortedPositions, positionGroups]);
+  }, [sortedPositions, positionGroups, groupOrder]);
 
   // Keep refs updated — use visual order so handleDragEnd indices match DOM
   useEffect(() => {
@@ -3747,17 +3839,43 @@ const OptionsPanel = () => {
                   onDragEnd={handleDragEnd}
                 >
                   <SortableContext
-                    // BUG-6 FIX: deduplicate IDs — during the cleanup race a symbol can appear
-                    // in both live positions and closedPositions; dnd-kit throws on duplicate IDs
-                    // GROUP FIX: use visualOrderedPositions so logical order matches DOM render order
-                    items={[...new Set(visualOrderedPositions.map((p) => p.product_symbol))]}
+                    // Items include __GROUP__<id> for each named group header so group headers
+                    // participate as sortable. Position symbols follow each group's header.
+                    // BUG-6 FIX: deduplicate IDs
+                    items={(() => {
+                      const hasAnyGroups = Object.keys(positionGroups).length > 0;
+                      if (!hasAnyGroups) {
+                        return [...new Set(visualOrderedPositions.map((p) => p.product_symbol))];
+                      }
+                      const ids = [];
+                      const gEntries = groupOrder
+                        .filter((gid) => positionGroups[gid])
+                        .map((gid) => [gid, positionGroups[gid]]);
+                      gEntries.forEach(([gid, grp]) => {
+                        ids.push(`${GROUP_DROP_PREFIX}${gid}`);
+                        sortedPositions.forEach((p) => {
+                          if (grp.symbols.includes(p.product_symbol)) ids.push(p.product_symbol);
+                        });
+                      });
+                      const assignedSet = new Set(gEntries.flatMap(([, g]) => g.symbols));
+                      sortedPositions.forEach((p) => {
+                        if (!assignedSet.has(p.product_symbol)) ids.push(p.product_symbol);
+                      });
+                      return [...new Set(ids)];
+                    })()}
                     strategy={verticalListSortingStrategy}
                   >
                     <TableBody>
                       {(() => {
-                        // Build rendering order: named groups first, then ungrouped
-                        const groupEntries = Object.entries(positionGroups);
-                        const hasGroups = groupEntries.length > 0;
+                        // Build rendering order: named groups first (in groupOrder), then ungrouped
+                        // groupOrder controls group display sequence; positions within each group
+                        // follow sortedPositions order
+                        const orderedGroupEntries = groupOrder
+                          .filter((gid) => positionGroups[gid])
+                          .map((gid) => [gid, positionGroups[gid]]);
+                        const hasGroups = orderedGroupEntries.length > 0;
+                        // Alias for backwards-compat with code below that references groupEntries
+                        const groupEntries = orderedGroupEntries;
 
                         // Render one position row (shared helper)
                         const renderPositionRow = (pos, index, groupColor) => {
@@ -3920,50 +4038,69 @@ const OptionsPanel = () => {
                             return sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
                           }, 0);
 
-                          // Group header row — wrapped in DroppableGroupHeader so it's a valid
-                          // dnd-kit drop zone (handles drag-into-empty-group)
+                          // Group header row — SortableGroupHeader makes it draggable
+                          // for whole-group reordering via the ⠇ grip on the left.
+                          // Also acts as a drop zone so positions can be dropped onto it.
                           rows.push(
-                            <DroppableGroupHeader key={`grphdr-${gid}`} groupId={gid} color={grp.color}>
-                              <TableCell
-                                colSpan={colCount}
-                                sx={{
-                                  py: 0.4,
-                                  px: 1,
-                                  bgcolor: `${grp.color}18`,
-                                  borderLeft: `3px solid ${grp.color}`,
-                                  borderBottom: `1px solid ${grp.color}40`,
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  {/* Color dot */}
-                                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
-                                  {/* Group name */}
-                                  <Typography sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: grp.color, flex: 1 }}>
-                                    {grp.name}
-                                  </Typography>
-                                  {/* Leg count */}
-                                  <Chip
-                                    label={`${groupPositions.length} leg${groupPositions.length !== 1 ? 's' : ''}`}
-                                    size="small"
-                                    sx={{ height: 16, fontSize: '0.6rem', bgcolor: `${grp.color}25`, color: grp.color }}
-                                  />
-                                  {/* Net PnL */}
-                                  <Typography sx={{
-                                    fontSize: '0.7rem', fontWeight: 'bold', minWidth: 70, textAlign: 'right',
-                                    color: groupNetPnl >= 0 ? '#10b981' : '#ef4444',
-                                  }}>
-                                    {groupNetPnl >= 0 ? '+' : ''}{formatPnl(groupNetPnl)}
-                                  </Typography>
-                                  {/* Collapse toggle */}
-                                  <Tooltip title={isCollapsed ? 'Expand group' : 'Collapse group'}>
-                                    <IconButton size="small" onClick={() => toggleGroupCollapse(gid)} sx={{ p: 0.25, color: grp.color }}>
-                                      {isCollapsed ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ExpandLessIcon sx={{ fontSize: 16 }} />}
-                                    </IconButton>
-                                  </Tooltip>
-                                </Box>
-                              </TableCell>
-                            </DroppableGroupHeader>
+                            <SortableGroupHeader key={`grphdr-${gid}`} groupId={gid} color={grp.color}>
+                              {(headerAttrs, headerListeners) => (
+                                <TableCell
+                                  colSpan={colCount}
+                                  sx={{
+                                    py: 0.4,
+                                    px: 1,
+                                    bgcolor: `${grp.color}18`,
+                                    borderLeft: `3px solid ${grp.color}`,
+                                    borderBottom: `1px solid ${grp.color}40`,
+                                  }}
+                                >
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    {/* Group-level drag grip — grab this to reorder entire group */}
+                                    <Box
+                                      {...headerAttrs}
+                                      {...headerListeners}
+                                      sx={{
+                                        cursor: 'grab', color: `${grp.color}99`,
+                                        display: 'flex', alignItems: 'center',
+                                        fontSize: 16, lineHeight: 1, userSelect: 'none',
+                                        flexShrink: 0, mr: 0.25,
+                                        '&:active': { cursor: 'grabbing' },
+                                      }}
+                                      title="Drag to reorder group"
+                                    >
+                                      ⋯
+                                    </Box>
+                                    {/* Color dot */}
+                                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: grp.color, flexShrink: 0 }} />
+                                    {/* Group name */}
+                                    <Typography sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: grp.color, flex: 1 }}>
+                                      {grp.name}
+                                    </Typography>
+                                    {/* Leg count */}
+                                    <Chip
+                                      label={`${groupPositions.length} leg${groupPositions.length !== 1 ? 's' : ''}`}
+                                      size="small"
+                                      sx={{ height: 16, fontSize: '0.6rem', bgcolor: `${grp.color}25`, color: grp.color }}
+                                    />
+                                    {/* Net PnL */}
+                                    <Typography sx={{
+                                      fontSize: '0.7rem', fontWeight: 'bold', minWidth: 70, textAlign: 'right',
+                                      color: groupNetPnl >= 0 ? '#10b981' : '#ef4444',
+                                    }}>
+                                      {groupNetPnl >= 0 ? '+' : ''}{formatPnl(groupNetPnl)}
+                                    </Typography>
+                                    {/* Collapse toggle */}
+                                    <Tooltip title={isCollapsed ? 'Expand group' : 'Collapse group'}>
+                                      <IconButton size="small" onClick={() => toggleGroupCollapse(gid)} sx={{ p: 0.25, color: grp.color }}>
+                                        {isCollapsed ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ExpandLessIcon sx={{ fontSize: 16 }} />}
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
+                                </TableCell>
+                              )}
+                            </SortableGroupHeader>
                           );
+
 
                           // Group position rows (hidden when collapsed)
                           if (!isCollapsed) {
