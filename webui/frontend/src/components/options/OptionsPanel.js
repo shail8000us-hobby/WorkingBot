@@ -405,37 +405,49 @@ const OptionsPanel = () => {
   // Right-click / tag-button context menu
   const [groupMenuAnchor, setGroupMenuAnchor] = useState(null); // { mouseX, mouseY, symbol }
 
-  // Create a new group
+  // Create a new group — uses setAllExpiryGroupData directly to avoid stale closure on expiryGroupKey
   const handleCreateGroup = useCallback((name) => {
     if (!name.trim()) return;
     const id = Date.now().toString();
-    const usedCount = Object.keys(positionGroups).length;
-    const color = GROUP_PALETTE[usedCount % GROUP_PALETTE.length];
-    setPositionGroups((prev) => ({ ...prev, [id]: { name: name.trim(), color, symbols: [] } }));
-  }, [positionGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+    setAllExpiryGroupData((prev) => {
+      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const usedCount = Object.keys(slice.groups || {}).length;
+      const color = GROUP_PALETTE[usedCount % GROUP_PALETTE.length];
+      return {
+        ...prev,
+        [expiryGroupKey]: {
+          ...slice,
+          groups: { ...(slice.groups || {}), [id]: { name: name.trim(), color, symbols: [] } },
+        },
+      };
+    });
+  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Delete a group (positions become ungrouped)
   const handleDeleteGroup = useCallback((groupId) => {
-    setPositionGroups((prev) => {
-      const next = { ...prev };
-      delete next[groupId];
-      return next;
+    setAllExpiryGroupData((prev) => {
+      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const nextGroups = { ...(slice.groups || {}) };
+      delete nextGroups[groupId];
+      return { ...prev, [expiryGroupKey]: { ...slice, groups: nextGroups } };
     });
-  }, []);
+  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Assign a position symbol to a group (removes from any previous group first)
   const handleAssignToGroup = useCallback((symbol, groupId) => {
-    setPositionGroups((prev) => {
+    setAllExpiryGroupData((prev) => {
+      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const prevGroups = slice.groups || {};
       const next = {};
-      for (const [id, g] of Object.entries(prev)) {
+      for (const [id, g] of Object.entries(prevGroups)) {
         next[id] = { ...g, symbols: g.symbols.filter((s) => s !== symbol) };
       }
       if (groupId && next[groupId]) {
         next[groupId] = { ...next[groupId], symbols: [...next[groupId].symbols, symbol] };
       }
-      return next;
+      return { ...prev, [expiryGroupKey]: { ...slice, groups: next } };
     });
-  }, []);
+  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get the groupId a symbol belongs to (or null)
   const getSymbolGroup = useCallback((symbol) => {
@@ -447,8 +459,15 @@ const OptionsPanel = () => {
 
   // Toggle collapse for a group
   const toggleGroupCollapse = useCallback((groupId) => {
-    setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  }, []);
+    setAllExpiryGroupData((prev) => {
+      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const prevCollapsed = slice.collapsed || {};
+      return {
+        ...prev,
+        [expiryGroupKey]: { ...slice, collapsed: { ...prevCollapsed, [groupId]: !prevCollapsed[groupId] } },
+      };
+    });
+  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SL/TP Dialog state
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
