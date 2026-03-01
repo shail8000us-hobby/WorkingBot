@@ -171,6 +171,24 @@ module.exports = override(
     if (process.env.NODE_ENV === 'production') {
       // No source maps in production for security and size
       config.devtool = false;
+
+      // Additional performance optimizations
+      config.performance = {
+        maxAssetSize: 512000, // 500KB warning threshold
+        maxEntrypointSize: 512000,
+        hints: 'warning',
+      };
+
+      // Optimize module concatenation (scope hoisting)
+      config.optimization.concatenateModules = true;
+
+      // Remove moment.js locales if present (reduces bundle by ~160KB)
+      config.plugins.push(
+        new webpack.IgnorePlugin({
+          resourceRegExp: /^\.\/locale$/,
+          contextRegExp: /moment$/,
+        })
+      );
     }
 
     return config;

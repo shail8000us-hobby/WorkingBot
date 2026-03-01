@@ -45,7 +45,6 @@ import PanelSkeleton from './components/common/PanelSkeleton';
 import { VolatilityRegimePanel, UnrealizedPnLPanel } from './components/panels';
 import EmergencyKillButton from './components/EmergencyKillButton';
 import TradingModeSwitch from './components/TradingModeSwitch';
-import HealthCheckDashboard from './components/HealthCheckDashboard';
 import EnhancedErrorBoundary from './components/EnhancedErrorBoundary';
 import { userPreferences } from './utils/storage.ts';
 import { perfMonitor } from './utils/performanceMonitor';
@@ -78,6 +77,9 @@ import { MMMErrorBoundary, MMMProvider } from './components/mmm';
 // import MobileBatteryIndicator from './components/MobileBatteryIndicator';
 // import TailscaleMobileOptimizer from './components/TailscaleMobileOptimizer';
 import './App.css';
+
+// Lazy load HealthCheckDashboard - only needed when health tab is visible
+const HealthCheckDashboard = React.lazy(() => import('./components/HealthCheckDashboard'));
 
 // Lazy load heavy components for better performance
 const GuardianDashboard = React.lazy(() => import('./components/GuardianDashboard'));
