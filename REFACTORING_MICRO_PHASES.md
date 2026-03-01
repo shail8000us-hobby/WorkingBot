@@ -7,6 +7,36 @@
 
 ---
 
+## 📊 Current Status (Last Updated: Mar 2, 2026)
+
+| Phase | Commits | Result | Notes |
+|-------|---------|--------|-------|
+| **P0: Setup** | f3eb264, a67c4b7 | ✅ **DONE** | Branch `refactor/split-gridbot` + backup + checklist script |
+| **P1: GuardianHandler** | bf47445…e3acdd5 (8 commits) | ✅ **DONE** | `guardian_handler.py` 690 lines, `async_gridbot.py` −583 lines |
+| **🧪 Full Bot Test P1** | 80a8a97 | ✅ **PASSED** (after 1 bug fix) | See bug report below |
+| **P2: HealthMonitor** | — | ⬜ **NEXT** | Ready to start |
+| P3–P9 | — | ⬜ Not started | — |
+
+### 🐛 Bug Found During P1 Full Bot Test
+
+**File:** `bot/strategy/simple_state_coordinator.py` line 161 (`_get_guardian_status`)
+
+**Error (repeated every ~1 second until fixed):**
+```
+ERROR | bot.strategy.simple_state_coordinator:_get_guardian_status:164 -
+Error reading Guardian status: 'AsyncGridBot' object has no attribute '_read_guardian_signal'
+```
+
+**Root Cause:** `simple_state_coordinator.py` still called `self.bot._read_guardian_signal()` which was moved to `GuardianHandler` in P1.2.
+
+**Fix:** `self.bot._read_guardian_signal()` → `self.bot.guardian.read_signal()` (same `tuple[str, str]` return signature)
+
+**Committed:** `80a8a976c` — "Fix: simple_state_coordinator use guardian.read_signal() after P1 extraction"
+
+**Lesson for future phases:** When moving methods, `grep -rn` the entire `bot/` tree (not just `async_gridbot.py`) for the old method name, since `simple_state_coordinator.py`, `health_monitor.py` etc. can also hold references.
+
+---
+
 ## How This Plan Works
 
 Each **Macro Phase** (1-8) from the original plan is split into numbered **micro-phases**.
@@ -119,9 +149,9 @@ After every **Macro Phase** completes: run the **FULL BOT TEST** (start bot, ver
 
 ---
 
-## Phase 0: Setup
+## Phase 0: Setup — ✅ DONE
 
-### P0.1 — Create Branch + Backup (5 min)
+### P0.1 — Create Branch + Backup (5 min) ✅
 
 ```bash
 cd ~/Projects/WorkingBot
@@ -136,7 +166,7 @@ git add bot/strategy/async_gridbot.py.pre_refactor_backup
 git commit -m "P0.1: Backup async_gridbot.py before refactoring"
 ```
 
-### P0.2 — Create Verification Checklist (5 min)
+### P0.2 — Create Verification Checklist (5 min) ✅
 
 Create file `tests/refactoring_checklist.sh`:
 
@@ -173,7 +203,7 @@ git commit -m "P0.2: Add refactoring verification script"
 
 ---
 
-## Phase 1: Extract `guardian_handler.py` (~520 lines, LOW risk)
+## Phase 1: Extract `guardian_handler.py` (~520 lines, LOW risk) — ✅ DONE
 
 ### Why First
 - Self-contained signal-reading concern
@@ -491,8 +521,36 @@ git add bot/strategy/modules/guardian_handler.py bot/strategy/async_gridbot.py
 git commit -m "P1.8: Move guardian_health_monitor_loop + cleanup dead code (~520 lines extracted)"
 ```
 
-### 🧪 FULL BOT TEST after Phase 1 (10 min)
+### 🧪 FULL BOT TEST after Phase 1 (10 min) — ✅ PASSED (Mar 2, 2026)
 
+**Test ran on:** `gridbot-btc-live` (PM2), branch `refactor/split-gridbot`
+
+**Results:**
+- ✅ `guardian_handler.py` syntax OK, import OK
+- ✅ `async_gridbot.py` syntax OK, import OK
+- ✅ `🛡️  Guardian: 🟢 GO` — signal read correctly from `guardian_handler:read_signal:131`
+- ✅ `[HB] Positions: 0/20 | Price: $66,392↑ | ✅ ACTIVE` — heartbeat clean
+- ✅ No ImportError, AttributeError, or NameError after fix
+- ✅ Bot stopped cleanly via `pm2 stop`
+
+**Bug found and fixed before passing** — see `## 📊 Current Status` bug report above.
+
+**Commits in this phase:**
+```
+f3eb264  P0.1: Backup async_gridbot.py before refactoring
+a67c4b7  P0.2: Add refactoring verification script
+bf47445  P1.1: Create GuardianHandler skeleton (class + __init__ only)
+42c5ff0  P1.2: Move _read_guardian_signal → GuardianHandler.read_signal()
+124cf60  P1.3: Move _check_guardian_transition_and_retry
+a491310  P1.4: Move _retry_missed_grid_orders
+13c32947 P1.5: Move _fill_multi_step_missed_grids (A3 fix)
+09815f3  P1.6: Move _check_guardian_transitions
+9193435  P1.7: Move cancel_pending_entries + resume_grid
+e3acdd5  P1.8: Move guardian_health_monitor_loop + cleanup
+80a8a97  Fix: simple_state_coordinator use guardian.read_signal() after P1 extraction
+```
+
+**Original guidance (kept for reference):**
 ```bash
 # Start bot
 pm2 start ecosystem.config.js --only gridbot-btc
