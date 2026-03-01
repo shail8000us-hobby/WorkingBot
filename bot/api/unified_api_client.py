@@ -69,10 +69,21 @@ class CircuitBreaker:
 class RateLimiter:
     """Simple rate limiter"""
     
+    _shared_instance: Optional['RateLimiter'] = None
+    
     def __init__(self, max_requests: int = 10, window: int = 1):
         self.max_requests = max_requests
         self.window = window
         self.requests = []
+    
+    @classmethod
+    def get_shared(cls, max_requests: int = 10, window: int = 1) -> 'RateLimiter':
+        """Get or create the shared singleton rate limiter instance.
+        All UnifiedAPIClient instances share this to prevent aggregate API abuse."""
+        if cls._shared_instance is None:
+            cls._shared_instance = cls(max_requests=max_requests, window=window)
+            log.info(f"🔒 Shared RateLimiter created ({max_requests} req/{window}s)")
+        return cls._shared_instance
     
     async def acquire(self):
         """Acquire rate limit token"""
@@ -190,8 +201,8 @@ class UnifiedAPIClient:
             timeout=60
         )
         
-        # Rate limiter (10 requests per second)
-        self.rate_limiter = RateLimiter(
+        # Rate limiter (shared singleton - 10 requests per second across all clients)
+        self.rate_limiter = RateLimiter.get_shared(
             max_requests=10,
             window=1
         )

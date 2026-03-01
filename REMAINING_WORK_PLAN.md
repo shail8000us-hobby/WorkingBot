@@ -26,12 +26,12 @@ No action needed.
 
 ## Actual Remaining Items
 
-| ID | Issue | Risk to Fix | Risk of Not Fixing | Priority |
-|----|-------|-------------|-------------------|----------|
-| M3 | Shared rate limiter across API clients | Medium | Low–Medium | 3 |
-| L2 | No file locking on `save_yaml` | Very Low | Extremely Low | 4 |
-| A3 | Missed grid check (multi-step price move) | Medium | Medium | 2 |
-| A4 | Adaptive reference price | Low | Low | 5 (user said leave it) |
+| ID | Issue | Risk to Fix | Risk of Not Fixing | Priority | Status |
+|----|-------|-------------|-------------------|----------|--------|
+| M3 | Shared rate limiter across API clients | Medium | Low–Medium | 3 | ✅ Fixed |
+| L2 | No file locking on `save_yaml` | Very Low | Extremely Low | 4 | ✅ Fixed |
+| A3 | Missed grid check (multi-step price move) | Medium | Medium | 2 | ✅ Fixed |
+| A4 | Adaptive reference price | Low | Low | 5 (user said leave it) | ⏭️ Skip |
 
 ---
 
@@ -237,3 +237,112 @@ Before touching any remaining items:
 | A4 | 0 | 0 | Nothing | ⏭️ Skip |
 
 **Overall: Not risky if done carefully and in order. L2 is a no-brainer. A3 needs a dedicated test session.**
+
+---
+
+## Refactoring Plan — `async_gridbot.py` (5,700+ lines)
+
+### The Problem
+`bot/strategy/async_gridbot.py` is the single largest file in the project at 5,700+ lines. It handles:
+- WebSocket connection lifecycle
+- Fill processing and saga orchestration
+- Grid order placement logic
+- Guardian signal handling and recovery
+- Position reconciliation triggers
+- Health monitoring, heartbeats, and snapshot writing
+- Initial entry logic and grid seeding
+- Price staleness detection and REST fallback
+- Order verification and dedup
+- 15+ concurrent async tasks
+
+This makes it:
+- **Hard to reason about** — changes in one concern can silently break another
+- **Hard to test** — no way to test grid logic without spinning up the full event loop
+- **Merge-conflict prone** — any two changes will likely touch the same file
+- **Slow to load in editors** — IDE features degrade at this file size
+
+### Proposed Module Split
+
+The file naturally breaks into 7 focused modules. Each module is a class or set of functions that receives its dependencies via constructor injection (no globals):
+
+```
+bot/strategy/
+├── async_gridbot.py          → Slim orchestrator (~500 lines)
+│                                Only __init__, run(), shutdown()
+│                                Wires modules together, owns the event loop
+│
+├── modules/
+│   ├── grid_calculator.py     → Already extracted ✅
+│   ├── ws_lifecycle.py        → WebSocket connect/reconnect/fallback (~400 lines)
+│   ├── fill_processor.py      → Fill handling, saga dispatch, dedup (~600 lines)
+│   ├── grid_engine.py         → Entry logic, grid seeding, order placement (~800 lines)
+│   ├── guardian_handler.py    → Signal reading, STOP/GO transitions, 
+│   │                            missed order retry, A3 multi-step (~300 lines)
+│   ├── health_monitor.py      → Heartbeat, snapshot, staleness checks (~400 lines)
+│   └── reconciliation.py      → Periodic recon trigger, position sync (~300 lines)
+```
+
+### Extraction Order (safest to riskiest)
+
+1. **`guardian_handler.py`** — Fully self-contained: reads a file, manages a buffer. Zero coupling to order placement. Extract `_check_guardian_transition`, `_retry_missed_grid_orders`, `_fill_multi_step_missed_grids`, `_read_guardian_signal`.
+
+2. **`health_monitor.py`** — Reads state, writes JSON. No side effects on trading. Extract `_write_monitoring_snapshot`, `_health_check_loop`, heartbeat logic.
+
+3. **`ws_lifecycle.py`** — WebSocket connect/disconnect/fallback/reconnect logic. Already partially isolated behind `UnifiedAPIClient`.
+
+4. **`fill_processor.py`** — Fill callback, saga orchestration, fill dedup, `_process_missed_fill`. This is the highest-risk extraction because it touches order state.
+
+5. **`grid_engine.py`** — Entry placement, `_check_and_place_entry_order`, `_ensure_grid_coverage`, grid seeding. Core trading logic — extract last.
+
+### Extraction Pattern (for each module)
+
+```python
+# 1. Create the new module with explicit dependencies
+class GuardianHandler:
+    def __init__(self, position_actor, order_actor, grid_calc, 
+                 signal_file_path, mode, grid_step, max_positions, lot_size):
+        ...
+
+# 2. In async_gridbot.py, instantiate it
+self.guardian = GuardianHandler(
+    position_actor=self.position_actor,
+    order_actor=self.order_actor,
+    grid_calc=self.grid_calc,
+    signal_file_path=self._guardian_signal_file,
+    mode=self.mode,
+    grid_step=self.grid_step,
+    max_positions=self.max_positions,
+    lot_size=self.lot_size
+)
+
+# 3. Replace inline calls
+# Before: await self._check_guardian_transition()
+# After:  await self.guardian.check_transition()
+```
+
+### Rules During Refactoring
+
+1. **One module at a time** — extract, test, commit, then move to next
+2. **No behavior changes** — pure structural moves. If a bug is found, fix it in a separate commit
+3. **Keep backward compat** — the orchestrator's public API (`run()`, `shutdown()`) must not change
+4. **Integration test after each extraction** — start bot, verify grid places, verify fills, verify recovery
+5. **Git branch** — do all refactoring on a `refactor/split-gridbot` branch, merge only after full live test
+
+### Estimated Effort
+
+| Module | Lines | Risk | Time |
+|--------|-------|------|------|
+| guardian_handler.py | ~300 | Low | 1 hour |
+| health_monitor.py | ~400 | Low | 1 hour |
+| ws_lifecycle.py | ~400 | Medium | 1.5 hours |
+| fill_processor.py | ~600 | High | 2 hours |
+| grid_engine.py | ~800 | High | 2.5 hours |
+| Orchestrator trim | ~500 remain | Medium | 1 hour |
+| **Total** | | | **~9 hours** |
+
+### When to Do This
+
+- **Not now.** The bot is about to go into production. Refactoring is best done during a scheduled maintenance window.
+- **Trigger:** When the next feature request requires touching 3+ concerns inside `async_gridbot.py`, or when a bug takes >30 minutes to locate due to file size.
+- **Prerequisite:** Set up at least a basic integration test harness (simulated fills, mock WebSocket) before starting extractions.
+

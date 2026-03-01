@@ -14,6 +14,7 @@ Key functions:
 
 import yaml
 import os
+import fcntl
 from pathlib import Path
 from typing import Union, Optional, List, Dict
 from dotenv import load_dotenv
@@ -126,9 +127,15 @@ class ConfigLoader:
         # Create parent directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Save as YAML
-        with open(output_path, 'w') as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, indent=2)
+        # Save as YAML with file locking (prevents concurrent write corruption)
+        lock_path = output_path.with_suffix('.lock')
+        with open(lock_path, 'w') as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                with open(output_path, 'w') as f:
+                    yaml.dump(data, f, default_flow_style=False, sort_keys=False, indent=2)
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
         
         print(f"✅ Configuration saved to: {output_path}")
 
