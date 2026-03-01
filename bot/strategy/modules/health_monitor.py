@@ -101,3 +101,33 @@ class HealthMonitor:
         """Wire runtime references after construction."""
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    # ========================================================================
+    # P2.2: External Heartbeat File Writer
+    # ========================================================================
+
+    async def update_external_heartbeat(self) -> None:
+        """
+        Update external .heartbeat file for PM2 monitoring.
+        This file is monitored by the heartbeat-monitor process.
+        """
+        try:
+            heartbeat_file = Path(".heartbeat")
+
+            heartbeat_data = {
+                "timestamp": time.time(),
+                "pid": os.getpid(),
+                "mode": self.mode,
+                "symbol": self.symbol,
+                "uptime": time.time() - self._get_start_time(),
+                "status": "running",  # Guardian controls halt state
+                "last_price": self._get_current_price(),
+                "fills_processed": self._get_fills_processed()
+            }
+
+            # Write heartbeat file (async I/O)
+            async with aiofiles.open(heartbeat_file, "w") as f:
+                await f.write(json.dumps(heartbeat_data, indent=2))
+
+        except Exception as e:
+            log.debug(f"Guardian health export error: {e}")

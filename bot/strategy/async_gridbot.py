@@ -44,6 +44,7 @@ from bot.strategy.sagas.fill_processing_saga import (
 from bot.strategy.sagas.position_closing_saga import create_emergency_close_all_saga
 from bot.strategy.modules.event_store import EventStore, EventType
 from bot.strategy.modules.guardian_handler import GuardianHandler
+from bot.strategy.modules.health_monitor import HealthMonitor
 from bot.strategy.modules.grid_calculator import GridCalculator
 from bot.strategy.modules.mode_state_manager import get_mode_state_manager
 from bot.strategy.actors.base_actor import Message
@@ -659,6 +660,24 @@ class AsyncGridBot:
             max_positions=self.max_positions,
             lot_size=self.lot_size,
             ref_price=self.ref_price,
+            should_log_fn=self._should_log,
+        )
+
+        # Phase 2: HealthMonitor module
+        self.health_monitor = HealthMonitor(
+            position_actor=self.position_actor,
+            order_actor=self.order_actor,
+            saga_orchestrator=self.saga_orchestrator,
+            api_client=self.api_client,
+            grid_calc=self.grid_calc,
+            price_monitor=self.price_monitor,
+            fill_monitor=self.fill_monitor,
+            mode=self.mode,
+            symbol=self.symbol,
+            symbol_name=self.symbol_name,
+            max_positions=self.max_positions,
+            instance_name=self.instance_name,
+            config=self.config,
             should_log_fn=self._should_log,
         )
     
@@ -1284,6 +1303,28 @@ class AsyncGridBot:
             get_started_once=lambda: self._started_once,
         )
         # cancel_pending_entries + resume_grid now live inside GuardianHandler (P1.7)
+
+        # Wire HealthMonitor runtime refs
+        self.health_monitor.set_runtime_refs(
+            _get_running=lambda: self._running,
+            _get_current_price=lambda: getattr(self, '_last_price', None),
+            _get_start_time=lambda: self._start_time,
+            _get_fills_processed=lambda: self._fills_processed,
+            _get_sagas_completed=lambda: self._sagas_completed,
+            _get_sagas_failed=lambda: self._sagas_failed,
+            _get_last_price_update=lambda: self._last_price_update,
+            _get_initial_order_placed=lambda: self._initial_order_placed,
+            _get_last_heartbeat_time=lambda: self._last_heartbeat_time,
+            _set_last_heartbeat_time=lambda v: setattr(self, '_last_heartbeat_time', v),
+            _get_last_block_reason=lambda: getattr(self, '_last_block_reason', None),
+            _set_last_block_reason=lambda v: setattr(self, '_last_block_reason', v),
+            _get_tp_offset=lambda: self.tp_offset,
+            _get_pre_order_logger=lambda: self.pre_order_logger,
+            _get_anomaly_detector=lambda: self.anomaly_detector,
+            _log_grid_status_callback=self._log_detailed_grid_status,
+            _format_pending_order_callback=self._format_pending_order_info,
+            _emergency_stop_callback=self.emergency_stop,
+        )
 
         # Create asyncio primitives within event loop
         if self._order_placement_lock is None:
@@ -3263,31 +3304,7 @@ class AsyncGridBot:
         
         log.info("=" * 70)
     
-    async def _update_external_heartbeat(self) -> None:
-        """
-        Update external .heartbeat file for PM2 monitoring.
-        This file is monitored by the heartbeat-monitor process.
-        """
-        try:
-            heartbeat_file = Path(".heartbeat")
-            
-            heartbeat_data = {
-                "timestamp": time.time(),
-                "pid": os.getpid(),
-                "mode": self.mode,
-                "symbol": self.symbol,
-                "uptime": time.time() - self._start_time,
-                "status": "running",  # Guardian controls halt state
-                "last_price": getattr(self, '_last_price', None),
-                "fills_processed": self._fills_processed
-            }
-            
-            # Write heartbeat file (async I/O)
-            async with aiofiles.open(heartbeat_file, "w") as f:
-                await f.write(json.dumps(heartbeat_data, indent=2))
-                
-        except Exception as e:
-            log.debug(f"Guardian health export error: {e}")
+    # _update_external_heartbeat — MOVED to HealthMonitor.update_external_heartbeat() (P2.2)
     
     async def _heartbeat_loop(self) -> None:
         """Periodic heartbeat tasks with detailed status logging."""
@@ -3306,7 +3323,7 @@ class AsyncGridBot:
                 self._last_heartbeat_time = time.time()
                 
                 # Update external heartbeat file every cycle (5s)
-                await self._update_external_heartbeat()
+                await self.health_monitor.update_external_heartbeat()
                 
                 # Get state from position actor (every 15s for detailed status)
                 if heartbeat_counter % 3 == 0:
