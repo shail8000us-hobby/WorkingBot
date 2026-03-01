@@ -1322,7 +1322,7 @@ class AsyncGridBot:
             _get_pre_order_logger=lambda: self.pre_order_logger,
             _get_anomaly_detector=lambda: self.anomaly_detector,
             _log_grid_status_callback=self._log_detailed_grid_status,
-            _format_pending_order_callback=self._format_pending_order_info,
+            _format_pending_order_callback=self.health_monitor._format_pending_order_info,
             _emergency_stop_callback=self.emergency_stop,
             _check_guardian_transitions_callback=self.guardian.check_transitions,
             _tp_retry_callback=self._process_tp_retry_queue,
