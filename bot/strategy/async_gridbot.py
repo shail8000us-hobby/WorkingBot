@@ -528,11 +528,7 @@ class AsyncGridBot:
         self._price_stale_threshold = 10  # seconds
         self._order_placement_lock = None  # Created in start() within event loop
         
-        # Guardian signal tracking for transition detection
-        self._last_guardian_signal = None  # Track previous signal to detect transitions
-        
-        # Volatility halt state REMOVED - Guardian handles all halt decisions
-        # Standard grid gap-fill logic handles missed orders
+        # Guardian signal state now owned by self.guardian (GuardianHandler)
         
         # Metrics
         self._start_time = 0
@@ -650,15 +646,7 @@ class AsyncGridBot:
         
         self.STATE_VERSION = "1.0"
     
-    # Loss limit checking REMOVED - Guardian monitors this
-    # Guardian checks max_account_loss_inr and publishes STOP signal
-        
-        # Track Guardian signal transitions for recovery
-        self._last_guardian_signal = None
-        self._guardian_transition_time = 0
-
-        # Track missed orders during Guardian STOP
-        self._missed_grid_orders = []  # List of (price, side, reason, timestamp)
+    # Guardian state (transitions, missed orders) now owned by GuardianHandler
 
         # Phase 1: GuardianHandler module
         self.guardian = GuardianHandler(
@@ -1390,7 +1378,7 @@ class AsyncGridBot:
             asyncio.create_task(self._watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
             asyncio.create_task(self._safety_gatekeeper_loop(), name="safety_gatekeeper"),  # Safety check every 5 min
             asyncio.create_task(self._fill_polling_fallback_loop(), name="fill_polling"),  # JAN 20: Fill polling fallback every 60s
-            asyncio.create_task(self._guardian_health_monitor_loop(), name="guardian_monitor"),  # CRITICAL: Guardian health check every 15s
+            asyncio.create_task(self.guardian.health_monitor_loop(), name="guardian_monitor"),  # CRITICAL: Guardian health check every 15s
             asyncio.create_task(self.api_client.start_websocket_health_monitor(), name="ws_health_monitor"),  # CRITICAL FIX: WebSocket health monitor (5s checks)
             asyncio.create_task(self.state_coordinator.monitor_guardian(), name="state_guardian_monitor"),  # NOV 20: State coordinator Guardian monitor
             asyncio.create_task(self.state_coordinator.run_reconciliation_loop(), name="state_reconciliation"),  # NOV 20: State coordinator reconciliation
@@ -3668,42 +3656,7 @@ class AsyncGridBot:
         except Exception as e:
             log.error(f"Error checking for unhedged positions: {e}")
     
-    async def _guardian_health_monitor_loop(self) -> None:
-        """
-        CRITICAL: Monitor Guardian bot health every 15 seconds.
-        
-        RULE: No Guardian = No Trading (KISS principle)
-        If Guardian stops or becomes unresponsive, GridBot MUST stop immediately.
-        
-        CRITICAL FIX (Dec 11, 2025):
-        Also checks for Guardian signal transitions (STOP -> GO) and retries missed orders.
-        """
-        log.info("🛡️  Guardian health monitor started - checking every 15 seconds")
-        log.info("🛡️  RULE: No Guardian = No Trading")
-        log.info("🔄 Auto-retry: Missed orders will be retried when Guardian signal becomes GO")
-        
-        while self._running:
-            try:
-                # Check Guardian signal to verify it's alive
-                signal, reason = await self._read_guardian_signal()
-                
-                # Check for signal transition and retry missed orders
-                await self.guardian.check_transition_and_retry()
-                
-                # If Guardian stopped, _read_guardian_signal already set _running = False
-                # This loop will exit naturally
-                if not self._running:
-                    log.error("🚨 Guardian health monitor detected bot shutdown - exiting")
-                    break
-                
-                # Sleep for 15 seconds before next check
-                await asyncio.sleep(15)
-                
-            except Exception as e:
-                log.error(f"🚨 Guardian health monitor error: {e}")
-                log.error(f"🛑 Cannot monitor Guardian. Stopping bot for safety.")
-                self._running = False
-                break
+    # _guardian_health_monitor_loop — MOVED to GuardianHandler.health_monitor_loop() (P1.8)
     
     async def _check_memory_usage(self) -> None:
         """Check memory usage and log warnings if excessive."""

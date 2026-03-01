@@ -651,3 +651,40 @@ class GuardianHandler:
 
         except Exception as e:
             log.error(f"Error resuming grid trading: {e}")
+
+    async def health_monitor_loop(self) -> None:
+        """
+        CRITICAL: Monitor Guardian bot health every 15 seconds.
+
+        RULE: No Guardian = No Trading (KISS principle)
+        If Guardian stops or becomes unresponsive, GridBot MUST stop immediately.
+
+        CRITICAL FIX (Dec 11, 2025):
+        Also checks for Guardian signal transitions (STOP -> GO) and retries missed orders.
+        """
+        log.info("🛡️  Guardian health monitor started - checking every 15 seconds")
+        log.info("🛡️  RULE: No Guardian = No Trading")
+        log.info("🔄 Auto-retry: Missed orders will be retried when Guardian signal becomes GO")
+
+        while self._get_running():
+            try:
+                # Check Guardian signal to verify it's alive
+                signal, reason = await self.read_signal()
+
+                # Check for signal transition and retry missed orders
+                await self.check_transition_and_retry()
+
+                # If Guardian stopped, read_signal already set _running = False
+                # This loop will exit naturally
+                if not self._get_running():
+                    log.error("🚨 Guardian health monitor detected bot shutdown - exiting")
+                    break
+
+                # Sleep for 15 seconds before next check
+                await asyncio.sleep(15)
+
+            except Exception as e:
+                log.error(f"🚨 Guardian health monitor error: {e}")
+                log.error(f"🛑 Cannot monitor Guardian. Stopping bot for safety.")
+                self._set_running(False)
+                break
