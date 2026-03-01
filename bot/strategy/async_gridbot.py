@@ -1418,7 +1418,7 @@ class AsyncGridBot:
             asyncio.create_task(self.health_monitor.health_check_loop(), name="health_check"),
             asyncio.create_task(self._reconciliation_action_processor(), name="reconciliation_actions"),  # NOV 20: Process actions from standalone reconciliation engine
             asyncio.create_task(self._rest_fallback_monitor_loop(), name="rest_fallback"),  # NOV 13: REST fallback
-            asyncio.create_task(self._watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
+            asyncio.create_task(self.health_monitor.watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
             asyncio.create_task(self._safety_gatekeeper_loop(), name="safety_gatekeeper"),  # Safety check every 5 min
             asyncio.create_task(self._fill_polling_fallback_loop(), name="fill_polling"),  # JAN 20: Fill polling fallback every 60s
             asyncio.create_task(self.guardian.health_monitor_loop(), name="guardian_monitor"),  # CRITICAL: Guardian health check every 15s
@@ -3283,12 +3283,8 @@ class AsyncGridBot:
         
         log.info("=" * 70)
     
-    # _update_external_heartbeat — MOVED to HealthMonitor.update_external_heartbeat() (P2.2)
-    
-    # _heartbeat_loop — MOVED to HealthMonitor.heartbeat_loop() (P2.3)
-    # _format_pending_order_info — MOVED to HealthMonitor._format_pending_order_info() (P2.3)
-    
-    # _monitoring_loop — MOVED to HealthMonitor.monitoring_loop() (P2.4)
+    # Phase 2 methods MOVED to HealthMonitor: update_external_heartbeat, heartbeat_loop,
+    # _format_pending_order_info, monitoring_loop (P2.2-P2.4)
     
     async def _fill_polling_fallback_loop(self) -> None:
         """
@@ -3470,10 +3466,8 @@ class AsyncGridBot:
     
     # _guardian_health_monitor_loop — MOVED to GuardianHandler.health_monitor_loop() (P1.8)
     
-    # _check_memory_usage — MOVED to HealthMonitor.check_memory_usage() (P2.5)
-    # _check_websocket_health — MOVED to HealthMonitor.check_websocket_health() (P2.5)
-    
-    # _health_check_loop — MOVED to HealthMonitor.health_check_loop() (P2.6)
+    # Phase 2 methods MOVED to HealthMonitor: check_memory_usage, check_websocket_health,
+    # health_check_loop (P2.5-P2.6)
     
     async def _exchange_maintenance_monitor(self) -> None:
         """
@@ -3641,62 +3635,7 @@ class AsyncGridBot:
         except Exception as e:
             log.error(f"TP retry queue processing error: {e}")
     
-    async def _watchdog_loop(self) -> None:
-        """
-        Watchdog loop to detect frozen event loop.
-        
-        Monitors heartbeat execution and triggers emergency stop if heartbeat freezes.
-        This is critical for detecting deadlocks or infinite loops that freeze the bot.
-        
-        NOV 13: Implemented for async event loop monitoring.
-        """
-        log.info(f"🐕 Watchdog started (timeout: {self._watchdog_timeout}s, check interval: {self._watchdog_check_interval}s)")
-        human_log.watchdog_active()  # Human-readable
-        
-        while self._running:
-            try:
-                # Wait for check interval
-                await asyncio.sleep(self._watchdog_check_interval)
-                
-                if not self._running:
-                    break
-                
-                # Check time since last heartbeat
-                time_since_heartbeat = time.time() - self._last_heartbeat_time
-                
-                if time_since_heartbeat > self._watchdog_timeout:
-                    log.critical("=" * 80)
-                    log.critical(f"🚨 WATCHDOG TRIGGERED: Heartbeat frozen for {time_since_heartbeat:.1f}s")
-                    log.critical(f"   Last heartbeat: {time_since_heartbeat:.1f}s ago")
-                    log.critical(f"   Timeout threshold: {self._watchdog_timeout}s")
-                    log.critical(f"   Event loop appears to be frozen - triggering emergency stop")
-                    log.critical("=" * 80)
-                    
-                    # Send Telegram alert (if notifications implemented)
-                    try:
-                        from bot.utils.notifier import TelegramNotifier
-                        notifier = TelegramNotifier()
-                        notifier.send(
-                            f"🚨 WATCHDOG ALERT\n\n"
-                            f"Event loop frozen for {time_since_heartbeat:.1f}s\n"
-                            f"Heartbeat timeout: {self._watchdog_timeout}s\n\n"
-                            f"Bot triggering emergency stop"
-                        )
-                    except Exception:
-                        pass  # Telegram not critical
-                    
-                    # Trigger emergency stop
-                    await self.emergency_stop()
-                    break
-                else:
-                    # Heartbeat is healthy - log debug
-                    log.debug(f"🐕 Watchdog: Heartbeat healthy ({time_since_heartbeat:.1f}s since last)")
-            
-            except Exception as e:
-                log.error(f"Watchdog error: {e}")
-                # Don't stop watchdog on errors - keep monitoring
-        
-        log.info("🐕 Watchdog stopped")
+    # Phase 2: _watchdog_loop MOVED to HealthMonitor.watchdog_loop() (P2.7)
     
     # ========================================================================
     # NOV 20: Reconciliation Action Queue Processor

@@ -498,3 +498,66 @@ class HealthMonitor:
 
             except Exception as e:
                 log.error(f"Health check error: {e}")
+
+    # ========================================================================
+    # P2.7: Watchdog Loop (Event Loop Freeze Detection)
+    # ========================================================================
+
+    async def watchdog_loop(self) -> None:
+        """
+        Watchdog loop to detect frozen event loop.
+
+        Monitors heartbeat execution and triggers emergency stop if heartbeat freezes.
+        This is critical for detecting deadlocks or infinite loops that freeze the bot.
+
+        NOV 13: Implemented for async event loop monitoring.
+        """
+        log.info(f"🐕 Watchdog started (timeout: {self._watchdog_timeout}s, check interval: {self._watchdog_check_interval}s)")
+        if human_log:
+            human_log.watchdog_active()  # Human-readable
+
+        while self._get_running():
+            try:
+                # Wait for check interval
+                await asyncio.sleep(self._watchdog_check_interval)
+
+                if not self._get_running():
+                    break
+
+                # Check time since last heartbeat
+                time_since_heartbeat = time.time() - self._get_last_heartbeat_time()
+
+                if time_since_heartbeat > self._watchdog_timeout:
+                    log.critical("=" * 80)
+                    log.critical(f"🚨 WATCHDOG TRIGGERED: Heartbeat frozen for {time_since_heartbeat:.1f}s")
+                    log.critical(f"   Last heartbeat: {time_since_heartbeat:.1f}s ago")
+                    log.critical(f"   Timeout threshold: {self._watchdog_timeout}s")
+                    log.critical(f"   Event loop appears to be frozen - triggering emergency stop")
+                    log.critical("=" * 80)
+
+                    # Send Telegram alert (if notifications implemented)
+                    try:
+                        from bot.utils.notifier import TelegramNotifier
+                        notifier = TelegramNotifier()
+                        notifier.send(
+                            f"🚨 WATCHDOG ALERT\n\n"
+                            f"Event loop frozen for {time_since_heartbeat:.1f}s\n"
+                            f"Heartbeat timeout: {self._watchdog_timeout}s\n\n"
+                            f"Bot triggering emergency stop"
+                        )
+                    except Exception:
+                        pass  # Telegram not critical
+
+                    # Trigger emergency stop
+                    if self._emergency_stop_callback:
+                        await self._emergency_stop_callback()
+                    break
+                else:
+                    # Heartbeat is healthy - log debug
+                    log.debug(f"🐕 Watchdog: Heartbeat healthy ({time_since_heartbeat:.1f}s since last)")
+
+            except Exception as e:
+                log.error(f"Watchdog error: {e}")
+                # Don't stop watchdog on errors - keep monitoring
+
+        log.info("🐕 Watchdog stopped")
