@@ -327,5 +327,139 @@ class GuardianHandler:
             log.info(f"🔄 Retry complete: {retried} succeeded, {skipped} skipped")
 
     async def fill_multi_step_missed_grids(self) -> None:
-        """Stub — replaced in P1.5 with real implementation."""
-        log.warning("fill_multi_step_missed_grids stub called — real method arrives in P1.5")
+        """
+        A3: Detect and fill grid levels missed during a multi-step price move
+        while Guardian was in STOP state.
+
+        When the market drops 2+ grid steps during STOP, the explicit
+        _missed_grid_orders list may only have 1 entry (or none if the move
+        happened entirely in STOP). This method calculates the full set of
+        missed levels from the current position state vs. current price.
+
+        Safety: capped at 5 fills per cycle, respects max_positions,
+        re-checks Guardian before each fill.
+        """
+        MAX_MISSED_FILLS_PER_CYCLE = 5
+
+        # Only for LONG mode currently (SHORT would mirror with SELL levels)
+        if self.mode != "LONG":
+            return
+
+        # Verify Guardian is still GO
+        signal, reason = await self.read_signal()
+        if signal == 'STOP':
+            return
+
+        # Get current state
+        state = await self.position_actor.ask("GET_STATE", {})
+        positions = list(state.get("positions", {}).values())
+        num_positions = len(positions)
+        pending_buy = state.get("pending_buy")
+
+        # If we already have a pending buy, don't interfere
+        if pending_buy:
+            return
+
+        # If at max positions, nothing to do
+        if num_positions >= self.max_positions:
+            return
+
+        # Determine the lowest level we SHOULD have filled to
+        # based on current price vs. existing positions
+        current_price = self._get_current_price()
+        if not current_price or current_price <= 0:
+            return
+
+        if positions:
+            lowest_entry = min(p.get('entry_price', float('inf')) for p in positions)
+        else:
+            # No positions: reference is our starting point
+            lowest_entry = self.ref_price
+
+        # How many steps from the lowest position to current price?
+        price_gap = lowest_entry - current_price
+        if price_gap <= self.grid_step:
+            # Price hasn't moved more than 1 step below — no multi-step gap
+            return
+
+        steps_missed = int(price_gap / self.grid_step)
+        if steps_missed < 2:
+            return
+
+        # Build list of missed grid levels (below lowest position, above current price)
+        missed_levels = []
+        for i in range(1, steps_missed + 1):
+            level = lowest_entry - (i * self.grid_step)
+            # Must be within grid bounds
+            if level < self.grid_calc.lower:
+                break
+            # Must be below current price (would have triggered as buy)
+            if level >= current_price:
+                continue
+            # Skip if a position already exists at this level (within half-step tolerance)
+            already_held = any(
+                abs(p.get('entry_price', 0) - level) < self.grid_step * 0.3
+                for p in positions
+            )
+            if already_held:
+                continue
+            missed_levels.append(level)
+
+        if not missed_levels:
+            return
+
+        # Sort highest first (closest to current price)
+        missed_levels.sort(reverse=True)
+
+        # Cap at safety limit
+        slots_available = self.max_positions - num_positions
+        fill_count = min(len(missed_levels), MAX_MISSED_FILLS_PER_CYCLE, slots_available)
+        missed_levels = missed_levels[:fill_count]
+
+        log.info(f"📊 A3: Multi-step gap detected — {steps_missed} steps missed, filling {len(missed_levels)} levels")
+
+        filled = 0
+        for level in missed_levels:
+            # Re-check Guardian before each fill
+            signal, _ = await self.read_signal()
+            if signal == 'STOP':
+                log.warning(f"⚠️  Guardian went STOP during multi-step fill — stopping ({filled}/{len(missed_levels)} filled)")
+                break
+
+            # Re-verify price is still below this level
+            current_price = self._get_current_price()
+            if current_price and current_price >= level:
+                log.info(f"   ⏭️  Skipping ${level:,.0f} — price bounced above it (${current_price:,.0f})")
+                continue
+
+            try:
+                result = await self.order_actor.ask("PLACE_BUY", {
+                    "price": level,
+                    "size": self.lot_size
+                }, timeout=10.0)
+
+                if result.get("status") == "ok":
+                    log.info(f"   ✅ A3 filled missed grid BUY @ ${level:,.0f} (order_id: {result.get('order_id')})")
+                    filled += 1
+
+                    # Update pending buy state
+                    await self.position_actor.tell("SET_PENDING_BUY", {
+                        "order_id": result["order_id"],
+                        "price": level,
+                        "size": self.lot_size
+                    })
+
+                    # Wait for fill confirmation before next level (cooldown)
+                    await asyncio.sleep(0.5)
+
+                    # Refresh state for next iteration
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    positions = list(state.get("positions", {}).values())
+                    num_positions = len(positions)
+                else:
+                    log.warning(f"   ❌ A3 failed BUY @ ${level:,.0f}: {result.get('error')}")
+            except Exception as e:
+                log.error(f"   ❌ A3 error placing BUY @ ${level:,.0f}: {e}")
+
+        if filled > 0:
+            log.info(f"📊 A3: Multi-step recovery complete — {filled} levels filled")
