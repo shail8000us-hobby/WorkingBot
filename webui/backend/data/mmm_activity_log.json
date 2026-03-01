@@ -1,37 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_20260301_035035_000852",
-      "timestamp": "2026-03-01T03:50:35.542302+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_035035_000853",
-      "timestamp": "2026-03-01T03:50:35.555215+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: PE POSITION CAP REACHED: 200/200 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "PE POSITION CAP REACHED: 200/200 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
       "id": "act_20260301_035123_000854",
       "timestamp": "2026-03-01T03:51:23.641533+00:00",
       "type": "safety_warning",
@@ -7748,7 +7717,38 @@
     },
     {
       "id": "act_20260301_190805_000034",
-      "timestamp": "2026-03-01T19:08:05.204142+00:00",
+      "timestamp": "2026-03-01T19:08:05.228727+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_191305_000035",
+      "timestamp": "2026-03-01T19:13:05.577528+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_191305_000036",
+      "timestamp": "2026-03-01T19:13:05.577985+00:00",
       "type": "adjustments_stopped",
       "type_label": "Adjustments Stopped",
       "category": "safety",
@@ -7761,5 +7761,5 @@
       }
     }
   ],
-  "updated_at": "2026-03-01T19:08:05.205712+00:00"
+  "updated_at": "2026-03-01T19:13:05.579826+00:00"
 }

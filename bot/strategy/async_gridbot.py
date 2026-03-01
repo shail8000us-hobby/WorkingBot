@@ -1307,7 +1307,7 @@ class AsyncGridBot:
         await self._load_recovery_state()
         
         # Sync positions from exchange (NOV 20)
-        await self._sync_positions_from_exchange()
+        await self.exchange_sync.sync_positions_from_exchange()
         
         self._running = True
         self._started_once = True
@@ -4455,69 +4455,8 @@ class AsyncGridBot:
             log.error(f"Error getting open orders: {e}")
             return []
     
-    async def _sync_positions_from_exchange(self) -> None:
-        """
-        Sync positions from exchange on startup.
-        This detects recovery positions and other external positions.
-        """
-        try:
-            log.info("🔄 Syncing positions from exchange...")
-            
-            # Get all positions from exchange
-            positions = await self.api_client.get_positions()
-            
-            if not positions:
-                log.info("✅ No positions found on exchange")
-                return
-            
-            # Handle case where API returns string instead of list
-            if isinstance(positions, str):
-                log.info("✅ No positions found on exchange (empty response)")
-                return
-            
-            # Ensure positions is a list
-            if not isinstance(positions, list):
-                log.warning(f"⚠️  Unexpected positions format: {type(positions)}")
-                return
-            
-            # Filter for BTCUSD positions
-            btc_positions = [p for p in positions if isinstance(p, dict) and p.get('product_symbol') == 'BTCUSD']
-            
-            if not btc_positions:
-                log.info("✅ No BTCUSD positions found on exchange")
-                return
-            
-            log.info(f"📊 Found {len(btc_positions)} BTCUSD position(s) on exchange")
-            
-            # Process each position
-            for position in btc_positions:
-                size = float(position.get('size', 0))
-                entry_price = float(position.get('entry_price', 0))
-                mark_price = float(position.get('mark_price', 0))
-                
-                if size == 0:
-                    continue
-                
-                log.info(f"   Position: {size} @ ${entry_price:,.0f} (mark: ${mark_price:,.0f})")
-                
-                # Add to position manager
-                position_data = {
-                    'size': size,
-                    'entry_price': entry_price,
-                    'mark_price': mark_price,
-                    'is_recovery': True,  # Mark as recovery position
-                    'grid_level': entry_price  # Use entry price as grid level
-                }
-                
-                # Send to position actor
-                await self.position_actor.ask("ADD_POSITION", position_data)
-                
-            log.info(f"✅ Synced {len(btc_positions)} position(s) from exchange")
-            
-        except Exception as e:
-            log.warning(f"⚠️  Could not sync positions from exchange: {e}")
-            log.warning("   Continuing with normal startup...")
-    
+    # _sync_positions_from_exchange — MOVED to ExchangeSync.sync_positions_from_exchange() (P3.4)
+
     def _setup_signal_handlers(self) -> None:
         """
         Setup signal handlers for graceful shutdown.
