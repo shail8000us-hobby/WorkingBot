@@ -14,8 +14,10 @@
 | **P0: Setup** | f3eb264, a67c4b7 | ✅ **DONE** | Branch `refactor/split-gridbot` + backup + checklist script |
 | **P1: GuardianHandler** | bf47445…e3acdd5 (8 commits) | ✅ **DONE** | `guardian_handler.py` 690 lines, `async_gridbot.py` −583 lines |
 | **🧪 Full Bot Test P1** | 80a8a97 | ✅ **PASSED** (after 1 bug fix) | See bug report below |
-| **P2: HealthMonitor** | — | ⬜ **NEXT** | Ready to start |
-| P3–P9 | — | ⬜ Not started | — |
+| **P2: HealthMonitor** | 8a03d0f…905e95f (7 commits) | ✅ **DONE** | `health_monitor.py` 563 lines, `async_gridbot.py` −373 lines |
+| **🧪 Full Bot Test P2** | 11e0dc8 | ✅ **PASSED** (after 1 bug fix) | See bug report below |
+| **P3: ExchangeSync** | — | ⬜ **NEXT** | Ready to start |
+| P4–P9 | — | ⬜ Not started | — |
 
 ### 🐛 Bug Found During P1 Full Bot Test
 
@@ -34,6 +36,23 @@ Error reading Guardian status: 'AsyncGridBot' object has no attribute '_read_gua
 **Committed:** `80a8a976c` — "Fix: simple_state_coordinator use guardian.read_signal() after P1 extraction"
 
 **Lesson for future phases:** When moving methods, `grep -rn` the entire `bot/` tree (not just `async_gridbot.py`) for the old method name, since `simple_state_coordinator.py`, `health_monitor.py` etc. can also hold references.
+
+### 🐛 Bug Found During P2 Full Bot Test
+
+**File:** `bot/strategy/async_gridbot.py` line 1325 (`start()` → `health_monitor.set_runtime_refs()`)
+
+**Error (bot crashed at startup, before any tasks launched):**
+```
+AttributeError: 'AsyncGridBot' object has no attribute '_format_pending_order_info'
+```
+
+**Root Cause:** `async_gridbot.py` passed `_format_pending_order_callback=self._format_pending_order_info` to `set_runtime_refs()`. This method was moved to `HealthMonitor` in P2.3. Note: the callback is dead code (never read inside `health_monitor.py` — the method is called internally as `self._format_pending_order_info()`), but the stale reference still crashed the bot.
+
+**Fix:** `self._format_pending_order_info` → `self.health_monitor._format_pending_order_info`
+
+**Committed:** `11e0dc81e` — "Fix: async_gridbot pass health_monitor._format_pending_order_info after P2 extraction"
+
+**Lesson:** When passing `self.method` as a callback to `set_runtime_refs()`, the method may have already been moved. Always grep the `set_runtime_refs()` call block for any `self._xxx` references from the extracted class.
 
 ---
 
@@ -575,7 +594,7 @@ ps aux | grep async_gridbot
 
 ---
 
-## Phase 2: Extract `health_monitor.py` (~400 lines, LOW risk)
+## Phase 2: Extract `health_monitor.py` (~400 lines, LOW risk) — ✅ DONE
 
 ### Why Second
 - Read-only observation loops — they **never** place orders or mutate trading state
@@ -803,8 +822,39 @@ bash tests/refactoring_checklist.sh bot/strategy/modules/health_monitor.py
 git commit -m "P2.7: Move _watchdog_loop + cleanup dead code (~400 lines extracted)"
 ```
 
-### 🧪 FULL BOT TEST after Phase 2 (10 min)
+### 🧪 FULL BOT TEST after Phase 2 (10 min) — ✅ PASSED (Mar 2, 2026)
 
+**Test ran on:** `gridbot-btc-live` (PM2), branch `refactor/split-gridbot`
+
+**Results:**
+- ✅ `health_monitor.py` syntax OK, import OK
+- ✅ `async_gridbot.py` syntax OK, import OK
+- ✅ `💓 Heartbeat loop started (every 20s)` — from `health_monitor:heartbeat_loop:168`
+- ✅ `📊 Monitoring loop started` — from `health_monitor:monitoring_loop:293`
+- ✅ `Health check loop started` — from `health_monitor:health_check_loop:439`
+- ✅ `🐕 Watchdog started (timeout: 60.0s)` — from `health_monitor:watchdog_loop:515`
+- ✅ `[HB] Positions: 0/20 | Price: $66,296 | ✅ ACTIVE` — from `health_monitor:heartbeat_loop:270`
+- ✅ Guardian `🟢 GO` reading from `guardian_handler:read_signal:131`
+- ✅ 2x cold-start cycle confirmed (start → stop → start)
+- ✅ No ImportError, AttributeError, or traceback after fix
+
+**Bug found and fixed before passing** — see `## 📊 Current Status` P2 bug report above.
+
+**Commits in this phase:**
+```
+8a03d0f  P2.1: Create HealthMonitor skeleton (class + __init__ only)
+563d48e  P2.2: Move _update_external_heartbeat to HealthMonitor
+6d977bb  P2.3: Move _heartbeat_loop + _format_pending_order_info to HealthMonitor
+2c345f8  P2.4: Move _monitoring_loop to HealthMonitor
+e81ab20  P2.5: Move _check_memory_usage + _check_websocket_health to HealthMonitor
+84f2c8c  P2.6: Move _health_check_loop to HealthMonitor
+905e95f  P2.7: Move _watchdog_loop + cleanup dead code (~373 lines extracted)
+11e0dc8  Fix: async_gridbot pass health_monitor._format_pending_order_info after P2 extraction
+```
+
+**Cumulative progress (P1 + P2):** Original 5,770 → Now 4,815 lines (−955 lines, −16.5%). Modules: `guardian_handler.py` (690 lines) + `health_monitor.py` (563 lines)
+
+**Original guidance (kept for reference):**
 ```bash
 pm2 start ecosystem.config.js --only gridbot-btc
 # Wait 30s, check for:
