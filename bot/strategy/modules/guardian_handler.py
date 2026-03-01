@@ -216,8 +216,115 @@ class GuardianHandler:
             log.error(f"Error checking Guardian transition: {e}")
 
     async def retry_missed_orders(self) -> None:
-        """Stub — replaced in P1.4 with real implementation."""
-        log.warning("retry_missed_orders stub called — real method arrives in P1.4")
+        """
+        Retry placing grid orders that were missed due to Guardian STOP signal.
+        Only retries orders that are still valid based on current bot state.
+        """
+        if not self._missed_grid_orders:
+            return
+
+        log.info(f"🔄 Retrying {len(self._missed_grid_orders)} missed grid orders...")
+
+        # ✅ CRITICAL: Verify Guardian signal is still GO before retrying
+        signal, reason = await self.read_signal()
+        if signal == 'STOP':
+            log.warning(f"⚠️  Guardian is STOP again during retry attempt")
+            log.warning(f"   Reason: {reason}")
+            log.warning(f"   Missed orders will remain queued for next GO signal")
+            return  # Exit early, keep orders in list for next transition
+
+        # Get current bot state
+        state = await self.position_actor.ask("GET_STATE", {})
+        open_positions = state.get("open_tranches", [])
+        pending_buy = state.get("pending_buy")
+        pending_sell = state.get("pending_sell")
+
+        retried = 0
+        skipped = 0
+        processed_orders = []  # Track which orders we've processed
+        guardian_stopped = False
+
+        for missed_order in list(self._missed_grid_orders):  # Copy to allow modification
+            price, side, reason, timestamp = missed_order
+
+            # ✅ Defense in depth: Check Guardian again if retrying multiple orders
+            if len(self._missed_grid_orders) > 1 and retried > 0:
+                signal, _ = await self.read_signal()
+                if signal == 'STOP':
+                    log.warning(f"⚠️  Guardian changed to STOP during retry loop - stopping")
+                    log.warning(f"   Remaining orders will be retried on next GO signal")
+                    guardian_stopped = True
+                    break  # Stop retry loop, remaining orders stay in list
+
+            # Check if this order is still needed
+            if side == "buy":
+                # Skip if we already have a pending buy
+                if pending_buy:
+                    log.info(f"   ⏭️  Skipping BUY @ ${price:,.0f} - already have pending buy @ ${pending_buy.get('price'):,.0f}")
+                    skipped += 1
+                    processed_orders.append(missed_order)  # Mark as processed
+                    continue
+
+                # Skip if price is no longer valid
+                if not self.grid_calc.is_within_bounds(price):
+                    log.info(f"   ⏭️  Skipping BUY @ ${price:,.0f} - price out of grid bounds")
+                    skipped += 1
+                    processed_orders.append(missed_order)  # Mark as processed
+                    continue
+
+                # Retry placing BUY order
+                try:
+                    result = await self.order_actor.ask("PLACE_BUY", {
+                        "price": price,
+                        "size": self.lot_size
+                    }, timeout=10.0)
+
+                    if result.get("status") == "ok":
+                        log.info(f"   ✅ Retried BUY @ ${price:,.0f} successfully (order_id: {result.get('order_id')})")
+                        retried += 1
+                        processed_orders.append(missed_order)  # Mark as processed
+
+                        # Update pending buy state
+                        await self.position_actor.tell("SET_PENDING_BUY", {
+                            "order_id": result["order_id"],
+                            "price": price,
+                            "size": self.lot_size
+                        })
+                    else:
+                        log.warning(f"   ❌ Failed to retry BUY @ ${price:,.0f}: {result.get('error')}")
+                        skipped += 1
+                        processed_orders.append(missed_order)  # Mark as processed
+
+                except Exception as e:
+                    log.error(f"   ❌ Error retrying BUY @ ${price:,.0f}: {e}")
+                    skipped += 1
+                    processed_orders.append(missed_order)  # Mark as processed
+
+            elif side == "sell":
+                # Skip if we already have a pending sell
+                if pending_sell:
+                    log.info(f"   ⏭️  Skipping SELL @ ${price:,.0f} - already have pending sell")
+                    skipped += 1
+                    processed_orders.append(missed_order)  # Mark as processed
+                    continue
+
+                # Retry placing SELL order (this shouldn't happen often)
+                # SELL orders are usually for positions, not grid seeding
+                log.warning(f"   ⚠️  Skipping SELL @ ${price:,.0f} - SELL retry not implemented")
+                skipped += 1
+                processed_orders.append(missed_order)  # Mark as processed
+
+            # Small delay between retries
+            await asyncio.sleep(0.3)
+
+        # Remove processed orders from the list
+        self._missed_grid_orders = [order for order in self._missed_grid_orders
+                                   if order not in processed_orders]
+
+        if guardian_stopped:
+            log.info(f"🔄 Partial retry: {retried} succeeded, {skipped} skipped, {len(self._missed_grid_orders)} remain queued")
+        else:
+            log.info(f"🔄 Retry complete: {retried} succeeded, {skipped} skipped")
 
     async def fill_multi_step_missed_grids(self) -> None:
         """Stub — replaced in P1.5 with real implementation."""
