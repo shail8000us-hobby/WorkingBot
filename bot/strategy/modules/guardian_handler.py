@@ -63,6 +63,10 @@ class GuardianHandler:
         self._set_running: Callable = lambda v: None
         self._get_started_once: Callable = lambda: False
 
+        # Callbacks for methods not yet moved (P1.6 → P1.7)
+        self._cancel_entries_callback: Optional[Callable] = None
+        self._resume_grid_callback: Optional[Callable] = None
+
     def set_runtime_refs(
         self,
         get_running: Callable,        # () -> bool
@@ -463,3 +467,40 @@ class GuardianHandler:
 
         if filled > 0:
             log.info(f"📊 A3: Multi-step recovery complete — {filled} levels filled")
+
+    async def check_transitions(self) -> None:
+        """
+        Check for Guardian signal transitions and respond accordingly.
+
+        GO → STOP: Cancel all pending entry orders immediately
+        STOP → GO: Resume grid trading (place missing grid orders)
+        """
+        try:
+            current_signal, reason = await self.read_signal()
+
+            # Detect transition
+            if self._last_guardian_signal != current_signal:
+                # GO → STOP transition
+                if self._last_guardian_signal == "GO" and current_signal == "STOP":
+                    log.warning("=" * 70)
+                    log.warning("🔴 GUARDIAN SIGNAL: GO → STOP")
+                    log.warning(f"   Reason: {reason}")
+                    log.warning("   Action: Cancelling all pending entry orders")
+                    log.warning("=" * 70)
+                    if self._cancel_entries_callback:
+                        await self._cancel_entries_callback()
+
+                # STOP → GO transition
+                elif self._last_guardian_signal == "STOP" and current_signal == "GO":
+                    log.info("=" * 70)
+                    log.info("🟢 GUARDIAN SIGNAL: STOP → GO")
+                    log.info("   Trading resumed - checking grid coverage")
+                    log.info("=" * 70)
+                    if self._resume_grid_callback:
+                        await self._resume_grid_callback()
+
+                # Update last signal
+                self._last_guardian_signal = current_signal
+
+        except Exception as e:
+            log.error(f"Error checking Guardian transitions: {e}")

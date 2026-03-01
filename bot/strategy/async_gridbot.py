@@ -1295,6 +1295,9 @@ class AsyncGridBot:
             set_running=lambda v: setattr(self, '_running', v),
             get_started_once=lambda: self._started_once,
         )
+        # Temporary callbacks — will be internalized when methods move in P1.7
+        self.guardian._cancel_entries_callback = self._cancel_pending_entry_orders
+        self.guardian._resume_grid_callback = self._resume_grid_trading
 
         # Create asyncio primitives within event loop
         if self._order_placement_lock is None:
@@ -3782,7 +3785,7 @@ class AsyncGridBot:
         while self._running:
             try:
                 # Check Guardian signal transitions every 5 seconds for faster response
-                await self._check_guardian_transitions()
+                await self.guardian.check_transitions()
                 await asyncio.sleep(5)
                 
                 check_counter += 5
@@ -3871,41 +3874,8 @@ class AsyncGridBot:
                 log.error(f"Exchange maintenance monitor error: {e}")
                 await asyncio.sleep(60)
     
-    async def _check_guardian_transitions(self) -> None:
-        """
-        Check for Guardian signal transitions and respond accordingly.
-        
-        GO → STOP: Cancel all pending entry orders immediately
-        STOP → GO: Resume grid trading (place missing grid orders)
-        """
-        try:
-            current_signal, reason = await self._read_guardian_signal()
-            
-            # Detect transition
-            if self._last_guardian_signal != current_signal:
-                # GO → STOP transition
-                if self._last_guardian_signal == "GO" and current_signal == "STOP":
-                    log.warning("=" * 70)
-                    log.warning("🔴 GUARDIAN SIGNAL: GO → STOP")
-                    log.warning(f"   Reason: {reason}")
-                    log.warning("   Action: Cancelling all pending entry orders")
-                    log.warning("=" * 70)
-                    await self._cancel_pending_entry_orders()
-                
-                # STOP → GO transition
-                elif self._last_guardian_signal == "STOP" and current_signal == "GO":
-                    log.info("=" * 70)
-                    log.info("🟢 GUARDIAN SIGNAL: STOP → GO")
-                    log.info("   Trading resumed - checking grid coverage")
-                    log.info("=" * 70)
-                    await self._resume_grid_trading()
-                
-                # Update last signal
-                self._last_guardian_signal = current_signal
-            
-        except Exception as e:
-            log.error(f"Error checking Guardian transitions: {e}")
-    
+    # _check_guardian_transitions — MOVED to GuardianHandler.check_transitions() (P1.6)
+
     async def _cancel_pending_entry_orders(self) -> None:
         """
         Cancel all pending entry orders when Guardian turns STOP.
