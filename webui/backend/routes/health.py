@@ -11,6 +11,12 @@ from pathlib import Path
 
 from webui.backend.utils.api_response import APIResponse
 
+# Import cache for Phase 3 optimization
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS
+
 health_bp = Blueprint('health', __name__)
 
 
@@ -159,6 +165,7 @@ def health_check():
 
 
 @health_bp.route('/health/detailed', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['health'])
 def detailed_health_check():
     """
     Detailed health check with system metrics and circuit breaker states

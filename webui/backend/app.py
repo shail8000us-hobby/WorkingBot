@@ -157,6 +157,16 @@ app.config['COMPRESS_MIMETYPES'] = [
 ]
 compress.init_app(app)
 
+# Configure caching for performance optimization (Phase 3)
+try:
+    from webui.backend.cache import init_cache
+    cache = init_cache(app)
+    log.info("✅ Flask-Caching initialized (SimpleCache, 500 items, 5min default TTL)")
+except:
+    from cache import init_cache
+    cache = init_cache(app)
+    log.info("✅ Flask-Caching initialized (SimpleCache, 500 items, 5min default TTL)")
+
 # CORS configuration
 ALLOWED_ORIGINS = cfg.webui.allowed_origins
 CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)

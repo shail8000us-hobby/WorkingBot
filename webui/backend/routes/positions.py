@@ -18,6 +18,7 @@ Refactored from app.py (8,850 lines)
 Date: 2025-10-31
 Enhanced with circuit breaker: 2025-11-12
 Updated for v6.0 instance support: 2026-01-01
+Phase 3 caching added: 2026-03-01
 """
 
 import os
@@ -31,6 +32,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, jsonify, request
+
+# Import cache
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS, make_cache_key
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS, make_cache_key
 
 
 def get_instance_from_request():
@@ -171,6 +178,7 @@ def _filter_positions_by_symbol(positions_data, filter_symbol):
 # ============================================================================
 
 @positions_bp.route('/api/positions', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['positions'], key_prefix=make_cache_key)
 def get_positions():
     """
     Get current positions with liquidation info and Greeks

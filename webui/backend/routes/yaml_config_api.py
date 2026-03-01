@@ -15,6 +15,12 @@ import yaml
 from typing import Any, Dict
 from datetime import datetime
 
+# Import cache for Phase 3 optimization
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS
+
 log = logging.getLogger(__name__)
 
 yaml_config_bp = Blueprint('yaml_config', __name__)
@@ -444,6 +450,7 @@ def restore_config():
 # ============================================================================
 
 @yaml_config_bp.route('/api/config/all', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['config'])
 def get_all_config_compat():
     """
     Get ALL configuration in flat format (backward compatible with legacy .env API)
@@ -692,6 +699,7 @@ def get_all_config_compat():
 
 
 @yaml_config_bp.route('/api/config/flat', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['config'])
 def get_flat_config_compat():
     """
     Get flattened configuration (v5.0 multi-symbol support)
