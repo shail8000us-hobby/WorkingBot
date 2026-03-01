@@ -27,7 +27,7 @@ from typing import Dict, Optional, Callable, Any
 from loguru import logger as log
 
 try:
-    from bot.utils.human_log import human_log
+    from bot.utils.human_logger import human_log
 except ImportError:
     human_log = None
 
@@ -100,7 +100,7 @@ class WSLifecycle:
         """Fetch current market price via REST API."""
         try:
             log.info(f"Fetching current price for {self.symbol}...")
-            human_log.fetching_price(self.symbol)
+            if human_log: human_log.fetching_price(self.symbol)
             ticker_data = await self.api_client.get_ticker(self.symbol)
 
             if ticker_data:
@@ -231,7 +231,7 @@ class WSLifecycle:
             )
             if not ticker_data:
                 log.warning(f"⚠️ Ticker message has no price data: {message}")
-                human_log.missing_data("price")  # Trader-friendly alert
+                if human_log: human_log.missing_data("price")  # Trader-friendly alert
                 return
 
             # Update current price
@@ -279,10 +279,10 @@ class WSLifecycle:
                         else:
                             indicator = "→"
                         log.debug(f"📊 [PRICE UPDATE] ${price:,.2f} {indicator}")
-                        human_log.price_data_flowing(price)  # Trader-friendly update
+                        if human_log: human_log.price_data_flowing(price)  # Trader-friendly update
                     else:
                         log.debug(f"📊 [PRICE UPDATE] ${price:,.2f}")
-                        human_log.price_data_flowing(price)  # Trader-friendly update
+                        if human_log: human_log.price_data_flowing(price)  # Trader-friendly update
 
                 self._last_price_log_time = time.time()
 
@@ -333,7 +333,7 @@ class WSLifecycle:
         """
         log.info("🔄 [REST FALLBACK MONITOR] Loop started")
         log.debug(f"🔄 [REST FALLBACK MONITOR] self._get_running() = {self._get_running()}")
-        human_log.rest_fallback_active()  # Human-readable
+        if human_log: human_log.rest_fallback_active()  # Human-readable
 
         last_reconnect_attempt = 0
         reconnect_cooldown = 60.0  # Wait 60s between reconnection attempts
