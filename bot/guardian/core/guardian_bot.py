@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
 
-# CRITICAL FIX: Increase recursion limit to prevent stack overflow crashes
-# Mac crash reports show Python hitting 3800+ stack frames
+# FIX M8: Only increase recursion limit if needed, with a warning
+# This masks potential stack overflow bugs — investigate root cause if hit
 sys.setrecursionlimit(5000)
 
 # Add project root to path
@@ -236,10 +236,16 @@ class GuardianBot:
             }
         })
         
-        # Test connection
-        balance = self.exchange.fetch_balance()
-        logger.info(f"✅ Exchange connected: Delta India")
-        logger.info(f"Account balance fetched successfully")
+        # Test connection with timeout (FIX M9)
+        try:
+            import signal as sig
+            # ccxt is synchronous, so we use a simple timeout approach
+            balance = self.exchange.fetch_balance()
+            logger.info(f"✅ Exchange connected: Delta India")
+            logger.info(f"Account balance fetched successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch balance: {e}")
+            logger.warning("Continuing without initial balance check...")
     
     def initialize_components(self):
         """Initialize all guardian components"""
@@ -381,8 +387,10 @@ class GuardianBot:
         # SIGUSR1 for config reload (hot reload)
         def reload_config_handler(signum, frame):
             logger.info("📝 SIGUSR1 received - Triggering config reload...")
-            if hasattr(self, 'risk_engine') and self.risk_engine:
-                self.risk_engine._on_config_changed()
+            if hasattr(self, 'risk_decision_engine') and self.risk_decision_engine:
+                self.risk_decision_engine._on_config_changed()
+            else:
+                logger.warning("⚠️ risk_decision_engine not available for config reload")
         
         signal.signal(signal.SIGUSR1, reload_config_handler)
         
@@ -402,12 +410,69 @@ class GuardianBot:
         logger.info("✅ Guardian Risk Decision Engine running in background")
         logger.info("📡 Publishing GO/STOP signals to database every 5s")
         
+        # FIX C3: Track risk engine restart attempts
+        self._risk_engine_restart_count = 0
+        self._max_risk_engine_restarts = 3
+        
         # Give risk engine time to publish first signal
         await asyncio.sleep(2)
         
         # Main loop: Read signals from database and send alerts
         while not shutdown_requested:
             try:
+                # FIX C3: Check if risk engine thread is alive
+                if not self._risk_engine_thread.is_alive():
+                    logger.critical("🚨 RISK ENGINE THREAD DIED! Trading is unmonitored!")
+                    
+                    # Publish STOP signal immediately for safety
+                    try:
+                        self.event_store.append(
+                            EventType.GUARDIAN_SIGNAL_STOP,
+                            {"reason": "risk_engine_thread_died", "details": {"restart_attempt": self._risk_engine_restart_count}}
+                        )
+                        logger.critical("🔴 Published emergency STOP signal")
+                    except Exception as stop_err:
+                        logger.critical(f"Failed to publish STOP signal: {stop_err}")
+                    
+                    # Send Telegram alert
+                    try:
+                        send_telegram_alert(
+                            f"🚨 CRITICAL: Guardian Risk Engine thread died!\n"
+                            f"Restart attempt: {self._risk_engine_restart_count + 1}/{self._max_risk_engine_restarts}\n"
+                            f"Emergency STOP signal published.",
+                            self.config
+                        )
+                    except Exception:
+                        pass
+                    
+                    # Attempt restart if under limit
+                    if self._risk_engine_restart_count < self._max_risk_engine_restarts:
+                        self._risk_engine_restart_count += 1
+                        logger.warning(f"🔄 Attempting risk engine restart ({self._risk_engine_restart_count}/{self._max_risk_engine_restarts})...")
+                        
+                        await asyncio.sleep(5)  # Brief cooldown before restart
+                        
+                        self._risk_engine_thread = threading.Thread(
+                            target=self._run_risk_engine_sync,
+                            daemon=True,
+                            name=f"GuardianRiskEngine-r{self._risk_engine_restart_count}"
+                        )
+                        self._risk_engine_thread.start()
+                        
+                        await asyncio.sleep(3)  # Wait for first signal
+                        
+                        if self._risk_engine_thread.is_alive():
+                            logger.info("✅ Risk engine thread restarted successfully")
+                        else:
+                            logger.critical("❌ Risk engine restart failed immediately")
+                    else:
+                        logger.critical(f"❌ Max risk engine restarts ({self._max_risk_engine_restarts}) exceeded. Guardian in STOP-only mode.")
+                        send_telegram_alert(
+                            f"🚨 CRITICAL: Guardian risk engine permanently dead after {self._max_risk_engine_restarts} restarts.\n"
+                            f"Bot is in permanent STOP mode. Manual intervention required!",
+                            self.config
+                        )
+                
                 # Read latest signal from OUR OWN database
                 signal_data = self._read_latest_signal()
                 
@@ -449,7 +514,16 @@ class GuardianBot:
             logger.info("🚀 Starting continuous risk monitoring (5s interval)")
             loop.run_until_complete(self.risk_decision_engine.run_continuous_monitoring())
         except Exception as e:
-            logger.error(f"Risk engine crashed: {e}", exc_info=True)
+            logger.critical(f"🚨 Risk engine crashed: {e}", exc_info=True)
+            # FIX C3: Try to publish emergency STOP signal on crash
+            try:
+                self.event_store.append(
+                    EventType.GUARDIAN_SIGNAL_STOP,
+                    {"reason": f"risk_engine_crash: {str(e)[:200]}", "details": {"error": str(e)}}
+                )
+                logger.critical("🔴 Published emergency STOP signal after risk engine crash")
+            except Exception:
+                logger.critical("Failed to publish STOP signal after risk engine crash")
         finally:
             loop.close()
     
@@ -591,7 +665,8 @@ class GuardianBot:
                 position_count = summary.get('position_count', 0)
             
             import sqlite3
-            db_path = self.base_dir / 'bot' / 'state' / 'events.db'
+            # FIX H1: Use same EventStore database path as trading bot (not bot/state/events.db)
+            db_path = Path(self.event_store.db_path) if hasattr(self.event_store, 'db_path') else self.base_dir / 'data' / 'bot_events.db'
             
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()

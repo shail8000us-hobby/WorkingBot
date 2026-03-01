@@ -47,12 +47,11 @@ class ConfigLoader:
         # Get the project root directory (3 levels up from config/loader.py)
         project_root = Path(__file__).parent.parent
         
+        # FIX M5: Use absolute paths based on project root to avoid CWD dependency
         candidates = [
-            Path('config.yaml'),  # Current directory
-            Path('config/config.yaml'),  # Config subdirectory
-            project_root / 'config.yaml',  # Project root (absolute path)
-            Path('../config.yaml'),  # Parent directory
-            Path('../../config.yaml'),  # Two levels up (from webui/backend)
+            project_root / 'config.yaml',  # Project root (absolute path) - primary
+            Path('config.yaml'),  # Current directory (fallback for dev)
+            project_root / 'config' / 'config.yaml',  # Config subdirectory
         ]
         
         for path in candidates:
@@ -235,6 +234,17 @@ def get_api_credentials(trading_mode: Optional[str] = None):
 
     _cached_credentials = {'api_key': api_key, 'api_secret': api_secret}
     _credentials_mode = trading_mode
+    
+    # FIX M6: Fail fast if credentials are missing instead of returning None silently
+    if not api_key or not api_secret:
+        import warnings
+        warnings.warn(
+            f"API credentials not found for {trading_mode} mode! "
+            f"Check secrets/api_keys.env or environment variables.",
+            RuntimeWarning,
+            stacklevel=2
+        )
+    
     return _cached_credentials
 
 

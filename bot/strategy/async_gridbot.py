@@ -1009,7 +1009,7 @@ class AsyncGridBot:
                 try:
                     result = await self.order_actor.ask("PLACE_BUY", {
                         "price": price,
-                        "size": self.lot
+                        "size": self.lot_size
                     }, timeout=10.0)
                     
                     if result.get("status") == "ok":
@@ -1021,7 +1021,7 @@ class AsyncGridBot:
                         await self.position_actor.tell("SET_PENDING_BUY", {
                             "order_id": result["order_id"],
                             "price": price,
-                            "size": self.lot
+                            "size": self.lot_size
                         })
                     else:
                         log.warning(f"   ❌ Failed to retry BUY @ ${price:,.0f}: {result.get('error')}")
@@ -2535,19 +2535,23 @@ class AsyncGridBot:
                     
                     log.warning(f"   🎯 Orphan TP order #{tp_order_id} @ ${tp_price:,.0f} (size: {size})")
                     
-                    # Calculate expected entry price from TP
+                    # FIX H2: Calculate expected entry using grid-snap instead of raw arithmetic
+                    # This handles cases where grid_step changed between runs
                     if self.mode == "LONG":
-                        expected_entry = tp_price - self.grid_step
+                        raw_entry = tp_price - self.grid_step
                     else:  # SHORT
-                        expected_entry = tp_price + self.grid_step
+                        raw_entry = tp_price + self.grid_step
+                    # Snap to nearest grid level for alignment
+                    expected_entry = self.grid_calc.find_nearest_grid_level(raw_entry)
                     
                     # Try to find position in event store
                     position_from_event = None
                     try:
                         # Query tp_order_placed events with this order_id
+                        # FIX H3: Increased limit to handle long-running bots
                         tp_events = self.event_store.get_events_by_type(
                             EventType.TP_ORDER_PLACED,
-                            limit=1000  # Last 1000 TP placements
+                            limit=10000  # Last 10000 TP placements
                         )
                         
                         for event in tp_events:
@@ -2556,9 +2560,10 @@ class AsyncGridBot:
                                 position_id = event.aggregate_id
                                 
                                 # Now find the position_opened event
+                                # FIX H3: Increased limit to handle long-running bots
                                 position_events = self.event_store.get_events_by_type(
                                     EventType.POSITION_OPENED,
-                                    limit=1000
+                                    limit=10000
                                 )
                                 
                                 for pos_event in position_events:
@@ -2749,9 +2754,59 @@ class AsyncGridBot:
             log.error(f"Error handling order update: {e}", exc_info=True)
     
     async def _handle_position_update(self, message: Dict[str, Any]) -> None:
-        """Handle position update messages."""
-        # Position updates are informational - no action needed
-        pass
+        """
+        Handle position update messages from exchange.
+        
+        FIX H6: Detect exchange-initiated liquidations and position changes.
+        If the exchange liquidates a position, we must update internal state
+        to avoid placing orders against positions that no longer exist.
+        """
+        try:
+            position_data = message if isinstance(message, dict) else {}
+            
+            # Check for relevant position fields
+            product_id = position_data.get('product_id')
+            if product_id and product_id != self.product_id:
+                return  # Not our product
+            
+            size = position_data.get('size', 0)
+            entry_price = position_data.get('entry_price', 0)
+            liquidation_price = position_data.get('liquidation_price')
+            margin = position_data.get('margin')
+            
+            # Detect liquidation: position size went to zero unexpectedly
+            # or exchange sends a specific liquidation event
+            is_liquidation = position_data.get('is_liquidated', False)
+            reason = position_data.get('reason', '')
+            
+            if is_liquidation or 'liquidat' in str(reason).lower():
+                log.critical("🚨 LIQUIDATION DETECTED via position channel!")
+                log.critical(f"   Product: {product_id}")
+                log.critical(f"   Size: {size}, Entry: {entry_price}")
+                log.critical(f"   Reason: {reason}")
+                
+                # Send Telegram alert
+                try:
+                    from tools.telepush import send_telegram_alert
+                    send_telegram_alert(
+                        f"🚨 LIQUIDATION DETECTED!\n"
+                        f"Size: {size}, Entry: ${entry_price:,.0f}\n"
+                        f"Reason: {reason}",
+                        self.config
+                    )
+                except Exception:
+                    pass
+                
+                # Trigger emergency reconciliation to sync internal state
+                log.critical("   🔄 Triggering emergency exchange sync...")
+                asyncio.create_task(self._full_exchange_sync())
+            
+            # Log significant position changes at debug level
+            elif size != 0 or entry_price != 0:
+                log.debug(f"📊 Position update: size={size}, entry=${entry_price:,.0f}, liq=${liquidation_price}")
+                
+        except Exception as e:
+            log.error(f"Error handling position update: {e}", exc_info=True)
     
     async def _handle_ticker_update(self, message: Dict[str, Any]) -> None:
         """
@@ -3317,13 +3372,14 @@ class AsyncGridBot:
             current_price_float = float(current_price)
             
             if side == "buy":
-                color = "\033[32m" if pending_price_float < current_price_float else "\033[31m"
+                # FIX M2: Remove ANSI escape codes that corrupt log files
+                color_indicator = "✅" if pending_price_float < current_price_float else "⚠️"
                 label = "BUY"
             else:
-                color = "\033[32m" if pending_price_float > current_price_float else "\033[31m"
+                color_indicator = "✅" if pending_price_float > current_price_float else "⚠️"
                 label = "SELL"
             
-            return f" | {color}Pending {label} @ ${pending_price_float:,.0f}\033[0m"
+            return f" | {color_indicator} Pending {label} @ ${pending_price_float:,.0f}"
         except (ValueError, TypeError):
             label = "BUY" if side == "buy" else "SELL"
             return f" | Pending {label} @ ${pending_price}"
@@ -3464,13 +3520,15 @@ class AsyncGridBot:
     
     async def _heartbeat_loop(self) -> None:
         """Periodic heartbeat tasks with detailed status logging."""
-        log.info("💓 Heartbeat loop started (every {self.config.bot.heartbeat_seconds}s)")
+        # FIX M1: Use config value and f-string
+        heartbeat_interval = getattr(self.config.bot, 'heartbeat_seconds', 5)
+        log.info(f"💓 Heartbeat loop started (every {heartbeat_interval}s)")
         
         heartbeat_counter = 0
         
         while self._running:
             try:
-                await asyncio.sleep(5)  # Run every 5 seconds
+                await asyncio.sleep(heartbeat_interval)  # FIX M1: Use config interval
                 heartbeat_counter += 1
                 
                 # NOV 13: Update watchdog timestamp
@@ -3642,14 +3700,9 @@ class AsyncGridBot:
                 # No need to export health data to files - Guardian has its own PositionMonitor
                 # PnL history tracking is now handled by Guardian bot (runs 24/7, stores in SQL)
                 
-                # NOV 13: Export via monitoring data writer (for WebUI compatibility)
-                current_time = time.time()
-                if current_time - self._last_monitoring_write > 5:  # Every 5s
-                    try:
-                        self.monitoring_writer.write_snapshot(self)  # Pass bot instance, not snapshot
-                        self._last_monitoring_write = current_time
-                    except Exception as e:
-                        log.debug(f"Monitoring writer error: {e}")  # Don't spam logs
+                # FIX L4: Removed duplicate monitoring_writer.write_snapshot() call
+                # The aiofiles write above already writes the monitoring snapshot
+                # Having both causes unnecessary I/O and potential file contention
             
             except Exception as e:
                 log.error(f"Monitoring error: {e}")
@@ -3669,7 +3722,7 @@ class AsyncGridBot:
         log.info("🔄 Fill polling fallback started - checking every 60 seconds")
         log.info("   This is a safety backup for WebSocket fill notifications")
         
-        await asyncio.sleep(120)  # Initial delay to let WebSocket establish
+        await asyncio.sleep(30)  # FIX C5: Reduced from 120s to 30s to minimize blind spot at startup
         
         while self._running:
             try:
@@ -3690,10 +3743,16 @@ class AsyncGridBot:
                         # Fill records have 'id' field directly (not order_id)
                         fill_id = str(fill.get('id'))
                         order_id = str(fill.get('order_id'))
-                        fill_marker = f"fill-{fill_id}"
                         
-                        # Check if this fill was already processed via WebSocket
-                        if fill_marker not in self._seen_fill_ids:
+                        # FIX C2: Check BOTH fill_id and order_id for consistent deduplication
+                        # WebSocket may have stored fill under exchange_fill_id or order-{order_id}
+                        already_seen = (
+                            fill_id in self._seen_fill_ids or
+                            f"fill-{fill_id}" in self._seen_fill_ids or
+                            f"order-{order_id}" in self._seen_fill_ids
+                        )
+                        
+                        if not already_seen:
                             # New fill detected! Process it
                             new_fills_found += 1
                             log.warning("=" * 80)
@@ -5214,10 +5273,23 @@ class AsyncGridBot:
             # Wait for fill
             await asyncio.sleep(1)
             
+            # FIX A1: Get actual fill price for logging, but use grid_price for registration
+            actual_fill_price = None
+            try:
+                order_info = await self.api_client.get_order(str(order_id))
+                if order_info:
+                    actual_fill_price = float(order_info.get('average_fill_price', 0))
+                    if actual_fill_price:
+                        slippage = abs(actual_fill_price - grid_price)
+                        log.info(f"[Recovery] 📊 Actual fill price: ${actual_fill_price:,.0f} (grid: ${grid_price:,.0f}, slippage: ${slippage:,.0f} bonus)")
+            except Exception as e:
+                log.debug(f"[Recovery] Could not get fill price: {e}")
+            
             # Place TP order (grid-aligned)
             log.info(f"[Recovery] Placing TP {tp_side.upper()} order @ ${tp_price:,.0f}")
             
             tp_tag = f"{tag}_TP"
+            tp_order_id = None
             
             tp_result = await self.api_client.place_order(
                 product_id=self.product_id,
@@ -5230,9 +5302,42 @@ class AsyncGridBot:
             )
             
             if tp_result and tp_result.get("id"):
-                log.info(f"[Recovery] ✅ TP order placed: {tp_result['id']} @ ${tp_price:,.0f}")
+                tp_order_id = tp_result['id']
+                log.info(f"[Recovery] ✅ TP order placed: {tp_order_id} @ ${tp_price:,.0f}")
             else:
                 log.warning(f"[Recovery] ⚠️ TP order failed but entry succeeded - saga will handle")
+            
+            # FIX A1: Register position at GRID PRICE (not fill price) with PositionActor
+            # This ensures grid alignment is maintained. The difference between fill price
+            # and grid price is bonus profit that gets captured when TP fills.
+            from uuid import uuid4
+            position_id = f"recovery-{tag}-{uuid4().hex[:8]}"
+            
+            position_data = {
+                "position_id": position_id,
+                "entry_order_id": str(order_id),
+                "entry_price": grid_price,  # GRID PRICE, not fill price
+                "actual_entry": actual_fill_price or grid_price,  # Track real fill for PnL
+                "tp_price": tp_price,
+                "size": self.lot_size,
+                "tp_order_id": str(tp_order_id) if tp_order_id else None,
+                "recovered": True,
+                "recovery_tag": tag
+            }
+            
+            try:
+                await self.position_actor.tell("ADD_POSITION", position_data)
+                log.info(f"[Recovery] ✅ Position registered at grid ${grid_price:,.0f} (actual fill: ${actual_fill_price or 0:,.0f})")
+            except Exception as e:
+                log.error(f"[Recovery] ⚠️ Failed to register position: {e}")
+            
+            # FIX A1: Mark order as processed to prevent duplicate saga processing
+            # When the WebSocket fill event arrives for this order, it will be skipped
+            self._mark_fill_seen(f"fill-{order_id}")
+            self._mark_order_fill_seen(str(order_id))
+            # Also mark in FillMonitor
+            self.fill_monitor.mark_filled(str(order_id), source="recovery")
+            log.info(f"[Recovery] ✅ Order {order_id} marked as processed (saga dedup)")
             
             # Track as recovered
             self._recovered_grids.add(grid_price)

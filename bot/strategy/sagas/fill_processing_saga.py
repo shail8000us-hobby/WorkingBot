@@ -67,22 +67,37 @@ async def create_buy_fill_saga(
     async def add_position_action() -> Dict[str, Any]:
         nonlocal position_result
         
-        # Use main GridCalculator method for TP price calculation
+        # FIX A1: Snap fill_price to nearest grid level for registration
+        # This ensures grid alignment when fills come in slightly off-grid (market orders)
+        raw_fill_price = fill_data["fill_price"]
+        snapped_entry = grid_calc.find_nearest_grid_level(raw_fill_price)
+        
+        # Only snap if the difference is small (within 1 grid step)
+        # If too far off, use actual fill price (could be a manual order)
+        if abs(raw_fill_price - snapped_entry) < grid_calc.step:
+            entry_price = snapped_entry
+            if abs(raw_fill_price - snapped_entry) > 0.01:
+                log.info(f"[SAGA] Grid-snapped entry: ${raw_fill_price:,.0f} → ${snapped_entry:,.0f}")
+        else:
+            entry_price = raw_fill_price
+        
+        # Use main GridCalculator method for TP price calculation (from snapped entry)
         if mode == "LONG":
-            tp_price = grid_calc.compute_tp_price(fill_data["fill_price"])
+            tp_price = grid_calc.compute_tp_price(entry_price)
         else:  # SHORT
-            tp_price = grid_calc.compute_tp_price_short(fill_data["fill_price"])
+            tp_price = grid_calc.compute_tp_price_short(entry_price)
         
         position = {
             "position_id": position_id,
             "entry_order_id": position_id,  # For reconciliation compatibility
-            "entry_price": fill_data["fill_price"],
+            "entry_price": entry_price,
+            "actual_entry": raw_fill_price,  # Track actual fill for PnL
             "tp_price": tp_price,
             "size": fill_data["fill_size"],
             "correlation_id": correlation_id
         }
         
-        log.info(f"[SAGA] Adding position: {position_id} @ {fill_data['fill_price']}")
+        log.info(f"[SAGA] Adding position: {position_id} @ {entry_price}")
         
         # Send message to actor
         reply_queue = asyncio.Queue()

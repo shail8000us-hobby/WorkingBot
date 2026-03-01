@@ -907,19 +907,32 @@ class PositionManagerActor(Actor):
                     validation_result['pending_sell_cleared'] = True
             
             # Validate open positions
-            # Build set of exchange entry prices for fast lookup
-            exchange_entry_prices = {
+            # FIX M7: Use tolerance-based matching instead of exact entry_price match
+            # This handles cases where two positions at same price or slight price discrepancy
+            exchange_entry_prices = [
                 float(p.get('entry_price', 0)) 
                 for p in exchange_positions
-            }
+            ]
             
             valid_tranches = []
             removed_count = 0
+            price_tolerance = 1.0  # $1 tolerance for entry price matching
+            
+            # Track which exchange prices have been claimed (prevents double-counting)
+            claimed_exchange_prices = []
             
             for tranche in self.state['open_tranches']:
                 entry_price = tranche.get('entry_price')
                 
-                if entry_price in exchange_entry_prices:
+                # Find matching exchange price (with tolerance, unclaimed)
+                matched = False
+                for i, ex_price in enumerate(exchange_entry_prices):
+                    if i not in claimed_exchange_prices and abs(entry_price - ex_price) < price_tolerance:
+                        matched = True
+                        claimed_exchange_prices.append(i)
+                        break
+                
+                if matched:
                     valid_tranches.append(tranche)
                 else:
                     log.warning(

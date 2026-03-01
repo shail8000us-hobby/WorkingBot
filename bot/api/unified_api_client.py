@@ -253,7 +253,8 @@ class UnifiedAPIClient:
         
         log.info("🏥 Starting WebSocket health monitor (5s interval)")
         
-        while True:
+        # FIX H5: Use self._running check instead of while True for graceful shutdown
+        while getattr(self, '_running', True):
             try:
                 await asyncio.sleep(5)
                 

@@ -147,7 +147,7 @@ class AsyncWebSocketManager:
         self._current_reconnect_delay = self.reconnect_delay
         self.consecutive_failures = 0
         self.max_consecutive_failures = 5
-        self.circuit_breaker_timeout = 300  # 5 minutes
+        self.circuit_breaker_timeout = 60  # FIX L6: Reduced from 300s to 60s to minimize fill blindspot
         self.circuit_breaker_open_until = None
         
         # Statistics tracking
@@ -157,6 +157,25 @@ class AsyncWebSocketManager:
         # Task management
         self.background_tasks: Set[asyncio.Task] = set()
         self._connected = False
+    
+    def _on_background_task_done(self, task: asyncio.Task) -> None:
+        """
+        FIX L5: Handle background task completion with proper logging.
+        Replaces silent discard callback to detect crashed tasks.
+        """
+        self.background_tasks.discard(task)
+        
+        if task.cancelled():
+            return  # Normal cancellation during shutdown
+        
+        exc = task.exception()
+        if exc:
+            task_name = task.get_name() if hasattr(task, 'get_name') else str(task)
+            log.error(f"🚨 Background task '{task_name}' crashed: {exc}", exc_info=exc)
+            
+            # If this was a critical task (heartbeat monitor or ping loop), trigger reconnection
+            if 'heartbeat' in str(task_name).lower() or 'ping' in str(task_name).lower():
+                log.warning(f"⚠️ Critical task {task_name} died — WebSocket health compromised")
     
     @property
     def ws(self) -> Optional[WebSocketClientProtocol]:
@@ -206,9 +225,9 @@ class AsyncWebSocketManager:
             
             # Fallback: check if object exists
             # If we got here, we have a WebSocket object but can't determine state
-            # Log warning and assume it's alive
-            log.warning(f"WebSocket object type: {type(self._ws)} - using existence as alive check")
-            return True
+            # FIX C4: Fail-safe to "not alive" — triggers reconnection rather than silent failure
+            log.warning(f"WebSocket object type: {type(self._ws)} - cannot determine state, assuming dead")
+            return False
             
         except Exception as e:
             log.error(f"Error checking WebSocket state: {e}")
@@ -261,8 +280,10 @@ class AsyncWebSocketManager:
                 
                 self._ws = await websockets.connect(
                     ws_url,
-                    ping_interval=20,
-                    ping_timeout=10,
+                    # FIX M4: Disable library-level pings — we use our own _ping_loop
+                    # Dual ping causes confusion and double disconnection logic
+                    ping_interval=None,
+                    ping_timeout=None,
                     close_timeout=10
                 )
                 
@@ -287,7 +308,8 @@ class AsyncWebSocketManager:
                 for coro in tasks:
                     task = asyncio.create_task(coro)
                     self.background_tasks.add(task)
-                    task.add_done_callback(self.background_tasks.discard)
+                    # FIX L5: Log background task crashes instead of silently discarding
+                    task.add_done_callback(lambda t: self._on_background_task_done(t))
                 
                 # Authenticate
                 await self._authenticate()
@@ -891,8 +913,9 @@ class AsyncWebSocketManager:
                     
                     self._ws = await websockets.connect(
                         ws_url,
-                        ping_interval=20,
-                        ping_timeout=10,
+                        # FIX M4: Disable library-level pings — we use our own _ping_loop
+                        ping_interval=None,
+                        ping_timeout=None,
                         close_timeout=10
                     )
                     
@@ -918,7 +941,8 @@ class AsyncWebSocketManager:
                     for coro in tasks:
                         task = asyncio.create_task(coro)
                         self.background_tasks.add(task)
-                        task.add_done_callback(self.background_tasks.discard)
+                        # FIX L5: Log background task crashes instead of silently discarding
+                        task.add_done_callback(lambda t: self._on_background_task_done(t))
                     
                     # Step 7: Re-authenticate
                     await self._authenticate()

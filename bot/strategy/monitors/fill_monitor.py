@@ -103,6 +103,8 @@ class FillMonitor(BaseMonitor):
         
         self._cleanup_old_orders(current_time)
         
+        # FIX H7: This is the only sleep between iterations (BaseMonitor._run has no sleep)
+        # Correct behavior — one sleep per iteration
         await asyncio.sleep(self.check_interval)
     
     async def _verify_order(self, order_id: str) -> None:
@@ -188,8 +190,8 @@ class FillMonitor(BaseMonitor):
         
         if self.missed_fill_callback:
             fill_data = {
-                "id": order_id,  # Fill Monitor uses order_id, but callback expects 'id'
-                "order_id": order_id,
+                "id": f"fillmon-{order_id}",  # FIX C2: Unique prefix for fill monitor source
+                "order_id": order_id,  # order_id used for dedup via _is_order_fill_seen()
                 "side": side,
                 "price": fill_price,  # Use 'price' for consistency with WebSocket fills
                 "fill_price": fill_price,
@@ -214,8 +216,8 @@ class FillMonitor(BaseMonitor):
         for order_id, order_data in self._tracked_orders.items():
             age = current_time - order_data["placed_at"]
             
-            if order_data["status"] in ["filled", "cancelled"] and age > 3600:
-                orders_to_remove.append(order_id)
+            if order_data["status"] in ["filled", "cancelled"] and age > self.max_age:
+                orders_to_remove.append(order_id)  # FIX L3: Use max_age instead of hardcoded 3600s
             
             elif age > self.max_age:
                 log.warning(f"[{self.name}] Order {order_id} too old ({age:.0f}s), removing from tracking")
@@ -226,7 +228,7 @@ class FillMonitor(BaseMonitor):
         
         verified_to_remove = []
         for order_id, timestamp in self._verified_orders.items():
-            if current_time - timestamp > 3600:
+            if current_time - timestamp > self.max_age:  # FIX L3: Use max_age consistently
                 verified_to_remove.append(order_id)
         
         for order_id in verified_to_remove:
