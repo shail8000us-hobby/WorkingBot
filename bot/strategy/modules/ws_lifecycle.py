@@ -291,3 +291,26 @@ class WSLifecycle:
 
         except Exception as e:
             log.error(f"Ticker update error: {e}")
+
+    # ── WebSocket Reconnection ────────────────────────────────────────
+
+    async def reconnect_websocket(self) -> None:
+        """Attempt to reconnect WebSocket."""
+        try:
+            log.info("🔄 [WEBSOCKET] Attempting reconnection...")
+
+            # Disconnect existing connection
+            await self.api_client.disconnect()
+            await asyncio.sleep(2)
+
+            # Reconnect
+            await self.api_client.connect()
+
+            # Re-subscribe to channels
+            await self.subscribe_channels()
+
+            log.info("✅ [WEBSOCKET] Reconnection successful")
+
+        except Exception as e:
+            log.error(f"❌ [WEBSOCKET] Reconnection failed: {e}")
+            raise

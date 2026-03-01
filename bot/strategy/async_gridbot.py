@@ -3051,7 +3051,7 @@ class AsyncGridBot:
                                 
                                 try:
                                     # Attempt to reconnect WebSocket
-                                    await self._reconnect_websocket()
+                                    await self.ws_lifecycle.reconnect_websocket()
                                     last_reconnect_attempt = time.time()
                                     
                                     # Send Telegram alert (if notifications implemented)
@@ -3256,26 +3256,7 @@ class AsyncGridBot:
         except Exception as e:
             log.error(f"❌ [REST FALLBACK] Error checking order {order_id}: {e}")
     
-    async def _reconnect_websocket(self) -> None:
-        """Attempt to reconnect WebSocket."""
-        try:
-            log.info("🔄 [WEBSOCKET] Attempting reconnection...")
-            
-            # Disconnect existing connection
-            await self.api_client.disconnect()
-            await asyncio.sleep(2)
-            
-            # Reconnect
-            await self.api_client.connect()
-            
-            # Re-subscribe to channels
-            await self.ws_lifecycle.subscribe_channels()
-            
-            log.info("✅ [WEBSOCKET] Reconnection successful")
-            
-        except Exception as e:
-            log.error(f"❌ [WEBSOCKET] Reconnection failed: {e}")
-            raise
+    # ── _reconnect_websocket → MOVED to ws_lifecycle.reconnect_websocket() [P4.5] ──
     
     def _calculate_next_grid_level(self, side: str, current_price: float) -> Optional[float]:
         """
