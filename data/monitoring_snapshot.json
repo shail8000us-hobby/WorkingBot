@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-03-02T01:16:14.285176",
+  "timestamp": "2026-03-02T01:19:05.048788",
   "monitoring_active": true,
   "bot_status": {
     "active": true,
     "mode": "UNKNOWN",
-    "current_price": 65825.5,
+    "current_price": 65903.5,
     "positions": 0,
     "max_positions": 0
   },
   "layers": {
     "price_health": {
       "active": true,
-      "price": 65825.5,
-      "price_age_seconds": 2.3647408485412598,
+      "price": 65903.5,
+      "price_age_seconds": 2.1730949878692627,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -22,7 +22,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 4647,
+        "total_updates": 4681,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -30,7 +30,7 @@
       }
     },
     "pre_order_stats": {
-      "total_decisions": 1,
+      "total_decisions": 2,
       "approved": 0,
       "rejected": 0,
       "approval_rate": 0.0,
@@ -67,21 +67,21 @@
       "active": true,
       "current_state": {
         "mode": "LONG",
-        "price": 65825.5,
+        "price": 65903.5,
         "grid_step": 500.0,
         "positions": 0,
         "max_positions": 10,
         "capacity_used_pct": 0.0,
-        "pending_buy": true,
+        "pending_buy": false,
         "pending_sell": false
       },
       "executed_orders": [],
       "placed_tps": [],
       "scenarios": {
         "next_action": {
-          "type": "PENDING_BUY",
+          "type": "WILL_BUY",
           "price": 65500.0,
-          "status": "Waiting for fill",
+          "status": "Will place when price drops to $65,500",
           "then": "Calculate TP"
         },
         "price_drops": [
@@ -89,7 +89,7 @@
             "action": "BUY",
             "price": 65500.0,
             "tp_price": 66000.0,
-            "change_pct": -0.49448921770438514,
+            "change_pct": -0.6122588329906605,
             "reason": "Grid level #1",
             "sequence": 1,
             "profit_target": 500.0
@@ -98,7 +98,7 @@
             "action": "BUY",
             "price": 65000.0,
             "tp_price": 65500.0,
-            "change_pct": -1.2540732694776342,
+            "change_pct": -1.370943880067068,
             "reason": "Grid level #2",
             "sequence": 2,
             "profit_target": 500.0
@@ -107,7 +107,7 @@
             "action": "BUY",
             "price": 64500.0,
             "tp_price": 65000.0,
-            "change_pct": -2.013657321250883,
+            "change_pct": -2.1296289271434747,
             "reason": "Grid level #3",
             "sequence": 3,
             "profit_target": 500.0
@@ -159,7 +159,7 @@
       "guardian_status": {
         "running": false
       },
-      "timestamp": "2026-03-02T01:16:17.198854"
+      "timestamp": "2026-03-02T01:19:07.746120"
     },
     "opportunistic_recovery": {
       "active": false,

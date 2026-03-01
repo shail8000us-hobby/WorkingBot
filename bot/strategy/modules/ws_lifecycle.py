@@ -314,3 +314,262 @@ class WSLifecycle:
         except Exception as e:
             log.error(f"❌ [WEBSOCKET] Reconnection failed: {e}")
             raise
+
+    # ── REST Fallback Monitor ─────────────────────────────────────────
+
+    async def rest_fallback_monitor_loop(self) -> None:
+        """
+        Monitor WebSocket health and activate REST fallback when needed.
+
+        Activates REST polling when:
+        - WebSocket has not sent price update for > 35s (Delta heartbeat + buffer)
+        - No price data received at all
+
+        Deactivates REST polling when:
+        - WebSocket recovers (fresh price update received)
+
+        Triggers WebSocket reconnection when:
+        - Price is critically stale (>300s / 5 minutes)
+        """
+        log.info("🔄 [REST FALLBACK MONITOR] Loop started")
+        log.debug(f"🔄 [REST FALLBACK MONITOR] self._get_running() = {self._get_running()}")
+        human_log.rest_fallback_active()  # Human-readable
+
+        last_reconnect_attempt = 0
+        reconnect_cooldown = 60.0  # Wait 60s between reconnection attempts
+        ws_starvation_threshold = 40.0  # 30s Delta heartbeat + 10s buffer (increased from 35s)
+        critically_stale_threshold = 300.0  # 5 minutes = dead connection
+
+        try:
+            while self._get_running():
+                try:
+                    # Check if we have price data
+                    if self._last_price_update == 0:
+                        # No price data yet - check how long we've been waiting
+                        wait_time = time.time() - self._get_start_time()
+                        if wait_time > 15 and not self._rest_fallback_active:
+                            log.warning(f"🚨 [REST FALLBACK] No WebSocket data for {wait_time:.1f}s since start")
+                            log.warning(f"   Activating REST fallback to get initial price...")
+                            await self._activate_rest_fallback()
+
+                    elif self._last_price_update > 0:
+                        age = time.time() - self._last_price_update
+
+                        # Check if critically stale (dead connection)
+                        if age > critically_stale_threshold:
+                            time_since_last_reconnect = time.time() - last_reconnect_attempt
+
+                            if time_since_last_reconnect > reconnect_cooldown:
+                                log.critical("=" * 80)
+                                log.critical(f"🚨 CRITICAL: WebSocket DEAD for {age:.1f}s (>5 minutes)")
+                                log.critical("   Attempting automatic reconnection...")
+                                log.critical("=" * 80)
+
+                                try:
+                                    # Attempt to reconnect WebSocket
+                                    await self.reconnect_websocket()
+                                    last_reconnect_attempt = time.time()
+
+                                    # Send Telegram alert (if notifications implemented)
+                                    try:
+                                        from bot.utils.notifier import TelegramNotifier
+                                        notifier = TelegramNotifier()
+                                        notifier.send(
+                                            f"🔄 WebSocket Reconnection\n\n"
+                                            f"Price was stale for {age:.1f}s\n"
+                                            f"Automatic reconnection triggered\n\n"
+                                            f"Monitoring for recovery..."
+                                        )
+                                    except Exception:
+                                        pass  # Telegram not critical
+                                except Exception as e:
+                                    log.error(f"❌ WebSocket reconnection failed: {e}")
+
+                        # Activate fallback if WebSocket starved
+                        if age > ws_starvation_threshold and not self._rest_fallback_active:
+                            log.warning(f"🚨 [REST FALLBACK] WebSocket starved for {age:.1f}s > {ws_starvation_threshold}s threshold")
+                            await self._activate_rest_fallback()
+
+                        # Deactivate fallback if WebSocket recovered
+                        elif age < 10 and self._rest_fallback_active:
+                            log.info(f"✅ [REST FALLBACK] WebSocket recovered (age: {age:.1f}s)")
+                            await self._deactivate_rest_fallback()
+
+                    # Check every second
+                    await asyncio.sleep(1.0)
+
+                except Exception as e:
+                    log.error(f"❌ [REST FALLBACK MONITOR] Error in loop: {e}")
+                    await asyncio.sleep(5.0)  # Back off on error
+
+        except asyncio.CancelledError:
+            log.info("🔄 [REST FALLBACK MONITOR] Loop cancelled")
+            raise
+
+        log.info("🔄 [REST FALLBACK MONITOR] Loop exited")
+        log.debug(f"🔄 [REST FALLBACK MONITOR] Final self._get_running() = {self._get_running()}")
+
+    async def _activate_rest_fallback(self) -> None:
+        """Activate REST API polling as fallback for WebSocket."""
+        if self._rest_fallback_active:
+            return  # Already active
+
+        log.warning("=" * 80)
+        log.warning("🔄 ACTIVATING REST API FALLBACK - WebSocket Starvation Detected")
+        if self._last_price_update > 0:
+            log.warning(f"   Last WebSocket update: {time.time() - self._last_price_update:.1f}s ago")
+        log.warning(f"   Polling interval: 5.0s")
+        log.warning("=" * 80)
+
+        self._rest_fallback_active = True
+
+        # Start polling task
+        self._rest_fallback_task = asyncio.create_task(
+            self._rest_polling_loop(),
+            name="RestFallbackPoller"
+        )
+
+        log.info("✅ [REST FALLBACK] Polling task started")
+
+    async def _deactivate_rest_fallback(self) -> None:
+        """Deactivate REST API fallback when WebSocket recovers."""
+        if not self._rest_fallback_active:
+            return  # Already inactive
+
+        log.info("=" * 80)
+        log.info("✅ DEACTIVATING REST API FALLBACK - WebSocket Recovered")
+        log.info("=" * 80)
+
+        self._rest_fallback_active = False
+
+        # Cancel polling task
+        if self._rest_fallback_task and not self._rest_fallback_task.done():
+            log.info("⏳ [REST FALLBACK] Cancelling polling task...")
+            self._rest_fallback_task.cancel()
+            try:
+                await self._rest_fallback_task
+            except asyncio.CancelledError:
+                pass  # Expected
+
+        self._rest_fallback_task = None
+        log.info("✅ [REST FALLBACK] Deactivated successfully")
+
+    # ── REST Polling ──────────────────────────────────────────────────
+
+    async def _rest_polling_loop(self) -> None:
+        """
+        Background loop that polls REST API for price and order updates.
+
+        Runs while _rest_fallback_active == True.
+        Polls every 5 seconds.
+        """
+        log.info("🔄 [REST FALLBACK] Polling loop started")
+
+        while self._rest_fallback_active and self._get_running():
+            try:
+                # Poll current price
+                await self._poll_price_via_rest()
+
+                # Poll pending orders for fill detection
+                await self._poll_pending_orders_via_rest()
+
+                await asyncio.sleep(5.0)
+
+            except asyncio.CancelledError:
+                break  # Task cancelled
+            except Exception as e:
+                log.error(f"❌ [REST FALLBACK] Polling error: {e}")
+                await asyncio.sleep(5.0)
+
+        log.info("✅ [REST FALLBACK] Polling loop exited")
+
+    async def _poll_price_via_rest(self) -> None:
+        """Poll current price via REST API and update internal state."""
+        try:
+            # Get ticker from REST API (uses symbol, not product_id)
+            ticker = await self.api_client.get_ticker(self.symbol)
+
+            if ticker and "close" in ticker:
+                price = float(ticker["close"])
+
+                # Update internal price tracking
+                self.current_price = price
+                self._last_price_update = time.time()
+                # NOTE: Do NOT update last WebSocket time - this is REST data
+
+                log.debug(f"📊 [REST FALLBACK] Price update: ${price:,.2f}")
+
+                # NOV 13: Update price health monitor with REST source
+                self.price_monitor.update_price(price, source="REST_API")
+
+            else:
+                log.warning(f"⚠️  [REST FALLBACK] Invalid ticker response: {ticker}")
+
+        except Exception as e:
+            log.error(f"❌ [REST FALLBACK] Failed to poll price: {e}")
+
+    async def _poll_pending_orders_via_rest(self) -> None:
+        """Poll pending orders via REST API to detect fills."""
+        try:
+            # Get current state from position actor (NOV 13: Fixed ask() signature - needs payload)
+            state_response = await self.position_actor.ask("GET_STATE", {}, timeout=10)
+            if not state_response or "state" not in state_response:
+                return
+
+            state = state_response["state"]
+            pending_buy = state.get("pending_buy")
+            pending_sell = state.get("pending_sell")
+
+            # Check each pending order
+            for order_info in [pending_buy, pending_sell]:
+                if not order_info:
+                    continue
+
+                order_id = order_info.get("order_id")
+                expected_side = order_info.get("side", "buy")
+
+                if not order_id:
+                    continue
+
+                # Query order status from exchange
+                await self._check_order_status_rest(order_id, expected_side)
+
+        except Exception as e:
+            log.error(f"❌ [REST FALLBACK] Failed to poll pending orders: {e}")
+
+    async def _check_order_status_rest(self, order_id: str, expected_side: str) -> None:
+        """Check order status via REST API and process if filled."""
+        try:
+            # Get order details from exchange
+            order = await self.api_client.get_order(order_id)
+
+            if not order:
+                log.warning(f"⚠️  [REST FALLBACK] Could not get order {order_id}")
+                return
+
+            state = order.get("state", "unknown")
+
+            # If order is filled, process it
+            if state == "filled":
+                side = order.get("side", expected_side)
+                avg_fill_price = float(order.get("average_fill_price") or order.get("limit_price", 0))
+                filled_size = int(order.get("size", 0))
+
+                log.info(f"🔔 [REST FALLBACK] FILL DETECTED via REST polling!")
+                log.info(f"   Order ID: {order_id}")
+                log.info(f"   Side: {side}, Price: ${avg_fill_price:,.2f}, Size: {filled_size}")
+
+                # Process the fill through normal fill handling
+                fill_data = {
+                    "order_id": order_id,
+                    "side": side,
+                    "fill_price": avg_fill_price,
+                    "fill_size": filled_size,
+                    "timestamp": time.time(),
+                    "source": "REST_POLLING"
+                }
+
+                await self._process_fill_callback(fill_data)
+
+        except Exception as e:
+            log.error(f"❌ [REST FALLBACK] Error checking order {order_id}: {e}")
