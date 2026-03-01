@@ -63,10 +63,6 @@ class GuardianHandler:
         self._set_running: Callable = lambda v: None
         self._get_started_once: Callable = lambda: False
 
-        # Callbacks for methods not yet moved (P1.6 → P1.7)
-        self._cancel_entries_callback: Optional[Callable] = None
-        self._resume_grid_callback: Optional[Callable] = None
-
     def set_runtime_refs(
         self,
         get_running: Callable,        # () -> bool
@@ -487,8 +483,7 @@ class GuardianHandler:
                     log.warning(f"   Reason: {reason}")
                     log.warning("   Action: Cancelling all pending entry orders")
                     log.warning("=" * 70)
-                    if self._cancel_entries_callback:
-                        await self._cancel_entries_callback()
+                    await self.cancel_pending_entries()
 
                 # STOP → GO transition
                 elif self._last_guardian_signal == "STOP" and current_signal == "GO":
@@ -496,11 +491,163 @@ class GuardianHandler:
                     log.info("🟢 GUARDIAN SIGNAL: STOP → GO")
                     log.info("   Trading resumed - checking grid coverage")
                     log.info("=" * 70)
-                    if self._resume_grid_callback:
-                        await self._resume_grid_callback()
+                    await self.resume_grid()
 
                 # Update last signal
                 self._last_guardian_signal = current_signal
 
         except Exception as e:
             log.error(f"Error checking Guardian transitions: {e}")
+
+    async def cancel_pending_entries(self) -> None:
+        """
+        Cancel all pending entry orders when Guardian turns STOP.
+
+        This prevents orders from filling during dangerous market conditions
+        when the bot is blocked from placing protective TP orders.
+        """
+        try:
+            cancelled_count = 0
+
+            # Get pending buy order
+            if self.mode == "LONG":
+                pending = self.position_actor.state.get("pending_buy")
+                if pending:
+                    order_id = pending.get("order_id")
+                    price = pending.get("price", 0)
+                    log.info(f"📋 Cancelling pending BUY order: {order_id} @ ${price:,.0f}")
+
+                    try:
+                        await self.order_actor.tell("CANCEL_ORDER", {"order_id": order_id})
+                        await self.position_actor.tell("CLEAR_PENDING_BUY", {"order_id": order_id})
+                        cancelled_count += 1
+                        log.info(f"✅ Cancelled BUY order {order_id}")
+                    except Exception as cancel_error:
+                        log.error(f"Failed to cancel BUY order {order_id}: {cancel_error}")
+
+            # Get pending sell order
+            elif self.mode == "SHORT":
+                pending = self.position_actor.state.get("pending_sell")
+                if pending:
+                    order_id = pending.get("order_id")
+                    price = pending.get("price", 0)
+                    log.info(f"📋 Cancelling pending SELL order: {order_id} @ ${price:,.0f}")
+
+                    try:
+                        await self.order_actor.tell("CANCEL_ORDER", {"order_id": order_id})
+                        await self.position_actor.tell("CLEAR_PENDING_SELL", {"order_id": order_id})
+                        cancelled_count += 1
+                        log.info(f"✅ Cancelled SELL order {order_id}")
+                    except Exception as cancel_error:
+                        log.error(f"Failed to cancel SELL order {order_id}: {cancel_error}")
+
+            if cancelled_count > 0:
+                log.info(f"🧹 Cancelled {cancelled_count} pending entry order(s) due to Guardian STOP")
+                if human_log:
+                    human_log.info(f"Guardian stopped trading - cancelled {cancelled_count} pending order(s)")
+            else:
+                log.info("✓ No pending entry orders to cancel")
+
+        except Exception as e:
+            log.error(f"Error cancelling pending entry orders: {e}")
+
+    async def resume_grid(self) -> None:
+        """
+        Resume grid trading when Guardian signal turns from STOP to GO.
+
+        Uses proper GridCalculator logic to determine next entry level based on:
+        - Current market price
+        - Existing open positions
+        - Grid strategy (LONG/SHORT)
+
+        This ensures the bot resumes exactly as per the documented grid strategy
+        without disrupting the single pending order rule or grid logic.
+        """
+        try:
+            # Check if we have the current price
+            current_price = self._get_current_price()
+            if not current_price:
+                log.warning("Cannot resume grid - no current price available")
+                return
+
+            # Check if we already have a pending order
+            if self.mode == "LONG":
+                pending = self.position_actor.state.get("pending_buy")
+                if pending:
+                    log.info(f"✓ Pending BUY order already exists @ ${pending.get('price', 0):,.0f}")
+                    return
+            elif self.mode == "SHORT":
+                pending = self.position_actor.state.get("pending_sell")
+                if pending:
+                    log.info(f"✓ Pending SELL order already exists @ ${pending.get('price', 0):,.0f}")
+                    return
+
+            # Get current positions from position actor
+            positions = list(self.position_actor.state.get("positions", {}).values())
+
+            # Use GridCalculator to determine proper next entry level
+            # This follows the exact logic documented in logic_strategy.md
+            if self.mode == "LONG":
+                # GridCalculator determines next BUY based on:
+                # - If positions exist: lowest_entry - step
+                # - If no positions: proper grid level below current price
+                next_buy_level = self.grid_calc.get_next_buy_level(
+                    current_price=current_price,
+                    open_positions=positions
+                )
+
+                if next_buy_level and next_buy_level >= self.grid_calc.lower:
+                    log.info(f"🟢 Resuming LONG grid - placing BUY @ ${next_buy_level:,.0f}")
+                    log.info(f"   Current price: ${current_price:,.0f}")
+                    log.info(f"   Open positions: {len(positions)}")
+
+                    # Place order via order actor (follows existing pattern)
+                    order_resp = await self.order_actor.ask({
+                        'action': 'place_buy_order',
+                        'price': next_buy_level,
+                        'post_only': True
+                    }, timeout=10.0)
+
+                    if order_resp.get('status') == 'success':
+                        order_id = order_resp.get('order_id')
+                        log.info(f"✅ Grid resumed - BUY order {order_id} @ ${next_buy_level:,.0f}")
+                        if human_log:
+                            human_log.info(f"Grid trading resumed - BUY order @ ${next_buy_level:,.0f}")
+                    else:
+                        log.warning(f"Failed to resume grid: {order_resp.get('error')}")
+                else:
+                    log.info(f"✓ Next BUY level ${next_buy_level or 'N/A'} outside grid bounds or unavailable")
+
+            elif self.mode == "SHORT":
+                # GridCalculator determines next SELL based on:
+                # - If positions exist: highest_entry + step
+                # - If no positions: proper grid level above current price
+                next_sell_level = self.grid_calc.get_next_sell_level(
+                    current_price=current_price,
+                    open_positions=positions
+                )
+
+                if next_sell_level and next_sell_level <= self.grid_calc.upper:
+                    log.info(f"🟢 Resuming SHORT grid - placing SELL @ ${next_sell_level:,.0f}")
+                    log.info(f"   Current price: ${current_price:,.0f}")
+                    log.info(f"   Open positions: {len(positions)}")
+
+                    # Place order via order actor (follows existing pattern)
+                    order_resp = await self.order_actor.ask({
+                        'action': 'place_sell_order',
+                        'price': next_sell_level,
+                        'post_only': True
+                    }, timeout=10.0)
+
+                    if order_resp.get('status') == 'success':
+                        order_id = order_resp.get('order_id')
+                        log.info(f"✅ Grid resumed - SELL order {order_id} @ ${next_sell_level:,.0f}")
+                        if human_log:
+                            human_log.info(f"Grid trading resumed - SELL order @ ${next_sell_level:,.0f}")
+                    else:
+                        log.warning(f"Failed to resume grid: {order_resp.get('error')}")
+                else:
+                    log.info(f"✓ Next SELL level ${next_sell_level or 'N/A'} outside grid bounds or unavailable")
+
+        except Exception as e:
+            log.error(f"Error resuming grid trading: {e}")
