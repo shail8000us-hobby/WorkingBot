@@ -146,3 +146,45 @@ class ExchangeSync:
             else:
                 # State is likely 'unknown' during transition - this is normal
                 log.debug(f"Exchange state: {state} (check #{check_count}) - continuing to monitor")
+
+    # ========================================================================
+    # P3.3: Exchange Maintenance Monitor Loop
+    # ========================================================================
+
+    async def exchange_maintenance_monitor(self) -> None:
+        """
+        DEC 23 Layer 3: Monitor for exchange maintenance.
+        
+        Detects when exchange goes into maintenance mode and handles recovery.
+        Checks every 60 seconds during normal operation.
+        """
+        log.info("Exchange maintenance monitor started")
+        
+        consecutive_errors = 0
+        max_errors_before_maintenance = 3  # 3 consecutive errors = likely maintenance
+        
+        while self._get_running():
+            try:
+                await asyncio.sleep(60)  # Check every minute during normal operation
+                
+                state = await self.detect_exchange_state()
+                
+                if state == 'online':
+                    consecutive_errors = 0
+                    # log.debug("Exchange state: online")
+                elif state == 'maintenance':
+                    log.warning("🏗️ Exchange maintenance detected!")
+                    await self.handle_exchange_maintenance()
+                    consecutive_errors = 0
+                else:  # error
+                    consecutive_errors += 1
+                    log.debug(f"Exchange state check error ({consecutive_errors}/{max_errors_before_maintenance})")
+                    
+                    if consecutive_errors >= max_errors_before_maintenance:
+                        log.warning(f"⚠️ {consecutive_errors} consecutive exchange errors - possible maintenance")
+                        await self.handle_exchange_maintenance()
+                        consecutive_errors = 0
+            
+            except Exception as e:
+                log.error(f"Exchange maintenance monitor error: {e}")
+                await asyncio.sleep(60)

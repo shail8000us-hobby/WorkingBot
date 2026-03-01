@@ -1444,7 +1444,7 @@ class AsyncGridBot:
             asyncio.create_task(self.state_coordinator.monitor_guardian(), name="state_guardian_monitor"),  # NOV 20: State coordinator Guardian monitor
             asyncio.create_task(self.state_coordinator.run_reconciliation_loop(), name="state_reconciliation"),  # NOV 20: State coordinator reconciliation
             self.fill_monitor._task,  # DEC 23: Fill Monitor task (already created by start())
-            asyncio.create_task(self._exchange_maintenance_monitor(), name="exchange_maintenance_monitor")  # DEC 23 Layer 3: Exchange state monitoring
+            asyncio.create_task(self.exchange_sync.exchange_maintenance_monitor(), name="exchange_maintenance_monitor")  # DEC 23 Layer 3: Exchange state monitoring
         ]
         self._tasks.extend(async_tasks)
         
@@ -3415,44 +3415,8 @@ class AsyncGridBot:
     # Phase 2 methods MOVED to HealthMonitor: check_memory_usage, check_websocket_health,
     # health_check_loop (P2.5-P2.6)
     
-    async def _exchange_maintenance_monitor(self) -> None:
-        """
-        DEC 23 Layer 3: Monitor for exchange maintenance.
-        
-        Detects when exchange goes into maintenance mode and handles recovery.
-        Checks every 60 seconds during normal operation.
-        """
-        log.info("Exchange maintenance monitor started")
-        
-        consecutive_errors = 0
-        max_errors_before_maintenance = 3  # 3 consecutive errors = likely maintenance
-        
-        while self._running:
-            try:
-                await asyncio.sleep(60)  # Check every minute during normal operation
-                
-                state = await self.exchange_sync.detect_exchange_state()
-                
-                if state == 'online':
-                    consecutive_errors = 0
-                    # log.debug("Exchange state: online")
-                elif state == 'maintenance':
-                    log.warning("🏗️ Exchange maintenance detected!")
-                    await self.exchange_sync.handle_exchange_maintenance()
-                    consecutive_errors = 0
-                else:  # error
-                    consecutive_errors += 1
-                    log.debug(f"Exchange state check error ({consecutive_errors}/{max_errors_before_maintenance})")
-                    
-                    if consecutive_errors >= max_errors_before_maintenance:
-                        log.warning(f"⚠️ {consecutive_errors} consecutive exchange errors - possible maintenance")
-                        await self.exchange_sync.handle_exchange_maintenance()
-                        consecutive_errors = 0
-            
-            except Exception as e:
-                log.error(f"Exchange maintenance monitor error: {e}")
-                await asyncio.sleep(60)
-    
+    # _exchange_maintenance_monitor — MOVED to ExchangeSync.exchange_maintenance_monitor() (P3.3)
+
     # _check_guardian_transitions — MOVED to GuardianHandler.check_transitions() (P1.6)
 
     # _cancel_pending_entry_orders — MOVED to GuardianHandler.cancel_pending_entries() (P1.7)
