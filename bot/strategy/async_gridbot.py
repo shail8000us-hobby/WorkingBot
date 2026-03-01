@@ -46,6 +46,7 @@ from bot.strategy.modules.event_store import EventStore, EventType
 from bot.strategy.modules.guardian_handler import GuardianHandler
 from bot.strategy.modules.health_monitor import HealthMonitor
 from bot.strategy.modules.exchange_sync import ExchangeSync
+from bot.strategy.modules.ws_lifecycle import WSLifecycle
 from bot.strategy.modules.grid_calculator import GridCalculator
 from bot.strategy.modules.mode_state_manager import get_mode_state_manager
 from bot.strategy.actors.base_actor import Message
@@ -697,6 +698,19 @@ class AsyncGridBot:
             instance_name=self.instance_name,
             config=self.config,
             should_log_fn=self._should_log,
+        )
+
+        # Phase 4: WSLifecycle module
+        self.ws_lifecycle = WSLifecycle(
+            api_client=self.api_client,
+            position_actor=self.position_actor,
+            price_monitor=self.price_monitor,
+            mode=self.mode,
+            symbol=self.symbol,
+            product_id=self.product_id,
+            max_positions=self.max_positions,
+            should_log_fn=self._should_log,
+            config=self.config,
         )
     
     def _should_log(self, log_key: str, interval_seconds: float = 60.0) -> bool:
