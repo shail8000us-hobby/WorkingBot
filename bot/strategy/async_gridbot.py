@@ -519,6 +519,7 @@ class AsyncGridBot:
         
         # Bot state
         self._running = False
+        self._started_once = False  # Distinguishes startup (not yet running) from shutdown (was running)
         self._tasks: List[asyncio.Task] = []
         self.current_price: Optional[float] = None
         self._initial_order_placed = False
@@ -765,12 +766,21 @@ class AsyncGridBot:
             # Increased from 60s to 120s to handle API rate limiting scenarios where
             # Delta API may block requests for 60s, causing Guardian signal to appear stale
             # JAN 27, 2026: Fixed to prevent stop/start cycle during rate limiting
+            # MAR 01, 2026: Fixed startup vs shutdown detection for stale signals
             if signal_age > 120:  # 120 seconds = 24 missed cycles (was 60s = 12 cycles)
-                # IMPORTANT: Don't trigger shutdown if we're already in graceful shutdown
-                # This prevents cascade of errors during shutdown when rate-limited
                 if not self._running:
-                    log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) but bot already shutting down - ignoring")
-                    return 'STOP', f'Guardian signal stale (bot already shutting down)'
+                    if not self._started_once:
+                        # STARTUP: Bot hasn't started yet. A stale signal from days ago
+                        # should NOT block startup. Guardian will publish fresh signals
+                        # once it's running. Treat stale signals as expired during startup.
+                        log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) during STARTUP - treating as expired")
+                        log.warning(f"   Original signal: {signal} - {reason}")
+                        log.warning(f"   Stale signals do not block startup. Guardian will publish fresh signals.")
+                        return 'GO', f'Guardian signal expired during startup ({signal_age:.0f}s old)'
+                    else:
+                        # SHUTDOWN: Bot was running but stopped. Don't trigger new shutdown.
+                        log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) but bot already shutting down - ignoring")
+                        return 'STOP', f'Guardian signal stale (bot already shutting down)'
                 
                 log.error(f"🚨 CRITICAL: Guardian signal is stale ({signal_age:.0f}s old)")
                 log.error(f"🛑 Guardian appears to have STOPPED. Shutting down bot for safety.")
@@ -1501,6 +1511,7 @@ class AsyncGridBot:
         await self._sync_positions_from_exchange()
         
         self._running = True
+        self._started_once = True
         self._start_time = time.time()
         
         # Create asyncio primitives within event loop

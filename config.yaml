@@ -11,12 +11,12 @@ symbols:
     product_id: '27'
     grid:
       geometry:
-        reference: 77500
-        lower: 75000
+        reference: 66500
+        lower: 63000
         upper: 100000
         step: 500
       limits:
-        max_open_positions: 120
+        max_open_positions: 20
         lot_size: 5
         short_lot_size: '1'
         max_open_orders: '20'
@@ -44,8 +44,8 @@ symbols:
     product_id: '3136'
     grid:
       geometry:
-        reference: 3100
-        lower: 3000
+        reference: 1000
+        lower: 500
         upper: 3600
         step: 100
       limits:
@@ -105,8 +105,8 @@ safety:
   spread_guard: {}
   volatility:
     enabled: true
-    max_iv: 55.0
-    max_rv: 55.0
+    max_iv: 70.0
+    max_rv: 70.0
     max_spread: 10.0
     check_interval: 300.0
     auto_resume: true

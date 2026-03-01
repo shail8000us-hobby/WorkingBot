@@ -66,10 +66,12 @@ class StartupRecoveryEngine(BaseRecoveryEngine):
         """
         try:
             current_price = await self.bot.get_current_price()
-            reference = self.config.grid.geometry.reference
-            step = self.config.grid.geometry.step
-            lower = self.config.grid.geometry.lower
-            upper = self.config.grid.geometry.upper
+            # Use bot's grid calculator which already has the correct geometry
+            gc = self.bot.grid_calc
+            reference = gc.ref
+            step = gc.step
+            lower = gc.lower
+            upper = gc.upper
             
             # Get max grids from config
             try:
@@ -111,8 +113,10 @@ class StartupRecoveryEngine(BaseRecoveryEngine):
     
     def _calculate_first_grid_level(self) -> float:
         """Calculate the first grid level based on mode"""
-        reference = self.config.grid.geometry.reference
-        step = self.config.grid.geometry.step
+        # Use bot's grid calculator which already has the correct geometry
+        gc = self.bot.grid_calc
+        reference = gc.ref
+        step = gc.step
         
         if self.bot.mode == "LONG":
             return reference - step

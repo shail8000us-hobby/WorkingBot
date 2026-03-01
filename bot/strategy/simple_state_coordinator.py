@@ -137,6 +137,9 @@ class SimpleStateCoordinator:
     async def _wait_for_guardian(self):
         log.info("Waiting for Guardian GO signal...")
         
+        max_wait_seconds = 60  # Don't wait more than 60 seconds for Guardian
+        waited = 0
+        
         while True:
             guardian_status = await self._get_guardian_status()
             
@@ -144,7 +147,13 @@ class SimpleStateCoordinator:
                 log.info("✅ Guardian GO signal received")
                 break
             
-            log.info("⏳ Guardian HALT - waiting 5s...")
+            waited += 5
+            if waited >= max_wait_seconds:
+                log.warning(f"⚠️  Guardian did not send GO signal within {max_wait_seconds}s")
+                log.warning("   Proceeding with startup. Guardian will enforce safety when running.")
+                break
+            
+            log.info(f"⏳ Guardian HALT - waiting 5s... ({waited}/{max_wait_seconds}s)")
             await asyncio.sleep(5)
     
     async def _get_guardian_status(self) -> str:

@@ -1,1829 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_20260301_015620_000652",
-      "timestamp": "2026-03-01T01:56:20.896159+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_015620_000653",
-      "timestamp": "2026-03-01T01:56:20.903382+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_015812_000654",
-      "timestamp": "2026-03-01T01:58:12.833400+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_015812_000655",
-      "timestamp": "2026-03-01T01:58:12.978255+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020041_000656",
-      "timestamp": "2026-03-01T02:00:41.955274+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020042_000657",
-      "timestamp": "2026-03-01T02:00:42.485597+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020121_000658",
-      "timestamp": "2026-03-01T02:01:21.630050+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020121_000659",
-      "timestamp": "2026-03-01T02:01:21.637926+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_020212_000660",
-      "timestamp": "2026-03-01T02:02:12.740190+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020212_000661",
-      "timestamp": "2026-03-01T02:02:12.864926+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020344_000662",
-      "timestamp": "2026-03-01T02:03:44.374294+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020344_000663",
-      "timestamp": "2026-03-01T02:03:44.519811+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020516_000664",
-      "timestamp": "2026-03-01T02:05:16.529542+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020516_000665",
-      "timestamp": "2026-03-01T02:05:16.673575+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020620_000666",
-      "timestamp": "2026-03-01T02:06:20.080812+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020620_000667",
-      "timestamp": "2026-03-01T02:06:20.088736+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_020644_000668",
-      "timestamp": "2026-03-01T02:06:44.662231+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020644_000669",
-      "timestamp": "2026-03-01T02:06:44.950748+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020814_000670",
-      "timestamp": "2026-03-01T02:08:14.967389+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020815_000671",
-      "timestamp": "2026-03-01T02:08:15.096054+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime HIGH + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime HIGH + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_020945_000672",
-      "timestamp": "2026-03-01T02:09:45.426566+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_020945_000673",
-      "timestamp": "2026-03-01T02:09:45.550787+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_021116_000674",
-      "timestamp": "2026-03-01T02:11:16.565240+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021116_000675",
-      "timestamp": "2026-03-01T02:11:16.701166+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_021119_000676",
-      "timestamp": "2026-03-01T02:11:19.102439+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021119_000677",
-      "timestamp": "2026-03-01T02:11:19.111692+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_021248_000678",
-      "timestamp": "2026-03-01T02:12:48.451845+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021248_000679",
-      "timestamp": "2026-03-01T02:12:48.575144+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_021418_000680",
-      "timestamp": "2026-03-01T02:14:18.302263+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021418_000681",
-      "timestamp": "2026-03-01T02:14:18.443170+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_021546_000682",
-      "timestamp": "2026-03-01T02:15:46.602065+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021546_000683",
-      "timestamp": "2026-03-01T02:15:46.734021+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_021618_000684",
-      "timestamp": "2026-03-01T02:16:18.381641+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021618_000685",
-      "timestamp": "2026-03-01T02:16:18.390187+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_021718_000686",
-      "timestamp": "2026-03-01T02:17:18.047698+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021718_000687",
-      "timestamp": "2026-03-01T02:17:18.171547+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_021847_000688",
-      "timestamp": "2026-03-01T02:18:47.859380+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_021847_000689",
-      "timestamp": "2026-03-01T02:18:47.984475+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022020_000690",
-      "timestamp": "2026-03-01T02:20:20.369246+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022020_000691",
-      "timestamp": "2026-03-01T02:20:20.504843+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022118_000692",
-      "timestamp": "2026-03-01T02:21:18.686667+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022118_000693",
-      "timestamp": "2026-03-01T02:21:18.695718+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_022151_000694",
-      "timestamp": "2026-03-01T02:21:51.491345+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022151_000695",
-      "timestamp": "2026-03-01T02:21:51.618882+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022322_000696",
-      "timestamp": "2026-03-01T02:23:22.291170+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022322_000697",
-      "timestamp": "2026-03-01T02:23:22.571797+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022453_000698",
-      "timestamp": "2026-03-01T02:24:53.292181+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022453_000699",
-      "timestamp": "2026-03-01T02:24:53.439638+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022620_000700",
-      "timestamp": "2026-03-01T02:26:20.127852+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022620_000701",
-      "timestamp": "2026-03-01T02:26:20.135531+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_022624_000702",
-      "timestamp": "2026-03-01T02:26:24.771113+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022624_000703",
-      "timestamp": "2026-03-01T02:26:24.865741+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022757_000704",
-      "timestamp": "2026-03-01T02:27:57.361489+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022757_000705",
-      "timestamp": "2026-03-01T02:27:57.538207+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_022926_000706",
-      "timestamp": "2026-03-01T02:29:26.799193+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_022927_000707",
-      "timestamp": "2026-03-01T02:29:27.076837+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023054_000708",
-      "timestamp": "2026-03-01T02:30:54.846638+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023054_000709",
-      "timestamp": "2026-03-01T02:30:54.990421+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023119_000710",
-      "timestamp": "2026-03-01T02:31:19.542333+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023119_000711",
-      "timestamp": "2026-03-01T02:31:19.557627+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_023224_000712",
-      "timestamp": "2026-03-01T02:32:24.490339+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023224_000713",
-      "timestamp": "2026-03-01T02:32:24.633567+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023354_000714",
-      "timestamp": "2026-03-01T02:33:54.991869+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023355_000715",
-      "timestamp": "2026-03-01T02:33:55.308162+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023524_000716",
-      "timestamp": "2026-03-01T02:35:24.768775+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023524_000717",
-      "timestamp": "2026-03-01T02:35:24.907972+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023620_000718",
-      "timestamp": "2026-03-01T02:36:20.064845+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023620_000719",
-      "timestamp": "2026-03-01T02:36:20.073810+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_023653_000720",
-      "timestamp": "2026-03-01T02:36:53.252693+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023653_000721",
-      "timestamp": "2026-03-01T02:36:53.370464+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime HIGH + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime HIGH + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023823_000722",
-      "timestamp": "2026-03-01T02:38:23.294218+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023823_000723",
-      "timestamp": "2026-03-01T02:38:23.435055+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_023954_000724",
-      "timestamp": "2026-03-01T02:39:54.290225+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_023954_000725",
-      "timestamp": "2026-03-01T02:39:54.841679+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_024117_000726",
-      "timestamp": "2026-03-01T02:41:17.551404+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024117_000727",
-      "timestamp": "2026-03-01T02:41:17.559779+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_024122_000728",
-      "timestamp": "2026-03-01T02:41:22.878193+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024122_000729",
-      "timestamp": "2026-03-01T02:41:22.971054+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_024252_000730",
-      "timestamp": "2026-03-01T02:42:52.328055+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024252_000731",
-      "timestamp": "2026-03-01T02:42:52.461629+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_024421_000732",
-      "timestamp": "2026-03-01T02:44:21.211032+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024421_000733",
-      "timestamp": "2026-03-01T02:44:21.353741+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_024550_000734",
-      "timestamp": "2026-03-01T02:45:50.372651+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024550_000735",
-      "timestamp": "2026-03-01T02:45:50.493464+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_024617_000736",
-      "timestamp": "2026-03-01T02:46:17.504185+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024617_000737",
-      "timestamp": "2026-03-01T02:46:17.516664+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_024722_000738",
-      "timestamp": "2026-03-01T02:47:22.110271+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024722_000739",
-      "timestamp": "2026-03-01T02:47:22.425752+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_024850_000740",
-      "timestamp": "2026-03-01T02:48:51.004310+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_024851_000741",
-      "timestamp": "2026-03-01T02:48:51.323850+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025023_000742",
-      "timestamp": "2026-03-01T02:50:23.429754+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025023_000743",
-      "timestamp": "2026-03-01T02:50:23.712451+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025118_000744",
-      "timestamp": "2026-03-01T02:51:18.361553+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025118_000745",
-      "timestamp": "2026-03-01T02:51:18.372791+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_025151_000746",
-      "timestamp": "2026-03-01T02:51:51.997467+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 asymmetry (alert), pnl_guardrail (warning)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "asymmetry",
-          "pnl_guardrail"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025152_000747",
-      "timestamp": "2026-03-01T02:51:52.130563+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025323_000748",
-      "timestamp": "2026-03-01T02:53:23.455393+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025323_000749",
-      "timestamp": "2026-03-01T02:53:23.577652+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025454_000750",
-      "timestamp": "2026-03-01T02:54:54.870753+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025454_000751",
-      "timestamp": "2026-03-01T02:54:55.002585+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025619_000752",
-      "timestamp": "2026-03-01T02:56:19.484952+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025619_000753",
-      "timestamp": "2026-03-01T02:56:19.501116+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_025626_000754",
-      "timestamp": "2026-03-01T02:56:26.414426+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025626_000755",
-      "timestamp": "2026-03-01T02:56:26.697248+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025758_000756",
-      "timestamp": "2026-03-01T02:57:58.547415+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025758_000757",
-      "timestamp": "2026-03-01T02:57:58.687748+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_025927_000758",
-      "timestamp": "2026-03-01T02:59:27.636456+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_025928_000759",
-      "timestamp": "2026-03-01T02:59:28.166990+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_030056_000760",
-      "timestamp": "2026-03-01T03:00:56.562636+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_030056_000761",
-      "timestamp": "2026-03-01T03:00:56.691325+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_030120_000762",
-      "timestamp": "2026-03-01T03:01:20.287802+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 2,
-        "events": [
-          "position_cap",
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_030120_000763",
-      "timestamp": "2026-03-01T03:01:20.297423+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-      "session_id": "mmm06mar26-1",
-      "severity": "warning",
-      "details": {
-        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260301_030228_000764",
-      "timestamp": "2026-03-01T03:02:28.514333+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_030229_000765",
-      "timestamp": "2026-03-01T03:02:29.057632+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
-      "id": "act_20260301_030356_000766",
-      "timestamp": "2026-03-01T03:03:56.713042+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "event_count": 1,
-        "events": [
-          "asymmetry"
-        ]
-      }
-    },
-    {
-      "id": "act_20260301_030356_000767",
-      "timestamp": "2026-03-01T03:03:56.864930+00:00",
-      "type": "regime_block",
-      "type_label": "Regime Block",
-      "category": "safety",
-      "message": "Regime blocked PE sell: Vol regime ELEVATED + Trend TREND_UP",
-      "session_id": "mmm01mar26-1",
-      "severity": "warning",
-      "details": {
-        "hedge": "pe",
-        "aggressor": "ce",
-        "reason": "Vol regime ELEVATED + Trend TREND_UP"
-      }
-    },
-    {
       "id": "act_20260301_030526_000768",
       "timestamp": "2026-03-01T03:05:26.948952+00:00",
       "type": "safety_warning",
@@ -7780,7 +5957,1805 @@
     },
     {
       "id": "act_20260301_104621_001151",
-      "timestamp": "2026-03-01T10:46:21.892991+00:00",
+      "timestamp": "2026-03-01T10:46:21.903709+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_105122_001152",
+      "timestamp": "2026-03-01T10:51:22.945620+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_105122_001153",
+      "timestamp": "2026-03-01T10:51:22.973753+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_105624_001154",
+      "timestamp": "2026-03-01T10:56:24.245325+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_105624_001155",
+      "timestamp": "2026-03-01T10:56:24.249993+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_110123_001156",
+      "timestamp": "2026-03-01T11:01:23.869136+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_110123_001157",
+      "timestamp": "2026-03-01T11:01:23.882506+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_110625_001158",
+      "timestamp": "2026-03-01T11:06:25.127542+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_110625_001159",
+      "timestamp": "2026-03-01T11:06:25.139585+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_111124_001160",
+      "timestamp": "2026-03-01T11:11:24.825303+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_111124_001161",
+      "timestamp": "2026-03-01T11:11:24.839894+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_111627_001162",
+      "timestamp": "2026-03-01T11:16:27.017076+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_111627_001163",
+      "timestamp": "2026-03-01T11:16:27.030151+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_112125_001164",
+      "timestamp": "2026-03-01T11:21:25.387478+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_112125_001165",
+      "timestamp": "2026-03-01T11:21:25.401216+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_112625_001166",
+      "timestamp": "2026-03-01T11:26:25.589569+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_112625_001167",
+      "timestamp": "2026-03-01T11:26:25.601796+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_113126_001168",
+      "timestamp": "2026-03-01T11:31:26.868444+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_113126_001169",
+      "timestamp": "2026-03-01T11:31:26.881723+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_113626_001170",
+      "timestamp": "2026-03-01T11:36:26.216098+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_113626_001171",
+      "timestamp": "2026-03-01T11:36:26.231379+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_114126_001172",
+      "timestamp": "2026-03-01T11:41:26.231821+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_114126_001173",
+      "timestamp": "2026-03-01T11:41:26.245290+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_114628_001174",
+      "timestamp": "2026-03-01T11:46:28.024631+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_114628_001175",
+      "timestamp": "2026-03-01T11:46:28.033296+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_115127_001176",
+      "timestamp": "2026-03-01T11:51:27.787412+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_115127_001177",
+      "timestamp": "2026-03-01T11:51:27.798519+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_115628_001178",
+      "timestamp": "2026-03-01T11:56:28.574419+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_115628_001179",
+      "timestamp": "2026-03-01T11:56:28.585375+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_120126_001180",
+      "timestamp": "2026-03-01T12:01:26.741220+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_120126_001181",
+      "timestamp": "2026-03-01T12:01:26.755066+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_120626_001182",
+      "timestamp": "2026-03-01T12:06:27.007945+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_120627_001183",
+      "timestamp": "2026-03-01T12:06:27.024056+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_121128_001184",
+      "timestamp": "2026-03-01T12:11:28.960646+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_121128_001185",
+      "timestamp": "2026-03-01T12:11:28.972974+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_121628_001186",
+      "timestamp": "2026-03-01T12:16:28.913411+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_121628_001187",
+      "timestamp": "2026-03-01T12:16:28.924682+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_122130_001188",
+      "timestamp": "2026-03-01T12:21:30.523751+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_122130_001189",
+      "timestamp": "2026-03-01T12:21:30.539944+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_122631_001190",
+      "timestamp": "2026-03-01T12:26:31.065371+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_122631_001191",
+      "timestamp": "2026-03-01T12:26:31.074128+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_123130_001192",
+      "timestamp": "2026-03-01T12:31:31.002553+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_123131_001193",
+      "timestamp": "2026-03-01T12:31:31.021502+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_123629_001194",
+      "timestamp": "2026-03-01T12:36:29.730395+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_123629_001195",
+      "timestamp": "2026-03-01T12:36:29.738327+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_124131_001196",
+      "timestamp": "2026-03-01T12:41:31.058299+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_124131_001197",
+      "timestamp": "2026-03-01T12:41:31.071455+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_124632_001198",
+      "timestamp": "2026-03-01T12:46:32.847365+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_124632_001199",
+      "timestamp": "2026-03-01T12:46:32.857726+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_125131_001200",
+      "timestamp": "2026-03-01T12:51:31.777289+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_125131_001201",
+      "timestamp": "2026-03-01T12:51:31.785912+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_125632_001202",
+      "timestamp": "2026-03-01T12:56:32.464340+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_125632_001203",
+      "timestamp": "2026-03-01T12:56:32.476034+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_130132_001204",
+      "timestamp": "2026-03-01T13:01:32.693907+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_130132_001205",
+      "timestamp": "2026-03-01T13:01:32.704230+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_130633_001206",
+      "timestamp": "2026-03-01T13:06:33.209484+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_130633_001207",
+      "timestamp": "2026-03-01T13:06:33.215544+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_131134_001208",
+      "timestamp": "2026-03-01T13:11:34.640123+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_131134_001209",
+      "timestamp": "2026-03-01T13:11:34.652635+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_131636_001210",
+      "timestamp": "2026-03-01T13:16:36.059232+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_131636_001211",
+      "timestamp": "2026-03-01T13:16:36.080646+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_132134_001212",
+      "timestamp": "2026-03-01T13:21:34.646935+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_132134_001213",
+      "timestamp": "2026-03-01T13:21:34.654364+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_132635_001214",
+      "timestamp": "2026-03-01T13:26:35.641609+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_132635_001215",
+      "timestamp": "2026-03-01T13:26:35.652128+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_133134_001216",
+      "timestamp": "2026-03-01T13:31:34.154613+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_133134_001217",
+      "timestamp": "2026-03-01T13:31:34.172322+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_133634_001218",
+      "timestamp": "2026-03-01T13:36:34.938492+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_133634_001219",
+      "timestamp": "2026-03-01T13:36:34.947762+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_134134_001220",
+      "timestamp": "2026-03-01T13:41:34.524151+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_134134_001221",
+      "timestamp": "2026-03-01T13:41:34.534089+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_134636_001222",
+      "timestamp": "2026-03-01T13:46:36.157616+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_134636_001223",
+      "timestamp": "2026-03-01T13:46:36.166807+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_135136_001224",
+      "timestamp": "2026-03-01T13:51:36.918927+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_135136_001225",
+      "timestamp": "2026-03-01T13:51:36.935281+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_135638_001226",
+      "timestamp": "2026-03-01T13:56:38.270762+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_135638_001227",
+      "timestamp": "2026-03-01T13:56:38.280179+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_140137_001228",
+      "timestamp": "2026-03-01T14:01:37.017389+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_140137_001229",
+      "timestamp": "2026-03-01T14:01:37.028596+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_140635_001230",
+      "timestamp": "2026-03-01T14:06:35.652873+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_140635_001231",
+      "timestamp": "2026-03-01T14:06:35.670279+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_141137_001232",
+      "timestamp": "2026-03-01T14:11:37.138917+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_141137_001233",
+      "timestamp": "2026-03-01T14:11:37.145007+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_141636_001234",
+      "timestamp": "2026-03-01T14:16:36.859277+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_141636_001235",
+      "timestamp": "2026-03-01T14:16:36.874859+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_142134_001236",
+      "timestamp": "2026-03-01T14:21:34.354758+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_142134_001237",
+      "timestamp": "2026-03-01T14:21:34.363696+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_142635_001238",
+      "timestamp": "2026-03-01T14:26:35.985372+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_142635_001239",
+      "timestamp": "2026-03-01T14:26:36.004495+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_143137_001240",
+      "timestamp": "2026-03-01T14:31:37.230662+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_143137_001241",
+      "timestamp": "2026-03-01T14:31:37.240853+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_143635_001242",
+      "timestamp": "2026-03-01T14:36:35.652005+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_143635_001243",
+      "timestamp": "2026-03-01T14:36:35.665044+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_144137_001244",
+      "timestamp": "2026-03-01T14:41:37.050003+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_144137_001245",
+      "timestamp": "2026-03-01T14:41:37.066156+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_144634_001246",
+      "timestamp": "2026-03-01T14:46:34.486675+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_144634_001247",
+      "timestamp": "2026-03-01T14:46:34.487048+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_150143_000001",
+      "timestamp": "2026-03-01T15:01:43.135219+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_150143_000002",
+      "timestamp": "2026-03-01T15:01:43.153968+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_150644_000003",
+      "timestamp": "2026-03-01T15:06:44.538872+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_150644_000004",
+      "timestamp": "2026-03-01T15:06:44.595500+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_151145_000005",
+      "timestamp": "2026-03-01T15:11:45.764203+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_151145_000006",
+      "timestamp": "2026-03-01T15:11:45.794342+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_151647_000007",
+      "timestamp": "2026-03-01T15:16:47.548175+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_151647_000008",
+      "timestamp": "2026-03-01T15:16:47.560824+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_152150_000009",
+      "timestamp": "2026-03-01T15:21:50.950525+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_152150_000010",
+      "timestamp": "2026-03-01T15:21:50.966356+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_152652_000011",
+      "timestamp": "2026-03-01T15:26:52.485495+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_152652_000012",
+      "timestamp": "2026-03-01T15:26:52.505155+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_153155_000013",
+      "timestamp": "2026-03-01T15:31:55.425527+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_153155_000014",
+      "timestamp": "2026-03-01T15:31:55.533264+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_153657_000015",
+      "timestamp": "2026-03-01T15:36:57.410369+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_153657_000016",
+      "timestamp": "2026-03-01T15:36:57.432486+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_154159_000017",
+      "timestamp": "2026-03-01T15:41:59.211545+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_154159_000018",
+      "timestamp": "2026-03-01T15:41:59.238664+00:00",
+      "type": "adjustments_stopped",
+      "type_label": "Adjustments Stopped",
+      "category": "safety",
+      "message": "\u26d4 Adjustments blocked: CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "reason": "CE POSITION CAP REACHED: 100/100 lots \u2014 ADJUSTMENTS BLOCKED",
+        "action_type": "stop_adjustments"
+      }
+    },
+    {
+      "id": "act_20260301_154658_000019",
+      "timestamp": "2026-03-01T15:46:58.112028+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 2 event(s) \u2014 position_cap (alert), asymmetry (warning)",
+      "session_id": "mmm06mar26-1",
+      "severity": "warning",
+      "details": {
+        "event_count": 2,
+        "events": [
+          "position_cap",
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260301_154658_000020",
+      "timestamp": "2026-03-01T15:46:58.112394+00:00",
       "type": "adjustments_stopped",
       "type_label": "Adjustments Stopped",
       "category": "safety",
@@ -7793,5 +7768,5 @@
       }
     }
   ],
-  "updated_at": "2026-03-01T10:46:21.894971+00:00"
+  "updated_at": "2026-03-01T15:46:58.113417+00:00"
 }

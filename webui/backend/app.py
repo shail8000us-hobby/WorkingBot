@@ -157,16 +157,6 @@ app.config['COMPRESS_MIMETYPES'] = [
 ]
 compress.init_app(app)
 
-# Configure caching for performance optimization (Phase 3)
-try:
-    from webui.backend.cache import init_cache
-    cache = init_cache(app)
-    log.info("✅ Flask-Caching initialized (SimpleCache, 500 items, 5min default TTL)")
-except:
-    from cache import init_cache
-    cache = init_cache(app)
-    log.info("✅ Flask-Caching initialized (SimpleCache, 500 items, 5min default TTL)")
-
 # CORS configuration
 ALLOWED_ORIGINS = cfg.webui.allowed_origins
 CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)
@@ -307,6 +297,22 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register options dashboard blueprint: {e}")
     log.warning(f"Options dashboard routes not available: {e}")
+
+# Register Options Groups blueprint (MAR 2026: Server-side persistent groups)
+try:
+    import importlib.util as _il
+    _gpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'routes', 'options', 'groups_api.py')
+    _spec = _il.spec_from_file_location('options_groups_api', _gpath)
+    _gmod = _il.module_from_spec(_spec)
+    _spec.loader.exec_module(_gmod)
+    groups_bp = _gmod.groups_bp
+    app.register_blueprint(groups_bp)
+    print(f"✅ Registered options groups blueprint (server-side persistent groups)", flush=True)
+except BaseException as e:
+    import traceback as _tb
+    print(f"⚠️ Could not register options groups blueprint: {type(e).__name__}: {e}", flush=True)
+    print(_tb.format_exc(), flush=True)
+    log.warning(f"Options groups routes not available: {e}")
 
 # Register Kelly Criterion Position Sizer (JAN 2026: Institutional position sizing)
 try:

@@ -117,6 +117,7 @@ import TakeProfitDialog from './TakeProfitDialog';
 import ExpiryMaxLossPanel from './ExpiryMaxLossPanel';
 import useMarketPrices from '../../hooks/useMarketPrices';
 import usePersistedState from '../../hooks/usePersistedState';
+import useGroupsAPI from '../../hooks/useGroupsAPI';
 import useOptionsPositions from '../../hooks/useOptionsPositions';
 import useOptionsSettings from '../../hooks/useOptionsSettings';
 import SoundSettingsPanel from '../SoundSettingsPanel';
@@ -380,8 +381,15 @@ const OptionsPanel = () => {
   // expiryKey = sorted expiry codes joined by '|', or 'ALL' when no filter.
   const GROUP_PALETTE = ['#7c3aed', '#0891b2', '#0d9488', '#d97706', '#dc2626', '#db2777', '#65a30d', '#ea580c'];
 
-  // Single master persisted object for all expiry group data
-  const [allExpiryGroupData, setAllExpiryGroupData] = usePersistedState('options_position_groups_v2', {});
+  // Single master persisted object for all expiry group data — SERVER-SIDE STORAGE
+  // Groups are stored in SQLite on the backend and will NEVER disappear unless user deletes them.
+  // On first load, any existing localStorage data is automatically migrated to the server.
+  const {
+    allExpiryGroupData, setAllExpiryGroupData,
+    loaded: groupsLoaded,
+    createGroupOnServer, deleteGroupOnServer,
+    assignSymbolOnServer, updateGroupOnServer, updateMetaOnServer,
+  } = useGroupsAPI();
 
   // The current expiry key (derived from selectedExpiries)
   const expiryGroupKey = useMemo(() => {
@@ -445,13 +453,15 @@ const OptionsPanel = () => {
   // (usePersistedState debouncing is handled inside the hook). We expose a no-op-compatible
   // wrapper that accepts the new order and writes it immediately via setAllExpiryGroupData.
   const saveCustomOrderNow = useCallback((newOrder) => {
+    // Persist position order to server
+    updateMetaOnServer(expiryGroupKey, { order: newOrder });
     setAllExpiryGroupData((prev) => {
       const key = expiryGroupKey;
       const slice = prev[key] || { groups: {}, collapsed: {}, order: [] };
       return { ...prev, [key]: { ...slice, order: newOrder } };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expiryGroupKey]);
+  }, [expiryGroupKey, updateMetaOnServer]);
 
   // setGroupOrder — persists the group display order for the current expiry
   const setGroupOrder = useCallback((updater) => {
@@ -459,10 +469,12 @@ const OptionsPanel = () => {
       const key = expiryGroupKey;
       const slice = prev[key] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const nextGroupOrder = typeof updater === 'function' ? updater(slice.groupOrder || []) : updater;
+      // Persist group order to server
+      updateMetaOnServer(key, { group_order: nextGroupOrder });
       return { ...prev, [key]: { ...slice, groupOrder: nextGroupOrder } };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expiryGroupKey]);
+  }, [expiryGroupKey, updateMetaOnServer]);
 
   const [newGroupName, setNewGroupName] = useState('');
   // Right-click / tag-button context menu
@@ -472,24 +484,29 @@ const OptionsPanel = () => {
   const handleCreateGroup = useCallback((name) => {
     if (!name.trim()) return;
     const id = Date.now().toString();
+    const trimmedName = name.trim();
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const usedCount = Object.keys(slice.groups || {}).length;
       const color = GROUP_PALETTE[usedCount % GROUP_PALETTE.length];
       const existingOrder = slice.groupOrder || Object.keys(slice.groups || {});
+      // Also persist to server via targeted API
+      createGroupOnServer(expiryGroupKey, id, trimmedName, color);
       return {
         ...prev,
         [expiryGroupKey]: {
           ...slice,
-          groups: { ...(slice.groups || {}), [id]: { name: name.trim(), color, symbols: [] } },
+          groups: { ...(slice.groups || {}), [id]: { name: trimmedName, color, symbols: [] } },
           groupOrder: [...existingOrder, id], // append new group at the end
         },
       };
     });
-  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, createGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Delete a group (positions become ungrouped) — also removes from groupOrder
   const handleDeleteGroup = useCallback((groupId) => {
+    // Persist to server
+    deleteGroupOnServer(expiryGroupKey, groupId);
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const nextGroups = { ...(slice.groups || {}) };
@@ -497,10 +514,12 @@ const OptionsPanel = () => {
       const nextGroupOrder = (slice.groupOrder || []).filter((id) => id !== groupId);
       return { ...prev, [expiryGroupKey]: { ...slice, groups: nextGroups, groupOrder: nextGroupOrder } };
     });
-  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, deleteGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Assign a position symbol to a group (removes from any previous group first)
   const handleAssignToGroup = useCallback((symbol, groupId) => {
+    // Persist to server
+    assignSymbolOnServer(expiryGroupKey, symbol, groupId || null);
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
       const prevGroups = slice.groups || {};
@@ -513,7 +532,7 @@ const OptionsPanel = () => {
       }
       return { ...prev, [expiryGroupKey]: { ...slice, groups: next } };
     });
-  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, assignSymbolOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get the groupId a symbol belongs to (or null)
   const getSymbolGroup = useCallback((symbol) => {
@@ -528,12 +547,15 @@ const OptionsPanel = () => {
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
       const prevCollapsed = slice.collapsed || {};
+      const nextCollapsed = { ...prevCollapsed, [groupId]: !prevCollapsed[groupId] };
+      // Persist collapsed state to server
+      updateMetaOnServer(expiryGroupKey, { collapsed: nextCollapsed });
       return {
         ...prev,
-        [expiryGroupKey]: { ...slice, collapsed: { ...prevCollapsed, [groupId]: !prevCollapsed[groupId] } },
+        [expiryGroupKey]: { ...slice, collapsed: nextCollapsed },
       };
     });
-  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, updateMetaOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Group Notes ───────────────────────────────────────────────────────────
   // noteEditAnchor: { mouseX, mouseY, groupId } | null — controls popover visibility
@@ -543,6 +565,8 @@ const OptionsPanel = () => {
 
   // Persist note text into the group object for the current expiry
   const handleSaveGroupNote = useCallback((groupId, text) => {
+    // Persist note to server
+    updateGroupOnServer(expiryGroupKey, groupId, { note: text });
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
       const prevGroups = slice.groups || {};
@@ -558,7 +582,7 @@ const OptionsPanel = () => {
         },
       };
     });
-  }, [expiryGroupKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, updateGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SL/TP Dialog state
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);

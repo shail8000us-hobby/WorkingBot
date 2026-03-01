@@ -44,7 +44,7 @@ class GuardianRecoveryEngine(BaseRecoveryEngine):
                 if self.halt_start_price:
                     current_price = await self.bot.get_current_price()
                     price_change = abs(current_price - self.halt_start_price)
-                    grid_step = self.config.grid.geometry.step
+                    grid_step = self.bot.grid_calc.step
                     
                     if price_change > grid_step:
                         return True, f"market_moved_${price_change:.0f}_during_halt"
@@ -81,10 +81,11 @@ class GuardianRecoveryEngine(BaseRecoveryEngine):
         
         try:
             current_price = await self.bot.get_current_price()
-            step = self.config.grid.geometry.step
-            lower = self.config.grid.geometry.lower
-            upper = self.config.grid.geometry.upper
-            reference = self.config.grid.geometry.reference
+            gc = self.bot.grid_calc
+            step = gc.step
+            lower = gc.lower
+            upper = gc.upper
+            reference = gc.ref
             
             # Get max grids from config (default 5 for Guardian)
             try:

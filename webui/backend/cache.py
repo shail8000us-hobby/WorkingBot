@@ -7,8 +7,10 @@ Phase 3 optimization - March 2026
 
 from flask_caching import Cache
 
-# Cache instance (initialized in app.py)
-cache = None
+# Cache instance — initialized with NullCache so @cache.cached() decorators work
+# at import time (before init_cache is called). init_cache() replaces this with
+# a real in-memory cache once the Flask app is ready.
+cache = Cache(config={'CACHE_TYPE': 'NullCache'})
 
 def init_cache(app):
     """Initialize cache with Flask app"""
