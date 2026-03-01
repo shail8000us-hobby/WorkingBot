@@ -131,3 +131,155 @@ class HealthMonitor:
 
         except Exception as e:
             log.debug(f"Guardian health export error: {e}")
+
+    # ========================================================================
+    # P2.3: Heartbeat Loop + Pending Order Formatter
+    # ========================================================================
+
+    def _format_pending_order_info(self, pending_order: Optional[Dict], current_price: float, side: str) -> str:
+        if not pending_order:
+            return ""
+
+        pending_price = pending_order.get('price')
+        if not pending_price:
+            return ""
+
+        try:
+            pending_price_float = float(pending_price)
+            current_price_float = float(current_price)
+
+            if side == "buy":
+                # FIX M2: Remove ANSI escape codes that corrupt log files
+                color_indicator = "✅" if pending_price_float < current_price_float else "⚠️"
+                label = "BUY"
+            else:
+                color_indicator = "✅" if pending_price_float > current_price_float else "⚠️"
+                label = "SELL"
+
+            return f" | {color_indicator} Pending {label} @ ${pending_price_float:,.0f}"
+        except (ValueError, TypeError):
+            label = "BUY" if side == "buy" else "SELL"
+            return f" | Pending {label} @ ${pending_price}"
+
+    async def heartbeat_loop(self) -> None:
+        """Periodic heartbeat tasks with detailed status logging."""
+        # FIX M1: Use config value and f-string
+        heartbeat_interval = getattr(self.config.bot, 'heartbeat_seconds', 5)
+        log.info(f"💓 Heartbeat loop started (every {heartbeat_interval}s)")
+
+        heartbeat_counter = 0
+
+        while self._get_running():
+            try:
+                await asyncio.sleep(heartbeat_interval)  # FIX M1: Use config interval
+                heartbeat_counter += 1
+
+                # NOV 13: Update watchdog timestamp
+                self._set_last_heartbeat_time(time.time())
+
+                # Update external heartbeat file every cycle (5s)
+                await self.update_external_heartbeat()
+
+                # Get state from position actor (every 15s for detailed status)
+                if heartbeat_counter % 3 == 0:
+                    state = await self.position_actor.ask("GET_STATE", {}, timeout=10)
+
+                    positions = state.get("open_tranches", [])
+                    pending_buy = state.get("pending_buy")
+                    pending_sell = state.get("pending_sell")
+
+                    # Get current price and volatility status
+                    current_price = self._get_current_price()
+
+                    # Get bid/ask from WebSocket if available
+                    bid_price = None
+                    ask_price = None
+                    spread = None
+
+                    try:
+                        if hasattr(self.api_client, 'ws_manager') and hasattr(self.api_client.ws_manager, 'ticker_data'):
+                            ticker_data = getattr(self.api_client.ws_manager, 'ticker_data', {})
+                            bid_price = ticker_data.get('bid')
+                            ask_price = ticker_data.get('ask')
+                            if bid_price and ask_price and bid_price > 0 and ask_price > 0:
+                                spread = ask_price - bid_price
+                    except Exception:
+                        pass
+
+                    # Check volatility status with REAL DATA
+                    # Volatility display REMOVED - Guardian monitors this
+                    # Check Guardian log for volatility status
+                    volatility_status = "🛡️  Guardian"
+                    volatility_detail = ""
+
+                    # Format detailed status log (matching old GridBot style)
+                    if current_price:
+                        # Color codes for positions
+                        positions_str = f"\033[36m{len(positions)}/{self.max_positions}\033[0m"  # Cyan
+
+                        # Price change indicator (green up, red down, white unchanged)
+                        if self._last_hb_price is not None:
+                            try:
+                                current_float = float(current_price)
+                                last_float = float(self._last_hb_price)
+                                if current_float > last_float:
+                                    price_color = "\033[32m"  # Green up
+                                    price_change = "↑"
+                                elif current_float < last_float:
+                                    price_color = "\033[31m"  # Red down
+                                    price_change = "↓"
+                                else:
+                                    price_color = "\033[37m"  # White unchanged
+                                    price_change = "→"
+                            except (ValueError, TypeError):
+                                price_color = "\033[37m"
+                                price_change = ""
+                        else:
+                            price_color = "\033[33m"  # Yellow for first time
+                            price_change = ""
+
+                        # Pending order info with color coding
+                        pending_order = pending_buy if self.mode == 'LONG' else pending_sell
+                        side = "buy" if self.mode == 'LONG' else "sell"
+                        pending_info = self._format_pending_order_info(pending_order, current_price, side)
+
+                        # Build detailed log message with bid/ask if available
+                        # Add trading status indicator
+                        trading_status = ""
+                        if not self._get_initial_order_placed():
+                            trading_status = " | ⏸️  NOT STARTED"
+                        elif self._get_last_block_reason():
+                            # If we have a pending order, bot is ACTIVE (not blocked)
+                            if pending_buy or pending_sell:
+                                trading_status = " | ✅ ACTIVE"
+                                self._set_last_block_reason(None)  # Clear stale block reason
+                            else:
+                                trading_status = " | 🚫 BLOCKED"
+                        else:
+                            trading_status = " | ✅ ACTIVE"
+
+                        if bid_price and ask_price:
+                            log.info(
+                                f"[HB] Positions: {positions_str} | "
+                                f"Price: {price_color}${current_price:,.0f}{price_change}\033[0m | "
+                                f"\033[35mBid: ${bid_price:,.1f} | Ask: ${ask_price:,.1f}\033[0m | "
+                                f"Spread: ${spread:.1f} | "
+                                f"Volatility: {volatility_status}{pending_info}{trading_status}"
+                            )
+                        else:
+                            log.info(
+                                f"[HB] Positions: {positions_str} | "
+                                f"Price: {price_color}${current_price:,.0f}{price_change}\033[0m | "
+                                f"Volatility: {volatility_status}{pending_info}{trading_status}"
+                            )
+
+                        # Store for next comparison
+                        self._last_hb_price = current_price
+
+                        # Log detailed grid status (every 60s instead of 30s)
+                        if heartbeat_counter % 12 == 0:
+                            if self._log_grid_status_callback:
+                                self._log_grid_status_callback(positions, pending_buy, pending_sell, current_price)
+
+            except Exception as e:
+                log.error(f"Heartbeat error: {e}")
