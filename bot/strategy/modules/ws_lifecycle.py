@@ -70,6 +70,8 @@ class WSLifecycle:
         self._get_start_time: Callable = lambda: time.time()
         self._on_ticker_callback: Optional[Callable] = None
         self._on_order_update_callback: Optional[Callable] = None
+        self._on_position_update_callback: Optional[Callable] = None
+        self._on_ticker_update_callback: Optional[Callable] = None
         self._process_fill_callback: Optional[Callable] = None
         self._full_exchange_sync_callback: Optional[Callable] = None
 
@@ -128,3 +130,33 @@ class WSLifecycle:
 
         except Exception as e:
             log.error(f"Error fetching current price: {e}")
+
+    # ── WebSocket Setup ───────────────────────────────────────────────
+
+    def register_handlers(self) -> None:
+        """Register WebSocket message handlers."""
+        # NOTE: Removed v2/user_trades handler to prevent duplicate fill processing
+        # Delta Exchange sends fills via orders channel (state=closed, reason=fill)
+        self.api_client.ws_manager.register_handler("orders", self._on_order_update_callback)
+        self.api_client.ws_manager.register_handler("positions", self._on_position_update_callback)
+        self.api_client.ws_manager.register_handler("v2/ticker", self._on_ticker_update_callback)
+
+    async def subscribe_channels(self) -> None:
+        """Subscribe to WebSocket channels."""
+        await self.api_client.subscribe_channels()
+
+    async def message_loop(self) -> None:
+        """WebSocket message processing loop."""
+        log.info("📡 WebSocket message loop started")
+
+        try:
+            async for message in self.api_client.ws_manager.messages():
+                if not self._get_running():
+                    break
+
+                # Messages are routed via handlers registered above
+
+        except Exception as e:
+            log.error(f"WebSocket message loop error: {e}")
+
+        log.info("WebSocket message loop ended")

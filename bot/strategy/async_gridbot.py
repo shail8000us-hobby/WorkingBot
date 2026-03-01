@@ -1127,7 +1127,7 @@ class AsyncGridBot:
         # Volatility halt cleanup REMOVED - Guardian manages all halt state
         
         # Register WebSocket handlers
-        self._register_ws_handlers()
+        self.ws_lifecycle.register_handlers()
         
         # CRITICAL FIX NOV 14: Register reconnection callback for fill reconciliation
         # Reconnection handled by UnifiedAPIClient: self.exchange_sync.reconcile_fills_after_reconnect)
@@ -1161,7 +1161,7 @@ class AsyncGridBot:
         await self.api_client.connect()
         
         # Subscribe to channels
-        await self._subscribe_channels()
+        await self.ws_lifecycle.subscribe_channels()
         
         # Wait a moment for subscriptions to stabilize
         await asyncio.sleep(1)
@@ -1181,7 +1181,7 @@ class AsyncGridBot:
         log.info("Starting async tasks...")
         async_tasks = [
             asyncio.create_task(self.health_monitor.heartbeat_loop(), name="heartbeat"),
-            asyncio.create_task(self._ws_message_loop(), name="websocket"),
+            asyncio.create_task(self.ws_lifecycle.message_loop(), name="websocket"),
             asyncio.create_task(self.health_monitor.monitoring_loop(), name="monitoring"),
             asyncio.create_task(self.health_monitor.health_check_loop(), name="health_check"),
             asyncio.create_task(self._reconciliation_action_processor(), name="reconciliation_actions"),  # NOV 20: Process actions from standalone reconciliation engine
@@ -1377,67 +1377,10 @@ class AsyncGridBot:
         
         log.info("✅ AsyncGridBot stopped")
     
-    def _register_ws_handlers(self) -> None:
-        """Register WebSocket message handlers."""
-        # WebSocket handlers are registered via UnifiedAPIClient
-        # NOTE: Removed v2/user_trades handler to prevent duplicate fill processing
-        # Delta Exchange sends fills via orders channel (state=closed, reason=fill)
-        # Using both channels risks processing same fill twice → duplicate TP orders
-        # self.api_client.ws_manager.register_handler("v2/user_trades", self._handle_user_trades)  # DISABLED
-        self.api_client.ws_manager.register_handler("orders", self._handle_order_update)
-        self.api_client.ws_manager.register_handler("positions", self._handle_position_update)
-        self.api_client.ws_manager.register_handler("v2/ticker", self._handle_ticker_update)
-    
-    async def _subscribe_channels(self) -> None:
-        """Subscribe to WebSocket channels."""
-        # Subscription handled by UnifiedAPIClient
-        await self.api_client.subscribe_channels()
-    
-    async def _ws_message_loop(self) -> None:
-        """WebSocket message processing loop."""
-        log.info("📡 WebSocket message loop started")
-        
-        try:
-            async for message in self.api_client.ws_manager.messages():
-                if not self._running:
-                    break
-                
-                # Messages are routed via handlers registered above
-        
-        except Exception as e:
-            log.error(f"WebSocket message loop error: {e}")
-        
-        log.info("WebSocket message loop ended")
-    
-    async def _handle_user_trades(self, message: Dict[str, Any]) -> None:
-        """
-        DISABLED: Handle user trade (fill) messages.
-        
-        This handler is currently DISABLED to prevent duplicate fill processing.
-        
-        Reason: Delta Exchange sends fill notifications via BOTH channels:
-        1. orders channel: state=closed, reason=fill (used by bot)
-        2. v2/user_trades channel: dedicated fill stream (redundant)
-        
-        Using both risks processing same fill twice → duplicate positions/TP orders.
-        
-        The orders channel is more reliable as it includes order lifecycle events,
-        while user_trades only provides fill data without context.
-        
-        Args:
-            message: Trade message from WebSocket (not processed)
-        """
-        # DISABLED - see _register_ws_handlers() for explanation
-        log.debug("⏭️  user_trades message ignored (handler disabled)")
-        return
-        
-        # Original code kept for reference:
-        # try:
-        #     trades = message.get("trades", [])
-        #     for trade in trades:
-        #         await self._process_fill(trade)
-        # except Exception as e:
-        #     log.error(f"Error handling user trades: {e}")
+    # ── _register_ws_handlers → MOVED to ws_lifecycle.register_handlers() [P4.3] ──
+    # ── _subscribe_channels → MOVED to ws_lifecycle.subscribe_channels() [P4.3] ──
+    # ── _ws_message_loop → MOVED to ws_lifecycle.message_loop() [P4.3] ──
+    # ── _handle_user_trades → MOVED to ws_lifecycle (disabled) [P4.3] ──
     
     async def _process_fill(self, fill_data: Dict[str, Any]) -> None:
         """
@@ -3452,7 +3395,7 @@ class AsyncGridBot:
             await self.api_client.connect()
             
             # Re-subscribe to channels
-            await self._subscribe_channels()
+            await self.ws_lifecycle.subscribe_channels()
             
             log.info("✅ [WEBSOCKET] Reconnection successful")
             
