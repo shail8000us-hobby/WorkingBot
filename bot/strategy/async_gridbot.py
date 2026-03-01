@@ -827,43 +827,8 @@ class AsyncGridBot:
         self._last_fill_id_cleanup = now
         log.debug(f"Cleaned up old fill IDs, current cache size: {len(self._seen_fill_ids)}")
     
-    async def _check_guardian_transition_and_retry(self) -> None:
-        """
-        Check if Guardian signal transitioned from STOP to GO.
-        If yes, retry placing missed grid orders that were skipped.
-        
-        CRITICAL FIX (Dec 11, 2025):
-        When Guardian blocks order placement during saga execution,
-        we need to retry those missed orders when Guardian gives GO signal.
-        """
-        try:
-            # Read current Guardian signal
-            signal, reason = await self._read_guardian_signal()
-            
-            # Check for STOP -> GO transition
-            if self._last_guardian_signal == 'STOP' and signal == 'GO':
-                transition_time = time.time()
-                log.info("=" * 80)
-                log.info("🟢 GUARDIAN TRANSITION DETECTED: STOP -> GO")
-                log.info(f"   Blocked Duration: {transition_time - self._guardian_transition_time:.1f}s")
-                log.info(f"   Missed Grid Orders: {len(self._missed_grid_orders)}")
-                log.info("=" * 80)
-                
-                # Retry missed grid orders
-                if self._missed_grid_orders:
-                    await self._retry_missed_grid_orders()
-                
-                # A3: Check for multi-step price moves during the STOP period
-                await self._fill_multi_step_missed_grids()
-            
-            # Track signal for next check
-            if self._last_guardian_signal != signal:
-                self._last_guardian_signal = signal
-                self._guardian_transition_time = time.time()
-                
-        except Exception as e:
-            log.error(f"Error checking Guardian transition: {e}")
-    
+    # _check_guardian_transition_and_retry — MOVED to GuardianHandler.check_transition_and_retry() (P1.3)
+
     async def _retry_missed_grid_orders(self) -> None:
         """
         Retry placing grid orders that were missed due to Guardian STOP signal.
@@ -3965,7 +3930,7 @@ class AsyncGridBot:
                 signal, reason = await self._read_guardian_signal()
                 
                 # Check for signal transition and retry missed orders
-                await self._check_guardian_transition_and_retry()
+                await self.guardian.check_transition_and_retry()
                 
                 # If Guardian stopped, _read_guardian_signal already set _running = False
                 # This loop will exit naturally

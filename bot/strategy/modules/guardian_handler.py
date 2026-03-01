@@ -177,3 +177,48 @@ class GuardianHandler:
             # Trigger bot shutdown
             self._set_running(False)
             return 'STOP', f'CRITICAL: Guardian signal read error: {str(e)}'
+
+    async def check_transition_and_retry(self) -> None:
+        """
+        Check if Guardian signal transitioned from STOP to GO.
+        If yes, retry placing missed grid orders that were skipped.
+
+        CRITICAL FIX (Dec 11, 2025):
+        When Guardian blocks order placement during saga execution,
+        we need to retry those missed orders when Guardian gives GO signal.
+        """
+        try:
+            # Read current Guardian signal
+            signal, reason = await self.read_signal()
+
+            # Check for STOP -> GO transition
+            if self._last_guardian_signal == 'STOP' and signal == 'GO':
+                transition_time = time.time()
+                log.info("=" * 80)
+                log.info("🟢 GUARDIAN TRANSITION DETECTED: STOP -> GO")
+                log.info(f"   Blocked Duration: {transition_time - self._guardian_transition_time:.1f}s")
+                log.info(f"   Missed Grid Orders: {len(self._missed_grid_orders)}")
+                log.info("=" * 80)
+
+                # Retry missed grid orders
+                if self._missed_grid_orders:
+                    await self.retry_missed_orders()
+
+                # A3: Check for multi-step price moves during the STOP period
+                await self.fill_multi_step_missed_grids()
+
+            # Track signal for next check
+            if self._last_guardian_signal != signal:
+                self._last_guardian_signal = signal
+                self._guardian_transition_time = time.time()
+
+        except Exception as e:
+            log.error(f"Error checking Guardian transition: {e}")
+
+    async def retry_missed_orders(self) -> None:
+        """Stub — replaced in P1.4 with real implementation."""
+        log.warning("retry_missed_orders stub called — real method arrives in P1.4")
+
+    async def fill_multi_step_missed_grids(self) -> None:
+        """Stub — replaced in P1.5 with real implementation."""
+        log.warning("fill_multi_step_missed_grids stub called — real method arrives in P1.5")
