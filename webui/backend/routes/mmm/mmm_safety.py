@@ -550,6 +550,13 @@ class MMMSafety:
         params = session.get('params', {})
         trailing_pct = params.get('trailing_stop_pct', 0.50)
 
+        # trailing_stop_pct=0 means disabled — threshold would be $0 which
+        # fires on any dip below zero after profit, not the intended behavior.
+        # The API/UI already treats 0 as "disabled" for display purposes;
+        # this guard makes the safety check consistent with that intent.
+        if trailing_pct <= 0:
+            return events
+
         peak = session.get('peak_pnl', 0)
         if peak <= 0:
             return events  # No profit to protect

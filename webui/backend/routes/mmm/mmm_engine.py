@@ -315,6 +315,7 @@ class MMMEngine:
         # When trend guard is at Tier 1 (ALERT), reduce lots by configurable %
         # Tier 2+ blocks sells entirely (handled in regime engine), so this
         # only applies to the "soft warning" zone.
+        constraint_msg = ''
         trend_tier = session.get('_trend_tier', 0)
         if trend_tier >= 1:
             lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
@@ -331,7 +332,6 @@ class MMMEngine:
         # §13.1: Position cap
         hedge_state = session.get(hedge_side, {})
         current_total = hedge_state.get('total_lots', 0)
-        constraint_msg = ''
 
         if current_total + lots_to_sell > max_lots_per_side:
             lots_to_sell = max_lots_per_side - current_total
@@ -340,10 +340,12 @@ class MMMEngine:
                     f"Position cap reached: {hedge_side.upper()} has "
                     f"{current_total}/{max_lots_per_side} lots"
                 )
-            constraint_msg = (
+            cap_msg = (
                 f"Capped from {math.ceil(raw_lots)} to {lots_to_sell} "
                 f"(position cap: {max_lots_per_side})"
             )
+            # Combine with any prior constraint message (e.g. trend lot reduction)
+            constraint_msg = f"{constraint_msg}; {cap_msg}" if constraint_msg else cap_msg
 
         return lots_to_sell, constraint_msg
 

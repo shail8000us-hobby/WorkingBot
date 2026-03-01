@@ -17,6 +17,8 @@ log = logging.getLogger('mmm_config')
 PARAM_RULES = {
     'desired_ce_premium':      {'type': float, 'min': 1,    'max': 10000, 'hot': False},
     'desired_pe_premium':      {'type': float, 'min': 1,    'max': 10000, 'hot': False},
+    # NOTE: initial_lots is display-only — stored for analytics/reporting but
+    # the runtime entry lot count is set by the API request body, not this param.
     'initial_lots':            {'type': int,   'min': 1,    'max': 1000,  'hot': False},
     'expiry':                  {'type': str,   'min': None, 'max': None,  'hot': False},
     'adjustment_interval':     {'type': int,   'min': 10,   'max': 3600,  'hot': True},
@@ -287,7 +289,7 @@ def get_param_info() -> Dict[str, Dict]:
     descriptions = {
         'desired_ce_premium': 'Target CE premium for auto strike selection',
         'desired_pe_premium': 'Target PE premium for auto strike selection',
-        'initial_lots': 'Starting lots per side at entry',
+        'initial_lots': 'Starting lots per side at entry (display/analytics only — actual entry lots set via API)',
         'expiry': 'Target expiry date/time',
         'adjustment_interval': 'Seconds between heartbeat checks',
         'min_trigger_move': 'Minimum % premium move above trigger to fire adjustment (e.g. 15 = 15%)',

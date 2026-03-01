@@ -2,7 +2,7 @@
   "files": {
     "main.css": "/static/css/main.da34bb4e.css",
     "main.js": "/static/js/main.d7713060.js",
-    "runtime.js": "/static/js/runtime.9362f0f5.js",
+    "runtime.js": "/static/js/runtime.61e25b76.js",
     "static/js/8651.1db678d6.chunk.js": "/static/js/8651.1db678d6.chunk.js",
     "static/js/9578.cf7f3742.chunk.js": "/static/js/9578.cf7f3742.chunk.js",
     "static/js/4513.11f0c569.chunk.js": "/static/js/4513.11f0c569.chunk.js",
@@ -48,7 +48,7 @@
     "static/css/3919.b07d81ba.chunk.css": "/static/css/3919.b07d81ba.chunk.css",
     "static/js/3919.da17d410.chunk.js": "/static/js/3919.da17d410.chunk.js",
     "static/js/7295.65437d8c.chunk.js": "/static/js/7295.65437d8c.chunk.js",
-    "static/js/3314.222d597d.chunk.js": "/static/js/3314.222d597d.chunk.js",
+    "static/js/3314.61784e15.chunk.js": "/static/js/3314.61784e15.chunk.js",
     "static/js/2688.de2aa38e.chunk.js": "/static/js/2688.de2aa38e.chunk.js",
     "vendor.js": "/static/js/vendor.5ff01d96.js",
     "ui-libs.js": "/static/js/ui-libs.4a19fa77.js",
@@ -74,7 +74,7 @@
     "index.html": "/index.html"
   },
   "entrypoints": [
-    "static/js/runtime.9362f0f5.js",
+    "static/js/runtime.61e25b76.js",
     "static/js/vendor.5ff01d96.js",
     "static/js/ui-libs.4a19fa77.js",
     "static/js/charts.8f797169.js",

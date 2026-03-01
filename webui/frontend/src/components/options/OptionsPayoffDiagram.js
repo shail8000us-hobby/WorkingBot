@@ -611,7 +611,7 @@ const OptionsPayoffDiagram = ({
                       }}
                       label={
                         <span>
-                          {pos.size > 0 ? '📈 Long' : '📉 Short'} {Math.abs(pos.size)} {pos.type.toUpperCase()} ${pos.strike.toLocaleString()}
+                          {pos.size > 0 ? '+' : '-'}{Math.abs(pos.size)} {pos.type === 'call' ? 'C' : 'P'}{pos.strike.toLocaleString()}
                           {isMultiExpiry && (
                             <span style={{
                               marginLeft: 4, fontSize: '0.6rem', padding: '1px 4px',

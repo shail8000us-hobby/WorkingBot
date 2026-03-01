@@ -46,6 +46,20 @@ def is_wind_down_active(session: Dict) -> bool:
     # NOTE: when wind_down_on_atm fires, mmm_monitor.py auto-sets params['wind_down_enabled']=True
     # so this check will pass — wind_down_on_atm is self-sufficient (user doesn't need to
     # also enable the manual toggle).
+    #
+    # EXCEPTION: Regime-triggered wind-down (_trend_wind_down_triggered,
+    # _vol_wind_down_triggered) bypasses the master switch because these are
+    # SAFETY flags set by the regime engine when vol_regime_action='wind_down'
+    # or trend_action='wind_down'.  Requiring the user to also enable
+    # wind_down_enabled would defeat the purpose of automatic regime response.
+
+    # Regime-triggered wind-down: vol HIGH or trend Tier 4 with action='wind_down'
+    # These bypass the wind_down_enabled master switch — they are safety overrides.
+    if session.get('_vol_wind_down_triggered', False):
+        return True
+    if session.get('_trend_wind_down_triggered', False):
+        return True
+
     if not params.get('wind_down_enabled', False):
         return False
 

@@ -59,6 +59,7 @@ ACTION_BLOCK_CE_SELLS = 'BLOCK_CE_SELLS'
 ACTION_BLOCK_PE_SELLS = 'BLOCK_PE_SELLS'
 ACTION_BLOCK_ALL_SELLS = 'BLOCK_ALL_SELLS'
 ACTION_FORCE_REDUCE = 'FORCE_REDUCE'
+ACTION_PAUSE = 'PAUSE'
 
 # Ring buffer max sizes
 MAX_IV_HISTORY = 60
@@ -233,6 +234,10 @@ def _update_vol_regime(session: Dict, iv_data: Dict, spot_price: float) -> str:
     session['_vol_iv_change_pct'] = round(iv_change_pct, 2)
     session['_vol_rv_annualized'] = round(rv_annualized, 2)
     session['_vol_regime_score'] = round(r_score, 3)
+
+    if new_regime == VOL_NORMAL and session.get('_vol_wind_down_triggered'):
+        session['_vol_wind_down_triggered'] = False
+        log.info("Vol regime reset to NORMAL — clearing _vol_wind_down_triggered")
 
     return new_regime
 
@@ -681,6 +686,13 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     session['_trend_tier'] = new_tier
     session['_trend_direction'] = direction if new_tier > TREND_TIER_NONE else 'none'
 
+    # Clear regime wind-down flag when trend resets fully to NORMAL.
+    # Without this, a Tier 4 wind-down trigger would be sticky forever,
+    # keeping wind-down active even after the market calmed down.
+    if new_tier == TREND_TIER_NONE and session.get('_trend_wind_down_triggered'):
+        session['_trend_wind_down_triggered'] = False
+        log.info("Trend reset to NORMAL — clearing _trend_wind_down_triggered")
+
     return new_regime
 
 
@@ -704,7 +716,7 @@ def _compute_regime_action(session: Dict) -> str:
 
     Returns:
         NORMAL | WARN | BLOCK_CE_SELLS | BLOCK_PE_SELLS |
-        BLOCK_ALL_SELLS | FORCE_REDUCE
+        BLOCK_ALL_SELLS | FORCE_REDUCE | PAUSE
     """
     vol_regime = session.get('_vol_regime', VOL_NORMAL)
     gamma_regime = session.get('_gamma_regime', GAMMA_NORMAL)
@@ -727,6 +739,9 @@ def _compute_regime_action(session: Dict) -> str:
         if vol_action_cfg == 'wind_down':
             # Vol HIGH with wind_down action → mark for wind-down + block all sells
             session['_vol_wind_down_triggered'] = True
+        elif vol_action_cfg == 'pause':
+            # Vol HIGH with pause action → pause the session entirely
+            return ACTION_PAUSE
         return ACTION_BLOCK_ALL_SELLS
 
     # Priority 4: Gamma hard → block all sells
@@ -759,10 +774,14 @@ def _compute_regime_action(session: Dict) -> str:
         if trend_regime == TREND_UP:
             if trend_action_cfg == 'wind_down':
                 session['_trend_wind_down_triggered'] = True
+            elif trend_action_cfg == 'pause':
+                return ACTION_PAUSE
             return ACTION_BLOCK_CE_SELLS
         if trend_regime == TREND_DOWN:
             if trend_action_cfg == 'wind_down':
                 session['_trend_wind_down_triggered'] = True
+            elif trend_action_cfg == 'pause':
+                return ACTION_PAUSE
             return ACTION_BLOCK_PE_SELLS
 
     # Tier 1: warn only (lot reduction handled in engine)
@@ -876,6 +895,9 @@ class MMMRegimeEngine:
 
         if action == ACTION_FORCE_REDUCE:
             return True, 'Gamma emergency — force reducing positions'
+
+        if action == ACTION_PAUSE:
+            return True, 'Regime pause — session paused by vol/trend controls'
 
         if action == ACTION_BLOCK_ALL_SELLS:
             vol = session.get('_vol_regime', VOL_NORMAL)

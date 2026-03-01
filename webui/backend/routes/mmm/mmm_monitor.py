@@ -73,7 +73,7 @@ from .mmm_perp_hedge import (
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
-from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE
+from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE, ACTION_PAUSE
 from .mmm_telegram import (
     alert_margin_tier_change, alert_emergency_close,
     alert_session_stopped, alert_rapid_check_activated,
@@ -130,7 +130,8 @@ class MMMMonitor:
         # Institutional heartbeat infrastructure
         base_interval = session.get('params', {}).get('adjustment_interval', 300)
         self._health = HeartbeatHealth(session_id, base_interval)
-        self._circuit = CircuitBreaker(session_id)
+        cb_threshold = session.get('params', {}).get('circuit_breaker_threshold', None)
+        self._circuit = CircuitBreaker(session_id, failure_threshold=cb_threshold)
 
         # Margin Guardian (P1 safety layer)
         self._margin_guardian = MarginGuardian(session_id)
@@ -838,13 +839,31 @@ class MMMMonitor:
                 session['unrealized_pnl'] = fresh_unrealized
                 minutes_to_expiry = self._get_minutes_to_expiry()
                 safety_events = self._safety.run_all_checks(session, minutes_to_expiry)
-                # Process auto-resume events (e.g. whipsaw cooldown expired)
+                # Process safety events on partial beat — not just resume,
+                # also auto_close and stop (critical safety actions like
+                # max_loss must fire even during exchange outages).
                 for event in safety_events:
                     if event.get('action') == 'resume' and self._paused:
                         log_activity('session_resumed',
                                     f'Auto-resumed (partial beat): {event.get("message", "")}',
                                     sid, 'success')
                         self.resume(event.get('message', 'Auto-resume'))
+                if should_block_adjustment(safety_events):
+                    reason, action_type = get_block_action(safety_events)
+                    if action_type == 'auto_close':
+                        log.critical(
+                            f"[{sid}] SAFETY AUTO-CLOSE on partial beat: {reason}"
+                        )
+                        await self._auto_close_all(reason, emergency=True)
+                        self._save_my_session(session)
+                        return
+                    elif action_type == 'stop':
+                        log.critical(
+                            f"[{sid}] SAFETY STOP on partial beat: {reason}"
+                        )
+                        self.stop(reason)
+                        self._save_my_session(session)
+                        return
                 self._save_my_session(session)
                 latency_ms = (time.monotonic() - beat_start_mono) * 1000
                 self._health.record_beat(
@@ -868,12 +887,30 @@ class MMMMonitor:
             try:
                 minutes_to_expiry = self._get_minutes_to_expiry()
                 safety_events = self._safety.run_all_checks(session, minutes_to_expiry)
+                # Process all critical safety events on miss beat — auto_close
+                # and stop must fire even when exchange is unreachable.
                 for event in safety_events:
                     if event.get('action') == 'resume' and self._paused:
                         log_activity('session_resumed',
                                     f'Auto-resumed (miss beat): {event.get("message", "")}',
                                     sid, 'success')
                         self.resume(event.get('message', 'Auto-resume'))
+                if should_block_adjustment(safety_events):
+                    reason, action_type = get_block_action(safety_events)
+                    if action_type == 'auto_close':
+                        log.critical(
+                            f"[{sid}] SAFETY AUTO-CLOSE on miss beat: {reason}"
+                        )
+                        await self._auto_close_all(reason, emergency=True)
+                        self._save_my_session(session)
+                        return
+                    elif action_type == 'stop':
+                        log.critical(
+                            f"[{sid}] SAFETY STOP on miss beat: {reason}"
+                        )
+                        self.stop(reason)
+                        self._save_my_session(session)
+                        return
                 self._save_my_session(session)
             except Exception as safety_e:
                 log.warning(f"[{sid}] Safety check during miss beat failed: {safety_e}")
@@ -960,6 +997,8 @@ class MMMMonitor:
                         # returns True. wind_down_on_atm is the user's explicit opt-in — the ATM
                         # trigger should activate wind-down without requiring the manual toggle.
                         params['wind_down_enabled'] = True
+                        # Persist the change to params_json immediately to survive hot-reload
+                        self._save_my_session(session)
                         log.warning(
                             f"[{sid}] ATM WIND-DOWN TRIGGERED: Spot ${_wd_spot:.0f} within "
                             f"0.5% of {_atm_wd_side} ORIGINAL strike ${_triggered_strike:.0f}. "
@@ -1307,6 +1346,28 @@ class MMMMonitor:
                         {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)},
                     )
                     self.pause('Gamma emergency — manual review required')
+                    _skip_to_pnl = True
+
+                # Handle ACTION_PAUSE — vol_regime_action='pause' or
+                # trend_action='pause' requested explicit session pause.
+                if not _skip_to_pnl and regime_action == ACTION_PAUSE:
+                    vol_r = session.get('_vol_regime', 'NORMAL')
+                    trend_r = session.get('_trend_regime', 'NORMAL')
+                    trend_tier = session.get('_trend_tier', 0)
+                    log_activity('regime_pause',
+                                f'Regime PAUSE: session paused by regime controls '
+                                f'(vol={vol_r}, trend={trend_r}, tier={trend_tier})',
+                                sid, 'error',
+                                {'vol_regime': vol_r, 'trend_regime': trend_r,
+                                 'trend_tier': trend_tier})
+                    emit_safety(
+                        sid, 'regime', 'critical',
+                        f'⚠️ Regime PAUSE: Session paused — '
+                        f'vol={vol_r}, trend={trend_r}. Manual review required.',
+                        {'vol_regime': vol_r, 'trend_regime': trend_r,
+                         'trend_tier': trend_tier},
+                    )
+                    self.pause(f'Regime pause — vol={vol_r}, trend={trend_r}')
                     _skip_to_pnl = True
 
                 # Handle BLOCK_ALL_SELLS — skip trigger evaluation entirely
@@ -2090,11 +2151,13 @@ class MMMMonitor:
                         {'side': aggressor.upper(), 'strike': strike_val, 'lots': group_lots})
 
             try:
+                _reprice_max = self.session.get('params', {}).get('max_reprice_attempts', None)
                 result = await self.executor.smart_execute(
                     symbol=symbol,
                     side='buy',
                     size=group_lots,
                     reduce_only=True,
+                    max_reprice_attempts=_reprice_max,
                 )
 
                 if not result.get('success'):
@@ -2726,10 +2789,12 @@ class MMMMonitor:
         except Exception as _pe:
             log.warning(f"[{sid}] Failed to register pending order for strike shift: {_pe}")
 
+        _reprice_max = self.session.get('params', {}).get('max_reprice_attempts', None)
         result = await self.executor.smart_execute(
             symbol=symbol,
             side='sell',
             size=lots,
+            max_reprice_attempts=_reprice_max,
         )
 
         # Update pending registry with real order ID
@@ -3334,9 +3399,11 @@ class MMMMonitor:
                     reduce_only=True, session_id=sid,
                 )
             else:
+                _reprice_max = self.session.get('params', {}).get('max_reprice_attempts', None)
                 return await self.executor.smart_execute(
                     symbol=symbol, side='buy', size=lots,
                     reduce_only=True,
+                    max_reprice_attempts=_reprice_max,
                 )
 
         # Close active lots (original + adjustment) at active strike
@@ -5021,6 +5088,14 @@ def _save_session(session: Dict, my_generation: int = 0):
                         return
                 if 'params' in stored:
                     session['params'] = stored['params']
+                    # BUG FIX (mmm01mar26-1): Re-apply session-level auto-trigger overrides
+                    # that were set in-memory but not yet persisted to params_json.
+                    # Specifically: ATM wind-down trigger sets wind_down_enabled=True in-memory,
+                    # but the line above just replaced session['params'] with the STORED copy
+                    # (which still has wind_down_enabled=False). Re-apply the override so it
+                    # gets written to DB in this very save call.
+                    if session.get('_atm_wind_down_triggered'):
+                        session['params']['wind_down_enabled'] = True
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")
