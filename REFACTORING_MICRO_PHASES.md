@@ -18,7 +18,9 @@
 | **🧪 Full Bot Test P2** | 11e0dc8 | ✅ **PASSED** (after 1 bug fix) | See bug report below |
 | **P3: ExchangeSync** | dcc3858…cf91d89 (8 commits) | ✅ **DONE** | `exchange_sync.py` 822 lines, `async_gridbot.py` −709 lines |
 | **🧪 Full Bot Test P3** | — | ✅ **PASSED** (0 bugs) | Clean start→stop→start, no tracebacks |
-| P4–P9 | — | ⬜ Not started | — |
+| **P4: WSLifecycle** | 856f049…e8a439a (8 commits + 2 bugfixes) | ✅ **DONE** | `ws_lifecycle.py` 576 lines, `async_gridbot.py` −500 lines |
+| **🧪 Full Bot Test P4** | — | ✅ **PASSED** (after 2 bug fixes) | Clean start→stop→start, zero errors |
+| P5–P9 | — | ⬜ Not started | — |
 
 ### 🐛 Bug Found During P1 Full Bot Test
 
@@ -54,6 +56,28 @@ AttributeError: 'AsyncGridBot' object has no attribute '_format_pending_order_in
 **Committed:** `11e0dc81e` — "Fix: async_gridbot pass health_monitor._format_pending_order_info after P2 extraction"
 
 **Lesson:** When passing `self.method` as a callback to `set_runtime_refs()`, the method may have already been moved. Always grep the `set_runtime_refs()` call block for any `self._xxx` references from the extracted class.
+
+### 🐛 Bug #1 Found During P4 Full Bot Test
+
+**Error:** `AttributeError: 'AsyncGridBot' object has no attribute 'ws_lifecycle'`
+
+**Root Cause:** `self._rest_fallback_active = False` was set at line 569 in `__init__`, before `ws_lifecycle` was constructed at line 703. The property proxy setter tried `self.ws_lifecycle._rest_fallback_active = value` which failed because `ws_lifecycle` didn't exist yet.
+
+**Fix:** Removed early assignment — WSLifecycle owns this state and initializes it in its own `__init__`.
+
+**Committed:** `91a5b9ea3` — "P4 Fix: remove early _rest_fallback_active init that conflicts with ws_lifecycle proxy"
+
+### 🐛 Bug #2 Found During P4 Full Bot Test
+
+**Error:** `'NoneType' object has no attribute 'price_data_flowing'` from `human_log.price_data_flowing()`
+
+**Root Cause:** Wrong import path in ws_lifecycle.py: `from bot.utils.human_log import human_log` instead of `from bot.utils.human_logger import human_log`. This silently set `human_log = None`.
+
+**Fix:** Corrected import path + added `if human_log:` guards on all 5 call sites.
+
+**Committed:** `e8a439abb` — "P4 Fix: correct human_log import path + add None guards in ws_lifecycle"
+
+**Lesson:** Always verify import paths by grepping the existing codebase for the canonical import. Add defensive None guards on optional singletons.
 
 ---
 
@@ -1087,7 +1111,7 @@ pm2 stop gridbot-btc
 
 ---
 
-## Phase 4: Extract `ws_lifecycle.py` (~500 lines, MEDIUM risk)
+## Phase 4: Extract `ws_lifecycle.py` (~500 lines, MEDIUM risk) — ✅ DONE
 
 ### Why Fourth
 - WebSocket lifecycle is well-bounded
@@ -1282,6 +1306,16 @@ pm2 start ecosystem.config.js --only gridbot-btc
 # ✅ No tracebacks
 pm2 stop gridbot-btc
 ```
+
+### ✅ Phase 4 Completion Notes
+
+**Completed:** Mar 2, 2026
+**Commits:** 856f049ce → e8a439abb (8 extraction commits + 2 bugfix commits)
+**Result:** `ws_lifecycle.py` = 576 lines, `async_gridbot.py` ≈ 3,669 lines (down from ~4,200 pre-P4)
+**Methods extracted:** 16 (get_current_price, fetch_current_price, register_handlers, subscribe_channels, message_loop, reconnect_websocket, rest_fallback_monitor_loop, _handle_ticker_update, _handle_position_update, _activate_rest_fallback, _deactivate_rest_fallback, _rest_polling_loop, _poll_price_via_rest, _poll_pending_orders_via_rest, _check_order_status_rest, set_runtime_refs)
+**Property proxies:** 4 (current_price, _last_price, _last_price_update, _rest_fallback_active)
+**Runtime callbacks:** 6 (wired via set_runtime_refs before WS connect)
+**Bugs found:** 2 (see bug reports above)
 
 ---
 
