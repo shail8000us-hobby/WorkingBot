@@ -1324,6 +1324,8 @@ class AsyncGridBot:
             _log_grid_status_callback=self._log_detailed_grid_status,
             _format_pending_order_callback=self._format_pending_order_info,
             _emergency_stop_callback=self.emergency_stop,
+            _check_guardian_transitions_callback=self.guardian.check_transitions,
+            _tp_retry_callback=self._process_tp_retry_queue,
         )
 
         # Create asyncio primitives within event loop
@@ -1413,7 +1415,7 @@ class AsyncGridBot:
             asyncio.create_task(self.health_monitor.heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(self._ws_message_loop(), name="websocket"),
             asyncio.create_task(self.health_monitor.monitoring_loop(), name="monitoring"),
-            asyncio.create_task(self._health_check_loop(), name="health_check"),
+            asyncio.create_task(self.health_monitor.health_check_loop(), name="health_check"),
             asyncio.create_task(self._reconciliation_action_processor(), name="reconciliation_actions"),  # NOV 20: Process actions from standalone reconciliation engine
             asyncio.create_task(self._rest_fallback_monitor_loop(), name="rest_fallback"),  # NOV 13: REST fallback
             asyncio.create_task(self._watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
@@ -3471,66 +3473,7 @@ class AsyncGridBot:
     # _check_memory_usage — MOVED to HealthMonitor.check_memory_usage() (P2.5)
     # _check_websocket_health — MOVED to HealthMonitor.check_websocket_health() (P2.5)
     
-    async def _health_check_loop(self) -> None:
-        """Health check loop for detecting issues."""
-        log.info("Health check loop started")
-        human_log.health_monitoring_active()  # Human-readable
-        
-        check_counter = 0
-        
-        while self._running:
-            try:
-                # Check Guardian signal transitions every 5 seconds for faster response
-                await self.guardian.check_transitions()
-                await asyncio.sleep(5)
-                
-                check_counter += 5
-                
-                # Run other health checks every 30 seconds
-                if check_counter >= 30:
-                    check_counter = 0
-                    
-                    # Check memory usage
-                    await self._check_memory_usage()
-                    
-                    # Process TP retry queue
-                    await self._process_tp_retry_queue()
-                    
-                    # Check WebSocket health
-                    await self._check_websocket_health()
-                
-                    # Check actor health
-                    position_metrics = self.position_actor.get_metrics()
-                    order_metrics = self.order_actor.get_metrics()
-                    
-                    # Check for high error rates
-                    if position_metrics.get("error_rate", 0) > 0.1:
-                        log.warning(f"High error rate in position actor: {position_metrics['error_rate']:.1%}")
-                    
-                    if order_metrics.get("error_rate", 0) > 0.1:
-                        log.warning(f"High error rate in order actor: {order_metrics['error_rate']:.1%}")
-                    
-                    # Check mailbox sizes
-                    if position_metrics.get("mailbox_size", 0) > position_metrics.get("mailbox_capacity", 1000) * 0.8:
-                        log.warning(f"Position actor mailbox nearly full: {position_metrics['mailbox_size']}/{position_metrics['mailbox_capacity']}")
-                    
-                    if order_metrics.get("mailbox_size", 0) > order_metrics.get("mailbox_capacity", 1000) * 0.8:
-                        log.warning(f"Order actor mailbox nearly full: {order_metrics['mailbox_size']}/{order_metrics['mailbox_capacity']}")
-                    
-                    # Check saga metrics
-                    saga_metrics = self.saga_orchestrator.get_metrics()
-                    if saga_metrics["active_sagas"] > 8:
-                        log.warning(f"Many active sagas: {saga_metrics['active_sagas']}")
-                    
-                    # Check price health
-                    if self._last_price_update > 0:
-                        price_age = time.time() - self._last_price_update
-                        if price_age > 30:
-                            log.warning(f"⚠️  Price data is STALE: {price_age:.1f}s since last update")
-                            log.warning("   WebSocket may have issues - check connectivity")
-            
-            except Exception as e:
-                log.error(f"Health check error: {e}")
+    # _health_check_loop — MOVED to HealthMonitor.health_check_loop() (P2.6)
     
     async def _exchange_maintenance_monitor(self) -> None:
         """

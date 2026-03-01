@@ -429,3 +429,72 @@ class HealthMonitor:
                             asyncio.create_task(ws_manager._handle_reconnect())
         except Exception as e:
             log.error(f"WebSocket health check error: {e}", exc_info=True)
+
+    # ========================================================================
+    # P2.6: Health Check Loop
+    # ========================================================================
+
+    async def health_check_loop(self) -> None:
+        """Health check loop for detecting issues."""
+        log.info("Health check loop started")
+        if human_log:
+            human_log.health_monitoring_active()  # Human-readable
+
+        check_counter = 0
+
+        while self._get_running():
+            try:
+                # Check Guardian signal transitions every 5 seconds for faster response
+                if self._check_guardian_transitions_callback:
+                    await self._check_guardian_transitions_callback()
+                await asyncio.sleep(5)
+
+                check_counter += 5
+
+                # Run other health checks every 30 seconds
+                if check_counter >= 30:
+                    check_counter = 0
+
+                    # Check memory usage
+                    await self.check_memory_usage()
+
+                    # Process TP retry queue
+                    if self._tp_retry_callback:
+                        await self._tp_retry_callback()
+
+                    # Check WebSocket health
+                    await self.check_websocket_health()
+
+                    # Check actor health
+                    position_metrics = self.position_actor.get_metrics()
+                    order_metrics = self.order_actor.get_metrics()
+
+                    # Check for high error rates
+                    if position_metrics.get("error_rate", 0) > 0.1:
+                        log.warning(f"High error rate in position actor: {position_metrics['error_rate']:.1%}")
+
+                    if order_metrics.get("error_rate", 0) > 0.1:
+                        log.warning(f"High error rate in order actor: {order_metrics['error_rate']:.1%}")
+
+                    # Check mailbox sizes
+                    if position_metrics.get("mailbox_size", 0) > position_metrics.get("mailbox_capacity", 1000) * 0.8:
+                        log.warning(f"Position actor mailbox nearly full: {position_metrics['mailbox_size']}/{position_metrics['mailbox_capacity']}")
+
+                    if order_metrics.get("mailbox_size", 0) > order_metrics.get("mailbox_capacity", 1000) * 0.8:
+                        log.warning(f"Order actor mailbox nearly full: {order_metrics['mailbox_size']}/{order_metrics['mailbox_capacity']}")
+
+                    # Check saga metrics
+                    saga_metrics = self.saga_orchestrator.get_metrics()
+                    if saga_metrics["active_sagas"] > 8:
+                        log.warning(f"Many active sagas: {saga_metrics['active_sagas']}")
+
+                    # Check price health
+                    last_price_update = self._get_last_price_update()
+                    if last_price_update > 0:
+                        price_age = time.time() - last_price_update
+                        if price_age > 30:
+                            log.warning(f"⚠️  Price data is STALE: {price_age:.1f}s since last update")
+                            log.warning("   WebSocket may have issues - check connectivity")
+
+            except Exception as e:
+                log.error(f"Health check error: {e}")
