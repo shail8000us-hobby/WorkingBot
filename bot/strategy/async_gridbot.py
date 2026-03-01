@@ -1412,7 +1412,7 @@ class AsyncGridBot:
         async_tasks = [
             asyncio.create_task(self.health_monitor.heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(self._ws_message_loop(), name="websocket"),
-            asyncio.create_task(self._monitoring_loop(), name="monitoring"),
+            asyncio.create_task(self.health_monitor.monitoring_loop(), name="monitoring"),
             asyncio.create_task(self._health_check_loop(), name="health_check"),
             asyncio.create_task(self._reconciliation_action_processor(), name="reconciliation_actions"),  # NOV 20: Process actions from standalone reconciliation engine
             asyncio.create_task(self._rest_fallback_monitor_loop(), name="rest_fallback"),  # NOV 13: REST fallback
@@ -3286,72 +3286,7 @@ class AsyncGridBot:
     # _heartbeat_loop — MOVED to HealthMonitor.heartbeat_loop() (P2.3)
     # _format_pending_order_info — MOVED to HealthMonitor._format_pending_order_info() (P2.3)
     
-    async def _monitoring_loop(self) -> None:
-        """Write monitoring data for WebUI - Symbol-specific (v5.0)."""
-        log.info("📊 Monitoring loop started")
-        
-        monitoring_file = Path(f"data/monitoring_snapshot_{self.symbol_name}_{self.mode}.json")
-        monitoring_file.parent.mkdir(exist_ok=True)
-        
-        while self._running:
-            try:
-                await asyncio.sleep(5)
-                
-                # Gather monitoring data
-                state = await self.position_actor.ask("GET_STATE", {})
-                position_metrics = await self.position_actor.ask("GET_METRICS", {})
-                order_metrics = await self.order_actor.ask("GET_METRICS", {})
-                saga_metrics = self.saga_orchestrator.get_metrics()
-                actor_metrics = {
-                    "position_actor": self.position_actor.get_metrics(),
-                    "order_actor": self.order_actor.get_metrics()
-                }
-                
-                # Prepare snapshot
-                snapshot = {
-                    "timestamp": time.time(),
-                    "mode": self.mode,
-                    "symbol": self.symbol,
-                    "uptime": time.time() - self._start_time,
-                    "state": state,
-                    "metrics": {
-                        "positions": position_metrics,
-                        "orders": order_metrics,
-                        "sagas": saga_metrics,
-                        "actors": actor_metrics,
-                        "fills_processed": self._fills_processed,
-                        "sagas_completed": self._sagas_completed,
-                        "sagas_failed": self._sagas_failed
-                    },
-                    "grid_config": {
-                        "lower": self.grid_calc.lower,
-                        "upper": self.grid_calc.upper,
-                        "step": self.grid_calc.step,
-                        "ref": self.grid_calc.ref,
-                        "tp_offset": self.tp_offset
-                    },
-                    # NOV 13: Add monitoring system status
-                    "monitoring": {
-                        "price_health": self.price_monitor.get_status() if self.price_monitor else None,
-                        "recent_decisions": self.pre_order_logger.get_recent_decisions() if self.pre_order_logger else [],
-                        "anomalies": self.anomaly_detector.get_recent_anomalies() if self.anomaly_detector else []
-                    }
-                }
-                
-                # Write snapshot (async file I/O)
-                async with aiofiles.open(monitoring_file, "w") as f:
-                    await f.write(json.dumps(snapshot, indent=2))
-                
-                # Guardian health monitoring REMOVED - Guardian monitors positions directly from exchange
-                # No need to export health data to files - Guardian has its own PositionMonitor
-                # PnL history tracking is now handled by Guardian bot (runs 24/7, stores in SQL)
-                
-                # FIX L4: Removed duplicate monitoring_writer.write_snapshot() call
-                # The aiofiles write above already writes the monitoring snapshot
-                # Having both causes unnecessary I/O and potential file contention
-            
-            except Exception as e:
-                log.error(f"Monitoring error: {e}")
+    # _monitoring_loop — MOVED to HealthMonitor.monitoring_loop() (P2.4)
     
     async def _fill_polling_fallback_loop(self) -> None:
         """
