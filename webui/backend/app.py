@@ -157,6 +157,14 @@ app.config['COMPRESS_MIMETYPES'] = [
 ]
 compress.init_app(app)
 
+# Initialize Flask-Caching (MUST happen before blueprint registration)
+try:
+    from webui.backend.cache import init_cache
+except ImportError:
+    from cache import init_cache
+init_cache(app)
+print("✅ Flask-Caching initialized")
+
 # CORS configuration
 ALLOWED_ORIGINS = cfg.webui.allowed_origins
 CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)

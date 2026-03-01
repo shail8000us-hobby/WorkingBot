@@ -7,19 +7,17 @@ Phase 3 optimization - March 2026
 
 from flask_caching import Cache
 
-# Cache instance — initialized with NullCache so @cache.cached() decorators work
-# at import time (before init_cache is called). init_cache() replaces this with
-# a real in-memory cache once the Flask app is ready.
-cache = Cache(config={'CACHE_TYPE': 'NullCache'})
+# Cache instance — initialized without an app so @cache.cached() decorators work
+# at import time (before init_cache is called). init_cache() binds it to the
+# Flask app with a real in-memory backend.
+cache = Cache()
 
 def init_cache(app):
-    """Initialize cache with Flask app"""
-    global cache
-    cache = Cache(app, config={
-        'CACHE_TYPE': 'SimpleCache',  # In-memory cache (use Redis for production scaling)
-        'CACHE_DEFAULT_TIMEOUT': 300,  # 5 minutes default
-        'CACHE_THRESHOLD': 500,  # Maximum number of cached items
-    })
+    """Initialize cache with Flask app (binds to existing cache instance)"""
+    app.config['CACHE_TYPE'] = 'SimpleCache'
+    app.config['CACHE_DEFAULT_TIMEOUT'] = 300       # 5 minutes default
+    app.config['CACHE_THRESHOLD'] = 500             # Maximum number of cached items
+    cache.init_app(app)
     return cache
 
 def make_cache_key(*args, **kwargs):
