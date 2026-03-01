@@ -525,9 +525,8 @@ class AsyncGridBot:
         self._running = False
         self._started_once = False  # Distinguishes startup (not yet running) from shutdown (was running)
         self._tasks: List[asyncio.Task] = []
-        self.current_price: Optional[float] = None
+        # current_price, _last_price, _last_price_update → owned by WSLifecycle (P4)
         self._initial_order_placed = False
-        self._last_price_update = 0
         self._price_stale_threshold = 10  # seconds
         self._order_placement_lock = None  # Created in start() within event loop
         
@@ -712,7 +711,41 @@ class AsyncGridBot:
             should_log_fn=self._should_log,
             config=self.config,
         )
-    
+
+    # ── Property proxies for WSLifecycle-owned state (P4) ─────────────
+
+    @property
+    def current_price(self):
+        return self.ws_lifecycle.current_price
+
+    @current_price.setter
+    def current_price(self, value):
+        self.ws_lifecycle.current_price = value
+
+    @property
+    def _last_price(self):
+        return self.ws_lifecycle._last_price
+
+    @_last_price.setter
+    def _last_price(self, value):
+        self.ws_lifecycle._last_price = value
+
+    @property
+    def _last_price_update(self):
+        return self.ws_lifecycle._last_price_update
+
+    @_last_price_update.setter
+    def _last_price_update(self, value):
+        self.ws_lifecycle._last_price_update = value
+
+    @property
+    def _rest_fallback_active(self):
+        return self.ws_lifecycle._rest_fallback_active
+
+    @_rest_fallback_active.setter
+    def _rest_fallback_active(self, value):
+        self.ws_lifecycle._rest_fallback_active = value
+
     def _should_log(self, log_key: str, interval_seconds: float = 60.0) -> bool:
         """
         Rate limiter for frequent log messages.
@@ -1059,7 +1092,7 @@ class AsyncGridBot:
         self.exchange_sync.set_runtime_refs(
             _get_running=lambda: self._running,
             _get_current_price=lambda: self.current_price,
-            _fetch_current_price_callback=self._fetch_current_price,
+            _fetch_current_price_callback=self.ws_lifecycle.fetch_current_price,
             _process_fill_callback=self._process_fill,
         )
 
@@ -1134,7 +1167,7 @@ class AsyncGridBot:
         await asyncio.sleep(1)
         
         # Get current market price
-        await self._fetch_current_price()
+        await self.ws_lifecycle.fetch_current_price()
         
         await self.exchange_sync.cleanup_misaligned_orders()
         
@@ -2114,54 +2147,13 @@ class AsyncGridBot:
         except Exception as e:
             log.error(f"Ticker update error: {e}")
     
+    # get_current_price — MOVED to WSLifecycle.get_current_price() (P4.2)
+
     async def get_current_price(self) -> float:
-        """
-        Get current market price (async method for recovery engines).
-        
-        JAN 29 2026: Added to support recovery engines that need async price fetching.
-        
-        Returns:
-            Current market price, or fetches from API if not available.
-        """
-        if self.current_price and self.current_price > 0:
-            return self.current_price
-        
-        # Fetch if not available
-        await self._fetch_current_price()
-        return self.current_price or 0.0
-    
-    async def _fetch_current_price(self) -> None:
-        """Fetch current market price via REST API."""
-        try:
-            log.info(f"Fetching current price for {self.symbol}...")
-            human_log.fetching_price(self.symbol)  # Human-readable
-            ticker_data = await self.api_client.get_ticker(self.symbol)
-            
-            if ticker_data:
-                # get_ticker returns a list, get first item
-                if isinstance(ticker_data, list) and len(ticker_data) > 0:
-                    ticker = ticker_data[0]
-                else:
-                    ticker = ticker_data
-                
-                # Try multiple price fields
-                self.current_price = float(
-                    ticker.get('close') or 
-                    ticker.get('last_price') or 
-                    ticker.get('mark_price') or 
-                    0
-                )
-                
-                # Update price monitor so bot can pass health check at startup
-                if self.current_price > 0:
-                    self.price_monitor.update_price(self.current_price, source="REST_API")
-                    
-                log.info(f"Current market price: ${self.current_price:,.2f}")
-            else:
-                log.warning("Could not fetch current price - will use WebSocket data")
-                
-        except Exception as e:
-            log.error(f"Error fetching current price: {e}")
+        """Delegate to WSLifecycle (kept for external callers like recovery engines)."""
+        return await self.ws_lifecycle.get_current_price()
+
+    # _fetch_current_price — MOVED to WSLifecycle.fetch_current_price() (P4.2)
     
     async def _place_initial_order(self) -> None:
         """
@@ -3947,7 +3939,7 @@ class AsyncGridBot:
         try:
             current_price = self.current_price
             if not current_price:
-                await self._fetch_current_price()
+                await self.ws_lifecycle.fetch_current_price()
                 current_price = self.current_price
             
             if not current_price:

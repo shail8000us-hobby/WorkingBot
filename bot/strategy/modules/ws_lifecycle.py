@@ -77,3 +77,54 @@ class WSLifecycle:
         """Wire runtime references after construction."""
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    # ── Price Fetching ────────────────────────────────────────────────
+
+    async def get_current_price(self) -> float:
+        """
+        Get current market price (async method for recovery engines).
+
+        JAN 29 2026: Added to support recovery engines that need async price fetching.
+
+        Returns:
+            Current market price, or fetches from API if not available.
+        """
+        if self.current_price and self.current_price > 0:
+            return self.current_price
+
+        # Fetch if not available
+        await self.fetch_current_price()
+        return self.current_price or 0.0
+
+    async def fetch_current_price(self) -> None:
+        """Fetch current market price via REST API."""
+        try:
+            log.info(f"Fetching current price for {self.symbol}...")
+            human_log.fetching_price(self.symbol)
+            ticker_data = await self.api_client.get_ticker(self.symbol)
+
+            if ticker_data:
+                # get_ticker returns a list, get first item
+                if isinstance(ticker_data, list) and len(ticker_data) > 0:
+                    ticker = ticker_data[0]
+                else:
+                    ticker = ticker_data
+
+                # Try multiple price fields
+                self.current_price = float(
+                    ticker.get('close') or
+                    ticker.get('last_price') or
+                    ticker.get('mark_price') or
+                    0
+                )
+
+                # Update price monitor so bot can pass health check at startup
+                if self.current_price > 0:
+                    self.price_monitor.update_price(self.current_price, source="REST_API")
+
+                log.info(f"Current market price: ${self.current_price:,.2f}")
+            else:
+                log.warning("Could not fetch current price - will use WebSocket data")
+
+        except Exception as e:
+            log.error(f"Error fetching current price: {e}")
