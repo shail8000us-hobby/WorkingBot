@@ -414,3 +414,50 @@ class ExchangeSync:
             log.error(f"❌ Error during orphaned order reconciliation: {e}")
             import traceback
             log.error(traceback.format_exc())
+
+    # ── Misaligned Order Cleanup ──────────────────────────────────────
+
+    async def cleanup_misaligned_orders(self) -> None:
+        """Cancel grid buy orders that are too far below the current grid."""
+        try:
+            log.info("🔄 Checking for misaligned grid orders...")
+
+            orders_response = await self.order_actor.ask("GET_OPEN_ORDERS", {}, timeout=5.0)
+            if orders_response.get("status") != "ok":
+                log.warning(f"⚠️  Could not fetch orders for cleanup")
+                return
+
+            open_orders = orders_response.get("orders", [])
+            if not open_orders:
+                log.info("ℹ️  No open orders - skipping cleanup")
+                return
+
+            state = await self.position_actor.ask("GET_STATE", {})
+            positions = state.get("positions", []) if state else []
+
+            if self.mode == "LONG":
+                if positions:
+                    highest_tp = max(pos.get("tp_price", 0) for pos in positions)
+                    threshold = highest_tp - (2 * self.grid_step)
+                else:
+                    threshold = self._get_current_price() - (2 * self.grid_step)
+
+                for order in open_orders:
+                    if order.get("side") == "buy" and order.get("state") == "open":
+                        order_price = float(order.get("limit_price", 0))
+                        order_id = str(order.get("id"))
+                        client_id = order.get("client_order_id") or ""
+                        is_reduce_only = order.get("reduce_only", False)
+
+                        if is_reduce_only:
+                            continue
+
+                        if client_id and client_id.startswith("GBOT_") and order_price < threshold:
+                            log.info(f"🗑️  Cancelling misaligned BUY order #{order_id} @ ${order_price:,.0f} (threshold: ${threshold:,.0f})")
+                            await self.order_actor.ask("CANCEL_ORDER", {"order_id": order_id}, timeout=5.0)
+                            await asyncio.sleep(0.2)
+
+            log.info("✅ Misaligned order cleanup complete")
+
+        except Exception as e:
+            log.error(f"❌ Error during misaligned order cleanup: {e}")

@@ -872,49 +872,7 @@ class AsyncGridBot:
     
     # _reconcile_orphaned_orders — MOVED to ExchangeSync.reconcile_orphaned_orders() (P3.5)
 
-    async def _cleanup_misaligned_orders(self) -> None:
-        try:
-            log.info("🔄 Checking for misaligned grid orders...")
-            
-            orders_response = await self.order_actor.ask("GET_OPEN_ORDERS", {}, timeout=5.0)
-            if orders_response.get("status") != "ok":
-                log.warning(f"⚠️  Could not fetch orders for cleanup")
-                return
-            
-            open_orders = orders_response.get("orders", [])
-            if not open_orders:
-                log.info("ℹ️  No open orders - skipping cleanup")
-                return
-            
-            state = await self.position_actor.ask("GET_STATE", {})
-            positions = state.get("positions", []) if state else []
-            
-            if self.mode == "LONG":
-                if positions:
-                    highest_tp = max(pos.get("tp_price", 0) for pos in positions)
-                    threshold = highest_tp - (2 * self.grid_calc.step)
-                else:
-                    threshold = self.current_price - (2 * self.grid_calc.step)
-                
-                for order in open_orders:
-                    if order.get("side") == "buy" and order.get("state") == "open":
-                        order_price = float(order.get("limit_price", 0))
-                        order_id = str(order.get("id"))
-                        client_id = order.get("client_order_id") or ""
-                        is_reduce_only = order.get("reduce_only", False)
-                        
-                        if is_reduce_only:
-                            continue
-                        
-                        if client_id and client_id.startswith("GBOT_") and order_price < threshold:
-                            log.info(f"🗑️  Cancelling misaligned BUY order #{order_id} @ ${order_price:,.0f} (threshold: ${threshold:,.0f})")
-                            await self.order_actor.ask("CANCEL_ORDER", {"order_id": order_id}, timeout=5.0)
-                            await asyncio.sleep(0.2)
-            
-            log.info("✅ Misaligned order cleanup complete")
-            
-        except Exception as e:
-            log.error(f"❌ Error during misaligned order cleanup: {e}")
+    # _cleanup_misaligned_orders — MOVED to ExchangeSync.cleanup_misaligned_orders() (P3.6)
     
     async def _reconcile_fills_after_reconnect(self) -> None:
         """
@@ -1266,7 +1224,7 @@ class AsyncGridBot:
         # Get current market price
         await self._fetch_current_price()
         
-        await self._cleanup_misaligned_orders()
+        await self.exchange_sync.cleanup_misaligned_orders()
         
         # Place initial order to start grid strategy
         await self._place_initial_order()
