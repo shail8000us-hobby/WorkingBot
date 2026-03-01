@@ -45,6 +45,7 @@ from bot.strategy.sagas.position_closing_saga import create_emergency_close_all_
 from bot.strategy.modules.event_store import EventStore, EventType
 from bot.strategy.modules.guardian_handler import GuardianHandler
 from bot.strategy.modules.health_monitor import HealthMonitor
+from bot.strategy.modules.exchange_sync import ExchangeSync
 from bot.strategy.modules.grid_calculator import GridCalculator
 from bot.strategy.modules.mode_state_manager import get_mode_state_manager
 from bot.strategy.actors.base_actor import Message
@@ -660,6 +661,23 @@ class AsyncGridBot:
             max_positions=self.max_positions,
             lot_size=self.lot_size,
             ref_price=self.ref_price,
+            should_log_fn=self._should_log,
+        )
+
+        # Phase 3: ExchangeSync module
+        self.exchange_sync = ExchangeSync(
+            api_client=self.api_client,
+            position_actor=self.position_actor,
+            order_actor=self.order_actor,
+            event_store=self.event_store,
+            grid_calc=self.grid_calc,
+            mode=self.mode,
+            symbol=self.symbol,
+            product_id=self.product_id,
+            grid_step=self.grid_step,
+            lot_size=self.lot_size,
+            max_positions=self.max_positions,
+            tp_offset=self.tp_offset,
             should_log_fn=self._should_log,
         )
 
@@ -2144,82 +2162,10 @@ class AsyncGridBot:
     # DEC 23: Layer 3 - Exchange State Detection
     # ========================================================================
     
-    async def _detect_exchange_state(self) -> str:
-        """
-        Detect if exchange is in maintenance mode.
-        
-        Returns:
-            'online' | 'maintenance' | 'error'
-        """
-        try:
-            # Try to get server time (lightest API call)
-            response = await self.api_client.rest_client.get_server_time()
-            
-            if response:
-                return 'online'
-            
-        except Exception as e:
-            error_msg = str(e).lower()
-            
-            # Check for maintenance indicators
-            if 'maintenance' in error_msg or 'scheduled' in error_msg:
-                return 'maintenance'
-            elif '503' in error_msg or 'unavailable' in error_msg:
-                return 'maintenance'
-            elif '502' in error_msg or 'bad gateway' in error_msg:
-                return 'maintenance'
-            else:
-                log.debug(f"Exchange state detection error: {error_msg}")
-                return 'error'
-        
-        return 'error'
-    
-    async def _handle_exchange_maintenance(self):
-        """
-        Handle exchange coming back from maintenance.
-        
-        1. Detect when exchange is back online
-        2. Sync all positions and orders from exchange
-        3. Process any fills that happened during downtime
-        4. Resume normal trading
-        """
-        log.warning("=" * 80)
-        log.warning("🏗️ EXCHANGE IN MAINTENANCE MODE")
-        log.warning("   Bot entering safe state - pausing trading")
-        log.warning("   Will automatically resume when exchange is back online")
-        log.warning("=" * 80)
-        
-        maintenance_start = time.time()
-        check_count = 0
-        
-        while True:
-            await asyncio.sleep(30)  # Check every 30 seconds
-            check_count += 1
-            
-            state = await self._detect_exchange_state()
-            
-            if state == 'online':
-                downtime = time.time() - maintenance_start
-                log.info("=" * 80)
-                log.info(f"✅ EXCHANGE BACK ONLINE (downtime: {downtime/60:.1f} minutes)")
-                log.info("   Starting full state synchronization...")
-                log.info("=" * 80)
-                
-                # CRITICAL: Full reconciliation after maintenance
-                try:
-                    await self._full_exchange_sync()
-                    log.info("✅ State sync complete - resuming normal trading")
-                except Exception as sync_error:
-                    log.error(f"❌ Error during post-maintenance sync: {sync_error}")
-                    log.warning("⚠️ Continuing with partial sync - manual review recommended")
-                
-                break
-            elif state == 'maintenance':
-                log.info(f"🏗️ Exchange still in maintenance (check #{check_count})")
-            else:
-                # State is likely 'unknown' during transition - this is normal
-                log.debug(f"Exchange state: {state} (check #{check_count}) - continuing to monitor")
-    
+    # _detect_exchange_state — MOVED to ExchangeSync.detect_exchange_state() (P3.2)
+
+    # _handle_exchange_maintenance — MOVED to ExchangeSync.handle_exchange_maintenance() (P3.2)
+
     async def _full_exchange_sync(self):
         """
         Perform full reconciliation after exchange maintenance.
@@ -3485,14 +3431,14 @@ class AsyncGridBot:
             try:
                 await asyncio.sleep(60)  # Check every minute during normal operation
                 
-                state = await self._detect_exchange_state()
+                state = await self.exchange_sync.detect_exchange_state()
                 
                 if state == 'online':
                     consecutive_errors = 0
                     # log.debug("Exchange state: online")
                 elif state == 'maintenance':
                     log.warning("🏗️ Exchange maintenance detected!")
-                    await self._handle_exchange_maintenance()
+                    await self.exchange_sync.handle_exchange_maintenance()
                     consecutive_errors = 0
                 else:  # error
                     consecutive_errors += 1
@@ -3500,7 +3446,7 @@ class AsyncGridBot:
                     
                     if consecutive_errors >= max_errors_before_maintenance:
                         log.warning(f"⚠️ {consecutive_errors} consecutive exchange errors - possible maintenance")
-                        await self._handle_exchange_maintenance()
+                        await self.exchange_sync.handle_exchange_maintenance()
                         consecutive_errors = 0
             
             except Exception as e:

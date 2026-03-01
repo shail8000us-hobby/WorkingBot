@@ -66,3 +66,83 @@ class ExchangeSync:
         """Wire runtime references after construction."""
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    # ========================================================================
+    # P3.2: Exchange State Detection + Maintenance Handling
+    # ========================================================================
+
+    async def detect_exchange_state(self) -> str:
+        """
+        Detect if exchange is in maintenance mode.
+        
+        Returns:
+            'online' | 'maintenance' | 'error'
+        """
+        try:
+            # Try to get server time (lightest API call)
+            response = await self.api_client.rest_client.get_server_time()
+            
+            if response:
+                return 'online'
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Check for maintenance indicators
+            if 'maintenance' in error_msg or 'scheduled' in error_msg:
+                return 'maintenance'
+            elif '503' in error_msg or 'unavailable' in error_msg:
+                return 'maintenance'
+            elif '502' in error_msg or 'bad gateway' in error_msg:
+                return 'maintenance'
+            else:
+                log.debug(f"Exchange state detection error: {error_msg}")
+                return 'error'
+        
+        return 'error'
+    
+    async def handle_exchange_maintenance(self):
+        """
+        Handle exchange coming back from maintenance.
+        
+        1. Detect when exchange is back online
+        2. Sync all positions and orders from exchange
+        3. Process any fills that happened during downtime
+        4. Resume normal trading
+        """
+        log.warning("=" * 80)
+        log.warning("🏗️ EXCHANGE IN MAINTENANCE MODE")
+        log.warning("   Bot entering safe state - pausing trading")
+        log.warning("   Will automatically resume when exchange is back online")
+        log.warning("=" * 80)
+        
+        maintenance_start = time.time()
+        check_count = 0
+        
+        while True:
+            await asyncio.sleep(30)  # Check every 30 seconds
+            check_count += 1
+            
+            state = await self.detect_exchange_state()
+            
+            if state == 'online':
+                downtime = time.time() - maintenance_start
+                log.info("=" * 80)
+                log.info(f"✅ EXCHANGE BACK ONLINE (downtime: {downtime/60:.1f} minutes)")
+                log.info("   Starting full state synchronization...")
+                log.info("=" * 80)
+                
+                # CRITICAL: Full reconciliation after maintenance
+                try:
+                    await self.full_exchange_sync()
+                    log.info("✅ State sync complete - resuming normal trading")
+                except Exception as sync_error:
+                    log.error(f"❌ Error during post-maintenance sync: {sync_error}")
+                    log.warning("⚠️ Continuing with partial sync - manual review recommended")
+                
+                break
+            elif state == 'maintenance':
+                log.info(f"🏗️ Exchange still in maintenance (check #{check_count})")
+            else:
+                # State is likely 'unknown' during transition - this is normal
+                log.debug(f"Exchange state: {state} (check #{check_count}) - continuing to monitor")
