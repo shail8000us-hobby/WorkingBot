@@ -70,8 +70,6 @@ class WSLifecycle:
         self._get_start_time: Callable = lambda: time.time()
         self._on_ticker_callback: Optional[Callable] = None
         self._on_order_update_callback: Optional[Callable] = None
-        self._on_position_update_callback: Optional[Callable] = None
-        self._on_ticker_update_callback: Optional[Callable] = None
         self._process_fill_callback: Optional[Callable] = None
         self._full_exchange_sync_callback: Optional[Callable] = None
 
@@ -138,8 +136,8 @@ class WSLifecycle:
         # NOTE: Removed v2/user_trades handler to prevent duplicate fill processing
         # Delta Exchange sends fills via orders channel (state=closed, reason=fill)
         self.api_client.ws_manager.register_handler("orders", self._on_order_update_callback)
-        self.api_client.ws_manager.register_handler("positions", self._on_position_update_callback)
-        self.api_client.ws_manager.register_handler("v2/ticker", self._on_ticker_update_callback)
+        self.api_client.ws_manager.register_handler("positions", self._handle_position_update)
+        self.api_client.ws_manager.register_handler("v2/ticker", self._handle_ticker_update)
 
     async def subscribe_channels(self) -> None:
         """Subscribe to WebSocket channels."""
@@ -160,3 +158,136 @@ class WSLifecycle:
             log.error(f"WebSocket message loop error: {e}")
 
         log.info("WebSocket message loop ended")
+
+    # ── WebSocket Handlers ────────────────────────────────────────────
+
+    async def _handle_position_update(self, message: Dict[str, Any]) -> None:
+        """
+        Handle position update messages from exchange.
+
+        FIX H6: Detect exchange-initiated liquidations and position changes.
+        If the exchange liquidates a position, we must update internal state
+        to avoid placing orders against positions that no longer exist.
+        """
+        try:
+            position_data = message if isinstance(message, dict) else {}
+
+            # Check for relevant position fields
+            product_id = position_data.get('product_id')
+            if product_id and product_id != self.product_id:
+                return  # Not our product
+
+            size = position_data.get('size', 0)
+            entry_price = position_data.get('entry_price', 0)
+            liquidation_price = position_data.get('liquidation_price')
+            margin = position_data.get('margin')
+
+            # Detect liquidation: position size went to zero unexpectedly
+            # or exchange sends a specific liquidation event
+            is_liquidation = position_data.get('is_liquidated', False)
+            reason = position_data.get('reason', '')
+
+            if is_liquidation or 'liquidat' in str(reason).lower():
+                log.critical("🚨 LIQUIDATION DETECTED via position channel!")
+                log.critical(f"   Product: {product_id}")
+                log.critical(f"   Size: {size}, Entry: {entry_price}")
+                log.critical(f"   Reason: {reason}")
+
+                # Send Telegram alert
+                try:
+                    from tools.telepush import send_telegram_alert
+                    send_telegram_alert(
+                        f"🚨 LIQUIDATION DETECTED!\n"
+                        f"Size: {size}, Entry: ${entry_price:,.0f}\n"
+                        f"Reason: {reason}",
+                        self.config
+                    )
+                except Exception:
+                    pass
+
+                # Trigger emergency reconciliation to sync internal state
+                log.critical("   🔄 Triggering emergency exchange sync...")
+                asyncio.create_task(self._full_exchange_sync_callback())
+
+            # Log significant position changes at debug level
+            elif size != 0 or entry_price != 0:
+                log.debug(f"📊 Position update: size={size}, entry=${entry_price:,.0f}, liq=${liquidation_price}")
+
+        except Exception as e:
+            log.error(f"Error handling position update: {e}", exc_info=True)
+
+    async def _handle_ticker_update(self, message: Dict[str, Any]) -> None:
+        """
+        Handle ticker update messages and check for entry opportunities.
+        This is the core order placement trigger.
+        """
+        try:
+            # Extract price from ticker message (try multiple fields)
+            ticker_data = (
+                message.get('close') or
+                message.get('last_traded_price') or
+                message.get('mark_price') or
+                message.get('last')
+            )
+            if not ticker_data:
+                log.warning(f"⚠️ Ticker message has no price data: {message}")
+                human_log.missing_data("price")  # Trader-friendly alert
+                return
+
+            # Update current price
+            price = float(ticker_data)
+            old_price = self.current_price
+            self.current_price = price
+            self._last_price = price  # Store for heartbeat
+            self._last_price_update = time.time()
+
+            # NOV 20: Update UnifiedAPIClient price cache
+            self.api_client.update_price_from_websocket(price)
+
+            # NOV 13: Update price health monitor
+            self.price_monitor.update_price(price, source="WEBSOCKET")
+
+            # Debug: Log ticker updates (rate-limited to avoid spam)
+            if self._should_log('websocket_ticker', interval_seconds=60):
+                log.debug(f"💚 WebSocket ticker: ${price:,.2f} (age: 0s)")
+
+            # Log price updates periodically (every 30s) or on significant changes
+            time_since_log = time.time() - self._last_price_log_time
+
+            price_change = abs(price - old_price) if old_price else 0
+            significant_change = price_change > (price * 0.001)  # 0.1% change
+
+            if time_since_log >= 30 or significant_change:
+                # Get bid/ask if available
+                bid = message.get('bid')
+                ask = message.get('ask')
+
+                if bid and ask:
+                    spread = float(ask) - float(bid)
+                    log.debug(
+                        f"📊 [PRICE UPDATE] ${price:,.2f} | "
+                        f"Bid: ${float(bid):,.2f} | Ask: ${float(ask):,.2f} | "
+                        f"Spread: ${spread:.2f}"
+                    )
+                else:
+                    # Price change indicator
+                    if old_price:
+                        if price > old_price:
+                            indicator = "↑"
+                        elif price < old_price:
+                            indicator = "↓"
+                        else:
+                            indicator = "→"
+                        log.debug(f"📊 [PRICE UPDATE] ${price:,.2f} {indicator}")
+                        human_log.price_data_flowing(price)  # Trader-friendly update
+                    else:
+                        log.debug(f"📊 [PRICE UPDATE] ${price:,.2f}")
+                        human_log.price_data_flowing(price)  # Trader-friendly update
+
+                self._last_price_log_time = time.time()
+
+            # Check if we should place an entry order
+            await self._on_ticker_callback()
+
+        except Exception as e:
+            log.error(f"Ticker update error: {e}")
