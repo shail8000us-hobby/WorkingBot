@@ -33,15 +33,16 @@ class APIClient {
     // Key: request URL, Value: { data, expiry }
     this._responseCache = new Map();
     // Default cache TTL per endpoint prefix (ms)
+    // Phase 4: Aligned with backend cache timeouts (Phase 3)
     this._cacheTTL = {
-      '/api/health': 5000,
-      '/api/bot/status': 3000,
-      '/api/pnl': 5000,
-      '/api/positions': 3000,
-      '/api/orders': 3000,
-      '/api/config': 10000,
-      '/api/flags': 30000,
-      '_default': 2000,
+      '/api/health': 2000,        // 2s (matches backend)
+      '/api/bot/status': 5000,    // 5s
+      '/api/pnl': 5000,           // 5s
+      '/api/positions': 5000,     // 5s (matches backend)
+      '/api/orders': 5000,        // 5s
+      '/api/config': 60000,       // 60s (matches backend)
+      '/api/flags': 30000,        // 30s
+      '_default': 5000,           // 5s (increased from 2s)
     };
   }
 
