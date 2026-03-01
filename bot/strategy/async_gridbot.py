@@ -873,118 +873,8 @@ class AsyncGridBot:
     # _reconcile_orphaned_orders — MOVED to ExchangeSync.reconcile_orphaned_orders() (P3.5)
 
     # _cleanup_misaligned_orders — MOVED to ExchangeSync.cleanup_misaligned_orders() (P3.6)
-    
-    async def _reconcile_fills_after_reconnect(self) -> None:
-        """
-        CRITICAL FIX NOV 14: Reconcile missed fills after WebSocket reconnect.
-        
-        After WebSocket reconnection, we may have missed fill notifications.
-        This method fetches recent fills via REST API and processes any that
-        occurred during the disconnection period.
-        
-        Prevents state desync and orphaned positions.
-        """
-        try:
-            log.info("🔄 Reconciling missed fills after WebSocket reconnect...")
-            
-            # Calculate time window - check last 5 minutes
-            # This should cover any reasonable reconnection window
-            end_time = int(time.time() * 1000)  # Current time in ms
-            start_time = end_time - (5 * 60 * 1000)  # 5 minutes ago
-            
-            # Fetch fills from REST API
-            try:
-                fills_response = await self.api_client.get_fills(
-                    product_id=self.product_id,
-                    start_time=start_time,
-                    end_time=end_time
-                )
-            except Exception as e:
-                log.error(f"❌ Failed to fetch fills from REST API: {e}")
-                return
-            
-            if not fills_response:
-                log.info("✅ No recent fills found - no reconciliation needed")
-                return
-            
-            # Extract fills array from response
-            fills = fills_response.get('result', []) if isinstance(fills_response, dict) else fills_response
-            
-            if not fills:
-                log.info("✅ No recent fills found - no reconciliation needed")
-                return
-            
-            log.info(f"📋 Found {len(fills)} recent fill(s) - checking for missed ones...")
-            
-            # Get current state to check which fills we already processed
-            state = await self.position_actor.ask("GET_STATE", {})
-            open_tranches = state.get("open_tranches", [])
-            
-            # Track which fills we've already processed by checking:
-            # 1. Open positions (entry fills we processed)
-            # 2. Recent saga executions (check saga orchestrator history)
-            processed_order_ids = set()
-            
-            # Add order IDs from open positions
-            for tranche in open_tranches:
-                if 'order_id' in tranche:
-                    processed_order_ids.add(str(tranche['order_id']))
-            
-            # Process each fill
-            missed_count = 0
-            for fill in fills:
-                order_id = str(fill.get('order_id', ''))
-                fill_id = fill.get('id', '')
-                side = fill.get('side', '').lower()
-                price = float(fill.get('price', 0))
-                size = int(fill.get('size', 0))
-                
-                # Skip if we already processed this order
-                if order_id in processed_order_ids:
-                    continue
-                
-                # Check if this is a bot order (client_order_id starts with "BOT-")
-                # We only reconcile bot orders, not manual trades
-                client_id = fill.get('client_order_id', '')
-                if not client_id.startswith('BOT-'):
-                    log.debug(f"Skipping non-bot fill: {fill_id}")
-                    continue
-                
-                # This is a missed fill - process it now
-                log.warning(f"⚠️  MISSED FILL DETECTED: {side.upper()} {size} @ ${price:,.0f} (Order: {order_id})")
-                missed_count += 1
-                
-                # Create fill data structure matching WebSocket format
-                fill_data = {
-                    'order_id': order_id,
-                    'price': price,
-                    'size': size,
-                    'side': side,
-                    'is_complete': True,  # REST API fills are always complete
-                    'fill_id': fill_id,
-                    'reconciled': True  # Mark as reconciled for tracking
-                }
-                
-                # Process the fill through normal saga flow
-                try:
-                    await self._process_fill(fill_data)
-                    log.info(f"✅ Reconciled fill: {side.upper()} @ ${price:,.0f}")
-                    processed_order_ids.add(order_id)
-                except Exception as e:
-                    log.error(f"❌ Failed to reconcile fill {fill_id}: {e}")
-                    import traceback
-                    log.error(traceback.format_exc())
-            
-            if missed_count == 0:
-                log.info("✅ All fills were already processed - state is in sync")
-            else:
-                log.warning(f"⚠️  Reconciled {missed_count} missed fill(s)")
-                log.warning(f"   Bot state is now synchronized with exchange")
-        
-        except Exception as e:
-            log.error(f"❌ Error during fill reconciliation: {e}")
-            import traceback
-            log.error(traceback.format_exc())
+
+    # _reconcile_fills_after_reconnect — MOVED to ExchangeSync.reconcile_fills_after_reconnect() (P3.7)
     
     async def seed_missed_grid_levels(self, count: int) -> None:
         """
@@ -1185,7 +1075,7 @@ class AsyncGridBot:
         self._register_ws_handlers()
         
         # CRITICAL FIX NOV 14: Register reconnection callback for fill reconciliation
-        # Reconnection handled by UnifiedAPIClient: self._reconcile_fills_after_reconnect)
+        # Reconnection handled by UnifiedAPIClient: self.exchange_sync.reconcile_fills_after_reconnect)
         
         # Start actors FIRST (needed for reconciliation)
         # NOTE: Actor .start() methods return immediately after starting their message loops
@@ -2176,7 +2066,7 @@ class AsyncGridBot:
                     log.info(f"   ✅ Position reconstructed for TP #{tp_order_id}")
             
             # Step 8: Ensure grid coverage (place missing grid buy orders)
-            await self._ensure_grid_coverage()
+            await self.exchange_sync.ensure_grid_coverage()
             
             log.info(f"✅ Full exchange sync complete:")
             log.info(f"   - {len(orphan_positions)} orphan positions recovered")
@@ -2187,47 +2077,8 @@ class AsyncGridBot:
             log.error(f"❌ Error during full exchange sync: {e}")
             raise
     
-    async def _ensure_grid_coverage(self):
-        """
-        Ensure there's a buy order covering the next grid level.
-        
-        Called after exchange maintenance to fill any gaps in grid coverage.
-        """
-        try:
-            # Get current state
-            state = await self.position_actor.ask("GET_STATE", {})
-            positions = state.get("open_tranches", [])
-            
-            if not self.current_price:
-                await self._fetch_current_price()
-            
-            # Calculate next buy level
-            next_buy = self.grid_calc.compute_next_buy_level(positions, current_price=self.current_price)
-            
-            if next_buy:
-                # Check if order already exists
-                orders = await self.api_client.list_orders(symbol=self.symbol, states='open')
-                
-                order_exists = any(
-                    abs(float(o.get('limit_price', 0)) - next_buy) < 0.01
-                    and o.get('side', '').lower() == 'buy'
-                    and not o.get('reduce_only', False)
-                    for o in orders
-                )
-                
-                if not order_exists:
-                    log.info(f"📍 Placing missing grid buy order at ${next_buy:,.0f}")
-                    
-                    await self.order_actor.tell('PLACE_BUY', {
-                        'price': next_buy,
-                        'size': self.lot_size
-                    })
-                else:
-                    log.debug(f"✅ Grid buy order already exists at ${next_buy:,.0f}")
-            
-        except Exception as e:
-            log.error(f"❌ Error ensuring grid coverage: {e}")
-    
+    # _ensure_grid_coverage — MOVED to ExchangeSync.ensure_grid_coverage() (P3.7)
+
     # ========================================================================
     # WebSocket Handlers
     # ========================================================================
