@@ -565,9 +565,7 @@ class AsyncGridBot:
         )
         log.info("✅ Recovery engines initialized (StartupRecovery + GuardianRecovery)")
         
-        # REST API Fallback state (NOV 13 - WebSocket starvation protection)
-        self._rest_fallback_active = False
-        self._rest_fallback_task: Optional[asyncio.Task] = None
+        # REST API Fallback state → MOVED to WSLifecycle (P4)
         
         # ========================================================================
         # NOV 13: Comprehensive Monitoring Systems (5 Layers of Protection)
