@@ -357,3 +357,75 @@ class HealthMonitor:
 
             except Exception as e:
                 log.error(f"Monitoring error: {e}")
+
+    # ========================================================================
+    # P2.5: Memory Usage + WebSocket Health Checks
+    # ========================================================================
+
+    async def check_memory_usage(self) -> None:
+        """Check memory usage and log warnings if excessive."""
+        try:
+            import psutil
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
+            mem_mb = mem_info.rss / 1024 / 1024
+
+            # Warn if memory exceeds 400 MB
+            if mem_mb > 400:
+                log.warning(f"⚠️  High memory usage: {mem_mb:.1f} MB")
+
+                # Trigger garbage collection if memory is high
+                if mem_mb > 450:
+                    gc.collect()
+                    log.info("   Triggered garbage collection")
+        except Exception as e:
+            log.debug(f"Memory check error: {e}")
+
+    async def check_websocket_health(self) -> None:
+        """
+        Check WebSocket connection health using proper manager API.
+
+        NOV 13 v2: Fixed to use _ws_is_alive() wrapper and proper reconnection flow.
+        Prevents AttributeError on .closed/.connected/.open attributes.
+        """
+        try:
+            # Check if WebSocket manager exists
+            if not hasattr(self, 'api_client') or not hasattr(self.api_client, 'ws_manager') or not self.api_client.ws_manager:
+                log.warning("⚠️  WebSocket manager not initialized")
+                return
+
+            ws_manager = self.api_client.ws_manager
+
+            # Use the proper is_connected property (uses _ws_is_alive internally)
+            if not ws_manager.is_connected:
+                log.warning(f"⚠️  WebSocket not connected (state: {ws_manager.state.value})")
+
+                # Only attempt reconnect if in DISCONNECTED state (not CONNECTING/RECONNECTING)
+                if (ws_manager.state.value == "disconnected" and
+                    not ws_manager._reconnecting):
+                    log.error("❌ WebSocket disconnected - triggering reconnect...")
+                    try:
+                        # Don't call connect() directly - trigger reconnect which handles cleanup
+                        asyncio.create_task(ws_manager._handle_reconnect())
+                    except Exception as reconnect_error:
+                        log.error(f"Reconnect trigger failed: {reconnect_error}")
+                return
+
+            # Check time since last price update (data flow health)
+            last_price_update = self._get_last_price_update()
+            if last_price_update > 0:
+                time_since_update = time.time() - last_price_update
+
+                # Warn if no update for > 35 seconds (Delta heartbeat is 30s + 5s buffer)
+                if time_since_update > 35:
+                    log.warning(f"⚠️  WebSocket starvation: {time_since_update:.1f}s since last price update")
+                    log.warning("   Delta heartbeat threshold: 30s + 5s buffer = 35s")
+
+                    # If > 60 seconds, WebSocket is likely stalled - force reconnect
+                    if time_since_update > 60:
+                        log.error("❌ WebSocket appears dead (no data for 60s) - forcing reconnect...")
+                        # Trigger full reconnection (not just connect)
+                        if not ws_manager._reconnecting:
+                            asyncio.create_task(ws_manager._handle_reconnect())
+        except Exception as e:
+            log.error(f"WebSocket health check error: {e}", exc_info=True)
