@@ -1133,7 +1133,7 @@ class AsyncGridBot:
             _get_running=lambda: self._running,
             _get_start_time=lambda: self._start_time,
             _on_ticker_callback=self._check_and_place_entry_order,
-            _on_order_update_callback=self._handle_order_update,
+            _on_order_update_callback=self.fill_processor.handle_order_update,
             _process_fill_callback=self.fill_processor.process_fill,
             _full_exchange_sync_callback=self.exchange_sync.full_exchange_sync,
         )
@@ -1424,104 +1424,7 @@ class AsyncGridBot:
     # WebSocket Handlers
     # ========================================================================
     
-    async def _handle_order_update(self, message: Dict[str, Any]) -> None:
-        """
-        Handle order update messages.
-        CRITICAL: Delta Exchange sends fill notifications via orders channel!
-        """
-        try:
-            # Log all order updates for debugging
-            log.debug(f"📬 Order update received: {message}")
-            
-            # Check if this is a fill notification or cancellation
-            order_data = message if isinstance(message, dict) else {}
-            
-            # Delta Exchange order status: "open", "pending", "closed" (when filled), "cancelled"
-            order_status = order_data.get("state") or order_data.get("status")
-            order_reason = order_data.get("reason")
-            order_id = order_data.get("id") or order_data.get("order_id")
-            
-            # Handle cancellation (manual or otherwise)
-            if order_status == "cancelled":
-                cancellation_reason = order_data.get("cancellation_reason", "unknown")
-                log.info(f"📭 Order cancelled: {order_id} (reason: {cancellation_reason})")
-                
-                # Clear from pending memory
-                # FIX MAR 2 2026: pending_buy/pending_sell are DICTS with 'order_id' key,
-                # not raw order_id strings. Must compare .get('order_id'), not the dict itself.
-                state = await self.position_actor.ask("GET_STATE", {})
-                pending_buy = state.get("pending_buy")
-                pending_sell = state.get("pending_sell")
-                
-                pending_buy_id = pending_buy.get("order_id") if isinstance(pending_buy, dict) else pending_buy
-                pending_sell_id = pending_sell.get("order_id") if isinstance(pending_sell, dict) else pending_sell
-                
-                # Convert both to string for safe comparison (API returns int or str)
-                order_id_str = str(order_id) if order_id else None
-                
-                if pending_buy_id and str(pending_buy_id) == order_id_str:
-                    await self.position_actor.ask("CLEAR_PENDING_BUY", {"order_id": order_id})
-                    log.info(f"✅ Cleared pending buy from memory: {order_id}")
-                elif pending_sell_id and str(pending_sell_id) == order_id_str:
-                    await self.position_actor.ask("CLEAR_PENDING_SELL", {"order_id": order_id})
-                    log.info(f"✅ Cleared pending sell from memory: {order_id}")
-                else:
-                    log.debug(f"   Cancelled order {order_id} was not in pending memory (buy={pending_buy_id}, sell={pending_sell_id})")
-                
-                return
-            
-            # Check if order was filled (status="closed" AND reason="fill")
-            if order_status == "closed" and order_reason == "fill":
-                # Determine if this is a bot-placed order
-                client_order_id = order_data.get("client_order_id", "")
-                is_reduce_only = order_data.get("reduce_only", False)
-                
-                # Bot orders are either:
-                # 1. Entry orders with GBOT_ prefix
-                # 2. TP orders with reduce_only=True (these don't have client_order_id)
-                is_entry_order = client_order_id and (client_order_id.startswith("GBOT_") or client_order_id.startswith("BOT-"))
-                is_tp_order = is_reduce_only  # TP orders are always reduce_only
-                
-                is_bot_order = is_entry_order or is_tp_order
-                
-                if not is_bot_order:
-                    order_id = order_data.get("id") or order_data.get("order_id")
-                    log.info(f"ℹ️  Ignoring manual order fill: {order_id} (client_id: {client_order_id or 'None'}, reduce_only: {is_reduce_only})")
-                    return
-                
-                # This is a fill from bot-placed order! Process it immediately
-                order_id = order_data.get("id") or order_data.get("order_id")
-                fill_price = float(order_data.get("average_fill_price") or order_data.get("price", 0))
-                fill_size = int(order_data.get("size") or order_data.get("unfilled_size", 0))
-                side = order_data.get("side", "").lower()
-                
-                # CRITICAL: Use exchange's fill_id for deduplication (not timestamp)
-                # Delta Exchange sends duplicate WebSocket messages; proper fill_id prevents double-processing
-                exchange_fill_id = order_data.get("fill_id")  # Exchange-provided unique fill ID
-                
-                log.info(f"🔔 FILL DETECTED via orders channel!")
-                log.info(f"   Order ID: {order_id}")
-                log.info(f"   Fill ID: {exchange_fill_id}")
-                log.info(f"   Side: {side.upper()}")
-                log.info(f"   Price: ${fill_price:,.0f}")
-                log.info(f"   Size: {fill_size}")
-                
-                # Create fill data structure
-                # Use exchange fill_id if available, otherwise fallback to order_id (without timestamp)
-                fill_data = {
-                    "id": exchange_fill_id or f"fill-{order_id}",
-                    "order_id": str(order_id),
-                    "price": fill_price,
-                    "size": fill_size,
-                    "side": side,
-                    "is_complete": True
-                }
-                
-                # Process the fill
-                await self.fill_processor.process_fill(fill_data)
-                
-        except Exception as e:
-            log.error(f"Error handling order update: {e}", exc_info=True)
+    # _handle_order_update — MOVED to FillProcessor.handle_order_update() (P5.8)
     
     # ── _handle_position_update → MOVED to ws_lifecycle._handle_position_update() [P4.4] ──
     # ── _handle_ticker_update → MOVED to ws_lifecycle._handle_ticker_update() [P4.4] ──
