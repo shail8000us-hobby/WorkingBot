@@ -496,3 +496,82 @@ class GridEngine:
 
             except Exception as e:
                 log.error(f"Entry check error: {e}", exc_info=True)
+
+    # ── seed_missed_grid_levels → MOVED here P6.7 ──
+    async def seed_missed_grid_levels(self, count: int) -> None:
+        """
+        Seed missed grid levels - place multiple entry orders at grid intervals.
+
+        For LONG mode: Places BUY orders below current price
+        For SHORT mode: Places SELL orders above current price
+
+        Uses existing order placement logic via OrderManagerActor.
+        Bot handles TPs automatically when fills occur.
+
+        Args:
+            count: Number of grid levels to seed
+        """
+        if count <= 0:
+            return
+
+        current_price = self._get_current_price()
+
+        log.info("=" * 70)
+        log.info(f"🌱 SEEDING {count} MISSED GRID LEVELS ({self.mode} MODE)")
+        log.info(f"📍 Current Price: ${current_price:,.0f}")
+        log.info("=" * 70)
+
+        for i in range(count):
+            try:
+                if self.mode == 'LONG':
+                    # Buy below current price (going down)
+                    level = current_price - (i + 1) * self.grid_calc.step
+
+                    if level >= self.grid_calc.lower:
+                        # Place order via OrderManagerActor
+                        order_resp = await self.order_actor.ask({
+                            'action': 'place_buy_order',
+                            'price': level,
+                            'post_only': True
+                        })
+
+                        if order_resp.get('status') == 'success':
+                            order_id = order_resp.get('order_id')
+                            log.info(f"  ✅ Grid BUY placed @ ${level:,.0f} (ID: {order_id})")
+                        else:
+                            log.warning(f"  ⚠️  Failed to place BUY @ ${level:,.0f}: {order_resp.get('error')}")
+                    else:
+                        log.warning(f"  ⚠️  Level ${level:,.0f} below grid lower bound, stopping")
+                        break
+
+                elif self.mode == 'SHORT':
+                    # Sell above current price (going up)
+                    level = current_price + (i + 1) * self.grid_calc.step
+
+                    if level <= self.grid_calc.upper:
+                        # Place order via OrderManagerActor
+                        order_resp = await self.order_actor.ask({
+                            'action': 'place_sell_order',
+                            'price': level,
+                            'post_only': True
+                        })
+
+                        if order_resp.get('status') == 'success':
+                            order_id = order_resp.get('order_id')
+                            log.info(f"  ✅ Grid SELL placed @ ${level:,.0f} (ID: {order_id})")
+                        else:
+                            log.warning(f"  ⚠️  Failed to place SELL @ ${level:,.0f}: {order_resp.get('error')}")
+                    else:
+                        log.warning(f"  ⚠️  Level ${level:,.0f} above grid upper bound, stopping")
+                        break
+
+                # Rate limiting between orders
+                await asyncio.sleep(0.2)
+
+            except Exception as e:
+                log.error(f"❌ Error seeding grid level {i+1}: {e}")
+                continue
+
+        log.info("=" * 70)
+        log.info(f"✅ SEEDING COMPLETE - Bot will manage TPs automatically")
+        log.info("=" * 70)
