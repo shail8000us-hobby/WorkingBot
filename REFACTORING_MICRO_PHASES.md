@@ -24,7 +24,27 @@
 | **🧪 Full Bot Test P5** | b463ae7 | ✅ **PASSED** (after 4 bug fixes) | See bug report below |
 | **P6: GridEngine** | 8 commits | ✅ **DONE** | `grid_engine.py` 846 lines, `async_gridbot.py` 3,076→2,379 (−697) |
 | **🧪 Full Bot Test P6** | — | ✅ **PASSED** (0 bugs in code review) | Clean start→stop→start, zero errors |
-| P7–P9 | — | ⬜ Not started | — |
+| **P7: RecoveryActions** | a058df9 | ✅ **DONE** | `recovery_actions.py` 530 lines, `async_gridbot.py` 2,379→1,962 (−417) |
+| **🧪 Full Bot Test P7** | 7426c05 | ✅ **PASSED** (after 1 bug fix) | See P7 bug report below |
+| **P8: Slim Orchestrator** | ab695d7 | ✅ **DONE** | Removed 14 stale state vars, 6 dead imports, cleaned task list |
+| **🧪 Full Bot Test P8** | — | ✅ **PASSED** (0 bugs) | Clean start, all tasks running, heartbeat ACTIVE, zero errors |
+| P9 | — | ⬜ Not started | — |
+
+### 🐛 Bug Found During P7 Full Bot Test (1 bug, 1 commit)
+
+**Commit:** `7426c05d2` — "P7 audit: fix recovery_actions using stdlib logging instead of loguru"
+
+**Bug — Wrong logger in recovery_actions.py (HIGH severity)**
+- `recovery_actions.py` used `import logging` / `logging.getLogger(__name__)` while ALL other modules use `from loguru import logger as log`
+- This caused all 3 background tasks (`safety_gatekeeper_loop`, `fill_polling_fallback_loop`, `reconciliation_action_processor`) to be **completely invisible** in PM2 logs — their messages went to the unconfigured stdlib logger and were silently dropped
+- Also wrong `human_log` import: `from bot.utils import human_log` instead of `from bot.utils.human_logger import human_log`, with a fallback class instead of `None` + guards
+- **Fix:** Changed to `from loguru import logger as log`, fixed human_log import pattern to match all other modules
+
+**Lesson:** When creating new module files, always copy the logger import pattern from an existing module (e.g., `grid_engine.py`). Never use stdlib `logging` in a loguru project — log messages will silently vanish.
+
+### P8 Full Bot Test — Zero Bugs
+
+Code review verified: 14 removed state vars are all owned by their respective modules. 6 removed imports (`hashlib`, `deque`, `aiofiles`, `EventType`, `Message`, `RecoveryStatus`) have zero remaining usages. Task list reordered into logical groups with consistent naming. `_last_safety_check_time` correctly kept in orchestrator (shared by both RecoveryActions and FillProcessor via lambdas). Clean start → heartbeat ACTIVE → Guardian GO → zero errors.
 
 ### 🐛 Bug Found During P1 Full Bot Test
 
