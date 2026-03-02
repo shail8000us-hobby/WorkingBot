@@ -15,19 +15,15 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-log = logging.getLogger(__name__)
+from loguru import logger as log
 
 try:
-    from bot.utils import human_log
+    from bot.utils.human_logger import human_log
 except ImportError:
-    class _FallbackHumanLog:
-        def monitoring_active(self): pass
-        def error(self, msg): log.error(msg)
-    human_log = _FallbackHumanLog()
+    human_log = None
 
 
 class RecoveryActions:
@@ -73,7 +69,8 @@ class RecoveryActions:
         Also triggered by state changes (via _process_fill).
         """
         log.info("Safety gatekeeper loop started - checking every 5 minutes")
-        human_log.monitoring_active()  # Human-readable
+        if human_log:
+            human_log.monitoring_active()  # Human-readable
 
         while self._get_running():
             try:
@@ -154,7 +151,8 @@ class RecoveryActions:
                 log.error("=" * 80)
 
                 # Log to human logger for visibility
-                human_log.error(f"UNHEDGED POSITIONS: {len(unhedged_positions)} positions without TP orders")
+                if human_log:
+                    human_log.error(f"UNHEDGED POSITIONS: {len(unhedged_positions)} positions without TP orders")
             else:
                 log.debug("✅ All positions have TP orders")
 
