@@ -85,3 +85,35 @@ class GridEngine:
         """Wire live references after all components are constructed."""
         for key, val in kwargs.items():
             setattr(self, key, val)
+
+    # ── _is_cooldown_ready → MOVED here P6.2 ──
+    def is_cooldown_ready(self) -> bool:
+        """
+        Check if cooldown period has elapsed since last order.
+
+        Returns:
+            True if ready to place order, False if in cooldown
+        """
+        if self.cooldown_seconds <= 0:
+            return True
+
+        elapsed = time.time() - self._last_order_time
+        if elapsed < self.cooldown_seconds:
+            remaining = self.cooldown_seconds - elapsed
+            log.debug(f"Cooldown active: {remaining:.1f}s remaining")
+            return False
+
+        return True
+
+    # ── _should_recalculate_grid_level → MOVED here P6.2 ──
+    def should_recalculate_grid_level(self, proposed_price: float) -> bool:
+        if self._last_accepted_order_price is None:
+            return True
+
+        current_price = self._get_current_price()
+        price_diff = abs(current_price - self._last_accepted_order_price)
+        if price_diff < self._min_price_move_threshold:
+            log.debug(f"Price moved only ${price_diff:.2f}, threshold is ${self._min_price_move_threshold:.2f} - skipping recalculation")
+            return False
+
+        return True

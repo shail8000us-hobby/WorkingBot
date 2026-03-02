@@ -785,23 +785,7 @@ class AsyncGridBot:
             return True
         return False
     
-    def _is_cooldown_ready(self) -> bool:
-        """
-        Check if cooldown period has elapsed since last order.
-        
-        Returns:
-            True if ready to place order, False if in cooldown
-        """
-        if self.cooldown_seconds <= 0:
-            return True
-        
-        elapsed = time.time() - self._last_order_time
-        if elapsed < self.cooldown_seconds:
-            remaining = self.cooldown_seconds - elapsed
-            log.debug(f"Cooldown active: {remaining:.1f}s remaining")
-            return False
-        
-        return True
+    # _is_cooldown_ready — MOVED to GridEngine.is_cooldown_ready() (P6.2)
     
     # _read_guardian_signal — MOVED to GuardianHandler.read_signal() (P1.2)
 
@@ -898,16 +882,7 @@ class AsyncGridBot:
 
     # _fill_multi_step_missed_grids — MOVED to GuardianHandler.fill_multi_step_missed_grids() (P1.5)
 
-    def _should_recalculate_grid_level(self, proposed_price: float) -> bool:
-        if self._last_accepted_order_price is None:
-            return True
-        
-        price_diff = abs(self.current_price - self._last_accepted_order_price)
-        if price_diff < self._min_price_move_threshold:
-            log.debug(f"Price moved only ${price_diff:.2f}, threshold is ${self._min_price_move_threshold:.2f} - skipping recalculation")
-            return False
-        
-        return True
+    # _should_recalculate_grid_level — MOVED to GridEngine.should_recalculate_grid_level() (P6.2)
 
     
     # _reconcile_orphaned_orders — MOVED to ExchangeSync.reconcile_orphaned_orders() (P3.5)
