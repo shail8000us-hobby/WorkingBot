@@ -615,3 +615,97 @@ class FillProcessor:
 
         except Exception as e:
             log.error(f"Error processing fill: {e}")
+
+    # ── _process_missed_fill (FillMonitor callback) → MOVED here P5.7 ──
+    async def process_missed_fill(self, order_data: Dict[str, Any]) -> None:
+        """
+        Process a fill detected by Fill Monitor (not WebSocket).
+
+        This is called when:
+        1. Fill happens during WebSocket disconnection
+        2. Fill happens during exchange maintenance
+        3. WebSocket misses the notification for any reason
+
+        Args:
+            order_data: Order data from exchange with fill information
+        """
+        try:
+            order_id = str(order_data.get('id') or order_data.get('order_id', ''))
+            state = order_data.get('state', '').lower()
+            unfilled_size = order_data.get('unfilled_size', 0)
+
+            # Verify it's actually filled
+            if state != 'closed' or unfilled_size != 0:
+                log.warning(f"⚠️ [FillMonitor] Order {order_id} not actually filled (state={state}, unfilled={unfilled_size})")
+                return
+
+            # Extract fill data
+            fill_price = float(order_data.get('average_fill_price') or order_data.get('limit_price', 0))
+            fill_size = int(order_data.get('size', 0))
+            side = order_data.get('side', '').lower()
+
+            log.warning("=" * 80)
+            log.warning("🎯 MISSED FILL DETECTED BY FILL MONITOR!")
+            log.warning(f"   Order ID: {order_id}")
+            log.warning(f"   Side: {side.upper()}")
+            log.warning(f"   Price: ${fill_price:,.0f}")
+            log.warning(f"   Size: {fill_size}")
+            log.warning(f"   Reason: Fill occurred during WebSocket disconnection or exchange maintenance")
+            log.warning("=" * 80)
+
+            # CRITICAL: Check if already processed (race condition prevention)
+            if self.is_order_fill_seen(order_id):
+                log.info(f"✓ [FillMonitor] Order {order_id} already processed (WebSocket or other system detected it)")
+                return
+
+            # Create fill data structure (same format as WebSocket fills)
+            fill_data = {
+                "id": f"missed-fill-{order_id}-{int(time.time()*1000)}",
+                "order_id": order_id,
+                "price": fill_price,
+                "size": fill_size,
+                "side": side,
+                "product_id": self.product_id,
+                "is_complete": True,  # Fill Monitor only detects completed fills
+                "unfilled_size": 0
+            }
+
+            # Process through normal fill saga
+            await self.process_fill(fill_data)
+
+            log.info(f"✅ [FillMonitor] Missed fill processed successfully")
+
+        except Exception as e:
+            log.error(f"❌ [FillMonitor] Error processing missed fill: {e}")
+
+    # ── _process_missed_fill (reconciliation handler) → MOVED here P5.7 ──
+    async def process_missed_fill_by_params(self, order_id: str, side: str, fill_price: float, fill_size: int) -> None:
+        """
+        Process a fill that was missed by WebSocket.
+        Critical reconciliation mechanism.
+        """
+        try:
+            log.critical("🚨 PROCESSING MISSED FILL (RECONCILIATION)")
+            log.critical(f"   Order: {order_id}")
+            log.critical(f"   Side: {side}")
+            log.critical(f"   Price: {fill_price}")
+            log.critical(f"   Size: {fill_size}")
+
+            # Prepare fill data
+            fill_data = {
+                "order_id": order_id,
+                "fill_price": fill_price,
+                "fill_size": fill_size,
+                "side": side,
+                "is_complete": True,
+                "_detected_via": "reconciliation"
+            }
+
+            # Process via saga (same as regular fill)
+            await self.process_fill(fill_data)
+
+            log.critical("✅ [RECONCILIATION] Missed fill processed successfully")
+
+        except Exception as e:
+            log.critical(f"❌ [RECONCILIATION] FAILED to process missed fill: {e}")
+            raise
