@@ -67,6 +67,9 @@ import AutoloopStatusBar from './components/positionAdjustment/AutoloopStatusBar
 import IdleIndicator from './components/IdleIndicator';
 import SafetyWarningBanner from './components/SafetyWarningBanner';
 import OfflineIndicator from './components/OfflineIndicator';
+// BackendDownError must NOT be lazy-loaded — it's the error fallback for backend failures
+// and must be available immediately (lazy components need Suspense which may not be ready)
+import BackendDownError from './components/BackendDownError';
 import SymbolContextBar from './components/layout/SymbolContextBar';
 import InstanceContextBar from './components/layout/InstanceContextBar';
 // SSRAlgoErrorBoundary imported directly (class component can't be lazy loaded)
@@ -136,7 +139,6 @@ const ShutdownPanel = React.lazy(() => import('./components/ShutdownPanel'));
 const OpportunisticRecoveryPanel = React.lazy(
   () => import('./components/OpportunisticRecoveryPanel')
 );
-const BackendDownError = React.lazy(() => import('./components/BackendDownError'));
 const TodoListPanel = React.lazy(() => import('./components/TodoListPanel'));
 const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceWidget'));
 const SystemHealthPanel = React.lazy(() => import('./components/SystemHealthPanel'));

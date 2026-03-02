@@ -158,7 +158,7 @@ class SimpleStateCoordinator:
     
     async def _get_guardian_status(self) -> str:
         try:
-            signal, reason = await self.bot._read_guardian_signal()
+            signal, reason = await self.bot.guardian.read_signal()
             return signal
         except Exception as e:
             log.error(f"Error reading Guardian status: {e}")

@@ -7,6 +7,133 @@
 
 ---
 
+## 📊 Current Status (Last Updated: Mar 2, 2026)
+
+| Phase | Commits | Result | Notes |
+|-------|---------|--------|-------|
+| **P0: Setup** | f3eb264, a67c4b7 | ✅ **DONE** | Branch `refactor/split-gridbot` + backup + checklist script |
+| **P1: GuardianHandler** | bf47445…e3acdd5 (8 commits) | ✅ **DONE** | `guardian_handler.py` 690 lines, `async_gridbot.py` −583 lines |
+| **🧪 Full Bot Test P1** | 80a8a97 | ✅ **PASSED** (after 1 bug fix) | See bug report below |
+| **P2: HealthMonitor** | 8a03d0f…905e95f (7 commits) | ✅ **DONE** | `health_monitor.py` 563 lines, `async_gridbot.py` −373 lines |
+| **🧪 Full Bot Test P2** | 11e0dc8 | ✅ **PASSED** (after 1 bug fix) | See bug report below |
+| **P3: ExchangeSync** | dcc3858…cf91d89 (8 commits) | ✅ **DONE** | `exchange_sync.py` 822 lines, `async_gridbot.py` −709 lines |
+| **🧪 Full Bot Test P3** | — | ✅ **PASSED** (0 bugs) | Clean start→stop→start, no tracebacks |
+| **P4: WSLifecycle** | 856f049…e8a439a (8 commits + 2 bugfixes) | ✅ **DONE** | `ws_lifecycle.py` 576 lines, `async_gridbot.py` −500 lines |
+| **🧪 Full Bot Test P4** | — | ✅ **PASSED** (after 2 bug fixes) | Clean start→stop→start, zero errors |
+| **P5: FillProcessor** | fc815d6…b463ae7 (4 commits + 1 bugfix commit) | ✅ **DONE** | `fill_processor.py` 812 lines, `async_gridbot.py` 5,770→3,076 (−2,694) |
+| **🧪 Full Bot Test P5** | b463ae7 | ✅ **PASSED** (after 4 bug fixes) | See bug report below |
+| **P6: GridEngine** | 8 commits | ✅ **DONE** | `grid_engine.py` 846 lines, `async_gridbot.py` 3,076→2,379 (−697) |
+| **🧪 Full Bot Test P6** | — | ✅ **PASSED** (0 bugs in code review) | Clean start→stop→start, zero errors |
+| **P7: RecoveryActions** | a058df9 | ✅ **DONE** | `recovery_actions.py` 530 lines, `async_gridbot.py` 2,379→1,962 (−417) |
+| **🧪 Full Bot Test P7** | 7426c05 | ✅ **PASSED** (after 1 bug fix) | See P7 bug report below |
+| **P8: Slim Orchestrator** | ab695d7 | ✅ **DONE** | Removed 14 stale state vars, 6 dead imports, cleaned task list |
+| **🧪 Full Bot Test P8** | — | ✅ **PASSED** (0 bugs) | Clean start, all tasks running, heartbeat ACTIVE, zero errors |
+| P9 | — | ⬜ Not started | — |
+
+### 🐛 Bug Found During P7 Full Bot Test (1 bug, 1 commit)
+
+**Commit:** `7426c05d2` — "P7 audit: fix recovery_actions using stdlib logging instead of loguru"
+
+**Bug — Wrong logger in recovery_actions.py (HIGH severity)**
+- `recovery_actions.py` used `import logging` / `logging.getLogger(__name__)` while ALL other modules use `from loguru import logger as log`
+- This caused all 3 background tasks (`safety_gatekeeper_loop`, `fill_polling_fallback_loop`, `reconciliation_action_processor`) to be **completely invisible** in PM2 logs — their messages went to the unconfigured stdlib logger and were silently dropped
+- Also wrong `human_log` import: `from bot.utils import human_log` instead of `from bot.utils.human_logger import human_log`, with a fallback class instead of `None` + guards
+- **Fix:** Changed to `from loguru import logger as log`, fixed human_log import pattern to match all other modules
+
+**Lesson:** When creating new module files, always copy the logger import pattern from an existing module (e.g., `grid_engine.py`). Never use stdlib `logging` in a loguru project — log messages will silently vanish.
+
+### P8 Full Bot Test — Zero Bugs
+
+Code review verified: 14 removed state vars are all owned by their respective modules. 6 removed imports (`hashlib`, `deque`, `aiofiles`, `EventType`, `Message`, `RecoveryStatus`) have zero remaining usages. Task list reordered into logical groups with consistent naming. `_last_safety_check_time` correctly kept in orchestrator (shared by both RecoveryActions and FillProcessor via lambdas). Clean start → heartbeat ACTIVE → Guardian GO → zero errors.
+
+### 🐛 Bug Found During P1 Full Bot Test
+
+**File:** `bot/strategy/simple_state_coordinator.py` line 161 (`_get_guardian_status`)
+
+**Error (repeated every ~1 second until fixed):**
+```
+ERROR | bot.strategy.simple_state_coordinator:_get_guardian_status:164 -
+Error reading Guardian status: 'AsyncGridBot' object has no attribute '_read_guardian_signal'
+```
+
+**Root Cause:** `simple_state_coordinator.py` still called `self.bot._read_guardian_signal()` which was moved to `GuardianHandler` in P1.2.
+
+**Fix:** `self.bot._read_guardian_signal()` → `self.bot.guardian.read_signal()` (same `tuple[str, str]` return signature)
+
+**Committed:** `80a8a976c` — "Fix: simple_state_coordinator use guardian.read_signal() after P1 extraction"
+
+**Lesson for future phases:** When moving methods, `grep -rn` the entire `bot/` tree (not just `async_gridbot.py`) for the old method name, since `simple_state_coordinator.py`, `health_monitor.py` etc. can also hold references.
+
+### 🐛 Bug Found During P2 Full Bot Test
+
+**File:** `bot/strategy/async_gridbot.py` line 1325 (`start()` → `health_monitor.set_runtime_refs()`)
+
+**Error (bot crashed at startup, before any tasks launched):**
+```
+AttributeError: 'AsyncGridBot' object has no attribute '_format_pending_order_info'
+```
+
+**Root Cause:** `async_gridbot.py` passed `_format_pending_order_callback=self._format_pending_order_info` to `set_runtime_refs()`. This method was moved to `HealthMonitor` in P2.3. Note: the callback is dead code (never read inside `health_monitor.py` — the method is called internally as `self._format_pending_order_info()`), but the stale reference still crashed the bot.
+
+**Fix:** `self._format_pending_order_info` → `self.health_monitor._format_pending_order_info`
+
+**Committed:** `11e0dc81e` — "Fix: async_gridbot pass health_monitor._format_pending_order_info after P2 extraction"
+
+**Lesson:** When passing `self.method` as a callback to `set_runtime_refs()`, the method may have already been moved. Always grep the `set_runtime_refs()` call block for any `self._xxx` references from the extracted class.
+
+### 🐛 Bug #1 Found During P4 Full Bot Test
+
+**Error:** `AttributeError: 'AsyncGridBot' object has no attribute 'ws_lifecycle'`
+
+**Root Cause:** `self._rest_fallback_active = False` was set at line 569 in `__init__`, before `ws_lifecycle` was constructed at line 703. The property proxy setter tried `self.ws_lifecycle._rest_fallback_active = value` which failed because `ws_lifecycle` didn't exist yet.
+
+**Fix:** Removed early assignment — WSLifecycle owns this state and initializes it in its own `__init__`.
+
+**Committed:** `91a5b9ea3` — "P4 Fix: remove early _rest_fallback_active init that conflicts with ws_lifecycle proxy"
+
+### 🐛 Bug #2 Found During P4 Full Bot Test
+
+**Error:** `'NoneType' object has no attribute 'price_data_flowing'` from `human_log.price_data_flowing()`
+
+**Root Cause:** Wrong import path in ws_lifecycle.py: `from bot.utils.human_log import human_log` instead of `from bot.utils.human_logger import human_log`. This silently set `human_log = None`.
+
+**Fix:** Corrected import path + added `if human_log:` guards on all 5 call sites.
+
+**Committed:** `e8a439abb` — "P4 Fix: correct human_log import path + add None guards in ws_lifecycle"
+
+**Lesson:** Always verify import paths by grepping the existing codebase for the canonical import. Add defensive None guards on optional singletons.
+
+### 🐛 Bugs Found During P5 Full Bot Test (4 bugs, 1 commit)
+
+**Commit:** `b463ae719` — "P5 FillProcessor: fix 4 bugs found during thorough review"
+
+**Bug 1 — FillMonitor init ordering (Critical)**
+- `FillMonitor(missed_fill_callback=self.fill_processor.process_missed_fill)` at line 621, but `self.fill_processor` isn't created until line 715
+- Would crash on startup with `AttributeError`
+- **Fix:** Removed callback from constructor, wired after FillProcessor init: `self.fill_monitor.missed_fill_callback = self.fill_processor.process_missed_fill`
+
+**Bug 2 — Wrong keys in `process_missed_fill_by_params` (Critical)**
+- Used `fill_price`/`fill_size` keys instead of `price`/`size` expected by `process_fill()`
+- Reconciliation fills would silently get price=0, size=0
+- **Fix:** Changed keys to `price`/`size`, added `id` field for deduplication
+
+**Bug 3 — Health monitor counter wiring (Medium)**
+- `_get_fills_processed=lambda: self._fills_processed` pointed to orchestrator's stale counter (always 0)
+- **Fix:** `lambda: self.fill_processor._fills_processed`
+
+**Bug 4 — Fill polling dedup (Critical)**
+- `fill_id in self._seen_fill_ids` checked orchestrator's empty set instead of `fill_processor`'s
+- Every polled fill would be re-processed (no dedup)
+- **Fix:** `self.fill_processor.is_fill_seen(fill_id)` / `self.fill_processor.is_order_fill_seen(order_id)`
+
+**Lesson:** When moving state (sets, counters) to a new module, grep ALL callers — not just in `async_gridbot.py` but also loops, monitoring, and reporting code that reference `self._xxx` directly.
+
+### P6 Full Bot Test — Zero Bugs
+
+Code review found all wiring correct. No stale method definitions, no stale state variables, no broken references. Clean start→heartbeat→watchdog verified in live logs.
+
+---
+
 ## How This Plan Works
 
 Each **Macro Phase** (1-8) from the original plan is split into numbered **micro-phases**.
@@ -119,9 +246,9 @@ After every **Macro Phase** completes: run the **FULL BOT TEST** (start bot, ver
 
 ---
 
-## Phase 0: Setup
+## Phase 0: Setup — ✅ DONE
 
-### P0.1 — Create Branch + Backup (5 min)
+### P0.1 — Create Branch + Backup (5 min) ✅
 
 ```bash
 cd ~/Projects/WorkingBot
@@ -136,7 +263,7 @@ git add bot/strategy/async_gridbot.py.pre_refactor_backup
 git commit -m "P0.1: Backup async_gridbot.py before refactoring"
 ```
 
-### P0.2 — Create Verification Checklist (5 min)
+### P0.2 — Create Verification Checklist (5 min) ✅
 
 Create file `tests/refactoring_checklist.sh`:
 
@@ -173,7 +300,7 @@ git commit -m "P0.2: Add refactoring verification script"
 
 ---
 
-## Phase 1: Extract `guardian_handler.py` (~520 lines, LOW risk)
+## Phase 1: Extract `guardian_handler.py` (~520 lines, LOW risk) — ✅ DONE
 
 ### Why First
 - Self-contained signal-reading concern
@@ -491,8 +618,36 @@ git add bot/strategy/modules/guardian_handler.py bot/strategy/async_gridbot.py
 git commit -m "P1.8: Move guardian_health_monitor_loop + cleanup dead code (~520 lines extracted)"
 ```
 
-### 🧪 FULL BOT TEST after Phase 1 (10 min)
+### 🧪 FULL BOT TEST after Phase 1 (10 min) — ✅ PASSED (Mar 2, 2026)
 
+**Test ran on:** `gridbot-btc-live` (PM2), branch `refactor/split-gridbot`
+
+**Results:**
+- ✅ `guardian_handler.py` syntax OK, import OK
+- ✅ `async_gridbot.py` syntax OK, import OK
+- ✅ `🛡️  Guardian: 🟢 GO` — signal read correctly from `guardian_handler:read_signal:131`
+- ✅ `[HB] Positions: 0/20 | Price: $66,392↑ | ✅ ACTIVE` — heartbeat clean
+- ✅ No ImportError, AttributeError, or NameError after fix
+- ✅ Bot stopped cleanly via `pm2 stop`
+
+**Bug found and fixed before passing** — see `## 📊 Current Status` bug report above.
+
+**Commits in this phase:**
+```
+f3eb264  P0.1: Backup async_gridbot.py before refactoring
+a67c4b7  P0.2: Add refactoring verification script
+bf47445  P1.1: Create GuardianHandler skeleton (class + __init__ only)
+42c5ff0  P1.2: Move _read_guardian_signal → GuardianHandler.read_signal()
+124cf60  P1.3: Move _check_guardian_transition_and_retry
+a491310  P1.4: Move _retry_missed_grid_orders
+13c32947 P1.5: Move _fill_multi_step_missed_grids (A3 fix)
+09815f3  P1.6: Move _check_guardian_transitions
+9193435  P1.7: Move cancel_pending_entries + resume_grid
+e3acdd5  P1.8: Move guardian_health_monitor_loop + cleanup
+80a8a97  Fix: simple_state_coordinator use guardian.read_signal() after P1 extraction
+```
+
+**Original guidance (kept for reference):**
 ```bash
 # Start bot
 pm2 start ecosystem.config.js --only gridbot-btc
@@ -517,7 +672,7 @@ ps aux | grep async_gridbot
 
 ---
 
-## Phase 2: Extract `health_monitor.py` (~400 lines, LOW risk)
+## Phase 2: Extract `health_monitor.py` (~400 lines, LOW risk) — ✅ DONE
 
 ### Why Second
 - Read-only observation loops — they **never** place orders or mutate trading state
@@ -745,8 +900,39 @@ bash tests/refactoring_checklist.sh bot/strategy/modules/health_monitor.py
 git commit -m "P2.7: Move _watchdog_loop + cleanup dead code (~400 lines extracted)"
 ```
 
-### 🧪 FULL BOT TEST after Phase 2 (10 min)
+### 🧪 FULL BOT TEST after Phase 2 (10 min) — ✅ PASSED (Mar 2, 2026)
 
+**Test ran on:** `gridbot-btc-live` (PM2), branch `refactor/split-gridbot`
+
+**Results:**
+- ✅ `health_monitor.py` syntax OK, import OK
+- ✅ `async_gridbot.py` syntax OK, import OK
+- ✅ `💓 Heartbeat loop started (every 20s)` — from `health_monitor:heartbeat_loop:168`
+- ✅ `📊 Monitoring loop started` — from `health_monitor:monitoring_loop:293`
+- ✅ `Health check loop started` — from `health_monitor:health_check_loop:439`
+- ✅ `🐕 Watchdog started (timeout: 60.0s)` — from `health_monitor:watchdog_loop:515`
+- ✅ `[HB] Positions: 0/20 | Price: $66,296 | ✅ ACTIVE` — from `health_monitor:heartbeat_loop:270`
+- ✅ Guardian `🟢 GO` reading from `guardian_handler:read_signal:131`
+- ✅ 2x cold-start cycle confirmed (start → stop → start)
+- ✅ No ImportError, AttributeError, or traceback after fix
+
+**Bug found and fixed before passing** — see `## 📊 Current Status` P2 bug report above.
+
+**Commits in this phase:**
+```
+8a03d0f  P2.1: Create HealthMonitor skeleton (class + __init__ only)
+563d48e  P2.2: Move _update_external_heartbeat to HealthMonitor
+6d977bb  P2.3: Move _heartbeat_loop + _format_pending_order_info to HealthMonitor
+2c345f8  P2.4: Move _monitoring_loop to HealthMonitor
+e81ab20  P2.5: Move _check_memory_usage + _check_websocket_health to HealthMonitor
+84f2c8c  P2.6: Move _health_check_loop to HealthMonitor
+905e95f  P2.7: Move _watchdog_loop + cleanup dead code (~373 lines extracted)
+11e0dc8  Fix: async_gridbot pass health_monitor._format_pending_order_info after P2 extraction
+```
+
+**Cumulative progress (P1 + P2):** Original 5,770 → Now 4,815 lines (−955 lines, −16.5%). Modules: `guardian_handler.py` (690 lines) + `health_monitor.py` (563 lines)
+
+**Original guidance (kept for reference):**
 ```bash
 pm2 start ecosystem.config.js --only gridbot-btc
 # Wait 30s, check for:
@@ -758,7 +944,7 @@ pm2 stop gridbot-btc
 
 ---
 
-## Phase 3: Extract `exchange_sync.py` (~600 lines, MEDIUM risk)
+## Phase 3: Extract `exchange_sync.py` (~600 lines, MEDIUM risk) — ✅ DONE
 
 ### Why Third
 - Runs mostly at startup (one-time reconciliation) and during maintenance
@@ -946,9 +1132,39 @@ pm2 start ecosystem.config.js --only gridbot-btc
 pm2 stop gridbot-btc
 ```
 
+### ✅ Phase 3 Completion Notes (Mar 2, 2026)
+
+**Commits:** dcc3858cb → cf91d8976 (8 commits)
+
+| Step | Method(s) Moved | Lines |
+|------|----------------|-------|
+| P3.1 | ExchangeSync skeleton | 68 |
+| P3.2 | `detect_exchange_state` + `handle_exchange_maintenance` | ~80 |
+| P3.3 | `exchange_maintenance_monitor` | ~40 |
+| P3.4 | `sync_positions_from_exchange` | ~60 |
+| P3.5 | `reconcile_orphaned_orders` | 155 |
+| P3.6 | `cleanup_misaligned_orders` | 46 |
+| P3.7 | `reconcile_fills_after_reconnect` + `ensure_grid_coverage` | 149 |
+| P3.8 | `full_exchange_sync` + wire `set_runtime_refs` | 190 |
+
+**Final sizes:** `exchange_sync.py` = 822 lines, `async_gridbot.py` = 4,106 lines
+
+**Runtime refs wired:** `_get_running`, `_get_current_price`, `_fetch_current_price_callback`, `_process_fill_callback`
+
+**Attribute translations:**
+- `self.grid_calc.step` → `self.grid_step` (constructor param)
+- `self.current_price` → `self._get_current_price()` (runtime ref)
+- `self._fetch_current_price()` → `self._fetch_current_price_callback()` (runtime ref)
+- `self._process_fill()` → `self._process_fill_callback()` (runtime ref)
+- `self.exchange_sync.ensure_grid_coverage()` → `self.ensure_grid_coverage()` (internal call within ExchangeSync)
+
+**Bot test:** start → stop → start — zero errors, zero tracebacks. ✅ **PASSED**
+
+**Bugs found:** 0
+
 ---
 
-## Phase 4: Extract `ws_lifecycle.py` (~500 lines, MEDIUM risk)
+## Phase 4: Extract `ws_lifecycle.py` (~500 lines, MEDIUM risk) — ✅ DONE
 
 ### Why Fourth
 - WebSocket lifecycle is well-bounded
@@ -1143,6 +1359,16 @@ pm2 start ecosystem.config.js --only gridbot-btc
 # ✅ No tracebacks
 pm2 stop gridbot-btc
 ```
+
+### ✅ Phase 4 Completion Notes
+
+**Completed:** Mar 2, 2026
+**Commits:** 856f049ce → e8a439abb (8 extraction commits + 2 bugfix commits)
+**Result:** `ws_lifecycle.py` = 576 lines, `async_gridbot.py` ≈ 3,669 lines (down from ~4,200 pre-P4)
+**Methods extracted:** 16 (get_current_price, fetch_current_price, register_handlers, subscribe_channels, message_loop, reconnect_websocket, rest_fallback_monitor_loop, _handle_ticker_update, _handle_position_update, _activate_rest_fallback, _deactivate_rest_fallback, _rest_polling_loop, _poll_price_via_rest, _poll_pending_orders_via_rest, _check_order_status_rest, set_runtime_refs)
+**Property proxies:** 4 (current_price, _last_price, _last_price_update, _rest_fallback_active)
+**Runtime callbacks:** 6 (wired via set_runtime_refs before WS connect)
+**Bugs found:** 2 (see bug reports above)
 
 ---
 
