@@ -427,3 +427,72 @@ class GridEngine:
                     log.info(f"   → Next SELL level: ${next_level:,.0f}")
 
         log.info("=" * 70)
+
+    # ── _check_and_place_entry_order → MOVED here P6.6 ──
+    async def check_and_place_entry_order(self) -> None:
+        """Check if we should place a new entry order based on current grid state.
+
+        CRITICAL SAFETY INTEGRATION:
+        - Calls comprehensive_safety_check() before EVERY order
+        - This includes Guardian signal, account loss limits, margin, and volatility
+        - If ANY check fails, order is blocked
+        - Ensures grid trading respects ALL safety boundaries
+
+        JAN 29 2026: Added recovery_in_progress check to prevent conflicts.
+        """
+        async with self._order_placement_lock:
+            try:
+                if not self._get_initial_order_placed() or not self._get_current_price():
+                    return
+
+                # Check if recovery is in progress - skip normal order placement
+                if self._state_coordinator_ref and self._state_coordinator_ref.is_recovery_in_progress():
+                    log.debug("Skipping normal order placement - recovery in progress")
+                    return
+
+                # COMPREHENSIVE SAFETY CHECK before placing any order
+                can_proceed, reason = await self.comprehensive_safety_check("entry order placement")
+                if not can_proceed:
+                    # Mark as halted when blocked
+                    self._was_halted = True
+
+                    # Log detailed reason on state change or periodically (every 60s)
+                    if self._last_block_reason != reason:
+                        # Reason changed - log immediately with full detailed message
+                        log.warning("")
+                        log.warning("=" * 70)
+                        log.warning("🚫 TRADING HALTED")
+                        log.warning("=" * 70)
+                        # reason is already a multi-line detailed message, log it directly
+                        for line in reason.split('\n'):
+                            if line.strip():
+                                log.warning(line)
+                        log.warning("=" * 70)
+                        log.warning("")
+                        self._last_block_reason = reason
+                        self._last_safety_block_log = time.time()
+                    elif time.time() - self._last_safety_block_log > 300:
+                        # Same reason but 5 minutes passed - brief reminder
+                        first_line = reason.split('\n')[0] if '\n' in reason else reason
+                        log.info(f"ℹ️  Still blocked: {first_line}")
+                        self._last_safety_block_log = time.time()
+                    # Silently skip if same reason and logged recently
+                    return
+
+                # GUARDIAN RESUME - Reset halt flag
+                if self._was_halted:
+                    log.info("✅ Guardian resumed trading - resuming normal grid operations")
+                    self._was_halted = False  # Reset flag
+
+                # Price bounds already checked in comprehensive check
+                # Volatility already checked in comprehensive check
+
+                # Get current state
+                state = await self.position_actor.ask("GET_STATE", {})
+
+                # Place grid order based on mode
+                side = "buy" if self.mode == "LONG" else "sell"
+                await self.place_grid_order(state, side)
+
+            except Exception as e:
+                log.error(f"Entry check error: {e}", exc_info=True)

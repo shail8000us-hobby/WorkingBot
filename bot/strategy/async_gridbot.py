@@ -1048,7 +1048,7 @@ class AsyncGridBot:
         self.ws_lifecycle.set_runtime_refs(
             _get_running=lambda: self._running,
             _get_start_time=lambda: self._start_time,
-            _on_ticker_callback=self._check_and_place_entry_order,
+            _on_ticker_callback=self.grid_engine.check_and_place_entry_order,
             _on_order_update_callback=self.fill_processor.handle_order_update,
             _process_fill_callback=self.fill_processor.process_fill,
             _full_exchange_sync_callback=self.exchange_sync.full_exchange_sync,
@@ -1619,73 +1619,7 @@ class AsyncGridBot:
     
     # _place_grid_order — MOVED to GridEngine.place_grid_order() (P6.5)
     
-    async def _check_and_place_entry_order(self) -> None:
-        """Check if we should place a new entry order based on current grid state.
-        
-        CRITICAL SAFETY INTEGRATION:
-        - Calls _comprehensive_safety_check() before EVERY order
-        - This includes Guardian signal, account loss limits, margin, and volatility
-        - If ANY check fails, order is blocked
-        - Ensures grid trading respects ALL safety boundaries
-        
-        JAN 29 2026: Added recovery_in_progress check to prevent conflicts.
-        """
-        async with self._order_placement_lock:
-            try:
-                if not self._initial_order_placed or not self.current_price:
-                    return
-                
-                # Check if recovery is in progress - skip normal order placement
-                if hasattr(self, 'state_coordinator') and self.state_coordinator.is_recovery_in_progress():
-                    log.debug("Skipping normal order placement - recovery in progress")
-                    return
-                
-                # COMPREHENSIVE SAFETY CHECK before placing any order
-                can_proceed, reason = await self._comprehensive_safety_check("entry order placement")
-                if not can_proceed:
-                    # Mark as halted when blocked
-                    self._was_halted = True
-                    
-                    # Log detailed reason on state change or periodically (every 60s)
-                    if not hasattr(self, '_last_block_reason') or self._last_block_reason != reason:
-                        # Reason changed - log immediately with full detailed message
-                        log.warning("")
-                        log.warning("=" * 70)
-                        log.warning("🚫 TRADING HALTED")
-                        log.warning("=" * 70)
-                        # reason is already a multi-line detailed message, log it directly
-                        for line in reason.split('\n'):
-                            if line.strip():
-                                log.warning(line)
-                        log.warning("=" * 70)
-                        log.warning("")
-                        self._last_block_reason = reason
-                        self._last_safety_block_log = time.time()
-                    elif time.time() - getattr(self, '_last_safety_block_log', 0) > 300:
-                        # Same reason but 5 minutes passed - brief reminder
-                        first_line = reason.split('\n')[0] if '\n' in reason else reason
-                        log.info(f"ℹ️  Still blocked: {first_line}")
-                        self._last_safety_block_log = time.time()
-                    # Silently skip if same reason and logged recently
-                    return
-                
-                # GUARDIAN RESUME - Reset halt flag
-                if hasattr(self, '_was_halted') and self._was_halted:
-                    log.info("✅ Guardian resumed trading - resuming normal grid operations")
-                    self._was_halted = False  # Reset flag
-            
-                # Price bounds already checked in comprehensive check
-                # Volatility already checked in comprehensive check
-                
-                # Get current state
-                state = await self.position_actor.ask("GET_STATE", {})
-                
-                # Place grid order based on mode
-                side = "buy" if self.mode == "LONG" else "sell"
-                await self.grid_engine.place_grid_order(state, side)
-                        
-            except Exception as e:
-                log.error(f"Entry check error: {e}", exc_info=True)
+    # _check_and_place_entry_order — MOVED to GridEngine.check_and_place_entry_order() (P6.6)
     
     # _format_pending_order_info — MOVED to HealthMonitor._format_pending_order_info() (P2.3)
     
