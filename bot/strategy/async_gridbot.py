@@ -9,12 +9,8 @@ import os
 import sys
 import signal
 import time
-import hashlib
-from collections import deque
 from typing import Dict, Any, Optional, List, Set
 from pathlib import Path
-
-import aiofiles
 
 from loguru import logger as log
 
@@ -42,7 +38,7 @@ from bot.strategy.sagas.fill_processing_saga import (
     create_short_tp_saga,
 )
 from bot.strategy.sagas.position_closing_saga import create_emergency_close_all_saga
-from bot.strategy.modules.event_store import EventStore, EventType
+from bot.strategy.modules.event_store import EventStore
 from bot.strategy.modules.guardian_handler import GuardianHandler
 from bot.strategy.modules.health_monitor import HealthMonitor
 from bot.strategy.modules.exchange_sync import ExchangeSync
@@ -52,10 +48,8 @@ from bot.strategy.modules.recovery_actions import RecoveryActions
 from bot.strategy.modules.grid_engine import GridEngine
 from bot.strategy.modules.grid_calculator import GridCalculator
 from bot.strategy.modules.mode_state_manager import get_mode_state_manager
-from bot.strategy.actors.base_actor import Message
-
 # Recovery System Integration (NOV 20)
-from bot.strategy.recovery import StartupRecoveryEngine, GuardianRecoveryEngine, RecoveryStatus
+from bot.strategy.recovery import StartupRecoveryEngine, GuardianRecoveryEngine
 
 # NOV 13: Comprehensive Monitoring Systems (5 layers of protection)
 from bot.monitoring import (
@@ -426,9 +420,7 @@ class AsyncGridBot:
         self.cooldown_seconds = cooldown_seconds or config.order_execution.cooldown_seconds
         
         # Safety state (minimal - Guardian handles most safety)
-        # These are kept for status display only, not for checking
-        self._account_loss_inr = 0.0  # For display in status endpoint
-        self._last_safety_check_time = 0  # For periodic safety gatekeeper
+        self._last_safety_check_time = 0  # For periodic safety gatekeeper (RecoveryActions)
         
         # Log rate limiter - track last log time for frequently occurring messages
         self._log_rate_limiter: Dict[str, float] = {}
@@ -529,22 +521,13 @@ class AsyncGridBot:
         self._tasks: List[asyncio.Task] = []
         # current_price, _last_price, _last_price_update → owned by WSLifecycle (P4)
         self._initial_order_placed = False
-        self._price_stale_threshold = 10  # seconds
-        
+        # _price_stale_threshold → removed (unused)
         # Guardian signal state now owned by self.guardian (GuardianHandler)
-        
-        # Metrics
+        # _fills_processed, _sagas_completed, _sagas_failed → owned by FillProcessor (P5)
+        # _last_reconciliation, _reconciliation_* → owned by RecoveryActions (P7)
+
         self._start_time = 0
-        self._fills_processed = 0
-        self._sagas_completed = 0
-        self._sagas_failed = 0
-        
-        # Reconciliation state
-        self._last_reconciliation = 0
-        self._reconciliation_interval = 300  # 5 minutes
-        self._reconciliation_initial_delay = 60  # 1 minute initial delay
-        self._reconciliation_errors = 0
-        
+
         # Recovery state (NOV 20) - Symbol-specific (v5.0)
         self._recovery_state = None
         self._recovered_grids = set()  # Grid levels that were recovered
@@ -602,7 +585,6 @@ class AsyncGridBot:
         # Monitoring Data Writer (WebUI integration)
         log.info("   └─ Monitoring Data Writer (WebUI integration)")
         self.monitoring_writer = MonitoringDataWriter()
-        self._last_monitoring_write = 0  # Track last write time
         
         log.info("✅ All monitoring systems initialized (5 layers + WebUI writer)")
         
@@ -628,21 +610,13 @@ class AsyncGridBot:
         # Guardian monitors IV, RV, spreads and publishes GO/STOP signals
         # Trading bot reads Guardian signal from database (no duplicate checks)
         
-        # ========================================================================
-        # NOV 13: Event Loop Watchdog (Frozen Loop Detection)
-        # ========================================================================
-        
+        # _last_heartbeat_time owned here; _watchdog_timeout exposed for health_check.py
         self._last_heartbeat_time = time.time()
         self._watchdog_timeout = 60.0
-        self._watchdog_check_interval = 10.0
-        self._max_reconciliation_errors = 10
-        
-        self._seen_fill_ids: Set[str] = set()
-        self._fill_id_timestamps: deque = deque(maxlen=1000)
-        self._fill_id_cleanup_interval = 300
-        self._last_fill_id_cleanup = time.time()
-        
-        
+        # _watchdog_check_interval, _max_reconciliation_errors → owned by HealthMonitor (P2)
+        # _seen_fill_ids, _fill_id_timestamps, etc. → owned by FillProcessor (P5)
+        # _last_monitoring_write → removed (unused)
+
         self.STATE_VERSION = "1.0"
     
     # Guardian state (transitions, missed orders) now owned by GuardianHandler
@@ -1060,21 +1034,27 @@ class AsyncGridBot:
         # Start async tasks
         log.info("Starting async tasks...")
         async_tasks = [
-            asyncio.create_task(self.health_monitor.heartbeat_loop(), name="heartbeat"),
-            asyncio.create_task(self.ws_lifecycle.message_loop(), name="websocket"),
-            asyncio.create_task(self.health_monitor.monitoring_loop(), name="monitoring"),
-            asyncio.create_task(self.health_monitor.health_check_loop(), name="health_check"),
-            asyncio.create_task(self.recovery_actions.reconciliation_action_processor(), name="reconciliation_actions"),  # NOV 20: Process actions from standalone reconciliation engine
-            asyncio.create_task(self.ws_lifecycle.rest_fallback_monitor_loop(), name="rest_fallback"),  # NOV 13: REST fallback
-            asyncio.create_task(self.health_monitor.watchdog_loop(), name="watchdog"),  # NOV 13: Event loop watchdog
-            asyncio.create_task(self.recovery_actions.safety_gatekeeper_loop(), name="safety_gatekeeper"),  # Safety check every 5 min
-            asyncio.create_task(self.recovery_actions.fill_polling_fallback_loop(), name="fill_polling"),  # JAN 20: Fill polling fallback every 60s
-            asyncio.create_task(self.guardian.health_monitor_loop(), name="guardian_monitor"),  # CRITICAL: Guardian health check every 15s
-            asyncio.create_task(self.api_client.start_websocket_health_monitor(), name="ws_health_monitor"),  # CRITICAL FIX: WebSocket health monitor (5s checks)
-            asyncio.create_task(self.state_coordinator.monitor_guardian(), name="state_guardian_monitor"),  # NOV 20: State coordinator Guardian monitor
-            asyncio.create_task(self.state_coordinator.run_reconciliation_loop(), name="state_reconciliation"),  # NOV 20: State coordinator reconciliation
-            self.fill_monitor._task,  # DEC 23: Fill Monitor task (already created by start())
-            asyncio.create_task(self.exchange_sync.exchange_maintenance_monitor(), name="exchange_maintenance_monitor")  # DEC 23 Layer 3: Exchange state monitoring
+            # Guardian
+            asyncio.create_task(self.guardian.health_monitor_loop(), name="GuardianMonitor"),
+            # Health
+            asyncio.create_task(self.health_monitor.heartbeat_loop(), name="Heartbeat"),
+            asyncio.create_task(self.health_monitor.monitoring_loop(), name="Monitoring"),
+            asyncio.create_task(self.health_monitor.health_check_loop(), name="HealthCheck"),
+            asyncio.create_task(self.health_monitor.watchdog_loop(), name="Watchdog"),
+            # Exchange / WebSocket
+            asyncio.create_task(self.exchange_sync.exchange_maintenance_monitor(), name="ExchangeMonitor"),
+            asyncio.create_task(self.ws_lifecycle.message_loop(), name="WSMessages"),
+            asyncio.create_task(self.ws_lifecycle.rest_fallback_monitor_loop(), name="RestFallback"),
+            asyncio.create_task(self.api_client.start_websocket_health_monitor(), name="WSHealthMonitor"),
+            # Recovery
+            asyncio.create_task(self.recovery_actions.reconciliation_action_processor(), name="ReconProcessor"),
+            asyncio.create_task(self.recovery_actions.safety_gatekeeper_loop(), name="SafetyGatekeeper"),
+            asyncio.create_task(self.recovery_actions.fill_polling_fallback_loop(), name="FillPolling"),
+            # State coordinator
+            asyncio.create_task(self.state_coordinator.monitor_guardian(), name="StateGuardianMonitor"),
+            asyncio.create_task(self.state_coordinator.run_reconciliation_loop(), name="StateReconciliation"),
+            # Fill monitor (task pre-created by FillMonitor.start())
+            self.fill_monitor._task,
         ]
         self._tasks.extend(async_tasks)
         
