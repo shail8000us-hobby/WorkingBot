@@ -1478,7 +1478,7 @@ class AsyncGridBot:
                     human_log.position_updated(size=current_positions + 1)
                     
                     # Calculate next buy level
-                    next_buy = self._calculate_next_grid_level('BUY', processed_fill['fill_price'])
+                    next_buy = self.fill_processor.calculate_next_grid_level('BUY', processed_fill['fill_price'])
                     if next_buy:
                         log.info(f"   ⬇️  Next BUY level: ${next_buy:,.0f}")
                     
@@ -1550,7 +1550,7 @@ class AsyncGridBot:
                     human_log.position_updated(size=current_positions + 1)
                     
                     # Calculate next sell level (UP from current)
-                    next_sell = self._calculate_next_grid_level('SELL', processed_fill['fill_price'])
+                    next_sell = self.fill_processor.calculate_next_grid_level('SELL', processed_fill['fill_price'])
                     if next_sell:
                         log.info(f"   ⬆️  Next SELL level: ${next_sell:,.0f}")
                     
@@ -2522,11 +2522,11 @@ class AsyncGridBot:
         
         # Next grid level
         if self.mode == 'LONG':
-            next_level = self._calculate_next_grid_level('BUY', current_price)
+            next_level = self.fill_processor.calculate_next_grid_level('BUY', current_price)
             if next_level:
                 log.info(f"   → Next BUY level: ${next_level:,.0f}")
         else:
-            next_level = self._calculate_next_grid_level('SELL', current_price)
+            next_level = self.fill_processor.calculate_next_grid_level('SELL', current_price)
             if next_level:
                 log.info(f"   → Next SELL level: ${next_level:,.0f}")
         
@@ -3040,60 +3040,7 @@ class AsyncGridBot:
 
     # ── _reconnect_websocket → MOVED to ws_lifecycle.reconnect_websocket() [P4.5] ──
     
-    def _calculate_next_grid_level(self, side: str, current_price: float) -> Optional[float]:
-        """
-        Calculate the next grid level for order placement.
-        Skips recovered grid levels to prevent duplicate positions.
-        
-        Args:
-            side: 'BUY' or 'SELL'
-            current_price: Current market price
-            
-        Returns:
-            Next grid level price or None if out of range
-        """
-        try:
-            if side == 'BUY':
-                # For LONG mode, buy below current price
-                # Find next grid level below current price
-                next_level = self.grid_calc.lower
-                while next_level < current_price:
-                    next_level += self.grid_calc.step
-                
-                # Go one step back to get level below current price
-                next_level -= self.grid_calc.step
-                
-                # Skip recovered grid levels (NOV 20)
-                while (next_level in self._recovered_grids and 
-                       next_level >= self.grid_calc.lower):
-                    next_level -= self.grid_calc.step
-                
-                # Ensure it's within grid bounds
-                if next_level >= self.grid_calc.lower and next_level <= self.grid_calc.upper:
-                    return next_level
-            else:
-                # For SHORT mode, sell above current price
-                next_level = self.grid_calc.upper
-                while next_level > current_price:
-                    next_level -= self.grid_calc.step
-                
-                # Go one step forward to get level above current price
-                next_level += self.grid_calc.step
-                
-                # Skip recovered grid levels (NOV 20)
-                while (next_level in self._recovered_grids and 
-                       next_level <= self.grid_calc.upper):
-                    next_level += self.grid_calc.step
-                
-                # Ensure it's within grid bounds
-                if next_level >= self.grid_calc.lower and next_level <= self.grid_calc.upper:
-                    return next_level
-            
-            return None
-            
-        except Exception as e:
-            log.debug(f"Error calculating next grid level: {e}")
-            return None
+    # _calculate_next_grid_level — MOVED to FillProcessor.calculate_next_grid_level() (P5.3)
     
     # ========================================================================
     # Telegram Notifications (NOV 13)

@@ -134,3 +134,62 @@ class FillProcessor:
 
         self._last_fill_id_cleanup = now
         log.debug(f"Cleaned up old fill IDs, current cache size: {len(self._seen_fill_ids)}")
+
+    # ========================================================================
+    # P5.3: Next Grid Level Calculator
+    # ========================================================================
+
+    def calculate_next_grid_level(self, side: str, current_price: float) -> Optional[float]:
+        """
+        Calculate the next grid level for order placement.
+        Skips recovered grid levels to prevent duplicate positions.
+
+        Args:
+            side: 'BUY' or 'SELL'
+            current_price: Current market price
+
+        Returns:
+            Next grid level price or None if out of range
+        """
+        try:
+            if side == 'BUY':
+                # For LONG mode, buy below current price
+                # Find next grid level below current price
+                next_level = self.grid_calc.lower
+                while next_level < current_price:
+                    next_level += self.grid_calc.step
+
+                # Go one step back to get level below current price
+                next_level -= self.grid_calc.step
+
+                # Skip recovered grid levels (NOV 20)
+                while (next_level in self._recovered_grids and
+                       next_level >= self.grid_calc.lower):
+                    next_level -= self.grid_calc.step
+
+                # Ensure it's within grid bounds
+                if next_level >= self.grid_calc.lower and next_level <= self.grid_calc.upper:
+                    return next_level
+            else:
+                # For SHORT mode, sell above current price
+                next_level = self.grid_calc.upper
+                while next_level > current_price:
+                    next_level -= self.grid_calc.step
+
+                # Go one step forward to get level above current price
+                next_level += self.grid_calc.step
+
+                # Skip recovered grid levels (NOV 20)
+                while (next_level in self._recovered_grids and
+                       next_level <= self.grid_calc.upper):
+                    next_level += self.grid_calc.step
+
+                # Ensure it's within grid bounds
+                if next_level >= self.grid_calc.lower and next_level <= self.grid_calc.upper:
+                    return next_level
+
+            return None
+
+        except Exception as e:
+            log.debug(f"Error calculating next grid level: {e}")
+            return None
