@@ -693,9 +693,10 @@ class FillProcessor:
 
             # Prepare fill data
             fill_data = {
+                "id": f"reconciliation-{order_id}-{int(time.time()*1000)}",
                 "order_id": order_id,
-                "fill_price": fill_price,
-                "fill_size": fill_size,
+                "price": fill_price,
+                "size": fill_size,
                 "side": side,
                 "is_complete": True,
                 "_detected_via": "reconciliation"

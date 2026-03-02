@@ -618,7 +618,7 @@ class AsyncGridBot:
             check_interval=30,  # Check every 30 seconds
             verification_delay=5,  # Start checking 5 seconds after placement
             max_age=86400,  # Keep orders for 24 hours
-            missed_fill_callback=self.fill_processor.process_missed_fill
+            # NOTE: missed_fill_callback wired after FillProcessor init (line ~730)
         )
         log.info("✅ Fill Monitor initialized (30s check interval, 5s initial delay)")
         
@@ -728,6 +728,9 @@ class AsyncGridBot:
             tp_offset=self.tp_offset,
             symbol=self.symbol,
         )
+
+        # Wire FillMonitor callback now that FillProcessor exists
+        self.fill_monitor.missed_fill_callback = self.fill_processor.process_missed_fill
 
     # ── Property proxies for WSLifecycle-owned state (P4) ─────────────
 
@@ -1059,9 +1062,9 @@ class AsyncGridBot:
             _get_running=lambda: self._running,
             _get_current_price=lambda: getattr(self, '_last_price', None),
             _get_start_time=lambda: self._start_time,
-            _get_fills_processed=lambda: self._fills_processed,
-            _get_sagas_completed=lambda: self._sagas_completed,
-            _get_sagas_failed=lambda: self._sagas_failed,
+            _get_fills_processed=lambda: self.fill_processor._fills_processed,
+            _get_sagas_completed=lambda: self.fill_processor._sagas_completed,
+            _get_sagas_failed=lambda: self.fill_processor._sagas_failed,
             _get_last_price_update=lambda: self._last_price_update,
             _get_initial_order_placed=lambda: self._initial_order_placed,
             _get_last_heartbeat_time=lambda: self._last_heartbeat_time,
@@ -1386,7 +1389,7 @@ class AsyncGridBot:
         
         # Print final metrics (quick)
         uptime = time.time() - self._start_time
-        log.info(f"Uptime: {uptime:.0f}s | Fills: {self._fills_processed} | Sagas: {self._sagas_completed}✅ {self._sagas_failed}❌")
+        log.info(f"Uptime: {uptime:.0f}s | Fills: {self.fill_processor._fills_processed} | Sagas: {self.fill_processor._sagas_completed}✅ {self.fill_processor._sagas_failed}❌")
         
         log.info("✅ AsyncGridBot stopped")
     
@@ -2034,9 +2037,9 @@ class AsyncGridBot:
                         # FIX C2: Check BOTH fill_id and order_id for consistent deduplication
                         # WebSocket may have stored fill under exchange_fill_id or order-{order_id}
                         already_seen = (
-                            fill_id in self._seen_fill_ids or
-                            f"fill-{fill_id}" in self._seen_fill_ids or
-                            f"order-{order_id}" in self._seen_fill_ids
+                            self.fill_processor.is_fill_seen(fill_id) or
+                            self.fill_processor.is_fill_seen(f"fill-{fill_id}") or
+                            self.fill_processor.is_order_fill_seen(order_id)
                         )
                         
                         if not already_seen:
@@ -2668,8 +2671,8 @@ class AsyncGridBot:
                     f"Symbol: {self.symbol}\n"
                     f"Runtime: {runtime/3600:.1f}h\n"
                     f"Final Positions: {positions}/{self.max_positions}\n"
-                    f"Fills Processed: {self._fills_processed}\n"
-                    f"Sagas: {self._sagas_completed} completed, {self._sagas_failed} failed\n\n"
+                    f"Fills Processed: {self.fill_processor._fills_processed}\n"
+                    f"Sagas: {self.fill_processor._sagas_completed} completed, {self.fill_processor._sagas_failed} failed\n\n"
                     f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
                 )
                 notifier.send(message)
