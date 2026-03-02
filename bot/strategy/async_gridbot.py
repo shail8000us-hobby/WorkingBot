@@ -47,6 +47,7 @@ from bot.strategy.modules.guardian_handler import GuardianHandler
 from bot.strategy.modules.health_monitor import HealthMonitor
 from bot.strategy.modules.exchange_sync import ExchangeSync
 from bot.strategy.modules.ws_lifecycle import WSLifecycle
+from bot.strategy.modules.fill_processor import FillProcessor
 from bot.strategy.modules.grid_calculator import GridCalculator
 from bot.strategy.modules.mode_state_manager import get_mode_state_manager
 from bot.strategy.actors.base_actor import Message
@@ -710,6 +711,24 @@ class AsyncGridBot:
             config=self.config,
         )
 
+        # Phase 5: FillProcessor module
+        self.fill_processor = FillProcessor(
+            position_actor=self.position_actor,
+            order_actor=self.order_actor,
+            saga_orchestrator=self.saga_orchestrator,
+            grid_calc=self.grid_calc,
+            event_store=self.event_store,
+            fill_monitor=self.fill_monitor,
+            pre_order_logger=self.pre_order_logger,
+            anomaly_detector=self.anomaly_detector,
+            mode=self.mode,
+            product_id=self.product_id,
+            lot_size=self.lot_size,
+            max_positions=self.max_positions,
+            tp_offset=self.tp_offset,
+            symbol=self.symbol,
+        )
+
     # ── Property proxies for WSLifecycle-owned state (P4) ─────────────
 
     @property
@@ -867,35 +886,8 @@ class AsyncGridBot:
         if order_price is not None:
             self._last_accepted_order_price = order_price
     
-    def _is_fill_seen(self, fill_id: str) -> bool:
-        return fill_id in self._seen_fill_ids
-    
-    def _mark_fill_seen(self, fill_id: str) -> None:
-        self._seen_fill_ids.add(fill_id)
-        self._fill_id_timestamps.append((fill_id, time.time()))
-    
-    def _is_order_fill_seen(self, order_id: str) -> bool:
-        """Check if order fill already processed (deduplication by order_id)."""
-        return f"order-{order_id}" in self._seen_fill_ids
-    
-    def _mark_order_fill_seen(self, order_id: str) -> None:
-        """Mark order fill as processed (deduplication by order_id)."""
-        fill_marker = f"order-{order_id}"
-        self._seen_fill_ids.add(fill_marker)
-        self._fill_id_timestamps.append((fill_marker, time.time()))
-    
-    def _cleanup_old_fill_ids(self) -> None:
-        now = time.time()
-        if now - self._last_fill_id_cleanup < self._fill_id_cleanup_interval:
-            return
-        
-        cutoff_time = now - 300
-        while self._fill_id_timestamps and self._fill_id_timestamps[0][1] < cutoff_time:
-            old_fill_id, _ = self._fill_id_timestamps.popleft()
-            self._seen_fill_ids.discard(old_fill_id)
-        
-        self._last_fill_id_cleanup = now
-        log.debug(f"Cleaned up old fill IDs, current cache size: {len(self._seen_fill_ids)}")
+    # Phase 5 dedup helpers — MOVED to FillProcessor (P5.2)
+    # _is_fill_seen, _mark_fill_seen, _is_order_fill_seen, _mark_order_fill_seen, _cleanup_old_fill_ids
     
     # _check_guardian_transition_and_retry — MOVED to GuardianHandler.check_transition_and_retry() (P1.3)
 
@@ -3470,8 +3462,8 @@ class AsyncGridBot:
             
             # FIX A1: Mark order as processed to prevent duplicate saga processing
             # When the WebSocket fill event arrives for this order, it will be skipped
-            self._mark_fill_seen(f"fill-{order_id}")
-            self._mark_order_fill_seen(str(order_id))
+            self.fill_processor.mark_fill_seen(f"fill-{order_id}")
+            self.fill_processor.mark_order_fill_seen(str(order_id))
             # Also mark in FillMonitor
             self.fill_monitor.mark_filled(str(order_id), source="recovery")
             log.info(f"[Recovery] ✅ Order {order_id} marked as processed (saga dedup)")

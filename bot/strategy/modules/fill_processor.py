@@ -100,3 +100,37 @@ class FillProcessor:
         """Wire runtime references after construction."""
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    # ========================================================================
+    # P5.2: Fill Deduplication Helpers
+    # ========================================================================
+
+    def is_fill_seen(self, fill_id: str) -> bool:
+        return fill_id in self._seen_fill_ids
+
+    def mark_fill_seen(self, fill_id: str) -> None:
+        self._seen_fill_ids.add(fill_id)
+        self._fill_id_timestamps.append((fill_id, time.time()))
+
+    def is_order_fill_seen(self, order_id: str) -> bool:
+        """Check if order fill already processed (deduplication by order_id)."""
+        return f"order-{order_id}" in self._seen_fill_ids
+
+    def mark_order_fill_seen(self, order_id: str) -> None:
+        """Mark order fill as processed (deduplication by order_id)."""
+        fill_marker = f"order-{order_id}"
+        self._seen_fill_ids.add(fill_marker)
+        self._fill_id_timestamps.append((fill_marker, time.time()))
+
+    def cleanup_old_fill_ids(self) -> None:
+        now = time.time()
+        if now - self._last_fill_id_cleanup < self._fill_id_cleanup_interval:
+            return
+
+        cutoff_time = now - 300
+        while self._fill_id_timestamps and self._fill_id_timestamps[0][1] < cutoff_time:
+            old_fill_id, _ = self._fill_id_timestamps.popleft()
+            self._seen_fill_ids.discard(old_fill_id)
+
+        self._last_fill_id_cleanup = now
+        log.debug(f"Cleaned up old fill IDs, current cache size: {len(self._seen_fill_ids)}")
