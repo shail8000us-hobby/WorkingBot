@@ -198,3 +198,113 @@ class GridEngine:
             return False
 
         return True
+
+    # ── _log_detailed_grid_status → MOVED here P6.4 ──
+    def log_detailed_grid_status(
+        self,
+        positions: list,
+        pending_buy: Optional[Dict],
+        pending_sell: Optional[Dict],
+        current_price: float
+    ) -> None:
+        """
+        Log detailed grid status with timeline for each position/loop.
+        Shows mode, grid config, and detailed position info.
+        """
+        from datetime import datetime
+
+        # Header with mode and grid configuration
+        log.info("=" * 70)
+        log.info(f"📊 GRID STATUS REPORT | Mode: {self.mode}")
+        log.info(f"   Reference: ${self.grid_calc.ref:,.0f} | Step: ${self.grid_calc.step:,.0f}")
+        log.info(f"   Lower: ${self.grid_calc.lower:,.0f} | Upper: ${self.grid_calc.upper:,.0f}")
+        log.info(f"   Current Price: ${current_price:,.0f}")
+        log.info("-" * 70)
+
+        # Pending order info
+        pending_order = pending_buy if self.mode == 'LONG' else pending_sell
+        order_type = "BUY" if self.mode == 'LONG' else "SELL"
+
+        if pending_order:
+            pending_price = pending_order.get('price', 0)
+            pending_time = pending_order.get('timestamp', 0)
+            pending_order_id = pending_order.get('order_id', 'N/A')
+
+            if pending_time:
+                pending_dt = datetime.fromtimestamp(pending_time)
+                time_str = pending_dt.strftime("%H:%M:%S")
+            else:
+                time_str = "N/A"
+
+            distance = abs(current_price - pending_price)
+            distance_pct = (distance / current_price * 100) if current_price > 0 else 0
+
+            log.info(f"⏳ PENDING {order_type} ORDER:")
+            log.info(f"   Price: ${pending_price:,.0f} | Distance: ${distance:,.0f} ({distance_pct:.2f}%)")
+            log.info(f"   Order ID: {pending_order_id} | Placed at: {time_str}")
+        else:
+            log.info(f"⚠️  NO PENDING {order_type} ORDER")
+
+        log.info("-" * 70)
+
+        # Position details (Loops)
+        if positions:
+            log.info(f"📈 ACTIVE POSITIONS ({len(positions)} loops):")
+            log.info("")
+
+            # Sort positions by entry price (lowest first for LONG, highest first for SHORT)
+            sorted_positions = sorted(
+                positions,
+                key=lambda p: p.get('entry_price', 0),
+                reverse=(self.mode == 'SHORT')
+            )
+
+            for idx, pos in enumerate(sorted_positions, 1):
+                entry_price = pos.get('entry_price', 0)
+                tp_price = pos.get('tp_price', 0)
+                entry_time = pos.get('timestamp', 0)
+                position_id = pos.get('position_id', 'N/A')
+                tp_order_id = pos.get('tp_order_id', 'N/A')
+                entry_order_id = pos.get('entry_order_id', 'N/A')
+
+                # Calculate PnL
+                if self.mode == 'LONG':
+                    pnl = current_price - entry_price
+                else:
+                    pnl = entry_price - current_price
+                pnl_pct = (pnl / entry_price * 100) if entry_price > 0 else 0
+
+                # Distance to TP
+                tp_distance = abs(tp_price - current_price)
+                tp_distance_pct = (tp_distance / current_price * 100) if current_price > 0 else 0
+
+                # Format entry time
+                if entry_time:
+                    entry_dt = datetime.fromtimestamp(entry_time)
+                    entry_time_str = entry_dt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    entry_time_str = "N/A"
+
+                # PnL color
+                pnl_color = "\033[32m" if pnl > 0 else "\033[31m" if pnl < 0 else "\033[37m"
+
+                log.info(f"   Loop {idx}:")
+                log.info(f"      Entry: ${entry_price:,.0f} at {entry_time_str}")
+                log.info(f"      TP Order: ${tp_price:,.0f} (ID: {tp_order_id})")
+                log.info(f"      PnL: {pnl_color}${pnl:,.0f} ({pnl_pct:+.2f}%)\033[0m | Distance to TP: ${tp_distance:,.0f} ({tp_distance_pct:.2f}%)")
+                log.info("")
+        else:
+            log.info("📭 NO ACTIVE POSITIONS")
+
+        # Next grid level
+        if self._fill_processor_ref:
+            if self.mode == 'LONG':
+                next_level = self._fill_processor_ref.calculate_next_grid_level('BUY', current_price)
+                if next_level:
+                    log.info(f"   → Next BUY level: ${next_level:,.0f}")
+            else:
+                next_level = self._fill_processor_ref.calculate_next_grid_level('SELL', current_price)
+                if next_level:
+                    log.info(f"   → Next SELL level: ${next_level:,.0f}")
+
+        log.info("=" * 70)
