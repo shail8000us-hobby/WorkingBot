@@ -809,10 +809,7 @@ class AsyncGridBot:
 
     # _comprehensive_safety_check — MOVED to GridEngine.comprehensive_safety_check() (P6.3)
     
-    def _update_last_order_time(self, order_price: Optional[float] = None) -> None:
-        self._last_order_time = time.time()
-        if order_price is not None:
-            self._last_accepted_order_price = order_price
+    # _update_last_order_time — MOVED to GridEngine.update_last_order_time() (P6.5)
     
     # Phase 5 dedup helpers — MOVED to FillProcessor (P5.2)
     # _is_fill_seen, _mark_fill_seen, _is_order_fill_seen, _mark_order_fill_seen, _cleanup_old_fill_ids
@@ -1548,7 +1545,7 @@ class AsyncGridBot:
                     if result.get("status") == "ok":
                         order_id = result.get("order_id")
                         
-                        self._update_last_order_time(target)
+                        self.grid_engine.update_last_order_time(target)
                         
                         await self.position_actor.tell("SET_PENDING_BUY", {
                             "order_id": order_id,
@@ -1601,7 +1598,7 @@ class AsyncGridBot:
                     if result.get("status") == "ok":
                         order_id = result.get("order_id")
                         
-                        self._update_last_order_time(target)
+                        self.grid_engine.update_last_order_time(target)
                         
                         await self.position_actor.tell("SET_PENDING_SELL", {
                             "order_id": order_id,
@@ -1620,117 +1617,7 @@ class AsyncGridBot:
         except Exception as e:
             log.error(f"Error placing initial order: {e}", exc_info=True)
     
-    async def _place_grid_order(self, state: Dict, side: str) -> None:
-        # CRITICAL: Need current price to calculate and place orders
-        if not self.current_price:
-            log.debug(f"Cannot place {side} order - current price not available yet")
-            return
-        
-        pending_key = f"pending_{side}"
-        if state.get(pending_key):
-            return
-        
-        if len(state["open_tranches"]) >= self.position_actor.max_positions:
-            return
-        
-        positions = state["open_tranches"]
-        
-        # FIX MAR 2 2026: Pass current_price to prevent placing above market (BUY)
-        # or below market (SELL). Without this, compute_next_buy_level defaults to
-        # ref - step when there are no positions, which can be above market price,
-        # causing post-only orders to be rejected in an infinite loop.
-        calc_method = f"compute_next_{side}_level"
-        target = getattr(self.grid_calc, calc_method)(positions, current_price=self.current_price)
-        
-        if not target:
-            log.info(f"⚠️  No {side.upper()} target calculated")
-            log.info(f"   Current positions: {len(positions)}/{self.position_actor.max_positions}")
-            if self.current_price:
-                log.info(f"   Current price: ${self.current_price:,.2f}")
-            else:
-                log.info(f"   Current price: Not available")
-            log.info(f"   Grid bounds: ${self.grid_calc.lower:,.0f} - ${self.grid_calc.upper:,.0f}")
-            if positions:
-                position_prices = [p.get('entry_price', 0) for p in positions]
-                log.info(f"   Position levels: {[f'${p:,.0f}' for p in sorted(position_prices)]}")
-            return
-        
-        if not self.grid_calc.is_within_bounds(target):
-            log.debug(f"{side.upper()} target ${target:,.2f} is out of bounds ({self.grid_calc.lower} - {self.grid_calc.upper})")
-            return
-        
-        # FIX MAR 2 2026: Post-only safety guard — prevent placing orders that
-        # would cross the spread (BUY above market / SELL below market).
-        # These get rejected with immediate_execution_post_only and create
-        # an infinite retry loop.
-        current_price = self.current_price
-        if current_price:
-            if side == "buy" and target >= current_price:
-                log.debug(f"⏭️  Skipping BUY @ ${target:,.0f} — at/above market ${current_price:,.0f} (would cross spread)")
-                return
-            elif side == "sell" and target <= current_price:
-                log.debug(f"⏭️  Skipping SELL @ ${target:,.0f} — at/below market ${current_price:,.0f} (would cross spread)")
-                return
-        
-        if target:
-            try:
-                self.pre_order_logger.log_decision(
-                    side=side,
-                    price=target,
-                    current_price=self.current_price,
-                    current_positions=len(positions),
-                    max_positions=self.position_actor.max_positions,
-                    grid_step=self.grid_calc.step,
-                    reasons=[f"Grid level placement ({self.mode} mode)"]
-                )
-            except Exception as e:
-                log.warning(f"Pre-order logging failed: {e}")
-            
-            try:
-                anomaly_detected = self.anomaly_detector.check_before_order(
-                    side=side,
-                    price=target,
-                    current_price=self.current_price
-                )
-            except Exception as e:
-                log.warning(f"Anomaly detection failed: {e}")
-                anomaly_detected = False
-            
-            if anomaly_detected:
-                log.warning(f"⚠️  Anomaly detected before {side.upper()} order @ ${target:,.2f} - proceeding with caution")
-            
-            action = f"PLACE_{side.upper()}"
-            # CRITICAL FIX (Nov 20, 2025): Use separate lot sizes for LONG/SHORT
-            if side == "sell":
-                size = getattr(self.config.grid.limits, 'short_lot_size', self.lot_size)
-            else:
-                size = self.lot_size
-            
-            result = await self.order_actor.ask(action, {
-                "price": target,
-                "size": size
-            }, timeout=20.0)
-            
-            if result.get("status") == "ok":
-                order_id = result.get("order_id")
-                
-                self._update_last_order_time(target)
-                
-                await self.position_actor.tell(f"SET_PENDING_{side.upper()}", {
-                    "order_id": order_id,
-                    "price": target,
-                    "size": self.lot_size,
-                    "timestamp": time.time()
-                })
-                
-                log.info(f"✅ {side.upper()} order placed @ ${target:,.2f} (Order: {order_id})")
-            else:
-                # FIX MAR 2 2026: Log error and apply cooldown to prevent rapid retry spam.
-                # Without this, failed orders retry on every ticker update (~1-2s).
-                error_msg = result.get("error", "unknown")
-                log.warning(f"❌ {side.upper()} order FAILED @ ${target:,.2f}: {error_msg}")
-                # Apply cooldown even on failure to prevent hammering the exchange
-                self._update_last_order_time(target)
+    # _place_grid_order — MOVED to GridEngine.place_grid_order() (P6.5)
     
     async def _check_and_place_entry_order(self) -> None:
         """Check if we should place a new entry order based on current grid state.
@@ -1795,7 +1682,7 @@ class AsyncGridBot:
                 
                 # Place grid order based on mode
                 side = "buy" if self.mode == "LONG" else "sell"
-                await self._place_grid_order(state, side)
+                await self.grid_engine.place_grid_order(state, side)
                         
             except Exception as e:
                 log.error(f"Entry check error: {e}", exc_info=True)
