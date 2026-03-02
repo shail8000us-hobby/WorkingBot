@@ -20,7 +20,11 @@
 | **🧪 Full Bot Test P3** | — | ✅ **PASSED** (0 bugs) | Clean start→stop→start, no tracebacks |
 | **P4: WSLifecycle** | 856f049…e8a439a (8 commits + 2 bugfixes) | ✅ **DONE** | `ws_lifecycle.py` 576 lines, `async_gridbot.py` −500 lines |
 | **🧪 Full Bot Test P4** | — | ✅ **PASSED** (after 2 bug fixes) | Clean start→stop→start, zero errors |
-| P5–P9 | — | ⬜ Not started | — |
+| **P5: FillProcessor** | fc815d6…b463ae7 (4 commits + 1 bugfix commit) | ✅ **DONE** | `fill_processor.py` 812 lines, `async_gridbot.py` 5,770→3,076 (−2,694) |
+| **🧪 Full Bot Test P5** | b463ae7 | ✅ **PASSED** (after 4 bug fixes) | See bug report below |
+| **P6: GridEngine** | 8 commits | ✅ **DONE** | `grid_engine.py` 846 lines, `async_gridbot.py` 3,076→2,379 (−697) |
+| **🧪 Full Bot Test P6** | — | ✅ **PASSED** (0 bugs in code review) | Clean start→stop→start, zero errors |
+| P7–P9 | — | ⬜ Not started | — |
 
 ### 🐛 Bug Found During P1 Full Bot Test
 
@@ -78,6 +82,35 @@ AttributeError: 'AsyncGridBot' object has no attribute '_format_pending_order_in
 **Committed:** `e8a439abb` — "P4 Fix: correct human_log import path + add None guards in ws_lifecycle"
 
 **Lesson:** Always verify import paths by grepping the existing codebase for the canonical import. Add defensive None guards on optional singletons.
+
+### 🐛 Bugs Found During P5 Full Bot Test (4 bugs, 1 commit)
+
+**Commit:** `b463ae719` — "P5 FillProcessor: fix 4 bugs found during thorough review"
+
+**Bug 1 — FillMonitor init ordering (Critical)**
+- `FillMonitor(missed_fill_callback=self.fill_processor.process_missed_fill)` at line 621, but `self.fill_processor` isn't created until line 715
+- Would crash on startup with `AttributeError`
+- **Fix:** Removed callback from constructor, wired after FillProcessor init: `self.fill_monitor.missed_fill_callback = self.fill_processor.process_missed_fill`
+
+**Bug 2 — Wrong keys in `process_missed_fill_by_params` (Critical)**
+- Used `fill_price`/`fill_size` keys instead of `price`/`size` expected by `process_fill()`
+- Reconciliation fills would silently get price=0, size=0
+- **Fix:** Changed keys to `price`/`size`, added `id` field for deduplication
+
+**Bug 3 — Health monitor counter wiring (Medium)**
+- `_get_fills_processed=lambda: self._fills_processed` pointed to orchestrator's stale counter (always 0)
+- **Fix:** `lambda: self.fill_processor._fills_processed`
+
+**Bug 4 — Fill polling dedup (Critical)**
+- `fill_id in self._seen_fill_ids` checked orchestrator's empty set instead of `fill_processor`'s
+- Every polled fill would be re-processed (no dedup)
+- **Fix:** `self.fill_processor.is_fill_seen(fill_id)` / `self.fill_processor.is_order_fill_seen(order_id)`
+
+**Lesson:** When moving state (sets, counters) to a new module, grep ALL callers — not just in `async_gridbot.py` but also loops, monitoring, and reporting code that reference `self._xxx` directly.
+
+### P6 Full Bot Test — Zero Bugs
+
+Code review found all wiring correct. No stale method definitions, no stale state variables, no broken references. Clean start→heartbeat→watchdog verified in live logs.
 
 ---
 
