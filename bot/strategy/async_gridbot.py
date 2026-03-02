@@ -1183,6 +1183,9 @@ class AsyncGridBot:
         # DEC 23: Start Fill Monitor (creates internal task)
         await self.fill_monitor.start()
         
+        # Reset heartbeat so watchdog doesn't trigger from startup delay
+        self._last_heartbeat_time = time.time()
+        
         # Start async tasks
         log.info("Starting async tasks...")
         async_tasks = [
@@ -1896,13 +1899,26 @@ class AsyncGridBot:
                 log.info(f"📭 Order cancelled: {order_id} (reason: {cancellation_reason})")
                 
                 # Clear from pending memory
+                # FIX MAR 2 2026: pending_buy/pending_sell are DICTS with 'order_id' key,
+                # not raw order_id strings. Must compare .get('order_id'), not the dict itself.
                 state = await self.position_actor.ask("GET_STATE", {})
-                if state.get("pending_buy") == order_id:
+                pending_buy = state.get("pending_buy")
+                pending_sell = state.get("pending_sell")
+                
+                pending_buy_id = pending_buy.get("order_id") if isinstance(pending_buy, dict) else pending_buy
+                pending_sell_id = pending_sell.get("order_id") if isinstance(pending_sell, dict) else pending_sell
+                
+                # Convert both to string for safe comparison (API returns int or str)
+                order_id_str = str(order_id) if order_id else None
+                
+                if pending_buy_id and str(pending_buy_id) == order_id_str:
                     await self.position_actor.ask("CLEAR_PENDING_BUY", {"order_id": order_id})
                     log.info(f"✅ Cleared pending buy from memory: {order_id}")
-                elif state.get("pending_sell") == order_id:
+                elif pending_sell_id and str(pending_sell_id) == order_id_str:
                     await self.position_actor.ask("CLEAR_PENDING_SELL", {"order_id": order_id})
                     log.info(f"✅ Cleared pending sell from memory: {order_id}")
+                else:
+                    log.debug(f"   Cancelled order {order_id} was not in pending memory (buy={pending_buy_id}, sell={pending_sell_id})")
                 
                 return
             
@@ -2249,8 +2265,12 @@ class AsyncGridBot:
         
         positions = state["open_tranches"]
         
+        # FIX MAR 2 2026: Pass current_price to prevent placing above market (BUY)
+        # or below market (SELL). Without this, compute_next_buy_level defaults to
+        # ref - step when there are no positions, which can be above market price,
+        # causing post-only orders to be rejected in an infinite loop.
         calc_method = f"compute_next_{side}_level"
-        target = getattr(self.grid_calc, calc_method)(positions)
+        target = getattr(self.grid_calc, calc_method)(positions, current_price=self.current_price)
         
         if not target:
             log.info(f"⚠️  No {side.upper()} target calculated")
@@ -2268,6 +2288,19 @@ class AsyncGridBot:
         if not self.grid_calc.is_within_bounds(target):
             log.debug(f"{side.upper()} target ${target:,.2f} is out of bounds ({self.grid_calc.lower} - {self.grid_calc.upper})")
             return
+        
+        # FIX MAR 2 2026: Post-only safety guard — prevent placing orders that
+        # would cross the spread (BUY above market / SELL below market).
+        # These get rejected with immediate_execution_post_only and create
+        # an infinite retry loop.
+        current_price = self.current_price
+        if current_price:
+            if side == "buy" and target >= current_price:
+                log.debug(f"⏭️  Skipping BUY @ ${target:,.0f} — at/above market ${current_price:,.0f} (would cross spread)")
+                return
+            elif side == "sell" and target <= current_price:
+                log.debug(f"⏭️  Skipping SELL @ ${target:,.0f} — at/below market ${current_price:,.0f} (would cross spread)")
+                return
         
         if target:
             try:
@@ -2321,6 +2354,13 @@ class AsyncGridBot:
                 })
                 
                 log.info(f"✅ {side.upper()} order placed @ ${target:,.2f} (Order: {order_id})")
+            else:
+                # FIX MAR 2 2026: Log error and apply cooldown to prevent rapid retry spam.
+                # Without this, failed orders retry on every ticker update (~1-2s).
+                error_msg = result.get("error", "unknown")
+                log.warning(f"❌ {side.upper()} order FAILED @ ${target:,.2f}: {error_msg}")
+                # Apply cooldown even on failure to prevent hammering the exchange
+                self._update_last_order_time(target)
     
     async def _check_and_place_entry_order(self) -> None:
         """Check if we should place a new entry order based on current grid state.
@@ -3299,11 +3339,10 @@ class AsyncGridBot:
     
     async def _load_recovery_state(self) -> None:
         """
-        CLEAN SLATE MODE: Do not load recovery state.
-        Bot syncs from exchange only.
+        Initialize recovery state variables.
+        Position replay from event store is handled by sync_positions_from_exchange().
         """
-        log.info("🧹 CLEAN SLATE MODE: Skipping recovery state loading")
-        log.info("   Bot will sync all positions from exchange")
+        log.info("🧹 Position state will be replayed from event store")
         self._recovery_state = None
         self._recovered_grids = set()
         return

@@ -190,71 +190,34 @@ class ExchangeSync:
                 await asyncio.sleep(60)
 
     # ========================================================================
-    # P3.4: Sync Positions from Exchange
+    # P3.4: Replay own positions on startup (pre-actor-start)
     # ========================================================================
 
     async def sync_positions_from_exchange(self) -> None:
         """
-        Sync positions from exchange on startup.
-        This detects recovery positions and other external positions.
+        Startup Step 1: Replay bot's own position events from event store.
+        
+        Called BEFORE actors start, so we call replay_own_positions() directly
+        on the position_actor (synchronous SQLite read — no message passing needed).
+        
+        Exchange validation happens later in full_exchange_sync() after actors start.
+        
+        PRINCIPLE: The bot only manages positions IT created.
         """
         try:
-            log.info("🔄 Syncing positions from exchange...")
+            log.info("🔄 POSITION SYNC: Replaying bot's own trade history...")
             
-            # Get all positions from exchange
-            positions = await self.api_client.get_positions()
+            # Direct call — no message passing (actors not started yet)
+            positions_restored = self.position_actor.replay_own_positions()
             
-            if not positions:
-                log.info("✅ No positions found on exchange")
-                return
-            
-            # Handle case where API returns string instead of list
-            if isinstance(positions, str):
-                log.info("✅ No positions found on exchange (empty response)")
-                return
-            
-            # Ensure positions is a list
-            if not isinstance(positions, list):
-                log.warning(f"⚠️  Unexpected positions format: {type(positions)}")
-                return
-            
-            # Filter for BTCUSD positions
-            btc_positions = [p for p in positions if isinstance(p, dict) and p.get('product_symbol') == 'BTCUSD']
-            
-            if not btc_positions:
-                log.info("✅ No BTCUSD positions found on exchange")
-                return
-            
-            log.info(f"📊 Found {len(btc_positions)} BTCUSD position(s) on exchange")
-            
-            # Process each position
-            for position in btc_positions:
-                size = float(position.get('size', 0))
-                entry_price = float(position.get('entry_price', 0))
-                mark_price = float(position.get('mark_price', 0))
-                
-                if size == 0:
-                    continue
-                
-                log.info(f"   Position: {size} @ ${entry_price:,.0f} (mark: ${mark_price:,.0f})")
-                
-                # Add to position manager
-                position_data = {
-                    'size': size,
-                    'entry_price': entry_price,
-                    'mark_price': mark_price,
-                    'is_recovery': True,  # Mark as recovery position
-                    'grid_level': entry_price  # Use entry price as grid level
-                }
-                
-                # Send to position actor
-                await self.position_actor.ask("ADD_POSITION", position_data)
-                
-            log.info(f"✅ Synced {len(btc_positions)} position(s) from exchange")
+            log.info(f"✅ Replayed {positions_restored} position(s) from event store")
+            log.info("   Exchange validation will happen in full_exchange_sync() after actors start")
             
         except Exception as e:
-            log.warning(f"⚠️  Could not sync positions from exchange: {e}")
-            log.warning("   Continuing with normal startup...")
+            log.warning(f"⚠️  Position replay error: {e}")
+            import traceback
+            log.warning(traceback.format_exc())
+            log.warning("   Continuing with empty state...")
 
     # ========================================================================
     # P3.5: Reconcile Orphaned Orders
@@ -594,6 +557,13 @@ class ExchangeSync:
             next_buy = self.grid_calc.compute_next_buy_level(positions, current_price=current_price)
 
             if next_buy:
+                # FIX MAR 2 2026: Post-only safety guard — don't place BUY at/above
+                # market price. This would get rejected with immediate_execution_post_only
+                # and cause the order actor to retry for 15s, freezing the heartbeat.
+                if current_price and next_buy >= current_price:
+                    log.info(f"⏭️  Grid coverage: BUY @ ${next_buy:,.0f} >= market ${current_price:,.0f} — skipping (would cross spread)")
+                    return
+                
                 # Check if order already exists
                 orders = await self.api_client.list_orders(symbol=self.symbol, states='open')
 
@@ -621,201 +591,122 @@ class ExchangeSync:
 
     async def full_exchange_sync(self):
         """
-        Perform full reconciliation after exchange maintenance.
-
-        This is more comprehensive than normal reconciliation because:
-        1. Orders may have filled during downtime
-        2. Positions may have changed
-        3. Pending orders may have been cancelled
+        Periodic reconciliation after exchange maintenance or reconnection.
+        
+        PRINCIPLE: Only manage positions the bot created. Never adopt external
+        positions. Use event store as source of truth, exchange as validation.
+        
+        Steps:
+        1. Get current bot state (already in memory from startup replay)
+        2. Get exchange positions and open orders
+        3. Validate bot's positions still exist on exchange
+        4. Close stale positions (TP hit while maintenance)
+        5. Ensure TP orders exist for valid positions
+        6. Ensure grid coverage (next buy order)
         """
-        log.info("🔄 Starting full exchange synchronization...")
+        log.info("🔄 Starting full exchange sync (own positions only)...")
 
         try:
-            # Step 1: Get all positions from exchange
+            # Step 1: Get current bot state
+            bot_state = await self.position_actor.ask("GET_STATE", {})
+            bot_positions = bot_state.get("open_tranches", [])
+            bot_total_size = sum(float(p.get('size', 0)) for p in bot_positions)
+
+            # Step 2: Get exchange state
             exchange_positions_raw = await self.api_client.get_positions()
 
-            # Handle both dict and list responses
             if isinstance(exchange_positions_raw, dict):
-                exchange_positions = exchange_positions_raw.get('result', [])
-                if not isinstance(exchange_positions, list):
-                    exchange_positions = [exchange_positions_raw] if exchange_positions_raw.get('size', 0) > 0 else []
+                if float(exchange_positions_raw.get('size', 0)) != 0:
+                    exchange_positions = [exchange_positions_raw]
+                else:
+                    exchange_positions = []
             elif isinstance(exchange_positions_raw, list):
                 exchange_positions = exchange_positions_raw
             else:
-                log.warning(f"⚠️ Unexpected positions format: {type(exchange_positions_raw)}")
                 exchange_positions = []
 
-            # Step 2: Get all open orders from exchange
             exchange_orders = await self.api_client.list_orders(
                 symbol=self.symbol,
                 states='open'
             )
+            if not isinstance(exchange_orders, list):
+                exchange_orders = []
 
-            # Step 3: Get current bot state
-            bot_state = await self.position_actor.ask("GET_STATE", {})
-            bot_positions = bot_state.get("open_tranches", [])
-
-            # Step 4: Find orphan positions (on exchange but not in bot)
-            orphan_positions = []
+            # Calculate exchange total for our product
+            exchange_total_size = 0
             for ex_pos in exchange_positions:
-                if ex_pos.get('size', 0) > 0:
-                    entry_price = ex_pos.get('entry_price', 0)
+                if isinstance(ex_pos, dict) and (
+                    ex_pos.get('product_symbol') == 'BTCUSD' or
+                    ex_pos.get('product_id') == self.product_id
+                ):
+                    exchange_total_size += abs(float(ex_pos.get('size', 0)))
 
-                    # Check if bot has this position
-                    bot_has_position = any(
-                        abs(float(bp.get('entry', 0)) - entry_price) < 0.01
-                        for bp in bot_positions
-                    )
+            log.info(f"   Bot: {len(bot_positions)} positions ({bot_total_size} contracts)")
+            log.info(f"   Exchange: {exchange_total_size} contracts, {len(exchange_orders)} orders")
 
-                    if not bot_has_position:
-                        orphan_positions.append(ex_pos)
-
-            # Step 5: Process orphan positions
-            if orphan_positions:
-                log.warning(f"🔍 Found {len(orphan_positions)} orphan position(s) after maintenance")
-
-                for position in orphan_positions:
-                    entry_price = position.get('entry_price', 0)
-                    size = position.get('size', 0)
-
-                    log.warning(f"   📍 Orphan position: {size} @ ${entry_price:,.0f}")
-
-                    # Add to bot memory
-                    position_id = f"recovery-{int(entry_price)}-{int(time.time())}"
-                    tp_price = entry_price + self.grid_step
-
-                    await self.position_actor.tell('ADD_POSITION', {
-                        'position_id': position_id,
-                        'entry_price': entry_price,
-                        'tp_price': tp_price,
-                        'size': size,
-                        'entry_order_id': position_id,
-                        'recovered': True
+            # Step 3-4: Validate bot positions against exchange
+            stale_count = 0
+            if exchange_total_size == 0 and bot_total_size > 0:
+                # All positions were closed
+                log.warning(f"   ⚠️  Exchange has 0 contracts — closing all {len(bot_positions)} bot positions")
+                for pos in list(bot_positions):
+                    await self.position_actor.ask("CLOSE_STALE_POSITION", {
+                        "position_id": pos["position_id"],
+                        "reason": "no_exchange_position_during_sync"
                     })
-
-                    # Check if TP order exists
-                    tp_exists = any(
-                        abs(float(o.get('limit_price', 0)) - tp_price) < 0.01
-                        and o.get('reduce_only', False)
-                        for o in exchange_orders
-                    )
-
-                    if not tp_exists:
-                        log.warning(f"   ⚠️ Missing TP for position at ${entry_price:,.0f} - placing now")
-
-                        await self.order_actor.tell('PLACE_SELL', {
-                            'price': tp_price,
-                            'size': size,
-                            'reduce_only': True
+                    stale_count += 1
+                bot_positions = []
+            elif exchange_total_size < bot_total_size:
+                # Some positions were closed
+                excess = bot_total_size - exchange_total_size
+                log.warning(f"   ⚠️  Exchange has {exchange_total_size} < bot {bot_total_size} — closing excess")
+                sorted_positions = sorted(bot_positions, key=lambda p: p.get('timestamp', 0), reverse=True)
+                contracts_to_close = excess
+                remaining = []
+                for pos in sorted_positions:
+                    if contracts_to_close > 0:
+                        pos_size = float(pos.get('size', 0))
+                        await self.position_actor.ask("CLOSE_STALE_POSITION", {
+                            "position_id": pos["position_id"],
+                            "reason": f"exchange_size_mismatch_sync ({exchange_total_size} < {bot_total_size})"
                         })
+                        contracts_to_close -= pos_size
+                        stale_count += 1
                     else:
-                        log.info(f"   ✅ TP order already exists at ${tp_price:,.0f}")
+                        remaining.append(pos)
+                bot_positions = remaining
 
-            # Step 6: Find orphan TP orders (CRITICAL FIX DEC 24)
-            orphan_tp_orders = []
-            for order in exchange_orders:
-                client_order_id = order.get('client_order_id') or ''
+            # Step 5: Ensure TP orders exist for valid positions
+            tp_placed = 0
+            for pos in bot_positions:
+                tp_price = float(pos.get('tp_price', 0))
+                pos_size = float(pos.get('size', 0))
+                
+                if tp_price <= 0:
+                    continue
+                
+                tp_exists = any(
+                    abs(float(o.get('limit_price', 0)) - tp_price) < 0.01
+                    and o.get('side', '').lower() == 'sell'
+                    and o.get('reduce_only', False)
+                    for o in exchange_orders
+                )
+                
+                if not tp_exists:
+                    log.warning(f"   ⚠️  Missing TP for {pos['position_id']} @ ${tp_price:,.0f} — placing")
+                    await self.order_actor.tell('PLACE_SELL', {
+                        'price': tp_price,
+                        'size': pos_size,
+                        'reduce_only': True
+                    })
+                    tp_placed += 1
 
-                if (order.get('reduce_only', False) and
-                    order.get('side', '').lower() == 'sell' and
-                    client_order_id.startswith('GBOT_')):
-
-                    tp_price = float(order.get('limit_price', 0))
-
-                    # Check if bot already has position with this TP
-                    bot_has_position = any(
-                        abs(float(bp.get('tp_price', 0)) - tp_price) < 0.01
-                        for bp in bot_positions
-                    )
-
-                    if not bot_has_position:
-                        orphan_tp_orders.append(order)
-
-            # Step 7: Reconstruct positions from orphan TP orders
-            if orphan_tp_orders:
-                log.warning(f"🔍 Found {len(orphan_tp_orders)} orphan TP order(s) - reconstructing positions")
-
-                from bot.strategy.modules.event_store import EventType
-
-                for tp_order in orphan_tp_orders:
-                    tp_price = float(tp_order.get('limit_price', 0))
-                    size = float(tp_order.get('size', 0))
-                    tp_order_id = str(tp_order.get('id'))
-
-                    log.warning(f"   🎯 Orphan TP order #{tp_order_id} @ ${tp_price:,.0f} (size: {size})")
-
-                    # FIX H2: Calculate expected entry using grid-snap
-                    if self.mode == "LONG":
-                        raw_entry = tp_price - self.grid_step
-                    else:  # SHORT
-                        raw_entry = tp_price + self.grid_step
-                    expected_entry = self.grid_calc.find_nearest_grid_level(raw_entry)
-
-                    # Try to find position in event store
-                    position_from_event = None
-                    try:
-                        tp_events = self.event_store.get_events_by_type(
-                            EventType.TP_ORDER_PLACED,
-                            limit=10000
-                        )
-
-                        for event in tp_events:
-                            if str(event.data.get('order_id')) == tp_order_id:
-                                position_id = event.aggregate_id
-
-                                position_events = self.event_store.get_events_by_type(
-                                    EventType.POSITION_OPENED,
-                                    limit=10000
-                                )
-
-                                for pos_event in position_events:
-                                    if pos_event.aggregate_id == position_id:
-                                        position_from_event = pos_event.data
-                                        log.info(f"   ✅ Found position in event store: {position_id}")
-                                        break
-                                break
-                    except Exception as e:
-                        log.warning(f"   ⚠️ Could not query event store: {e}")
-
-                    # Reconstruct position (from event store or calculated)
-                    if position_from_event:
-                        position_id = position_from_event.get('position_id')
-                        entry_price = position_from_event.get('entry_price')
-
-                        log.info(f"   📊 Recovering from event: entry=${entry_price:,.0f}, tp=${tp_price:,.0f}")
-
-                        await self.position_actor.tell('ADD_POSITION', {
-                            'position_id': position_id,
-                            'entry_price': entry_price,
-                            'tp_price': tp_price,
-                            'size': size,
-                            'tp_order_id': tp_order_id,
-                            'entry_order_id': position_from_event.get('entry_order_id', position_id),
-                            'recovered': True
-                        })
-                    else:
-                        position_id = f"recovery-tp-{tp_order_id}"
-
-                        log.warning(f"   ⚠️ Not in event store - calculating from grid: entry=${expected_entry:,.0f}")
-
-                        await self.position_actor.tell('ADD_POSITION', {
-                            'position_id': position_id,
-                            'entry_price': expected_entry,
-                            'tp_price': tp_price,
-                            'size': size,
-                            'tp_order_id': tp_order_id,
-                            'entry_order_id': position_id,
-                            'recovered': True
-                        })
-
-                    log.info(f"   ✅ Position reconstructed for TP #{tp_order_id}")
-
-            # Step 8: Ensure grid coverage (place missing grid buy orders)
+            # Step 6: Ensure grid coverage
             await self.ensure_grid_coverage()
 
             log.info(f"✅ Full exchange sync complete:")
-            log.info(f"   - {len(orphan_positions)} orphan positions recovered")
-            log.info(f"   - {len(orphan_tp_orders)} positions reconstructed from TP orders")
+            log.info(f"   - {stale_count} stale positions closed")
+            log.info(f"   - {tp_placed} missing TP orders placed")
             log.info(f"   - Grid coverage verified")
 
         except Exception as e:

@@ -69,7 +69,138 @@ class PositionManagerActor(Actor):
         
         # Initialize empty state (all state stored in SQL event store)
         # JSON files removed - WebUI reads from SQL database via data_writer.py
-    
+
+    def replay_own_positions(self) -> int:
+        """
+        Replay POSITION_OPENED and POSITION_CLOSED events from the event store
+        to rebuild the bot's own position state on startup.
+        
+        This ensures the bot only tracks positions IT created — not manual trades
+        or positions from other algos on the same exchange account.
+        
+        Returns:
+            Number of open positions restored
+        """
+        log.info("🔄 Replaying position events from event store...")
+        
+        # Get all position events from event store
+        try:
+            opened_events = self.event_store.get_events_by_type(
+                EventType.POSITION_OPENED, limit=50000
+            )
+            closed_events = self.event_store.get_events_by_type(
+                EventType.POSITION_CLOSED, limit=50000
+            )
+        except Exception as e:
+            log.error(f"❌ Failed to read events from event store: {e}")
+            return 0
+        
+        # Build set of closed position IDs
+        closed_ids = set()
+        for event in closed_events:
+            closed_ids.add(event.aggregate_id)
+        
+        # Find positions that were opened but never closed = still open
+        open_positions = []
+        seen_ids = set()  # Deduplicate (same position_id can have multiple OPENED events)
+        
+        for event in sorted(opened_events, key=lambda e: e.timestamp):
+            pid = event.aggregate_id
+            
+            # Skip if already closed or already seen
+            if pid in closed_ids or pid in seen_ids:
+                continue
+            
+            seen_ids.add(pid)
+            
+            position = {
+                "position_id": pid,
+                "entry_price": event.data.get("entry_price", 0),
+                "tp_price": event.data.get("tp_price", 0),
+                "size": event.data.get("size", 0),
+                "correlation_id": event.correlation_id,
+                "timestamp": event.timestamp,
+            }
+            
+            # Preserve optional fields
+            for key in ("entry_order_id", "tp_order_id", "is_opportunistic",
+                        "actual_entry", "saved_capital"):
+                if key in event.data:
+                    position[key] = event.data[key]
+            
+            open_positions.append(position)
+        
+        # Load into state
+        self.state["open_tranches"] = open_positions
+        self._position_index = {p["position_id"]: p for p in open_positions}
+        self.state["total_positions_opened"] = len(opened_events)
+        self.state["total_positions_closed"] = len(closed_events)
+        
+        log.info(f"✅ Replayed {len(opened_events)} opens + {len(closed_events)} closes")
+        log.info(f"   → {len(open_positions)} position(s) still open (bot's own)")
+        
+        for p in open_positions:
+            log.info(f"   📍 {p['position_id']}: entry=${p['entry_price']:,.0f}, tp=${p['tp_price']:,.0f}")
+        
+        return len(open_positions)
+
+    async def _handle_replay_positions(
+        self,
+        payload: Dict[str, Any],
+        reply_to: Optional[asyncio.Queue],
+        correlation_id: str
+    ) -> Dict[str, Any]:
+        """Handle REPLAY_POSITIONS message — triggers event replay."""
+        count = self.replay_own_positions()
+        return {"status": "ok", "positions_restored": count}
+
+    async def _handle_close_stale_position(
+        self,
+        payload: Dict[str, Any],
+        reply_to: Optional[asyncio.Queue],
+        correlation_id: str
+    ) -> Dict[str, Any]:
+        """
+        Close a position that the bot thinks is open but exchange says is not.
+        Records a POSITION_CLOSED event so it stays closed across future restarts.
+        
+        Args:
+            payload: Dict with position_id and reason
+        """
+        position_id = payload["position_id"]
+        reason = payload.get("reason", "stale_position")
+        
+        position = self._position_index.get(position_id)
+        if not position:
+            return {"status": "ok", "already_closed": True}
+        
+        # Remove from state
+        self.state["open_tranches"].remove(position)
+        del self._position_index[position_id]
+        self.state["total_positions_closed"] += 1
+        
+        # Record POSITION_CLOSED event so it doesn't reappear on next restart
+        event = Event(
+            event_id=str(uuid4()),
+            event_type=EventType.POSITION_CLOSED,
+            timestamp=time.time(),
+            correlation_id=correlation_id,
+            aggregate_id=position_id,
+            data={
+                "position_id": position_id,
+                "closed_at": time.time(),
+                "reason": reason,
+                "entry_price": position.get("entry_price", 0),
+                "tp_price": position.get("tp_price", 0),
+            },
+            metadata={"actor": self.name, "auto_closed": True}
+        )
+        self.event_store.append_event(event)
+        
+        log.info(f"🗑️  Stale position closed: {position_id} (reason: {reason})")
+        
+        return {"status": "ok", "position": position}
+
     async def _handle_add_position(
         self,
         payload: Dict[str, Any],
