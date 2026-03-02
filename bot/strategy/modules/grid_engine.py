@@ -575,3 +575,272 @@ class GridEngine:
         log.info("=" * 70)
         log.info(f"✅ SEEDING COMPLETE - Bot will manage TPs automatically")
         log.info("=" * 70)
+
+    # ── _place_initial_order → MOVED here P6.8 ──
+    async def place_initial_order(self) -> None:
+        """
+        Place initial entry order on startup.
+        Only places order if no positions or pending orders exist.
+        """
+        try:
+            log.info("Checking if initial order should be placed...")
+
+            # Pre-order volatility check REMOVED - Guardian handles this
+            # Guardian publishes GO/STOP signals based on volatility
+            # Trading bot will read Guardian signal (Phase 2.6)
+
+            # Get current state
+            state = await self.position_actor.ask("GET_STATE", {})
+
+            # Check if we already have positions or pending orders
+            has_positions = len(state.get("open_tranches", [])) > 0
+            has_pending = state.get("pending_buy") or state.get("pending_sell")
+
+            if has_positions:
+                log.info(f"✓ Found {len(state['open_tranches'])} existing position(s) - no initial order needed")
+                self._set_initial_order_placed(True)
+                return
+
+            if has_pending:
+                log.info("✓ Pending order already exists in bot state - no initial order needed")
+                self._set_initial_order_placed(True)
+                return
+
+            # CRITICAL: Check exchange for existing open orders BEFORE placing new ones
+            log.info("🔍 Checking exchange for existing open orders...")
+            try:
+                exchange_orders = await self.api_client.rest_client.get_open_orders(product_id=self.product_id)
+
+                # CRITICAL FIX: Filter by product_id manually (API returns all products)
+                if exchange_orders:
+                    exchange_orders = [o for o in exchange_orders if o.get('product_id') == self.product_id]
+
+                if exchange_orders and len(exchange_orders) > 0:
+                    log.warning(f"⚠️  Found {len(exchange_orders)} existing open order(s) on exchange:")
+                    if human_log:
+                        human_log.existing_orders_found(len(exchange_orders))  # Human-readable
+                    for order in exchange_orders:
+                        order_id = order.get('id')
+                        side = order.get('side')
+                        price = order.get('limit_price')
+                        size = order.get('size')
+                        order_type = order.get('order_type', 'UNKNOWN')
+
+                        # Convert price to float for formatting (API might return string)
+                        try:
+                            price_float = float(price) if price else 0
+                            log.warning(f"   Order {order_id}: {side} {size} @ ${price_float:,.2f} [type={order_type}]")
+                        except (ValueError, TypeError):
+                            log.warning(f"   Order {order_id}: {side} {size} @ {price} [type={order_type}]")
+
+                    # Sync the first relevant order to bot state
+                    # CRITICAL: Only sync LIMIT orders, NEVER stop/stop-limit/market orders
+                    # This prevents interfering with manual stop losses or other manual trades
+                    for order in exchange_orders:
+                        order_side = order.get('side')
+                        order_type = order.get('order_type', '').lower()
+                        bracket_order = order.get('bracket_order')  # Bracket orders (SL/TP) have this field
+                        stop_order_type = order.get('stop_order_type')  # Stop orders have this field
+
+                        # Log all order details for debugging
+                        log.info(f"   📋 Order details: type={order_type}, bracket={bracket_order}, stop_type={stop_order_type}")
+
+                        # Skip non-limit orders (stop, stop-limit, market, etc.)
+                        # Skip bracket orders (user's manual stop-loss/take-profit brackets)
+                        if order_type != 'limit_order':
+                            log.info(f"   ⏭️  Skipping {order_type} order {order.get('id')} - bot only manages plain limit orders")
+                            continue
+
+                        if bracket_order:
+                            log.info(f"   ⏭️  Skipping bracket order {order.get('id')} - this is a manual SL/TP order")
+                            continue
+
+                        if stop_order_type:
+                            log.info(f"   ⏭️  Skipping stop order {order.get('id')} (type={stop_order_type}) - manual stop order")
+                            continue
+
+                        if (self.mode == "LONG" and order_side == "buy") or (self.mode == "SHORT" and order_side == "sell"):
+                            order_id = order.get('id')
+                            order_price = order.get('limit_price')
+
+                            # Convert price to float (API returns string)
+                            try:
+                                order_price_float = float(order_price) if order_price else 0
+                            except (ValueError, TypeError):
+                                log.error(f"Invalid price format from exchange: {order_price}")
+                                continue
+
+                            log.info(f"✅ Syncing existing LIMIT order {order_id} to bot state @ ${order_price_float:,.2f}")
+
+                            if order_side == "buy":
+                                await self.position_actor.tell("SET_PENDING_BUY", {
+                                    "order_id": order_id,
+                                    "price": order_price_float,  # Store as float
+                                    "size": order.get("size", self.lot_size),
+                                    "timestamp": time.time()
+                                })
+                            else:
+                                await self.position_actor.tell("SET_PENDING_SELL", {
+                                    "order_id": order_id,
+                                    "price": order_price_float,  # Store as float
+                                    "size": order.get("size", self.lot_size),
+                                    "timestamp": time.time()
+                                })
+
+                            self._set_initial_order_placed(True)
+                            log.info("✅ Existing exchange LIMIT order synced - bot will track it")
+                            return
+
+                    log.warning("⚠️  Existing orders found but none are bot-managed LIMIT orders - continuing with new order")
+                else:
+                    log.info("✅ No existing orders on exchange - safe to place new order")
+            except Exception as e:
+                log.error(f"❌ Failed to check exchange orders: {e}")
+                log.warning("⚠️  Proceeding with caution - may result in duplicate orders")
+
+            current_price = self._get_current_price()
+            if not current_price:
+                log.warning("⚠️  Current price not available - cannot place initial order")
+                return
+
+            # COMPREHENSIVE SAFETY CHECK before initial order
+            can_proceed, reason = await self.comprehensive_safety_check("initial order placement")
+            if not can_proceed:
+                # Log detailed blocking reason prominently
+                log.warning("")
+                log.warning("=" * 70)
+                log.warning("🚫 TRADING BLOCKED AT STARTUP")
+                log.warning("=" * 70)
+                for line in reason.split('\n'):
+                    if line.strip():
+                        log.warning(line)
+                log.warning("=" * 70)
+                log.warning("💡 Bot will start trading automatically when conditions are met")
+                log.warning("=" * 70)
+                log.warning("")
+
+                # Mark as "placed" so entry order check loop runs and shows updates
+                self._set_initial_order_placed(True)
+                self._last_block_reason = reason
+                self._last_safety_block_log = time.time()
+                return
+
+            # Check if price is within grid bounds (already checked in comprehensive, but log it)
+            if not self.grid_calc.is_within_bounds(current_price):
+                log.warning(f"⚠️  Current price ${current_price:,.2f} outside grid bounds")
+                log.info(f"   Grid: ${self.grid_calc.lower:,.0f} - ${self.grid_calc.upper:,.0f}")
+                log.info("   Waiting for price to enter grid range...")
+                return
+
+            # Calculate initial entry level
+            positions = state.get("open_tranches", [])
+
+            if self.mode == "LONG":
+                # Check if we already have a pending buy order
+                pending_buy = state.get("pending_buy")
+                if pending_buy:
+                    log.info(f"ℹ️  Pending BUY order already exists: {pending_buy.get('order_id')} @ ${pending_buy.get('price'):,.0f}")
+                    return
+
+                if not self.should_recalculate_grid_level(current_price):
+                    log.debug(f"Price hasn't moved enough to recalculate grid level")
+                    return
+
+                target = self.grid_calc.compute_next_buy_level(positions, current_price=current_price)
+
+                # Skip recovered grid levels (NOV 20)
+                while target and target in self._recovered_grids:
+                    log.info(f"🔄 Skipping recovered grid level: ${target:,.0f}")
+                    # Find next level below the recovered one
+                    target = target - self.grid_calc.step
+                    if not self.grid_calc.is_within_bounds(target):
+                        target = None
+                        break
+
+                if target and self.grid_calc.is_within_bounds(target):
+                    log.info(f"📍 Placing initial MAKER BUY order @ ${target:,.2f}")
+                    log.info(f"   Current market: ${current_price:,.2f}")
+                    if human_log:
+                        human_log.initial_order_placed("BUY", target)  # Human-readable
+
+                    # Place order via order actor (timeout=20s to allow for retries)
+                    result = await self.order_actor.ask("PLACE_BUY", {
+                        "price": target,
+                        "size": self.lot_size  # Use configured lot size
+                    }, timeout=20.0)
+
+                    if result.get("status") == "ok":
+                        order_id = result.get("order_id")
+
+                        self.update_last_order_time(target)
+
+                        await self.position_actor.tell("SET_PENDING_BUY", {
+                            "order_id": order_id,
+                            "price": target,
+                            "size": self.lot_size,
+                            "timestamp": time.time()
+                        })
+
+                        log.info(f"✅ Initial MAKER BUY placed @ ${target:,.2f} (Order: {order_id})")
+                        self._set_initial_order_placed(True)
+                    else:
+                        log.error(f"❌ Failed to place initial order: {result.get('error')}")
+                else:
+                    log.warning(f"⚠️  No valid buy level available (target={target})")
+
+            else:  # SHORT mode
+                # Check if we already have a pending sell order
+                pending_sell = state.get("pending_sell")
+                if pending_sell:
+                    pending_price = pending_sell.get("price")
+                    pending_order_id = pending_sell.get("order_id")
+                    log.info(f"✅ Already have pending SELL @ ${pending_price:,.2f} (Order: {pending_order_id})")
+                    log.info("   Not placing duplicate order - using existing one")
+                    if human_log:
+                        human_log.duplicate_order_detected("SELL", pending_price)
+                    self._set_initial_order_placed(True)
+                    return
+
+                # Calculate next sell level above current price
+                target = self.grid_calc.compute_next_sell_level(positions, current_price=current_price)
+
+                # Skip recovered grid levels (NOV 20)
+                while target and target in self._recovered_grids:
+                    log.info(f"🔄 Skipping recovered grid level: ${target:,.0f}")
+                    # Find next level above the recovered one
+                    target = target + self.grid_calc.step
+                    if not self.grid_calc.is_within_bounds(target):
+                        target = None
+                        break
+
+                if target and self.grid_calc.is_within_bounds(target):
+                    log.info(f"📍 Placing initial MAKER SELL order @ ${target:,.2f}")
+                    log.info(f"   Current market: ${current_price:,.2f}")
+
+                    # Place order via order actor (timeout=20s to allow for retries)
+                    result = await self.order_actor.ask("PLACE_SELL", {
+                        "price": target,
+                        "size": 1
+                    }, timeout=20.0)
+
+                    if result.get("status") == "ok":
+                        order_id = result.get("order_id")
+
+                        self.update_last_order_time(target)
+
+                        await self.position_actor.tell("SET_PENDING_SELL", {
+                            "order_id": order_id,
+                            "price": target,
+                            "size": self.lot_size,
+                            "timestamp": time.time()
+                        })
+
+                        log.info(f"✅ Initial MAKER SELL placed @ ${target:,.2f} (Order: {order_id})")
+                        self._set_initial_order_placed(True)
+                    else:
+                        log.error(f"❌ Failed to place initial order: {result.get('error')}")
+                else:
+                    log.warning(f"⚠️  No valid sell level available (target={target})")
+
+        except Exception as e:
+            log.error(f"Error placing initial order: {e}", exc_info=True)
