@@ -105,6 +105,87 @@ class GridEngine:
 
         return True
 
+    # ── _comprehensive_safety_check → MOVED here P6.3 ──
+    async def comprehensive_safety_check(self, context: str = "order placement") -> tuple:
+        """
+        Comprehensive safety check - validates ALL safety mechanisms.
+
+        Args:
+            context: What action is being checked (for logging)
+
+        Returns:
+            (can_proceed, reason) - True if safe, False with reason if blocked
+        """
+        # 0. Early exit: Skip all checks if bot is already shutting down
+        # JAN 27, 2026: Prevents Guardian signal errors during graceful shutdown
+        if not self._get_running():
+            return False, "Bot is shutting down"
+
+        # 1. Check Guardian GO/STOP signal
+        signal, reason = await self._guardian_ref.read_signal()
+        if signal == 'STOP':
+            halt_reason = (
+                f"🛑 GUARDIAN HALT: Trading blocked by Guardian\n"
+                f"   Reason: {reason}\n"
+                f"   ⏰ Waiting for Guardian to publish GO signal..."
+            )
+            log.warning(halt_reason)
+            return False, halt_reason
+
+        # 2. Check cooldown period
+        if not self.is_cooldown_ready():
+            elapsed = time.time() - self._last_order_time
+            remaining = self.cooldown_seconds - elapsed
+
+            reason = (
+                f"⏱️  COOLDOWN: Order placement rate-limited\n"
+                f"   Seconds since last order: {elapsed:.1f}s\n"
+                f"   Cooldown period: {self.cooldown_seconds:.1f}s\n"
+                f"   ⏰ Can place order in: {remaining:.1f}s"
+            )
+            log.info(reason)
+            return False, reason  # Return FULL detailed message
+
+        # 3. Check price availability
+        current_price = self._get_current_price()
+        if not current_price:
+            reason = (
+                f"📍 NO PRICE DATA: Cannot place orders without current price\n"
+                f"   ⏰ Waiting for price update from WebSocket..."
+            )
+            log.warning(reason)
+            log.warning(f"   📍 Trading BLOCKED for: {context}")
+            return False, reason  # Return FULL detailed message
+
+        # 5. Check grid bounds
+        if not self.grid_calc.is_within_bounds(current_price):
+            reason = (
+                f"📊 PRICE OUT OF GRID: Current price outside trading range\n"
+                f"   Current Price: ${current_price:,.0f}\n"
+                f"   Grid Lower: ${self.grid_calc.lower:,.0f}\n"
+                f"   Grid Upper: ${self.grid_calc.upper:,.0f}\n"
+                f"   ⏰ Can trade when price enters grid range"
+            )
+            log.info(reason)
+            log.info(f"   📊 Trading BLOCKED for: {context}")
+            return False, reason  # Return FULL detailed message
+
+        # 6. Check price health (NOV 13 monitoring system)
+        try:
+            can_place, health_reason = self.price_monitor.can_place_orders()
+            if not can_place:
+                reason = (
+                    f"🏥 PRICE HEALTH CHECK FAILED: {health_reason}\n"
+                    f"   ⏰ Waiting for price data to stabilize..."
+                )
+                log.warning(reason)
+                return False, reason  # Return FULL detailed message
+        except Exception as e:
+            log.debug(f"Price health check error (proceeding): {e}")
+
+        # All checks passed
+        return True, "All safety checks passed"
+
     # ── _should_recalculate_grid_level → MOVED here P6.2 ──
     def should_recalculate_grid_level(self, proposed_price: float) -> bool:
         if self._last_accepted_order_price is None:
