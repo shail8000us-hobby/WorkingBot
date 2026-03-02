@@ -193,3 +193,84 @@ class FillProcessor:
         except Exception as e:
             log.debug(f"Error calculating next grid level: {e}")
             return None
+
+    # ========================================================================
+    # P5.4: Saga Completion Tracking
+    # ========================================================================
+
+    async def track_saga_completion(self, task: asyncio.Task, correlation_id: str) -> None:
+        """
+        Track saga completion for metrics.
+
+        CRITICAL FIX (Dec 11, 2025):
+        Check if saga skipped order placement due to Guardian STOP.
+        If so, track the missed order for retry when Guardian gives GO signal.
+
+        DEC 23: Track successfully placed orders in Fill Monitor for exchange maintenance protection.
+        """
+        try:
+            saga = await task  # Task returns the Saga object now, not just boolean
+
+            if saga and saga.context.status == "completed":
+                self._sagas_completed += 1
+                log.info(f"Saga completed successfully: {correlation_id}")
+
+                # DEC 23: Track placed orders in Fill Monitor
+                for step_name, step_result in saga.context.step_results.items():
+                    if isinstance(step_result, dict) and step_result.get('status') == 'ok':
+                        # Check if this step placed an order
+                        if 'order_id' in step_result and step_result['order_id']:
+                            order_id = str(step_result['order_id'])
+
+                            # Extract order details if available
+                            price = step_result.get('price', 0)
+                            size = step_result.get('size', 1)
+
+                            # Infer side from step name
+                            side = 'unknown'
+                            if 'buy' in step_name.lower() or 'grid' in step_name.lower():
+                                side = 'buy'
+                            elif 'sell' in step_name.lower() or 'tp' in step_name.lower():
+                                side = 'sell'
+
+                            # Track in Fill Monitor
+                            if price > 0 and side != 'unknown':
+                                self.track_order_in_fill_monitor(order_id, side, price, size)
+
+                                # DEC 23 Layer 2: Post-Order Verification (async, non-blocking)
+                                # Verify order status immediately after placement
+                                asyncio.create_task(self.verify_order_after_placement(
+                                    order_id=order_id,
+                                    expected_side=side,
+                                    expected_price=price,
+                                    timeout=5
+                                ))
+
+                # Check step_results for skipped orders due to Guardian STOP
+                for step_name, step_result in saga.context.step_results.items():
+                    if isinstance(step_result, dict):
+                        if step_result.get('status') == 'skipped' and 'guardian_stop' in step_result.get('reason', ''):
+                            # Extract missed order info
+                            missed_order = step_result.get('missed_order')
+                            if missed_order:
+                                price = missed_order.get('price')
+                                side = missed_order.get('side')
+                                reason = step_result.get('reason', 'Unknown')
+
+                                log.warning(f"📝 Tracking missed order for retry: {side.upper()} @ ${price:,.0f}")
+                                if self._guardian_ref is not None:
+                                    self._guardian_ref._missed_grid_orders.append((price, side, reason, time.time()))
+            else:
+                self._sagas_failed += 1
+                log.warning(f"Saga failed/compensated: {correlation_id}")
+        except Exception as e:
+            self._sagas_failed += 1
+            log.error(f"Saga execution error: {e}")
+
+    def track_order_in_fill_monitor(self, order_id: str, side: str, price: float, size: int) -> None:
+        """Placeholder — will be replaced with direct call in P5.6."""
+        pass  # Replaced in P5.6
+
+    async def verify_order_after_placement(self, order_id: str, expected_side: str, expected_price: float, timeout: int = 5) -> bool:
+        """Placeholder — will be replaced with real impl in P5.6."""
+        return False  # Replaced in P5.6
