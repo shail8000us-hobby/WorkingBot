@@ -274,3 +274,248 @@ class FillProcessor:
     async def verify_order_after_placement(self, order_id: str, expected_side: str, expected_price: float, timeout: int = 5) -> bool:
         """Placeholder — will be replaced with real impl in P5.6."""
         return False  # Replaced in P5.6
+
+    # ========================================================================
+    # P5.5: THE CRITICAL METHOD — process_fill
+    # ========================================================================
+
+    async def process_fill(self, fill_data: Dict[str, Any]) -> None:
+        """
+        Process fill via saga.
+
+        CRITICAL: Multiple systems can call this (WebSocket, Fill Monitor, Post-Order Verification).
+        Deduplication prevents double-processing using BOTH fill_id AND order_id.
+
+        Args:
+            fill_data: Fill information
+        """
+        try:
+            fill_id = str(fill_data.get('id', ''))
+            order_id = str(fill_data.get("order_id", ''))
+
+            # CRITICAL: Check BOTH fill_id and order_id for deduplication
+            # Fill Monitor creates synthetic fill_ids, so order_id is the true unique key
+            if self.is_fill_seen(fill_id):
+                log.debug(f"⏭️  Skipping already processed fill: {fill_id}")
+                return
+
+            if order_id and self.is_order_fill_seen(order_id):
+                log.debug(f"⏭️  Skipping already processed order fill: {order_id}")
+                return
+
+            # Mark BOTH fill_id and order_id as seen
+            self.mark_fill_seen(fill_id)
+            if order_id:
+                self.mark_order_fill_seen(order_id)
+                # Mark in Fill Monitor too (prevents Fill Monitor from re-detecting)
+                self.fill_monitor.mark_filled(order_id, source="processing")
+
+            self.cleanup_old_fill_ids()
+
+            fill_product = fill_data.get('product_id')
+            if fill_product and fill_product != self.product_id:
+                log.debug(f"⏭️  Ignoring fill for different product: {fill_product} (bot trades product_id={self.product_id})")
+                return
+
+            order_id = fill_data.get("order_id")
+
+            self._fills_processed += 1
+
+            # Generate correlation ID
+            correlation_id = f"fill-{fill_data.get('id', '')}-{int(time.time()*1000)}"
+
+            # Prepare fill data
+            # CRITICAL FIX NOV 14: Don't default is_complete to True
+            # Partial fills must be explicitly marked, otherwise position size will be wrong
+            is_complete = fill_data.get("is_complete")
+            if is_complete is None:
+                # If not provided, check unfilled_size
+                unfilled_size = fill_data.get("unfilled_size", 0)
+                is_complete = (unfilled_size == 0)
+                log.warning(f"⚠️  is_complete not provided in fill data, inferring from unfilled_size: {is_complete}")
+
+            processed_fill = {
+                "order_id": fill_data.get("order_id"),
+                "fill_price": float(fill_data.get("price", 0)),
+                "fill_size": int(fill_data.get("size", 0)),
+                "side": fill_data.get("side"),
+                "is_complete": is_complete
+            }
+
+            # Enhanced logging (matching old GridBot style)
+            log.info(f"🔔 Processing fill: {processed_fill['side'].upper()} {processed_fill['fill_size']} @ ${processed_fill['fill_price']:,.0f}")
+
+            # Mark bot as started on first fill
+            if not self._get_initial_order_placed():
+                self._set_initial_order_placed(True)
+                log.info("✅ Bot marked as ACTIVE (first fill processed)")
+
+            # Human-readable narrative logging
+            if human_log:
+                human_log.order_filled(
+                    processed_fill.get("order_id", "unknown"),
+                    processed_fill["side"].upper(),
+                    processed_fill["fill_price"]
+                )
+
+            # Create appropriate saga based on MODE and SIDE
+            if self.mode == "LONG":
+                if processed_fill["side"] == "buy":
+                    # LONG mode: BUY = Entry
+                    # Calculate TP price for new position
+                    tp_price = processed_fill['fill_price'] + self.grid_calc.step
+                    log.info(f"   💰 New position opened | Entry: ${processed_fill['fill_price']:,.0f} → Target: ${tp_price:,.0f}")
+
+                    # Get current position count
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    current_positions = len(state.get("open_tranches", []))
+                    log.info(f"   📊 Active positions: {current_positions + 1}/{self.max_positions}")
+
+                    # Human-readable position update
+                    if human_log:
+                        human_log.position_updated(size=current_positions + 1)
+
+                    # Calculate next buy level
+                    next_buy = self.calculate_next_grid_level('BUY', processed_fill['fill_price'])
+                    if next_buy:
+                        log.info(f"   ⬇️  Next BUY level: ${next_buy:,.0f}")
+
+                    saga = await create_buy_fill_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store,
+                        mode=self.mode
+                    )
+                else:  # sell
+                    # LONG mode: SELL = TP close
+                    # Get position details for profit calculation
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    positions = state.get("open_tranches", [])
+
+                    # Find the position that was closed
+                    order_id = processed_fill.get("order_id")
+                    closed_position = None
+                    for pos in positions:
+                        if pos.get("tp_order_id") == order_id:
+                            closed_position = pos
+                            break
+
+                    if closed_position:
+                        entry_price = closed_position.get("entry_price", 0)
+                        exit_price = processed_fill['fill_price']
+                        profit = exit_price - entry_price
+                        profit_pct = (profit / entry_price * 100) if entry_price > 0 else 0
+
+                        log.info(f"   ✅ Position closed | Entry: ${entry_price:,.0f} → Exit: ${exit_price:,.0f}")
+                        log.info(f"   💵 Profit: ${profit:,.0f} ({profit_pct:+.2f}%)")
+
+                    # Get updated position count
+                    remaining_positions = len(positions) - 1
+                    log.info(f"   📊 Active positions: {remaining_positions}/{self.max_positions}")
+
+                    # Human-readable position update with PnL
+                    if human_log:
+                        if closed_position:
+                            human_log.position_updated(size=remaining_positions, pnl=profit)
+                        else:
+                            human_log.position_updated(size=remaining_positions)
+
+                    saga = await create_sell_fill_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store,
+                        mode=self.mode
+                    )
+
+            elif self.mode == "SHORT":
+                if processed_fill["side"] == "sell":
+                    # SHORT mode: SELL = Entry
+                    # Calculate TP price for new position (below entry)
+                    tp_price = processed_fill['fill_price'] - self.grid_calc.step
+                    log.info(f"   💰 New SHORT position opened | Entry: ${processed_fill['fill_price']:,.0f} → Target: ${tp_price:,.0f}")
+
+                    # Get current position count
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    current_positions = len(state.get("open_tranches", []))
+                    log.info(f"   📊 Active positions: {current_positions + 1}/{self.max_positions}")
+
+                    # Human-readable position update
+                    if human_log:
+                        human_log.position_updated(size=current_positions + 1)
+
+                    # Calculate next sell level (UP from current)
+                    next_sell = self.calculate_next_grid_level('SELL', processed_fill['fill_price'])
+                    if next_sell:
+                        log.info(f"   ⬆️  Next SELL level: ${next_sell:,.0f}")
+
+                    saga = await create_short_entry_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store
+                    )
+                else:  # buy
+                    # SHORT mode: BUY = TP close
+                    # Get position details for profit calculation
+                    state = await self.position_actor.ask("GET_STATE", {})
+                    positions = state.get("open_tranches", [])
+
+                    # Find the position that was closed
+                    order_id = processed_fill.get("order_id")
+                    closed_position = None
+                    for pos in positions:
+                        if pos.get("tp_order_id") == order_id:
+                            closed_position = pos
+                            break
+
+                    if closed_position:
+                        entry_price = closed_position.get("entry_price", 0)
+                        exit_price = processed_fill['fill_price']
+                        profit = entry_price - exit_price  # SHORT profit
+                        profit_pct = (profit / entry_price * 100) if entry_price > 0 else 0
+
+                        log.info(f"   ✅ SHORT position closed | Entry: ${entry_price:,.0f} → Exit: ${exit_price:,.0f}")
+                        log.info(f"   💵 Profit: ${profit:,.0f} ({profit_pct:+.2f}%)")
+
+                    # Get updated position count
+                    remaining_positions = len(positions) - 1
+                    log.info(f"   📊 Active positions: {remaining_positions}/{self.max_positions}")
+
+                    # Human-readable position update with PnL
+                    if human_log:
+                        if closed_position:
+                            human_log.position_updated(size=remaining_positions, pnl=profit)
+                        else:
+                            human_log.position_updated(size=remaining_positions)
+
+                    saga = await create_short_tp_saga(
+                        fill_data=processed_fill,
+                        correlation_id=correlation_id,
+                        position_actor=self.position_actor,
+                        order_actor=self.order_actor,
+                        grid_calc=self.grid_calc,
+                        event_store=self.event_store
+                    )
+            else:
+                raise ValueError(f"Unknown trading mode: {self.mode}")
+
+            # Execute saga
+            task = await self.saga_orchestrator.start_saga(saga)
+
+            # Track saga completion
+            asyncio.create_task(self.track_saga_completion(task, correlation_id))
+
+            # Safety check removed - Guardian monitors risk parameters
+            # Fill processed successfully
+            self._set_last_safety_check_time(time.time())
+
+        except Exception as e:
+            log.error(f"Error processing fill: {e}")
