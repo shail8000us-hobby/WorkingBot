@@ -76,15 +76,8 @@ mmm_bp = Blueprint('mmm', __name__, url_prefix='/api/mmm')
 
 
 def _invalidate_sessions_cache():
-    """Clear cached /sessions response after mutations."""
-    try:
-        cache.delete_memoized(list_sessions)
-    except Exception:
-        # Fallback: clear by key pattern
-        try:
-            cache.clear()
-        except Exception:
-            pass
+    """No-op: list_sessions is no longer cached (real-time via WebSocket)."""
+    pass
 
 
 def _check_guardian_signal() -> str:
@@ -101,7 +94,6 @@ def _check_guardian_signal() -> str:
 # =============================================================================
 
 @mmm_bp.route('/sessions', methods=['GET'])
-@cache.cached(timeout=30, query_string=True)  # 30s cache — session list is relatively static
 def list_sessions():
     """
     List all MMM sessions.
