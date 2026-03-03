@@ -149,13 +149,17 @@ app = Flask(__name__, static_folder='../frontend/build')
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 app.config['_start_time'] = time.time()
 
-# Enable compression
+# Enable compression (prefer Brotli over gzip — 20-30% smaller responses)
 compress = Compress()
 app.config['COMPRESS_MIMETYPES'] = [
     'text/html', 'text/css', 'text/xml', 'application/json',
     'application/javascript', 'text/javascript'
 ]
+app.config['COMPRESS_ALGORITHM'] = ['br', 'gzip', 'deflate']  # Brotli first
 compress.init_app(app)
+
+# Long-term caching for static assets (CRA filenames contain content hashes)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # 1 year in seconds
 
 # Initialize Flask-Caching (MUST happen before blueprint registration)
 try:
@@ -586,12 +590,18 @@ def start_request_timer():
 @app.after_request
 def log_request_metrics(response):
     """
-    Log API request metrics to SQLite for trending
+    Log API request metrics to SQLite for trending + set browser cache headers.
     
     Tracks:
     - API latency (response time)
     - Error counts (4xx, 5xx responses)
     - Endpoint usage patterns
+    
+    Cache strategy:
+    - Rarely-changing config endpoints: 60s browser cache
+    - Fast-changing trading data: 5s browser cache
+    - Health/status: no-store (always fresh)
+    - Mutations (POST/PUT/DELETE): no-store
     """
     try:
         # Calculate latency
@@ -631,6 +641,32 @@ def log_request_metrics(response):
     except Exception as e:
         # Don't fail the request if metrics logging fails
         log.debug(f"Metrics logging failed: {e}")
+    
+    # Phase 7.3: Browser cache headers for API responses
+    if request.path.startswith('/api/') and request.method == 'GET' and response.status_code < 400:
+        # Skip if route already set Cache-Control explicitly
+        if 'Cache-Control' not in response.headers:
+            # Rarely-changing endpoints — cache 60s in browser
+            _long_cache = {'/api/config/flat', '/api/flags', '/api/feature_flags',
+                           '/api/options/expiries', '/api/options/strategy/templates'}
+            # Fast-changing trading data — cache 5s to deduplicate rapid tab switches
+            _short_cache = {'/api/positions', '/api/orders', '/api/pnl/summary',
+                            '/api/options/dashboard', '/api/options/positions',
+                            '/api/trading_status', '/api/logs'}
+            # Never cache health/status (must always be fresh)
+            _no_cache = {'/api/health', '/api/health/detailed', '/api/bot/status'}
+            
+            if request.path in _long_cache:
+                response.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
+            elif request.path in _short_cache or request.path.startswith('/api/positions') or request.path.startswith('/api/logs'):
+                response.headers['Cache-Control'] = 'public, max-age=5, stale-while-revalidate=10'
+            elif request.path in _no_cache:
+                response.headers['Cache-Control'] = 'no-store'
+            else:
+                # Default: short cache for unknown GET endpoints
+                response.headers['Cache-Control'] = 'public, max-age=10, stale-while-revalidate=30'
+    elif request.path.startswith('/api/') and request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        response.headers['Cache-Control'] = 'no-store'
     
     return response
 
@@ -1393,6 +1429,31 @@ if __name__ == '__main__':
     
     # IMPORTANT: Disable reloader to work with instance lock
     # Reloader spawns child process which conflicts with lock
+    
+    # ============================================================================
+    # Pre-warm critical API caches on startup
+    # ============================================================================
+    def _prewarm_caches():
+        """Pre-warm dashboard + bot/status caches so first user gets instant response."""
+        import urllib.request
+        time.sleep(2)  # Wait for server to be ready
+        endpoints = [
+            ('bot/status', f'http://127.0.0.1:{WEBUI_PORT}/api/bot/status'),
+            ('options/dashboard', f'http://127.0.0.1:{WEBUI_PORT}/api/options/dashboard'),
+            ('mmm/sessions', f'http://127.0.0.1:{WEBUI_PORT}/api/mmm/sessions?summary=true'),
+            ('positions', f'http://127.0.0.1:{WEBUI_PORT}/api/positions'),
+            ('config/flat', f'http://127.0.0.1:{WEBUI_PORT}/api/config/flat'),
+        ]
+        for name, url in endpoints:
+            try:
+                urllib.request.urlopen(url, timeout=30).read()
+                print(f"  🔥 Cache warmed: {name}")
+            except Exception as e:
+                print(f"  ⚠️ Failed to warm {name}: {e}")
+    
+    import threading as _t
+    _t.Thread(target=_prewarm_caches, daemon=True, name='cache-warmer').start()
+    
     socketio.run(
         app,
         host='0.0.0.0',

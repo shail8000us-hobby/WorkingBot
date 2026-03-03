@@ -42,7 +42,12 @@ def get_system_metrics():
         metrics = health_monitor.get_current_metrics()
         
         if not metrics:
-            return jsonify({'error': 'No metrics available yet'}), 404
+            # Return empty metrics with 200 — monitor may not have collected first sample yet
+            return jsonify({
+                'status': 'success',
+                'metrics': None,
+                'message': 'No metrics available yet — monitor is warming up'
+            })
         
         return jsonify({
             'status': 'success',

@@ -18,6 +18,12 @@ import requests
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 
+# Import cache
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS, make_cache_key
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS, make_cache_key
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -44,6 +50,7 @@ _cache_ttl = 10.0
 
 
 @market_bp.route('/api/market/spot-price', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['market'], key_prefix=make_cache_key)
 def get_spot_price():
     """
     Get current spot price for an underlying asset.

@@ -1,5 +1,4 @@
 import { Play, Square, RotateCcw, AlertTriangle } from 'lucide-react';
-import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
 function FloatingActionBar({
@@ -13,11 +12,8 @@ function FloatingActionBar({
 }) {
   if (isMobile) {
     return (
-      <motion.div
-        className="fixed inset-x-0 bottom-3 z-50 px-4"
-        initial={{ y: 80, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+      <div
+        className="fixed inset-x-0 bottom-3 z-50 px-4 animate-slide-up-spring"
         style={{
           paddingBottom: `calc(env(safe-area-inset-bottom) + 0.75rem)`,
         }}
@@ -74,16 +70,13 @@ function FloatingActionBar({
             Emergency
           </button>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   return (
-    <motion.div
-      className="fixed bottom-5 inset-x-0 z-40 flex justify-center px-4"
-      initial={{ y: 80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+    <div
+      className="fixed bottom-5 inset-x-0 z-40 flex justify-center px-4 animate-slide-up-spring"
       style={{
         paddingBottom: `calc(env(safe-area-inset-bottom) + 1.25rem)`,
       }}
@@ -143,7 +136,7 @@ function FloatingActionBar({
           Emergency
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 }
 

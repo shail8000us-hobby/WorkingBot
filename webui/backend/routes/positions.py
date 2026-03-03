@@ -107,7 +107,24 @@ _positions_cache = {
     'timestamp': 0,
     'lock': threading.Lock()
 }
-_POSITIONS_CACHE_TTL = 5.0  # 5 seconds - fresh enough for trading, avoids N+1 per poll
+_POSITIONS_CACHE_TTL = 15.0  # 15 seconds - avoids hammering Delta API
+
+# SWR cache for the /api/positions route (stale-while-revalidate)
+_route_cache = {
+    'data': None,        # Cached JSON response dict
+    'timestamp': 0,
+    'lock': threading.Lock()
+}
+_ROUTE_FRESH_SECONDS = 5.0    # Return instantly if < 5s old
+_ROUTE_STALE_SECONDS = 60.0   # Return stale + background refresh if < 60s old
+_route_refresh_in_progress = False
+
+# Margin cache (avoid fetching wallet on every poll)
+_margin_cache = {
+    'data': None,
+    'timestamp': 0,
+}
+_MARGIN_CACHE_TTL = 15.0  # 15 seconds
 
 # Thread pool for concurrent API calls (reuse across requests)
 _ticker_pool = ThreadPoolExecutor(max_workers=8)
@@ -178,118 +195,105 @@ def _filter_positions_by_symbol(positions_data, filter_symbol):
 # ============================================================================
 
 @positions_bp.route('/api/positions', methods=['GET'])
-@cache.cached(timeout=CACHE_TIMEOUTS['positions'], key_prefix=make_cache_key)
 def get_positions():
     """
-    Get current positions with liquidation info and Greeks
-    
-    Query Parameters:
-        symbol (optional): Filter positions by symbol (e.g., "BTCUSD", "ETHUSD")
-                          If provided, only returns positions for that symbol.
-                          If omitted, returns all positions (v4.0 backward compat).
-    
-    Tries multiple strategies:
-    1. Delta Exchange API (real-time with Greeks)
-    2. Positions file (if bot is running)
-    3. Guardian data (fallback)
-    
-    Returns:
-        JSON response with positions and summary
-    
-    Example:
-        GET /api/positions
-        GET /api/positions?symbol=BTCUSD
-        Response: {
-            "positions": [
-                {
-                    "symbol": "BTCUSD",
-                    "product_id": 27,
-                    "type": "FUTURE",
-                    "size": 10,
-                    "side": "long",
-                    "entry_price": 50000.0,
-                    "current_price": 51000.0,
-                    "unrealized_pnl": 10.0,
-                    "delta": 0.5,
-                    "vega": 0.01,
-                    "theta": -0.05,
-                    "notional_deployed": 425000.0
-                },
-                ...
-            ],
-            "summary": {
-                "total_positions": 5,
-                "total_pnl": 1234.56,
-                "portfolio_delta": 2.5,
-                "portfolio_vega": 0.05,
-                "portfolio_theta": -0.25,
-                "total_notional_deployed": 2125000.0,
-                "data_source": "delta_exchange",
-                "filtered_by_symbol": "BTCUSD"  # v5.0: If filtering applied
-            }
-        }
+    Get current positions with liquidation info and Greeks.
+    Uses Stale-While-Revalidate (SWR) caching for instant responses.
     """
+    global _route_refresh_in_progress
+    
+    now = time.time()
+    age = now - _route_cache['timestamp']
+    
+    # FRESH: return cached data instantly
+    if _route_cache['data'] is not None and age < _ROUTE_FRESH_SECONDS:
+        return jsonify(_route_cache['data']), 200
+    
+    # STALE: return cached data + trigger background refresh
+    if _route_cache['data'] is not None and age < _ROUTE_STALE_SECONDS:
+        if not _route_refresh_in_progress:
+            _route_refresh_in_progress = True
+            # Get current request args for background thread
+            req_args = dict(request.args)
+            from flask import current_app
+            app = current_app._get_current_object()
+            t = threading.Thread(target=_refresh_positions_cache, args=(app, req_args), daemon=True)
+            t.start()
+        return jsonify(_route_cache['data']), 200
+    
+    # EXPIRED: fetch fresh (blocking)
+    result = _fetch_positions_fresh()
+    if result:
+        return jsonify(result), 200
+    
+    return jsonify({'positions': [], 'summary': {'total_positions': 0, 'data_source': 'none'}}), 200
+
+
+def _fetch_positions_fresh():
+    """Fetch fresh positions data and update the SWR route cache."""
+    global _route_refresh_in_progress
     try:
-        from flask import request
+        # Get filter params from request context (if available)
+        try:
+            instance_name, filter_symbol, filter_mode = get_instance_from_request()
+        except RuntimeError:
+            filter_symbol = None
         
-        # v6.0: Get instance filter (supports both ?instance= and ?symbol= formats)
-        instance_name, filter_symbol, filter_mode = get_instance_from_request()
+        # Fetch margin (with its own cache)
+        margin_data = _fetch_blocked_margin_cached()
         
-        # Fetch account-level blocked_margin ONCE per request (fresh data from wallet API)
-        margin_data = _fetch_blocked_margin()
-        log.info(f"Fetched blocked_margin: {margin_data}")
-        
-        # Strategy 1: Try Delta Exchange API
+        # Try strategies in order
         positions_data = _get_positions_from_delta()
+        if not positions_data:
+            positions_data = _get_positions_from_file()
+        if not positions_data:
+            positions_data = _get_positions_from_guardian()
+        
         if positions_data:
-            # Inject fresh margin data into summary
             positions_data['summary'].update(margin_data)
-            # v6.0: Apply symbol filter if requested
             if filter_symbol:
                 positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
-            return jsonify(positions_data), 200
+            
+            # Update SWR cache
+            with _route_cache['lock']:
+                _route_cache['data'] = positions_data
+                _route_cache['timestamp'] = time.time()
+            
+            _route_refresh_in_progress = False
+            return positions_data
         
-        # Strategy 2: Try positions file
-        positions_data = _get_positions_from_file()
-        if positions_data:
-            # Inject fresh margin data
-            positions_data['summary'].update(margin_data)
-            # v5.0: Apply symbol filter if requested
-            if filter_symbol:
-                positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
-            return jsonify(positions_data), 200
-        
-        # Strategy 3: Try guardian
-        positions_data = _get_positions_from_guardian()
-        if positions_data:
-            # Inject fresh margin data
-            positions_data['summary'].update(margin_data)
-            # v5.0: Apply symbol filter if requested
-            if filter_symbol:
-                positions_data = _filter_positions_by_symbol(positions_data, filter_symbol)
-            return jsonify(positions_data), 200
-        
-        # No positions found - but still return wallet blocked_margin
-        usd_to_inr_rate = float(get_config_value('market.usd_to_inr_rate', 'USD_TO_INR_RATE', 85))
-        
-        return jsonify({
-            'positions': [],
-            'summary': {
-                'total_positions': 0,
-                'total_pnl_usd': 0,
-                'total_pnl_inr': 0,
-                'risk_percent': 0,
-                'total_notional_deployed': 0,
-                'blocked_margin_usd': margin_data.get('blocked_margin_usd', 0),
-                'blocked_margin_inr': margin_data.get('blocked_margin_inr', 0),
-                'filtered_by_symbol': filter_symbol,
-                'data_source': 'delta_exchange'
-            }
-        }), 200
-        
+        _route_refresh_in_progress = False
+        return None
     except Exception as e:
         log.error(f"Error fetching positions: {e}")
-        return jsonify({'error': str(e)}), 500
+        _route_refresh_in_progress = False
+        # Extend stale cache on error
+        if _route_cache['data'] is not None:
+            _route_cache['timestamp'] = time.time() - _ROUTE_FRESH_SECONDS - 1
+        return None
+
+
+def _refresh_positions_cache(app, req_args):
+    """Background thread to refresh positions cache (SWR pattern)."""
+    global _route_refresh_in_progress
+    try:
+        with app.test_request_context('/api/positions', query_string=req_args):
+            _fetch_positions_fresh()
+    except Exception as e:
+        log.error(f"Background positions refresh failed: {e}")
+        _route_refresh_in_progress = False
+
+
+def _fetch_blocked_margin_cached():
+    """Fetch blocked margin with TTL cache to avoid extra API call on every poll."""
+    now = time.time()
+    if _margin_cache['data'] is not None and (now - _margin_cache['timestamp']) < _MARGIN_CACHE_TTL:
+        return _margin_cache['data']
+    
+    data = _fetch_blocked_margin()
+    _margin_cache['data'] = data
+    _margin_cache['timestamp'] = time.time()
+    return data
 
 
 @positions_bp.route('/api/positions/resync', methods=['POST'])

@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
 /**
@@ -32,17 +31,11 @@ const AnimatedNumber: React.FC<AnimatedNumberProps> = ({
   const formattedValue = value?.toFixed(decimals) ?? '0.00';
 
   return (
-    <motion.span
-      key={value}
-      initial={{ opacity: 1 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0 }}
-      {...({ className: clsx('tabular-nums', className) } as any)}
-    >
+    <span className={clsx('tabular-nums', className)}>
       {prefix}
       {formattedValue}
       {suffix}
-    </motion.span>
+    </span>
   );
 };
 

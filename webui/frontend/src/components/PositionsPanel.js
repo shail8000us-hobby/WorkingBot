@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import clsx from 'clsx';
+import { List as VirtualList } from 'react-window';
 import {
   Box,
   Card,
@@ -116,6 +117,114 @@ const PositionsPanel = () => {
     };
     return colors[symbol] || { bg: '#64748b20', text: '#64748b' };
   }, []);
+
+  // Phase 8.1: Extracted position card for use in both normal list and virtual list
+  const PositionCardContent = useCallback(({ position }) => {
+    const baseSymbol = position.symbol?.includes('BTC')
+      ? 'BTCUSD'
+      : position.symbol?.includes('ETH')
+        ? 'ETHUSD'
+        : null;
+    const symbolColors = baseSymbol
+      ? getSymbolColor(baseSymbol)
+      : { bg: '#64748b20', text: '#64748b' };
+
+    return (
+      <Card
+        sx={{
+          bgcolor: '#1e293b',
+          border: '1px solid #334155',
+          borderLeft: `4px solid ${position.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}`,
+          transition: 'all 0.3s',
+          '&:hover': {
+            transform: 'translateY(-2px)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            borderColor: '#475569',
+          },
+        }}
+      >
+        <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600} color="#f8fafc">
+                  {position.symbol}
+                </Typography>
+                <Box display="flex" alignItems="center" gap={0.5} mt={0.25}>
+                  <Chip
+                    label={position.type}
+                    size="small"
+                    sx={{
+                      bgcolor: position.type === 'OPTION' ? '#8b5cf6' : '#3b82f6',
+                      color: 'white',
+                      fontWeight: 500,
+                      height: 20,
+                      fontSize: '0.7rem',
+                    }}
+                  />
+                  {baseSymbol && (
+                    <Chip
+                      label={baseSymbol}
+                      size="small"
+                      sx={{
+                        bgcolor: symbolColors.bg,
+                        color: symbolColors.text,
+                        fontWeight: 600,
+                        height: 20,
+                        fontSize: '0.7rem',
+                      }}
+                    />
+                  )}
+                  {position.source === 'bot' && (
+                    <Chip
+                      label="BOT"
+                      size="small"
+                      sx={{ bgcolor: '#10b98120', color: '#10b981', height: 20, fontSize: '0.7rem' }}
+                    />
+                  )}
+                </Box>
+              </Box>
+            </Box>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ color: getPnlColor(position.unrealized_pnl) }}
+            >
+              {position.unrealized_pnl >= 0 ? '+' : ''}
+              {formatCurrency(position.unrealized_pnl)}
+            </Typography>
+          </Box>
+
+          <Grid container spacing={1}>
+            <Grid item xs={6} sm={3}>
+              <Typography variant="caption" color="#94a3b8">Size</Typography>
+              <Typography variant="body2" fontWeight={600} color="#cbd5e1">
+                {position.size} ({position.side})
+              </Typography>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Typography variant="caption" color="#94a3b8">Current</Typography>
+              <Typography variant="body2" fontWeight={600} color="#cbd5e1">
+                {formatCurrency(position.current_price)}
+              </Typography>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Typography variant="caption" color="#94a3b8">Entry</Typography>
+              <Typography variant="body2" fontWeight={600} color="#cbd5e1">
+                {formatCurrency(position.entry_price)}
+              </Typography>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Typography variant="caption" color="#94a3b8">Delta</Typography>
+              <Typography variant="body2" fontWeight={600} color="#cbd5e1">
+                {formatNumber(position.delta)}
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+    );
+  }, [getSymbolColor, getPnlColor, formatCurrency, formatNumber]);
 
   // Filter positions - memoized expensive operation
   const filteredPositions = useMemo(() => {
@@ -275,125 +384,27 @@ const PositionsPanel = () => {
                   </Box>
                 </CardContent>
               </Card>
+            ) : positions.length > 20 ? (
+              /* Phase 8.1: Virtual scrolling for large position lists (>20 items) */
+              <VirtualList
+                height={Math.min(positions.length * 178, 800)}
+                itemCount={positions.length}
+                itemSize={178}
+                width="100%"
+              >
+                {({ index, style }) => {
+                  const position = positions[index];
+                  return (
+                    <div style={{ ...style, paddingBottom: '8px', boxSizing: 'border-box' }}>
+                      <PositionCardContent position={position} />
+                    </div>
+                  );
+                }}
+              </VirtualList>
             ) : (
-              positions.map((position, index) => {
-                // Extract base symbol (BTCUSD, ETHUSD) from position symbol
-                const baseSymbol = position.symbol?.includes('BTC')
-                  ? 'BTCUSD'
-                  : position.symbol?.includes('ETH')
-                    ? 'ETHUSD'
-                    : null;
-                const symbolColors = baseSymbol
-                  ? getSymbolColor(baseSymbol)
-                  : { bg: '#64748b20', text: '#64748b' };
-
-                return (
-                  <Card
-                    key={index}
-                    sx={{
-                      bgcolor: '#1e293b',
-                      border: '1px solid #334155',
-                      borderLeft: `4px solid ${position.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'}`,
-                      transition: 'all 0.3s',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                        borderColor: '#475569',
-                      },
-                    }}
-                  >
-                    <CardContent>
-                      {/* Position Header */}
-                      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Box>
-                            <Typography variant="h6" fontWeight={600} color="#f8fafc">
-                              {position.symbol}
-                            </Typography>
-                            <Box display="flex" alignItems="center" gap={1} mt={0.5}>
-                              <Chip
-                                label={position.type}
-                                size="small"
-                                sx={{
-                                  bgcolor: position.type === 'OPTION' ? '#8b5cf6' : '#3b82f6',
-                                  color: 'white',
-                                  fontWeight: 500,
-                                }}
-                              />
-                              {baseSymbol && (
-                                <Chip
-                                  label={baseSymbol}
-                                  size="small"
-                                  sx={{
-                                    bgcolor: symbolColors.bg,
-                                    color: symbolColors.text,
-                                    fontWeight: 600,
-                                  }}
-                                />
-                              )}
-                              {position.source === 'bot' && (
-                                <Chip
-                                  label="BOT"
-                                  size="small"
-                                  sx={{ bgcolor: '#10b98120', color: '#10b981' }}
-                                />
-                              )}
-                            </Box>
-                          </Box>
-                        </Box>
-                        <Typography
-                          component={motion.p}
-                          initial={{ opacity: 0, y: -4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.3 }}
-                          variant="h5"
-                          fontWeight={700}
-                          sx={{ color: getPnlColor(position.unrealized_pnl) }}
-                        >
-                          {position.unrealized_pnl >= 0 ? '+' : ''}
-                          {formatCurrency(position.unrealized_pnl)}
-                        </Typography>
-                      </Box>
-
-                      {/* Position Details Grid */}
-                      <Grid container spacing={2}>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="#94a3b8">
-                            Size
-                          </Typography>
-                          <Typography variant="body1" fontWeight={600} color="#cbd5e1">
-                            {position.size} ({position.side})
-                          </Typography>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="#94a3b8">
-                            Current
-                          </Typography>
-                          <Typography variant="body1" fontWeight={600} color="#cbd5e1">
-                            {formatCurrency(position.current_price)}
-                          </Typography>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="#94a3b8">
-                            Entry
-                          </Typography>
-                          <Typography variant="body1" fontWeight={600} color="#cbd5e1">
-                            {formatCurrency(position.entry_price)}
-                          </Typography>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="#94a3b8">
-                            Delta
-                          </Typography>
-                          <Typography variant="body1" fontWeight={600} color="#cbd5e1">
-                            {formatNumber(position.delta)}
-                          </Typography>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                );
-              })
+              positions.map((position, index) => (
+                <PositionCardContent key={index} position={position} />
+              ))
             )}
           </Box>
         </Grid>

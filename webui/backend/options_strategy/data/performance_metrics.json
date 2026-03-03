@@ -1,5 +1,5 @@
 {
-  "total_trades": 1063,
+  "total_trades": 1173,
   "winning_trades": 0,
   "losing_trades": 0,
   "win_rate": 0.0,
@@ -13,6 +13,6 @@
   "style_match_avg": 0,
   "confidence_avg": 0,
   "prediction_accuracy": 0.0,
-  "period_start": "2026-01-22T13:07:37.649789",
-  "period_end": "2026-02-21T13:07:37.726071"
+  "period_start": "2026-01-31T20:20:26.159247",
+  "period_end": "2026-03-02T20:20:26.918649"
 }

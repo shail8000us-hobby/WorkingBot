@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Alert, Button, Chip, CircularProgress, TextField, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
-import { motion } from 'framer-motion';
 import { Database, Download, RefreshCw, Activity, Clock, TrendingUp, BarChart3, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 
 /**
@@ -638,11 +637,7 @@ const TechnicalIndicatorsPanel = () => {
 // Main Advanced Features Panel
 const AdvancedFeaturesPanel = () => {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
+    <div className="animate-fade-slide-up">
       <Box sx={{ p: 3 }}>
         {/* Header */}
         <Box sx={{ mb: 3 }}>
@@ -688,7 +683,7 @@ const AdvancedFeaturesPanel = () => {
           </Typography>
         </Box>
       </Box>
-    </motion.div>
+    </div>
   );
 };
 

@@ -23,6 +23,12 @@ from pathlib import Path
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
+# Import cache
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS
+
 log = logging.getLogger(__name__)
 
 # Create blueprint
@@ -63,6 +69,7 @@ def save_todos(todos):
 # ============================================================================
 
 @todos_bp.route('/api/todos', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['todos'])
 def get_todos():
     """
     Get all todos

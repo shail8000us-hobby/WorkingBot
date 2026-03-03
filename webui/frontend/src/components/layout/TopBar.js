@@ -12,8 +12,8 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import React from 'react';
 import { useState, useEffect } from 'react';
 import SymbolSelector from '../SymbolSelector';
 import { useInstance } from '../../context/InstanceContext';
@@ -33,19 +33,15 @@ const qualityIconMap = {
 };
 
 const StatusSection = ({ title, icon: Icon, children, color = 'border-slate-700/50' }) => (
-  <motion.div
-    layout
-    className={clsx('flex items-center gap-2 rounded-lg border bg-slate-800/40 px-3 py-2', color)}
-    initial={{ opacity: 0, y: -8 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+  <div
+    className={clsx('flex items-center gap-2 rounded-lg border bg-slate-800/40 px-3 py-2 animate-fade-slide-up', color)}
   >
     <Icon className="h-4 w-4 text-slate-400" strokeWidth={2} />
     <div className="flex items-center gap-3">
       <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">{title}</span>
       <div className="flex items-center gap-2">{children}</div>
     </div>
-  </motion.div>
+  </div>
 );
 
 const Badge = ({ label, value, color }) => (
@@ -104,38 +100,35 @@ function TopBar({
 
   return (
     <header
-      className="fixed inset-x-0 top-0 z-40 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur supports-[backdrop-filter]:bg-slate-900/70"
+      className="fixed inset-x-0 top-0 z-40 border-b border-slate-800/80 bg-slate-900"
       style={{
         paddingTop: `calc(env(safe-area-inset-top) + ${isMobile ? '0.5rem' : '0.75rem'})`,
         paddingBottom: isMobile ? '0.5rem' : '0.75rem',
       }}
     >
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex items-center justify-between gap-4 px-4 sm:px-6">
         {/* Left: Brand & Wallet Balance */}
         <div className="flex items-center gap-3">
-          <motion.div
+          <div
             className="flex items-center gap-2 rounded-lg bg-slate-800/50 px-3 py-1.5"
-            layout
           >
-            <motion.div
+            <div
               className={clsx(
-                'grid h-8 w-8 place-items-center rounded border',
+                'grid h-8 w-8 place-items-center rounded border animate-pulse-scale',
                 running
                   ? 'border-emerald-400/50 bg-emerald-500/10'
                   : 'border-rose-400/40 bg-rose-500/10'
               )}
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
             >
               <Bot className={clsx('h-4 w-4', running ? 'text-emerald-400' : 'text-rose-400')} />
-            </motion.div>
+            </div>
             <div>
               <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
                 SSR BOT
               </p>
               <p className="text-xs font-semibold text-slate-100">{running ? 'Online' : 'Standby'}</p>
             </div>
-          </motion.div>
+          </div>
           
           {/* Wallet Balance Indicator */}
           <WalletBalanceIndicator />
@@ -254,4 +247,4 @@ function TopBar({
   );
 }
 
-export default TopBar;
+export default React.memo(TopBar);

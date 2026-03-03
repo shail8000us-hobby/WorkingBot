@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { WifiOff, Wifi } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import offlineStorage, { STORES } from '../utils/offlineStorage';
 
 function OfflineIndicator() {
@@ -70,30 +69,25 @@ function OfflineIndicator() {
   }
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -20 }}
-        className="fixed top-16 left-1/2 z-50 -translate-x-1/2"
-        style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
-      >
-        <div className="flex items-center gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-2 backdrop-blur">
-          <WifiOff className="h-5 w-5 text-amber-400" />
-          <div>
-            <p className="text-sm font-semibold text-amber-100">Offline Mode</p>
-            {hasCachedData && <p className="text-xs text-amber-300">Showing cached data</p>}
-            {pendingActions > 0 && (
-              <p className="text-xs text-amber-300">
-                {pendingActions} action{pendingActions > 1 ? 's' : ''} pending sync
-              </p>
-            )}
-          </div>
-          <Wifi className="h-4 w-4 animate-pulse text-amber-400 opacity-50" />
+    <div
+      className="fixed top-16 left-1/2 z-50 -translate-x-1/2 animate-fade-slide-up"
+      style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
+    >
+      <div className="flex items-center gap-3 rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-2 backdrop-blur">
+        <WifiOff className="h-5 w-5 text-amber-400" />
+        <div>
+          <p className="text-sm font-semibold text-amber-100">Offline Mode</p>
+          {hasCachedData && <p className="text-xs text-amber-300">Showing cached data</p>}
+          {pendingActions > 0 && (
+            <p className="text-xs text-amber-300">
+              {pendingActions} action{pendingActions > 1 ? 's' : ''} pending sync
+            </p>
+          )}
         </div>
-      </motion.div>
-    </AnimatePresence>
+        <Wifi className="h-4 w-4 animate-pulse text-amber-400 opacity-50" />
+      </div>
+    </div>
   );
 }
 
-export default OfflineIndicator;
+export default React.memo(OfflineIndicator);

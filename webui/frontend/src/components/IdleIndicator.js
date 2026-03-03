@@ -110,4 +110,4 @@ export function IdleStatusChip() {
   );
 }
 
-export default IdleIndicator;
+export default React.memo(IdleIndicator);

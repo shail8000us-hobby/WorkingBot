@@ -358,16 +358,20 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   const fetchOpenPositions = useCallback(async () => {
     try {
       const map = await optionsChainAPI.getOpenPositions();
-      setOpenPositions(map);
+      // Only overwrite if we got real data — never replace a populated map with an
+      // empty one, which can happen transiently right after an order is placed while
+      // the exchange is still settling the fill.
+      setOpenPositions((prev) => (Object.keys(map).length > 0 ? map : prev));
     } catch (e) {
       console.warn('[OptionsChainPanel] Failed to fetch open positions:', e);
+      // Keep existing positions on error — do NOT clear them
     }
   }, []);
 
-  // Load on mount and refresh every 30s
+  // Load on mount and refresh every 15s (was 30s — shorter so highlights stay fresh)
   useEffect(() => {
     fetchOpenPositions();
-    const interval = setInterval(fetchOpenPositions, 30000);
+    const interval = setInterval(fetchOpenPositions, 15000);
     return () => clearInterval(interval);
   }, [fetchOpenPositions]);
 
@@ -469,6 +473,10 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
       });
       setBuilderLegs([]);
       fetchChainData();
+      // Refresh position highlights — strategy builder bypasses OrderDialog so we
+      // must trigger the refresh here.  Delay slightly to let the exchange settle.
+      setTimeout(fetchOpenPositions, 2000);
+      setTimeout(fetchOpenPositions, 5000); // second pass for slow exchanges
     } catch (err) {
       console.error('Strategy execution error:', err);
       setSnackbar({
@@ -479,7 +487,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
     } finally {
       setExecuting(false);
     }
-  }, [fetchChainData]);
+  }, [fetchChainData, fetchOpenPositions]);
 
   // Auto-refresh
   useEffect(() => {
@@ -512,9 +520,14 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
         message: `Order placed successfully! ID: ${order.id}`,
         severity: 'success',
       });
-      // Refresh chain data and open positions to reflect the new trade
+      // Refresh chain data and open positions to reflect the new trade.
+      // Call fetchOpenPositions immediately to keep existing highlights visible
+      // during the chainData refresh, then again after 2 s and 5 s so the new
+      // position appears once the exchange has settled the fill.
+      fetchOpenPositions();
       fetchChainData();
-      setTimeout(fetchOpenPositions, 2000); // slight delay so exchange reflects the fill
+      setTimeout(fetchOpenPositions, 2000);
+      setTimeout(fetchOpenPositions, 5000);
     },
     [fetchChainData, fetchOpenPositions]
   );

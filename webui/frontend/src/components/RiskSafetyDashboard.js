@@ -53,7 +53,6 @@ import {
   PowerOff,
   Info,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/apiShim';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 
@@ -304,11 +303,7 @@ const RiskSafetyDashboard = () => {
       </Box>
 
       {/* Overall Status Banner */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
+      <div className="animate-fade-slide-up">
         <Card
           sx={{
             mb: 3,
@@ -410,7 +405,7 @@ const RiskSafetyDashboard = () => {
             </Grid>
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
 
       {/* Guardian Control */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
@@ -780,11 +775,7 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
-    >
+    <div className="animate-fade-scale-in">
       <Card
         sx={{
           height: '100%',
@@ -867,7 +858,7 @@ const SafetyLayerCard = ({ number, title, icon, status, metrics }) => {
           </Box>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 };
 

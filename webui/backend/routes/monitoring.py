@@ -26,6 +26,12 @@ from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 
+# Import cache
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS, make_cache_key
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS, make_cache_key
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -177,6 +183,7 @@ def set_bot_instance(bot):
 # ============================================================================
 
 @monitoring_bp.route('/api/monitoring/status', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['market'], key_prefix=make_cache_key)
 def monitoring_status():
     """
     Get overall monitoring system status
@@ -246,6 +253,7 @@ def monitoring_status():
 
 
 @monitoring_bp.route('/api/monitoring/price-health', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['market'], key_prefix=make_cache_key)
 def price_health():
     """
     Get current price health status

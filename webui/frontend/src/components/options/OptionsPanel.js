@@ -12,7 +12,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import {
   Box,
@@ -121,7 +120,6 @@ import useGroupsAPI from '../../hooks/useGroupsAPI';
 import useOptionsPositions from '../../hooks/useOptionsPositions';
 import useOptionsSettings from '../../hooks/useOptionsSettings';
 import SoundSettingsPanel from '../SoundSettingsPanel';
-import TradeNotification from '../TradeNotification';
 // JAN 17, 2026: Futures panel - separate file structure, minimal invasion
 import FuturesPanel from '../futures/FuturesPanel';
 // JAN 23, 2026: Day 1 & 2 utilities for PoP calculation
@@ -694,6 +692,28 @@ const OptionsPanel = () => {
   const [executionMode, setExecutionMode] = useState('smart'); // 'immediate', 'smart', 'ssr_standard', 'ssr_aggressive', 'ssr_conservative'
   const [batchQuantities, setBatchQuantities] = useState({}); // { symbol: number } - Manual quantity input per strike
   const [batchOrderResults, setBatchOrderResults] = useState([]);
+  // Saved batch quantities - persisted across sessions, keyed by strike (no expiry) e.g. 'P-BTP-56000'
+  const [savedBatchQty, setSavedBatchQty] = usePersistedState('options_saved_batch_qty', {});
+  // Track which symbols have already been auto-populated so we don't overwrite manual edits
+  const initializedBatchQtyRef = useRef(new Set());
+  // Auto-populate batch quantities from saved values when positions load or change
+  useEffect(() => {
+    if (!positions || positions.length === 0) return;
+    const updates = {};
+    positions.forEach((pos) => {
+      const symbol = pos.product_symbol;
+      if (!initializedBatchQtyRef.current.has(symbol)) {
+        initializedBatchQtyRef.current.add(symbol);
+        const key = symbol.split('-').slice(0, 3).join('-');
+        if (savedBatchQty[key] !== undefined && savedBatchQty[key] !== 0) {
+          updates[symbol] = savedBatchQty[key];
+        }
+      }
+    });
+    if (Object.keys(updates).length > 0) {
+      setBatchQuantities((prev) => ({ ...prev, ...updates }));
+    }
+  }, [positions, savedBatchQty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-loop execution state - with localStorage persistence
   // Now supports per-expiry loops
@@ -2703,10 +2723,10 @@ const OptionsPanel = () => {
           order_preference: orderPreference,
         });
       } catch (err) {
-        // If 409 CONFLICT (stale loop), auto-clear and retry once
+        // If 409 CONFLICT (running/stale loop), force-clear and retry once
         if (err.response?.status === 409) {
-          devLog('[AUTO-LOOP] Got 409 CONFLICT — clearing stale loop and retrying...');
-          await api.post('/api/options/auto-loop/clear');
+          devLog('[AUTO-LOOP] Got 409 CONFLICT — force-clearing loop and retrying...');
+          await api.post('/api/options/auto-loop/clear', { force: true, loop_id: 'main' });
           response = await api.post('/api/options/auto-loop/start', {
             loop_id: 'main',
             orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
@@ -2923,8 +2943,8 @@ const OptionsPanel = () => {
         });
       } catch (err) {
         if (err.response?.status === 409) {
-          devLog(`[AUTO-LOOP:${expiryCode}] Got 409 CONFLICT — clearing stale loop and retrying...`);
-          await api.post('/api/options/auto-loop/clear');
+          devLog(`[AUTO-LOOP:${expiryCode}] Got 409 CONFLICT — force-clearing loop and retrying...`);
+          await api.post('/api/options/auto-loop/clear', { force: true, loop_id: expiryCode });
           response = await api.post('/api/options/auto-loop/start', {
             loop_id: expiryCode,
             orders: orders.map(o => ({ symbol: o.symbol, side: o.side, size: o.size })),
@@ -3187,11 +3207,7 @@ const OptionsPanel = () => {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
+    <div className="animate-fade-slide-up">
       {/* ARCH-2: Extracted AutoLoopBanner component */}
       <AutoLoopBanner
         autoLoopRunning={autoLoopRunning}
@@ -3206,7 +3222,7 @@ const OptionsPanel = () => {
       />
 
 
-      <Card sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
+      <Card sx={{ bgcolor: 'background.paper', borderRadius: 2, width: '100%' }}>
         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
           {/* ═══ Phase 2: Primary Header Bar ═══ */}
           <Box
@@ -3770,7 +3786,7 @@ const OptionsPanel = () => {
               </Button>
             </Paper>
           ) : (
-            <TableContainer component={Paper} sx={{ maxHeight: 500 }}>
+            <TableContainer component={Paper} sx={{ maxHeight: 500, width: '100%', overflowX: 'auto' }}>
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
@@ -4148,6 +4164,15 @@ const OptionsPanel = () => {
                                     if (value !== 0) {
                                       setSelectedStrikes((prev) => ({ ...prev, [symbol]: true }));
                                     }
+                                  }}
+                                  savedBatchQtyValue={savedBatchQty[pos.product_symbol.split('-').slice(0, 3).join('-')]}
+                                  onSaveBatchQty={(symbol, qty) => {
+                                    const key = symbol.split('-').slice(0, 3).join('-');
+                                    setSavedBatchQty(prev => qty ? { ...prev, [key]: qty } : (({ [key]: _, ...rest }) => rest)(prev));
+                                  }}
+                                  onUnsaveBatchQty={(symbol) => {
+                                    const key = symbol.split('-').slice(0, 3).join('-');
+                                    setSavedBatchQty(prev => (({ [key]: _, ...rest }) => rest)(prev));
                                   }}
                                   onSetSLTP={(position) => {
                                     setSelectedPositionForSLTP(position);
@@ -4533,7 +4558,7 @@ const OptionsPanel = () => {
           handleRefresh();
         }}
       />
-    </motion.div >
+    </div >
   );
 };
 

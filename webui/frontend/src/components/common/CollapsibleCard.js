@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 import clsx from 'clsx';
 import React from 'react';
 import '../../styles/glassmorphism.css';
@@ -29,14 +28,10 @@ const CollapsibleCard = React.memo(function CollapsibleCard({
   };
 
   return (
-    <motion.section
+    <section
       id={id}
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
       className={clsx(
-        'holographic-card relative overflow-visible',
+        'holographic-card relative overflow-visible animate-fade-slide-up',
         accent ? accentClasses[accent] : null
       )}
     >
@@ -57,20 +52,15 @@ const CollapsibleCard = React.memo(function CollapsibleCard({
           </button>
         </div>
       </header>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="content"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
-          >
-            <div className="px-5 pb-6 pt-0">{children}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.section>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-in-out"
+        style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="px-5 pb-6 pt-0">{children}</div>
+        </div>
+      </div>
+    </section>
   );
 });
 

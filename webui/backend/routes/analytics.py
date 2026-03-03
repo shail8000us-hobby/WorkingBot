@@ -6,6 +6,12 @@ import sqlite3
 from datetime import datetime, timedelta
 import random
 
+# Import cache
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS, make_cache_key
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS, make_cache_key
+
 analytics_bp = Blueprint('analytics', __name__)
 
 def get_db_connection():
@@ -15,6 +21,7 @@ def get_db_connection():
     return conn
 
 @analytics_bp.route('/api/analytics/summary', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['analytics'], key_prefix=make_cache_key)
 def get_analytics_summary():
     """
     Get comprehensive analytics summary
@@ -119,6 +126,7 @@ def get_analytics_summary():
         return jsonify({'error': str(e)}), 500
 
 @analytics_bp.route('/api/analytics/performance', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['analytics'], key_prefix=make_cache_key)
 def get_performance_metrics():
     """Get detailed performance metrics"""
     try:

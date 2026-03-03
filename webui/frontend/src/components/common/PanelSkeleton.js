@@ -92,4 +92,4 @@ const PanelSkeleton = ({ type = 'default' }) => {
   );
 };
 
-export default PanelSkeleton;
+export default React.memo(PanelSkeleton);

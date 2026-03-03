@@ -286,4 +286,4 @@ const BackendDownError = ({ onRetry }) => {
   );
 };
 
-export default BackendDownError;
+export default React.memo(BackendDownError);

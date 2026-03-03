@@ -1,10 +1,10 @@
 /* PM2 Panel Container - Dark Theme */
 .pm2-panel {
   background: #1e293b;
-  border-radius: 8px;
+  border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  padding: 24px;
-  margin: 16px 0;
+  padding: 10px;
+  margin: 8px 0;
   border: 1px solid rgba(148, 163, 184, 0.1);
 }
 

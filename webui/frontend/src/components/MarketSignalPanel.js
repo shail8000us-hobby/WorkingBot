@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import {
   Box,
   Paper,
@@ -282,33 +281,25 @@ const MarketSignalPanel = () => {
               <Chip
                 label={vol.value || '—'}
                 size="small"
+                className="animate-fade-scale-in"
                 sx={{
                   bgcolor: getColorFromValue(vol.color),
                   color: 'white',
                   mb: 1,
                   fontWeight: 'bold',
                 }}
-                component={motion.div}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
               />
               {vol.iv && vol.rv && (
                 <>
                   <Typography
                     variant="body2"
                     color="text.secondary"
-                    component={motion.p}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
                   >
                     IV: {vol.iv.toFixed(1)}%
                   </Typography>
                   <Typography
                     variant="body2"
                     color="text.secondary"
-                    component={motion.p}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
                   >
                     RV: {vol.rv.toFixed(1)}%
                   </Typography>
@@ -316,9 +307,6 @@ const MarketSignalPanel = () => {
                     <Typography
                       variant="body2"
                       color="text.secondary"
-                      component={motion.p}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
                     >
                       Spread: {vol.spread > 0 ? '+' : ''}
                       {vol.spread.toFixed(1)}%
@@ -343,15 +331,13 @@ const MarketSignalPanel = () => {
               <Chip
                 label={regime.value || '—'}
                 size="small"
+                className="animate-fade-scale-in"
                 sx={{
                   bgcolor: getColorFromValue(regime.color),
                   color: 'white',
                   mb: 1,
                   fontWeight: 'bold',
                 }}
-                component={motion.div}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
               />
               <Typography variant="body2" color="text.secondary">
                 RV: {regime.rv.toFixed(1)}%

@@ -145,6 +145,28 @@ class AutoLoopService:
                 self._threads.pop(lid, None)
             return len(to_remove)
 
+    def force_clear(self, loop_id: str = None) -> int:
+        """Force-stop and remove loops regardless of status.
+
+        If loop_id is given, only that loop is cleared; otherwise all loops.
+        Running loops are signalled to stop before removal so their threads
+        exit cleanly.
+        """
+        with self._lock:
+            targets = ([loop_id] if loop_id and loop_id in self._loops
+                       else list(self._loops.keys()))
+            for lid in targets:
+                state = self._loops.pop(lid, None)
+                if state:
+                    if state["status"] in ("running", "stopping"):
+                        state["stop_requested"] = True
+                        state["status"] = "stopped"
+                        log.warning(f"AutoLoopService: force-cleared running loop '{lid}'")
+                    else:
+                        log.info(f"AutoLoopService: force-cleared loop '{lid}' (was {state['status']})")
+                self._threads.pop(lid, None)
+            return len(targets)
+
     # ── Main loop execution (runs in thread) ──────────────────────────
 
     def _run_loop(self, loop_id: str):

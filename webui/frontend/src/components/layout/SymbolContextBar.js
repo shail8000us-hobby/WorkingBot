@@ -8,6 +8,9 @@ import {
   KeyboardArrowDown,
   SwapHoriz,
   Refresh,
+  PlayCircleFilled,
+  StopCircle,
+  Memory,
 } from '@mui/icons-material';
 import api from '../../utils/apiShim';
 
@@ -56,7 +59,7 @@ export const getSymbolColor = (symbolName) => {
   return SYMBOL_COLORS[symbolName] || SYMBOL_COLORS.default;
 };
 
-function SymbolContextBar({ gridInfo, status, pnl }) {
+function SymbolContextBar({ gridInfo, status, pnl, botStatus }) {
   const instanceContext = useInstanceSafe();
   const instances = instanceContext?.instances || [];
   const selectedInstance = instanceContext?.selectedInstance || null;
@@ -193,6 +196,126 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
         transition: 'all 0.3s ease',
       }}
     >
+      {/* Bot Instance Status - Prominent Indicator */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            px: 1.5,
+            py: 0.5,
+            borderRadius: '8px',
+            border: `1px solid ${botStatus?.running ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+            background: botStatus?.running
+              ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.04) 100%)'
+              : 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%)',
+          }}
+        >
+          {/* Animated pulse dot */}
+          <Box
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: botStatus?.running ? '#10B981' : '#EF4444',
+              boxShadow: botStatus?.running
+                ? '0 0 8px rgba(16, 185, 129, 0.6)'
+                : '0 0 8px rgba(239, 68, 68, 0.6)',
+              animation: botStatus?.running ? 'pulse 2s ease-in-out infinite' : 'none',
+              '@keyframes pulse': {
+                '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                '50%': { opacity: 0.6, transform: 'scale(0.85)' },
+              },
+            }}
+          />
+          {botStatus?.running ? (
+            <PlayCircleFilled sx={{ fontSize: 16, color: '#10B981' }} />
+          ) : (
+            <StopCircle sx={{ fontSize: 16, color: '#EF4444' }} />
+          )}
+          <Box>
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 700,
+                color: botStatus?.running ? '#10B981' : '#EF4444',
+                fontSize: '0.7rem',
+                lineHeight: 1.2,
+                display: 'block',
+              }}
+            >
+              {botStatus?.running ? 'BOT RUNNING' : 'BOT STOPPED'}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                color: '#94A3B8',
+                fontSize: '0.6rem',
+                lineHeight: 1.2,
+                display: 'block',
+              }}
+            >
+              {botStatus?.instance_names?.length > 0
+                ? botStatus.instance_names.join(', ')
+                : botStatus?.pm2_managed
+                  ? 'PM2 Managed'
+                  : botStatus?.running
+                    ? 'Direct Process'
+                    : 'No instances'}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* PID & Uptime badges */}
+        {botStatus?.running && botStatus?.pid && (
+          <Chip
+            icon={<Memory sx={{ fontSize: 12 }} />}
+            label={`PID ${botStatus.pid}`}
+            size="small"
+            sx={{
+              height: 20,
+              fontSize: '0.6rem',
+              fontWeight: 600,
+              backgroundColor: 'rgba(59, 130, 246, 0.15)',
+              color: '#93C5FD',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              '& .MuiChip-icon': { color: '#93C5FD' },
+            }}
+          />
+        )}
+        {botStatus?.running && botStatus?.uptime && (
+          <Chip
+            label={`Up ${botStatus.uptime}`}
+            size="small"
+            sx={{
+              height: 20,
+              fontSize: '0.6rem',
+              fontWeight: 600,
+              backgroundColor: 'rgba(16, 185, 129, 0.15)',
+              color: '#6EE7B7',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              display: { xs: 'none', md: 'flex' },
+            }}
+          />
+        )}
+        {botStatus?.running && botStatus?.active_instances > 0 && (
+          <Chip
+            label={`${botStatus.active_instances} instance${botStatus.active_instances > 1 ? 's' : ''}`}
+            size="small"
+            sx={{
+              height: 20,
+              fontSize: '0.6rem',
+              fontWeight: 600,
+              backgroundColor: 'rgba(168, 85, 247, 0.15)',
+              color: '#C4B5FD',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              display: { xs: 'none', sm: 'flex' },
+            }}
+          />
+        )}
+      </Box>
+
       {/* Left: BTC Market Info */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -345,4 +468,4 @@ function SymbolContextBar({ gridInfo, status, pnl }) {
   );
 }
 
-export default SymbolContextBar;
+export default React.memo(SymbolContextBar);

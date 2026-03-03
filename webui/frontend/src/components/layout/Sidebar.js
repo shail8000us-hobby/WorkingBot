@@ -1,36 +1,6 @@
 import clsx from 'clsx';
-import { motion } from 'framer-motion';
 import React from 'react';
-import { prefetchChunk } from '../../utils/chunkPrefetch.ts';
-
-// Map section IDs to their corresponding chunk names for prefetching
-// Phase 1: Complete map — all sections covered
-const sectionChunkMap = {
-  dashboard: 'monitoring',
-  portfolio: 'symbolPortfolio',
-  positions: 'positions',
-  config: 'configPanel',
-  risk: 'riskSafetyDashboard',
-  options: 'options',
-  options_chain: 'optionsChain',
-  strategy_builder: 'strategyBuilder',
-  mv_straddle: 'mvStraddle',
-  mmm: 'mmm',
-  ssr_algo: 'ssrAlgo',
-  zero_dte: 'zeroDTE',
-  tradingview: 'tradingViewSignals',
-  rsi: 'rsiPanel',
-  ml_trading: 'mlTrading',
-  botmanagement: 'botManagement',
-  system_health: 'systemHealth',
-  intelligence: 'intelligence',
-  todos: 'todoList',
-  guardian: 'guardianDashboard',
-  experimental: 'experimentalPanel',
-  advanced_features: 'advancedFeatures',
-  monitoring: 'monitoring',
-  logs: 'logsPanel',
-};
+import { prefetchPage } from '../../utils/pagePrefetch';
 
 // Short display labels for group headers
 const groupLabels = {
@@ -44,11 +14,8 @@ const groupLabels = {
 
 const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSelect }) {
   const handleMouseEnter = React.useCallback((sectionId) => {
-    // Prefetch chunk when user hovers over navigation item
-    const chunkName = sectionChunkMap[sectionId];
-    if (chunkName) {
-      prefetchChunk(chunkName, { priority: 'high' });
-    }
+    // Prefetch the actual webpack chunk when user hovers — makes page switch instant
+    prefetchPage(sectionId);
   }, []);
 
   // Build grouped structure: [{ group, items }]
@@ -69,7 +36,7 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
 
   return (
     <nav
-      className="fixed left-0 right-0 z-38 hidden border-b border-slate-800/80 bg-slate-950/90 backdrop-blur lg:block"
+      className="fixed left-0 right-0 z-[38] hidden border-b border-slate-800/80 bg-slate-950 lg:block"
       style={{
         top: `calc(9.5rem + env(safe-area-inset-top))`,
       }}
@@ -92,21 +59,18 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
               {g.items.map(({ id, label, icon: Icon, badge }) => {
                 const active = activeSection === id;
                 return (
-                  <motion.button
+                  <button
                     key={id}
                     type="button"
                     onClick={() => onSelect?.(id)}
                     onMouseEnter={() => handleMouseEnter(id)}
-                    data-prefetch={sectionChunkMap[id]}
                     className={clsx(
-                      'group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition whitespace-nowrap',
+                      'group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all duration-150 whitespace-nowrap',
                       active
                         ? 'border-sky-500/50 bg-sky-500/10 text-sky-100 shadow-card'
-                        : 'border-transparent bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:bg-slate-900'
+                        : 'border-transparent bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:-translate-y-0.5',
+                      'active:scale-[0.98]'
                     )}
-                    whileHover={{ y: active ? 0 : -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 22 }}
                   >
                     {Icon && (
                       <Icon
@@ -126,7 +90,7 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
                         </span>
                       )}
                     </span>
-                  </motion.button>
+                  </button>
                 );
               })}
             </React.Fragment>

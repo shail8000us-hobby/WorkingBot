@@ -1,2 +1,0 @@
-export { ConfigVisualEditor } from './ConfigVisualEditor';
-

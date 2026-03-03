@@ -20,6 +20,12 @@ import json
 from flask import Blueprint, request, jsonify, make_response
 from datetime import datetime, timezone
 
+# Import cache for performance optimization
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS
+
 
 def _run_async(coro):
     """Run async coroutine without closing the event loop.
@@ -69,6 +75,18 @@ log = logging.getLogger('mmm_api')
 mmm_bp = Blueprint('mmm', __name__, url_prefix='/api/mmm')
 
 
+def _invalidate_sessions_cache():
+    """Clear cached /sessions response after mutations."""
+    try:
+        cache.delete_memoized(list_sessions)
+    except Exception:
+        # Fallback: clear by key pattern
+        try:
+            cache.clear()
+        except Exception:
+            pass
+
+
 def _check_guardian_signal() -> str:
     """Check if trading is allowed via global guardian."""
     try:
@@ -83,13 +101,14 @@ def _check_guardian_signal() -> str:
 # =============================================================================
 
 @mmm_bp.route('/sessions', methods=['GET'])
+@cache.cached(timeout=30, query_string=True)  # 30s cache — session list is relatively static
 def list_sessions():
     """
     List all MMM sessions.
 
     Query params:
         active_only: bool - If true, only return active sessions
-        summary: bool - If true, return compact summaries
+        summary: bool - If true, return compact summaries (uses optimized SQL query)
 
     Returns:
         {success: true, sessions: [...], count: int}
@@ -99,10 +118,14 @@ def list_sessions():
         summary_mode = request.args.get('summary', 'false').lower() == 'true'
 
         storage = get_storage()
-        sessions = storage.list_sessions(active_only=active_only)
 
         if summary_mode:
-            sessions = [get_session_summary(s) for s in sessions]
+            # Optimized path: uses SQLite json_extract() to avoid
+            # deserializing 8+ MB of full session JSON blobs.
+            # ~10ms vs ~10s for 28 sessions.
+            sessions = storage.list_session_summaries(active_only=active_only)
+        else:
+            sessions = storage.list_sessions(active_only=active_only)
 
         return jsonify({
             'success': True,
@@ -266,6 +289,7 @@ def create_session_endpoint():
 
         # Persist
         storage.save_session(session)
+        _invalidate_sessions_cache()
 
         # Emit WebSocket
         emit_session_created(session['session_id'], get_session_summary(session))
@@ -307,6 +331,7 @@ def delete_session(session_id: str):
             }), 400
 
         storage.delete_session(session_id)
+        _invalidate_sessions_cache()
         
         # Also delete all activities for this session
         from .mmm_activity import get_activity_log

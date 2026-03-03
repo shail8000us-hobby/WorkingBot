@@ -330,7 +330,7 @@ const SSRAlgoDashboardRefactored = () => {
           <Typography sx={{ fontWeight: 800, fontSize: 18, background: 'linear-gradient(135deg,#38bdf8,#818cf8)', backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>🦋 SSR ALGO</Typography>
         </Box>
         <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
-          <Box sx={{ maxWidth: 600, width: '100%' }}>
+          <Box sx={{ width: '100%' }}>
             <Typography sx={{ textAlign: 'center', mb: 3, fontSize: 22, fontWeight: 700, background: 'linear-gradient(135deg,#38bdf8,#818cf8)', backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               Create Your First Session
             </Typography>

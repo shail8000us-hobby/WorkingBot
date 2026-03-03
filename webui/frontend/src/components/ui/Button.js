@@ -5,7 +5,6 @@
 
 import React from 'react';
 import clsx from 'clsx';
-import { motion } from 'framer-motion';
 
 const buttonVariants = {
   primary: 'bg-sky-500 text-white hover:bg-sky-600 border-sky-500',
@@ -36,21 +35,20 @@ const Button = React.memo(function Button({
   ...props
 }) {
   return (
-    <motion.button
+    <button
       type={type}
       disabled={disabled || loading}
       onClick={onClick}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-lg border font-semibold transition-all',
+        'inline-flex items-center justify-center gap-2 rounded-lg border font-semibold transition-all duration-150',
         'focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900',
         'disabled:opacity-50 disabled:cursor-not-allowed',
+        !disabled && !loading && 'hover:scale-[1.02] active:scale-[0.98]',
         buttonVariants[variant],
         buttonSizes[size],
         fullWidth && 'w-full',
         className
       )}
-      whileHover={!disabled && !loading ? { scale: 1.02 } : {}}
-      whileTap={!disabled && !loading ? { scale: 0.98 } : {}}
       {...props}
     >
       {loading ? (
@@ -79,7 +77,7 @@ const Button = React.memo(function Button({
           {children}
         </>
       )}
-    </motion.button>
+    </button>
   );
 });
 

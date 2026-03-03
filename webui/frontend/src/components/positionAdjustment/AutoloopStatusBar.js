@@ -275,7 +275,7 @@ const AutoloopItem = ({ autoloop, onStop, onRemove, expanded, onToggleExpand }) 
 /**
  * Main AutoloopStatusBar Component
  */
-export default function AutoloopStatusBar() {
+function AutoloopStatusBar() {
   const { autoloops, stopAutoloop, removeAutoloop, getActiveAutoloops } = useAutoloop();
   const [expanded, setExpanded] = useState(true);
   const [expandedItems, setExpandedItems] = useState({});
@@ -415,3 +415,5 @@ export default function AutoloopStatusBar() {
     </Paper>
   );
 }
+
+export default React.memo(AutoloopStatusBar);

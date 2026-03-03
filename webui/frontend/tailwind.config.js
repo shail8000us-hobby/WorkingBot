@@ -31,6 +31,31 @@ module.exports = {
       boxShadow: {
         card: '0 20px 45px -15px rgba(14, 165, 233, 0.45)',
         glow: '0 0 0 3px rgba(14, 165, 233, 0.3)'
+      },
+      keyframes: {
+        'fade-slide-up': {
+          '0%': { opacity: '0', transform: 'translateY(20px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        'fade-scale-in': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' }
+        },
+        'slide-up-spring': {
+          '0%': { opacity: '0', transform: 'translateY(80px)' },
+          '60%': { opacity: '1', transform: 'translateY(-4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        'pulse-scale': {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.05)' }
+        }
+      },
+      animation: {
+        'fade-slide-up': 'fade-slide-up 0.3s ease-out both',
+        'fade-scale-in': 'fade-scale-in 0.3s ease-out both',
+        'slide-up-spring': 'slide-up-spring 0.5s cubic-bezier(0.22,1,0.36,1) both',
+        'pulse-scale': 'pulse-scale 4s ease-in-out infinite'
       }
     }
   },

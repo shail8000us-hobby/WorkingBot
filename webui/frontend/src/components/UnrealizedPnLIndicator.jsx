@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
-import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
 /**
@@ -74,11 +73,8 @@ function UnrealizedPnLIndicator() {
   const bgColor = isPositive ? 'bg-emerald-500/10' : 'bg-rose-500/10';
 
   return (
-    <motion.div
-      className={clsx('flex items-center gap-2 rounded-lg border px-3 py-2', borderColor, bgColor)}
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    <div
+      className={clsx('flex items-center gap-2 rounded-lg border px-3 py-2 animate-fade-scale-in', borderColor, bgColor)}
     >
       <Icon className={clsx('h-4 w-4', colorClass)} strokeWidth={2} />
       <div className="flex items-center gap-2">
@@ -95,7 +91,7 @@ function UnrealizedPnLIndicator() {
           </span>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 

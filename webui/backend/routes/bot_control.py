@@ -27,6 +27,7 @@ import sys
 import time
 import logging
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, jsonify, request
@@ -69,60 +70,76 @@ BASE_DIR = Path(__file__).parent.parent.parent.parent
 # Route Handlers
 # ============================================================================
 
+# SWR cache for bot status (stale-while-revalidate)
+_bot_status_cache = {'data': None, 'time': 0}
+_BOT_STATUS_FRESH_SECONDS = 5.0    # Return instantly if < 5s old
+_BOT_STATUS_STALE_SECONDS = 60.0   # Return stale + background refresh if < 60s
+_bot_status_refresh_in_progress = False
+
+
+def _format_pm2_uptime(pm_uptime):
+    """Convert PM2 pm_uptime (Unix ms timestamp) to human-readable uptime string."""
+    if not pm_uptime:
+        return None
+    try:
+        uptime_seconds = (time.time() * 1000 - pm_uptime) / 1000
+        if uptime_seconds < 0:
+            return None
+        days = int(uptime_seconds // 86400)
+        hours = int((uptime_seconds % 86400) // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+        if days > 0:
+            return f"{days}d {hours}h {minutes}m"
+        return f"{hours:02d}:{minutes:02d}"
+    except Exception:
+        return None
+
 @bot_control_bp.route('/api/bot/status', methods=['GET'])
 def bot_status():
-    """
-    Get bot running status
+    """Get bot running status with SWR caching."""
+    global _bot_status_refresh_in_progress
     
-    Query Parameters:
-        symbol (optional): Symbol name (e.g., "BTCUSD", "ETHUSD")
-                          Currently bot runs as single process for first enabled symbol.
-                          This parameter is accepted for API consistency.
-                          
-    ⚠️ TODO v5.1: Support multi-process bot architecture (one process per symbol)
+    now = time.time()
+    age = now - _bot_status_cache['time']
     
-    Uses PM2 if enabled, falls back to PID file check
+    # FRESH: return cached instantly
+    if _bot_status_cache['data'] is not None and age < _BOT_STATUS_FRESH_SECONDS:
+        return _bot_status_cache['data']
     
-    Returns:
-        JSON response with bot status
+    # STALE: return cached + trigger background refresh
+    if _bot_status_cache['data'] is not None and age < _BOT_STATUS_STALE_SECONDS:
+        if not _bot_status_refresh_in_progress:
+            _bot_status_refresh_in_progress = True
+            from flask import current_app
+            app = current_app._get_current_object()
+            req_args = dict(request.args)
+            t = threading.Thread(target=_refresh_bot_status_bg, args=(app, req_args), daemon=True)
+            t.start()
+        return _bot_status_cache['data']
     
-    Example:
-        GET /api/bot/status
-        GET /api/bot/status?symbol=BTCUSD
-        Response: {
-            "running": true,
-            "pid": 12345,
-            "pm2_managed": true,
-            "symbol": "BTCUSD",  # v5.0: Requested symbol
-            "note": "Bot currently runs as single process. Per-symbol processes planned for v5.1"
-        }
-    """
+    # EXPIRED: fetch fresh (blocking)
+    return _fetch_bot_status_fresh()
+
+
+def _fetch_bot_status_fresh():
+    """Fetch fresh bot status and update SWR cache."""
+    global _bot_status_refresh_in_progress
     try:
-        # v5.0: Accept symbol parameter (for API consistency)
-        # Note: Current bot runs as single process
-        requested_symbol = request.args.get('symbol')
+        requested_symbol = request.args.get('symbol') if request else None
         
-        # Check if PM2 is enabled
         if should_use_pm2():
-            # v6.0: Check for ANY running gridbot instance
             all_bots_status = pm2.get_all_bots_status()
-            
-            # Filter for gridbot processes only
             running_gridbots = [b for b in all_bots_status if b['name'].startswith('gridbot-') and b['status'] == 'online']
             
             if running_gridbots:
-                # At least one gridbot is running
-                # Use the first one for stats (or the one matching requested_symbol if provided)
                 selected_bot = running_gridbots[0]
-                
                 if requested_symbol:
-                    # Try to find bot matching the requested symbol
                     for bot in running_gridbots:
                         if requested_symbol in bot['name']:
                             selected_bot = bot
                             break
                 
-                response = {
+                result = jsonify({
                     'running': True,
                     'pid': selected_bot.get('pid'),
                     'pm2_managed': True,
@@ -130,83 +147,95 @@ def bot_status():
                     'restarts': selected_bot.get('restarts', 0),
                     'cpu': selected_bot.get('cpu', 0),
                     'memory_mb': round(selected_bot.get('memory', 0), 1),
-                    # v6.0 multi-instance fields
                     'symbol': requested_symbol,
                     'active_instances': len(running_gridbots),
                     'instance_names': [b['name'] for b in running_gridbots],
+                    'uptime': _format_pm2_uptime(selected_bot.get('uptime')),
                     'note': f'{len(running_gridbots)} bot instance(s) running'
-                }
-                return jsonify(response), 200
+                }), 200
             else:
-                # No gridbots running in PM2
-                return jsonify({
+                result = jsonify({
                     'running': False,
                     'pm2_managed': True,
                     'symbol': requested_symbol,
                     'active_instances': 0,
                     'note': 'No bot instances running'
                 }), 200
+        else:
+            running = is_bot_running()
+            pid = None
+            uptime = None
+            
+            if running and BOT_PID_FILE.exists():
+                try:
+                    with open(BOT_PID_FILE, 'r') as f:
+                        pid = int(f.read().strip())
+                except:
+                    pass
+            
+            if not pid and PSUTIL_AVAILABLE:
+                try:
+                    import psutil
+                    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                        cmdline = proc.info.get('cmdline', [])
+                        if cmdline and 'async_gridbot.py' in ' '.join(cmdline):
+                            pid = proc.info['pid']
+                            running = True
+                            break
+                except:
+                    pass
+            
+            if pid and PSUTIL_AVAILABLE:
+                try:
+                    import psutil
+                    process = psutil.Process(pid)
+                    uptime_seconds = time.time() - process.create_time()
+                    hours = int(uptime_seconds // 3600)
+                    minutes = int((uptime_seconds % 3600) // 60)
+                    seconds = int(uptime_seconds % 60)
+                    uptime = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                except:
+                    pass
+            
+            result = jsonify({
+                'running': running,
+                'bot_status': 'online' if running else 'stopped',
+                'pid': pid,
+                'uptime': uptime,
+                'pm2_managed': False,
+                'symbol': requested_symbol,
+                'single_process_mode': True,
+                'note': 'Bot runs as single process'
+            }), 200
         
-        # Fallback to traditional PID file check OR process detection
-        running = is_bot_running()
-        pid = None
-        uptime = None
-        
-        # First try PID file
-        if running and BOT_PID_FILE.exists():
-            try:
-                with open(BOT_PID_FILE, 'r') as f:
-                    pid = int(f.read().strip())
-            except:
-                pass
-        
-        # If no PID file, detect by process name (bot started manually)
-        if not pid and PSUTIL_AVAILABLE:
-            try:
-                import psutil
-                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                    cmdline = proc.info.get('cmdline', [])
-                    if cmdline and 'async_gridbot.py' in ' '.join(cmdline):
-                        pid = proc.info['pid']
-                        running = True
-                        break
-            except:
-                pass
-        
-        # Get uptime if PID is valid
-        if pid and PSUTIL_AVAILABLE:
-            try:
-                import psutil
-                process = psutil.Process(pid)
-                uptime_seconds = time.time() - process.create_time()
-                hours = int(uptime_seconds // 3600)
-                minutes = int((uptime_seconds % 3600) // 60)
-                seconds = int(uptime_seconds % 60)
-                uptime = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            except:
-                pass
-        
-        # v5.0: Include symbol info in response
-        return jsonify({
-            'running': running,
-            'bot_status': 'online' if running else 'stopped',
-            'pid': pid,
-            'uptime': uptime,
-            'pm2_managed': False,
-            # v5.0 multi-symbol fields
-            'symbol': requested_symbol,
-            'single_process_mode': True,
-            'note': 'Bot runs as single process. Per-symbol processes planned for v5.1'
-        }), 200
+        _bot_status_cache['data'] = result
+        _bot_status_cache['time'] = time.time()
+        _bot_status_refresh_in_progress = False
+        return result
         
     except Exception as e:
         log.error(f"Error getting bot status: {e}")
+        _bot_status_refresh_in_progress = False
+        # Extend stale cache on error
+        if _bot_status_cache['data'] is not None:
+            _bot_status_cache['time'] = time.time() - _BOT_STATUS_FRESH_SECONDS - 1
+            return _bot_status_cache['data']
         return jsonify({
             'running': False,
             'error': str(e),
-            'symbol': request.args.get('symbol'),  # v5.0
             'pm2_managed': should_use_pm2()
         }), 500
+
+
+def _refresh_bot_status_bg(app, req_args):
+    """Background thread to refresh bot status cache (SWR pattern)."""
+    global _bot_status_refresh_in_progress
+    try:
+        with app.test_request_context('/api/bot/status', query_string=req_args):
+            _fetch_bot_status_fresh()
+    except Exception as e:
+        log.error(f"Background bot status refresh failed: {e}")
+        _bot_status_refresh_in_progress = False
 
 
 @bot_control_bp.route('/api/bot/start', methods=['POST'])

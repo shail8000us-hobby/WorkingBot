@@ -1,2 +1,0 @@
-export { ModeSwitcherPanel } from './ModeSwitcherPanel';
-

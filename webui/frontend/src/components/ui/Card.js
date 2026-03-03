@@ -5,7 +5,6 @@
 
 import React from 'react';
 import clsx from 'clsx';
-import { motion } from 'framer-motion';
 
 const cardVariants = {
   default: 'bg-slate-900/60 border-slate-800/60',
@@ -32,7 +31,7 @@ const Card = React.memo(function Card({
   };
 
   return (
-    <motion.div
+    <div
       className={clsx(
         'rounded-2xl border backdrop-blur shadow-lg ring-1 ring-inset ring-white/5',
         cardVariants[variant],
@@ -43,7 +42,7 @@ const Card = React.memo(function Card({
       {...props}
     >
       {children}
-    </motion.div>
+    </div>
   );
 });
 

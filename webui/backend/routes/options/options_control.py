@@ -18,9 +18,12 @@ Purpose: Phase 2 - Backend Order Execution for Options
 This blueprint only manages options positions, never touches futures/grid bot.
 """
 
+from __future__ import annotations
+
 import sys
 import time
 import asyncio
+from typing import Optional
 import logging
 import threading
 from pathlib import Path
@@ -37,8 +40,8 @@ from flask import Blueprint, jsonify, request
 # the "<asyncio.locks.Event> is bound to a different event loop" errors that
 # occurred when each Flask request created / obtained a different loop.
 # ---------------------------------------------------------------------------
-_dedicated_loop: asyncio.AbstractEventLoop | None = None
-_loop_thread: threading.Thread | None = None
+_dedicated_loop: Optional[asyncio.AbstractEventLoop] = None
+_loop_thread: Optional[threading.Thread] = None
 _loop_lock = threading.Lock()
 
 
@@ -1347,7 +1350,7 @@ def _run_ssr_margin_monitoring_loop(client_config, symbol: str, size: int, side:
 
 # Position cache to prevent repeated failures
 _positions_cache = {'data': None, 'time': 0, 'error': None}
-POSITIONS_CACHE_SECONDS = 3.0  # Cache positions for 3 seconds
+POSITIONS_CACHE_SECONDS = 10.0  # Cache positions for 10 seconds (was 3s — too short)
 
 
 @options_bp.route('/positions', methods=['GET'])
@@ -3546,10 +3549,16 @@ def auto_loop_status():
 
 @options_bp.route('/auto-loop/clear', methods=['POST'])
 def auto_loop_clear():
-    """Clear finished loops."""
+    """Clear finished loops. Pass {"force": true} to also stop and remove running loops."""
     try:
+        data = request.get_json() or {}
+        force = bool(data.get('force', False))
+        loop_id = data.get('loop_id')  # optional: target a specific loop
         svc = _ensure_auto_loop_deps()
-        count = svc.clear_finished()
+        if force:
+            count = svc.force_clear(loop_id)
+        else:
+            count = svc.clear_finished()
         return jsonify({"success": True, "cleared": count})
     except Exception as e:
         log.error(f"auto-loop clear error: {e}", exc_info=True)

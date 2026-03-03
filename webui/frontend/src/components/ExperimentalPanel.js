@@ -1,6 +1,5 @@
 import React from 'react';
 import { Box, Typography, Alert } from '@mui/material';
-import { motion } from 'framer-motion';
 import KellyWidget from './KellyWidget';
 import AutoDeltaHedger from './AutoDeltaHedger';
 import GammaScalpingBot from './GammaScalpingBot';
@@ -20,11 +19,7 @@ import GammaScalpingBot from './GammaScalpingBot';
  */
 const ExperimentalPanel = () => {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
+    <div className="animate-fade-slide-up">
       <Box sx={{ p: 3 }}>
         {/* Header */}
         <Box sx={{ mb: 3 }}>
@@ -57,7 +52,7 @@ const ExperimentalPanel = () => {
           <KellyWidget />
         </Box>
       </Box>
-    </motion.div>
+    </div>
   );
 };
 

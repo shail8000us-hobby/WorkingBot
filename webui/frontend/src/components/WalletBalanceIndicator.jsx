@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Wallet } from 'lucide-react';
-import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
 /**
@@ -78,11 +77,8 @@ function WalletBalanceIndicator() {
   };
 
   return (
-    <motion.div
-      className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2"
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+    <div
+      className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 animate-fade-scale-in"
     >
       <Wallet className="h-4 w-4 text-emerald-400" strokeWidth={2} />
       <div className="flex items-center gap-2">
@@ -99,7 +95,7 @@ function WalletBalanceIndicator() {
           </span>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 

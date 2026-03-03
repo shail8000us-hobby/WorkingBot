@@ -11,7 +11,7 @@ symbols:
     product_id: '27'
     grid:
       geometry:
-        reference: 66500
+        reference: 68000
         lower: 63000
         upper: 100000
         step: 500

@@ -429,6 +429,149 @@ class MMMStorage:
         finally:
             conn.close()
 
+    def list_session_summaries(self, active_only: bool = False) -> List[Dict]:
+        """
+        List compact session summaries WITHOUT deserializing full data_json.
+
+        Uses SQLite json_extract() to pull only the fields needed for
+        get_session_summary(), avoiding the deserialization of multi-MB
+        data_json blobs (28 sessions × ~300KB each = 8.3MB).
+
+        Performance: ~10ms vs ~10s for full deserialization.
+        """
+        conn = self._get_conn()
+        try:
+            where = (
+                "WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP')"
+                if active_only else ""
+            )
+            rows = conn.execute(f'''
+                SELECT
+                    session_id,
+                    status,
+                    created_at,
+                    json_extract(data_json, '$.mode')                     AS mode,
+                    json_extract(data_json, '$.entry_time')               AS entry_time,
+                    json_extract(data_json, '$.ce.active_strike')         AS ce_active_strike,
+                    json_extract(data_json, '$.ce.original_lots')         AS ce_original_lots,
+                    json_extract(data_json, '$.ce.active_lots')           AS ce_active_lots,
+                    json_extract(data_json, '$.ce.total_lots')            AS ce_total_lots,
+                    json_extract(data_json, '$.ce.frozen_total_lots')     AS ce_frozen_lots,
+                    json_extract(data_json, '$.pe.active_strike')         AS pe_active_strike,
+                    json_extract(data_json, '$.pe.original_lots')         AS pe_original_lots,
+                    json_extract(data_json, '$.pe.active_lots')           AS pe_active_lots,
+                    json_extract(data_json, '$.pe.total_lots')            AS pe_total_lots,
+                    json_extract(data_json, '$.pe.frozen_total_lots')     AS pe_frozen_lots,
+                    json_extract(data_json, '$.last_aggressor')           AS last_aggressor,
+                    json_extract(data_json, '$.adjustment_count')         AS adjustment_count,
+                    json_extract(data_json, '$.reversal_count')           AS reversal_count,
+                    json_extract(data_json, '$.shift_count')              AS shift_count,
+                    json_extract(data_json, '$.close_at_5_count')         AS close_at_5_count,
+                    json_extract(data_json, '$.total_premium_collected')  AS total_premium_collected,
+                    json_extract(data_json, '$.realized_pnl')             AS realized_pnl,
+                    json_extract(data_json, '$.unrealized_pnl')           AS unrealized_pnl,
+                    json_extract(data_json, '$.total_fees')               AS total_fees,
+                    json_extract(data_json, '$.peak_pnl')                 AS peak_pnl,
+                    json_extract(data_json, '$.last_heartbeat')           AS last_heartbeat,
+                    json_extract(data_json, '$.next_heartbeat')           AS next_heartbeat,
+                    json_extract(data_json, '$.expiry_time')              AS expiry_time,
+                    json_extract(params_json, '$.adjustment_interval')    AS adjustment_interval,
+                    json_extract(params_json, '$.expiry')                 AS expiry
+                FROM mmm_sessions
+                {where}
+                ORDER BY created_at DESC
+            ''').fetchall()
+
+            summaries = []
+            for r in rows:
+                realized = r['realized_pnl'] or 0
+                unrealized = r['unrealized_pnl'] or 0
+                fees = r['total_fees'] or 0
+                summaries.append({
+                    'session_id': r['session_id'],
+                    'status': r['status'] or 'IDLE',
+                    'mode': r['mode'] or 'fresh',
+                    'created_at': r['created_at'],
+                    'entry_time': r['entry_time'],
+                    'ce_strike': r['ce_active_strike'] or 0,
+                    'ce_original_lots': r['ce_original_lots'] or 0,
+                    'ce_active_lots': r['ce_active_lots'] or 0,
+                    'ce_total_lots': r['ce_total_lots'] or 0,
+                    'ce_frozen_lots': r['ce_frozen_lots'] or 0,
+                    'pe_strike': r['pe_active_strike'] or 0,
+                    'pe_original_lots': r['pe_original_lots'] or 0,
+                    'pe_active_lots': r['pe_active_lots'] or 0,
+                    'pe_total_lots': r['pe_total_lots'] or 0,
+                    'pe_frozen_lots': r['pe_frozen_lots'] or 0,
+                    'last_aggressor': r['last_aggressor'] or 'NONE',
+                    'adjustment_count': r['adjustment_count'] or 0,
+                    'reversal_count': r['reversal_count'] or 0,
+                    'shift_count': r['shift_count'] or 0,
+                    'close_at_5_count': r['close_at_5_count'] or 0,
+                    'total_premium_collected': r['total_premium_collected'] or 0,
+                    'realized_pnl': realized,
+                    'unrealized_pnl': unrealized,
+                    'total_fees': fees,
+                    'net_pnl': realized + unrealized - fees,
+                    'peak_pnl': r['peak_pnl'] or 0,
+                    'adjustment_interval': r['adjustment_interval'] or 300,
+                    'last_heartbeat': r['last_heartbeat'],
+                    'next_heartbeat': r['next_heartbeat'],
+                    'expiry': r['expiry'] or '',
+                    'expiry_time': r['expiry_time'],
+                })
+            return summaries
+        except Exception as e:
+            log.error(f"Failed to list session summaries: {e}")
+            # Fallback to full deserialization
+            return [
+                self._row_to_summary_fallback(s)
+                for s in self.list_sessions(active_only=active_only)
+            ]
+        finally:
+            conn.close()
+
+    def _row_to_summary_fallback(self, session: Dict) -> Dict:
+        """Fallback: extract summary from fully deserialized session."""
+        ce = session.get('ce', {})
+        pe = session.get('pe', {})
+        realized = session.get('realized_pnl', 0)
+        unrealized = session.get('unrealized_pnl', 0)
+        fees = session.get('total_fees', 0)
+        return {
+            'session_id': session.get('session_id'),
+            'status': session.get('strategy_status', 'IDLE'),
+            'mode': session.get('mode', 'fresh'),
+            'created_at': session.get('created_at'),
+            'entry_time': session.get('entry_time'),
+            'ce_strike': ce.get('active_strike', 0),
+            'ce_original_lots': ce.get('original_lots', 0),
+            'ce_active_lots': ce.get('active_lots', 0),
+            'ce_total_lots': ce.get('total_lots', 0),
+            'ce_frozen_lots': ce.get('frozen_total_lots', 0),
+            'pe_strike': pe.get('active_strike', 0),
+            'pe_original_lots': pe.get('original_lots', 0),
+            'pe_active_lots': pe.get('active_lots', 0),
+            'pe_total_lots': pe.get('total_lots', 0),
+            'pe_frozen_lots': pe.get('frozen_total_lots', 0),
+            'last_aggressor': session.get('last_aggressor', 'NONE'),
+            'adjustment_count': session.get('adjustment_count', 0),
+            'reversal_count': session.get('reversal_count', 0),
+            'shift_count': session.get('shift_count', 0),
+            'close_at_5_count': session.get('close_at_5_count', 0),
+            'total_premium_collected': session.get('total_premium_collected', 0),
+            'realized_pnl': realized,
+            'unrealized_pnl': unrealized,
+            'total_fees': fees,
+            'net_pnl': realized + unrealized - fees,
+            'peak_pnl': session.get('peak_pnl', 0),
+            'adjustment_interval': session.get('params', {}).get('adjustment_interval', 300),
+            'last_heartbeat': session.get('last_heartbeat'),
+            'next_heartbeat': session.get('next_heartbeat'),
+            'expiry': session.get('params', {}).get('expiry', ''),
+            'expiry_time': session.get('expiry_time'),
+        }
+
     def get_session_count(self) -> int:
         """Get total number of sessions."""
         conn = self._get_conn()

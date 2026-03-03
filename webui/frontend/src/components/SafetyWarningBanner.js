@@ -57,4 +57,4 @@ function SafetyWarningBanner() {
   );
 }
 
-export default SafetyWarningBanner;
+export default React.memo(SafetyWarningBanner);

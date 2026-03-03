@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { List as VirtualList } from 'react-window';
 import {
   Paper,
   Box,
@@ -31,6 +32,7 @@ function LogsPanel() {
   const logsEndRef = useRef(null);
   const logsContainerRef = useRef(null);
   const isMountedRef = useRef(true);
+  const autoScrollRef = useRef(true); // Track if we should auto-scroll to bottom
   const lastLogsHashRef = useRef({
     trading: '',
     guardian: '',
@@ -53,11 +55,12 @@ function LogsPanel() {
     ...new Set(instances.map((i) => parseInstanceName(i.name)?.symbol).filter(Boolean)),
   ];
 
-  // Helper to check if user is scrolled to bottom
-  const isScrolledToBottom = useCallback(() => {
-    if (!logsContainerRef.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current;
-    return scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+  // Helper to scroll virtual list to bottom
+  const scrollToBottom = useCallback(() => {
+    // Defer to next tick so state has updated and VirtualList has re-rendered
+    setTimeout(() => {
+      logsEndRef.current?.scrollToItem?.(Infinity, 'end');
+    }, 0);
   }, []);
 
   // Helper to create a simple hash for comparison
@@ -81,10 +84,10 @@ function LogsPanel() {
         // Only update if logs have actually changed
         if (newHash !== lastLogsHashRef.current.trading) {
           lastLogsHashRef.current.trading = newHash;
-          const shouldScroll = isScrolledToBottom();
+          
           setTradingLogs(response.logs);
-          if (shouldScroll) {
-            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          if (autoScrollRef.current) {
+            scrollToBottom();
           }
         }
       }
@@ -99,7 +102,7 @@ function LogsPanel() {
         setLoadingTrading(false);
       }
     }
-  }, [selectedInstance, withInstance, createLogsHash, isScrolledToBottom]);
+  }, [selectedInstance, withInstance, createLogsHash, scrollToBottom]);
 
   // Fetch Guardian logs
   const fetchGuardianLogs = useCallback(async () => {
@@ -116,10 +119,10 @@ function LogsPanel() {
         const newHash = createLogsHash(response.logs);
         if (newHash !== lastLogsHashRef.current.guardian) {
           lastLogsHashRef.current.guardian = newHash;
-          const shouldScroll = isScrolledToBottom();
+          
           setGuardianLogs(response.logs);
-          if (shouldScroll) {
-            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          if (autoScrollRef.current) {
+            scrollToBottom();
           }
         }
       }
@@ -134,7 +137,7 @@ function LogsPanel() {
         setLoadingGuardian(false);
       }
     }
-  }, [createLogsHash, isScrolledToBottom]);
+  }, [createLogsHash, scrollToBottom]);
 
   // Fetch BTCUSD logs
   const fetchBtcLogs = useCallback(async () => {
@@ -148,10 +151,10 @@ function LogsPanel() {
         const newHash = createLogsHash(response.logs);
         if (newHash !== lastLogsHashRef.current.btcusd) {
           lastLogsHashRef.current.btcusd = newHash;
-          const shouldScroll = isScrolledToBottom();
+          
           setBtcLogs(response.logs);
-          if (shouldScroll) {
-            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          if (autoScrollRef.current) {
+            scrollToBottom();
           }
         }
       }
@@ -166,7 +169,7 @@ function LogsPanel() {
         setLoadingBtc(false);
       }
     }
-  }, [createLogsHash, isScrolledToBottom]);
+  }, [createLogsHash, scrollToBottom]);
 
   // Fetch ETHUSD logs
   const fetchEthLogs = useCallback(async () => {
@@ -180,10 +183,10 @@ function LogsPanel() {
         const newHash = createLogsHash(response.logs);
         if (newHash !== lastLogsHashRef.current.ethusd) {
           lastLogsHashRef.current.ethusd = newHash;
-          const shouldScroll = isScrolledToBottom();
+          
           setEthLogs(response.logs);
-          if (shouldScroll) {
-            logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
+          if (autoScrollRef.current) {
+            scrollToBottom();
           }
         }
       }
@@ -198,7 +201,7 @@ function LogsPanel() {
         setLoadingEth(false);
       }
     }
-  }, [createLogsHash, isScrolledToBottom]);
+  }, [createLogsHash, scrollToBottom]);
 
   // Main effect: Set up interval for current log source only
   useEffect(() => {
@@ -238,11 +241,7 @@ function LogsPanel() {
 
   // Removed duplicate useEffect for log source changes
 
-  const scrollToBottom = () => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'auto' });
-  };
-
-  // Removed auto-scroll effect - now handled in fetch functions
+  // Removed auto-scroll effect - now handled in fetch functions via scrollToBottom()
 
   const handleClear = () => {
     // This would require backend support
@@ -445,12 +444,11 @@ function LogsPanel() {
         ref={logsContainerRef}
         sx={{
           background: '#000',
-          p: 2,
           borderRadius: 1,
           height: '600px',
           minHeight: '600px',
           maxHeight: '600px',
-          overflowY: 'auto',
+          overflowY: 'hidden',
           overflowX: 'hidden',
           fontFamily: 'monospace',
           fontSize: '13px',
@@ -458,41 +456,48 @@ function LogsPanel() {
         }}
       >
         {displayLogs.length === 0 ? (
-          <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 10 }}>
+          <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 10, p: 2 }}>
             {isLoading
               ? 'Loading logs...'
               : `No ${logSource === 'guardian' ? 'Guardian' : 'trading bot'} logs available. ${logSource === 'guardian' ? 'Guardian should be running via LaunchAgent.' : 'Start the bot to see live logs.'}`}
           </Typography>
         ) : (
-          <>
-            {displayLogs.map((log, index) => {
+          <VirtualList
+            ref={logsEndRef}
+            height={600}
+            itemCount={displayLogs.length}
+            itemSize={28}
+            width="100%"
+            style={{ padding: '8px' }}
+            initialScrollOffset={Math.max(0, displayLogs.length * 28 - 600)}
+          >
+            {({ index, style }) => {
+              const log = displayLogs[index];
               const logColor = getLogColor(log);
               const isError =
                 log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error');
 
               return (
-                <Box
-                  key={index}
-                  className="log-entry"
-                  sx={{
+                <div
+                  style={{
+                    ...style,
                     color: logColor,
-                    py: 0.5,
+                    padding: '2px 0 2px 8px',
                     borderLeft: `3px solid ${logColor}`,
-                    pl: 1,
-                    mb: 0.5,
                     fontWeight: isError ? 600 : 400,
                     backgroundColor: isError ? 'rgba(255, 23, 68, 0.1)' : 'transparent',
-                    '&:hover': {
-                      background: isError ? 'rgba(255, 23, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                    },
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    boxSizing: 'border-box',
                   }}
+                  title={log}
                 >
                   {log}
-                </Box>
+                </div>
               );
-            })}
-            <div ref={logsEndRef} />
-          </>
+            }}
+          </VirtualList>
         )}
       </Box>
     </Paper>

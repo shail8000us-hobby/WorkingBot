@@ -23,6 +23,12 @@ from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, jsonify, request
 
+# Import cache
+try:
+    from webui.backend.cache import cache, CACHE_TIMEOUTS
+except ImportError:
+    from cache import cache, CACHE_TIMEOUTS
+
 # Import config helper
 from config.loader import get_config
 
@@ -109,6 +115,7 @@ def get_liquidation_debug():
 
 
 @liquidation_bp.route('/api/liquidation/status', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['positions'])
 def get_liquidation_status():
     """Get comprehensive liquidation protection status"""
     try:
@@ -428,6 +435,7 @@ def get_liquidation_status():
 
 
 @liquidation_bp.route('/api/liquidation/realtime-status', methods=['GET'])
+@cache.cached(timeout=CACHE_TIMEOUTS['positions'])
 def get_realtime_liquidation_status():
     """Get real-time liquidation monitoring status"""
     try:

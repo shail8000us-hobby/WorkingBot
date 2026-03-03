@@ -1,18 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { HashRouter } from 'react-router-dom';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/roboto-mono';
 import './index.css';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
-import { NotificationProvider } from './components/NotificationProvider';
-import { KeyboardProvider } from './components/KeyboardProvider';
-import { ThemeModeProvider } from './hooks/useThemeMode';
-import { SystemStatusProvider } from './context/SystemStatusContext';
+import AppProviders from './context/AppProviders';
+import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 
 /**
- * Root component with all providers for robust UI
- * Wraps App with error boundaries, notifications, keyboard shortcuts, and theme
+ * Root component — Phase 6.2 consolidated providers.
+ * Provider nesting reduced from 8+ levels to:
+ *   ErrorBoundary → AppProviders (flat composite) → HashRouter → App
  */
 const Root = () => {
   return (
@@ -20,43 +20,13 @@ const Root = () => {
       errorMessage="The application encountered an unexpected error. Please reload the page."
       onError={(error, errorInfo) => {
         console.error('App Error:', error, errorInfo);
-        // Could send to error tracking service here
       }}
     >
-      <ThemeModeProvider>
-        <SystemStatusProvider>
-          <NotificationProvider>
-            <KeyboardProvider
-              callbacks={{
-                onSave: () => {
-                  console.log('Keyboard: Save triggered');
-                  window.dispatchEvent(new CustomEvent('keyboard-save'));
-                },
-                onStart: () => {
-                  console.log('Keyboard: Start triggered');
-                  window.dispatchEvent(new CustomEvent('keyboard-start'));
-                },
-                onStop: () => {
-                  console.log('Keyboard: Stop triggered');
-                  window.dispatchEvent(new CustomEvent('keyboard-stop'));
-                },
-                onRefresh: () => {
-                  console.log('Keyboard: Refresh triggered');
-                  window.dispatchEvent(new CustomEvent('keyboard-refresh'));
-                },
-                onTabChange: (tabIndex) => {
-                  console.log('Keyboard: Tab change', tabIndex);
-                  window.dispatchEvent(
-                    new CustomEvent('keyboard-tab-change', { detail: tabIndex })
-                  );
-                },
-              }}
-            >
-              <App />
-            </KeyboardProvider>
-          </NotificationProvider>
-        </SystemStatusProvider>
-      </ThemeModeProvider>
+      <AppProviders>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </AppProviders>
     </ErrorBoundary>
   );
 };
@@ -67,3 +37,10 @@ root.render(
     <Root />
   </React.StrictMode>
 );
+
+// Phase 15: Register service worker for offline caching
+serviceWorkerRegistration.register({
+  onUpdate: (registration) => {
+    console.log('[SW] New version available. Refresh to update.');
+  },
+});

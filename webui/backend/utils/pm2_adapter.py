@@ -117,10 +117,10 @@ class PM2Adapter:
                     pm2_env = proc.get('pm2_env', {})
                     status = pm2_env.get('status')
                     
-                    # Check for gridbot-SYMBOL-MODE pattern (v5.0) or gridbot-live/demo (legacy)
+                    # Check for gridbot-SYMBOL-MODE pattern (v5.0), gridbot-SYMBOL-live (v5.0 alt), or gridbot-live/demo (legacy)
                     if name.startswith('gridbot-') and status == 'online':
                         # Map to 'live' mode for API compatibility
-                        if 'LONG' in name or 'SHORT' in name or name == 'gridbot-live':
+                        if 'LONG' in name or 'SHORT' in name or name == 'gridbot-live' or '-live' in name:
                             self.bot_names['live'] = name
                             log.info(f"✅ Detected active bot instance: {name}")
                             return
@@ -357,7 +357,7 @@ class PM2Adapter:
     
     def get_all_bots_status(self) -> List[Dict]:
         """
-        Get status of all managed bots
+        Get status of all managed bots (scans all PM2 gridbot processes)
         
         Returns:
             List of bot status dicts
@@ -367,10 +367,36 @@ class PM2Adapter:
         
         bots = []
         
+        # First, get explicitly mapped modes
         for mode in ['live', 'demo']:
             status = self.get_bot_status(mode)
             if status:
                 bots.append(status)
+        
+        # Also scan for any gridbot- processes not yet in bot_names
+        try:
+            success, stdout, _ = self._run_pm2_command(['jlist'])
+            if success:
+                seen_names = {b['name'] for b in bots}
+                processes = json.loads(stdout)
+                for proc in processes:
+                    name = proc.get('name', '')
+                    if name.startswith('gridbot-') and name not in seen_names:
+                        pm2_env = proc.get('pm2_env', {})
+                        monit = proc.get('monit', {})
+                        bots.append({
+                            'name': name,
+                            'pid': proc.get('pid'),
+                            'status': pm2_env.get('status'),
+                            'uptime': pm2_env.get('pm_uptime'),
+                            'restarts': pm2_env.get('restart_time', 0),
+                            'cpu': monit.get('cpu', 0),
+                            'memory': monit.get('memory', 0) / 1024 / 1024,
+                            'mode': 'live',
+                            'pm2_id': proc.get('pm_id')
+                        })
+        except Exception as e:
+            log.debug(f"Could not scan extra PM2 processes: {e}")
         
         return bots
     

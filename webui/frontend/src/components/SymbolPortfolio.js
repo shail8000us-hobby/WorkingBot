@@ -25,7 +25,6 @@ import {
   Refresh,
   Visibility,
 } from '@mui/icons-material';
-import { motion } from 'framer-motion';
 import { useInstanceSafe, parseInstanceName as parseInstance } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
 import AddSymbolDialog from './AddSymbolDialog';
@@ -377,10 +376,9 @@ const SymbolPortfolio = () => {
 
           return (
             <Grid item xs={12} sm={6} lg={4} key={symbol.name}>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
+              <div
+                className="animate-fade-slide-up"
+                style={{ animationDelay: `${index * 0.1}s` }}
               >
                 <Card
                   sx={{
@@ -511,7 +509,7 @@ const SymbolPortfolio = () => {
                     </Box>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </div>
             </Grid>
           );
         })}

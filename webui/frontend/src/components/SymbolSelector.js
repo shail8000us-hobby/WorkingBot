@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, Activity, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { SymbolContext } from '../context/SymbolContext'; // Reference for context integration
 
@@ -204,14 +203,9 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
       </button>
 
       {/* Dropdown Menu */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="absolute top-full left-0 right-0 z-[28] mt-2 rounded-lg border border-slate-700 bg-slate-800 shadow-xl overflow-hidden"
+      {isOpen && (
+          <div
+            className="absolute top-full left-0 right-0 z-[28] mt-2 rounded-lg border border-slate-700 bg-slate-800 shadow-xl overflow-hidden animate-fade-slide-up"
           >
             {instances.map((instance) => (
               <button
@@ -254,9 +248,8 @@ const SymbolSelector = ({ onSymbolChange, className }) => {
                 </div>
               </button>
             ))}
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {/* Close dropdown on outside click */}
       {isOpen && <div className="fixed inset-0 z-[18]" onClick={() => setIsOpen(false)} />}

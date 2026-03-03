@@ -13,7 +13,6 @@
  */
 
 import apiClient from './apiClient';
-import { v4 as uuidv4 } from 'uuid';
 
 // Command types
 export const COMMAND_TYPES = {
@@ -47,7 +46,7 @@ export async function sendBotCommand(command, params = {}, options = {}) {
   const { timeout = 30000, onSuccess, onError, onTimeout, optimisticUpdate } = options;
 
   // Generate confirmation ID
-  const confirmationId = uuidv4();
+  const confirmationId = crypto.randomUUID();
   const startTime = Date.now();
 
   // Track command

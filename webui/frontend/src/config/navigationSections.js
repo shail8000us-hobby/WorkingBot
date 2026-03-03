@@ -1,0 +1,216 @@
+/**
+ * Navigation sections configuration for the WebUI sidebar.
+ *
+ * Extracted from App.js (Phase 2.3) to keep the main component lean.
+ * Each section defines: id, label, icon, optional badge, description, and group.
+ *
+ * Usage:
+ *   import { buildSections } from '../config/navigationSections';
+ *   const sections = useMemo(() => buildSections({ openPositions, pendingOrders, guardianEnabled }), [openPositions, pendingOrders, guardianEnabled]);
+ */
+
+import {
+  LayoutDashboard,
+  Layers3,
+  ShieldCheck,
+  SlidersHorizontal,
+  Zap,
+  BookOpen,
+  RadioTower,
+  Terminal,
+  Code,
+  Activity,
+  BarChart3,
+  Brain,
+  Database,
+  PieChart,
+  Table2,
+  Workflow,
+  Scale,
+  Coins,
+  Timer,
+  ListChecks,
+  CandlestickChart,
+} from 'lucide-react';
+
+/**
+ * Build the sections array with dynamic badges and feature flags.
+ *
+ * @param {Object} opts
+ * @param {number|null} opts.openPositions  - active position count (badge)
+ * @param {number|null} opts.pendingOrders  - pending order count (badge)
+ * @param {boolean}     opts.guardianEnabled - whether the Guardian dashboard feature flag is on
+ * @returns {Array} sections list consumed by Sidebar and MobileNav
+ */
+export function buildSections({ openPositions, pendingOrders, guardianEnabled }) {
+  return [
+    // ── Grid Bot ──────────────────────────────────────────────
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      badge: pendingOrders ?? undefined,
+      description: 'Trading overview & telemetry',
+      group: 'Grid Bot',
+    },
+    {
+      id: 'portfolio',
+      label: '📊 Portfolio',
+      icon: PieChart,
+      description: 'Multi-symbol overview - all symbols at a glance',
+      group: 'Grid Bot',
+    },
+    {
+      id: 'positions',
+      label: 'Positions',
+      icon: Layers3,
+      badge: openPositions ?? undefined,
+      description: 'Active grids & execution state',
+      group: 'Grid Bot',
+    },
+    {
+      id: 'config',
+      label: 'Configuration',
+      icon: SlidersHorizontal,
+      description: 'Bot parameters and reconciliation tools',
+      group: 'Grid Bot',
+    },
+    {
+      id: 'risk',
+      label: 'Risk & Safety',
+      icon: ShieldCheck,
+      description: 'Risk analytics and protection systems',
+      group: 'Grid Bot',
+    },
+    // ── Options Trading ──────────────────────────────────────
+    {
+      id: 'options',
+      label: '📈 Options',
+      icon: CandlestickChart,
+      description: 'Options trading - manage calls/puts positions',
+      group: 'Options Trading',
+    },
+    {
+      id: 'options_chain',
+      label: '🔗 Options Chain',
+      icon: Table2,
+      description: 'Options chain - market data, IV, Greeks, strike selection',
+      group: 'Options Trading',
+    },
+    {
+      id: 'strategy_builder',
+      label: '🏗️ Strategy Builder',
+      icon: Workflow,
+      description: 'Multi-leg options strategies - straddles, iron condors, spreads',
+      group: 'Options Trading',
+    },
+    {
+      id: 'mv_straddle',
+      label: '📊 MV Straddle',
+      icon: Scale,
+      description: 'Market View Straddle - volatility-driven directional neutral strategy',
+      group: 'Options Trading',
+    },
+    // ── Algorithms ───────────────────────────────────────────
+    {
+      id: 'mmm',
+      label: '💰 MMM',
+      icon: Coins,
+      description: 'Money Mind & Method - BTC 0DTE options selling algorithm',
+      group: 'Algorithms',
+    },
+    {
+      id: 'ssr_algo',
+      label: '🦋 SSR ALGO',
+      icon: Zap,
+      description: 'Modified Iron Butterfly - automated percentage-based strike selection',
+      group: 'Algorithms',
+    },
+    {
+      id: 'zero_dte',
+      label: '⏱️ 0DTE Trading',
+      icon: Timer,
+      description: '0DTE options - autonomous strangle with premium balancing',
+      group: 'Algorithms',
+    },
+    // ── Signals & ML ─────────────────────────────────────────
+    {
+      id: 'tradingview',
+      label: '📊 TradingView',
+      icon: RadioTower,
+      description: 'TradingView webhook signals - buy/sell alerts from Pine Script',
+      group: 'Signals & ML',
+    },
+    {
+      id: 'rsi',
+      label: 'RSI',
+      icon: BarChart3,
+      description: 'RSI safety monitor - mode-specific thresholds with hysteresis',
+      group: 'Signals & ML',
+    },
+    {
+      id: 'ml_trading',
+      label: 'ML',
+      icon: Brain,
+      description:
+        'Machine Learning trading insights, style analysis, and autonomous decision engine',
+      group: 'Signals & ML',
+    },
+    // ── System ───────────────────────────────────────────────
+    {
+      id: 'botmanagement',
+      label: 'Bot Management',
+      icon: Terminal,
+      description: 'tmux control, process management, and emergency controls',
+      group: 'System',
+    },
+    {
+      id: 'system_health',
+      label: 'System Health',
+      icon: Activity,
+      description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts',
+      group: 'System',
+    },
+    {
+      id: 'intelligence',
+      label: 'Intelligence',
+      icon: BookOpen,
+      description: 'AI insights, documentation, market intel',
+      group: 'System',
+    },
+    {
+      id: 'todos',
+      label: 'Todo List',
+      icon: ListChecks,
+      description: 'Track improvements and ideas for the trading bot',
+      group: 'System',
+    },
+    // Week 3: Guardian Dashboard (feature flag controlled)
+    ...(guardianEnabled
+      ? [
+        {
+          id: 'guardian',
+          label: '🛡️ Guardian',
+          icon: ShieldCheck,
+          description: 'WebUI robustness monitor - circuit breakers, metrics, health',
+          group: 'System',
+        },
+      ]
+      : []),
+    // ── Labs ─────────────────────────────────────────────────
+    {
+      id: 'experimental',
+      label: '🧪 Experimental',
+      icon: Code,
+      description: 'Experimental features - Auto-Delta Hedging, Kelly Criterion, research tools',
+      group: 'Labs',
+    },
+    {
+      id: 'advanced_features',
+      label: '🚀 Advanced',
+      icon: Database,
+      description: 'Advanced data collection - Delta Exchange OHLCV, live streaming, technical indicators',
+      group: 'Labs',
+    },
+  ];
+}

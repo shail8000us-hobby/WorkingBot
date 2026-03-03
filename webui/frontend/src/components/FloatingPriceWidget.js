@@ -397,4 +397,4 @@ const FloatingPriceWidget = () => {
   );
 };
 
-export default FloatingPriceWidget;
+export default React.memo(FloatingPriceWidget);

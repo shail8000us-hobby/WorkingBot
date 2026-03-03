@@ -1,30 +1,32 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Paper, Box, Typography, Chip } from '@mui/material';
-import { Line } from 'react-chartjs-2';
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
   Tooltip,
   Legend,
-  Filler
-} from 'chart.js';
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+  ReferenceLine,
+  ResponsiveContainer,
+  Area,
+  AreaChart
+} from 'recharts';
 
 const BreakevenChart = ({ data }) => {
+  // Sample every nth point to keep chart readable
+  const chartData = useMemo(() => {
+    if (!data || !data.prices || !data.pnl) return [];
+    const sampleRate = Math.max(1, Math.floor(data.prices.length / 50));
+    return data.prices
+      .filter((_, i) => i % sampleRate === 0)
+      .map((price, i) => ({
+        price: `$${Math.round(price).toLocaleString()}`,
+        pnl: data.pnl.filter((_, j) => j % sampleRate === 0)[i],
+      }));
+  }, [data]);
+
   if (!data || !data.prices || !data.pnl) {
     return (
       <Paper sx={{ p: 3 }}>
@@ -36,80 +38,23 @@ const BreakevenChart = ({ data }) => {
     );
   }
 
-  // Sample every nth point to keep chart readable
-  const sampleRate = Math.max(1, Math.floor(data.prices.length / 50));
-  const sampledPrices = data.prices.filter((_, i) => i % sampleRate === 0);
-  const sampledPnl = data.pnl.filter((_, i) => i % sampleRate === 0);
-
-  const chartData = {
-    labels: sampledPrices.map(p => `$${Math.round(p).toLocaleString()}`),
-    datasets: [
-      {
-        label: 'P&L at Expiry',
-        data: sampledPnl,
-        borderColor: 'rgb(75, 192, 192)',
-        backgroundColor: (context) => {
-          const ctx = context.chart.ctx;
-          const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-          gradient.addColorStop(0, 'rgba(75, 192, 192, 0.4)');
-          gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
-          gradient.addColorStop(1, 'rgba(255, 99, 132, 0.4)');
-          return gradient;
-        },
-        fill: true,
-        tension: 0.4
-      },
-      {
-        label: 'Breakeven',
-        data: sampledPrices.map(() => 0),
-        borderColor: 'rgba(255, 255, 255, 0.5)',
-        borderDash: [5, 5],
-        borderWidth: 1,
-        pointRadius: 0,
-        fill: false
-      }
-    ]
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: true,
-        position: 'top'
-      },
-      title: {
-        display: false
-      },
-      tooltip: {
-        callbacks: {
-          label: (context) => {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            return `${label}: $${value.toFixed(2)}`;
-          }
-        }
-      }
-    },
-    scales: {
-      y: {
-        grid: {
-          color: 'rgba(255, 255, 255, 0.1)'
-        },
-        ticks: {
-          callback: (value) => `$${value.toFixed(0)}`
-        }
-      },
-      x: {
-        grid: {
-          color: 'rgba(255, 255, 255, 0.05)'
-        },
-        ticks: {
-          maxTicksLimit: 8
-        }
-      }
+  const customTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div style={{
+          background: 'rgba(30, 41, 59, 0.95)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 6,
+          padding: '8px 12px',
+        }}>
+          <p style={{ margin: 0, color: '#94a3b8', fontSize: 12 }}>{label}</p>
+          <p style={{ margin: 0, color: payload[0].value >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+            P&L: ${payload[0].value?.toFixed(2)}
+          </p>
+        </div>
+      );
     }
+    return null;
   };
 
   return (
@@ -135,7 +80,40 @@ const BreakevenChart = ({ data }) => {
       </Box>
 
       <Box sx={{ height: 300 }}>
-        <Line data={chartData} options={options} />
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+            <defs>
+              <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgb(75, 192, 192)" stopOpacity={0.4} />
+                <stop offset="50%" stopColor="rgb(255, 255, 255)" stopOpacity={0.1} />
+                <stop offset="100%" stopColor="rgb(255, 99, 132)" stopOpacity={0.4} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+            <XAxis
+              dataKey="price"
+              stroke="rgba(255, 255, 255, 0.3)"
+              tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.6)' }}
+              interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}
+            />
+            <YAxis
+              stroke="rgba(255, 255, 255, 0.3)"
+              tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.6)' }}
+              tickFormatter={(v) => `$${v.toFixed(0)}`}
+            />
+            <Tooltip content={customTooltip} />
+            <Legend />
+            <ReferenceLine y={0} stroke="rgba(255, 255, 255, 0.5)" strokeDasharray="5 5" label="" />
+            <Area
+              type="monotone"
+              dataKey="pnl"
+              name="P&L at Expiry"
+              stroke="rgb(75, 192, 192)"
+              fill="url(#pnlGradient)"
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
       </Box>
 
       {/* Summary Stats */}
