@@ -212,3 +212,4 @@ webui/backend.log
 webui/frontend.log
 webui/webui.log
 backtest_ui/*.log
+webui/backend/logs/
