@@ -34,6 +34,9 @@ open_terminals.sh.backup.*
 # Large files and caches
 *.log
 webui_*.log
+# Node dependencies — NEVER track these
+node_modules/
+**/node_modules/
 **/node_modules/.cache/
 **/.cache/
 *.log
@@ -172,3 +175,40 @@ ecosystem.demo-only.js
 *.pdf
 htmlcov/
 gridbot_pro.egg-info/
+
+# Build output dirs
+**/build/
+**/dist/
+**/.next/
+**/.nuxt/
+**/out/
+**/.turbo/
+**/coverage/
+
+# Reports (runtime generated)
+reports/**
+!reports/.gitkeep
+
+# Logs directory runtime files
+logs/*.log
+logs/*.log.*
+logs/*.jsonl
+logs/*.jsonl.*
+logs/*.gz
+logs/pm2/
+logs/archive_*/
+
+# Database dirs (runtime)
+database/*.db
+database/*.db-*
+
+# Empty shell dirs
+audit_from_bot/
+config_backups/*.json
+
+# webui runtime logs
+webui/*.log
+webui/backend.log
+webui/frontend.log
+webui/webui.log
+backtest_ui/*.log
