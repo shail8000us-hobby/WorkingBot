@@ -1,9 +1,0 @@
-# Amazon Bedrock Credentials
-# DO NOT COMMIT THIS FILE TO GIT
-export AWS_BEARER_TOKEN_BEDROCK='ABSKQmVkcm9ja0FQSUtleS1ibXMwLWF0LTAzMjE1NTk4Mjg1NDpwTkozeUNzMHI0Qk1lN0xNd0xBY1BPNzRhUzltTlJ2Nm1wYnZ3VzZxd2JyVjZZTVl5Wko1ZWRiSFJGaz0='
-export AWS_REGION='us-east-1'
-
-# If you have AWS credentials
-# export AWS_ACCESS_KEY_ID='your_access_key'
-# export AWS_SECRET_ACCESS_KEY='your_secret_key'
-# export AWS_SESSION_TOKEN='your_session_token' # if using temporary credentials

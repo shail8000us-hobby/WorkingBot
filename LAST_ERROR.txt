@@ -1,4 +1,0 @@
-  File "bot/orders/manager.py", line 16
-    self.max_lots_per_order = float(os.getenv(\"MAX_LOTS_PER_ORDER\",\"5\"))
-                                               ^
-SyntaxError: unexpected character after line continuation character

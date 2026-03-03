@@ -107,3 +107,68 @@ data/user_todos.json
 bot/audit/*.jsonl
 data/audit/*.jsonl
 webui/backend/metrics.db
+
+# ========================================
+# RUNTIME STATE - never track
+# ========================================
+.config_change_pending_*
+.confirm_*
+.volatility_halt*.json
+.volatility_status.json
+.heartbeat*
+.guardian_health
+.guardian_status.json
+.locked_files_registry.json
+*.lock
+.current_mode
+.monitor.pid
+.emergency_overrides.json
+.bedrock_env
+.audit_log.jsonl
+.DS_Store
+nohup.out
+emergency_overrides.log
+equity_snapshots_live.json
+safety_report.json
+runtime_state*.json*
+runtime_state*.backup*
+bot_events*.db*
+bot_live_data*.db*
+gridbot_events*.db*
+
+# JSON runtime state
+config_hash_*.json
+delta_analytics_test_results.json
+bug_report.json
+ISSUE_TABLE.json
+
+# Config backups (use git for versioning instead)
+config.yaml.bak*
+config.yaml.backup*
+config.yaml.broken
+config.yaml.test*
+*.md.backup*
+*.md.old
+
+# Ecosystem PM2 variant configs (keep only ecosystem.config.js)
+ecosystem.*.config.js
+ecosystem.*.config.js.backup*
+ecosystem.yaml-bot.json
+ecosystem.demo-only.js
+
+# macOS launchers and shortcuts
+*.command
+
+# Windows sync scripts (not part of the project)
+*.ps1
+
+# AI session artifacts (generated during AI-assisted dev)
+# Patterns like BUG_FIX_*, PHASE*_*, *_SUMMARY.md, *_COMPLETE.md etc.
+# are session notes - do not track new ones
+.ai/
+
+# Binary/generated
+*.gz
+*.pdf
+htmlcov/
+gridbot_pro.egg-info/
