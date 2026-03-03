@@ -1,4 +1,4 @@
-# WorkingBot GridBot (Delta Exchange)
+# WorkingBot — GridBot & Options Trading Platform
 
 **Version:** 4.0.0 (Modular Architecture)
 
