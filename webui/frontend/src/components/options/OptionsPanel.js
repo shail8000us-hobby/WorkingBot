@@ -132,6 +132,7 @@ import PayoffErrorBoundary from './PayoffErrorBoundary';
 // ARCH-2: Extracted sub-components to reduce monolith size and enable per-component React.memo
 import PositionRow from './PositionRow';
 import PortfolioGreeksSummary from './PortfolioGreeksSummary';
+import HedgeDeltaModal from './HedgeDeltaModal';
 import AutoLoopBanner from './AutoLoopBanner';
 import ClosePositionDialog from './ClosePositionDialog';
 
@@ -772,6 +773,10 @@ const OptionsPanel = () => {
 
   // Position Adjustment Panel state (JAN 31, 2026 - Sensibull-like adjustment workflow)
   const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
+
+  // Delta Hedge Modal state
+  const [hedgeModalOpen, setHedgeModalOpen] = useState(false);
+  const [hedgeModalDelta, setHedgeModalDelta] = useState(0);
 
   // Trade notification state (JAN 19, 2026 - Visual feedback)
   const [tradeNotification, setTradeNotification] = useState(null);
@@ -4459,11 +4464,27 @@ const OptionsPanel = () => {
               <PortfolioGreeksSummary
                 sortedPositions={sortedPositions}
                 aggregatedGreeks={aggregatedGreeks}
+                onHedgeClick={(delta) => {
+                  setHedgeModalDelta(delta);
+                  setHedgeModalOpen(true);
+                }}
               />
             )
           }
         </CardContent >
       </Card >
+
+      {/* Delta Hedge Modal */}
+      <HedgeDeltaModal
+        open={hedgeModalOpen}
+        delta={hedgeModalDelta}
+        btcPrice={btcPrice}
+        onClose={() => setHedgeModalOpen(false)}
+        onSuccess={() => {
+          setHedgeModalOpen(false);
+          fetchPositions();
+        }}
+      />
 
       {/* Payoff Diagram */}
       {

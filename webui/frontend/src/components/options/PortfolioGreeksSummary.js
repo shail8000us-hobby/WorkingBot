@@ -35,7 +35,7 @@ const getPnlColor = (pnl) => {
     return '#94a3b8';
 };
 
-function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks }) {
+function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks, onHedgeClick }) {
     const totalPnl = sortedPositions.reduce(
         (sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0),
         0
@@ -43,6 +43,21 @@ function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks }) {
 
     return (
         <>
+            {/* Pulse CSS for hedge button */}
+            <style>{`
+              @keyframes hedgePulse {
+                0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+                70%  { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+              }
+              @keyframes hedgePulseGreen {
+                0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+                70%  { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+              }
+              .hedge-btn-short { animation: hedgePulse 2s infinite; border-radius: 999px !important; }
+              .hedge-btn-long  { animation: hedgePulseGreen 2s infinite; border-radius: 999px !important; }
+            `}</style>
             <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Chip
                     icon={<MoneyIcon />}
@@ -130,6 +145,36 @@ function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks }) {
                                         />
                                     </Tooltip>
                                 )}
+                                {/* ⚡ Delta Hedge Button — hidden when |btcDelta| < 0.05 */}
+                                {aggregatedGreeks.btcDelta !== 0 &&
+                                    Math.abs(Number(aggregatedGreeks.btcDelta)) >= 0.05 && (
+                                        <Tooltip
+                                            title={
+                                                aggregatedGreeks.btcDelta > 0
+                                                    ? `Sell ${Math.abs(Number(aggregatedGreeks.btcDelta)).toFixed(4)} BTC-PERP to neutralise long delta`
+                                                    : `Buy ${Math.abs(Number(aggregatedGreeks.btcDelta)).toFixed(4)} BTC-PERP to neutralise short delta`
+                                            }
+                                        >
+                                            <Chip
+                                                size="small"
+                                                label={aggregatedGreeks.btcDelta > 0 ? '⚡ SHORT Hedge' : '⚡ LONG Hedge'}
+                                                className={aggregatedGreeks.btcDelta > 0 ? 'hedge-btn-short' : 'hedge-btn-long'}
+                                                onClick={() => onHedgeClick && onHedgeClick(Number(aggregatedGreeks.btcDelta))}
+                                                sx={{
+                                                    height: 22,
+                                                    fontSize: '0.7rem',
+                                                    fontWeight: 'bold',
+                                                    cursor: 'pointer',
+                                                    bgcolor: aggregatedGreeks.btcDelta > 0 ? '#ef4444' : '#22c55e',
+                                                    color: '#fff',
+                                                    px: 1,
+                                                    '&:hover': {
+                                                        bgcolor: aggregatedGreeks.btcDelta > 0 ? '#dc2626' : '#16a34a',
+                                                    },
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    )}
                                 <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
                             </>
                         )}

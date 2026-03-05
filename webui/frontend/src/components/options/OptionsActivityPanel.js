@@ -130,16 +130,16 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
             {activityData && (
               <>
-                <Chip 
+                <Chip
                   label={activityData.monitorStatus?.running ? '🟢 Running' : '🔴 Stopped'}
                   size="small"
-                  sx={{ 
+                  sx={{
                     bgcolor: activityData.monitorStatus?.running ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
                     color: activityData.monitorStatus?.running ? '#22c55e' : '#ef4444',
                     fontSize: '0.7rem'
                   }}
                 />
-                <Chip 
+                <Chip
                   label={`${activityData.activeLimits?.total || 0} Limits`}
                   size="small"
                   sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', fontSize: '0.7rem' }}
@@ -180,9 +180,9 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
       {activityData && (
         <>
           {/* Monitor Status Bar */}
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
             justifyContent: 'space-between',
             p: 1.5,
             mb: 2,
@@ -191,14 +191,14 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
             border: '1px solid rgba(148, 163, 184, 0.2)'
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Chip 
-                icon={activityData.monitorStatus?.running ? 
-                  <PlayCircleIcon sx={{ color: '#22c55e !important' }} /> : 
+              <Chip
+                icon={activityData.monitorStatus?.running ?
+                  <PlayCircleIcon sx={{ color: '#22c55e !important' }} /> :
                   <ErrorIcon sx={{ color: '#ef4444 !important' }} />
                 }
                 label={activityData.monitorStatus?.running ? 'Monitor Running' : 'Monitor Stopped'}
                 size="small"
-                sx={{ 
+                sx={{
                   bgcolor: activityData.monitorStatus?.running ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
                   color: activityData.monitorStatus?.running ? '#22c55e' : '#ef4444',
                   fontWeight: 600
@@ -212,12 +212,12 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip 
+              <Chip
                 label={`${activityData.activeLimits?.strike || 0} Strike Limits`}
                 size="small"
                 sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', fontSize: '0.7rem' }}
               />
-              <Chip 
+              <Chip
                 label={`${activityData.activeLimits?.expiry || 0} Expiry Limits`}
                 size="small"
                 sx={{ bgcolor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', fontSize: '0.7rem' }}
@@ -231,33 +231,33 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
               <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
                 ⚙️ Active Max Loss Limits
               </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                flexWrap: 'wrap', 
+              <Box sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
                 gap: 1,
                 p: 1,
                 borderRadius: 1,
                 bgcolor: 'rgba(0, 0, 0, 0.2)'
               }}>
                 {activityData.strikeLimits?.map((limit, idx) => (
-                  <Chip 
+                  <Chip
                     key={`strike-${idx}`}
                     label={`${limit.symbol}: $${limit.max_loss}`}
                     size="small"
-                    sx={{ 
-                      bgcolor: 'rgba(59, 130, 246, 0.15)', 
+                    sx={{
+                      bgcolor: 'rgba(59, 130, 246, 0.15)',
                       color: '#60a5fa',
                       fontSize: '0.65rem'
                     }}
                   />
                 ))}
                 {activityData.expiryLimits?.map((limit, idx) => (
-                  <Chip 
+                  <Chip
                     key={`expiry-${idx}`}
                     label={`Exp ${limit.expiry_code}: $${limit.max_loss}`}
                     size="small"
-                    sx={{ 
-                      bgcolor: 'rgba(168, 85, 247, 0.15)', 
+                    sx={{
+                      bgcolor: 'rgba(168, 85, 247, 0.15)',
                       color: '#c084fc',
                       fontSize: '0.65rem'
                     }}
@@ -273,10 +273,10 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
           <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
             📋 Real-Time Activity ({activityData.events?.length || 0} events)
           </Typography>
-          
-          <Box 
-            sx={{ 
-              maxHeight: 400, 
+
+          <Box
+            sx={{
+              maxHeight: 400,
               overflow: 'auto',
               bgcolor: 'rgba(0, 0, 0, 0.3)',
               borderRadius: 1,
@@ -289,9 +289,9 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
               </Typography>
             ) : (
               activityData.events?.map((event, idx) => (
-                <Box 
+                <Box
                   key={idx}
-                  sx={{ 
+                  sx={{
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: 1.5,
@@ -308,9 +308,9 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
                   </Box>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
+                      <Typography
+                        variant="body2"
+                        sx={{
                           color: getEventColor(event.type),
                           fontWeight: event.type === 'breach' || event.type === 'warning' ? 600 : 400,
                           wordBreak: 'break-word'
@@ -322,18 +322,18 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
                     {event.details && Object.keys(event.details).length > 0 && (
                       <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
                         {event.details.symbol && (
-                          <Chip 
-                            label={event.details.symbol} 
-                            size="small" 
+                          <Chip
+                            label={event.details.symbol}
+                            size="small"
                             sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontSize: '0.6rem', height: 18 }}
                           />
                         )}
                         {event.details.loss_pct !== undefined && (
-                          <Chip 
-                            label={`${event.details.loss_pct}%`} 
-                            size="small" 
-                            sx={{ 
-                              bgcolor: event.details.loss_pct >= 80 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(251, 191, 36, 0.2)', 
+                          <Chip
+                            label={`${event.details.loss_pct}%`}
+                            size="small"
+                            sx={{
+                              bgcolor: event.details.loss_pct >= 80 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(251, 191, 36, 0.2)',
                               color: event.details.loss_pct >= 80 ? '#ef4444' : '#fbbf24',
                               fontSize: '0.6rem',
                               height: 18
@@ -341,9 +341,9 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
                           />
                         )}
                         {event.details.actual_loss !== undefined && (
-                          <Chip 
-                            label={`Loss: $${event.details.actual_loss.toFixed(2)}`} 
-                            size="small" 
+                          <Chip
+                            label={`Loss: $${event.details.actual_loss.toFixed(2)}`}
+                            size="small"
                             sx={{ bgcolor: 'rgba(239, 68, 68, 0.15)', color: '#f87171', fontSize: '0.6rem', height: 18 }}
                           />
                         )}
@@ -357,6 +357,69 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
               ))
             )}
           </Box>
+
+          {/* Hedge History */}
+          {activityData.hedgeEvents?.length > 0 && (
+            <>
+              <Divider sx={{ my: 2, borderColor: 'rgba(148, 163, 184, 0.2)' }} />
+              <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
+                ⚡ Hedge History ({activityData.hedgeEvents.length})
+              </Typography>
+              <Box
+                sx={{
+                  maxHeight: 300,
+                  overflow: 'auto',
+                  bgcolor: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: 1,
+                  p: 1,
+                }}
+              >
+                {activityData.hedgeEvents.map((evt, idx) => (
+                  <Box
+                    key={idx}
+                    sx={{
+                      p: 1,
+                      mb: 0.5,
+                      borderRadius: 1,
+                      borderLeft: `3px solid ${evt.trigger === 'auto' ? '#f59e0b' : '#3b82f6'}`,
+                      bgcolor: evt.trigger === 'auto'
+                        ? 'rgba(245, 158, 11, 0.08)'
+                        : 'rgba(59, 130, 246, 0.08)',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Chip
+                        size="small"
+                        label={evt.trigger === 'auto' ? '[AUTO HEDGE]' : '[MANUAL HEDGE]'}
+                        sx={{
+                          height: 18,
+                          fontSize: '0.6rem',
+                          bgcolor: evt.trigger === 'auto'
+                            ? 'rgba(245, 158, 11, 0.2)'
+                            : 'rgba(59, 130, 246, 0.2)',
+                          color: evt.trigger === 'auto' ? '#f59e0b' : '#3b82f6',
+                        }}
+                      />
+                      <Typography variant="caption" sx={{ color: '#64748b' }}>
+                        {evt.timestamp}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" sx={{ color: '#e2e8f0' }}>
+                      {evt.side === 'sell' ? 'SOLD' : 'BOUGHT'} {evt.size} BTC-PERP
+                      {' '}@ {evt.order_type === 'smart' ? 'Smart' : 'Market'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                      Pre-hedge Δ: {evt.pre_delta > 0 ? '+' : ''}{evt.pre_delta}
+                      {' '}→ Post-hedge Δ: ~{evt.post_delta}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                      Order ID: #{evt.order_id} ✅
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </>
+          )}
 
           {/* Last Update */}
           <Typography variant="caption" sx={{ color: '#64748b', mt: 2, display: 'block', textAlign: 'right' }}>
