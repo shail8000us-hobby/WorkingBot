@@ -24,9 +24,8 @@ import {
   Alert,
 } from '@mui/material';
 import { Warning, Check, Close, Edit, Shield, ShieldOutlined, Delete } from '@mui/icons-material';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '' });
+// BUG-FIX: use shared apiShim (handles auth headers, base URL, interceptors)
+import api from '../../utils/apiShim';
 
 export default function ExpiryMaxLossPanel({
   uniqueExpiries = [],

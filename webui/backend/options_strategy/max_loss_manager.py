@@ -301,13 +301,15 @@ class MaxLossManager:
             return None
     
     def get_all_strike_max_loss(self) -> List[Dict]:
-        """Get all active strike max loss settings"""
+        """Get all active strike max loss settings (including triggered ones for UI display)"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            
+
+            # Return enabled limits AND recently-triggered limits so frontend can show the
+            # triggered/strikethrough state even after the monitor cleaned up the position.
             cursor.execute("""
-                SELECT * FROM strike_max_loss WHERE enabled = 1
+                SELECT * FROM strike_max_loss WHERE enabled = 1 OR triggered = 1
             """)
             
             rows = cursor.fetchall()
@@ -330,9 +332,12 @@ class MaxLossManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            
+
+            # Also clear triggered so the entry is fully hidden from the frontend
+            # (triggered=1 entries are returned by get_all_strike_max_loss for UI display;
+            # explicit user removal should fully hide the entry).
             cursor.execute("""
-                UPDATE strike_max_loss SET enabled = 0, updated_at = ?
+                UPDATE strike_max_loss SET enabled = 0, triggered = 0, updated_at = ?
                 WHERE symbol = ?
             """, (datetime.now().isoformat(), symbol))
             
@@ -429,13 +434,13 @@ class MaxLossManager:
             return None
     
     def get_all_expiry_max_loss(self) -> List[Dict]:
-        """Get all active expiry max loss settings"""
+        """Get all active expiry max loss settings (including triggered ones for UI display)"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute("""
-                SELECT * FROM expiry_max_loss WHERE enabled = 1
+                SELECT * FROM expiry_max_loss WHERE enabled = 1 OR triggered = 1
             """)
             
             rows = cursor.fetchall()
@@ -458,9 +463,10 @@ class MaxLossManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            
+
+            # Also clear triggered so explicit user removal fully hides the entry
             cursor.execute("""
-                UPDATE expiry_max_loss SET enabled = 0, updated_at = ?
+                UPDATE expiry_max_loss SET enabled = 0, triggered = 0, updated_at = ?
                 WHERE expiry_code = ?
             """, (datetime.now().isoformat(), expiry_code))
             
@@ -490,9 +496,9 @@ class MaxLossManager:
             row = cursor.fetchone()
             max_loss_limit = row["max_loss"] if row else 0
             
-            # Mark as triggered
+            # Mark as triggered and disable monitoring so cleanup doesn't clear the triggered flag
             cursor.execute("""
-                UPDATE strike_max_loss SET triggered = 1, triggered_at = ?, updated_at = ?
+                UPDATE strike_max_loss SET triggered = 1, enabled = 0, triggered_at = ?, updated_at = ?
                 WHERE symbol = ?
             """, (now, now, symbol))
             
@@ -522,9 +528,9 @@ class MaxLossManager:
             row = cursor.fetchone()
             max_loss_limit = row["max_loss"] if row else 0
             
-            # Mark as triggered
+            # Mark as triggered and disable monitoring so cleanup doesn't clear the triggered flag
             cursor.execute("""
-                UPDATE expiry_max_loss SET triggered = 1, triggered_at = ?, updated_at = ?
+                UPDATE expiry_max_loss SET triggered = 1, enabled = 0, triggered_at = ?, updated_at = ?
                 WHERE expiry_code = ?
             """, (now, now, expiry_code))
             
@@ -745,42 +751,41 @@ class MaxLossMonitor:
     def _monitor_loop(self):
         """Main monitoring loop - runs continuously in background"""
         logger.info("🔄 Max loss monitor loop started")
-        print("🔄 MAX LOSS MONITOR LOOP STARTED - THREAD RUNNING", flush=True)
         add_activity_event("monitor_start", "🔄 Max Loss Monitor started", {"interval": self.check_interval})
-        
+
         iteration = 0
         while self._running:
             iteration += 1
-            print(f"🔄 Monitor loop iteration {iteration}", flush=True)
             try:
                 # Only check if there are active max loss limits
                 strike_limits = self.manager.get_all_strike_max_loss()
                 expiry_limits = self.manager.get_all_expiry_max_loss()
-                
-                print(f"📊 Limits found: {len(strike_limits)} strikes, {len(expiry_limits)} expiries", flush=True)
-                logger.debug(f"Monitor loop: {len(strike_limits)} strike limits, {len(expiry_limits)} expiry limits")
-                
-                if strike_limits or expiry_limits:
-                    print(f"🔍 RUNNING MAX LOSS CHECK", flush=True)
-                    logger.info(f"🔍 Running max loss check (strike: {len(strike_limits)}, expiry: {len(expiry_limits)})")
-                    add_activity_event("check_start", f"🔍 Checking {len(strike_limits)} strike limits, {len(expiry_limits)} expiry limits", {
-                        "strike_count": len(strike_limits),
-                        "expiry_count": len(expiry_limits),
+
+                # Filter to only enabled (non-triggered) limits for monitoring
+                active_strike = [s for s in strike_limits if s.get("enabled")]
+                active_expiry = [e for e in expiry_limits if e.get("enabled")]
+
+                logger.debug(f"Monitor loop {iteration}: {len(active_strike)} strike limits, {len(active_expiry)} expiry limits")
+
+                if active_strike or active_expiry:
+                    logger.info(f"🔍 Running max loss check (strike: {len(active_strike)}, expiry: {len(active_expiry)})")
+                    add_activity_event("check_start", f"🔍 Checking {len(active_strike)} strike limits, {len(active_expiry)} expiry limits", {
+                        "strike_count": len(active_strike),
+                        "expiry_count": len(active_expiry),
                         "iteration": iteration
                     })
                     self._check_max_loss()
                     self._check_count += 1
                 else:
-                    print(f"⏭️  No limits, skipping", flush=True)
                     # Only log this occasionally to avoid spam
                     if iteration % 12 == 1:  # Every ~60 seconds if interval is 5s
                         add_activity_event("idle", "⏭️ No active max loss limits configured", {"iteration": iteration})
-                
+
                 self._last_check = time.time()
             except Exception as e:
                 logger.error(f"Error in max loss monitor loop: {e}", exc_info=True)
                 add_activity_event("error", f"❌ Monitor error: {str(e)}", {"iteration": iteration})
-            
+
             time.sleep(self.check_interval)
     
     def _check_rate_limit(self) -> bool:
@@ -801,19 +806,14 @@ class MaxLossMonitor:
     
     def _check_max_loss(self):
         """Check all positions against max loss limits"""
-        print(f"🎯 _check_max_loss() CALLED", flush=True)
         try:
             # Increment check counter
             self._metrics["total_checks"] += 1
-            print(f"🎯 Check counter: {self._metrics['total_checks']}", flush=True)
-            
+
             # Check API rate limits before making calls
             if not self._check_rate_limit():
-                print(f"⏸️ Rate limit reached, skipping check", flush=True)
                 return
-            
-            print(f"✅ Rate limit OK, proceeding", flush=True)
-            
+
             # Use test mode positions if enabled
             if self.test_mode and self._test_positions:
                 positions = self._test_positions
@@ -827,163 +827,94 @@ class MaxLossMonitor:
                         logger.debug(f"Using cached positions: {len(positions)} positions")
                     else:
                         positions = None
-                
+
                 if positions is None:
-                    # Fetch positions from Delta Exchange with proper async handling
-                    print(f"📡 Fetching positions from API...", flush=True)
+                    # Fetch positions using sync HTTP request to avoid asyncio event loop issues
+                    # The async API client has objects bound to main thread's event loop,
+                    # which causes "bound to a different event loop" errors in background threads
                     try:
-                        # Proper async event loop management in thread
-                        try:
-                            loop = asyncio.get_running_loop()
-                            should_close_loop = False
-                        except RuntimeError:
-                            # No running loop, create one
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            should_close_loop = True
-                        
-                        try:
-                            positions = loop.run_until_complete(
-                                self.api_client.get_all_positions_with_options()
-                            )
-                            logger.info(f"✅ Fetched {len(positions)} positions from Delta Exchange")
-                            print(f"✅ API returned {len(positions)} positions", flush=True)
-                            
-                            # Log position symbols for debugging
-                            if positions:
-                                # Filter for dict items before accessing .get()
-                                losing_positions = [p for p in positions if isinstance(p, dict) and p.get('unrealized_pnl', 0) < 0]
-                                if losing_positions:
-                                    logger.debug(f"Found {len(losing_positions)} losing positions")
-                            
+                        import requests
+
+                        # Use internal Flask endpoint (thread-safe, no asyncio issues)
+                        response = requests.get(
+                            "http://localhost:5555/api/options/positions",
+                            timeout=10
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            # The endpoint returns {'positions': [...], 'dashboard': {...}}
+                            positions = data.get('positions', [])
+                            logger.debug(f"Fetched {len(positions)} positions via HTTP")
+
                             # Update cache with lock
                             with self._cache_lock:
                                 self._positions_cache = positions
                                 self._cache_time = now
-                        finally:
-                            pass  # Don't close loop - may be reused by Flask/async context
-                            
+                        else:
+                            logger.error(f"❌ HTTP fetch failed: {response.status_code}")
+                            self._metrics["api_errors"] += 1
+                            return
+
                     except Exception as e:
-                        logger.error(f"❌ Error fetching positions from Delta Exchange: {e}")
+                        logger.error(f"❌ Error fetching positions: {e}")
                         self._metrics["api_errors"] += 1
-                        print(f"❌ API error: {e}", flush=True)
                         return
-            
-            print(f"🔍 positions variable type: {type(positions)}", flush=True)
-            print(f"🔍 positions keys: {positions.keys() if isinstance(positions, dict) else 'N/A'}", flush=True)
-            
-            # FIX: get_all_positions_with_options() returns {'futures': [...], 'options': [...]}
-            # We need to extract the flat list of all positions
+
+            # Handle dict response format {'futures': [...], 'options': [...]}
             if isinstance(positions, dict):
                 futures_list = positions.get('futures', [])
                 options_list = positions.get('options', [])
-                all_positions = futures_list + options_list
-                print(f"✅ Extracted {len(all_positions)} positions ({len(futures_list)} futures, {len(options_list)} options)", flush=True)
-                positions = all_positions  # Replace dict with flat list
-            
+                positions = futures_list + options_list
+
             if not positions:
-                logger.warning(f"⚠️ DEBUG: No positions found to check against max loss limits")
-                print(f"⚠️ DEBUG: No positions found (evaluated as False)", flush=True)
+                logger.debug("No positions found to check against max loss limits")
                 return
-            
-            # ADD DETAILED DEBUG LOGGING
-            logger.info(f"🔍 DEBUG: Fetched {len(positions)} total positions")
-            print(f"🔍 DEBUG: Fetched {len(positions)} total positions", flush=True)
-            logger.info(f"🔍 DEBUG: Position types: {[type(p) for p in positions[:3]]}")
-            print(f"🔍 DEBUG: Position types: {[type(p) for p in positions[:min(3, len(positions))]]}", flush=True)
-            
-            # Log ALL position symbols and PnL
-            for i, pos in enumerate(positions):
-                if isinstance(pos, dict):
-                    symbol = pos.get("product_symbol", "UNKNOWN")
-                    pnl = pos.get("unrealized_pnl", 0)
-                    size = pos.get("size", 0)
-                    logger.info(f"🔍 DEBUG Position {i+1}: {symbol} | PnL: ${pnl:.4f} | Size: {size}")
-                    print(f"🔍 DEBUG Position {i+1}: {symbol} | PnL: ${pnl:.4f} | Size: {size}", flush=True)
-                else:
-                    logger.error(f"❌ DEBUG: Position {i+1} is not a dict: {type(pos)}")
-            
+
             # Filter out any non-dict items (safety check)
             if not isinstance(positions, list):
                 logger.error(f"❌ Positions is not a list: {type(positions)}")
                 return
-            
+
             positions = [p for p in positions if isinstance(p, dict)]
             if not positions:
                 logger.warning("⚠️ No valid position dictionaries found after filtering")
                 return
-            
-            # Check per-strike max loss
-            strike_limits = self.manager.get_all_strike_max_loss()
-            
-            # Log all active max loss limits
-            logger.info(f"🔍 DEBUG: {len(strike_limits)} active strike max loss limits")
-            print(f"🔍 DEBUG: {len(strike_limits)} active strike max loss limits", flush=True)
-            for limit in strike_limits:
-                logger.info(f"🔍 DEBUG Limit: {limit['symbol']} | Max Loss: ${limit['max_loss']:.4f} | Triggered: {limit['triggered']}")
-                print(f"🔍 DEBUG Limit: {limit['symbol']} | Max Loss: ${limit['max_loss']:.4f}", flush=True)
-            
-            strike_limits_map = {s["symbol"]: s for s in strike_limits}
-            
+
+            # Check per-strike max loss — only enabled (non-triggered) limits
+            strike_limits = [s for s in self.manager.get_all_strike_max_loss() if s.get("enabled")]
+
             if strike_limits:
-                logger.info(f"🔍 Checking {len(positions)} positions against {len(strike_limits)} max loss limits")
-                print(f"🔍 Checking {len(positions)} positions against {len(strike_limits)} limits", flush=True)
-                
-                # DEBUG: Check if any position symbols match limit symbols
-                position_symbols = set(p.get("product_symbol") for p in positions if isinstance(p, dict))
+                logger.debug(f"Checking {len(positions)} positions against {len(strike_limits)} strike limits")
+
+                # Warn once if no symbols match (helps diagnose mismatches)
+                position_symbols = set(p.get("product_symbol") for p in positions)
                 limit_symbols = set(s["symbol"] for s in strike_limits)
-                
-                logger.info(f"🔍 DEBUG Position symbols: {position_symbols}")
-                logger.info(f"🔍 DEBUG Limit symbols: {limit_symbols}")
-                print(f"🔍 DEBUG Position symbols: {len(position_symbols)} total", flush=True)
-                print(f"🔍 DEBUG Limit symbols: {limit_symbols}", flush=True)
-                
-                matching_symbols = position_symbols & limit_symbols
-                logger.info(f"🔍 DEBUG Matching symbols: {matching_symbols}")
-                print(f"🔍 DEBUG Matching symbols: {matching_symbols}", flush=True)
-                
-                if not matching_symbols:
-                    logger.warning(f"⚠️ DEBUG: NO MATCHING SYMBOLS FOUND!")
-                    logger.warning(f"⚠️ DEBUG: This is why max loss is not triggering!")
-                    print(f"⚠️ DEBUG: NO MATCHING SYMBOLS!", flush=True)
-            
+                if not (position_symbols & limit_symbols):
+                    logger.warning(f"⚠️ No matching symbols between positions and strike max loss limits")
+                    logger.debug(f"  Position symbols: {position_symbols}")
+                    logger.debug(f"  Limit symbols: {limit_symbols}")
+
+            strike_limits_map = {s["symbol"]: s for s in strike_limits}
+
             for pos in positions:
-                if not isinstance(pos, dict):
-                    logger.error(f"❌ DEBUG: Skipping non-dict position: {type(pos)}")
-                    continue
-                
                 symbol = pos.get("product_symbol")
                 pnl = pos.get("unrealized_pnl", 0)
                 size = pos.get("size", 0)
-                
-                # DEBUG: Log every position being checked
-                logger.debug(f"🔍 Checking position: {symbol} | PnL: ${pnl:.4f} | Size: {size}")
-                
+
+                logger.debug(f"Checking position: {symbol} | PnL: ${pnl:.4f} | Size: {size}")
+
                 # Check if this symbol has a max loss limit
                 if symbol in strike_limits_map:
-                    logger.info(f"✅ DEBUG: Found max loss limit for {symbol}")
-                    print(f"✅ DEBUG: Found limit for {symbol}", flush=True)
-                    
                     limit = strike_limits_map[symbol]
                     max_loss = limit["max_loss"]
-                    
-                    # DEBUG: Log the comparison
-                    logger.info(f"🔍 DEBUG: {symbol} comparison:")
-                    logger.info(f"   - Current PnL: ${pnl:.4f}")
-                    logger.info(f"   - Max Loss Limit: ${max_loss:.4f}")
-                    logger.info(f"   - Is PnL negative? {pnl < 0}")
-                    logger.info(f"   - Absolute loss: ${abs(pnl):.4f}")
-                    logger.info(f"   - Should trigger? {abs(pnl) >= max_loss and pnl < 0}")
-                    print(f"🔍 {symbol}: PnL=${pnl:.4f}, Limit=${max_loss:.4f}, Negative={pnl < 0}", flush=True)
-                    
+
                     # ONLY check positions with NEGATIVE PnL (losses)
                     if pnl < 0:
-                        print(f"🔴 {symbol} has negative PnL, checking loss...", flush=True)
                         actual_loss = abs(pnl)  # Use absolute value of negative PnL
                         loss_percentage = (actual_loss / max_loss) if max_loss > 0 else 0
-                        
-                        logger.info(f"📊 {symbol}: Loss ${actual_loss:.4f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)")
-                        print(f"📊 {symbol}: Loss ${actual_loss:.4f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)", flush=True)
+
+                        logger.debug(f"📊 {symbol}: Loss ${actual_loss:.4f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)")
                         
                         # Log to activity panel
                         add_activity_event("position_check", f"📊 {symbol}: Loss ${actual_loss:.2f} / ${max_loss:.2f} ({loss_percentage*100:.1f}%)", {
@@ -1012,12 +943,7 @@ class MaxLossMonitor:
                         if actual_loss >= max_loss:
                             # Check if position is already closed (size = 0) to avoid duplicate close attempts
                             current_size = abs(pos.get("size", 0))
-                            logger.error(f"🛑 DEBUG: MAX LOSS BREACH DETECTED!")
-                            logger.error(f"   - Symbol: {symbol}")
-                            logger.error(f"   - Actual Loss: ${actual_loss:.4f}")
-                            logger.error(f"   - Max Loss: ${max_loss:.4f}")
-                            logger.error(f"   - Current Size: {current_size}")
-                            logger.error(f"   - Triggered Flag: {limit.get('triggered', False)}")
+                            logger.warning(f"🛑 MAX LOSS BREACH: {symbol} - Loss ${actual_loss:.4f} >= Limit ${max_loss:.4f} (size: {current_size})")
                             
                             add_activity_event("breach", f"🛑 MAX LOSS BREACH: {symbol} - Loss ${actual_loss:.2f} >= Limit ${max_loss:.2f}", {
                                 "symbol": symbol,
@@ -1037,8 +963,7 @@ class MaxLossMonitor:
                                             should_attempt = False
                                 
                                 if should_attempt:
-                                    logger.error(f"🛑 MAX LOSS BREACH: {symbol} loss ${actual_loss:.4f} >= limit ${max_loss:.2f} - AUTO CLOSING")
-                                    logger.error(f"🛑 ATTEMPTING TO CLOSE {symbol}")
+                                    logger.warning(f"🛑 AUTO-CLOSING {symbol} (loss ${actual_loss:.4f} >= limit ${max_loss:.2f})")
                                     
                                     add_activity_event("closing", f"🔴 AUTO-CLOSING {symbol} due to max loss breach", {
                                         "symbol": symbol,
@@ -1069,9 +994,8 @@ class MaxLossMonitor:
                                             logger.warning(f"Failed to send max loss notification: {e}")
                                     
                                     success = self._close_position_with_retry(symbol, actual_loss, "strike")
-                                    logger.error(f"🛑 Close attempt result: {'SUCCESS' if success else 'FAILED'}")
-                                    
                                     if success:
+                                        logger.warning(f"✅ Position {symbol} closed via max loss")
                                         self._metrics["total_breaches"] += 1
                                         self._metrics["last_breach_time"] = datetime.now().isoformat()
                                         # Remove from close attempts tracking (successfully closed)
@@ -1081,6 +1005,7 @@ class MaxLossMonitor:
                                         with self._warned_symbols_lock:
                                             self._warned_symbols.discard(symbol)
                                     else:
+                                        logger.error(f"❌ Failed to close {symbol} after max loss breach - will retry")
                                         # Mark attempt time to avoid immediate retry
                                         with self._close_attempts_lock:
                                             self._close_attempted[symbol] = time.time()
@@ -1105,8 +1030,8 @@ class MaxLossMonitor:
                 elif pnl >= 0 and symbol in strike_limits_map:
                     logger.debug(f"ℹ️ {symbol}: In profit ${pnl:.4f} - skipping max loss check")
             
-            # Check per-expiry max loss
-            expiry_limits = self.manager.get_all_expiry_max_loss()
+            # Check per-expiry max loss — only enabled (non-triggered) limits
+            expiry_limits = [e for e in self.manager.get_all_expiry_max_loss() if e.get("enabled")]
             if expiry_limits:
                 # Group positions by expiry
                 expiry_pnl = {}  # expiry_code -> total_pnl
@@ -1162,8 +1087,8 @@ class MaxLossMonitor:
                     if symbol:
                         active_positions_map[symbol] = pos
             
-            # Check each strike max loss limit
-            strike_limits = self.manager.get_all_strike_max_loss()
+            # Check each ENABLED (non-triggered) strike max loss limit for cleanup
+            strike_limits = [s for s in self.manager.get_all_strike_max_loss() if s.get("enabled")]
             for limit in strike_limits:
                 symbol = limit["symbol"]
                 should_remove = False
@@ -1207,8 +1132,8 @@ class MaxLossMonitor:
                     with self._warned_symbols_lock:
                         self._warned_symbols.discard(symbol)
             
-            # Check each expiry max loss limit
-            expiry_limits = self.manager.get_all_expiry_max_loss()
+            # Check each ENABLED (non-triggered) expiry max loss limit for cleanup
+            expiry_limits = [e for e in self.manager.get_all_expiry_max_loss() if e.get("enabled")]
             for limit in expiry_limits:
                 expiry_code = limit["expiry_code"]
                 
@@ -1275,7 +1200,7 @@ class MaxLossMonitor:
         return False
     
     def _close_position(self, symbol: str, actual_loss: float, loss_type: str):
-        """Close a single position due to max loss breach - Delta Exchange API"""
+        """Close a single position due to max loss breach - uses HTTP to avoid asyncio issues"""
         try:
             # Check if order execution is available
             if not ORDER_EXECUTION_AVAILABLE:
@@ -1290,156 +1215,117 @@ class MaxLossMonitor:
             
             logger.info(f"🔴 CLOSING {symbol} (max loss breach: ${actual_loss:.4f})")
             
-            # Proper async event loop management
-            try:
-                loop = asyncio.get_running_loop()
-                should_close_loop = False
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                should_close_loop = True
+            import requests
+            import time
             
+            # Use internal Flask endpoint to close position (thread-safe, no asyncio issues)
             try:
-                # Get position details to know size and side
-                positions_response = loop.run_until_complete(
-                    self.api_client.get_all_positions_with_options()
+                response = requests.post(
+                    "http://localhost:5555/api/options/close",
+                    json={
+                        "symbol": symbol,
+                        "confirm": True,
+                        "order_preference": "market_only"
+                    },
+                    timeout=15
                 )
                 
-                # FIX: get_all_positions_with_options() returns {'futures': [...], 'options': [...]}
-                # We need to extract the flat list of all positions
-                if isinstance(positions_response, dict):
-                    futures_list = positions_response.get('futures', [])
-                    options_list = positions_response.get('options', [])
-                    positions = futures_list + options_list
-                    logger.debug(f"Extracted {len(positions)} positions for close operation")
-                else:
-                    positions = positions_response if positions_response else []
-                
-                pos = next((p for p in positions if isinstance(p, dict) and p.get("product_symbol") == symbol), None)
-                if not pos:
-                    logger.error(f"❌ Position not found: {symbol}")
-                    return
-                
-                # Verify position still has size (not already closed)
-                current_size = abs(pos.get("size", 0))
-                if current_size == 0:
-                    logger.warning(f"⚠️ Position {symbol} already closed (size=0)")
-                    self.manager.mark_strike_triggered(symbol, actual_loss, [symbol])
-                    return
-                
-                # Delta Exchange: size must be absolute value
-                size = current_size
-                
-                # Delta Exchange: side is opposite of position
-                # Long position (size > 0) -> sell to close
-                # Short position (size < 0) -> buy to close
-                is_long = pos.get("size", 0) > 0
-                close_side = "sell" if is_long else "buy"
-                
-                logger.info(f"📊 Position details: {close_side} {size} contracts (reduce_only=True)")
-                
-                # Place market close order with reduce_only=True
-                # This ensures we only close existing position, never open new one
-                result = loop.run_until_complete(
-                    place_smart_order(
-                        self.api_client, 
-                        symbol, 
-                        size, 
-                        close_side, 
-                        ORDER_TYPE_MARKET_ONLY, 
-                        reduce_only=True  # Critical: prevents opening new positions
-                    )
-                )
-                
-                # Verify order was successful
-                if result and result.get("success", False):
-                    logger.info(f"✅ Close order placed for {symbol}: {result}")
-                    
-                    # Wait briefly for order to fill
-                    loop.run_until_complete(asyncio.sleep(0.5))
-                    
-                    # Verify position was actually closed by checking size
-                    updated_positions_response = loop.run_until_complete(
-                        self.api_client.get_all_positions_with_options()
-                    )
-                    
-                    # FIX: Extract positions from dict response
-                    if isinstance(updated_positions_response, dict):
-                        updated_futures = updated_positions_response.get('futures', [])
-                        updated_options = updated_positions_response.get('options', [])
-                        updated_positions = updated_futures + updated_options
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get("success"):
+                        logger.info(f"✅ Close order placed for {symbol}: {result}")
+                        
+                        # Wait briefly for order to fill, then verify
+                        time.sleep(0.5)
+                        
+                        # Verify position was closed using HTTP
+                        verify_response = requests.get(
+                            "http://localhost:5555/api/options/positions",
+                            timeout=10
+                        )
+                        
+                        if verify_response.status_code == 200:
+                            verify_data = verify_response.json()
+                            positions = verify_data.get('positions', [])
+                            updated_pos = next((p for p in positions if isinstance(p, dict) and p.get("product_symbol") == symbol), None)
+                            
+                            if updated_pos and abs(updated_pos.get("size", 0)) > 0:
+                                remaining_size = abs(updated_pos.get("size", 0))
+                                logger.warning(f"⚠️ Position {symbol} still has size {remaining_size} after close order - may need manual intervention")
+                                raise Exception(f"Position not fully closed (remaining size: {remaining_size})")
+                            else:
+                                logger.info(f"✅ Verified {symbol} position fully closed")
+                                self.manager.mark_strike_triggered(symbol, actual_loss, [symbol])
+                                self._metrics["positions_closed"] += 1
                     else:
-                        updated_positions = updated_positions_response if updated_positions_response else []
-                    
-                    updated_pos = next((p for p in updated_positions if isinstance(p, dict) and p.get("product_symbol") == symbol), None)
-                    
-                    if updated_pos and abs(updated_pos.get("size", 0)) > 0:
-                        remaining_size = abs(updated_pos.get("size", 0))
-                        logger.warning(f"⚠️ Position {symbol} still has size {remaining_size} after close order - may need manual intervention")
-                        raise Exception(f"Position not fully closed (remaining size: {remaining_size})")
-                    else:
-                        logger.info(f"✅ Verified {symbol} position fully closed")
-                        self.manager.mark_strike_triggered(symbol, actual_loss, [symbol])
-                        self._metrics["positions_closed"] += 1
+                        error_msg = result.get("error", "Unknown error")
+                        logger.error(f"❌ Failed to close {symbol}: {error_msg}")
+                        raise Exception(f"Close order failed: {error_msg}")
                 else:
-                    error_msg = result.get("error", "Unknown error") if result else "No result returned"
-                    logger.error(f"❌ Failed to close {symbol}: {error_msg}")
-                    raise Exception(f"Close order failed: {error_msg}")
-                
-            finally:
-                pass  # Don't close loop - may be reused by Flask/async context
+                    logger.error(f"❌ HTTP error closing {symbol}: {response.status_code}")
+                    raise Exception(f"HTTP error: {response.status_code}")
+                    
+            except requests.RequestException as e:
+                logger.error(f"❌ Request error closing {symbol}: {e}")
+                raise
                 
         except Exception as e:
             logger.error(f"❌ Error closing position for max loss: {e}", exc_info=True)
-    
+            raise  # Re-raise so _close_position_with_retry can apply retry/backoff logic
+
     def _close_expiry_positions(self, expiry_code: str, positions: List[Dict], actual_loss: float):
-        """Close all positions of an expiry due to max loss breach"""
+        """Close all positions of an expiry due to max loss breach - uses HTTP to avoid asyncio issues"""
         try:
-            # Proper async event loop management
-            try:
-                loop = asyncio.get_running_loop()
-                should_close_loop = False
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                should_close_loop = True
+            import requests
             
-            try:
-                # Check if order execution is available
-                if not ORDER_EXECUTION_AVAILABLE:
-                    logger.error(f"❌ Cannot close expiry {expiry_code}: Order execution module not available")
-                    raise Exception("Order execution module not available")
+            # Check if order execution is available
+            if not ORDER_EXECUTION_AVAILABLE:
+                logger.error(f"❌ Cannot close expiry {expiry_code}: Order execution module not available")
+                raise Exception("Order execution module not available")
+            
+            closed_positions = []
+            
+            for pos in positions:
+                symbol = pos.get("product_symbol")
+                size = abs(pos.get("size", 0))
+                is_long = pos.get("size", 0) > 0
+                close_side = "sell" if is_long else "buy"
                 
-                closed_positions = []
+                # TEST MODE: Only log, don't actually close
+                if self.test_mode:
+                    logger.warning(f"🧪 TEST MODE: Would close {symbol} (expiry {expiry_code}): {close_side} {size}")
+                    closed_positions.append(symbol)
+                    continue
                 
-                for pos in positions:
-                    symbol = pos.get("product_symbol")
-                    size = abs(pos.get("size", 0))
-                    is_long = pos.get("size", 0) > 0
-                    close_side = "sell" if is_long else "buy"
+                logger.info(f"🔴 CLOSING {symbol} (expiry {expiry_code} max loss): {close_side} {size}")
+                
+                try:
+                    # Use HTTP endpoint to close position
+                    response = requests.post(
+                        "http://localhost:5555/api/options/close",
+                        json={
+                            "symbol": symbol,
+                            "confirm": True,
+                            "order_preference": "market_only"
+                        },
+                        timeout=15
+                    )
                     
-                    # TEST MODE: Only log, don't actually close
-                    if self.test_mode:
-                        logger.warning(f"🧪 TEST MODE: Would close {symbol} (expiry {expiry_code}): {close_side} {size}")
-                        closed_positions.append(symbol)
-                        continue
-                    
-                    logger.info(f"🔴 CLOSING {symbol} (expiry {expiry_code} max loss): {close_side} {size}")
-                    
-                    try:
-                        result = loop.run_until_complete(
-                            place_smart_order(self.api_client, symbol, size, close_side, ORDER_TYPE_MARKET_ONLY, reduce_only=True)
-                        )
-                        closed_positions.append(symbol)
-                        logger.info(f"✅ Closed {symbol}: {result}")
-                    except Exception as e:
-                        logger.error(f"Failed to close {symbol}: {e}")
-                
-                # Mark expiry as triggered
-                self.manager.mark_expiry_triggered(expiry_code, actual_loss, closed_positions)
-                
-            finally:
-                pass  # Don't close loop - may be reused by Flask/async context
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get("success"):
+                            closed_positions.append(symbol)
+                            logger.info(f"✅ Closed {symbol}: {result}")
+                        else:
+                            logger.error(f"Failed to close {symbol}: {result.get('error')}")
+                    else:
+                        logger.error(f"HTTP error closing {symbol}: {response.status_code}")
+                        
+                except requests.RequestException as e:
+                    logger.error(f"Request error closing {symbol}: {e}")
+            
+            # Mark expiry as triggered
+            self.manager.mark_expiry_triggered(expiry_code, actual_loss, closed_positions)
                 
         except Exception as e:
             logger.error(f"Error closing expiry positions for max loss: {e}", exc_info=True)
