@@ -489,6 +489,11 @@ class MMMAnalyticsAggregator:
             'total_pe_lots_traded':     total_pe_vol,
             'total_volume_lots':        total_ce_vol + total_pe_vol,
             'avg_volume_per_session':   round((total_ce_vol + total_pe_vol) / n, 1),
+            # M1/M2 metrics
+            'total_harvests':           sum(s.get('total_harvests', 0) for s in sessions),
+            'avg_harvests_per_session': round(sum(s.get('total_harvests', 0) for s in sessions) / n, 1),
+            'total_recycles':           sum(s.get('total_recycles', 0) for s in sessions),
+            'avg_recycles_per_session': round(sum(s.get('total_recycles', 0) for s in sessions) / n, 1),
         }
 
     # =========================================================================

@@ -26,14 +26,25 @@ import {
  * @param {Array} futuresPositions - Futures positions
  * @returns {Object|null} Parsed positions + spotPrice + minDaysToExpiry + nearestExpiry
  */
-export const useParsedPositions = (positions, selectedPositions, futuresPositions) => {
+export const useParsedPositions = (positions, selectedPositions, futuresPositions, indexPrices = {}) => {
   return useMemo(() => {
     if (!positions || positions.length === 0) return null;
 
     const visiblePositions = positions.filter((p) => selectedPositions.includes(p.product_symbol));
 
+    // Determine underlying asset from visible positions (BTC or ETH)
+    const underlying = visiblePositions.length > 0
+      ? (visiblePositions[0].product_symbol.split('-')[1] || 'BTC')
+      : 'BTC';
+
+    // Use live index price as authoritative spot (same for all expiries).
+    // greeks.spot varies per expiry on Delta Exchange, causing ATM to shift
+    // when selecting positions from different expiries.
+    const liveSpot = indexPrices[underlying] || 0;
     let spotPrice = 90000;
-    if (visiblePositions.length > 0 && visiblePositions[0]?.greeks?.spot) {
+    if (liveSpot > 0) {
+      spotPrice = liveSpot;
+    } else if (visiblePositions.length > 0 && visiblePositions[0]?.greeks?.spot) {
       spotPrice = parseFloat(visiblePositions[0].greeks.spot);
     } else if (futuresPositions.length > 0 && futuresPositions[0]?.mark_price) {
       spotPrice = parseFloat(futuresPositions[0].mark_price);
@@ -105,7 +116,7 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
     const minDaysToExpiry = Math.max(0.001, actualDaysToExpiry);
 
     return { positions: parsed, spotPrice, minDaysToExpiry, riskFreeRate, nearestExpiry };
-  }, [positions, selectedPositions, futuresPositions]);
+  }, [positions, selectedPositions, futuresPositions, indexPrices]);
 };
 
 /**
@@ -196,8 +207,8 @@ export const useChartData = (parsedPositions, opts) => {
         //   at the current spot today.
         // ─────────────────────────────────────────────────────────────────────
 
-        const nowYears        = Math.max(1e-7, pos.daysToExpiry / 365.25);
-        const remainingYears  = Math.max(1e-7, remainingDays    / 365.25);
+        const nowYears = Math.max(1e-7, pos.daysToExpiry / 365.25);
+        const remainingYears = Math.max(1e-7, remainingDays / 365.25);
 
         // Intrinsic values
         const intrinsicAtSpot = pos.type === 'call'
@@ -208,9 +219,9 @@ export const useChartData = (parsedPositions, opts) => {
           : Math.max(0, pos.strike - price);
 
         // BSM values at current spot for "now" and "future" time slices
-        const bsAtSpotNow    = blackScholesPrice(spotPrice, pos.strike, nowYears,       riskFreeRate, pos.iv, pos.type);
+        const bsAtSpotNow = blackScholesPrice(spotPrice, pos.strike, nowYears, riskFreeRate, pos.iv, pos.type);
         const bsAtSpotFuture = blackScholesPrice(spotPrice, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
-        const bsTVAtSpotNow    = Math.max(0, bsAtSpotNow    - intrinsicAtSpot);
+        const bsTVAtSpotNow = Math.max(0, bsAtSpotNow - intrinsicAtSpot);
         const bsTVAtSpotFuture = Math.max(0, bsAtSpotFuture - intrinsicAtSpot);
 
         // Actual market time value at current spot (mark price above intrinsic)
@@ -231,7 +242,7 @@ export const useChartData = (parsedPositions, opts) => {
 
         // Step 2 — Distribute calibrated time value across the price axis
         //   using BSM time-value shape at the target time slice
-        const bsAtPriceFuture  = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
+        const bsAtPriceFuture = blackScholesPrice(price, pos.strike, remainingYears, riskFreeRate, pos.iv, pos.type);
         const bsTVAtPriceFuture = Math.max(0, bsAtPriceFuture - intrinsicAtPrice);
 
         let theo;

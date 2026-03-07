@@ -28,6 +28,8 @@ try:
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
+    # Provide a stub base class so ConfigChangeHandler can still be defined
+    FileSystemEventHandler = object
     logging.warning("watchdog not installed - config auto-reload disabled. Install: pip install watchdog")
 
 from bot.strategy.modules.event_store import EventStore, Event, EventType

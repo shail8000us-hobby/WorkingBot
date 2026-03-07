@@ -109,6 +109,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
       const { data } = await api.get('/api/options/dashboard');
 
       if (data?.success) {
+        // Always update lastDataUpdate on a successful backend response,
+        // even if data is unchanged (cached) — prevents false "STALE" warning
+        // when exchange API is temporarily unavailable but backend is healthy.
+        setLastDataUpdate(Date.now());
+
         if (data.last_modified && data.last_modified === lastModifiedRef.current) {
           return true;
         }
@@ -157,6 +162,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     try {
       const { data } = await api.get('/api/options/status');
       if (data?.success) {
+        // Always update lastDataUpdate on a successful backend response,
+        // even if data is unchanged (cached) — prevents false "STALE" warning
+        // when exchange API is temporarily unavailable but backend is healthy.
+        setLastDataUpdate(Date.now());
+
         setStatus(data);
       }
     } catch (err) {
@@ -220,6 +230,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     try {
       const { data } = await api.get('/api/futures/positions');
       if (data?.success) {
+        // Always update lastDataUpdate on a successful backend response,
+        // even if data is unchanged (cached) — prevents false "STALE" warning
+        // when exchange API is temporarily unavailable but backend is healthy.
+        setLastDataUpdate(Date.now());
+
         setFuturesPositions(data.positions || []);
       }
     } catch (err) {
@@ -231,6 +246,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     try {
       const { data } = await api.get('/api/positions/pending-orders');
       if (data?.success) {
+        // Always update lastDataUpdate on a successful backend response,
+        // even if data is unchanged (cached) — prevents false "STALE" warning
+        // when exchange API is temporarily unavailable but backend is healthy.
+        setLastDataUpdate(Date.now());
+
         setPendingOrders(data.orders || []);
         setPendingOrdersError(null);
       } else {
@@ -249,6 +269,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
       try {
         const { data } = await api.delete(`/api/options-chain/order/${order.id}/${order.product_id}`);
         if (data?.success) {
+        // Always update lastDataUpdate on a successful backend response,
+        // even if data is unchanged (cached) — prevents false "STALE" warning
+        // when exchange API is temporarily unavailable but backend is healthy.
+        setLastDataUpdate(Date.now());
+
           await fetchPendingOrders();
         } else {
           console.error('Failed to cancel order:', data?.error);
@@ -361,8 +386,9 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     if (!socketRef.current) {
       socketRef.current = io({
         path: '/socket.io',
-        transports: ['polling'],
-        upgrade: false,
+        transports: ['websocket', 'polling'],
+        upgrade: true,
+        rememberUpgrade: true,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 10,

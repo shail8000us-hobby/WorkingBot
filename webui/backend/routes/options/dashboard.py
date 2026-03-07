@@ -22,6 +22,7 @@ from flask import Blueprint, jsonify
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from config.loader import get_config, get_api_credentials
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -45,10 +46,14 @@ DASHBOARD_FRESH_SECONDS = 4.0   # Serve instantly from cache
 DASHBOARD_STALE_SECONDS = 30.0  # Serve stale + trigger background refresh
 
 
+@sealed
 def calculate_portfolio_greeks(positions):
     """
     Calculate aggregated portfolio Greeks from positions.
     This offloads calculation from frontend to backend for better performance.
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
     
     Args:
         positions: List of position dicts with greeks data

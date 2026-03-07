@@ -23,6 +23,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.loader import get_config
 
+try:
+    from webui.backend.sealed import sealed
+except ImportError:
+    def sealed(f): return f
+
 log = logging.getLogger("runner")
 
 
@@ -104,6 +109,7 @@ class ModeStateManager:
             log.error(f"Failed to save state: {e}")
             return False
         
+    @sealed
     def get_current_mode(self) -> str:
         """
         Get current mode from config.

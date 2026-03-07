@@ -14,6 +14,8 @@ import math
 from typing import List, Dict, Optional, Any
 from decimal import Decimal, ROUND_DOWN
 
+from webui.backend.sealed import sealed
+
 log = logging.getLogger("runner")
 
 
@@ -75,6 +77,7 @@ class GridCalculator:
         self.ref = float(ref)
         self.tick_size = float(tick_size)
     
+    @sealed
     def compute_next_buy_level(
         self,
         open_positions: List[Dict[str, Any]],
@@ -207,6 +210,7 @@ class GridCalculator:
         # Quantize to tick size
         return self.quantize_price(target)
     
+    @sealed
     def compute_tp_price(self, entry_price: float) -> float:
         """
         Compute take-profit price from entry price (LONG mode)
@@ -257,6 +261,7 @@ class GridCalculator:
         """
         return current_price + self.step
     
+    @sealed
     def quantize_price(self, price: float) -> float:
         """
         Quantize price to exchange tick size (snap down)
@@ -304,6 +309,7 @@ class GridCalculator:
         # This is idempotent because quantized_decimal is always ticks * tick_size
         return float(quantized_decimal)
     
+    @sealed
     def is_within_bounds(
         self,
         price: float,
@@ -328,6 +334,7 @@ class GridCalculator:
         
         return lower <= price <= upper
     
+    @sealed
     def get_grid_levels(self) -> List[float]:
         """
         Generate all grid levels from lower to upper
@@ -362,6 +369,7 @@ class GridCalculator:
         
         return levels
     
+    @sealed
     def is_price_grid_aligned(self, price: float, tolerance: float = 0.01) -> bool:
         """
         Check if price is aligned to grid step
@@ -384,6 +392,7 @@ class GridCalculator:
         # Allow small floating point tolerance
         return remainder < tolerance or (self.step - remainder) < tolerance
     
+    @sealed
     def find_nearest_grid_level(self, price: float) -> float:
         """
         Find nearest grid level to given price (for alignment)
@@ -407,6 +416,7 @@ class GridCalculator:
         # This ensures grid_level - step is also precisely on-grid
         return self.quantize_price(grid_level)
     
+    @sealed
     def find_nearest_grid_below(self, price: float) -> Optional[float]:
         """
         Find nearest grid level strictly below given price.
@@ -474,6 +484,7 @@ class GridCalculator:
         
         return None
     
+    @sealed
     def get_startup_maker_buy_level(
         self,
         current_price: float,

@@ -1,0 +1,92 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                   🤖 TELEGRAM LIVE BOT - QUICK REFERENCE                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+📱 BOT INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Bot Name:     Algo notifier
+  Username:     @algo_ssr_bot
+  Bot ID:       8306669384
+  Token:        8306669384:AAHn8OwsYOwh17OvoSPgw6oErEB17C-_bBU
+  Chat ID:      8170794676
+  Status:       ✅ ACTIVE & TESTED
+
+🔧 CONFIGURATION FILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✅ secrets/api_keys.env           (Primary - LIVE_TELEGRAM_BOT_TOKEN)
+  ✅ grid_config.env                 (Main config)
+  ✅ webui/backend/grid_config.env   (Backend)
+  ✅ .env.reports                    (Reports)
+
+🚀 QUICK COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Test Telegram:
+    python3 test_live_telegram.py
+
+  Check Config:
+    grep "LIVE_TELEGRAM_BOT_TOKEN" secrets/api_keys.env
+
+  Verify Trading Mode:
+    grep "TRADING_MODE" grid_config.env
+
+  Check API Health:
+    curl http://localhost:5555/api/health | jq '.telegram'
+
+  Watch Logs:
+    tail -f /tmp/gridbot_mobile.log | grep -i telegram
+
+📊 TRADING MODES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🔴 LIVE Mode:  Uses LIVE_TELEGRAM_BOT_TOKEN (@algo_ssr_bot)
+                 Token: ...AAHn8OwsYOwh17OvoSPgw6oErEB17C-_bBU
+                 
+  🟢 DEMO Mode:  Uses DEMO_TELEGRAM_BOT_TOKEN (different bot)
+                 Token: ...AAE0sGh1qvWNiMgSev3K92p3i-x0jCTXcLM
+
+✅ WHAT WAS FIXED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✅ Updated LIVE_TELEGRAM_BOT_TOKEN in all config files
+  ✅ Updated TELEGRAM_BOT_TOKEN (generic fallback)
+  ✅ Fixed hardcoded token in webui/backend/app.py
+  ✅ Removed all duplications
+  ✅ Tested and verified working
+  ✅ No conflicts with demo token
+
+📝 NOTIFICATIONS YOU'LL RECEIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Order placed/filled/cancelled
+  • Position opened/closed
+  • Real-time PnL updates
+  • Error alerts & warnings
+  • Guardian stops
+  • Emergency kills
+  • Bot start/stop
+  • Configuration changes
+
+🛠️ TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  No messages?
+    1. Check TRADING_MODE=live in grid_config.env
+    2. Run: python3 test_live_telegram.py
+    3. Start chat with @algo_ssr_bot (send /start)
+    4. Check backend logs for errors
+
+  Bot not found?
+    • Verify token is correct
+    • Run test script to validate
+
+  Wrong bot responding?
+    • Check TRADING_MODE setting
+    • Verify correct token is loaded
+
+📚 MORE INFO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Full Documentation:    TELEGRAM_LIVE_BOT_CONFIGURED.md
+  Test Script:           test_live_telegram.py
+  Main Notifier Code:    bot/utils/notifier.py
+  Backend Integration:   webui/backend/app.py
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                   ✅ READY FOR LIVE TRADING NOTIFICATIONS                 ║
+╚═══════════════════════════════════════════════════════════════════════════╝

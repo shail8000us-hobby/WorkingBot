@@ -231,13 +231,17 @@ class AsyncDeltaClient:
     
     def _record_failure(self):
         """Record API failure for circuit breaker."""
-        self._circuit_breaker.failures += 1
-        self._circuit_breaker.last_failure = time.time()
-        
-        if self._circuit_breaker.failures >= self._circuit_breaker.failure_threshold:
-            log.error(f"Circuit breaker opened after {self._circuit_breaker.failures} failures")
-            self._circuit_breaker.is_open = True
-            self._metrics.circuit_breaker_opens += 1
+        # Only advance the failure counter when the breaker is NOT already open.
+        # Updating last_failure while open resets the cooldown timer, causing
+        # the breaker to stay permanently open under sustained blocked traffic.
+        if not self._circuit_breaker.is_open:
+            self._circuit_breaker.failures += 1
+            self._circuit_breaker.last_failure = time.time()
+
+            if self._circuit_breaker.failures >= self._circuit_breaker.failure_threshold:
+                log.error(f"Circuit breaker opened after {self._circuit_breaker.failures} failures")
+                self._circuit_breaker.is_open = True
+                self._metrics.circuit_breaker_opens += 1
     
     def _record_success(self):
         """Record API success - reset failure count."""

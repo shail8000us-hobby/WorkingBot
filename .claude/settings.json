@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/ssr/Projects/WorkingBot/webui/frontend/**)",
+      "Bash(lsof -iTCP -sTCP:LISTEN -P)",
+      "Read(//Users/ssr/Library/LaunchAgents/**)",
+      "Bash(/Users/ssr/Projects/WorkingBot/.venv/bin/python -c \":*)",
+      "Bash(lsof -ti:5555)",
+      "Bash(xargs ps -p)",
+      "Bash(kill 58772)",
+      "Bash(xargs kill -9)"
+    ]
+  }
+}

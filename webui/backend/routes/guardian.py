@@ -625,7 +625,6 @@ def rsi_status():
     try:
         from flask import request
         from config.loader import get_config
-        import ccxt
         
         requested_symbol = request.args.get('symbol')
         config = get_config(reload=True)
@@ -690,11 +689,10 @@ def _get_rsi_for_symbol(symbol_name: str, config) -> dict:
     Returns:
         Dict with RSI data for the symbol
     """
-    import ccxt
     from bot.guardian.collectors.rsi_collector import RSICollector
     
-    # Create exchange instance
-    exchange = ccxt.delta({'enableRateLimit': True})
+    # RSICollector uses its own REST API, no ccxt exchange needed
+    exchange = None
     
     # Get symbol-specific config (v5.0) or fallback to global (v4.0)
     if symbol_name and hasattr(config, 'symbols') and config.symbols and symbol_name in config.symbols:

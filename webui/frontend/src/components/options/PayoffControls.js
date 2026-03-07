@@ -24,8 +24,11 @@ import { formatDate } from './payoffCalculator';
  * @param {Function} props.setTargetDaysFromNow - Setter for target days
  * @param {Date} props.targetDate - Computed target date
  * @param {number} props.daysToExpiryFromTarget - Days remaining from target to expiry
- * @param {number} props.minDaysToExpiry - Max value for date slider
+ * @param {number} props.minDaysToExpiry - Nearest expiry in days (used as fallback)
+ * @param {number} [props.maxDaysToExpiry] - Furthest expiry in days (slider max)
  * @param {Date} props.nearestExpiry - Nearest expiry date
+ * @param {Date} [props.furthestExpiry] - Furthest expiry date (right-end label)
+ * @param {Array} [props.allExpiryMarks] - Per-expiry tick marks for the slider
  */
 const PayoffControls = React.memo(({
   targetPricePercent,
@@ -36,17 +39,22 @@ const PayoffControls = React.memo(({
   targetDate,
   daysToExpiryFromTarget,
   minDaysToExpiry,
+  maxDaysToExpiry,
   nearestExpiry,
+  furthestExpiry,
+  allExpiryMarks,
 }) => {
-  const dateMarks = [
+  const sliderMax = maxDaysToExpiry ?? minDaysToExpiry;
+  const dateMarks = allExpiryMarks ?? [
     { value: 0, label: 'Now' },
     {
-      value: minDaysToExpiry,
-      label: minDaysToExpiry < 1
-        ? `${Math.round(minDaysToExpiry * 24)}h`
-        : `${Math.ceil(minDaysToExpiry)}d`,
+      value: sliderMax,
+      label: sliderMax < 1
+        ? `${Math.round(sliderMax * 24)}h`
+        : `${Math.ceil(sliderMax)}d`,
     },
   ];
+  const rightExpiry = furthestExpiry ?? nearestExpiry;
 
   return (
     <>
@@ -119,7 +127,7 @@ const PayoffControls = React.memo(({
             <Typography variant="body2" sx={{ minWidth: 180, textAlign: 'center' }}>
               {formatDate(targetDate)}
             </Typography>
-            <IconButton size="small" onClick={() => setTargetDaysFromNow((d) => Math.min(minDaysToExpiry, d + 1 / 24))} title="+1 hour">
+            <IconButton size="small" onClick={() => setTargetDaysFromNow((d) => Math.min(sliderMax, d + 1 / 24))} title="+1 hour">
               <ChevronRightIcon fontSize="small" />
             </IconButton>
           </Box>
@@ -128,7 +136,7 @@ const PayoffControls = React.memo(({
           <Slider
             value={targetDaysFromNow}
             onChange={(e, v) => setTargetDaysFromNow(v)}
-            min={0} max={minDaysToExpiry} step={1 / 24}
+            min={0} max={sliderMax} step={1 / 24}
             marks={dateMarks}
             sx={{
               color: '#3b82f6',
@@ -140,9 +148,9 @@ const PayoffControls = React.memo(({
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: -1 }}>
             <Typography variant="caption" color="text.secondary">Now</Typography>
             <Typography variant="caption" color="text.secondary">
-              {minDaysToExpiry < 1
-                ? `${nearestExpiry.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })} 5:30 PM IST`
-                : nearestExpiry.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}
+              {rightExpiry && (sliderMax < 1
+                ? `${rightExpiry.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })} 5:30 PM IST`
+                : rightExpiry.toLocaleDateString('en-US', { day: '2-digit', month: 'short' }))}
             </Typography>
           </Box>
         </Box>

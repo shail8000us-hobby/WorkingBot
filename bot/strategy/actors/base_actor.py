@@ -115,6 +115,9 @@ class Actor:
         log.info(f"[{self.name}] Stopped - processed {self._processed_count} messages, {self._error_count} errors")
     
     async def send(self, message: Message) -> None:
+        if self.mailbox is None:
+            log.warning(f"[{self.name}] Cannot send message {message.type} - actor not started (mailbox is None)")
+            return
         try:
             await asyncio.wait_for(self.mailbox.put(message), timeout=0.1)
         except asyncio.TimeoutError:

@@ -502,8 +502,8 @@ export default function MMMAlgoCalculations({ session, wsData }) {
             { label: 'Total Prem',   value: `${(stats.total_premium_btc || 0).toFixed(4)} BTC`, color: '#ffd54f' },
             { label: 'Adj Count',    value: stats.adjustment_count != null ? String(stats.adjustment_count) : '\u2014', color: '#ce93d8' },
             { label: 'Last Agg',     value: stats.last_aggressor || '\u2014', color: '#ff8a65' },
-            { label: 'CE Lots',      value: stats.ce_total_lots  != null ? String(stats.ce_total_lots)  : '\u2014', color: '#64b5f6' },
-            { label: 'PE Lots',      value: stats.pe_total_lots  != null ? String(stats.pe_total_lots)  : '\u2014', color: '#ef9a9a' },
+            { label: 'CE Lots',      value: stats.ce_active_lots != null ? `${stats.ce_active_lots}${stats.ce_frozen_lots ? ` (+${stats.ce_frozen_lots} frozen)` : ''}` : '\u2014', color: '#64b5f6' },
+            { label: 'PE Lots',      value: stats.pe_active_lots != null ? `${stats.pe_active_lots}${stats.pe_frozen_lots ? ` (+${stats.pe_frozen_lots} frozen)` : ''}` : '\u2014', color: '#ef9a9a' },
             lastRegime && lastRegime.action !== 'NORMAL'
               ? { label: 'Regime', value: lastRegime.action, color: lastRegime.action.includes('BLOCK') ? '#ff5252' : '#ffab40' }
               : null,

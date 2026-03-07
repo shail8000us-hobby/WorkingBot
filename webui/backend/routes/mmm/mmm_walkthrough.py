@@ -344,9 +344,12 @@ def generate_heartbeat_walkthrough(
             c5_strike = c5.get('strike', 0)
             c5_lots = c5.get('lots_closed', c5.get('lots', 0))
             c5_pnl = c5.get('realized_pnl', 0)
-            c5_prem = c5.get('close_premium', 0)
+            c5_prem   = c5.get('close_premium', 0)      # actual exchange fill price
+            c5_scan   = c5.get('scan_premium', c5_prem)    # mid-market at scan time
+            c5_thresh = c5.get('threshold_used', 5.0)       # threshold that fired
             details.append(
-                f'{c5_side} @ {c5_strike:,.0f} premium=${c5_prem:.2f} ≤ 5 → CLOSE'
+                f'{c5_side} @ {c5_strike:,.0f} scan=${c5_scan:.2f} ≤ ${c5_thresh:.0f} → CLOSE'
+                f' (fill=${c5_prem:.2f})'
             )
             details.append(
                 f'Bought back {c5_lots} lots. Realized P&L = ${c5_pnl:.4f} BTC'
@@ -427,9 +430,11 @@ def generate_heartbeat_walkthrough(
             'ce_active_strike': ce_strike,
             'ce_active_lots': ce_active_lots,
             'ce_total_lots': ce_total_lots,
+            'ce_frozen_lots': ce_frozen,
             'pe_active_strike': pe_strike,
             'pe_active_lots': pe_active_lots,
             'pe_total_lots': pe_total_lots,
+            'pe_frozen_lots': pe_frozen,
             'last_aggressor': session.get('last_aggressor', 'NONE'),
             'adjustment_count': session.get('adjustment_count', 0),
             'total_premium_btc': round(session.get('total_premium_collected', 0), 6),

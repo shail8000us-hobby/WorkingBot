@@ -162,6 +162,11 @@ export function buildPositionRows(session, heartbeat) {
     });
 
     // Frozen positions
+    const params = session?.params || {};
+    const maxLots = params.max_lots_per_side || 100;
+    const totalSideLots = side.total_lots || 0;
+    const capacityPressure = totalSideLots / Math.max(maxLots, 1);
+
     (side.frozen_positions || []).forEach((frozen, i) => {
       const lots = frozen.lots || 0;
       const prem = frozen.entry_premium || 0;
@@ -191,6 +196,18 @@ export function buildPositionRows(session, heartbeat) {
         + `${frozenType} frozen at ${frozenAt}.\n`
         + `Monitored for Close-at-5 but excluded from adjustment calculations (§10).`;
 
+      // M1/M2 eligibility badges
+      const profitPct = (prem > 0 && currentPremium != null)
+        ? (prem - currentPremium) / prem * 100 : 0;
+      const isHarvestable = (params.harvest_enabled !== false)
+        && profitPct >= (params.harvest_profit_pct || 40)
+        && capacityPressure >= (params.harvest_pressure_threshold || 0.6);
+      const isRecyclable = (params.recycle_enabled !== false)
+        && currentPremium != null
+        && currentPremium <= (params.recycle_premium_ceiling || 50)
+        && !(params.recycle_protect_original !== false && frozen.type === 'original');
+      const harvestScore = profitPct * (lots / Math.max(totalSideLots, 1));
+
       rows.push({
         id: `${sideKey}-frozen-${i}`,
         side: sideKey.toUpperCase(),
@@ -204,6 +221,10 @@ export function buildPositionRows(session, heartbeat) {
         frozenReason,
         frozenAt: frozen.frozen_at,
         frozenType: frozen.type,
+        isHarvestable,
+        isRecyclable,
+        harvestScore,
+        profitPct,
       });
     });
   }
@@ -322,41 +343,61 @@ export default function MMMPositionsTable({ session, heartbeat }) {
                     {Number(row.strike).toLocaleString()}
                   </TableCell>
                   <TableCell>
-                    {isFrozen ? (
-                      <Tooltip
-                        title={
-                          <Box sx={{ whiteSpace: 'pre-line', fontSize: '0.85rem', p: 0.5 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, fontSize: '0.8rem' }}>
-                              ❄️ Frozen Position
-                            </Typography>
-                            {row.frozenReason}
-                          </Box>
-                        }
-                        arrow
-                        placement="top"
-                      >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                      {isFrozen ? (
+                        <Tooltip
+                          title={
+                            <Box sx={{ whiteSpace: 'pre-line', fontSize: '0.85rem', p: 0.5 }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, fontSize: '0.8rem' }}>
+                                ❄️ Frozen Position
+                              </Typography>
+                              {row.frozenReason}
+                            </Box>
+                          }
+                          arrow
+                          placement="top"
+                        >
+                          <Chip
+                            icon={<AcUnitIcon sx={{ fontSize: '0.8rem !important' }} />}
+                            label={row.typeLabel || typeCfg.label}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              color: typeCfg.color,
+                              borderColor: typeCfg.color,
+                              fontSize: '0.88rem',
+                              cursor: 'help',
+                              '& .MuiChip-icon': { color: '#90caf9' },
+                            }}
+                          />
+                        </Tooltip>
+                      ) : (
                         <Chip
-                          icon={<AcUnitIcon sx={{ fontSize: '0.8rem !important' }} />}
                           label={row.typeLabel || typeCfg.label}
                           size="small"
                           variant="outlined"
-                          sx={{
-                            color: typeCfg.color,
-                            borderColor: typeCfg.color,
-                            fontSize: '0.88rem',
-                            cursor: 'help',
-                            '& .MuiChip-icon': { color: '#90caf9' },
-                          }}
+                          sx={{ color: typeCfg.color, borderColor: typeCfg.color, fontSize: '0.88rem' }}
                         />
-                      </Tooltip>
-                    ) : (
-                      <Chip
-                        label={row.typeLabel || typeCfg.label}
-                        size="small"
-                        variant="outlined"
-                        sx={{ color: typeCfg.color, borderColor: typeCfg.color, fontSize: '0.88rem' }}
-                      />
-                    )}
+                      )}
+                      {row.isHarvestable && (
+                        <Tooltip title={`M1 Harvestable — ${row.profitPct.toFixed(0)}% profit, score ${row.harvestScore.toFixed(1)}`} arrow placement="top">
+                          <Chip
+                            label="🌾"
+                            size="small"
+                            sx={{ height: 18, fontSize: '0.7rem', bgcolor: 'rgba(76,175,80,0.15)', color: '#4caf50', cursor: 'help', minWidth: 0, px: 0.25 }}
+                          />
+                        </Tooltip>
+                      )}
+                      {row.isRecyclable && !row.isHarvestable && (
+                        <Tooltip title="M2 Recyclable — low premium, eligible for lot recycling" arrow placement="top">
+                          <Chip
+                            label="♻️"
+                            size="small"
+                            sx={{ height: 18, fontSize: '0.7rem', bgcolor: 'rgba(33,150,243,0.12)', color: '#2196f3', cursor: 'help', minWidth: 0, px: 0.25 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Box>
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600 }}>
                     {row.lots}

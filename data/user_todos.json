@@ -130,7 +130,7 @@
     "text": "# Check status anytime\n./check_webui_production.sh\n\n# Restart backend\nlaunchctl restart com.gridbot.webui\n\n# View logs\ntail -f logs/launchagent_webui.log\n\n# Rebuild frontend (after changes)\ncd webui/frontend && npm run build && launchctl restart com.gridbot.webui",
     "completed": false,
     "createdAt": "2026-01-05T19:48:26.452688",
-    "updatedAt": "2026-01-05T19:48:26.452694"
+    "updatedAt": "2026-03-06T11:06:34.391855"
   },
   {
     "id": "1768813449353",

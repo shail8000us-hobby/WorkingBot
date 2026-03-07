@@ -64,7 +64,7 @@ const PARAM_GROUPS = {
     title: 'Safety Limits',
     color: '#ff9800',
     blurb: 'Guard rails to prevent runaway exposure. Adjust carefully.',
-    params: ['whipsaw_limit', 'max_lots_per_side', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled'],
+    params: ['whipsaw_limit', 'max_lots_per_side', 'max_total_exposure', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled'],
   },
   expiry: {
     title: 'Close-at-Expiry',
@@ -124,6 +124,34 @@ const PARAM_GROUPS = {
       'perp_hedge_max_flips_per_hour',
     ],
   },
+  positionLifecycle: {
+    title: '🌾 Position Lifecycle',
+    color: '#4caf50',
+    blurb: 'M1 Profit Harvesting, M2 Lot Recycling, and Split Ledger Shift-Time Recycle: proactively close profitable frozen positions, restructure when capped, and optionally clean up cheap frozen lots at every strike shift.',
+    params: [
+      'harvest_enabled',
+      'harvest_profit_pct', 'harvest_min_age_mins',
+      'harvest_pressure_threshold', 'harvest_max_per_beat',
+      'recycle_enabled',
+      'recycle_premium_ceiling', 'recycle_min_premium_ratio',
+      'recycle_max_pct', 'recycle_free_lot_buffer',
+      'recycle_min_lot_gain', 'recycle_cooldown_sec',
+      'recycle_protect_original',
+      'shift_recycle_enabled',
+      'shift_recycle_premium_floor', 'shift_recycle_floor_ratio',
+      'shift_recycle_max_pct',
+    ],
+  },
+  balanceControl: {
+    title: '⚖️ Balance Control',
+    color: '#ff9800',
+    blurb: 'M3 Asymmetry Rebalancing: automatically relaxes harvest thresholds on the dominant side when CE/PE lot counts are severely skewed, preventing the one-sided accumulation death spiral.',
+    params: [
+      'rebalance_enabled',
+      'rebalance_asymmetry_threshold',
+      'rebalance_pressure_threshold',
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)
@@ -138,7 +166,8 @@ const PARAM_TOOLTIPS = {
   max_adjustments: HELP.max_adjustments || 'Maximum number of adjustments before the algo stops and alerts you.',
   cooldown_on_reversal: HELP.cooldown || 'After a reversal is detected, skip one heartbeat interval before adjusting. Filters out false reversals from short price spikes.',
   whipsaw_limit: HELP.whipsaw || 'If the last N adjustments alternate between CE and PE, the market is whipsawing. The algo pauses.',
-  max_lots_per_side: HELP.position_cap || 'Maximum total lots allowed per side (CE or PE). Prevents runaway lot accumulation from repeated adjustments.',
+  max_lots_per_side: HELP.position_cap || 'Maximum total lots allowed per side (CE or PE). With Split Ledger, only ACTIVE lots count against this cap — frozen (shifted) lots do not. Prevents runaway accumulation of productive adjustments.',
+  max_total_exposure: 'Split Ledger: Absolute ceiling on active + frozen lots per side. 0 = auto (2× max_lots_per_side). A safety net for the safety net — prevents runaway total exposure even if frozen lots don\'t block the active cap. Fires "Total exposure ceiling" error which does NOT trigger M2 recycling.',
   trailing_stop_pct: HELP.trailing_profit || 'Once P&L hits a peak, if it drops more than this % from that peak, the algo alerts you. Protects profits from giving back too much.',
   premium_buffer_pct: 'Extra lots percentage for slippage protection. When calculating how many lots to sell, add this % extra to account for price movement between quote and fill. 0.05 = 5% buffer.',
   close_at_atm: 'Auto-close ALL positions if the original strike becomes at-the-money (spot price ≈ strike price). This is dangerous territory — ATM options have maximum gamma and can move violently.',
@@ -202,6 +231,30 @@ const PARAM_TOOLTIPS = {
   perp_hedge_max_lots: 'Maximum perp position size in lots (1 lot = 0.001 BTC). Caps total hedge exposure. E.g., 50 lots = 0.05 BTC max perp position.',
   perp_hedge_cooldown_sec: 'Minimum seconds between consecutive hedge executions. Prevents rapid-fire trading during volatile periods. Default: 30 seconds.',
   perp_hedge_max_flips_per_hour: 'Maximum perp direction flips (long→short or short→long) per hour. Prevents spread drag from rapid flip-flopping in choppy markets. Default: 6.',
+  // M1: Profit Harvesting
+  harvest_enabled: 'M1: Enable proactive profit harvesting. Each heartbeat, frozen positions that have decayed by at least harvest_profit_pct are automatically bought back, freeing lot capacity for future adjustments.',
+  harvest_profit_pct: 'M1: Minimum profit percentage to harvest a frozen position. E.g., 40 means the option must be worth ≤ 60% of entry price (40%+ profit locked). Higher = more selective, fewer buybacks.',
+  harvest_min_age_mins: 'M1: Minimum age in minutes before a position can be harvested. Prevents harvesting freshly-frozen positions that may still be within normal bid-ask spread movement.',
+  harvest_pressure_threshold: 'M1: Minimum capacity pressure (total_lots / max_lots) to start harvesting. 0.6 = only harvest when above 60% capacity. Prevents unnecessary buybacks when lots are plentiful.',
+  harvest_max_per_beat: 'M1: Maximum frozen positions to close per heartbeat. Limits API calls and potential slippage in a single pass. Eligible positions beyond this limit are deferred to the next heartbeat.',
+  // M2: Lot Recycling
+  recycle_enabled: 'M2: Enable emergency lot recycling when max lots blocks an adjustment. Phase A buys back cheap frozen positions; Phase B sells fewer lots at an ATM-closer strike to cover both costs.',
+  recycle_premium_ceiling: 'M2: Maximum current premium (USD) for a position to be considered recyclable. Only deeply decayed options worth ≤ this amount are eligible for buyback during recycling.',
+  recycle_min_premium_ratio: 'M2: Minimum ratio of new_strike_premium ÷ avg_recycle_premium. Ensures Phase B collects at least 2.5× the buyback cost. Below this ratio, recycling is not economical — algo stays blocked.',
+  recycle_max_pct: 'M2: Maximum fraction of side lots to recycle in a single operation. 0.5 = never recycle more than 50% of side positions in one pass. Prevents over-restructuring.',
+  recycle_free_lot_buffer: 'M2: Extra lots to free beyond the immediate adjustment need. Frees headroom so the next heartbeat can adjust normally without triggering another recycle immediately.',
+  recycle_min_lot_gain: 'M2: Minimum net lots freed (recycled − new lots sold) for recycling to proceed. Ensures each operation meaningfully improves capacity, not just a break-even shuffle.',
+  recycle_cooldown_sec: 'M2: Cooldown in seconds between consecutive recycle operations. Prevents rapid repeated restructuring in choppy markets where every heartbeat hits the cap.',
+  recycle_protect_original: 'M2: Never recycle the original entry position. The original lots are your core anchor — recycling them would fundamentally change the strategy setup.',
+  // Split Ledger Phase 2 — Shift-Time Recycle
+  shift_recycle_enabled: 'Split Ledger Phase 2: At each strike shift, the algo closes cheap frozen positions BEFORE selling the new strike lots. Buyback cost is folded into the new sell calculation so net coverage is the same. Disabled by default — enable after observing Phase 1 for 1 week.',
+  shift_recycle_premium_floor: 'Shift-Time Recycle: Only close frozen positions with live premium BELOW this amount. 0 = use dynamic floor (shift_recycle_floor_ratio × new_strike_premium). Default 60 = close frozen positions worth $60 or less. Higher = more aggressive cleanup.',
+  shift_recycle_floor_ratio: 'Shift-Time Recycle dynamic floor: when shift_recycle_premium_floor is 0, compute floor as this fraction × new_strike_premium. 0.40 = close frozen if it costs less than 40% of the new strike. Auto-adapts to current market premium levels.',
+  shift_recycle_max_pct: 'Shift-Time Recycle: max fraction of total frozen lots to close per shift. 1.0 = all eligible lots. 0.5 = at most 50% of frozen lots per shift. Prevents liquidating too many positions at once.',
+  // M3: Asymmetry Rebalancing
+  rebalance_enabled: 'M3: Enable asymmetry-aware harvest threshold relaxation. When one side accumulates many more lots than the other, the harvest thresholds on the dominant side are automatically relaxed to free capacity faster.',
+  rebalance_asymmetry_threshold: 'M3: CE/PE lot ratio that triggers relaxed harvesting on the dominant side. Default 5.0 = relax when one side has 5× more lots than the other. Lower = more aggressive rebalancing.',
+  rebalance_pressure_threshold: 'M3: Minimum capacity pressure on the dominant side (combined with asymmetry ratio) to activate M3. Prevents threshold relaxation when lots are still plentiful on the dominant side.',
 };
 
 // =============================================================================

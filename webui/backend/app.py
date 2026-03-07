@@ -310,6 +310,31 @@ except Exception as e:
     print(f"⚠️ Could not register options dashboard blueprint: {e}")
     log.warning(f"Options dashboard routes not available: {e}")
 
+# Register PnL Attribution blueprint (Feature 4 — independent module)
+try:
+    from webui.backend.routes.options.pnl_attribution import pnl_attribution_bp
+    app.register_blueprint(pnl_attribution_bp)
+    print(f"✅ Registered pnl_attribution blueprint (Feature 4: Greek PnL breakdown)")
+except Exception as e:
+    print(f"⚠️ Could not register pnl_attribution blueprint: {e}")
+    log.warning(f"PnL attribution routes not available: {e}")
+
+# Register Greek Alerts blueprint (Feature 5 — conditional execution)
+try:
+    from webui.backend.routes.options.greek_alerts import greek_alerts_bp
+    app.register_blueprint(greek_alerts_bp)
+    print(f"✅ Registered greek_alerts blueprint (Feature 5: Greek-based conditional alerts)")
+except Exception as e:
+    print(f"⚠️ Could not register greek_alerts blueprint: {e}")
+
+# Register Roll Manager blueprint (Feature 9 — roll management tool)
+try:
+    from webui.backend.routes.options.roll_manager import roll_manager_bp
+    app.register_blueprint(roll_manager_bp)
+    print(f"✅ Registered roll_manager blueprint (Feature 9: Roll management tool)")
+except Exception as e:
+    print(f"⚠️ Could not register roll_manager blueprint: {e}")
+
 # Register Options Groups blueprint (MAR 2026: Server-side persistent groups)
 try:
     import importlib.util as _il
@@ -325,6 +350,15 @@ except BaseException as e:
     print(f"⚠️ Could not register options groups blueprint: {type(e).__name__}: {e}", flush=True)
     print(_tb.format_exc(), flush=True)
     log.warning(f"Options groups routes not available: {e}")
+
+# Register Portfolio Margin blueprint (MAR 2026: Portfolio margin monitoring)
+try:
+    from webui.backend.routes.portfolio_margin import portfolio_margin_bp
+    app.register_blueprint(portfolio_margin_bp)
+    print(f"✅ Registered portfolio_margin blueprint (portfolio margin monitoring)")
+except Exception as e:
+    print(f"⚠️ Could not register portfolio_margin blueprint: {e}")
+    log.warning(f"Portfolio margin routes not available: {e}")
 
 # Register Kelly Criterion Position Sizer (JAN 2026: Institutional position sizing)
 try:
@@ -1387,6 +1421,16 @@ if __name__ == '__main__':
     # ============================================================================
     print("⏱️  Staggering monitor startup (2s delay to prevent API conflicts)...")
     time.sleep(2)
+
+    # ============================================================================
+    # Start IV Background Recorder (Feature 2 — records IV snapshots every 5 min)
+    # ============================================================================
+    try:
+        from webui.backend.db.iv_history_db import start_iv_background_recorder
+        start_iv_background_recorder(interval=300)
+        print("✅ IV Background Recorder started (every 5 min)\n")
+    except Exception as e:
+        print(f"⚠️  Failed to start IV Background Recorder: {e}\n")
     
     # ============================================================================
     # Initialize and Start Take Profit Monitor (Options Trading)

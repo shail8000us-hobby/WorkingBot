@@ -118,6 +118,9 @@ class MMMAnalyticsStorage:
             'total_reversals': session.get('reversal_count', 0),
             'total_shifts': session.get('shift_count', 0),
             'total_close_at_5': session.get('close_at_5_count', 0),
+            'total_harvests': session.get('harvest_count', 0),
+            'total_harvest_lots': session.get('harvest_lots_freed', 0),
+            'total_recycles': session.get('recycle_count', 0),
         }
 
         conn = self._get_conn()

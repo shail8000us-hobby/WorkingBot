@@ -5,6 +5,7 @@
  * Collapsible section with "Live" badge when orders are present.
  */
 import React, { useState, useCallback } from 'react';
+import SealedBadge from '../common/SealedBadge';
 import {
   Box,
   Typography,
@@ -66,6 +67,7 @@ const PendingOrdersPanel = React.memo(function PendingOrdersPanel({
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
           ⏳ Pending Orders ({pendingOrders.length})
         </Typography>
+        <SealedBadge />
         {pendingOrders.length > 0 && (
           <Chip
             label="Live"

@@ -82,6 +82,15 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
 
     const socket = sharedSocket;
 
+    // Fix F3.5: Safe handler wrapper to prevent unhandled exceptions from breaking state updates
+    const safeHandler = (handler, eventName) => (data) => {
+      try {
+        handler(data);
+      } catch (err) {
+        console.error(`[useMMMWebSocket] Error in ${eventName} handler:`, err);
+      }
+    };
+
     // Track connection state
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
@@ -102,7 +111,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setHeartbeat(data);
       }
     };
-    socket.on('mmm_heartbeat', onHeartbeat);
+    socket.on('mmm_heartbeat', safeHandler(onHeartbeat, 'mmm_heartbeat'));
 
     // Price ticks (every 5 seconds — lightweight, prices only)
     const onPriceTick = (data) => {
@@ -121,7 +130,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         });
       }
     };
-    socket.on('mmm_price_tick', onPriceTick);
+    socket.on('mmm_price_tick', safeHandler(onPriceTick, 'mmm_price_tick'));
 
     // Adjustments
     const onAdjustment = (data) => {
@@ -129,7 +138,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setAdjustments((prev) => [...prev.slice(-99), data]);
       }
     };
-    socket.on('mmm_adjustment', onAdjustment);
+    socket.on('mmm_adjustment', safeHandler(onAdjustment, 'mmm_adjustment'));
 
     // Reversals
     const onReversal = (data) => {
@@ -137,7 +146,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setReversals((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_reversal', onReversal);
+    socket.on('mmm_reversal', safeHandler(onReversal, 'mmm_reversal'));
 
     // Strike shifts
     const onShift = (data) => {
@@ -145,7 +154,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setShifts((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_shift', onShift);
+    socket.on('mmm_shift', safeHandler(onShift, 'mmm_shift'));
 
     // Close-at-5
     const onCloseAt5 = (data) => {
@@ -153,7 +162,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setCloseEvents((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_close_at_5', onCloseAt5);
+    socket.on('mmm_close_at_5', safeHandler(onCloseAt5, 'mmm_close_at_5'));
 
     // Both-sides alert
     const onBothSides = (data) => {
@@ -161,7 +170,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setBothSidesAlert(data);
       }
     };
-    socket.on('mmm_both_sides', onBothSides);
+    socket.on('mmm_both_sides', safeHandler(onBothSides, 'mmm_both_sides'));
 
     // Safety events
     const onSafety = (data) => {
@@ -169,7 +178,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setSafetyEvents((prev) => [...prev.slice(-99), data]);
       }
     };
-    socket.on('mmm_safety', onSafety);
+    socket.on('mmm_safety', safeHandler(onSafety, 'mmm_safety'));
 
     // P&L updates
     const onPnl = (data) => {
@@ -177,7 +186,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setPnl(data);
       }
     };
-    socket.on('mmm_pnl_update', onPnl);
+    socket.on('mmm_pnl_update', safeHandler(onPnl, 'mmm_pnl_update'));
 
     // Status changes
     const onStatus = (data) => {
@@ -185,11 +194,11 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setStatus(data);
       }
     };
-    socket.on('mmm_status_change', onStatus);
+    socket.on('mmm_status_change', safeHandler(onStatus, 'mmm_status_change'));
 
     // Params changed (handled by useMMMParams hook, but keep listener)
     const onParams = () => { };
-    socket.on('mmm_params_changed', onParams);
+    socket.on('mmm_params_changed', safeHandler(onParams, 'mmm_params_changed'));
 
     // Walkthrough entries (real-time algo calculation walk-through)
     const onWalkthrough = (data) => {
@@ -197,7 +206,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setWalkthroughEntries((prev) => [...prev.slice(-199), data.entry]);
       }
     };
-    socket.on('mmm_walkthrough', onWalkthrough);
+    socket.on('mmm_walkthrough', safeHandler(onWalkthrough, 'mmm_walkthrough'));
 
     // Regime controls
     const onRegime = (data) => {
@@ -205,7 +214,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setRegimeData(data);
       }
     };
-    socket.on('mmm_regime', onRegime);
+    socket.on('mmm_regime', safeHandler(onRegime, 'mmm_regime'));
 
     // Perp hedge executions
     const onPerpExecution = (data) => {
@@ -213,7 +222,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setPerpHedgeEvents((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_perp_hedge_execution', onPerpExecution);
+    socket.on('mmm_perp_hedge_execution', safeHandler(onPerpExecution, 'mmm_perp_hedge_execution'));
 
     // Perp hedge flip (long↔short direction change)
     const onPerpFlip = (data) => {
@@ -221,7 +230,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setPerpHedgeFlip(data);
       }
     };
-    socket.on('mmm_perp_hedge_flip', onPerpFlip);
+    socket.on('mmm_perp_hedge_flip', safeHandler(onPerpFlip, 'mmm_perp_hedge_flip'));
 
     // Perp hedge update (periodic state sync)
     const onPerpUpdate = (data) => {
@@ -233,7 +242,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         });
       }
     };
-    socket.on('mmm_perp_hedge_update', onPerpUpdate);
+    socket.on('mmm_perp_hedge_update', safeHandler(onPerpUpdate, 'mmm_perp_hedge_update'));
 
     return () => {
       // Remove only OUR listeners — don't disconnect the shared socket
@@ -255,6 +264,8 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
       socket.off('mmm_perp_hedge_execution', onPerpExecution);
       socket.off('mmm_perp_hedge_flip', onPerpFlip);
       socket.off('mmm_perp_hedge_update', onPerpUpdate);
+      // Fix F3.11: Clear ref to prevent memory retention on unmount
+      latestPremiumMap.current = {};
     };
   }, [sessionId, sharedSocket]);
 

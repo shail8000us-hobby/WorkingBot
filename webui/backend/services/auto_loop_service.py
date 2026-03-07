@@ -23,6 +23,8 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
+from webui.backend.sealed import sealed
+
 
 class AutoLoopService:
     """Server-side auto-loop execution that survives page refreshes."""
@@ -51,10 +53,14 @@ class AutoLoopService:
 
     # ── Start a loop ──────────────────────────────────────────────────
 
+    @sealed
     def start_loop(self, loop_id: str, orders: List[dict],
                    total_rounds: int, order_preference: str = "maker_first") -> dict:
         """
         Start a new auto-loop.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
 
         Args:
             loop_id: Unique identifier (e.g. 'main' or expiry code like '280226')
@@ -112,7 +118,17 @@ class AutoLoopService:
 
     # ── Stop / Control ────────────────────────────────────────────────
 
+    @sealed
     def stop_loop(self, loop_id: str) -> bool:
+        """
+        Request a running loop to stop.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+
+        Returns:
+            True if stop was requested, False if loop not found or not running
+        """
         with self._lock:
             state = self._loops.get(loop_id)
             if not state:
@@ -124,8 +140,14 @@ class AutoLoopService:
             log.info(f"AutoLoopService: stop requested for loop '{loop_id}'")
             return True
 
+    @sealed
     def get_status(self, loop_id: str = None) -> dict:
-        """Get status of one loop or all loops."""
+        """
+        Get status of one loop or all loops.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         with self._lock:
             if loop_id:
                 state = self._loops.get(loop_id)
@@ -135,8 +157,14 @@ class AutoLoopService:
             else:
                 return {lid: dict(s) for lid, s in self._loops.items()}
 
+    @sealed
     def clear_finished(self) -> int:
-        """Remove completed/stopped/error loops."""
+        """
+        Remove completed/stopped/error loops.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         with self._lock:
             to_remove = [lid for lid, s in self._loops.items()
                          if s["status"] in ("completed", "stopped", "error")]

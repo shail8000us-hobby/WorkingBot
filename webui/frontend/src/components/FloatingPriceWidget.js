@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Typography, IconButton } from '@mui/material';
 import { Minimize2 } from 'lucide-react';
 import useMarketPrices from '../hooks/useMarketPrices';
+import SealedBadge from './common/SealedBadge';
 
 // ---- 5:30 PM IST daily session helpers ----
 // IST is UTC+5:30, so 5:30 PM IST = 12:00 PM UTC
@@ -307,16 +308,19 @@ const FloatingPriceWidget = () => {
               marginBottom: '4px',
             }}
           >
-            <Typography
-              sx={{
-                fontSize: '13px',
-                fontWeight: 600,
-                color: '#e2e8f0',
-                fontFamily: 'monospace',
-              }}
-            >
-              BTC SPOT
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Typography
+                sx={{
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  fontFamily: 'monospace',
+                }}
+              >
+                BTC SPOT
+              </Typography>
+              <SealedBadge size="small" />
+            </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
             <Typography
@@ -355,16 +359,19 @@ const FloatingPriceWidget = () => {
               marginBottom: '4px',
             }}
           >
-            <Typography
-              sx={{
-                fontSize: '13px',
-                fontWeight: 600,
-                color: '#e2e8f0',
-                fontFamily: 'monospace',
-              }}
-            >
-              ETH SPOT
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Typography
+                sx={{
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  fontFamily: 'monospace',
+                }}
+              >
+                ETH SPOT
+              </Typography>
+              <SealedBadge size="small" />
+            </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
             <Typography

@@ -28,6 +28,13 @@ PARAM_RULES = {
     'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
     'premium_buffer_pct':      {'type': float, 'min': 0,    'max': 0.5,   'hot': True},
     'max_lots_per_side':       {'type': int,   'min': 1,    'max': 10000, 'hot': True},
+    # Split Ledger Phase 1
+    'max_total_exposure':      {'type': int,   'min': 0,    'max': 20000, 'hot': True},
+    # Split Ledger Phase 2 — Shift-Time Recycle
+    'shift_recycle_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'shift_recycle_premium_floor':   {'type': float, 'min': 0,    'max': 500,   'hot': True},
+    'shift_recycle_max_pct':         {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'shift_recycle_floor_ratio':     {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
     'max_adjustments':         {'type': int,   'min': 1,    'max': 1000,  'hot': True},
     # M-6 fix: min raised from 0 to 1 — setting to 0 triggers auto_close on
     # any negative P&L including normal spread fluctuation (extremely dangerous).
@@ -112,6 +119,25 @@ PARAM_RULES = {
     'max_reprice_attempts':      {'type': int,   'min': 1,    'max': 10,   'hot': True},
     # L-4 fix: configurable P&L reconciliation threshold
     'pnl_reconciliation_threshold': {'type': float, 'min': 1.0, 'max': 1000.0, 'hot': True},
+    # M1: Profit Harvesting
+    'harvest_enabled':              {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'harvest_profit_pct':           {'type': float, 'min': 20,   'max': 80,    'hot': True},
+    'harvest_min_age_mins':         {'type': int,   'min': 10,   'max': 120,   'hot': True},
+    'harvest_pressure_threshold':   {'type': float, 'min': 0.4,  'max': 0.9,   'hot': True},
+    'harvest_max_per_beat':         {'type': int,   'min': 1,    'max': 10,    'hot': True},
+    # M2: Lot Recycling
+    'recycle_enabled':              {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'recycle_premium_ceiling':      {'type': float, 'min': 10,   'max': 200,   'hot': True},
+    'recycle_min_premium_ratio':    {'type': float, 'min': 1.5,  'max': 10,    'hot': True},
+    'recycle_max_pct':              {'type': float, 'min': 0.2,  'max': 0.8,   'hot': True},
+    'recycle_free_lot_buffer':      {'type': int,   'min': 0,    'max': 50,    'hot': True},
+    'recycle_min_lot_gain':         {'type': int,   'min': 1,    'max': 20,    'hot': True},
+    'recycle_cooldown_sec':         {'type': int,   'min': 60,   'max': 600,   'hot': True},
+    'recycle_protect_original':     {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # M3: Asymmetry Rebalancing
+    'rebalance_enabled':            {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'rebalance_asymmetry_threshold': {'type': float, 'min': 2,  'max': 20,    'hot': True},
+    'rebalance_pressure_threshold': {'type': float, 'min': 0.5,  'max': 1.0,   'hot': True},
 }
 
 
@@ -298,6 +324,12 @@ def get_param_info() -> Dict[str, Dict]:
         'close_at_threshold': 'Close positions at this premium or below',
         'premium_buffer_pct': 'Extra lots percentage for slippage protection',
         'max_lots_per_side': 'Maximum total lots allowed per side (CE or PE)',
+        # Split Ledger
+        'max_total_exposure': 'Absolute ceiling on active+frozen lots per side. 0 = auto (2× max_lots_per_side). Prevents runaway accumulation when frozen lots do not block the active cap.',
+        'shift_recycle_enabled': 'Split Ledger Phase 2: At each strike shift, close cheap frozen positions to free capacity. Returns buyback cost is folded into the new sell calculation. Disabled by default — enable after observing Phase 1 behavior.',
+        'shift_recycle_premium_floor': 'Shift-Time Recycle: only close frozen positions with live premium BELOW this value. 0 = dynamic mode (uses shift_recycle_floor_ratio × new_strike_premium). Default 60.',
+        'shift_recycle_max_pct': 'Shift-Time Recycle: maximum fraction of total frozen lots to close per shift. 1.0 = all eligible. 0.5 = at most half. Prevents closing too many at once.',
+        'shift_recycle_floor_ratio': 'Shift-Time Recycle dynamic floor: when shift_recycle_premium_floor=0, close frozen if premium < this fraction × new_strike_premium. 0.4 = close if frozen < 40% of new premium.',
         'max_adjustments': 'Maximum number of adjustment events',
         'max_loss_amount': 'Absolute dollar hard stop — close all if breached',
         'stop_adjustment_mins': 'Stop adjusting N minutes before expiry',
@@ -372,6 +404,25 @@ def get_param_info() -> Dict[str, Dict]:
         'perp_hedge_rebalance_band': 'Minimum |effective delta| (options + perp combined) to trigger a rebalance of an existing perp position. Prevents over-trading on tiny delta drift',
         'perp_hedge_max_lots': 'Maximum perp position size in lots (hard cap on long or short). Prevents runaway hedging in extreme delta scenarios',
         'perp_hedge_cooldown_sec': 'Minimum seconds between consecutive perp hedge executions. Prevents rapid flip-flop trading when delta oscillates near the threshold',
+        # M1: Profit Harvesting
+        'harvest_enabled': 'M1: Enable proactive profit harvesting of frozen positions',
+        'harvest_profit_pct': 'M1: Minimum profit % (entry vs current) to harvest a frozen position (default 40%)',
+        'harvest_min_age_mins': 'M1: Minimum position age in minutes before it is eligible for harvesting',
+        'harvest_pressure_threshold': 'M1: Minimum capacity pressure (total_lots/max_lots) to start harvesting',
+        'harvest_max_per_beat': 'M1: Maximum frozen positions to close per heartbeat',
+        # M2: Lot Recycling
+        'recycle_enabled': 'M2: Enable emergency lot recycling when max lots blocks an adjustment',
+        'recycle_premium_ceiling': 'M2: Maximum current premium for a position to be considered recyclable',
+        'recycle_min_premium_ratio': 'M2: Minimum new_strike_premium / avg_recycle_premium ratio required to proceed',
+        'recycle_max_pct': 'M2: Maximum fraction of side lots to recycle in a single operation',
+        'recycle_free_lot_buffer': 'M2: Extra lots to free beyond the immediate need (buffer for next adjustment)',
+        'recycle_min_lot_gain': 'M2: Minimum net lots freed (recycled - new_sold) to proceed with recycling',
+        'recycle_cooldown_sec': 'M2: Cooldown in seconds between consecutive recycle operations',
+        'recycle_protect_original': 'M2: Never recycle the original entry position',
+        # M3: Asymmetry Rebalancing
+        'rebalance_enabled': 'M3: Enable asymmetry-aware harvest threshold relaxation on the dominant side',
+        'rebalance_asymmetry_threshold': 'M3: CE/PE lot ratio that triggers relaxed harvest thresholds on the dominant side',
+        'rebalance_pressure_threshold': 'M3: Minimum capacity pressure on dominant side required for threshold relaxation',
     }
 
     info = {}

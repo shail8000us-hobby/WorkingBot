@@ -90,6 +90,7 @@ except ImportError:
 
 # Import circuit breakers
 from webui.backend.utils.circuit_breaker import delta_api_breaker, bot_file_breaker
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -869,9 +870,13 @@ def get_position_analysis():
 
 
 @positions_bp.route('/api/positions/pending-orders', methods=['GET'])
+@sealed
 def get_pending_orders():
     """
     Get all pending/open orders from Delta Exchange
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
     
     Returns:
         {

@@ -155,6 +155,11 @@ def scan_closeable_positions(
             f"none below threshold {threshold:.1f}"
         )
 
+    # Stamp every result item with the threshold that triggered it, so callers
+    # (walkthrough, monitor) can display it accurately (wind-down uses $20, normal $5).
+    for item in closeable:
+        item['threshold_used'] = threshold
+
     if closeable:
         log.info(
             f"[{session_id}] Found {len(closeable)} position(s) eligible for close-at-5 "
@@ -305,6 +310,10 @@ async def close_position(
                 if pos.get('id') == pos_id:
                     pos.pop('_being_closed', None)
                     break
+        # Fix F2.4: Force recompute after exception to ensure derived values are consistent
+        recompute_side_lots(side_state)
+        session[side] = side_state
+        
         log.exception(f"Close-at-5 execution failed: {e}")
         return {
             'success': False,

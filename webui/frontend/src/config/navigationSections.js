@@ -31,6 +31,7 @@ import {
   Timer,
   ListChecks,
   CandlestickChart,
+  Wallet,
 } from 'lucide-react';
 
 /**
@@ -109,6 +110,13 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       label: '📊 MV Straddle',
       icon: Scale,
       description: 'Market View Straddle - volatility-driven directional neutral strategy',
+      group: 'Options Trading',
+    },
+    {
+      id: 'portfolio_margin',
+      label: '💼 Portfolio Margin',
+      icon: Wallet,
+      description: 'Portfolio margin monitoring — risk, IM/MM, WebSocket live data',
       group: 'Options Trading',
     },
     // ── Algorithms ───────────────────────────────────────────

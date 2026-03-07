@@ -11,7 +11,8 @@ import React, { useState, useCallback } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, TextField, Typography, RadioGroup, Radio,
-  FormControlLabel, CircularProgress, Alert
+  FormControlLabel, CircularProgress, Alert,
+  Select, MenuItem, InputLabel, FormControl,
 } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 
@@ -27,6 +28,7 @@ const PayoffAlertDialog = React.memo(({
 }) => {
   const [direction, setDirection] = useState('above');
   const [note, setNote] = useState('');
+  const [actionType, setActionType] = useState('none');
   const [loading, setLoading] = useState(false);
 
   const handleCreate = useCallback(async () => {
@@ -44,6 +46,7 @@ const PayoffAlertDialog = React.memo(({
           expected_pnl_target: alertPnLTarget,
           notification_channels: 'telegram,in_app',
           expiry_date: expiryDate,
+          action_type: actionType,
         }),
       });
       const data = await response.json();
@@ -58,7 +61,7 @@ const PayoffAlertDialog = React.memo(({
     } finally {
       setLoading(false);
     }
-  }, [alertPrice, direction, note, alertPnLExpiry, alertPnLTarget, expiryDate, onClose, onAlertCreated]);
+  }, [alertPrice, direction, note, actionType, alertPnLExpiry, alertPnLTarget, expiryDate, onClose, onAlertCreated]);
 
   return (
     <Dialog
@@ -132,6 +135,26 @@ const PayoffAlertDialog = React.memo(({
           sx={{ mt: 2 }}
           placeholder="e.g., Take profit at this level, or enter new position"
         />
+
+        <FormControl fullWidth sx={{ mt: 2 }}>
+          <InputLabel id="action-type-label">On Trigger Action</InputLabel>
+          <Select
+            labelId="action-type-label"
+            value={actionType}
+            label="On Trigger Action"
+            onChange={(e) => setActionType(e.target.value)}
+            size="small"
+          >
+            <MenuItem value="none">Notify only (default)</MenuItem>
+            <MenuItem value="log">Log silently (no notification)</MenuItem>
+            <MenuItem value="close_position">Close position (see note)</MenuItem>
+          </Select>
+        </FormControl>
+        {actionType === 'close_position' && (
+          <Typography variant="caption" sx={{ color: '#f59e0b', display: 'block', mt: 0.5 }}>
+            Add the option symbol to close in the Note field above (e.g. C-BTC-90000-260328).
+          </Typography>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

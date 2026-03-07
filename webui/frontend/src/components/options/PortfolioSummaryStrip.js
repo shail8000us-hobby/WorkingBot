@@ -38,6 +38,35 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
   const totalPnl = sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0);
   const callCount = sortedPositions.filter((p) => p.product_symbol.startsWith('C-')).length;
   const putCount = sortedPositions.filter((p) => p.product_symbol.startsWith('P-')).length;
+
+  // CE/PE lot and cashflow summaries
+  // cashflow is always positive (absolute); sign is: short (size<0) = credit received, long (size>0) = debit paid
+  const ceLongLots = sortedPositions
+    .filter((p) => p.product_symbol.startsWith('C-') && (p.size || 0) > 0)
+    .reduce((sum, p) => sum + Math.abs(p.size || 0), 0);
+  const ceShortLots = sortedPositions
+    .filter((p) => p.product_symbol.startsWith('C-') && (p.size || 0) < 0)
+    .reduce((sum, p) => sum + Math.abs(p.size || 0), 0);
+  const ceNetCash = sortedPositions
+    .filter((p) => p.product_symbol.startsWith('C-'))
+    .reduce((sum, p) => sum + ((p.size || 0) < 0 ? 1 : -1) * (Number(p.cashflow) || 0), 0);
+
+  const peLongLots = sortedPositions
+    .filter((p) => p.product_symbol.startsWith('P-') && (p.size || 0) > 0)
+    .reduce((sum, p) => sum + Math.abs(p.size || 0), 0);
+  const peShortLots = sortedPositions
+    .filter((p) => p.product_symbol.startsWith('P-') && (p.size || 0) < 0)
+    .reduce((sum, p) => sum + Math.abs(p.size || 0), 0);
+  const peNetCash = sortedPositions
+    .filter((p) => p.product_symbol.startsWith('P-'))
+    .reduce((sum, p) => sum + ((p.size || 0) < 0 ? 1 : -1) * (Number(p.cashflow) || 0), 0);
+
+  const formatNetCash = (val) => {
+    if (val > 0) return `+$${val.toFixed(2)} CR`;
+    if (val < 0) return `-$${Math.abs(val).toFixed(2)} DB`;
+    return '$0.00';
+  };
+  const netCashColor = (val) => (val > 0 ? '#4ade80' : val < 0 ? '#f87171' : '#9ca3af');
   const delta = Number(aggregatedGreeks.delta) || 0;
   const theta = Number(aggregatedGreeks.theta) || 0;
   const gamma = Number(aggregatedGreeks.gamma) || 0;
@@ -93,7 +122,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           height: 22,
           bgcolor: '#3b82f615',
           color: '#3b82f6',
-          fontSize: '0.7rem',
+          fontSize: '1.4rem',
           fontWeight: 'bold',
         }}
       />
@@ -104,10 +133,60 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           height: 22,
           bgcolor: '#a855f715',
           color: '#a855f7',
-          fontSize: '0.7rem',
+          fontSize: '1.4rem',
           fontWeight: 'bold',
         }}
       />
+      {/* CE summary: Long lots / Short lots / Net cashflow */}
+      {callCount > 0 && (
+        <Tooltip title={`CE Calls — Long: ${ceLongLots} lots, Short: ${ceShortLots} lots, Net cashflow: ${formatNetCash(ceNetCash)}`}>
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 0.4,
+              px: 0.8,
+              py: 0.2,
+              borderRadius: 1,
+              border: '1px solid #3b82f640',
+              bgcolor: '#3b82f608',
+              fontSize: '1.36rem',
+              fontWeight: 'bold',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: '#3b82f6', fontWeight: 'bold' }}>CE:</Typography>
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: '#4ade80', fontWeight: 'bold' }}>▲{ceLongLots}L</Typography>
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: '#f87171', fontWeight: 'bold' }}>▼{ceShortLots}S</Typography>
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: netCashColor(ceNetCash), fontWeight: 'bold' }}>💰{formatNetCash(ceNetCash)}</Typography>
+          </Box>
+        </Tooltip>
+      )}
+      {/* PE summary: Long lots / Short lots / Net cashflow */}
+      {putCount > 0 && (
+        <Tooltip title={`PE Puts — Long: ${peLongLots} lots, Short: ${peShortLots} lots, Net cashflow: ${formatNetCash(peNetCash)}`}>
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 0.4,
+              px: 0.8,
+              py: 0.2,
+              borderRadius: 1,
+              border: '1px solid #a855f740',
+              bgcolor: '#a855f708',
+              fontSize: '1.36rem',
+              fontWeight: 'bold',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: '#a855f7', fontWeight: 'bold' }}>PE:</Typography>
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: '#4ade80', fontWeight: 'bold' }}>▲{peLongLots}L</Typography>
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: '#f87171', fontWeight: 'bold' }}>▼{peShortLots}S</Typography>
+            <Typography component="span" sx={{ fontSize: '1.36rem', color: netCashColor(peNetCash), fontWeight: 'bold' }}>💰{formatNetCash(peNetCash)}</Typography>
+          </Box>
+        </Tooltip>
+      )}
       {/* Inline Greeks — compact */}
       {aggregatedGreeks.count > 0 && (
         <>
@@ -118,12 +197,13 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
               sx={{
                 fontWeight: 'bold',
                 color: delta >= 0 ? '#10b981' : '#ef4444',
+                fontSize: '1.5rem',
               }}
             >
               Δ {delta >= 0 ? '+' : ''}
               {delta.toFixed(4)}
               {absDeltaExposure > 0 && (
-                <Typography component="span" variant="caption" sx={{ ml: 0.5, opacity: 0.7, fontSize: '0.65rem' }}>
+                <Typography component="span" variant="caption" sx={{ ml: 0.5, opacity: 0.7, fontSize: '1.3rem' }}>
                   ≈{deltaExposureStr}
                 </Typography>
               )}
@@ -135,6 +215,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
               sx={{
                 fontWeight: 'bold',
                 color: theta >= 0 ? '#10b981' : '#ef4444',
+                fontSize: '1.5rem',
               }}
             >
               θ {theta >= 0 ? '+' : ''}
@@ -142,12 +223,12 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
             </Typography>
           </Tooltip>
           <Tooltip title="Portfolio gamma">
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '1.5rem' }}>
               γ {gamma.toFixed(6)}
             </Typography>
           </Tooltip>
           <Tooltip title="Portfolio vega">
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '1.5rem' }}>
               ν {vega.toFixed(2)}
             </Typography>
           </Tooltip>
@@ -165,6 +246,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
               sx={{
                 fontWeight: 'bold',
                 color: btcDelta >= 0 ? '#10b981' : '#ef4444',
+                fontSize: '1.5rem',
               }}
             >
               BTC: {btcDelta >= 0 ? 'L' : 'S'} {Math.abs(btcDelta).toFixed(4)}
@@ -181,6 +263,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
             sx={{
               fontWeight: 'bold',
               color: ethDelta >= 0 ? '#10b981' : '#ef4444',
+              fontSize: '1.5rem',
             }}
           >
             ETH: {ethDelta >= 0 ? 'L' : 'S'} {Math.abs(ethDelta).toFixed(4)}
@@ -193,7 +276,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           label="Δ Neutral ✅"
           size="small"
           color="info"
-          sx={{ height: 18, fontSize: '0.6rem' }}
+          sx={{ height: 18, fontSize: '1.2rem' }}
         />
       )}
       {aggregatedGreeks.count > 0 && Math.abs(delta) >= 3 && Math.abs(delta) < 7 && (
@@ -201,7 +284,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           label={`High Δ ⚠️ (≈${deltaExposureStr})`}
           size="small"
           color="warning"
-          sx={{ height: 18, fontSize: '0.6rem' }}
+          sx={{ height: 18, fontSize: '1.2rem' }}
         />
       )}
       {aggregatedGreeks.count > 0 && Math.abs(delta) >= 7 && (
@@ -209,7 +292,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           label={`🚨 Δ ${delta.toFixed(2)} (≈${deltaExposureStr})`}
           size="small"
           color="error"
-          sx={{ height: 18, fontSize: '0.6rem', animation: 'pulse 1.5s infinite', '@keyframes pulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.6 } } }}
+          sx={{ height: 18, fontSize: '1.2rem', animation: 'pulse 1.5s infinite', '@keyframes pulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.6 } } }}
         />
       )}
 
@@ -224,7 +307,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
             <Divider orientation="vertical" flexItem sx={{ mx: 0 }} />
             <Tooltip title={`Blocked: $${blocked.toLocaleString()} / Balance: $${balance.toLocaleString()} (${utilPct.toFixed(1)}% utilized)`}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 110 }}>
-                <Typography variant="caption" sx={{ fontWeight: 'bold', color: mColor, whiteSpace: 'nowrap', fontSize: '0.65rem' }}>
+                <Typography variant="caption" sx={{ fontWeight: 'bold', color: mColor, whiteSpace: 'nowrap', fontSize: '1.3rem' }}>
                   Margin: {utilPct.toFixed(0)}%
                 </Typography>
                 <LinearProgress
@@ -257,7 +340,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
               size="small"
               sx={{
                 height: 18,
-                fontSize: '0.6rem',
+                fontSize: '1.2rem',
                 fontWeight: 'bold',
                 bgcolor: `${badgeColor}15`,
                 color: badgeColor,

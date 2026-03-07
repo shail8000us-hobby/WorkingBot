@@ -301,6 +301,12 @@ export function MMMProvider({ children, socket }) {
     fetchSessions(false);
   }, [fetchSessions]);
 
+  const handleSessionDeleted = useCallback((data) => {
+    if (!data?.session_id) return;
+    console.log('🗑️ MMM: Session deleted:', data.session_id);
+    fetchSessions(false);
+  }, [fetchSessions]);
+
   const handlePnlUpdate = useCallback((data) => {
     if (!data?.session_id) return;
     dispatch({
@@ -327,6 +333,7 @@ export function MMMProvider({ children, socket }) {
     socket.on('mmm_safety', handleSafety);
     socket.on('mmm_params_changed', handleParamsChanged);
     socket.on('mmm_session_created', handleSessionCreated);
+    socket.on('mmm_session_deleted', handleSessionDeleted);
     socket.on('mmm_pnl_update', handlePnlUpdate);
     socket.on('mmm_reversal', (data) => {
       console.log('🔄 MMM: Reversal detected', data);
@@ -340,6 +347,14 @@ export function MMMProvider({ children, socket }) {
       console.log('🏁 MMM: Close-at-5 triggered', data);
       fetchSessions(false);
     });
+    socket.on('mmm_harvest', (data) => {
+      console.log('🌾 MMM: Position harvested', data);
+      fetchSessions(false);
+    });
+    socket.on('mmm_recycle', (data) => {
+      console.log('♻️ MMM: Lot recycling executed', data);
+      fetchSessions(false);
+    });
 
     console.log('📡 MMM: WebSocket listeners attached');
 
@@ -351,10 +366,13 @@ export function MMMProvider({ children, socket }) {
       socket.off('mmm_safety', handleSafety);
       socket.off('mmm_params_changed', handleParamsChanged);
       socket.off('mmm_session_created', handleSessionCreated);
+      socket.off('mmm_session_deleted', handleSessionDeleted);
       socket.off('mmm_pnl_update', handlePnlUpdate);
       socket.off('mmm_reversal');
       socket.off('mmm_shift');
       socket.off('mmm_close_at_5');
+      socket.off('mmm_harvest');
+      socket.off('mmm_recycle');
       console.log('📡 MMM: WebSocket listeners detached');
     };
   }, [
@@ -366,6 +384,7 @@ export function MMMProvider({ children, socket }) {
     handleSafety,
     handleParamsChanged,
     handleSessionCreated,
+    handleSessionDeleted,
     handlePnlUpdate,
     fetchSessions,
   ]);

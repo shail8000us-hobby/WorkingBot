@@ -55,11 +55,12 @@ export const useMarketPrices = () => {
   };
 
   useEffect(() => {
-    // Initialize Socket.IO connection (polling-only for simple-websocket backend)
+    // Initialize Socket.IO connection — WebSocket first, polling fallback
     const socket = io({
       path: '/socket.io',
-      transports: ['polling'],
-      upgrade: false,
+      transports: ['websocket', 'polling'],
+      upgrade: true,
+      rememberUpgrade: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,

@@ -35,26 +35,7 @@ def _migrate_side_to_positions(side_state: Dict) -> None:
     frozen_positions[]) into a single positions[] list with unique IDs and
     lifecycle status. Called automatically by recompute_side_lots() when
     positions[] key is absent. Idempotent.
-
-    Audit fix (crash-safety): Two-phase flag prevents double-migration on restart:
-      1. '_positions_migrating' set at START of work (blocks re-entry if crash occurs
-         mid-function — on next restart we log a warning and do a clean fresh migration
-         since positions[] was not written yet).
-      2. On success: '_positions_migrating' removed and '_positions_migrated' set.
     """
-    # Guard: already fully migrated — nothing to do
-    if side_state.get('_positions_migrated'):
-        return
-
-    # Crash-recovery: a previous migration started but never finished
-    if side_state.get('_positions_migrating'):
-        log.warning(
-            f"[{side_state.get('side', 'XX')}] Incomplete prior migration detected "
-            "(_positions_migrating). Re-running clean migration to recover."
-        )
-
-    # Phase 1: Mark in-progress BEFORE any mutations
-    side_state['_positions_migrating'] = True
     now = datetime.now(timezone.utc).isoformat()
     positions = []
     counter = 0
@@ -125,11 +106,22 @@ def _migrate_side_to_positions(side_state: Dict) -> None:
             'source': frozen.get('source', ''),
         })
 
-    # Phase 2: Atomically write results and swap flags
     side_state['positions'] = positions
     side_state['_pos_counter'] = counter
-    side_state.pop('_positions_migrating', None)   # Remove in-progress flag
-    side_state['_positions_migrated'] = True        # Set permanent completion flag
+    
+    # Fix F2.5: Validate position ID uniqueness — defense-in-depth
+    ids = [p['id'] for p in positions]
+    if len(ids) != len(set(ids)):
+        log.error(f"[Fix F2.5] Migration created duplicate position IDs: {ids}")
+        # Deduplicate by appending counter suffix to duplicates
+        seen = set()
+        for pos in positions:
+            if pos['id'] in seen:
+                counter += 1
+                pos['id'] = f"{pos['id']}_{counter:03d}"
+            seen.add(pos['id'])
+        side_state['_pos_counter'] = counter
+    
     log.debug(
         f"[Fix #23] Migrated {side} to Unified Position Ledger: "
         f"{len(positions)} position(s)"
@@ -320,19 +312,27 @@ DEFAULT_PARAMS = {
 
     # Hot-reloadable parameters
     'adjustment_interval': 300,         # seconds between checks
-    'min_trigger_move': 3.0,            # minimum premium move above trigger
+    'min_trigger_move': 10.0,           # minimum premium move above trigger
     'shift_threshold': 50.0,            # min premium to sell at current strike
     'shift_target_premium': 100.0,      # target premium for new strike on shift
     'close_at_threshold': 5.0,          # close positions at this premium or below
+    'close_at_use_bid': True,           # use bid price (not mark) for close_at_5 checks — more accurate for illiquid options
     'premium_buffer_pct': 0.05,         # 5% extra lots for slippage
     'max_lots_per_side': 100,           # maximum total lots per CE or PE
+    # Split Ledger Phase 1
+    'max_total_exposure': 0,            # absolute ceiling on active+frozen lots per side. 0 = auto (2× max_lots_per_side)
+    # Split Ledger Phase 2: Shift-Time Recycle
+    'shift_recycle_enabled': False,         # proactive cleanup at shift time. Start disabled.
+    'shift_recycle_premium_floor': 60.0,    # only close frozen positions with premium < this. 0 = dynamic mode
+    'shift_recycle_max_pct': 1.0,           # max fraction of frozen lots to close per shift (0.0-1.0)
+    'shift_recycle_floor_ratio': 0.40,      # when premium_floor<=0, floor = new_strike_premium × this ratio
     'max_adjustments': 500,             # maximum adjustment events
     'max_loss_amount': 5000.0,          # hard stop P&L threshold
     'stop_adjustment_mins': 15,         # stop adjusting N mins before expiry
     'auto_close_mins': 5,              # auto-close all N mins before expiry
     'cooldown_on_reversal': True,       # skip 1 interval on reversal
     'whipsaw_limit': 3,                 # max alternating adjustments before pause
-    'trailing_stop_pct': 0.50,          # protect profit at N% of peak
+    'trailing_stop_pct': 0.0,           # protect profit at N% of peak (0 = disabled)
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
 
@@ -391,6 +391,28 @@ DEFAULT_PARAMS = {
     'trend_acceleration_window_s': 600,  # acceleration window in seconds (10 min)
     'trend_acceleration_pct': 0.5,       # fast-move % to bypass EMA (within accel window)
 
+    # M1: Profit Harvesting
+    'harvest_enabled': True,               # master switch for M1 profit harvesting
+    'harvest_profit_pct': 40.0,            # min % profit to harvest (entry - current) / entry * 100
+    'harvest_min_age_mins': 30,            # min minutes since frozen before eligible
+    'harvest_max_per_beat': 3,             # max positions to harvest per heartbeat
+    'harvest_pressure_threshold': 0.5,     # min capacity pressure (total/max) to trigger harvest (lowered from 0.7 for Split Ledger)
+
+    # M2: Lot Recycling
+    'recycle_enabled': True,               # master switch for M2 lot recycling
+    'recycle_min_premium_ratio': 2.5,      # min ratio: new_premium / avg_recycle_premium
+    'recycle_premium_ceiling': 50.0,       # max premium (USD) to consider for buyback
+    'recycle_max_pct': 0.50,               # max fraction of side lots to recycle at once
+    'recycle_cooldown_sec': 300,           # seconds between recycle operations
+    'recycle_min_lot_gain': 5,             # min net lot gain required for viability
+    'recycle_free_lot_buffer': 10,         # extra lots to free beyond estimated need
+    'recycle_protect_original': True,      # protect original entry position from recycling
+
+    # M3: Asymmetry Rebalancing
+    'rebalance_enabled': True,             # master switch for M3 asymmetry-aware harvesting
+    'rebalance_asymmetry_threshold': 5.0,  # lots ratio threshold for extreme asymmetry boost
+    'rebalance_pressure_threshold': 0.7,   # capacity pressure threshold for asymmetry boost
+
     # Perpetual Futures Delta Hedge (Fix #26)
     'perp_hedge_enabled': False,           # master switch — disabled until user opts in
     'perp_hedge_mode': 'atm_only',         # 'full' = always hedge, 'atm_only' = hedge only when original strike ≈ ATM
@@ -408,6 +430,10 @@ HOT_RELOAD_PARAMS = {
     'adjustment_interval', 'min_trigger_move', 'shift_threshold',
     'shift_threshold_pct', 'shift_target_premium', 'close_at_threshold',
     'premium_buffer_pct', 'max_lots_per_side',
+    # Split Ledger
+    'max_total_exposure',
+    'shift_recycle_enabled', 'shift_recycle_premium_floor', 'shift_recycle_max_pct',
+    'shift_recycle_floor_ratio',
     'max_adjustments', 'max_loss_amount', 'stop_adjustment_mins',
     'auto_close_mins', 'cooldown_on_reversal', 'whipsaw_limit',
     'trailing_stop_pct', 'theta_acceleration_window',
@@ -437,6 +463,13 @@ HOT_RELOAD_PARAMS = {
     'perp_hedge_delta_threshold', 'perp_hedge_ratio',
     'perp_hedge_rebalance_band', 'perp_hedge_max_lots', 'perp_hedge_cooldown_sec',
     'perp_hedge_max_flips_per_hour',
+    # Lot Lifecycle (M1/M2/M3)
+    'harvest_enabled', 'harvest_profit_pct', 'harvest_min_age_mins',
+    'harvest_max_per_beat', 'harvest_pressure_threshold',
+    'recycle_enabled', 'recycle_min_premium_ratio', 'recycle_premium_ceiling',
+    'recycle_max_pct', 'recycle_cooldown_sec', 'recycle_min_lot_gain',
+    'recycle_free_lot_buffer', 'recycle_protect_original',
+    'rebalance_enabled', 'rebalance_asymmetry_threshold', 'rebalance_pressure_threshold',
 }
 
 

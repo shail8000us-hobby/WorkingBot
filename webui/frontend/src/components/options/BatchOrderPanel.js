@@ -9,6 +9,7 @@
  * everything via props.
  */
 import React from 'react';
+import SealedBadge from '../common/SealedBadge';
 import {
   Alert,
   AlertTitle,
@@ -115,6 +116,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
             <Typography variant="body2" fontWeight="bold">
               Batch Order
             </Typography>
+            <SealedBadge />
             <Chip
               label={`${Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length} selected`}
               size="small"

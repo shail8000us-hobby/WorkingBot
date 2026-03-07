@@ -12,6 +12,7 @@ Created: February 26, 2026
 
 import time
 import logging
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -34,10 +35,14 @@ def fetch_options_positions_data() -> dict:
         return {'success': False, 'positions': [], 'error': str(e)}
 
 
+@sealed
 def fetch_pending_orders_data() -> dict:
     """
     Fetch pending orders as a plain dict.
-    
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
+
     Returns:
         dict: { 'success': bool, 'orders': list, ... }
     """

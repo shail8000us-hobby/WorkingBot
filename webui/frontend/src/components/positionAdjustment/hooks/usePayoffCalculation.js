@@ -5,14 +5,27 @@
  * 
  * Provides:
  * - Real-time payoff calculation on position/trade changes
+ * - Black-Scholes pre-expiry curves, theta fan, probability overlay
+ * - Delta profile, stress matrix, net debit/credit
  * - Debounced updates for performance
  * - Memoized chart data and metrics
  * 
  * Created: January 31, 2026
+ * Enhanced: March 6, 2026 — BS engine integration
  */
 
-import { useMemo, useCallback, useState, useEffect } from 'react';
-import { calculateCombinedPayoff, formatCurrency, formatPercentage } from '../utils/adjustmentPayoffEngine';
+import { useMemo } from 'react';
+import { calculateCombinedPayoff, formatCurrency, formatPercentage, formatProposedAsPositions } from '../utils/adjustmentPayoffEngine';
+import {
+  calculateThetaFanCurves,
+  calculateProbabilityOverlay,
+  calculateDeltaProfile,
+  calculateStressMatrix,
+  calculateNetDebitCredit,
+  getWeightedIV,
+  generateDynamicPriceRange,
+} from '../utils/adjustmentBSEngine';
+import { getTimeToExpiry, parsePositionSymbol } from '../utils/adjustmentPayoffEngine';
 
 /**
  * Hook for calculating and managing payoff data
@@ -27,6 +40,8 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
   const {
     rangePercent = 15,
     enabled = true,
+    thetaFanEnabled = false,
+    deltaProfileEnabled = false,
   } = options;
 
   // Calculate payoff data when inputs change
@@ -69,7 +84,126 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
     }
   }, [currentPositions, proposedTrades, spotPrice, rangePercent, enabled]);
 
-  // Formatted metrics for display
+  // ============================================================================
+  // BS ENGINE — Enhanced calculations
+  // ============================================================================
+
+  // Resolve combined positions for BS calculations
+  const combinedPositions = useMemo(() => {
+    const proposed = formatProposedAsPositions(proposedTrades || []);
+    return [...(currentPositions || []), ...proposed];
+  }, [currentPositions, proposedTrades]);
+
+  // Resolve average IV and days to expiry
+  const ivAndExpiry = useMemo(() => {
+    const allPositions = combinedPositions.length > 0 ? combinedPositions : (currentPositions || []);
+    const iv = getWeightedIV(allPositions, spotPrice);
+
+    // Find the nearest expiry
+    let minDays = 30;
+    allPositions.forEach(pos => {
+      const parsed = parsePositionSymbol(pos.product_symbol);
+      if (parsed?.expiry) {
+        const T = getTimeToExpiry(parsed.expiry);
+        const days = T * 365.25;
+        if (days > 0.5) {
+          minDays = Math.min(minDays, days);
+        }
+      }
+    });
+
+    return { iv, daysToExpiry: minDays };
+  }, [combinedPositions, currentPositions, spotPrice]);
+
+  // Net debit/credit for proposed trades
+  const netDebitCredit = useMemo(() => {
+    return calculateNetDebitCredit(proposedTrades);
+  }, [proposedTrades]);
+
+  // Theta fan curves (only when enabled for performance)
+  const thetaFanData = useMemo(() => {
+    if (!thetaFanEnabled || !enabled || !spotPrice || !payoffResult.isValid) {
+      return null;
+    }
+
+    try {
+      const priceRange = payoffResult.priceRange || payoffResult.chartData?.map(d => d.price) || [];
+      if (priceRange.length === 0) return null;
+
+      return calculateThetaFanCurves(
+        combinedPositions,
+        spotPrice,
+        priceRange,
+        ivAndExpiry.daysToExpiry
+      );
+    } catch (error) {
+      console.error('[usePayoffCalculation] Theta fan error:', error);
+      return null;
+    }
+  }, [thetaFanEnabled, enabled, spotPrice, payoffResult.isValid, payoffResult.priceRange, payoffResult.chartData, combinedPositions, ivAndExpiry.daysToExpiry]);
+
+  // Probability distribution overlay
+  const probabilityData = useMemo(() => {
+    if (!enabled || !spotPrice || !payoffResult.isValid) {
+      return null;
+    }
+
+    try {
+      const priceRange = payoffResult.priceRange || payoffResult.chartData?.map(d => d.price) || [];
+      if (priceRange.length === 0) return null;
+
+      return calculateProbabilityOverlay(
+        spotPrice,
+        ivAndExpiry.iv,
+        ivAndExpiry.daysToExpiry / 365.25,
+        priceRange
+      );
+    } catch (error) {
+      console.error('[usePayoffCalculation] Probability overlay error:', error);
+      return null;
+    }
+  }, [enabled, spotPrice, payoffResult.isValid, payoffResult.priceRange, payoffResult.chartData, ivAndExpiry]);
+
+  // Delta profile (only when enabled)
+  const deltaProfileData = useMemo(() => {
+    if (!deltaProfileEnabled || !enabled || !spotPrice || !payoffResult.isValid) {
+      return null;
+    }
+
+    try {
+      const priceRange = payoffResult.priceRange || payoffResult.chartData?.map(d => d.price) || [];
+      if (priceRange.length === 0) return null;
+
+      return calculateDeltaProfile(
+        combinedPositions,
+        spotPrice,
+        priceRange,
+        0 // Current date
+      );
+    } catch (error) {
+      console.error('[usePayoffCalculation] Delta profile error:', error);
+      return null;
+    }
+  }, [deltaProfileEnabled, enabled, spotPrice, payoffResult.isValid, payoffResult.priceRange, payoffResult.chartData, combinedPositions]);
+
+  // Stress test matrix
+  const stressTestData = useMemo(() => {
+    if (!enabled || !spotPrice) return null;
+
+    try {
+      const currentStress = calculateStressMatrix(currentPositions || [], spotPrice, 0);
+      const combinedStress = calculateStressMatrix(combinedPositions, spotPrice, 0);
+      return { current: currentStress, combined: combinedStress };
+    } catch (error) {
+      console.error('[usePayoffCalculation] Stress test error:', error);
+      return null;
+    }
+  }, [enabled, spotPrice, currentPositions, combinedPositions]);
+
+  // ============================================================================
+  // FORMATTED METRICS (unchanged from original + net debit/credit)
+  // ============================================================================
+
   const formattedMetrics = useMemo(() => {
     if (!payoffResult.currentMetrics && !payoffResult.combinedMetrics) {
       return null;
@@ -157,7 +291,7 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
     let recommendation = null;
     if (hasProposedTrades && payoffResult.metricsChange) {
       const { popChange, maxLossChange } = payoffResult.metricsChange;
-      
+
       if (popChange > 0.05 && maxLossChange > 0) {
         recommendation = { type: 'positive', message: 'Improves PoP and reduces max loss' };
       } else if (popChange > 0.05) {
@@ -182,15 +316,23 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
   return {
     // Raw calculation results
     ...payoffResult,
-    
+
     // Formatted for display
     formattedMetrics,
-    
+
     // Chart helpers
     chartConfig,
-    
+
     // Quick summary
     summary,
+
+    // BS engine results
+    thetaFanData,
+    probabilityData,
+    deltaProfileData,
+    stressTestData,
+    netDebitCredit,
+    ivAndExpiry,
   };
 }
 

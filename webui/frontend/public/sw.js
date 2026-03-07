@@ -62,19 +62,53 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API calls — network-first, cache as fallback (3s timeout)
+  // API calls — network-first, cache as fallback.
+  // Use AbortController with a generous timeout so that backends handling
+  // exchange API calls (position-greeks, roll/quotes, etc.) have time to
+  // respond.  The old 3 s race was triggering spurious 504s whenever the
+  // exchange took more than 3 s to reply, which is routine.
+  //
+  // Timeout budget per endpoint class:
+  //   - Fast endpoints (health, config, status): 8 s
+  //   - Exchange-dependent / trading endpoints: 25 s (backend has its own
+  //     inner asyncio timeout of 15 s, so this is a safe outer envelope)
   if (url.pathname.startsWith('/api/')) {
+    const isSlowEndpoint = (
+      url.pathname.includes('/position-greeks') ||
+      url.pathname.includes('/roll/') ||
+      url.pathname.includes('/positions') ||
+      url.pathname.includes('/dashboard') ||
+      url.pathname.includes('/execute') ||
+      url.pathname.includes('/greeks') ||
+      url.pathname.includes('/chain')
+    );
+    const timeoutMs = isSlowEndpoint ? 25000 : 8000;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     event.respondWith(
-      Promise.race([
-        fetch(event.request).then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(API_CACHE).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-      ]).catch(() => caches.match(event.request))
+      fetch(event.request, { signal: controller.signal }).then((response) => {
+        clearTimeout(timeoutId);
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(API_CACHE).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(async (err) => {
+        clearTimeout(timeoutId);
+        const isAbort = err.name === 'AbortError';
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: isAbort ? `Request timed out after ${timeoutMs / 1000}s` : 'Network unavailable',
+            offline: !isAbort,
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        );
+      })
     );
     return;
   }

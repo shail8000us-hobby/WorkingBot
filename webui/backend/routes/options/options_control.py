@@ -28,56 +28,17 @@ import logging
 import threading
 from pathlib import Path
 from functools import wraps
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, make_response
 from webui.backend.sealed import sealed
 
 
 # ---------------------------------------------------------------------------
-# Dedicated event loop for async operations
+# Infrastructure: event loop, client singleton, async helpers
 # ---------------------------------------------------------------------------
-# A single persistent event loop runs in a daemon thread.  ALL async work
-# (httpx calls, asyncio locks/events inside the singleton UnifiedAPIClient)
-# is submitted to this loop via ``run_coroutine_threadsafe``.  This prevents
-# the "<asyncio.locks.Event> is bound to a different event loop" errors that
-# occurred when each Flask request created / obtained a different loop.
+# Moved to options_client.py — re-exported here for backward compatibility.
+# DO NOT remove these re-exports until all callers are updated (Phase 6).
 # ---------------------------------------------------------------------------
-_dedicated_loop: Optional[asyncio.AbstractEventLoop] = None
-_loop_thread: Optional[threading.Thread] = None
-_loop_lock = threading.Lock()
-
-
-def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
-    """Return (and lazily create) the single persistent event loop."""
-    global _dedicated_loop, _loop_thread
-
-    with _loop_lock:
-        if _dedicated_loop is not None and not _dedicated_loop.is_closed():
-            return _dedicated_loop
-
-        _dedicated_loop = asyncio.new_event_loop()
-        _loop_thread = threading.Thread(
-            target=_dedicated_loop.run_forever,
-            daemon=True,
-            name="options-async-loop",
-        )
-        _loop_thread.start()
-        return _dedicated_loop
-
-
-def _run_async(coro):
-    """Run an async coroutine from sync Flask context.
-
-    Submits *coro* to a **dedicated persistent event loop** running in a
-    background daemon thread and blocks until the result is available.
-
-    This guarantees that all asyncio-bound objects (httpx ``AsyncClient``,
-    ``asyncio.Event``, ``asyncio.Lock``, etc.) created by the singleton
-    ``UnifiedAPIClient`` always execute on the **same** loop, eliminating
-    the "bound to a different event loop" errors.
-    """
-    loop = _get_dedicated_loop()
-    future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=60)
+from .options_client import _run_async, get_unified_client, with_timeout
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -127,62 +88,37 @@ DUPLICATE_WINDOW_SECONDS = 3.0  # Reduced from 5.0 to 3.0  # Block duplicate req
 _guardian_cache = {'signal': None, 'time': 0}
 GUARDIAN_CACHE_SECONDS = 5.0
 
-# Order type options
-ORDER_TYPE_MAKER_FIRST = 'maker_first'    # Try limit at mid, fallback to market
-ORDER_TYPE_MAKER_ONLY = 'maker_only'      # Only limit orders
-ORDER_TYPE_MARKET_ONLY = 'market_only'    # Only market orders (fastest)
-ORDER_TYPE_SSR = 'ssr'                    # SSR Order: Competitive pricing (2 ticks below best ask)
-
-# Valid order types set for validation
-VALID_ORDER_TYPES = {
-    ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY, ORDER_TYPE_SSR,
-    'ssr_standard', 'ssr_aggressive', 'ssr_conservative',  # Frontend SSR mode variants
-}
-
-# SSR Order tracking - stores active SSR monitoring tasks
-# Format: {order_id: {'symbol': str, 'status': str, 'adjustments': int, 'current_price': float, 'start_time': float}}
-_active_ssr_orders = {}
-import threading
-_ssr_lock = threading.Lock()
+# ---------------------------------------------------------------------------
+# Order execution: constants + functions
+# ---------------------------------------------------------------------------
+# Moved to order_executor.py — re-exported here for backward compatibility.
+# DO NOT remove these re-exports until all callers are updated (Phase 6).
+# ---------------------------------------------------------------------------
+from .order_executor import (
+    ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY,
+    ORDER_TYPE_SSR, VALID_ORDER_TYPES,
+    cancel_order_with_verification, validate_order_size,
+    place_options_order, modify_order_price, fetch_fresh_orderbook_quotes,
+    place_smart_order,
+)
 
 # ---------------------------------------------------------------------------
-# Delta Hedge — module globals
+# SSR monitoring: registry + monitoring threads + order placement
 # ---------------------------------------------------------------------------
-_hedge_events: list = []           # ring buffer, max 100 entries
-_hedge_events_lock = threading.Lock()
-_last_hedge_time: float = 0.0
+# Moved to ssr_monitor.py — re-exported here for backward compatibility.
+# DO NOT remove these re-exports until all callers are updated (Phase 6).
+# ---------------------------------------------------------------------------
+from .ssr_monitor import (
+    place_ssr_order, place_ssr_order_with_margin,
+    get_active_ssr_orders, _active_ssr_orders, _ssr_lock,
+)
 
-_auto_hedge_config: dict = {
-    'enabled': False,
-    'threshold': 5.0,
-    'order_type': 'market',
-    'smart_offset_pct': 0.05,
-    'cooldown_seconds': 300,
-    'max_perp_size_btc': 20.0,
-    'log_events': True,
-}
-_auto_hedge_config_lock = threading.Lock()
-
-def _auto_hedge_config_path() -> Path:
-    cfg_dir = Path(__file__).parent.parent.parent / 'data'
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    return cfg_dir / 'auto_hedge_config.json'
-
-def _load_auto_hedge_config_from_disk():
-    """Called once at import time — loads saved config from JSON."""
-    global _auto_hedge_config
-    try:
-        p = _auto_hedge_config_path()
-        if p.exists():
-            import json as _json
-            with open(p) as f:
-                saved = _json.load(f)
-            with _auto_hedge_config_lock:
-                _auto_hedge_config.update(saved)
-    except Exception as e:
-        log.warning(f'auto-hedge config not loaded from disk: {e}')
-
-_load_auto_hedge_config_from_disk()
+# ---------------------------------------------------------------------------
+# Delta Hedge — moved to delta_hedge.py
+# ---------------------------------------------------------------------------
+# Routes are registered below after blueprint creation.
+# Hedge events accessor imported for activity-log route.
+from .delta_hedge import get_hedge_events_snapshot, register_delta_hedge_routes
 
 
 def rate_limit(f):
@@ -312,1093 +248,18 @@ def check_guardian_signal():
         return 'GO'  # Default to GO on error
 
 
-# Singleton UnifiedAPIClient — creating a new client on every request opens
-# aiohttp connection pools and sockets that never close, rapidly exhausting
-# the OS file-descriptor limit ([Errno 24] Too many open files).
-_unified_client_singleton = None
-
-def get_unified_client():
-    """Get a shared (singleton) UnifiedAPIClient with credentials from config.
-
-    The client is created once on first call and reused for all subsequent
-    requests.  This prevents runaway file-descriptor accumulation from
-    creating a new connection pool on every call.
-    """
-    global _unified_client_singleton
-    if _unified_client_singleton is None:
-        from bot.api.unified_api_client import UnifiedAPIClient
-        creds = get_api_credentials()
-        _unified_client_singleton = UnifiedAPIClient(
-            api_key=creds['api_key'],
-            api_secret=creds['api_secret'],
-            symbol='BTCUSD',
-            enable_websocket=False
-        )
-        log.info("✅ UnifiedAPIClient singleton created")
-    return _unified_client_singleton
 
 
-async def with_timeout(coro, timeout_seconds=30):
-    """Execute coroutine with timeout to prevent hanging requests"""
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        raise Exception(f"Operation timed out after {timeout_seconds}s")
-
-
-@sealed
-async def cancel_order_with_verification(client, order_id, max_retries=3):
-    """
-    Cancel order with verification to prevent race conditions.
-
-    SEALED — v1.0.0 — March 4, 2026
-    Do not modify without UNSEAL command in AI_SEAL.md
-
-    Returns:
-        dict: {'state': 'cancelled'|'filled'|'unknown', 'safe_to_place_market': bool}
-    """
-    for attempt in range(max_retries):
-        try:
-            # Check current state first
-            status = await client.rest_client.get_order(order_id)
-            current_state = status.get('state', '')
-            
-            if current_state == 'filled':
-                log.info(f"✅ Order {order_id} already filled")
-                return {'state': 'filled', 'safe_to_place_market': False}
-            
-            if current_state == 'cancelled':
-                log.info(f"✅ Order {order_id} already cancelled")
-                return {'state': 'cancelled', 'safe_to_place_market': True}
-            
-            # Attempt cancellation
-            await client.rest_client.cancel_order(order_id)
-            await asyncio.sleep(0.3)
-            
-            # Verify cancellation
-            verify_status = await client.rest_client.get_order(order_id)
-            verify_state = verify_status.get('state', '')
-            
-            if verify_state == 'cancelled':
-                log.info(f"✅ Order {order_id} successfully cancelled")
-                return {'state': 'cancelled', 'safe_to_place_market': True}
-            elif verify_state == 'filled':
-                log.info(f"✅ Order {order_id} filled during cancellation")
-                return {'state': 'filled', 'safe_to_place_market': False}
-            
-            # Still open, retry
-            log.warning(f"⚠️ Order {order_id} still {verify_state}, retry {attempt + 1}/{max_retries}")
-            
-        except Exception as e:
-            log.error(f"Cancel attempt {attempt + 1} failed: {e}")
-            if attempt == max_retries - 1:
-                # Last attempt failed - assume unsafe to place market order
-                log.error(f"❌ All cancel attempts failed for {order_id}")
-                return {'state': 'unknown', 'safe_to_place_market': False}
-    
-    # If we get here, cancellation uncertain - DO NOT place market order
-    log.warning(f"⚠️ Cannot confirm cancellation of {order_id}, NOT safe for market order")
-    return {'state': 'unknown', 'safe_to_place_market': False}
-
-
-async def validate_order_size(client, symbol, requested_size, side, is_close=False):
-    """
-    Validate order size against position and exchange limits.
-    
-    Raises:
-        ValueError: If order size is invalid
-    """
-    if requested_size <= 0:
-        raise ValueError(f"Order size must be positive, got {requested_size}")
-    
-    if requested_size > 10000:
-        raise ValueError(f"Order size {requested_size} exceeds maximum (10000)")
-    
-    if is_close:
-        # Verify we have a position to close
-        positions = await client.get_all_positions_with_options()
-        position = next((p for p in positions.get('options', []) 
-                        if p.get('product_symbol') == symbol), None)
-        
-        if not position:
-            raise ValueError(f"Cannot close non-existent position: {symbol}")
-        
-        position_size = abs(float(position.get('size', 0)))
-        if requested_size > position_size:
-            raise ValueError(
-                f"Close size {requested_size} exceeds position size {position_size}"
-            )
-    
-    return True
-
-
-async def place_options_order(client, product_symbol: str, size: int, side: str, 
-                              order_type: str = 'limit_order', limit_price: float = None,
-                              reduce_only: bool = False, post_only: bool = True,
-                              mmp_level: str = None):
-    """
-    Place order on options contract using product_symbol.
-    
-    Delta Exchange API supports product_symbol for options contracts.
-    This bypasses the need for product_id lookup.
-    
-    Args:
-        client: UnifiedAPIClient instance (for rate limiting)
-        product_symbol: Options symbol (e.g., C-BTC-113000-300126)
-        size: Order size (positive integer)
-        side: 'buy' or 'sell'
-        order_type: 'limit_order' or 'market_order'
-        limit_price: Price for limit orders
-        reduce_only: If True, only reduces position
-        post_only: If True, order will be maker-only (default True for fee rebates)
-        mmp_level: Market Maker Protection level (mmp1-mmp5). If set, uses MMP tagging
-                   instead of gtc time_in_force. Only for approved market makers.
-        
-    Returns:
-        dict: Order response
-    """
-    # Build order data using product_symbol (works for options)
-    data = {
-        "product_symbol": product_symbol,
-        "side": side,
-        "order_type": order_type,
-        "size": int(size)
-    }
-    
-    # Market orders don't use limit_price, post_only, or time_in_force
-    if order_type == 'market_order':
-        if reduce_only:
-            data["reduce_only"] = "true"
-    else:
-        # Limit order
-        if limit_price is not None:
-            data["limit_price"] = str(limit_price)
-        
-        # Use MMP tagging if specified, otherwise use gtc
-        if mmp_level and mmp_level in ['mmp1', 'mmp2', 'mmp3', 'mmp4', 'mmp5']:
-            data["time_in_force"] = mmp_level  # Market Maker Protection
-            data["post_only"] = "true"  # MMP orders should always be post_only
-            log.info(f"🏦 Using MMP level: {mmp_level}")
-        else:
-            data["time_in_force"] = "gtc"
-            data["post_only"] = "true" if post_only else "false"
-        
-        if reduce_only:
-            data["reduce_only"] = "true"
-    
-    log.info(f"📊 Placing {order_type}: {side} {size} {product_symbol} @ {limit_price or 'market'} (post_only={post_only}, mmp={mmp_level})")
-    
-    # Make direct API call
-    response = await client.rest_client._request_with_retry(
-        method="POST",
-        path="/v2/orders",
-        data=data
-    )
-    
-    result = response.get('result', response)
-    log.info(f"✅ Order placed: {result.get('id', 'unknown')}")
-    return result
-
-
-async def modify_order_price(client, order_id: str, product_id: int, 
-                            symbol: str, new_price: float, size: float, 
-                            side: str, reduce_only: bool = False) -> dict:
-    """
-    Atomically modify order price by cancelling and immediately placing new order.
-    
-    Optimized for speed - no delay between cancel and place to minimize gap.
-    Returns new order details or raises exception.
-    """
-    rest_client = client.rest_client
-    
-    # Cancel old order
-    await rest_client.cancel_order(order_id, product_id)
-    
-    # Immediately place new order (no sleep - minimize gap)
-    new_order = await place_options_order(
-        client, symbol, size, side,
-        order_type='limit_order',
-        limit_price=new_price,
-        reduce_only=reduce_only,
-        post_only=True
-    )
-    
-    return new_order
-
-
-async def fetch_fresh_orderbook_quotes(client, symbol: str) -> dict:
-    """
-    Fetch FRESH bid/ask from exchange L2 orderbook at order time.
-    
-    This queries the exchange directly for instantaneous prices instead of 
-    using potentially stale cached/websocket data (which refreshes every ~5s).
-    
-    Benefits:
-    - Real-time accurate bid/ask for precise mid-price calculation
-    - post_only=True orders won't get rejected due to stale prices
-    - Better execution chances with current market conditions
-    
-    Returns:
-        dict with: best_bid, best_ask, bid_size, ask_size, tick_size, fresh (bool)
-    """
-    result = {
-        'best_bid': 0,
-        'best_ask': 0,
-        'bid_size': 0,
-        'ask_size': 0,
-        'tick_size': 0.01,
-        'fresh': False,
-        'source': 'none'
-    }
-    
-    try:
-        # METHOD 1: Try L2 orderbook for freshest prices (direct REST call)
-        log.debug(f"🔍 Fetching fresh L2 orderbook for {symbol}")
-        orderbook = await client.rest_client.get_orderbook(symbol)
-        
-        if orderbook:
-            buy_orders = orderbook.get('buy', [])  # Bids
-            sell_orders = orderbook.get('sell', [])  # Asks
-            
-            if buy_orders and sell_orders:
-                # Top of book = freshest best bid/ask
-                best_bid_entry = buy_orders[0] if buy_orders else {}
-                best_ask_entry = sell_orders[0] if sell_orders else {}
-                
-                result['best_bid'] = float(best_bid_entry.get('price', 0))
-                result['best_ask'] = float(best_ask_entry.get('price', 0))
-                result['bid_size'] = float(best_bid_entry.get('size', 0))
-                result['ask_size'] = float(best_ask_entry.get('size', 0))
-                result['fresh'] = True
-                result['source'] = 'l2_orderbook'
-                log.info(f"📖 Fresh L2 orderbook: bid ${result['best_bid']:.2f} x {result['bid_size']}, ask ${result['best_ask']:.2f} x {result['ask_size']}")
-    except Exception as e:
-        log.warning(f"L2 orderbook fetch failed for {symbol}: {e}")
-    
-    # METHOD 2: Fallback to ticker if orderbook failed
-    if not result['fresh'] or result['best_bid'] == 0 or result['best_ask'] == 0:
-        try:
-            log.debug(f"🔍 Falling back to ticker for {symbol}")
-            ticker = await client.get_option_ticker(symbol)
-            quotes = ticker.get('quotes', {})
-            if not quotes and 'raw' in ticker:
-                quotes = ticker.get('raw', {}).get('quotes', {})
-            
-            result['best_bid'] = float(quotes.get('best_bid') or 0)
-            result['best_ask'] = float(quotes.get('best_ask') or 0)
-            result['bid_size'] = float(quotes.get('best_bid_size') or 0)
-            result['ask_size'] = float(quotes.get('best_ask_size') or 0)
-            result['tick_size'] = float(ticker.get('tick_size') or ticker.get('raw', {}).get('tick_size') or 0.01)
-            result['fresh'] = True
-            result['source'] = 'ticker'
-            log.info(f"📊 Ticker quotes: bid ${result['best_bid']:.2f}, ask ${result['best_ask']:.2f}")
-        except Exception as e:
-            log.warning(f"Ticker fetch also failed for {symbol}: {e}")
-    
-    return result
-
-
-@sealed
-async def place_smart_order(client, symbol: str, size: float, side: str, 
-                           order_preference: str = ORDER_TYPE_MAKER_FIRST,
-                           reduce_only: bool = False,
-                           limit_price: float = None):
-    """
-    Place order with smart execution strategy using FRESH orderbook prices.
-
-    SEALED — v1.0.0 — March 4, 2026
-    Do not modify without UNSEAL command in AI_SEAL.md
-    
-    Smart (Maker First): Post-only limit at mid-price (half of bid + ask), waits infinitely for fill
-    Maker Only: Only post-only limit orders (may not fill, but guarantees fee rebates)
-    Market Only: Immediate market order (highest fees)
-    
-    For SMART orders:
-    - Fetches FRESH bid/ask directly from exchange L2 orderbook at order time
-    - Price is set at midpoint: (best_bid + best_ask) / 2
-    - Post-only order that never crosses the spread
-    - Waits infinitely until filled (no market fallback)
-    - Fresh prices prevent post_only rejection from stale data
-    
-    Args:
-        client: UnifiedAPIClient instance
-        symbol: Options symbol (e.g., C-BTC-113000-300126)
-        size: Order size (positive number)
-        side: 'buy' or 'sell'
-        order_preference: ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MAKER_ONLY, ORDER_TYPE_MARKET_ONLY, ORDER_TYPE_SSR
-        reduce_only: If True, only reduces position
-        limit_price: Optional custom limit price (if None, calculates mid-price)
-        
-    Returns:
-        dict: Order result with execution details
-    """
-    size = int(abs(float(size)))
-    
-    # Market only - fastest execution
-    if order_preference == ORDER_TYPE_MARKET_ONLY:
-        log.info(f"📊 MARKET order: {side} {size} {symbol}")
-        order = await place_options_order(
-            client, symbol, size, side,
-            order_type='market_order',
-            reduce_only=reduce_only,
-            post_only=False
-        )
-        order['execution_type'] = 'market'
-        return order
-    
-    # SSR order - competitive pricing with monitoring
-    # Handle both legacy 'ssr' and the three frontend SSR sub-modes
-    if order_preference == ORDER_TYPE_SSR or order_preference == 'ssr_standard':
-        # Standard: 2 ticks inside the best bid/ask
-        return await place_ssr_order(
-            client, symbol, size, side,
-            reduce_only=reduce_only,
-            tick_offset=2
-        )
-    
-    if order_preference == 'ssr_aggressive':
-        # Aggressive: 5% inside the best ask (for sells) / best bid (for buys)
-        return await place_ssr_order_with_margin(
-            client, symbol, size, side,
-            margin_percent=5.0,
-            ssr_mode='aggressive',
-            reduce_only=reduce_only
-        )
-    
-    if order_preference == 'ssr_conservative':
-        # Conservative: 1.5% inside the best ask (for sells) / best bid (for buys)
-        return await place_ssr_order_with_margin(
-            client, symbol, size, side,
-            margin_percent=1.5,
-            ssr_mode='conservative',
-            reduce_only=reduce_only
-        )
-    
-    # Fetch FRESH orderbook prices directly from exchange
-    try:
-        quotes = await fetch_fresh_orderbook_quotes(client, symbol)
-        best_bid = quotes['best_bid']
-        best_ask = quotes['best_ask']
-        tick_size = quotes['tick_size']
-        price_source = quotes['source']
-        
-        if best_bid == 0 or best_ask == 0:
-            log.warning(f"No quotes for {symbol} (source: {price_source}), using market order")
-            order = await place_options_order(
-                client, symbol, size, side,
-                order_type='market_order',
-                reduce_only=reduce_only,
-                post_only=False
-            )
-            order['execution_type'] = 'market_fallback_no_quotes'
-            return order
-        
-        # Calculate price
-        if limit_price is not None:
-            # Use custom limit price but round to tick size
-            price = round(float(limit_price) / tick_size) * tick_size
-            log.info(f"📊 SMART order at custom ${price:.2f} (fresh bid: ${best_bid:.2f}, ask: ${best_ask:.2f}) [source: {price_source}]")
-        else:
-            # Calculate mid-price (half between bid and ask)
-            mid_price = (best_bid + best_ask) / 2
-            price = round(mid_price / tick_size) * tick_size
-            log.info(f"📊 SMART order at mid-price ${price:.2f} (fresh bid: ${best_bid:.2f}, ask: ${best_ask:.2f}) [source: {price_source}]")
-        
-        # Place post-only limit order at mid-price - waits infinitely for fill (no market fallback)
-        limit_order = await place_options_order(
-            client, symbol, size, side,
-            order_type='limit_order',
-            limit_price=price,
-            reduce_only=reduce_only,
-            post_only=True  # Post-only at mid-price, never crosses spread
-        )
-        
-        order_id = limit_order.get('id')
-        
-        # Both MAKER_FIRST and MAKER_ONLY: Return immediately, order waits infinitely for fill
-        limit_order['execution_type'] = 'limit_at_mid'
-        limit_order['limit_price'] = price
-        limit_order['mid_price'] = price
-        limit_order['best_bid'] = best_bid
-        limit_order['best_ask'] = best_ask
-        limit_order['price_source'] = price_source
-        limit_order['bid_size'] = quotes.get('bid_size', 0)
-        limit_order['ask_size'] = quotes.get('ask_size', 0)
-        log.info(f"✅ SMART post-only order placed at mid-price ${price:.2f} - waiting for fill (fresh prices from {price_source})")
-        return limit_order
-        
-    except Exception as e:
-        log.exception(f"Smart order failed, falling back to market")  # Full traceback
-        order = await place_options_order(
-            client, symbol, size, side,
-            order_type='market_order',
-            reduce_only=reduce_only
-        )
-        order['execution_type'] = 'market_fallback_error'
-        order['error'] = str(e)
-        return order
-
-
-def _run_ssr_monitoring_loop(client_config, symbol: str, size: int, side: str,
-                              order_id: str, initial_price: float, tick_size: float,
-                              reduce_only: bool = False,
-                              max_duration: int = 120,
-                              check_interval: float = 2.0,
-                              tick_offset: int = 2):
-    """
-    Background thread function to monitor and adjust SSR orders.
-    Runs in a separate thread with its own event loop.
-    
-    CRITICAL: Must create httpx.AsyncClient INSIDE the async context
-    to avoid "Event loop is closed" or "attached to different loop" errors.
-    """
-    print(f"[SSR THREAD] _run_ssr_monitoring_loop STARTED for order {order_id}")
-    import asyncio
-    from config.loader import get_api_credentials
-    
-    # Create new event loop for this thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    print(f"[SSR THREAD] Created new event loop for order {order_id}")
-    
-    async def monitoring_loop():
-        nonlocal order_id
-        global _active_ssr_orders
-        
-        print(f"[SSR THREAD] monitoring_loop async function started for {order_id}")
-        
-        # CRITICAL FIX: Create AsyncDeltaClient DIRECTLY here, inside the async context
-        # The httpx.AsyncClient MUST be created in the same event loop it will be used in
-        # Using UnifiedAPIClient failed because httpx client was bound to wrong loop
-        from bot.api.async_delta_client import AsyncDeltaClient
-        creds = get_api_credentials()
-        
-        # Determine testnet setting (default to False for production)
-        testnet = creds.get('testnet', False)
-        if testnet is None:
-            testnet = False
-        
-        print(f"[SSR THREAD] Creating AsyncDeltaClient for {order_id}, testnet={testnet}")
-        
-        # Create fresh REST client in THIS event loop
-        rest_client = AsyncDeltaClient(
-            api_key=creds.get('api_key', ''),
-            api_secret=creds.get('api_secret', ''),
-            testnet=testnet
-        )
-        
-        print(f"[SSR THREAD] AsyncDeltaClient created successfully for {order_id}")
-        log.info(f"🔧 SSR Monitor: Created fresh AsyncDeltaClient (testnet={testnet})")
-        
-        current_price = initial_price
-        adjustments = 0
-        start_time = time.time()
-        
-        # NO TIMEOUT - runs until filled or cancelled for low liquidity far-expiry options
-        log.info(f"🏎️ SSR MONITOR STARTED: {order_id} at ${current_price:.2f} - will chase INDEFINITELY until filled/cancelled")
-        
-        try:
-            while True:
-                elapsed = time.time() - start_time
-                print(f"[SSR THREAD] Loop iteration: order {order_id}, elapsed={elapsed:.1f}s, adjustments={adjustments}")
-                
-                # Update tracking
-                with _ssr_lock:
-                    if order_id in _active_ssr_orders:
-                        _active_ssr_orders[order_id].update({
-                            'current_price': current_price,
-                            'adjustments': adjustments,
-                            'elapsed': round(elapsed, 1),
-                            'status': 'monitoring'
-                        })
-                
-                # NO TIMEOUT - continue until filled/cancelled
-                # Log progress every 60 seconds
-                if adjustments > 0 and elapsed % 60 < check_interval:
-                    log.info(f"🔄 SSR still active: {order_id} at ${current_price:.2f} ({elapsed:.0f}s, {adjustments} adjustments)")
-                
-                # Wait before next check
-                await asyncio.sleep(check_interval)
-                
-                # Check order status
-                try:
-                    print(f"[SSR THREAD] Checking order status for {order_id}...")
-                    order_status = await rest_client.get_order(order_id)
-                    print(f"[SSR THREAD] Order status response: {order_status}")
-                    
-                    # Handle empty/failed response - keep monitoring
-                    if not order_status:
-                        log.warning(f"SSR: Empty order status response for {order_id}, continuing...")
-                        print(f"[SSR THREAD] Empty response, continuing...")
-                        continue
-                    
-                    state = order_status.get('state', '')
-                    print(f"[SSR THREAD] Order state: '{state}'")
-                    
-                    # Handle empty state - could be API issue, keep monitoring
-                    if not state:
-                        log.warning(f"SSR: Empty state for order {order_id}, response: {order_status}, continuing...")
-                        print(f"[SSR THREAD] Empty state, continuing...")
-                        continue
-                    
-                    if state == 'filled':
-                        log.info(f"🎉 SSR FILLED: {order_id} at ${current_price:.2f} after {elapsed:.1f}s, {adjustments} adjustments")
-                        with _ssr_lock:
-                            if order_id in _active_ssr_orders:
-                                _active_ssr_orders[order_id]['status'] = 'filled'
-                        return
-                    
-                    if state == 'cancelled':
-                        log.warning(f"⚠️ SSR cancelled externally: {order_id}")
-                        with _ssr_lock:
-                            if order_id in _active_ssr_orders:
-                                _active_ssr_orders[order_id]['status'] = 'cancelled'
-                        return
-                    
-                    if state not in ('open', 'pending'):
-                        log.warning(f"⚠️ SSR order state: {state} - stopping (full response: {order_status})")
-                        break
-                    
-                    # Update current_price and tick_size from order status (authoritative source)
-                    actual_limit_price = order_status.get('limit_price')
-                    if actual_limit_price:
-                        current_price = float(actual_limit_price)
-                    
-                    # Get tick_size and product_id from product data in order status
-                    product_data = order_status.get('product', {})
-                    product_tick = product_data.get('tick_size')
-                    if product_tick:
-                        tick_size = float(product_tick)
-                        print(f"[SSR THREAD] Updated from order: current_price=${current_price}, tick_size=${tick_size}")
-                    
-                    # Get product_id for cancel operation
-                    product_id = order_status.get('product_id')
-                        
-                except Exception as e:
-                    log.error(f"Error checking SSR order status: {e}")
-                    continue
-                
-                # Fetch fresh orderbook and check if we need to adjust
-                try:
-                    print(f"[SSR THREAD] Fetching L2 orderbook for {symbol}...")
-                    # Get full L2 orderbook to find second-best price
-                    orderbook_data = await rest_client.get_orderbook(symbol, depth=20)
-                    buy_orders = orderbook_data.get('buy', [])
-                    sell_orders = orderbook_data.get('sell', [])
-                    new_tick = tick_size
-                    
-                    print(f"[SSR THREAD] Orderbook depth: {len(buy_orders)} bids, {len(sell_orders)} asks, tick=${new_tick}")
-                    
-                    if not buy_orders or not sell_orders:
-                        print(f"[SSR THREAD] Empty orderbook, skipping...")
-                        continue
-                    
-                    # Re-derive best bid / ask from fresh orderbook
-                    # Strategy (consistent with initial placement):
-                    #   SELL: target = best_ask - (tick_offset * tick_size)  → most competitive ask
-                    #   BUY:  target = best_bid + (tick_offset * tick_size)  → most competitive bid
-                    # This guarantees we are always tick_offset ticks inside the spread,
-                    # matching the initial placement logic and the user's design requirement.
-                    
-                    best_bid_now = float(buy_orders[0]['price']) if buy_orders else 0
-                    best_ask_now = float(sell_orders[0]['price']) if sell_orders else 0
-                    
-                    if best_bid_now == 0 or best_ask_now == 0:
-                        print(f"[SSR THREAD] Could not read best bid/ask from orderbook, skipping...")
-                        continue
-                    
-                    if side == 'sell':
-                        new_target = best_ask_now - (tick_offset * new_tick)
-                        new_target = max(new_target, best_bid_now + new_tick)  # Never cross the spread
-                        print(f"[SSR THREAD] SELL: best_ask=${best_ask_now}, target=${new_target} ({tick_offset} ticks inside), current=${current_price}")
-                    else:  # buy
-                        new_target = best_bid_now + (tick_offset * new_tick)
-                        new_target = min(new_target, best_ask_now - new_tick)  # Never cross the spread
-                        print(f"[SSR THREAD] BUY: best_bid=${best_bid_now}, target=${new_target} ({tick_offset} ticks inside), current=${current_price}")
-                    
-                    new_price = round(new_target / new_tick) * new_tick
-                    
-                    print(f"[SSR THREAD] Price calc: current=${current_price}, target=${new_target}, new_price=${new_price}")
-                    
-                    # Check if adjustment needed - adjust if price differs by at least 1 tick
-                    price_diff = abs(new_price - current_price)
-                    
-                    print(f"[SSR THREAD] Price diff: ${price_diff:.2f}, tick=${new_tick}, needs_adjust={price_diff >= new_tick}")
-                    
-                    # Adjust if price differs by at least 1 tick in EITHER direction
-                    if price_diff >= new_tick:
-                        print(f"[SSR THREAD] WILL ADJUST: ${current_price:.2f} → ${new_price:.2f}")
-                        log.info(f"🔄 SSR PRICE UPDATE: ${current_price:.2f} → ${new_price:.2f} [staying 1 tick ahead of competition]")
-                        
-                        # Directly edit order price (no cancellation - just price modification)
-                        try:
-                            print(f"[SSR THREAD] Editing order {order_id} price: ${current_price} → ${new_price}")
-                            edited_order = await rest_client.edit_order(
-                                order_id, 
-                                product_id, 
-                                str(new_price)
-                            )
-                            
-                            # Order ID stays the same when editing
-                            current_price = new_price
-                            adjustments += 1
-                            log.info(f"✅ SSR price adjusted #{adjustments}: {order_id} now at ${current_price:.2f}")
-                            print(f"[SSR THREAD] Price updated successfully - same order ID {order_id}")
-                            
-                            # Update tracking (order_id unchanged)
-                            with _ssr_lock:
-                                if order_id in _active_ssr_orders:
-                                    _active_ssr_orders[order_id]['current_price'] = current_price
-                                    _active_ssr_orders[order_id]['adjustments'] = adjustments
-                                    _active_ssr_orders[order_id]['elapsed'] = round(elapsed, 1)
-                                
-                        except Exception as e:
-                            log.error(f"Failed to edit order price: {e}")
-                            print(f"[SSR THREAD] ERROR editing order price: {e}")
-                            continue  # Try again next iteration instead of breaking
-                    
-                    else:
-                        print(f"[SSR THREAD] No adjustment needed (diff ${price_diff:.2f} < tick ${new_tick})")
-
-                            
-                except Exception as e:
-                    log.error(f"Error in SSR monitoring: {e}")
-                    print(f"[SSR THREAD] ERROR in orderbook/price calc: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
-            
-            # Monitoring ended
-            log.info(f"📊 SSR monitor ended: {order_id} at ${current_price:.2f} ({adjustments} adjustments)")
-            with _ssr_lock:
-                if order_id in _active_ssr_orders:
-                    _active_ssr_orders[order_id]['status'] = 'ended'
-                    
-        except Exception as e:
-            log.exception(f"SSR monitor error: {e}")
-            with _ssr_lock:
-                if order_id in _active_ssr_orders:
-                    _active_ssr_orders[order_id]['status'] = 'error'
-        finally:
-            # Close the REST client to clean up connections
-            try:
-                await rest_client.close()
-                log.debug(f"🔧 SSR Monitor: Closed AsyncDeltaClient for {order_id}")
-            except Exception as e:
-                log.debug(f"Error closing rest_client: {e}")
-            
-            # Clean up old entries after a delay
-            await asyncio.sleep(60)
-            with _ssr_lock:
-                if order_id in _active_ssr_orders:
-                    del _active_ssr_orders[order_id]
-    
-    loop.run_until_complete(monitoring_loop())
-
-
-async def place_ssr_order(client, symbol: str, size: float, side: str,
-                         reduce_only: bool = False,
-                         max_duration: int = 0,  # 0 = indefinite (until filled/cancelled)
-                         check_interval: float = 2.0,
-                         tick_offset: int = 2):
-    """
-    Place SSR Order: Competitive pricing that chases the market INDEFINITELY.
-    
-    Designed for Delta Exchange far-expiry options with low liquidity.
-    Places order 2 ticks below best ask (for sells) / 2 ticks above best bid (for buys).
-    Starts background monitoring that checks every 2 seconds and adjusts price if needed.
-    RUNS FOREVER until the order is filled or manually cancelled.
-    Always post_only=True - never crosses spread, guarantees maker status.
-    
-    Strategy:
-    - Initial: Place at best_ask - (tick_offset * tick_size) for sells
-    - Background: Monitor orderbook every check_interval seconds
-    - Adjust: If market moves, cancel and replace at new competitive price
-    - NO TIMEOUT: Continues until filled or cancelled
-    
-    Args:
-        client: UnifiedAPIClient instance
-        symbol: Options symbol (e.g., C-BTC-113000-300126)
-        size: Order size (positive number)
-        side: 'buy' or 'sell'
-        reduce_only: If True, only reduces position
-        max_duration: Ignored - always runs indefinitely (kept for API compatibility)
-        check_interval: Seconds between orderbook checks (default: 2s)
-        tick_offset: Number of ticks below ask/above bid (default: 2)
-        
-    Returns:
-        dict: Order result with initial placement details (monitoring continues in background)
-    """
-    global _active_ssr_orders
-    
-    size = int(abs(float(size)))
-    
-    log.info(f"🏎️ SSR ORDER: {side} {size} {symbol} - competitive pricing with background monitoring")
-    
-    try:
-        # Fetch fresh orderbook
-        quotes = await fetch_fresh_orderbook_quotes(client, symbol)
-        best_bid = quotes['best_bid']
-        best_ask = quotes['best_ask']
-        tick_size = quotes['tick_size']
-        price_source = quotes['source']
-        
-        if best_bid == 0 or best_ask == 0:
-            log.warning(f"No quotes for {symbol}, using market order")
-            order = await place_options_order(
-                client, symbol, size, side,
-                order_type='market_order',
-                reduce_only=reduce_only,
-                post_only=False
-            )
-            order['execution_type'] = 'market_fallback_no_quotes'
-            return order
-        
-        # Calculate initial competitive price
-        if side == 'sell':
-            # Sell: 2 ticks BELOW best ask (more competitive)
-            target_price = best_ask - (tick_offset * tick_size)
-            target_price = max(target_price, best_bid + tick_size)  # Don't cross spread
-        else:  # buy
-            # Buy: 2 ticks ABOVE best bid (more competitive)
-            target_price = best_bid + (tick_offset * tick_size)
-            target_price = min(target_price, best_ask - tick_size)  # Don't cross spread
-        
-        initial_price = round(target_price / tick_size) * tick_size
-        
-        log.info(f"📊 SSR initial price: ${initial_price:.2f} ({tick_offset} ticks competitive) [bid:${best_bid:.2f} ask:${best_ask:.2f}]")
-        
-        # Place initial order
-        initial_order = await place_options_order(
-            client, symbol, size, side,
-            order_type='limit_order',
-            limit_price=initial_price,
-            reduce_only=reduce_only,
-            post_only=True
-        )
-        
-        order_id = initial_order.get('id')
-        if not order_id:
-            log.error("❌ Failed to get order ID from initial SSR order")
-            return initial_order
-        
-        log.info(f"✅ SSR order placed: {order_id} at ${initial_price:.2f} - starting background monitor")
-        
-        # Track this SSR order
-        with _ssr_lock:
-            _active_ssr_orders[order_id] = {
-                'symbol': symbol,
-                'side': side,
-                'size': size,
-                'status': 'starting',
-                'current_price': initial_price,
-                'adjustments': 0,
-                'start_time': time.time(),
-                'max_duration': 'indefinite'  # No timeout for low liquidity options
-            }
-        
-        # Get client config for background thread (will create new client there)
-        client_config = {
-            'api_key': client.api_key if hasattr(client, 'api_key') else '',
-            'api_secret': client.api_secret if hasattr(client, 'api_secret') else '',
-            'testnet': client.testnet if hasattr(client, 'testnet') else True
-        }
-        
-        # Start background monitoring thread
-        monitor_thread = threading.Thread(
-            target=_run_ssr_monitoring_loop,
-            args=(client_config, symbol, size, side, order_id, initial_price, tick_size),
-            kwargs={
-                'reduce_only': reduce_only,
-                'max_duration': max_duration,
-                'check_interval': check_interval,
-                'tick_offset': tick_offset
-            },
-            daemon=True  # Thread will exit when main process exits
-        )
-        monitor_thread.start()
-        log.info(f"🏎️ SSR background monitor started - will chase INDEFINITELY until filled/cancelled")
-        
-        # Return immediately with order info
-        initial_order['execution_type'] = 'ssr_monitoring_started'
-        initial_order['limit_price'] = initial_price
-        initial_order['ssr_info'] = {
-            'order_id': order_id,
-            'initial_price': initial_price,
-            'tick_offset': tick_offset,
-            'max_duration': 'indefinite',
-            'check_interval': check_interval,
-            'status': 'background_monitoring_active_indefinitely'
-        }
-        return initial_order
-        
-    except Exception as e:
-        log.exception(f"SSR order failed: {e}")
-        # Fallback to market order
-        order = await place_options_order(
-            client, symbol, size, side,
-            order_type='market_order',
-            reduce_only=reduce_only
-        )
-        order['execution_type'] = 'market_fallback_error'
-        order['error'] = str(e)
-        return order
-
-
-async def place_ssr_order_with_margin(client, symbol: str, size: float, side: str,
-                                     margin_percent: float = 5.0,
-                                     ssr_mode: str = 'aggressive',
-                                     reduce_only: bool = False,
-                                     check_interval: float = 2.0):
-    """
-    Place SSR Order with percentage-based margin pricing (for aggressive/conservative modes).
-    
-    Unlike tick-based SSR, this uses a percentage margin from the reference price.
-    
-    Args:
-        client: UnifiedAPIClient instance
-        symbol: Options symbol (e.g., C-BTC-113000-300126)
-        size: Order size (positive number)
-        side: 'buy' or 'sell'
-        margin_percent: Percentage margin from reference price
-        ssr_mode: 'aggressive' or 'conservative' for logging
-        reduce_only: If True, only reduces position
-        check_interval: Seconds between orderbook checks (default: 2s)
-        
-    Returns:
-        dict: Order result with initial placement details (monitoring continues in background)
-    """
-    global _active_ssr_orders
-    
-    size = int(abs(float(size)))
-    
-    log.info(f"🏎️ SSR {ssr_mode.upper()} ORDER: {side} {size} {symbol} - {margin_percent}% margin pricing")
-    
-    try:
-        # Fetch fresh orderbook
-        quotes = await fetch_fresh_orderbook_quotes(client, symbol)
-        best_bid = quotes['best_bid']
-        best_ask = quotes['best_ask']
-        tick_size = quotes['tick_size']
-        
-        if best_bid == 0 or best_ask == 0:
-            log.warning(f"No quotes for {symbol}, using market order")
-            order = await place_options_order(
-                client, symbol, size, side,
-                order_type='market_order',
-                reduce_only=reduce_only,
-                post_only=False
-            )
-            order['execution_type'] = 'market_fallback_no_quotes'
-            return order
-        
-        # Calculate price based on percentage margin
-        if side == 'sell':
-            # Sell: margin% BELOW best ask (more competitive - lower limit sell gets filled first)
-            reference_price = best_ask
-            target_price = reference_price * (1 - margin_percent / 100)
-        else:  # buy
-            # Buy: margin% ABOVE best bid (more competitive - higher limit buy gets filled first)
-            reference_price = best_bid
-            target_price = reference_price * (1 + margin_percent / 100)
-        
-        # Round to tick size
-        initial_price = round(target_price / tick_size) * tick_size
-        
-        # Ensure we don't cross the spread
-        if side == 'sell':
-            initial_price = max(initial_price, best_bid + tick_size)  # Don't go below bid
-        else:
-            initial_price = min(initial_price, best_ask - tick_size)  # Don't go above ask
-        
-        log.info(f"📊 SSR {ssr_mode} initial price: ${initial_price:.2f} ({margin_percent}% margin) [bid:${best_bid:.2f} ask:${best_ask:.2f}]")
-        
-        # Place initial order
-        initial_order = await place_options_order(
-            client, symbol, size, side,
-            order_type='limit_order',
-            limit_price=initial_price,
-            reduce_only=reduce_only,
-            post_only=True
-        )
-        
-        order_id = initial_order.get('id')
-        if not order_id:
-            log.error("❌ Failed to get order ID from initial SSR order")
-            return initial_order
-        
-        log.info(f"✅ SSR {ssr_mode} order placed: {order_id} at ${initial_price:.2f} - starting background monitor")
-        
-        # Track this SSR order
-        with _ssr_lock:
-            _active_ssr_orders[order_id] = {
-                'symbol': symbol,
-                'side': side,
-                'size': size,
-                'status': 'starting',
-                'current_price': initial_price,
-                'adjustments': 0,
-                'start_time': time.time(),
-                'max_duration': 'indefinite',
-                'ssr_mode': ssr_mode,
-                'margin_percent': margin_percent
-            }
-        
-        # Get client config for background thread
-        client_config = {
-            'api_key': client.api_key if hasattr(client, 'api_key') else '',
-            'api_secret': client.api_secret if hasattr(client, 'api_secret') else '',
-            'testnet': client.testnet if hasattr(client, 'testnet') else True
-        }
-        
-        # Start background monitoring thread
-        monitor_thread = threading.Thread(
-            target=_run_ssr_margin_monitoring_loop,
-            args=(client_config, symbol, size, side, order_id, initial_price, tick_size),
-            kwargs={
-                'reduce_only': reduce_only,
-                'check_interval': check_interval,
-                'margin_percent': margin_percent,
-                'ssr_mode': ssr_mode
-            },
-            daemon=True
-        )
-        monitor_thread.start()
-        log.info(f"🏎️ SSR {ssr_mode} background monitor started - will chase until filled/cancelled")
-        
-        # Return immediately with order info
-        initial_order['execution_type'] = f'ssr_{ssr_mode}_monitoring_started'
-        initial_order['limit_price'] = initial_price
-        initial_order['ssr_info'] = {
-            'order_id': order_id,
-            'initial_price': initial_price,
-            'margin_percent': margin_percent,
-            'ssr_mode': ssr_mode,
-            'check_interval': check_interval,
-            'status': f'background_monitoring_{ssr_mode}_active'
-        }
-        return initial_order
-        
-    except Exception as e:
-        log.exception(f"SSR {ssr_mode} order failed: {e}")
-        order = await place_options_order(
-            client, symbol, size, side,
-            order_type='market_order',
-            reduce_only=reduce_only
-        )
-        order['execution_type'] = 'market_fallback_error'
-        order['error'] = str(e)
-        return order
-
-
-def _run_ssr_margin_monitoring_loop(client_config, symbol: str, size: int, side: str,
-                                    order_id: int, initial_price: float, tick_size: float,
-                                    reduce_only: bool = False,
-                                    check_interval: float = 2.0,
-                                    margin_percent: float = 5.0,
-                                    ssr_mode: str = 'aggressive'):
-    """
-    Background thread function to monitor and adjust SSR orders with margin-based pricing.
-    """
-    import asyncio
-    
-    print(f"[SSR {ssr_mode.upper()} THREAD] Started for order {order_id}")
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        global _active_ssr_orders
-        
-        async def monitoring_loop():
-            from bot.api.async_delta_client import AsyncDeltaClient
-            from config.loader import get_api_credentials
-            
-            creds = get_api_credentials()
-            testnet = client_config.get('testnet', creds.get('testnet', False))
-            if testnet is None:
-                testnet = False
-            async_client = AsyncDeltaClient(
-                api_key=creds.get('api_key', ''),
-                api_secret=creds.get('api_secret', ''),
-                testnet=testnet
-            )
-            
-            adjustments = 0
-            current_price = initial_price
-            
-            log.info(f"🏎️ SSR {ssr_mode} MONITOR STARTED: {order_id} at ${current_price:.2f}")
-            
-            while True:
-                try:
-                    # Check if order is still active
-                    order_info = await async_client.get_order(order_id)
-                    order_state = order_info.get('state', 'unknown')
-                    
-                    if order_state in ['closed', 'cancelled', 'filled']:
-                        log.info(f"✅ SSR {ssr_mode} order {order_id} completed: {order_state}")
-                        with _ssr_lock:
-                            if order_id in _active_ssr_orders:
-                                _active_ssr_orders[order_id]['status'] = order_state
-                        break
-                    
-                    # Fetch fresh orderbook
-                    quotes = await fetch_fresh_orderbook_quotes(async_client, symbol)
-                    best_bid = quotes['best_bid']
-                    best_ask = quotes['best_ask']
-                    
-                    # Recalculate target price
-                    if side == 'sell':
-                        reference_price = best_ask
-                        new_target = reference_price * (1 - margin_percent / 100)
-                        new_target = max(new_target, best_bid + tick_size)  # Don't cross spread
-                    else:
-                        reference_price = best_bid
-                        new_target = reference_price * (1 + margin_percent / 100)
-                        new_target = min(new_target, best_ask - tick_size)  # Don't cross spread
-                    
-                    new_price = round(new_target / tick_size) * tick_size
-                    
-                    # Check if adjustment needed
-                    if abs(new_price - current_price) > tick_size:
-                        log.info(f"🔄 SSR {ssr_mode} adjusting: ${current_price:.2f} → ${new_price:.2f}")
-                        
-                        # Edit the order
-                        result = await async_client.edit_order(
-                            order_id=order_id,
-                            limit_price=new_price
-                        )
-                        
-                        if result:
-                            adjustments += 1
-                            current_price = new_price
-                            
-                            with _ssr_lock:
-                                if order_id in _active_ssr_orders:
-                                    _active_ssr_orders[order_id]['current_price'] = current_price
-                                    _active_ssr_orders[order_id]['adjustments'] = adjustments
-                                    _active_ssr_orders[order_id]['status'] = 'monitoring'
-                    
-                    await asyncio.sleep(check_interval)
-                    
-                except Exception as e:
-                    log.warning(f"SSR {ssr_mode} monitor error: {e}")
-                    await asyncio.sleep(check_interval)
-            
-            # Cleanup
-            with _ssr_lock:
-                if order_id in _active_ssr_orders:
-                    del _active_ssr_orders[order_id]
-        
-        loop.run_until_complete(monitoring_loop())
-        
-    finally:
-        pass  # Don't close loop - may be reused
 
 
 # Position cache to prevent repeated failures
 _positions_cache = {'data': None, 'time': 0, 'error': None}
 POSITIONS_CACHE_SECONDS = 10.0  # Cache positions for 10 seconds (was 3s — too short)
+
+# Bulk tickers cache — one /v2/tickers call enriches ALL positions (vs 45 individual calls)
+# This prevents circuit-breaker trips from concurrent per-symbol API hammering.
+_tickers_cache = {'data': None, 'time': 0}
+TICKERS_CACHE_SECONDS = 8.0  # Slightly shorter than positions cache so it stays fresh
 
 
 @options_bp.route('/positions', methods=['GET'])
@@ -1431,24 +292,61 @@ def get_options_positions():
         import asyncio
         client = get_unified_client()
         
-        # Run async code with concurrent ticker fetching
+        # Run async code using ONE bulk tickers call instead of N individual calls.
+        # This is the key fix: /v2/tickers returns ALL 1000+ tickers in a single request,
+        # completely eliminating the 45-concurrent-request storm that trips the circuit breaker.
         async def fetch():
-            positions = await client.get_all_positions_with_options()
-            options = positions['options']
-            
-            # Fetch all tickers concurrently for faster loading
-            async def enrich_single(pos):
-                symbol = pos.get('product_symbol')
-                try:
-                    ticker = await client.get_option_ticker(symbol)
-                    return enrich_position_data(pos, ticker)
-                except Exception as e:
-                    log.warning(f"Failed to get ticker for {symbol}: {e}")
-                    return pos
-            
-            # Run all enrichments concurrently
-            enriched = await asyncio.gather(*[enrich_single(pos) for pos in options])
-            return list(enriched)
+            global _tickers_cache
+
+            positions_result = await client.get_all_positions_with_options()
+            options = positions_result['options']
+
+            # Fetch ALL tickers in one API call (1 call vs 45 individual calls)
+            tickers_age = time.time() - _tickers_cache['time']
+            if _tickers_cache['data'] is not None and tickers_age < TICKERS_CACHE_SECONDS:
+                all_tickers = _tickers_cache['data']
+            else:
+                all_tickers = await client.rest_client.get_all_tickers()
+                _tickers_cache['data'] = all_tickers
+                _tickers_cache['time'] = time.time()
+
+            # Build symbol→ticker lookup map once
+            ticker_map = {t.get('symbol'): t for t in all_tickers if t.get('symbol')}
+
+            # Enrich each position from the map — zero additional API calls
+            enriched = []
+            for pos in options:
+                symbol = pos.get('product_symbol', '')
+                raw_ticker = ticker_map.get(symbol)
+                if raw_ticker:
+                    # Wrap raw ticker into the shape enrich_position_data expects
+                    quotes = raw_ticker.get('quotes', {})
+                    best_bid = float(quotes.get('best_bid') or 0)
+                    best_ask = float(quotes.get('best_ask') or 0)
+                    spread_pct = 0
+                    if best_bid > 0 and best_ask > 0:
+                        spread_pct = ((best_ask - best_bid) / best_bid) * 100
+                    ticker = {
+                        'symbol': symbol,
+                        'mark_price': float(raw_ticker.get('mark_price') or 0),
+                        'spot_price': float(raw_ticker.get('spot_price') or 0),
+                        'strike_price': float(raw_ticker.get('strike_price') or 0),
+                        'bid': best_bid,
+                        'ask': best_ask,
+                        'spread_pct': spread_pct,
+                        'greeks': raw_ticker.get('greeks', {}),
+                        'quotes': quotes,
+                        'volume': float(raw_ticker.get('volume') or 0),
+                        'open_interest': raw_ticker.get('open_interest', 0),
+                        'mark_vol': float(raw_ticker.get('mark_vol') or 0),
+                        'raw': raw_ticker,
+                    }
+                    enriched.append(enrich_position_data(pos, ticker))
+                else:
+                    log.debug(f"No bulk ticker found for {symbol}, using raw position")
+                    enriched.append(pos)
+
+            return enriched
         
         options = _run_async(fetch())
         
@@ -1492,28 +390,12 @@ def get_options_positions():
 def get_ssr_status():
     """
     Get status of active SSR orders being monitored in background.
-    
+
     Returns:
         JSON: List of active SSR orders with their current status
     """
-    global _active_ssr_orders
-    
-    with _ssr_lock:
-        active_orders = []
-        for order_id, info in _active_ssr_orders.items():
-            elapsed = time.time() - info.get('start_time', time.time())
-            active_orders.append({
-                'order_id': order_id,
-                'symbol': info.get('symbol'),
-                'side': info.get('side'),
-                'size': info.get('size'),
-                'current_price': info.get('current_price'),
-                'adjustments': info.get('adjustments', 0),
-                'status': info.get('status', 'unknown'),
-                'elapsed_seconds': round(elapsed, 1),
-                'max_duration': info.get('max_duration', 120)
-            })
-    
+    active_orders = get_active_ssr_orders()
+
     return jsonify({
         'success': True,
         'active_ssr_orders': active_orders,
@@ -1540,27 +422,27 @@ def get_options_activity_log():
             timestamp: str
         }
     """
-    global _active_ssr_orders, _positions_cache
+    global _positions_cache
     from pathlib import Path
-    
+
     try:
         # Get active SSR orders
-        ssr_orders = []
-        with _ssr_lock:
-            for order_id, info in _active_ssr_orders.items():
-                elapsed = time.time() - info.get('start_time', time.time())
-                ssr_orders.append({
-                    'orderId': order_id,
-                    'symbol': info.get('symbol'),
-                    'side': info.get('side'),
-                    'size': info.get('size'),
-                    'currentPrice': info.get('current_price'),
-                    'adjustments': info.get('adjustments', 0),
-                    'status': info.get('status', 'unknown'),
-                    'elapsedSeconds': round(elapsed, 1),
-                    'ssrMode': info.get('ssr_mode', 'standard'),
-                    'marginPercent': info.get('margin_percent', 0)
-                })
+        raw_ssr = get_active_ssr_orders()
+        ssr_orders = [
+            {
+                'orderId': entry['order_id'],
+                'symbol': entry.get('symbol'),
+                'side': entry.get('side'),
+                'size': entry.get('size'),
+                'currentPrice': entry.get('current_price'),
+                'adjustments': entry.get('adjustments', 0),
+                'status': entry.get('status', 'unknown'),
+                'elapsedSeconds': entry.get('elapsed_seconds', 0),
+                'ssrMode': entry.get('ssr_mode', 'standard'),
+                'marginPercent': entry.get('margin_percent', 0),
+            }
+            for entry in raw_ssr
+        ]
         
         # Get current positions from cache or fetch fresh
         positions_data = []
@@ -1849,6 +731,34 @@ def get_option_ticker(symbol):
             'success': False,
             'error': str(e)
         }), 500
+
+
+def _close_position_by_symbol(symbol: str):
+    """Programmatic position close (used by alert actions). Raises on failure."""
+    client = get_unified_client()
+
+    async def _do_close():
+        positions = await with_timeout(client.get_all_positions_with_options(), timeout_seconds=15)
+        for pos in positions['options']:
+            if pos.get('product_symbol') == symbol:
+                position_size = float(pos.get('size', 0))
+                side = determine_close_side(position_size)
+                return await with_timeout(
+                    place_smart_order(
+                        client=client,
+                        symbol=symbol,
+                        size=abs(position_size),
+                        side=side,
+                        order_preference=ORDER_TYPE_MARKET_ONLY,
+                        reduce_only=True,
+                    ),
+                    timeout_seconds=30,
+                )
+        raise ValueError(f"Position not found: {symbol}")
+
+    result = _run_async(_do_close())
+    log.info("_close_position_by_symbol: closed %s -> %s", symbol, result.get('execution_type', '?'))
+    return result
 
 
 @options_bp.route('/close', methods=['POST'])
@@ -2871,8 +1781,7 @@ def get_monitoring_activity():
         strike_limits = manager.get_all_strike_max_loss()
         expiry_limits = manager.get_all_expiry_max_loss()
         
-        with _hedge_events_lock:
-            hedge_events_snapshot = list(reversed(_hedge_events[-20:]))
+        hedge_events_snapshot = get_hedge_events_snapshot(20)
 
         return jsonify({
             'success': True,
@@ -2898,6 +1807,158 @@ def get_monitoring_activity():
             'events': [],
             'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
         }), 500
+
+
+@options_bp.route('/monitoring-activity/export', methods=['GET'])
+def export_monitoring_activity_csv():
+    """
+    Export the last 24 h of monitoring activity as a CSV file.
+    Independent from the in-memory buffer — reads from SQLite.
+    """
+    try:
+        from webui.backend.db.activity_log_db import export_csv_string
+        hours = request.args.get('hours', 24, type=float)
+        csv_data = export_csv_string(hours=hours)
+        filename = f"activity_log_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+        response = make_response(csv_data)
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+    except Exception as e:
+        log.error(f"Error exporting activity log: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# IV RANK / IV PERCENTILE ROUTES  (Feature 2 — fully independent)
+# =============================================================================
+
+@options_bp.route('/iv-stats', methods=['GET'])
+def get_iv_stats():
+    """
+    Return IV Rank and IV Percentile per position symbol.
+    Also triggers a background IV snapshot recording (rate-limited internally).
+
+    Returns:
+        { success, iv_stats: {symbol: {ivr, ivp, high_52w, low_52w, current_iv_pct}}, ... }
+    """
+    try:
+        from webui.backend.db.iv_history_db import get_iv_stats_batch, record_iv_snapshot
+        from .dashboard_service import fetch_options_positions_data
+        from webui.backend.routes.market import _price_cache
+
+        positions_data = fetch_options_positions_data()
+        positions = positions_data.get('positions', [])
+        symbols = [p.get('product_symbol', '') for p in positions if p.get('product_symbol')]
+
+        spot_entry = _price_cache.get('spot_BTC')
+        spot = float(spot_entry[1]) if spot_entry else 0.0
+        record_iv_snapshot(positions, spot_price=spot)
+
+        iv_stats = get_iv_stats_batch(symbols)
+
+        return jsonify({
+            'success': True,
+            'iv_stats': iv_stats,
+            'total_symbols': len(symbols),
+            'symbols_with_history': len(iv_stats),
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        })
+
+    except Exception as e:
+        log.error(f"Error fetching IV stats: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# PER-POSITION GREEKS ROUTE  (Feature 3 — fully independent)
+# =============================================================================
+
+@options_bp.route('/position-greeks', methods=['GET'])
+def get_position_greeks():
+    """
+    Return per-position Black-Scholes Greeks and DTE for all current positions.
+    Independent of the sealed dashboard / portfolio-greeks pipeline.
+
+    Query params:
+        spot (float): BTC spot price override. If omitted, fetched from cache.
+
+    Returns:
+        {
+          success: bool,
+          position_greeks: { "<symbol>": {dte, delta, gamma, theta, vega} },
+          expiry_subtotals: { "<YYYY-MM-DD>": {delta, gamma, theta, vega, count} },
+          spot_used: float,
+          timestamp: str
+        }
+    """
+    import concurrent.futures as _cf
+
+    # Maximum seconds to wait for a fresh positions fetch before falling back
+    # to stale cache.  This is shorter than the exchange-client inner timeout
+    # (60 s) so we never block the HTTP worker for excessive time.
+    _GREEKS_FETCH_TIMEOUT = 12
+
+    try:
+        from webui.backend.options_strategy.position_greeks import (
+            enrich_positions_with_greeks,
+            compute_expiry_subtotals,
+        )
+        from .dashboard_service import fetch_options_positions_data
+
+        # Get spot price — caller may pass override; else use market data cache
+        spot = request.args.get('spot', None, type=float)
+        if spot is None:
+            try:
+                # Read from the market module's in-process price cache (avoids HTTP round-trip)
+                from webui.backend.routes.market import _price_cache
+                cache_entry = _price_cache.get('spot_BTC')
+                spot = float(cache_entry[1]) if cache_entry else 0.0
+            except Exception:
+                spot = 0.0
+
+        # Fetch positions with a bounded timeout.  If the exchange is slow or
+        # unreachable the call can hang; cap it here and fall back to whatever
+        # stale data was cached by get_options_positions().
+        stale_warning = None
+        with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix='pos-greeks') as _pool:
+            _fut = _pool.submit(fetch_options_positions_data)
+            try:
+                positions_data = _fut.result(timeout=_GREEKS_FETCH_TIMEOUT)
+            except _cf.TimeoutError:
+                log.warning("position-greeks: positions fetch timed out, using stale cache")
+                stale_warning = 'Exchange unavailable — using cached positions'
+                # Fall back to whatever the positions cache holds
+                positions_data = {
+                    'success': bool(_positions_cache['data']),
+                    'positions': _positions_cache['data'] or [],
+                }
+
+        positions = positions_data.get('positions', [])
+
+        enriched = enrich_positions_with_greeks(positions, spot_price=spot)
+
+        # Build compact lookup map for frontend: symbol -> pos_greeks
+        greeks_map = {
+            p.get('product_symbol', ''): p.get('pos_greeks', {})
+            for p in enriched
+        }
+        subtotals = compute_expiry_subtotals(enriched)
+
+        response = {
+            'success': True,
+            'position_greeks': greeks_map,
+            'expiry_subtotals': subtotals,
+            'spot_used': spot,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        }
+        if stale_warning:
+            response['warning'] = stale_warning
+        return jsonify(response)
+
+    except Exception as e:
+        log.error(f"Error computing position Greeks: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # =============================================================================
@@ -3617,303 +2678,73 @@ def auto_loop_clear():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ===========================================================================
-# DELTA HEDGE — helpers, routes, auto-loop
-# ===========================================================================
-
-def _get_portfolio_btc_delta() -> float:
-    """
-    Compute net BTC-equivalent delta from current options positions.
-    Reuses the same service + greeks functions as the dashboard.
-    """
-    from .dashboard_service import fetch_options_positions_data
-    from .dashboard import calculate_portfolio_greeks
-    pos_data = fetch_options_positions_data()
-    positions = pos_data.get('positions', [])
-    greeks = calculate_portfolio_greeks(positions)
-    return float(greeks.get('btcDelta', 0.0))
+# Register delta-hedge routes on the blueprint
+register_delta_hedge_routes(options_bp)
 
 
-async def _place_perp_order_async(client, side: str, size: float,
-                                   order_type: str, smart_offset_pct: float) -> dict:
-    """
-    Place a BTC-PERP order on Delta Exchange.
-    product_symbol 'BTCUSD' is the BTC perpetual contract.
-    """
-    data: dict = {
-        'product_symbol': 'BTCUSD',
-        'side': side,
-        'size': size,
-        'order_type': 'market_order',
-    }
+# ================================================================
+# CIRCUIT BREAKER RESET ENDPOINT
+# Allows manual recovery when the API circuit breaker gets stuck open
+# after a burst of failures on backend startup.
+# ================================================================
 
-    if order_type == 'smart':
-        try:
-            ticker_resp = await client.rest_client._request_with_retry(
-                'GET', '/v2/tickers/BTCUSD'
-            )
-            mark_price = float(
-                (ticker_resp.get('result') or {}).get('mark_price') or 0
-            )
-            if mark_price > 0:
-                offset = mark_price * (smart_offset_pct / 100.0)
-                limit_price = (
-                    mark_price - offset if side == 'buy'
-                    else mark_price + offset
-                )
-                data['order_type'] = 'limit_order'
-                data['limit_price'] = str(round(limit_price, 1))
-                data['time_in_force'] = 'gtc'
-                data['post_only'] = 'true'
-        except Exception as e:
-            log.warning(f'Smart hedge: mark price fetch failed ({e}), falling back to market')
-
-    response = await client.rest_client._request_with_retry(
-        method='POST', path='/v2/orders', data=data
-    )
-    return response.get('result', response)
-
-
-# ---------------------------------------------------------------------------
-# Route: POST /api/options/hedge-delta
-# ---------------------------------------------------------------------------
-@options_bp.route('/hedge-delta', methods=['POST'])
-def hedge_delta():
-    """
-    Place a BTC-PERP order to neutralise portfolio delta.
-
-    JSON body:
-        portfolio_delta  : float  — pre-computed BTC delta (optional)
-        order_type       : str    — 'market' (default) | 'smart'
-        smart_offset_pct : float  — offset % for smart orders (default 0.05)
-        trigger          : str    — 'manual' (default) | 'auto'
-    """
-    global _last_hedge_time
-    import datetime as _dt
-    data = request.get_json() or {}
-
-    order_type       = data.get('order_type', 'market')
-    smart_offset_pct = float(data.get('smart_offset_pct', 0.05))
-    trigger          = data.get('trigger', 'manual')
-
+@options_bp.route('/circuit-breaker/reset', methods=['POST'])
+def reset_circuit_breaker():
+    """Reset BOTH circuit breakers (outer UnifiedAPIClient + inner AsyncDeltaClient)."""
     try:
-        if 'portfolio_delta' in data:
-            portfolio_delta = float(data['portfolio_delta'])
-        else:
-            portfolio_delta = _get_portfolio_btc_delta()
-
-        if abs(portfolio_delta) < 0.05:
-            return jsonify({
-                'status': 'no_action',
-                'message': f'Delta already neutral (|\u0394|={abs(portfolio_delta):.4f} < 0.05)'
-            })
-
-        side = 'sell' if portfolio_delta > 0 else 'buy'
-        size = round(abs(portfolio_delta), 4)
-
         client = get_unified_client()
-        result = _run_async(
-            _place_perp_order_async(client, side, size, order_type, smart_offset_pct)
-        )
-        order_id = str(result.get('id', 'unknown'))
 
-        _last_hedge_time = time.time()
-        ts = _dt.datetime.now().strftime('%d %b %Y, %I:%M %p')
-        entry = {
-            'trigger': trigger,
-            'side': side,
-            'size': size,
-            'pre_delta': portfolio_delta,
-            'post_delta': round(
-                portfolio_delta + (size if side == 'buy' else -size), 4
-            ),
-            'order_id': order_id,
-            'order_type': order_type,
-            'timestamp': ts,
-        }
-        with _hedge_events_lock:
-            _hedge_events.append(entry)
-            if len(_hedge_events) > 100:
-                _hedge_events[:] = _hedge_events[-100:]
+        # Outer circuit breaker (UnifiedAPIClient)
+        cb = client.circuit_breaker
+        outer_state = cb.state
+        outer_failures = cb.failures
+        cb.failures = 0
+        cb.state = 'closed'
+        cb.last_failure_time = 0
 
-        log.info(
-            f'\u26a1 HEDGE ({trigger}): {side} {size} BTCUSD | '
-            f'pre-\u0394={portfolio_delta} | order={order_id}'
-        )
+        # Inner circuit breaker (AsyncDeltaClient)
+        inner_cb = client.rest_client._circuit_breaker
+        inner_open = inner_cb.is_open
+        inner_failures = inner_cb.failures
+        inner_cb.failures = 0
+        inner_cb.is_open = False
+        inner_cb.last_failure = 0
 
+        log.info(f"Circuit breakers manually reset: outer={outer_state}/{outer_failures}, inner={'open' if inner_open else 'closed'}/{inner_failures}")
         return jsonify({
-            'status': 'success',
-            'order_id': order_id,
-            'side': side,
-            'size': size,
-            'pre_hedge_delta': portfolio_delta,
-            'post_hedge_delta': entry['post_delta'],
-            'order_type': order_type,
+            'success': True,
+            'message': 'Both circuit breakers reset to closed',
+            'outer': {'previous_state': outer_state, 'previous_failures': outer_failures},
+            'inner': {'was_open': inner_open, 'previous_failures': inner_failures},
         })
-
     except Exception as e:
-        log.exception('\u274c hedge_delta route failed')
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        log.error(f"Failed to reset circuit breaker: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ---------------------------------------------------------------------------
-# Routes: GET/POST /api/options/auto-hedge-config
-#         GET      /api/options/auto-hedge-status
-# ---------------------------------------------------------------------------
-@options_bp.route('/auto-hedge-config', methods=['GET'])
-def get_auto_hedge_config():
-    with _auto_hedge_config_lock:
-        cfg = dict(_auto_hedge_config)
-    return jsonify({'success': True, 'config': cfg})
-
-
-@options_bp.route('/auto-hedge-config', methods=['POST'])
-def save_auto_hedge_config():
-    global _auto_hedge_config
-    import json as _json
-    data = request.get_json() or {}
-
-    allowed = {
-        'enabled', 'threshold', 'order_type', 'smart_offset_pct',
-        'cooldown_seconds', 'max_perp_size_btc', 'log_events'
-    }
-    with _auto_hedge_config_lock:
-        for k, v in data.items():
-            if k in allowed:
-                _auto_hedge_config[k] = v
-        cfg_snapshot = dict(_auto_hedge_config)
-
+@options_bp.route('/circuit-breaker/status', methods=['GET'])
+def get_circuit_breaker_status():
+    """Return current state of BOTH circuit breakers."""
     try:
-        with open(_auto_hedge_config_path(), 'w') as f:
-            _json.dump(cfg_snapshot, f, indent=2)
-    except Exception as e:
-        log.warning(f'auto-hedge config save failed: {e}')
-
-    if cfg_snapshot.get('enabled'):
-        _ensure_auto_hedge_running()
-
-    return jsonify({'success': True, 'config': cfg_snapshot})
-
-
-@options_bp.route('/auto-hedge-status', methods=['GET'])
-def get_auto_hedge_status():
-    import datetime as _dt
-    with _auto_hedge_config_lock:
-        enabled = _auto_hedge_config.get('enabled', False)
-    last_ts = (
-        _dt.datetime.fromtimestamp(_last_hedge_time).strftime('%d %b %Y, %I:%M %p')
-        if _last_hedge_time > 0 else 'Never'
-    )
-    with _hedge_events_lock:
-        recent = list(reversed(_hedge_events[-5:]))
-    return jsonify({
-        'success': True,
-        'enabled': enabled,
-        'last_hedge_time': _last_hedge_time,
-        'last_hedge_display': last_ts,
-        'recent_events': recent,
-    })
-
-
-# ---------------------------------------------------------------------------
-# Auto-hedge background loop (threading.Timer re-arming, fires every 30s)
-# ---------------------------------------------------------------------------
-_auto_hedge_timer = None
-_auto_hedge_timer_lock = threading.Lock()
-AUTO_HEDGE_INTERVAL_SECONDS = 30
-
-
-def _auto_hedge_tick():
-    """Called every AUTO_HEDGE_INTERVAL_SECONDS. Re-arms itself when enabled."""
-    global _last_hedge_time
-    import datetime as _dt
-
-    try:
-        with _auto_hedge_config_lock:
-            cfg = dict(_auto_hedge_config)
-
-        if not cfg.get('enabled', False):
-            return  # Don't re-arm if disabled
-
-        portfolio_delta = _get_portfolio_btc_delta()
-
-        if abs(portfolio_delta) < float(cfg.get('threshold', 5.0)):
-            log.debug(f'auto-hedge: \u0394={portfolio_delta:.4f} within threshold, skip')
-            return
-
-        cooldown = float(cfg.get('cooldown_seconds', 300))
-        if time.time() - _last_hedge_time < cooldown:
-            log.debug('auto-hedge: cooldown active, skip')
-            return
-
-        max_size = float(cfg.get('max_perp_size_btc', 20.0))
-        hedge_size = min(abs(portfolio_delta), max_size)
-        side = 'sell' if portfolio_delta > 0 else 'buy'
-        order_type = cfg.get('order_type', 'market')
-        smart_offset = float(cfg.get('smart_offset_pct', 0.05))
-
         client = get_unified_client()
-        result = _run_async(
-            _place_perp_order_async(client, side, hedge_size, order_type, smart_offset)
-        )
-        order_id = str(result.get('id', 'unknown'))
-        _last_hedge_time = time.time()
-
-        if cfg.get('log_events', True):
-            entry = {
-                'trigger': 'auto',
-                'side': side,
-                'size': hedge_size,
-                'pre_delta': portfolio_delta,
-                'post_delta': round(
-                    portfolio_delta + (hedge_size if side == 'buy' else -hedge_size), 4
-                ),
-                'order_id': order_id,
-                'order_type': order_type,
-                'timestamp': _dt.datetime.now().strftime('%d %b %Y, %I:%M %p'),
-            }
-            with _hedge_events_lock:
-                _hedge_events.append(entry)
-                if len(_hedge_events) > 100:
-                    _hedge_events[:] = _hedge_events[-100:]
-
-        log.info(
-            f'\u26a1 AUTO-HEDGE FIRED: {side} {hedge_size} BTCUSD | '
-            f'pre-\u0394={portfolio_delta} | order={order_id}'
-        )
-
+        cb = client.circuit_breaker
+        inner_cb = client.rest_client._circuit_breaker
+        return jsonify({
+            'success': True,
+            'outer': {
+                'state': cb.state,
+                'failures': cb.failures,
+                'failure_threshold': cb.failure_threshold,
+                'timeout_seconds': cb.timeout,
+                'seconds_since_last_failure': round(time.time() - cb.last_failure_time, 1) if cb.last_failure_time else None,
+            },
+            'inner': {
+                'is_open': inner_cb.is_open,
+                'failures': inner_cb.failures,
+                'failure_threshold': inner_cb.failure_threshold,
+                'reset_after_seconds': inner_cb.reset_after,
+                'seconds_since_last_failure': round(time.time() - inner_cb.last_failure, 1) if inner_cb.last_failure else None,
+            },
+        })
     except Exception as e:
-        log.error(f'auto-hedge tick error: {e}')
-
-    finally:
-        # Re-arm only if still enabled
-        with _auto_hedge_config_lock:
-            still_enabled = _auto_hedge_config.get('enabled', False)
-        if still_enabled:
-            _schedule_next_auto_hedge_tick()
-
-
-def _schedule_next_auto_hedge_tick():
-    global _auto_hedge_timer
-    with _auto_hedge_timer_lock:
-        _auto_hedge_timer = threading.Timer(
-            AUTO_HEDGE_INTERVAL_SECONDS, _auto_hedge_tick
-        )
-        _auto_hedge_timer.daemon = True
-        _auto_hedge_timer.start()
-
-
-def _ensure_auto_hedge_running():
-    """Start the auto-hedge timer loop if not already running."""
-    with _auto_hedge_timer_lock:
-        already_running = (
-            _auto_hedge_timer is not None and _auto_hedge_timer.is_alive()
-        )
-    if not already_running:
-        _schedule_next_auto_hedge_tick()
-        log.info('\u26a1 Auto-hedge timer started')
-
-
-# Auto-start if config loaded from disk already has enabled=True
-if _auto_hedge_config.get('enabled', False):
-    _ensure_auto_hedge_running()
+        return jsonify({'success': False, 'error': str(e)}), 500

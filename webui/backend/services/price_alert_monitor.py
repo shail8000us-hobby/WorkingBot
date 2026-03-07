@@ -26,6 +26,11 @@ except ImportError:
     from ..db.alerts_db import AlertsDB
     from .notifications import NotificationService
 
+try:
+    from webui.backend.sealed import sealed
+except ImportError:
+    def sealed(f): return f
+
 logger = logging.getLogger(__name__)
 
 
@@ -147,6 +152,7 @@ class PriceAlertMonitor:
         if triggered_count > 0:
             logger.info("🔔 Triggered %d alert(s)", triggered_count)
             
+    @sealed
     def _is_in_cooldown(self, alert: dict) -> bool:
         """Check if alert is still in cooldown period."""
         last_triggered = alert.get('last_triggered_at')
@@ -178,9 +184,14 @@ class PriceAlertMonitor:
         
         # Update alert status using existing trigger method
         AlertsDB.trigger_alert(alert_id, self._current_price)
-        
+
         # Send notifications
         self._send_notifications(alert, channels)
+
+        # F5: Execute conditional action if configured
+        action_type = alert.get('action_type', 'none')
+        if action_type and action_type != 'none':
+            self._execute_action(alert, action_type)
         
     def _send_notifications(self, alert: dict, channels: str):
         """Send notifications for a triggered alert."""
@@ -215,6 +226,32 @@ class PriceAlertMonitor:
             # Log the crash to DB history too
             AlertsDB.update_alert_history(alert['id'], False, f"System Error: {str(e)}")
             
+    def _execute_action(self, alert: dict, action_type: str):
+        """F5: Execute a conditional action when an alert fires."""
+        import json
+        try:
+            config = json.loads(alert.get('action_config') or '{}')
+        except Exception:
+            config = {}
+
+        logger.info("[AlertAction] Executing action '%s' for alert %s", action_type, alert['id'])
+
+        if action_type == 'close_position':
+            symbol = config.get('symbol')
+            if symbol:
+                try:
+                    from webui.backend.routes.options.options_control import _close_position_by_symbol
+                    _close_position_by_symbol(symbol)
+                    logger.info("[AlertAction] Closed position %s", symbol)
+                except Exception as e:
+                    logger.error("[AlertAction] Failed to close position %s: %s", symbol, e)
+
+        elif action_type == 'log':
+            logger.info("[AlertAction] Log-only action: alert %s at $%.2f",
+                        alert['id'], self._current_price)
+        # 'notify' is handled by _send_notifications — nothing extra needed
+
+    @sealed
     def _format_alert_message(self, alert: dict) -> str:
         """Format a human-readable alert message."""
         target_price = float(alert['target_price'])

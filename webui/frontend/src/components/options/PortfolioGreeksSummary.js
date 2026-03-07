@@ -8,7 +8,7 @@
  * Created: February 26, 2026 (ARCH-2 refactor)
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     Box,
     Chip,
@@ -35,11 +35,31 @@ const getPnlColor = (pnl) => {
     return '#94a3b8';
 };
 
-function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks, onHedgeClick }) {
+function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks, ivStats, onHedgeClick }) {
     const totalPnl = sortedPositions.reduce(
         (sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0),
         0
     );
+
+    // F2: Compute per-expiry average IVR
+    const expiryIvrSummary = useMemo(() => {
+        if (!ivStats || Object.keys(ivStats).length === 0) return [];
+        const expiryMap = {};
+        sortedPositions.forEach(pos => {
+            const symbol = pos.product_symbol;
+            const ivr = ivStats[symbol]?.ivr;
+            if (ivr == null) return;
+            // Extract expiry date: e.g. "C-BTC-110000-250315" -> "250315"
+            const parts = symbol.split('-');
+            const expKey = parts[parts.length - 1] || 'unknown';
+            if (!expiryMap[expKey]) expiryMap[expKey] = { total: 0, count: 0 };
+            expiryMap[expKey].total += ivr;
+            expiryMap[expKey].count += 1;
+        });
+        return Object.entries(expiryMap)
+            .map(([exp, { total, count }]) => ({ expiry: exp, avgIvr: total / count }))
+            .sort((a, b) => a.expiry.localeCompare(b.expiry));
+    }, [sortedPositions, ivStats]);
 
     return (
         <>
@@ -220,6 +240,27 @@ function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks, onHedgeClic
                                 </Typography>
                             </Box>
                         </Tooltip>
+
+                        {/* F2: Per-expiry average IVR */}
+                        {expiryIvrSummary.length > 0 && (
+                            <>
+                                <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+                                <Typography variant="caption" color="text.secondary" sx={{ mr: -0.5 }}>IVR:</Typography>
+                                {expiryIvrSummary.map(({ expiry, avgIvr }) => {
+                                    const color = avgIvr <= 30 ? '#10b981' : avgIvr <= 60 ? '#f59e0b' : '#ef4444';
+                                    const bg = avgIvr <= 30 ? 'rgba(16,185,129,0.15)' : avgIvr <= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)';
+                                    return (
+                                        <Tooltip key={expiry} title={`Avg IV Rank for ${expiry} expiry positions`}>
+                                            <Chip
+                                                size="small"
+                                                label={`${expiry}: ${avgIvr.toFixed(0)}`}
+                                                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 600, bgcolor: bg, color }}
+                                            />
+                                        </Tooltip>
+                                    );
+                                })}
+                            </>
+                        )}
                     </Box>
                 </Box>
             )}

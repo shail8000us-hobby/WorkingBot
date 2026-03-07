@@ -1,0 +1,257 @@
+================================================================================
+BOT DECISION LOGIC CHECKLIST
+================================================================================
+
+This checklist shows WHAT your bot can handle vs. what it CAN'T.
+Use this to identify gaps and add missing scenarios.
+
+
+================================================================================
+ORDER EXECUTION
+================================================================================
+
+✅ CODED [CRITICAL]   Duplicate order prevention
+    📍 Handled in: bot/strategy/handlers/long_handler.py
+
+✅ CODED [HIGH]       BUY order placement logic
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       SELL order placement logic
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       Take Profit order placement
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       LONG mode: BUY order fill handling
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       LONG mode: TP fill and position close
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       SHORT mode: SELL order fill handling
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       SHORT mode: TP fill and position close
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       Order placement throttling
+    📍 Handled in: bot/strategy/handlers/long_handler.py
+
+✅ CODED [LOW]        Order cancellation handling
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [LOW]        LONG mode: Partial BUY fill processing
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [LOW]        LONG mode: TP (SELL) placement
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [LOW]        SHORT mode: Partial SELL fill processing
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [LOW]        SHORT mode: TP (BUY) placement
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [LOW]        Missing TP order detection
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+⚪ N/A [LOW]        Stale TP order handling
+    ℹ️  N/A: TP orders are immutable by design - never modified after placement
+
+✅ CODED [LOW]        Order confirmation before placement
+    📍 Handled in: bot/strategy/modules/order_manager.py (content match)
+
+✅ CODED [LOW]        Order rejection handling
+    📍 Handled in: bot/strategy/modules/order_manager.py (content match)
+
+
+================================================================================
+POSITION MANAGEMENT
+================================================================================
+
+✅ CODED [HIGH]       Active position tracking
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       Max positions limit enforcement
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       Position sync with exchange
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [HIGH]       Orphaned position detection
+    📍 Handled in: bot/strategy/gridbot.py
+
+
+================================================================================
+PRICE & GRID
+================================================================================
+
+✅ CODED [LOW]        Price update processing
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [LOW]        Large price gap handling
+    📍 Handled in: bot/strategy/modules/grid_calculator.py
+
+✅ CODED [LOW]        Stale price detection
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [LOW]        Invalid price errors
+    📍 Handled in: bot/strategy/modules/order_manager.py (content match)
+
+✅ CODED [MEDIUM]     LONG mode: Next grid BUY placement
+    📍 Handled in: bot/strategy/handlers/long_handler.py
+
+✅ CODED [MEDIUM]     SHORT mode: Next grid SELL placement
+    📍 Handled in: bot/strategy/handlers/short_handler.py
+
+✅ CODED [MEDIUM]     Grid level calculation
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [MEDIUM]     Grid boundary enforcement
+    📍 Handled in: bot/strategy/modules/grid_calculator.py (content match)
+
+✅ CODED [MEDIUM]     Initial grid seeding
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+
+================================================================================
+VOLATILITY & RISK
+================================================================================
+
+✅ CODED [CRITICAL]   Drawdown protective mode
+    📍 Handled in: bot/safety/gatekeeper.py
+
+✅ CODED [CRITICAL]   Margin/capital adequacy
+    📍 Handled in: bot/safety/gatekeeper.py (content match)
+
+✅ CODED [CRITICAL]   Insufficient margin errors
+    📍 Handled in: bot/safety/circuit_breaker.py (content match)
+
+✅ CODED [LOW]        Circuit breaker triggered
+    📍 Handled in: bot/safety/circuit_breaker.py (content match)
+
+✅ CODED [LOW]        Circuit breaker testing
+    📍 Handled in: bot/safety/circuit_breaker.py
+
+✅ CODED [MEDIUM]     Safe volatility conditions
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [MEDIUM]     Unsafe volatility handling
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [MEDIUM]     Recovery from unsafe volatility
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [MEDIUM]     Predictive volatility analysis
+    📍 Handled in: bot/volatility/predictive_engine.py
+
+
+================================================================================
+NETWORK & API
+================================================================================
+
+✅ CODED [LOW]        API error handling
+    📍 Handled in: bot/strategy/modules/order_manager.py (content match)
+
+✅ CODED [LOW]        API timeout handling
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [LOW]        Network connectivity errors
+    📍 Handled in: bot/safety/circuit_breaker.py
+
+✅ CODED [MEDIUM]     WebSocket connection active
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [MEDIUM]     WebSocket disconnection
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [MEDIUM]     WebSocket reconnection
+    📍 Handled in: bot/strategy/modules/reconciliation.py
+
+
+================================================================================
+RACE CONDITIONS
+================================================================================
+
+✅ CODED [HIGH]       Duplicate fill detection
+    📍 Handled in: bot/strategy/modules/order_manager.py
+
+✅ CODED [HIGH]       Multiple simultaneous fills
+    📍 Handled in: bot/strategy/modules/fill_detector.py
+
+✅ CODED [HIGH]       State lock protection
+    📍 Handled in: bot/strategy/modules/position_manager.py
+
+
+================================================================================
+ERRORS
+================================================================================
+
+✅ CODED [LOW]        Exchange-side errors
+    📍 Handled in: bot/strategy/modules/order_manager.py (content match)
+
+
+================================================================================
+STATE TRANSITIONS
+================================================================================
+
+✅ CODED [CRITICAL]   Emergency stop procedure
+    📍 Handled in: bot/strategy/modules/order_manager.py (content match)
+
+✅ CODED [CRITICAL]   Enter protective mode
+    📍 Handled in: bot/safety/gatekeeper.py
+
+✅ CODED [CRITICAL]   Exit protective mode
+    📍 Handled in: bot/capital/equity_tracker.py (content match)
+
+✅ CODED [HIGH]       Partial fill processing
+    📍 Handled in: bot/strategy/modules/fill_detector.py
+
+✅ CODED [HIGH]       Complete fill processing
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [HIGH]       Fill confirmation (WebSocket primary + REST backup)
+    📍 Handled in: bot/strategy/modules/fill_detector.py
+
+✅ CODED [LOW]        Implied Volatility spike detection
+    📍 Handled in: bot/safety/volatility_monitor.py
+
+✅ CODED [LOW]        Realized Volatility spike detection
+    📍 Handled in: bot/safety/volatility_monitor.py
+
+✅ CODED [LOW]        Order blocker activation
+    📍 Handled in: bot/safety/gatekeeper.py (content match)
+
+⚪ N/A [LOW]        Order blocker release after cooldown
+    ℹ️  N/A: Blockers are detection-only - user must resolve root cause (enable flags, reduce margin, etc). No auto-release.
+
+✅ CODED [LOW]        Position exposure limit enforcement
+    📍 Handled in: bot/safety/gatekeeper.py
+
+⚪ N/A [LOW]        Daily loss limit enforcement
+    ℹ️  N/A: Daily loss limits not needed - Guardian enforces overall position protection (more conservative)
+
+✅ CODED [LOW]        Total loss limit enforcement
+    📍 Handled in: bot/guardian/risk_enforcer.py
+
+✅ CODED [LOW]        Equity floor protection
+    📍 Handled in: bot/safety/gatekeeper.py (content match)
+
+✅ CODED [LOW]        Pending order budget management
+    📍 Handled in: bot/safety/gatekeeper.py (content match)
+
+✅ CODED [LOW]        Configuration validation and guards
+    📍 Handled in: bot/safety/config_guard.py
+
+✅ CODED [LOW]        API rate limit handling
+    📍 Handled in: bot/strategy/gridbot.py (content match)
+
+✅ CODED [LOW]        Bot startup initialization
+    📍 Handled in: bot/strategy/gridbot.py
+
+✅ CODED [LOW]        Bot shutdown cleanup
+    📍 Handled in: bot/strategy/gridbot.py
+
+⚪ N/A [LOW]        Bot pause/resume
+    ℹ️  N/A: Bot uses stop/start model (EXECUTE_ORDERS flag) not pause/resume. Trading controlled by safety flags.
+

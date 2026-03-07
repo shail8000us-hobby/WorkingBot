@@ -1,0 +1,11 @@
+#!/bin/bash
+# GridBot Status Launcher
+
+SCRIPT_DIR="/Users/ssr/Projects/WorkingBot"
+
+osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "clear && cd '$SCRIPT_DIR' && ./bot-status.command"
+end tell
+EOF

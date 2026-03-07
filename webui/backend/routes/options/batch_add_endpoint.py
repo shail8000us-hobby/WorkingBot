@@ -15,10 +15,16 @@ from flask import jsonify, request
 
 log = logging.getLogger(__name__)
 
+from webui.backend.sealed import sealed
 
+
+@sealed
 async def execute_single_order(client, order_data, order_preference, index):
     """
     Execute a single order from the batch.
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
     
     Args:
         client: UnifiedAPIClient instance

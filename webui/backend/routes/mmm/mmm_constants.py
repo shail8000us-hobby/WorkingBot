@@ -4,10 +4,20 @@ MMM Constants
 Shared constants for the MMM algorithm.
 """
 
+from decimal import Decimal
+
 # Delta Exchange BTC Options: 1 BTC = 1000 lots, so 1 lot = 0.001 BTC
 # Premiums are quoted in USD per BTC. To get USD value for N lots:
 #   usd_value = premium_per_btc * N * LOT_SIZE_BTC
 LOT_SIZE_BTC = 0.001
+
+
+def _D(x) -> Decimal:
+    """Decimal precision helper for financial calculations."""
+    return Decimal(str(x))
+
+
+_LOT = _D(LOT_SIZE_BTC)
 
 
 def strike_key(strike: float) -> str:

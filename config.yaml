@@ -143,7 +143,7 @@ safety:
     period: 14
     overbought_threshold: 70.0
     oversold_threshold: 30.0
-    long_threshold: 34
+    long_threshold: 24
     short_threshold: 25
     hysteresis_seconds: 60
     timeframe: 1h

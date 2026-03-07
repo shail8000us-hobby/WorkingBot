@@ -28,6 +28,8 @@ try:
 except ImportError:
     human_log = None
 
+from webui.backend.sealed import sealed
+
 
 class GridEngine:
     """Grid order placement, safety gating, and entry trigger."""
@@ -87,6 +89,7 @@ class GridEngine:
             setattr(self, key, val)
 
     # ── _is_cooldown_ready → MOVED here P6.2 ──
+    @sealed
     def is_cooldown_ready(self) -> bool:
         """
         Check if cooldown period has elapsed since last order.

@@ -7,10 +7,13 @@ import { io } from 'socket.io-client';
 
 // Use port 5555 as default (matches config.yaml webui.port)
 // For development with different ports, set REACT_APP_SOCKET_URL in .env
+// Use window.location.origin to avoid cross-origin issues when accessing via LAN/Tailscale
 const DEFAULT_SOCKET_URL =
-  (process.env.REACT_APP_SOCKET_URL || '').trim() || 'http://localhost:5555';
+  (process.env.REACT_APP_SOCKET_URL || '').trim() ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5555');
 const DEFAULT_API_BASE_URL =
-  (process.env.REACT_APP_API_BASE_URL || '').trim().replace(/\/$/, '') || 'http://localhost:5555';
+  (process.env.REACT_APP_API_BASE_URL || '').trim().replace(/\/$/, '') ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5555');
 
 class ConnectionManager {
   constructor(config = {}) {
@@ -51,30 +54,18 @@ class ConnectionManager {
 
     const connectionOptions = {
       path: '/socket.io',
-      // Try WebSocket first, fall back to polling if it fails
-      transports: ['websocket', 'polling'],
+      // Use long-polling only — backend runs async_mode='threading' which does not
+      // support WebSocket upgrades; polling avoids the 'Invalid frame header' errors.
+      transports: ['polling'],
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
       timeout: 60000, // Increased from 20s to 60s for mobile networks
-      // Allow upgrade from polling to websocket
-      upgrade: true,
-      // Remember transport for faster subsequent connections
-      rememberUpgrade: true,
-      // Mobile-specific: longer intervals for battery optimization
-      pingInterval: 60000, // Ping every 60s (matches backend)
-      pingTimeout: 120000, // 120s timeout (matches backend)
-      // Enable credentials for authenticated connections
-      withCredentials: true,
-      // Transports-specific options
-      transportOptions: {
-        polling: {
-          // Extra headers for mobile clients
-          extraHeaders: {
-            'X-Client-Type': 'mobile-web',
-          },
-        },
-      },
+      // No WebSocket upgrade needed
+      upgrade: false,
+      rememberUpgrade: false,
+      // NOTE: Do NOT set withCredentials or custom extraHeaders —
+      // they trigger CORS preflight and block WebSocket upgrades
       ...socketIOConfig,
     };
 

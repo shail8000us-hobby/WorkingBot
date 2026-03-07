@@ -42,12 +42,16 @@ class CircuitBreaker:
     
     def record_failure(self):
         """Record failed call"""
-        self.failures += 1
-        self.last_failure_time = time.time()
-        
-        if self.failures >= self.failure_threshold:
-            self.state = "open"
-            log.warning(f"🔴 Circuit breaker OPEN - {self.failures} failures")
+        # Only update last_failure_time when the circuit is closed/half_open.
+        # If already open, do NOT reset the countdown — otherwise the timer
+        # can never reach the timeout and the breaker stays open permanently.
+        if self.state != "open":
+            self.failures += 1
+            self.last_failure_time = time.time()
+
+            if self.failures >= self.failure_threshold:
+                self.state = "open"
+                log.warning(f"🔴 Circuit breaker OPEN - {self.failures} failures")
     
     def can_attempt(self) -> bool:
         """Check if we can attempt a call"""

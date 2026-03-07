@@ -109,8 +109,10 @@ export default function useOptionsSettings() {
     // WebSocket listener for immediate auto-trigger notifications
     const socket = io({
       path: '/socket.io',
+      // Use polling only — backend async_mode='threading' doesn't support WebSocket
       transports: ['polling'],
       upgrade: false,
+      rememberUpgrade: false,
       reconnection: true,
       reconnectionDelay: 2000,
       reconnectionAttempts: 5,

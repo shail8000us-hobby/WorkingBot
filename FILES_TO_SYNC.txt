@@ -1,0 +1,35 @@
+COPY THESE 11 FILES FROM MAC TO WINDOWS
+========================================
+
+CODE FILES (copy to same paths):
+1. bot/strategy/modules/position_manager.py
+2. bot/strategy/modules/reconciliation.py
+3. bot/strategy/handlers/long_handler.py
+4. bot/strategy/gridbot.py
+
+DOCUMENTATION FILES (copy to root):
+5. OFFGRID_TRADE_BUG_NOV9_2025.md
+6. DEADLOCK_BUG_FILL_PROCESSING_NOV9_2025.md
+7. CRITICAL_BUG_MISSING_TP_NOV9_2025.md
+8. WEBSOCKET_FIX_COMPLETE_NOV9_2025.md
+
+SYNC GUIDES (copy to root):
+9. WINDOWS_SYNC_NOV9_2025.md
+10. SYNC_CHANGES_SUMMARY.txt
+11. sync_from_mac.ps1
+
+FROM: /Users/ssr/Projects/WorkingBot/ (Mac)
+TO:   D:\Projects\WorkingBot\ (Windows)
+
+ACCESS MAC FILES:
+- Windows File Explorer: \\192.168.1.3\Projects\WorkingBot
+- Or use USB drive
+- Or use cloud storage (Google Drive, OneDrive)
+
+AFTER COPYING:
+1. Backup Windows files first
+2. Run sync_from_mac.ps1 on Windows
+3. Restart bot: pm2 restart gridbot-live
+4. Monitor first fill carefully
+
+CRITICAL: All 3 bugs must be fixed together!

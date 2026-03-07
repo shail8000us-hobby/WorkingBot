@@ -19,6 +19,7 @@ import logging
 import requests
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -524,10 +525,14 @@ class RSICollector:
                 log.error(f"Unexpected error fetching OHLCV data: {e}", exc_info=True)
                 return None
     
+    @sealed
     def _calculate_rsi(self, prices: List[float], period: int) -> Optional[float]:
         """
         Calculate RSI using Wilder's smoothing method (industry standard).
-        
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+
         Formula (Wilder's method):
         1. Calculate price changes: change = price[i] - price[i-1]
         2. Separate gains and losses: gain = max(change, 0), loss = max(-change, 0)

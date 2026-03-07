@@ -65,6 +65,7 @@ const IntelligencePage = React.lazy(() => import('./pages/IntelligencePage'));
 const OptionsChainPage = React.lazy(() => import('./pages/OptionsChainPage'));
 const StrategyBuilderPage = React.lazy(() => import('./pages/StrategyBuilderPage'));
 const MMMPage = React.lazy(() => import('./pages/MMMPage'));
+const PortfolioMarginPage = React.lazy(() => import('./pages/PortfolioMarginPage'));
 const GuardianPage = React.lazy(() => import('./pages/GuardianPage'));
 const MLTradingPage = React.lazy(() => import('./pages/MLTradingPage'));
 const BotManagementPage = React.lazy(() => import('./pages/BotManagementPage'));
@@ -376,6 +377,7 @@ function App() {
                   <Route path="/intelligence" element={<IntelligencePage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/guardian" element={<GuardianPage guardianEnabled={guardianEnabled} />} />
                   <Route path="/zero_dte" element={<ZeroDTEPage />} />
+                  <Route path="/portfolio_margin" element={<PortfolioMarginPage />} />
                   <Route path="/experimental" element={<ExperimentalPage />} />
                   <Route path="/advanced_features" element={<AdvancedFeaturesPage />} />
                   <Route path="/monitoring" element={<MonitoringPage isMobile={isMobile} botIsRunning={botIsRunning} botStatus={botStatus} config={config} />} />

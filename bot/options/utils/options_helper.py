@@ -10,10 +10,12 @@ This module is completely independent of grid bot logic.
 from datetime import datetime
 from typing import Dict
 import logging
+from webui.backend.sealed import sealed
 
 logger = logging.getLogger(__name__)
 
 
+@sealed
 def get_contract_multiplier(symbol: str) -> float:
     """
     Return the USD contract multiplier for a given product symbol.
@@ -21,6 +23,9 @@ def get_contract_multiplier(symbol: str) -> float:
       BTC options/futures: 0.001 BTC per contract
       ETH options/futures: 0.001 ETH per contract
       All others default to 0.001 (override when new assets are listed)
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
     """
     if not symbol:
         return 0.001
@@ -32,9 +37,13 @@ def get_contract_multiplier(symbol: str) -> float:
     }.get(underlying, 0.001)
 
 
+@sealed
 def calculate_unrealized_pnl(position: Dict, mid_price: float) -> float:
     """
     Calculate unrealized PnL for options position using mid price (bid+ask)/2.
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
 
     For SHORT (size < 0): profit when price drops (mid < entry)
     For LONG (size > 0): profit when price rises (mid > entry)
@@ -59,10 +68,14 @@ def calculate_unrealized_pnl(position: Dict, mid_price: float) -> float:
     return pnl
 
 
+@sealed
 def calculate_pnl_percentage(position: Dict, mid_price: float) -> float:
     """
     Calculate PnL percentage using mid price.
-    
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
+
     Returns positive percentage for profit, negative for loss.
     - For SHORT positions: profit when mid_price < entry_price
     - For LONG positions: profit when mid_price > entry_price
@@ -93,10 +106,14 @@ def calculate_pnl_percentage(position: Dict, mid_price: float) -> float:
         return price_change_pct
 
 
+@sealed
 def check_expiry_warning(settlement_time: str) -> Dict:
     """
     Check if option is expiring soon.
-    
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
+
     Args:
         settlement_time: ISO format timestamp (e.g., "2025-01-31T12:00:00Z")
         
@@ -139,10 +156,14 @@ def check_expiry_warning(settlement_time: str) -> Dict:
         }
 
 
+@sealed
 def check_liquidity(ticker: Dict) -> Dict:
     """
     Check if option has sufficient liquidity.
-    
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
+
     Args:
         ticker: Ticker dict with quotes and mark_price
         
@@ -191,23 +212,31 @@ def check_liquidity(ticker: Dict) -> Dict:
         }
 
 
+@sealed
 def determine_close_side(position_size: float) -> str:
     """
     Determine which side to use to close position.
-    
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
+
     Args:
         position_size: Current position size (positive = long, negative = short)
-        
+
     Returns:
         str: 'sell' for long positions, 'buy' for short positions
     """
     return 'sell' if position_size > 0 else 'buy'
 
 
+@sealed
 def enrich_position_data(position: Dict, ticker: Dict) -> Dict:
     """
     Enrich position with real-time ticker data.
-    
+
+    SEALED — v1.0.0 — March 4, 2026
+    Do not modify without UNSEAL command in AI_SEAL.md
+
     Args:
         position: Position dict from API
         ticker: Ticker dict from API

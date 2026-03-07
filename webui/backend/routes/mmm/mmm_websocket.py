@@ -360,6 +360,44 @@ def emit_perp_hedge_update(session_id: str, perp_summary: Dict):
     })
 
 
+def emit_harvest(session_id: str, side: str, strike: float,
+                 lots: int, realized_pnl: float, close_premium: float,
+                 profit_pct: float, harvest_score: float,
+                 asymmetry_boosted: bool = False):
+    """Emit M1 profit harvest event."""
+    _emit('mmm_harvest', {
+        'session_id': session_id,
+        'side': side,
+        'strike': strike,
+        'lots': lots,
+        'realized_pnl': realized_pnl,
+        'close_premium': close_premium,
+        'profit_pct': profit_pct,
+        'harvest_score': harvest_score,
+        'asymmetry_boosted': asymmetry_boosted,
+    })
+
+
+def emit_recycle(session_id: str, hedge_side: str,
+                 recycled_lots: int, new_lots_sold: int,
+                 old_strike: float, new_strike: float,
+                 new_premium: float, net_lot_gain: int,
+                 buyback_cost: float, phase_a_pnl: float):
+    """Emit M2 lot recycling event."""
+    _emit('mmm_recycle', {
+        'session_id': session_id,
+        'hedge_side': hedge_side,
+        'recycled_lots': recycled_lots,
+        'new_lots_sold': new_lots_sold,
+        'old_strike': old_strike,
+        'new_strike': new_strike,
+        'new_premium': new_premium,
+        'net_lot_gain': net_lot_gain,
+        'buyback_cost': buyback_cost,
+        'phase_a_pnl': phase_a_pnl,
+    })
+
+
 def emit_perp_hedge_flip(session_id: str, old_direction: str,
                          new_direction: str, lots_closed: int,
                          new_lots: int, realized_pnl: float,

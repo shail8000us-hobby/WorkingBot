@@ -15,6 +15,7 @@ import numpy as np
 from scipy.stats import norm, lognorm
 from typing import Dict, List, Tuple
 import math
+from webui.backend.sealed import sealed
 
 
 class ProbabilityAnalyzer:
@@ -23,6 +24,7 @@ class ProbabilityAnalyzer:
     """
     
     @staticmethod
+    @sealed
     def probability_of_profit(
         positions: List[Dict],
         spot_price: float,
@@ -32,8 +34,11 @@ class ProbabilityAnalyzer:
         distribution: str = 'lognormal'
     ) -> Dict:
         """
-        Calculate probability that strategy is profitable at expiry
-        
+        Calculate probability that strategy is profitable at expiry.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+
         Returns: {
             'pop': float (0-1),
             'expected_value': float,

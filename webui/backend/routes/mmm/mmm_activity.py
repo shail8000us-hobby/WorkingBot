@@ -109,6 +109,12 @@ ACTIVITY_TYPES = {
     # Stale data
     'stale_price_warning': 'Stale Price',
 
+    # Lot lifecycle (M1/M2/M3/Split Ledger)
+    'harvest': 'Position Harvested',
+    'recycle': 'Lot Recycling',
+    'shift_recycle': 'Shift-Time Recycle',
+    'rebalance_boost': 'Rebalance Boost',
+
     # Hot reload
     'hot_reload': 'Hot Reload',
 
@@ -130,7 +136,8 @@ ACTIVITY_CATEGORIES = {
                     'trigger_cleared_by_close_at_5',
                     'close_at_5', 'wind_down', 'atm_wind_down', 'atm_auto_close',
                     'margin_wind_down', 'margin_block_sells', 'perp_hedge',
-                    'both_sides_auto_decision'},
+                    'both_sides_auto_decision',
+                    'harvest', 'recycle', 'shift_recycle', 'rebalance_boost'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error'},

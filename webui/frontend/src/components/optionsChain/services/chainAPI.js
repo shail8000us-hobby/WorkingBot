@@ -210,6 +210,17 @@ class OptionsChainAPI {
   /**
    * Get open options positions as a symbol lookup map
    * Returns: { [symbol]: { side: 'long'|'short', size, pnl } }
+   *
+   * @sealed v1.0.0 — Mar 5, 2026
+   * CONTRACT:
+   *   1. Always returns {} on any error — NEVER throws.
+   *   2. Only includes options: C-/P- prefix OR product_type=call_options/put_options OR type=option.
+   *   3. Map keys are always UPPERCASE.
+   *   4. `side` is always lowercase ('long' or 'short').
+   *   5. Long position (bought) → side='long' → green highlight in ChainTable.
+   *   6. Short position (sold) → side='short' → red highlight in ChainTable.
+   *   7. Symbol absent from map → no highlight (not in active trading).
+   * DO NOT CHANGE without UNSEAL: getOpenPositions in AI_SEAL.md
    */
   async getOpenPositions() {
     try {

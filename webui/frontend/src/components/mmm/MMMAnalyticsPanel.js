@@ -309,6 +309,22 @@ export default function MMMAnalyticsPanel({ sessionId }) {
             color="success"
           />
         </Grid>
+        <Grid item xs={6} sm={4}>
+          <MetricCard
+            label="Harvested"
+            value={analytics.total_harvests || 0}
+            subtitle="lots freed via M1"
+            color="success"
+          />
+        </Grid>
+        <Grid item xs={6} sm={4}>
+          <MetricCard
+            label="Recycled"
+            value={analytics.total_recycles || 0}
+            subtitle="M2 operations"
+            color="info"
+          />
+        </Grid>
       </Grid>
 
       {/* Risk Events & Milestones */}

@@ -86,11 +86,11 @@ const formatExpiry = (expiry) => {
 /**
  * Chain Row Component - Sensibull Style with per-row quantity selector
  */
-const ChainRow = ({ 
-  strikeData, 
-  isAtm, 
+const ChainRow = ({
+  strikeData,
+  isAtm,
   spotPrice,
-  proposedTrades, 
+  proposedTrades,
   onTradeClick,
   showOi,
   showGreeks,
@@ -100,27 +100,26 @@ const ChainRow = ({
   const strike = parseFloat(strikeData.strike);
   const callData = strikeData.call || {};
   const putData = strikeData.put || {};
-  
-  // Quantity options - sequential 1 to 50
-  const qtyOptions = Array.from({ length: 50 }, (_, i) => i + 1);
-  
+
+  // No max restriction on quantity — free-text input
+
   // Get current quantities for this strike
   const callQty = tradeQuantities?.[`${strike}-call`] || 1;
   const putQty = tradeQuantities?.[`${strike}-put`] || 1;
-  
+
   // Check if trades are selected
   const isCallBuySelected = proposedTrades.some(t => t.strike === strike && t.type === 'call' && t.side === 'buy');
   const isCallSellSelected = proposedTrades.some(t => t.strike === strike && t.type === 'call' && t.side === 'sell');
   const isPutBuySelected = proposedTrades.some(t => t.strike === strike && t.type === 'put' && t.side === 'buy');
   const isPutSellSelected = proposedTrades.some(t => t.strike === strike && t.type === 'put' && t.side === 'sell');
-  
+
   const isCallSelected = isCallBuySelected || isCallSellSelected;
   const isPutSelected = isPutBuySelected || isPutSellSelected;
-  
+
   return (
     <>
-      <TableRow 
-        sx={{ 
+      <TableRow
+        sx={{
           bgcolor: isAtm ? COLORS.atmBg : 'transparent',
           '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' },
         }}
@@ -131,18 +130,18 @@ const ChainRow = ({
             {callData.delta ? callData.delta.toFixed(2) : '-'}
           </TableCell>
         )}
-        
+
         {/* Call LTP */}
         <TableCell align="right" sx={{ color: COLORS.text, fontSize: '0.85rem', py: 0.75, px: 1, borderBottom: `1px solid ${COLORS.border}` }}>
           {(callData.mark_price || callData.ltp)?.toFixed(2) || '-'}
         </TableCell>
-        
+
         {/* Call OI bar */}
         {showOi && (
           <TableCell align="center" sx={{ py: 0.75, px: 0.75, width: 60, borderBottom: `1px solid ${COLORS.border}` }}>
-            <Box sx={{ 
-              height: 6, 
-              bgcolor: COLORS.callOi, 
+            <Box sx={{
+              height: 6,
+              bgcolor: COLORS.callOi,
               borderRadius: 0.5,
               width: `${Math.min((callData.oi || 0) / 1000, 100)}%`,
               minWidth: callData.oi ? 4 : 0,
@@ -150,7 +149,7 @@ const ChainRow = ({
             }} />
           </TableCell>
         )}
-        
+
         {/* Call B/S Buttons */}
         <TableCell align="center" sx={{ py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
           <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
@@ -196,11 +195,11 @@ const ChainRow = ({
             </Box>
           </Box>
         </TableCell>
-        
+
         {/* Strike */}
-        <TableCell 
-          align="center" 
-          sx={{ 
+        <TableCell
+          align="center"
+          sx={{
             fontWeight: 600,
             fontSize: '0.9rem',
             color: isAtm ? COLORS.atm : COLORS.text,
@@ -215,10 +214,10 @@ const ChainRow = ({
         >
           {strike.toLocaleString()}
           {isAtm && (
-            <Box 
+            <Box
               component="span"
-              sx={{ 
-                ml: 0.5, 
+              sx={{
+                ml: 0.5,
                 fontSize: '0.6rem',
                 color: COLORS.atm,
                 verticalAlign: 'super',
@@ -228,25 +227,25 @@ const ChainRow = ({
             </Box>
           )}
         </TableCell>
-        
+
         {/* IV */}
         <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
           {putData.iv ? `${(putData.iv * 100).toFixed(1)}` : callData.iv ? `${(callData.iv * 100).toFixed(1)}` : '-'}
         </TableCell>
-        
+
         {/* Put OI bar */}
         {showOi && (
           <TableCell align="center" sx={{ py: 0.75, px: 0.75, width: 60, borderBottom: `1px solid ${COLORS.border}` }}>
-            <Box sx={{ 
-              height: 6, 
-              bgcolor: COLORS.putOi, 
+            <Box sx={{
+              height: 6,
+              bgcolor: COLORS.putOi,
               borderRadius: 0.5,
               width: `${Math.min((putData.oi || 0) / 1000, 100)}%`,
               minWidth: putData.oi ? 4 : 0,
             }} />
           </TableCell>
         )}
-        
+
         {/* Put B/S Buttons */}
         <TableCell align="center" sx={{ py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
           <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
@@ -292,12 +291,12 @@ const ChainRow = ({
             </Box>
           </Box>
         </TableCell>
-        
+
         {/* Put LTP */}
         <TableCell align="left" sx={{ color: COLORS.text, fontSize: '0.85rem', py: 0.75, px: 1, borderBottom: `1px solid ${COLORS.border}` }}>
           {(putData.mark_price || putData.ltp)?.toFixed(2) || '-'}
         </TableCell>
-        
+
         {/* Delta (Put) */}
         {showGreeks && (
           <TableCell align="center" sx={{ color: COLORS.textSecondary, fontSize: '0.8rem', py: 0.75, px: 0.75, borderBottom: `1px solid ${COLORS.border}` }}>
@@ -305,12 +304,12 @@ const ChainRow = ({
           </TableCell>
         )}
       </TableRow>
-      
+
       {/* Quantity selector row - appears when call or put is selected */}
       {(isCallSelected || isPutSelected) && (
         <TableRow sx={{ bgcolor: 'rgba(255,255,255,0.02)' }}>
-          <TableCell 
-            colSpan={showGreeks ? (showOi ? 10 : 8) : (showOi ? 8 : 6)} 
+          <TableCell
+            colSpan={showGreeks ? (showOi ? 10 : 8) : (showOi ? 8 : 6)}
             sx={{ py: 0.5, px: 1, borderBottom: `1px solid ${COLORS.border}` }}
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -319,63 +318,63 @@ const ChainRow = ({
                 {isCallSelected && (
                   <>
                     <Typography sx={{ fontSize: '0.7rem', color: COLORS.textSecondary }}>Qty</Typography>
-                    <select
+                    <input
+                      type="number"
                       value={callQty}
+                      min="1"
                       onChange={(e) => {
                         e.stopPropagation();
-                        onQuantityChange(strike, 'call', parseInt(e.target.value));
+                        const val = parseInt(e.target.value) || 1;
+                        onQuantityChange(strike, 'call', Math.max(1, val));
                       }}
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         height: 24,
-                        minWidth: 50,
+                        width: 60,
                         fontSize: '0.75rem',
                         color: COLORS.text,
                         backgroundColor: COLORS.cardBg,
                         border: `1px solid ${COLORS.border}`,
                         borderRadius: 4,
-                        padding: '2px 4px',
-                        cursor: 'pointer',
+                        padding: '2px 6px',
+                        textAlign: 'center',
+                        outline: 'none',
                       }}
-                    >
-                      {qtyOptions.map(q => (
-                        <option key={q} value={q} style={{ backgroundColor: COLORS.cardBg, color: COLORS.text }}>{q}</option>
-                      ))}
-                    </select>
+                    />
                   </>
                 )}
               </Box>
-              
+
               {/* Strike spacer */}
               <Box sx={{ width: 70 }} />
-              
+
               {/* Put Quantity Selector */}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, pl: 2 }}>
                 {isPutSelected && (
                   <>
-                    <select
+                    <input
+                      type="number"
                       value={putQty}
+                      min="1"
                       onChange={(e) => {
                         e.stopPropagation();
-                        onQuantityChange(strike, 'put', parseInt(e.target.value));
+                        const val = parseInt(e.target.value) || 1;
+                        onQuantityChange(strike, 'put', Math.max(1, val));
                       }}
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         height: 24,
-                        minWidth: 50,
+                        width: 60,
                         fontSize: '0.75rem',
                         color: COLORS.text,
                         backgroundColor: COLORS.cardBg,
                         border: `1px solid ${COLORS.border}`,
                         borderRadius: 4,
-                        padding: '2px 4px',
-                        cursor: 'pointer',
+                        padding: '2px 6px',
+                        textAlign: 'center',
+                        outline: 'none',
                       }}
-                    >
-                      {qtyOptions.map(q => (
-                        <option key={q} value={q} style={{ backgroundColor: COLORS.cardBg, color: COLORS.text }}>{q}</option>
-                      ))}
-                    </select>
+                    />
                     <Typography sx={{ fontSize: '0.7rem', color: COLORS.textSecondary }}>Qty</Typography>
                   </>
                 )}
@@ -413,7 +412,7 @@ export default function SlidingOptionsChainPanel({
   const [showGreeks, setShowGreeks] = useState(false);
   const [displayMode, setDisplayMode] = useState('ltp'); // 'ltp', 'oi', 'greeks'
   const [tradeQuantities, setTradeQuantities] = useState({}); // Per-strike quantities: { "78200-call": 30, "78200-put": 10 }
-  
+
   // Convert expiry from DDMMYY to DDMMYYYY for API
   const convertExpiryToAPI = useCallback((expiry) => {
     if (!expiry) return expiry;
@@ -427,18 +426,18 @@ export default function SlidingOptionsChainPanel({
     }
     return expiry;
   }, []);
-  
+
   // Fetch expirations when panel opens
   useEffect(() => {
     if (!open) return;
-    
+
     const fetchExpirations = async () => {
       try {
         setLoading(true);
         setError(null);
         const result = await optionsChainAPI.getExpirations(underlying);
         setExpirations(result || []);
-        
+
         // Auto-select first expiry if none selected
         if (!selectedExpiry && result?.length > 0) {
           onExpiryChange?.(result[0]);
@@ -449,14 +448,14 @@ export default function SlidingOptionsChainPanel({
         setLoading(false);
       }
     };
-    
+
     fetchExpirations();
   }, [open, underlying]);
-  
+
   // Fetch chain data when expiry changes
   useEffect(() => {
     if (!open || !selectedExpiry) return;
-    
+
     const fetchChain = async () => {
       try {
         setLoading(true);
@@ -473,29 +472,29 @@ export default function SlidingOptionsChainPanel({
         setLoading(false);
       }
     };
-    
+
     fetchChain();
   }, [open, underlying, selectedExpiry, convertExpiryToAPI]);
-  
+
   // Find ATM strike
   const atmStrike = useMemo(() => {
     if (chainData?.atm_strike) return chainData.atm_strike;
     const effectiveSpot = chainData?.spot_price || spotPrice;
     if (!effectiveSpot || !chainData?.chain) return null;
-    
+
     const strikes = chainData.chain.map(s => parseFloat(s.strike));
     if (strikes.length === 0) return null;
-    
-    return strikes.reduce((closest, strike) => 
+
+    return strikes.reduce((closest, strike) =>
       Math.abs(strike - effectiveSpot) < Math.abs(closest - effectiveSpot) ? strike : closest
     );
   }, [spotPrice, chainData]);
-  
+
   // Handle quantity change for a specific strike/type
   const handleQuantityChange = useCallback((strike, type, quantity) => {
     const key = `${strike}-${type}`;
     setTradeQuantities(prev => ({ ...prev, [key]: quantity }));
-    
+
     // Update existing trade if it exists
     const existingTrade = proposedTrades.find(t => t.strike === strike && t.type === type);
     if (existingTrade) {
@@ -507,40 +506,40 @@ export default function SlidingOptionsChainPanel({
       });
     }
   }, [proposedTrades, onAddTrade, onRemoveTrade]);
-  
+
   // Handle trade click - now accepts quantity from row
   const handleTradeClick = useCallback((strike, type, side, optionData, quantity = 1) => {
-    const existingTrade = proposedTrades.find(t => 
+    const existingTrade = proposedTrades.find(t =>
       t.strike === strike && t.type === type && t.side === side
     );
-    
+
     if (existingTrade) {
       onRemoveTrade?.(existingTrade);
     } else {
       // Remove opposite side if selected
       const oppositeSide = side === 'buy' ? 'sell' : 'buy';
-      const oppositeTrade = proposedTrades.find(t => 
+      const oppositeTrade = proposedTrades.find(t =>
         t.strike === strike && t.type === type && t.side === oppositeSide
       );
       if (oppositeTrade) {
         onRemoveTrade?.(oppositeTrade);
       }
-      
+
       // Use the converted expiry format for API
       const apiExpiry = convertExpiryToAPI(selectedExpiry);
-      
+
       // Convert expiry format (DDMMYYYY -> DDMMYY for symbol)
-      const expiryShort = apiExpiry?.length === 8 
+      const expiryShort = apiExpiry?.length === 8
         ? apiExpiry.slice(0, 4) + apiExpiry.slice(6, 8)
         : selectedExpiry;
-      
+
       const symbol = `${type === 'call' ? 'C' : 'P'}-${underlying}-${strike}-${expiryShort}`;
       const price = optionData?.mark_price || optionData?.ltp || 0;
-      
+
       // Get quantity from tradeQuantities or use passed quantity
       const key = `${strike}-${type}`;
       const tradeQty = tradeQuantities[key] || quantity;
-      
+
       onAddTrade?.({
         symbol,
         strike,
@@ -558,12 +557,12 @@ export default function SlidingOptionsChainPanel({
       });
     }
   }, [proposedTrades, underlying, selectedExpiry, spotPrice, chainData, tradeQuantities, onAddTrade, onRemoveTrade, convertExpiryToAPI]);
-  
+
   // Clear all trades
   const handleClearAll = useCallback(() => {
     proposedTrades.forEach(t => onRemoveTrade?.(t));
   }, [proposedTrades, onRemoveTrade]);
-  
+
   // Toggle display mode
   const handleDisplayModeChange = (mode) => {
     if (mode === 'oi') {
@@ -576,16 +575,16 @@ export default function SlidingOptionsChainPanel({
 
   // Inner content to be rendered in both modes
   const panelContent = (
-    <Box sx={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
+    <Box sx={{
+      display: 'flex',
+      flexDirection: 'column',
       height: '100%',
       bgcolor: COLORS.background,
     }}>
       {/* Header */}
-      <Box sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: 'space-between',
         p: 1.5,
         borderBottom: `1px solid ${COLORS.border}`,
@@ -595,18 +594,18 @@ export default function SlidingOptionsChainPanel({
           <Typography variant="subtitle1" sx={{ color: COLORS.text, fontWeight: 600 }}>
             {underlying} {spotPrice?.toLocaleString() || ''}
           </Typography>
-          <Chip 
+          <Chip
             label={`${((chainData?.spot_price || spotPrice) ? ((chainData?.spot_price - spotPrice) / spotPrice * 100).toFixed(2) : '0.00')}%`}
             size="small"
-            sx={{ 
-              bgcolor: 'rgba(239, 68, 68, 0.2)', 
+            sx={{
+              bgcolor: 'rgba(239, 68, 68, 0.2)',
               color: COLORS.sell,
               fontSize: '0.7rem',
               height: 20,
             }}
           />
         </Box>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Chip label="Info" size="small" variant="outlined" sx={{ borderColor: COLORS.primary, color: COLORS.primary, height: 24 }} />
           <IconButton size="small" sx={{ color: COLORS.textSecondary }}>
@@ -617,17 +616,17 @@ export default function SlidingOptionsChainPanel({
           </IconButton>
         </Box>
       </Box>
-      
+
       {/* Tabs */}
       <Box sx={{ borderBottom: `1px solid ${COLORS.border}`, bgcolor: COLORS.cardBg }}>
-        <Tabs 
-          value={activeTab} 
+        <Tabs
+          value={activeTab}
           onChange={(e, v) => setActiveTab(v)}
           variant="fullWidth"
           sx={{
             minHeight: 36,
-            '& .MuiTab-root': { 
-              color: COLORS.textSecondary, 
+            '& .MuiTab-root': {
+              color: COLORS.textSecondary,
               textTransform: 'none',
               minHeight: 36,
               fontSize: '0.85rem',
@@ -642,11 +641,11 @@ export default function SlidingOptionsChainPanel({
           <Tab label="Futures" />
         </Tabs>
       </Box>
-      
+
       {/* Expiry Selector, Quantity Selector and Display Mode */}
-      <Box sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: 'space-between',
         p: 1,
         borderBottom: `1px solid ${COLORS.border}`,
@@ -657,7 +656,7 @@ export default function SlidingOptionsChainPanel({
               value={selectedExpiry || ''}
               onChange={(e) => onExpiryChange?.(e.target.value)}
               displayEmpty
-              sx={{ 
+              sx={{
                 color: COLORS.text,
                 bgcolor: COLORS.primary,
                 borderRadius: 1,
@@ -675,13 +674,13 @@ export default function SlidingOptionsChainPanel({
             </Select>
           </FormControl>
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 0.5 }}>
-          <Chip 
-            label="LTP" 
+          <Chip
+            label="LTP"
             size="small"
             onClick={() => handleDisplayModeChange('ltp')}
-            sx={{ 
+            sx={{
               bgcolor: displayMode === 'ltp' ? COLORS.primary : 'transparent',
               color: displayMode === 'ltp' ? '#fff' : COLORS.textSecondary,
               border: `1px solid ${COLORS.border}`,
@@ -690,11 +689,11 @@ export default function SlidingOptionsChainPanel({
               cursor: 'pointer',
             }}
           />
-          <Chip 
-            label="OI" 
+          <Chip
+            label="OI"
             size="small"
             onClick={() => handleDisplayModeChange('oi')}
-            sx={{ 
+            sx={{
               bgcolor: showOi ? COLORS.primary : 'transparent',
               color: showOi ? '#fff' : COLORS.textSecondary,
               border: `1px solid ${COLORS.border}`,
@@ -703,11 +702,11 @@ export default function SlidingOptionsChainPanel({
               cursor: 'pointer',
             }}
           />
-          <Chip 
-            label="Greeks" 
+          <Chip
+            label="Greeks"
             size="small"
             onClick={() => handleDisplayModeChange('greeks')}
-            sx={{ 
+            sx={{
               bgcolor: showGreeks ? COLORS.primary : 'transparent',
               color: showGreeks ? '#fff' : COLORS.textSecondary,
               border: `1px solid ${COLORS.border}`,
@@ -718,7 +717,7 @@ export default function SlidingOptionsChainPanel({
           />
         </Box>
       </Box>
-      
+
       {/* Chain Table */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
@@ -778,7 +777,7 @@ export default function SlidingOptionsChainPanel({
                 {chainData?.chain?.map((strikeData) => {
                   const strike = parseFloat(strikeData.strike);
                   const isAtm = strike === atmStrike;
-                  
+
                   return (
                     <ChainRow
                       key={strike}
@@ -794,7 +793,7 @@ export default function SlidingOptionsChainPanel({
                     />
                   );
                 })}
-                
+
                 {(!chainData?.chain || chainData.chain.length === 0) && (
                   <TableRow>
                     <TableCell colSpan={showGreeks ? 10 : showOi ? 8 : 6} align="center" sx={{ py: 4, color: COLORS.textSecondary }}>
@@ -807,43 +806,43 @@ export default function SlidingOptionsChainPanel({
           </TableContainer>
         )}
       </Box>
-      
+
       {/* Footer */}
-      <Box sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: 'space-between',
         p: 1.5,
         borderTop: `1px solid ${COLORS.border}`,
         bgcolor: COLORS.cardBg,
       }}>
-        <Button 
+        <Button
           variant="outlined"
           size="small"
           onClick={handleClearAll}
           disabled={proposedTrades.length === 0}
-          sx={{ 
-            color: COLORS.textSecondary, 
+          sx={{
+            color: COLORS.textSecondary,
             borderColor: COLORS.border,
             '&:hover': { borderColor: COLORS.textSecondary },
           }}
         >
           Clear All
         </Button>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {proposedTrades.length > 0 && (
-            <Chip 
+            <Chip
               label={`${proposedTrades.length} selected`}
               size="small"
               sx={{ bgcolor: COLORS.primary, color: '#fff' }}
             />
           )}
-          <Button 
+          <Button
             variant="contained"
             size="small"
             onClick={onClose}
-            sx={{ 
+            sx={{
               bgcolor: COLORS.primary,
               '&:hover': { bgcolor: '#2563eb' },
             }}
@@ -890,10 +889,10 @@ export default function SlidingOptionsChainPanel({
       }}
     >
       {panelContent}
-      
+
       {/* Collapse/Expand Handle */}
-      <Box 
-        sx={{ 
+      <Box
+        sx={{
           position: 'absolute',
           top: '50%',
           right: -24,
@@ -911,8 +910,8 @@ export default function SlidingOptionsChainPanel({
         }}
         onClick={onClose}
       >
-        <Typography 
-          sx={{ 
+        <Typography
+          sx={{
             writingMode: 'vertical-rl',
             textOrientation: 'mixed',
             fontSize: '0.7rem',

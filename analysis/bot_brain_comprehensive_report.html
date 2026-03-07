@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Bot Brain Comprehensive Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000000;
+            padding: 20px;
+            color: #e5e7eb;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #1a1a1a;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #0a0a0a;
+        }
+        
+        .stat-card {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            text-align: center;
+            border: 1px solid #333;
+        }
+        
+        .stat-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .stat-card .label {
+            color: #9ca3af;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .value.good { color: #10b981; }
+        .value.warn { color: #f59e0b; }
+        .value.danger { color: #ef4444; }
+        
+        .section {
+            padding: 30px;
+            border-bottom: 1px solid #333;
+            background: #1a1a1a;
+        }
+        
+        .section h2 {
+            color: #60a5fa;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            border-left: 5px solid #3b82f6;
+            padding-left: 15px;
+        }
+        
+        .scenario-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .scenario-card {
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            background: #0a0a0a;
+        }
+        
+        .scenario-card.coded {
+            border-color: #10b981;
+            background: #064e3b;
+        }
+        
+        .scenario-card.missing {
+            border-color: #ef4444;
+            background: #7f1d1d;
+        }
+        
+        .scenario-card.missing.critical {
+            border-color: #dc2626;
+            background: #991b1b;
+            border-width: 3px;
+        }
+        
+        .scenario-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .scenario-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #f3f4f6;
+        }
+        
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .badge.coded { background: #10b981; color: white; }
+        .badge.missing { background: #ef4444; color: white; }
+        .badge.critical { background: #dc2626; color: white; }
+        .badge.high { background: #f59e0b; color: white; }
+        .badge.medium { background: #3b82f6; color: white; }
+        .badge.low { background: #6b7280; color: white; }
+        
+        .handlers {
+            margin-top: 10px;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 5px;
+            font-size: 0.9em;
+            border: 1px solid #333;
+        }
+        
+        .handlers li {
+            margin: 5px 0;
+            padding-left: 20px;
+            position: relative;
+            color: #d1d5db;
+        }
+        
+        .handlers li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #60a5fa;
+        }
+        
+        .missing-coverage {
+            margin-top: 10px;
+            padding: 10px;
+            background: #7f1d1d;
+            border-left: 3px solid #ef4444;
+            font-size: 0.9em;
+            color: #fca5a5;
+        }
+        
+        .decision-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .decision-table th {
+            background: #1e3a8a;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        .decision-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #333;
+            color: #d1d5db;
+        }
+        
+        .decision-table tr:hover {
+            background: #262626;
+        }
+        
+        .category-tag {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .cat-order { background: #dbeafe; color: #1e40af; }
+        .cat-position { background: #d1fae5; color: #065f46; }
+        .cat-volatility { background: #fef3c7; color: #92400e; }
+        .cat-risk { background: #fee2e2; color: #991b1b; }
+        .cat-network { background: #e0e7ff; color: #3730a3; }
+        .cat-error { background: #fecaca; color: #7f1d1d; }
+        .cat-grid { background: #ddd6fe; color: #5b21b6; }
+        .cat-other { background: #e5e7eb; color: #374151; }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #262626;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+            border: 1px solid #333;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            transition: width 1s ease;
+        }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 5px solid;
+        }
+        
+        .alert.danger {
+            background: #7f1d1d;
+            border-color: #dc2626;
+            color: #fca5a5;
+        }
+        
+        .alert.warning {
+            background: #78350f;
+            border-color: #f59e0b;
+            color: #fcd34d;
+        }
+        
+        .alert.success {
+            background: #064e3b;
+            border-color: #10b981;
+            color: #6ee7b7;
+        }
+        
+        .timestamp {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+            font-size: 0.9em;
+            background: #0a0a0a;
+            border-top: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Bot Brain Comprehensive Analysis</h1>
+            <p>Complete Decision Path Mapping & Scenario Coverage Report</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Coverage</div>
+                <div class="value good">106.1%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Scenarios Coded</div>
+                <div class="value good">70/70</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Critical Gaps</div>
+                <div class="value good">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">High Priority Gaps</div>
+                <div class="value good">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Decision Points</div>
+                <div class="value">651</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Functions Analyzed</div>
+                <div class="value">301</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Overall Coverage</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 106.06060606060606%">
+                    70 / 70 Scenarios
+                </div>
+            </div>
+            
+            
+            
+            
+            
+            <div class="alert success">
+                <strong>✅ EXCELLENT COVERAGE!</strong><br>
+                Bot has comprehensive scenario coverage. Continue monitoring for new edge cases.
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🎯 Scenario Coverage Matrix</h2>
+            <p style="margin-bottom: 20px;">All possible trading scenarios and their implementation status:</p>
+            
+            <div class="scenario-grid">
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Drawdown Protection</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Drawdown protective mode</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py:unknown (line 413)</li><li>bot/safety/blocker_tracker.py:_check_capital_protection (line 326)</li><li>bot/capital/equity_tracker.py:check_drawdown_limit (line 215)</li><li>bot/guardian/guardian_bot.py:unknown (line 706)</li><li>bot/guardian/guardian_bot.py:unknown (line 709)</li>
+                            <li>... and 3 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Duplicate Order Prevention</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Duplicate order prevention</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/handlers/long_handler.py:handle_buy_fill (line 123)</li><li>bot/strategy/handlers/long_handler.py:handle_buy_fill (line 125)</li><li>bot/strategy/handlers/long_handler.py:unknown (line 142)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (line 170)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (line 173)</li>
+                            <li>... and 20 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Emergency Stop</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Emergency stop procedure</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Insufficient Margin</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Insufficient margin errors</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/circuit_breaker.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Margin Check</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Margin/capital adequacy</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Protective Mode Enter</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Enter protective mode</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py:unknown (line 413)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Protective Mode Exit</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Exit protective mode</div>
+                    <div><span class="badge critical">CRITICAL</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/capital/equity_tracker.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Buy Order Placement</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">BUY order placement logic</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:seed_missed_grid_levels (line 320)</li><li>bot/strategy/gridbot.py:_on_price_update (line 383)</li><li>bot/strategy/gridbot.py:unknown (line 829)</li><li>bot/strategy/gridbot.py:unknown (line 853)</li><li>bot/strategy/gridbot.py:unknown (line 879)</li>
+                            <li>... and 15 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Concurrent Fills</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Multiple simultaneous fills</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/fill_detector.py:start_processing (Start sequential fill processor thread
+
+✅ NOV 8: W)</li><li>bot/strategy/modules/fill_detector.py:stop_processing (Gracefully stop fill processor
+
+Processes remainin)</li><li>bot/strategy/modules/fill_detector.py:_process_fill_queue (Worker thread - processes fills sequentially (FIFO)</li><li>bot/strategy/modules/fill_detector.py:_process_single_fill (Process one fill event (called by worker thread)
+
+)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Duplicate Fill Prevention</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Duplicate fill detection</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py:_record_order_placement (Record order ID as recently placed
+
+✅ FIX NOV 8: T)</li><li>bot/strategy/modules/fill_detector.py:__init__ (Initialize fill detector with processing queue
+
+Ar)</li><li>bot/strategy/modules/fill_detector.py:handle_robust_fill (Handle fill detection from robust fill detection s)</li><li>bot/strategy/modules/fill_detector.py:get_processed_count (Get number of fills processed (dedup cache size)
+
+)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Fill Confirmation</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Fill confirmation (WebSocket primary + REST backup)</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/fill_detector.py:process_websocket_fill (Queue fill detected via WebSocket for sequential p)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Full Fill</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Complete fill processing</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Long Buy Fill</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">LONG mode: BUY order fill handling</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_on_fill_processed (line 486)</li><li>bot/strategy/handlers/long_handler.py:handle_buy_fill (Handle BUY order fill (entry order for LONG positi)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Long Tp Fill</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">LONG mode: TP fill and position close</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_on_fill_processed (line 500)</li><li>bot/strategy/gridbot.py:_on_fill_processed (line 502)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (Handle TP fill (SELL order closes LONG position)
+
+)</li><li>bot/strategy/handlers/short_handler.py:handle_tp_fill_short (Handle TP fill for SHORT position (BUY order close)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Mutex Lock</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">State lock protection</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/position_manager.py:get_pending_retries (line 355)</li><li>bot/strategy/modules/order_manager.py:__init__ (line 88)</li><li>bot/strategy/modules/order_manager.py:safe_place_tp (line 720)</li><li>bot/strategy/modules/position_manager.py:state_lock (Expose state lock for other modules
+
+Other modules)</li><li>bot/strategy/modules/fill_detector.py:__init__ (Initialize fill detector with processing queue
+
+Ar)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Order Throttle</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Order placement throttling</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/handlers/long_handler.py:handle_buy_fill (line 123)</li><li>bot/strategy/handlers/long_handler.py:handle_buy_fill (line 125)</li><li>bot/strategy/handlers/long_handler.py:unknown (line 142)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (line 170)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (line 173)</li>
+                            <li>... and 10 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Orphaned Position</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Orphaned position detection</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_reconcile_orphaned_orders (line 557)</li><li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1160)</li><li>bot/strategy/gridbot.py:_cleanup_short_mode (line 1227)</li><li>bot/strategy/modules/reconciliation.py:detect_orphaned_positions (line 423)</li><li>bot/strategy/modules/reconciliation.py:fix_orphaned_positions (line 445)</li>
+                            <li>... and 2 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Partial Fill</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Partial fill processing</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/fill_detector.py:stop_processing (line 164)</li><li>bot/strategy/gridbot.py:_on_fill_processed (Handle processed fill
+
+✅ NOV 8: PARTIAL FILL SUPPO)</li><li>bot/strategy/handlers/long_handler.py:handle_buy_fill (Handle BUY order fill (entry order for LONG positi)</li><li>bot/strategy/handlers/short_handler.py:handle_sell_fill (Handle SELL order fill (entry order for SHORT posi)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Position Limit Check</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Max positions limit enforcement</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_send_shutdown_notification (line 273)</li><li>bot/strategy/gridbot.py:_on_price_update (line 379)</li><li>bot/strategy/gridbot.py:_on_price_update (line 398)</li><li>bot/strategy/gridbot.py:unknown (line 1054)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (line 168)</li>
+                            <li>... and 7 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Position Reconciliation</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Position sync with exchange</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_heartbeat (line 950)</li><li>bot/strategy/gridbot.py:_reconcile_orphaned_orders (Reconcile orphaned bot orders on startup
+
+Queries )</li><li>bot/strategy/modules/reconciliation.py:reconcile_positions_with_exchange (Reconcile local positions with exchange reality
+
+T)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Position Tracking</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Active position tracking</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_send_shutdown_notification (line 273)</li><li>bot/strategy/gridbot.py:_on_price_update (line 373)</li><li>bot/strategy/gridbot.py:_on_price_update (line 375)</li><li>bot/strategy/gridbot.py:_on_price_update (line 379)</li><li>bot/strategy/gridbot.py:_on_price_update (line 385)</li>
+                            <li>... and 82 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Sell Order Placement</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">SELL order placement logic</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:seed_missed_grid_levels (line 332)</li><li>bot/strategy/gridbot.py:_on_price_update (line 402)</li><li>bot/strategy/gridbot.py:_cleanup_short_mode (line 1227)</li><li>bot/strategy/handlers/short_handler.py:handle_sell_fill (line 128)</li><li>bot/strategy/handlers/short_handler.py:unknown (line 142)</li>
+                            <li>... and 12 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Short Sell Fill</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">SHORT mode: SELL order fill handling</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_on_fill_processed (line 493)</li><li>bot/strategy/handlers/short_handler.py:handle_sell_fill (Handle SELL order fill (entry order for SHORT posi)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Short Tp Fill</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">SHORT mode: TP fill and position close</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_on_fill_processed (line 500)</li><li>bot/strategy/gridbot.py:_on_fill_processed (line 502)</li><li>bot/strategy/handlers/short_handler.py:handle_tp_fill_short (Handle TP fill for SHORT position (BUY order close)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Tp Order Placement</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Take Profit order placement</div>
+                    <div><span class="badge high">HIGH</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_heartbeat (line 939)</li><li>bot/strategy/modules/order_manager.py:safe_place_tp (line 759)</li><li>bot/strategy/modules/order_manager.py:place_tp_with_retry (line 848)</li><li>bot/strategy/modules/order_manager.py:cancel_all_orders_bulk (line 1155)</li><li>bot/strategy/modules/reconciliation.py:fix_orphaned_positions (line 445)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Api Error</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">API error handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Api Timeout</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">API timeout handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1107)</li><li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1128)</li><li>bot/strategy/modules/order_manager.py:verify_order_cancelled (line 875)</li><li>bot/strategy/modules/fill_detector.py:stop_processing (line 157)</li><li>bot/safety/circuit_breaker.py:call (line 146)</li>
+                            <li>... and 6 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Blocker Active</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Order blocker activation</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Blocker Release</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Order blocker release after cooldown</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>N/A: Blockers are detection-only - user must resolve root cause (enable flags, reduce margin, etc). No auto-release.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Circuit Breaker Halfopen</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Circuit breaker testing</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/circuit_breaker.py:call (line 144)</li><li>bot/safety/circuit_breaker.py:call (line 146)</li><li>bot/safety/circuit_breaker.py:_on_success (line 179)</li><li>bot/safety/circuit_breaker.py:get_circuit_breaker (Get or create a circuit breaker from the global re)</li><li>bot/safety/circuit_breaker.py:_transition_to_half_open (Transition to HALF_OPEN state)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Circuit Breaker Open</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Circuit breaker triggered</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/circuit_breaker.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Config Validation</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Configuration validation and guards</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/config_guard.py:_detect_risky_changes (Detect risky config changes.
+
+Returns:
+    List of)</li><li>bot/safety/config_guard.py:check_config_changes (Check for risky config changes.
+
+Args:
+    current)</li><li>bot/safety/config_guard.py:check_confirmation (Check if pending change has been confirmed or time)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Equity Floor</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Equity floor protection</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Exchange Error</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Exchange-side errors</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Exposure Limit</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Position exposure limit enforcement</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py:unknown (line 18)</li><li>bot/safety/gatekeeper.py:place_buy_order (line 490)</li><li>bot/safety/exposure_limiter.py:can_place_order (line 88)</li><li>bot/safety/gatekeeper.py:can_place_orders (Check if orders can be placed right now.
+
+Returns )</li><li>bot/capital/pending_budget.py:can_place_order (Check if a new order can be placed without exceedi)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Grid Boundary</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Grid boundary enforcement</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/grid_calculator.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Grid Calculation</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Grid level calculation</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Grid Seeding</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Initial grid seeding</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Invalid Price</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Invalid price errors</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Iv Spike</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Implied Volatility spike detection</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/volatility_monitor.py:_calculate_volatility (line 212)</li><li>bot/volatility/iv_rv_tracker.py:_send_notification (line 615)</li><li>bot/volatility/iv_rv_tracker.py:can_trade (line 675)</li><li>bot/volatility/iv_rv_tracker.py:_build_status_dict (line 689)</li><li>bot/safety/blocker_tracker.py:_check_safety_gatekeeper (Check Safety Gatekeeper blockers)</li>
+                            <li>... and 1 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Long Next Grid</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">LONG mode: Next grid BUY placement</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/handlers/long_handler.py:unknown (line 137)</li><li>bot/strategy/handlers/long_handler.py:handle_tp_fill (line 168)</li><li>bot/strategy/modules/grid_calculator.py:compute_next_level_down (Compute next grid level below current price (LONG )</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Long Partial Buy</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">LONG mode: Partial BUY fill processing</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Long Tp Placement</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">LONG mode: TP (SELL) placement</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_heartbeat (line 939)</li><li>bot/strategy/handlers/long_handler.py:handle_buy_fill (line 84)</li><li>bot/strategy/handlers/short_handler.py:handle_sell_fill (line 86)</li><li>bot/strategy/modules/order_manager.py:place_tp_with_retry (line 848)</li><li>bot/strategy/modules/reconciliation.py:fix_orphaned_positions (line 445)</li>
+                            <li>... and 3 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Loss Limit Daily</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Daily loss limit enforcement</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>N/A: Daily loss limits not needed - Guardian enforces overall position protection (more conservative)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Loss Limit Total</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Total loss limit enforcement</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/guardian/risk_enforcer.py:check_loss_threshold (line 107)</li><li>bot/guardian/risk_enforcer.py:check_loss_threshold (line 108)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Missing Tp</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Missing TP order detection</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Network Error</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Network connectivity errors</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/circuit_breaker.py:_on_success (line 185)</li><li>bot/safety/circuit_breaker.py:_on_failure (line 222)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Order Cancellation</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Order cancellation handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1107)</li><li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1112)</li><li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1119)</li><li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1128)</li><li>bot/strategy/gridbot.py:_cleanup_long_mode (line 1132)</li>
+                            <li>... and 34 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Order Confirmation</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Order confirmation before placement</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Order Rejected</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Order rejection handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/order_manager.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Pause Resume</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Bot pause/resume</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/volatility/iv_rv_tracker.py:_check_safety (line 591)</li><li>bot/strategy/modules/volatility_handler.py:execute_opportunistic_recovery (OPPORTUNISTIC RECOVERY ENGINE
+
+Extracted from Line)</li><li>bot/strategy/modules/volatility_handler.py:resume_normal_grid (After opportunistic recovery, resume normal grid o)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>N/A: Bot uses stop/start model (EXECUTE_ORDERS flag) not pause/resume. Trading controlled by safety flags.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Pending Budget</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Pending order budget management</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/gatekeeper.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Price Gap</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Large price gap handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/grid_calculator.py:compute_next_buy_level (line 114)</li><li>bot/strategy/modules/grid_calculator.py:compute_next_sell_level (line 179)</li><li>bot/strategy/modules/grid_calculator.py:find_nearest_grid_below (Find nearest grid level strictly below given price)</li><li>bot/strategy/modules/grid_calculator.py:find_nearest_grid_above (Find nearest grid level strictly above given price)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Price Stale</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Stale price detection</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Price Update</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Price update processing</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Rate Limiting</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">API rate limit handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Rv Spike</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Realized Volatility spike detection</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/safety/volatility_monitor.py:_update_zone (line 245)</li><li>bot/safety/volatility_monitor.py:should_halt_trading (line 398)</li><li>bot/volatility/iv_rv_tracker.py:can_trade (line 675)</li><li>bot/volatility/iv_rv_tracker.py:_build_status_dict (line 689)</li><li>bot/safety/blocker_tracker.py:_check_safety_gatekeeper (Check Safety Gatekeeper blockers)</li>
+                            <li>... and 1 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Short Next Grid</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">SHORT mode: Next grid SELL placement</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/handlers/short_handler.py:unknown (line 140)</li><li>bot/strategy/handlers/short_handler.py:handle_tp_fill_short (line 220)</li><li>bot/strategy/modules/grid_calculator.py:compute_next_level_up (Compute next grid level above current price (SHORT)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Short Partial Sell</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">SHORT mode: Partial SELL fill processing</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Short Tp Placement</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">SHORT mode: TP (BUY) placement</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_heartbeat (line 939)</li><li>bot/strategy/handlers/long_handler.py:handle_buy_fill (line 84)</li><li>bot/strategy/handlers/short_handler.py:handle_sell_fill (line 86)</li><li>bot/strategy/modules/order_manager.py:place_tp_with_retry (line 848)</li><li>bot/strategy/modules/reconciliation.py:fix_orphaned_positions (line 445)</li>
+                            <li>... and 2 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Shutdown</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Bot shutdown cleanup</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:unknown (line 896)</li><li>bot/strategy/gridbot.py:_emergency_cleanup (line 1079)</li><li>bot/guardian/guardian_bot.py:run (line 851)</li><li>bot/strategy/gridbot.py:_send_shutdown_notification (Send Telegram notification when bot stops)</li><li>bot/strategy/gridbot.py:_handle_shutdown_signal (Handle shutdown signals)</li>
+                            <li>... and 5 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Stale Tp</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Stale TP order handling</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>N/A: TP orders are immutable by design - never modified after placement</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Startup</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Bot startup initialization</div>
+                    <div><span class="badge low">LOW</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:run (line 798)</li><li>bot/strategy/gridbot.py:unknown (line 843)</li><li>bot/strategy/gridbot.py:unknown (line 869)</li><li>bot/strategy/gridbot.py:_send_startup_notification (Send Telegram notification when bot starts)</li><li>bot/strategy/gridbot.py:_reconcile_orphaned_orders (Reconcile orphaned bot orders on startup
+
+Queries )</li>
+                            <li>... and 6 more</li>
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Volatility Prediction</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Predictive volatility analysis</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/volatility/predictive_engine.py:get_early_warning (line 238)</li><li>bot/volatility/predictive_engine.py:get_early_warning (line 241)</li><li>bot/volatility/predictive_engine.py:get_predictor (line 269)</li><li>bot/strategy/modules/fill_detector.py:_process_fill_queue (Worker thread - processes fills sequentially (FIFO)</li><li>bot/volatility/predictive_engine.py:predict_spike (Predict if volatility will spike in next 5-10 minu)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Volatility Recovery</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Recovery from unsafe volatility</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Volatility Safe</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Safe volatility conditions</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Volatility Unsafe</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">Unsafe volatility handling</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Websocket Connected</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">WebSocket connection active</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py (content match)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    <div class="missing-coverage">
+                        <strong>⚠️ Missing:</strong>
+                        <ul>
+                            <li>Single point of failure - consider adding backup logic</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Websocket Disconnected</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">WebSocket disconnection</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/gridbot.py:_heartbeat (line 950)</li><li>bot/strategy/gridbot.py:_reconcile_orphaned_orders (Reconcile orphaned bot orders on startup
+
+Queries )</li><li>bot/strategy/modules/reconciliation.py:sync_on_reconnect (✅ FIX #12: Sync open orders on WebSocket reconnect)</li><li>bot/strategy/modules/reconciliation.py:reconcile_positions_with_exchange (Reconcile local positions with exchange reality
+
+T)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+                <div class="scenario-card coded">
+                    <div class="scenario-header">
+                        <div class="scenario-name">Websocket Reconnect</div>
+                        <span class="badge coded">✅ CODED</span>
+                    </div>
+                    <div style="margin: 10px 0; color: #666; font-size: 0.9em;">WebSocket reconnection</div>
+                    <div><span class="badge medium">MEDIUM</span></div>
+                    
+                    <div class="handlers">
+                        <strong>Handlers:</strong>
+                        <ul>
+                            <li>bot/strategy/modules/reconciliation.py:sync_on_reconnect (✅ FIX #12: Sync open orders on WebSocket reconnect)</li>
+                            
+                        </ul>
+                    </div>
+                    
+                    
+                </div>
+
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔀 Decision Points by Category</h2>
+            <table class="decision-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Decision Points</th>
+                        <th>Coverage</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td><span class="category-tag cat-other">OTHER</span></td>
+                        <td>363 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                    <tr>
+                        <td><span class="category-tag cat-order">ORDER</span></td>
+                        <td>112 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                    <tr>
+                        <td><span class="category-tag cat-grid">GRID</span></td>
+                        <td>85 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                    <tr>
+                        <td><span class="category-tag cat-volatility">VOLATILITY</span></td>
+                        <td>60 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                    <tr>
+                        <td><span class="category-tag cat-position">POSITION</span></td>
+                        <td>18 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                    <tr>
+                        <td><span class="category-tag cat-risk">RISK</span></td>
+                        <td>7 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                    <tr>
+                        <td><span class="category-tag cat-error">ERROR</span></td>
+                        <td>6 decisions</td>
+                        <td>✅ Well covered</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>📋 Top Complex Functions</h2>
+            <p style="margin-bottom: 15px;">Functions with highest decision complexity (need most attention):</p>
+            <table class="decision-table">
+                <thead>
+                    <tr>
+                        <th>Function</th>
+                        <th>File</th>
+                        <th>Decisions</th>
+                        <th>Loops</th>
+                        <th>Complexity</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td><strong>can_place_orders</strong></td>
+                        <td>gatekeeper.py</td>
+                        <td>28</td>
+                        <td>0</td>
+                        <td><strong>28</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>monitoring_cycle</strong></td>
+                        <td>guardian_bot.py</td>
+                        <td>25</td>
+                        <td>0</td>
+                        <td><strong>25</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>run</strong></td>
+                        <td>gridbot.py</td>
+                        <td>20</td>
+                        <td>2</td>
+                        <td><strong>24</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>_heartbeat</strong></td>
+                        <td>gridbot.py</td>
+                        <td>19</td>
+                        <td>1</td>
+                        <td><strong>21</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>_fetch_iv_from_delta</strong></td>
+                        <td>iv_rv_tracker.py</td>
+                        <td>14</td>
+                        <td>2</td>
+                        <td><strong>18</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>place_buy_order</strong></td>
+                        <td>order_manager.py</td>
+                        <td>16</td>
+                        <td>0</td>
+                        <td><strong>16</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>place_sell_order</strong></td>
+                        <td>order_manager.py</td>
+                        <td>14</td>
+                        <td>0</td>
+                        <td><strong>14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>cancel_order</strong></td>
+                        <td>order_manager.py</td>
+                        <td>12</td>
+                        <td>1</td>
+                        <td><strong>14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>reconcile_positions_with_exchange</strong></td>
+                        <td>reconciliation.py</td>
+                        <td>8</td>
+                        <td>3</td>
+                        <td><strong>14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>ensure_single_correct_pending_buy</strong></td>
+                        <td>reconciliation.py</td>
+                        <td>14</td>
+                        <td>0</td>
+                        <td><strong>14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>ensure_single_correct_pending_sell</strong></td>
+                        <td>reconciliation.py</td>
+                        <td>14</td>
+                        <td>0</td>
+                        <td><strong>14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>_cleanup_long_mode</strong></td>
+                        <td>gridbot.py</td>
+                        <td>9</td>
+                        <td>2</td>
+                        <td><strong>13</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>handle_sell_fill</strong></td>
+                        <td>short_handler.py</td>
+                        <td>13</td>
+                        <td>0</td>
+                        <td><strong>13</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>validate</strong></td>
+                        <td>loss_limits.py</td>
+                        <td>9</td>
+                        <td>2</td>
+                        <td><strong>13</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>_reconcile_orphaned_orders</strong></td>
+                        <td>gridbot.py</td>
+                        <td>7</td>
+                        <td>2</td>
+                        <td><strong>11</strong></td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>🛡️ Error Handling Coverage</h2>
+            <p>Exception types being handled:</p>
+            <div style="margin-top: 15px;">
+
+                <div style="margin: 10px 0; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                    <strong>CircuitBreakerOpen</strong> - handled in 2 file(s)
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        circuit_breaker.py
+                    </div>
+                </div>
+
+                <div style="margin: 10px 0; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                    <strong>Exception</strong> - handled in 134 file(s)
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        equity_tracker.py, gridbot.py, order_manager.py, position_manager.py, reconciliation.py, equity_floor.py, guardian_bot.py, blocker_tracker.py, circuit_breaker.py, volatility_monitor.py, short_handler.py, iv_rv_tracker.py, order_confirmation_guard.py, volatility_handler.py, gatekeeper.py, fill_detector.py, config_guard.py, pending_budget.py, long_handler.py, predictive_engine.py
+                    </div>
+                </div>
+
+                <div style="margin: 10px 0; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                    <strong>ImportError</strong> - handled in 6 file(s)
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        iv_rv_tracker.py, guardian_bot.py
+                    </div>
+                </div>
+
+                <div style="margin: 10px 0; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                    <strong>KeyboardInterrupt</strong> - handled in 2 file(s)
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        gridbot.py, guardian_bot.py
+                    </div>
+                </div>
+
+                <div style="margin: 10px 0; padding: 10px; background: #f9fafb; border-radius: 5px;">
+                    <strong>ValueError</strong> - handled in 1 file(s)
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        loss_limits.py
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>💡 Recommendations</h2>
+            <div style="line-height: 1.8;">
+
+                <div class="alert success">
+                    <strong>✅ EXCELLENT:</strong> Your bot has comprehensive scenario coverage!<br>
+                    Continue monitoring for new edge cases as you discover them.
+                </div>
+
+                <div class="alert warning">
+                    <strong>📌 GENERAL RECOMMENDATIONS:</strong>
+                    <ul style="margin-top: 10px;">
+                        <li><strong>Add logging:</strong> Every decision point should have log.info() for debugging</li>
+                        <li><strong>Test edge cases:</strong> Use chaos testing for network failures, API errors</li>
+                        <li><strong>Add metrics:</strong> Track how often each decision path is taken</li>
+                        <li><strong>Document assumptions:</strong> Add comments explaining why decisions are made</li>
+                        <li><strong>Regular reviews:</strong> Re-run this analysis monthly to catch new scenarios</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="timestamp">
+            Generated: 2025-11-08 09:49:49<br>
+            Analysis Tool: Comprehensive Bot Brain Analyzer v1.0
+        </div>
+    </div>
+</body>
+</html>

@@ -29,6 +29,8 @@ try:
 except ImportError:
     human_log = None
 
+from webui.backend.sealed import sealed
+
 # Saga imports
 from bot.strategy.sagas.fill_processing_saga import (
     create_buy_fill_saga,
@@ -105,9 +107,11 @@ class FillProcessor:
     # P5.2: Fill Deduplication Helpers
     # ========================================================================
 
+    @sealed
     def is_fill_seen(self, fill_id: str) -> bool:
         return fill_id in self._seen_fill_ids
 
+    @sealed
     def mark_fill_seen(self, fill_id: str) -> None:
         self._seen_fill_ids.add(fill_id)
         self._fill_id_timestamps.append((fill_id, time.time()))
@@ -139,6 +143,7 @@ class FillProcessor:
     # P5.3: Next Grid Level Calculator
     # ========================================================================
 
+    @sealed
     def calculate_next_grid_level(self, side: str, current_price: float) -> Optional[float]:
         """
         Calculate the next grid level for order placement.

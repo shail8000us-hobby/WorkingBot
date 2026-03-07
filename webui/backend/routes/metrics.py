@@ -199,10 +199,9 @@ def get_errors_filtered():
         
         if not ERROR_AVAILABLE:
             return jsonify({
-                'success': False,
-                'error': 'Error Intelligence System not available',
+                'success': True,
                 'errors': []
-            }), 503
+            }), 200
         
         # Get query parameters
         status_filters = request.args.getlist('status')

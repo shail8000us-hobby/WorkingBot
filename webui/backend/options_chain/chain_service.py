@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from config.loader import get_config, get_api_credentials
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -135,11 +136,15 @@ class OptionsChainService:
             log.error(f"API error: {e}")
             raise
     
+    @sealed
     def get_expirations(self, underlying: str = 'BTC') -> List[str]:
         """
         Get list of available expiry dates for options.
         Filters out contracts that have expired (expired at 5:30 PM IST).
-        
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+
         Returns:
             List of expiry dates in DDMMYYYY format (only active contracts)
         """
@@ -230,14 +235,18 @@ class OptionsChainService:
         
         return option_products
     
+    @sealed
     def get_chain_data(self, underlying: str, expiry: str) -> Dict:
         """
         Get full options chain data for specific underlying and expiry.
-        
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+
         Args:
             underlying: BTC or ETH
             expiry: Expiry date in DDMMYYYY format
-            
+
         Returns:
             Chain data with spot price, ATM strike, and all strikes
         """

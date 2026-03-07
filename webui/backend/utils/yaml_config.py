@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
 
+from webui.backend.sealed import sealed
+
 log = logging.getLogger("webui_yaml_config")
 
 # Base directory
@@ -84,6 +86,7 @@ def get_config_value(yaml_path: str, env_var: str = None, default: Any = None) -
     return default
 
 
+@sealed
 def update_yaml_config(updates: Dict[str, Any]) -> bool:
     """
     Update YAML configuration file

@@ -5,6 +5,7 @@ import sqlite3
 import os
 from datetime import datetime
 import uuid
+from webui.backend.sealed import sealed
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'alerts.db')
 
@@ -42,6 +43,33 @@ def init_alerts_db():
         cursor.execute('SELECT expiry_date FROM price_alerts LIMIT 1')
     except sqlite3.OperationalError:
         cursor.execute('ALTER TABLE price_alerts ADD COLUMN expiry_date TEXT')
+
+    # Migration: F5 — Add action columns for conditional execution
+    try:
+        cursor.execute('SELECT action_type FROM price_alerts LIMIT 1')
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE price_alerts ADD COLUMN action_type TEXT DEFAULT 'none'")
+    try:
+        cursor.execute('SELECT action_config FROM price_alerts LIMIT 1')
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE price_alerts ADD COLUMN action_config TEXT DEFAULT '{}'")
+
+    # Greek alerts table (F5 — trigger on Greek threshold crossing)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS greek_alerts (
+            id TEXT PRIMARY KEY,
+            symbol TEXT NOT NULL,
+            metric TEXT NOT NULL CHECK (metric IN ('delta', 'theta', 'gamma', 'vega', 'portfolio_delta')),
+            threshold REAL NOT NULL,
+            direction TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+            action_type TEXT DEFAULT 'notify',
+            action_config TEXT DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'triggered', 'cancelled')),
+            note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            triggered_at TIMESTAMP
+        )
+    ''')
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS alert_settings (
@@ -87,6 +115,7 @@ class AlertsDB:
     """Database operations for price alerts."""
     
     @staticmethod
+    @sealed
     def create_alert(target_price: float, direction: str, note: str = None, 
                      expected_pnl_expiry: float = None, expected_pnl_target: float = None,
                      symbol: str = 'BTCUSD', is_repeating: bool = False,
@@ -115,6 +144,7 @@ class AlertsDB:
         return dict(row)
     
     @staticmethod
+    @sealed
     def get_all_alerts(status: str = None, expiry_date: str = None) -> list:
         """Get all alerts, optionally filtered by status and/or expiry_date."""
         conn = get_db_connection()
@@ -179,6 +209,7 @@ class AlertsDB:
         return dict(row) if row else None
     
     @staticmethod
+    @sealed
     def trigger_alert(alert_id: str, price_at_trigger: float) -> dict:
         """Mark an alert as triggered."""
         now = datetime.utcnow().isoformat()
@@ -221,6 +252,7 @@ class AlertsDB:
         return dict(row) if row else None
     
     @staticmethod
+    @sealed
     def delete_alert(alert_id: str) -> bool:
         """Delete an alert."""
         conn = get_db_connection()
@@ -312,6 +344,65 @@ class AlertsDB:
         conn.close()
         
         return dict(row) if row else {}
+
+
+# ---------------------------------------------------------------------------
+# F5: Greek alert CRUD (non-sealed — new table)
+# ---------------------------------------------------------------------------
+
+def create_greek_alert(symbol: str, metric: str, threshold: float, direction: str,
+                       action_type: str = 'notify', action_config: str = '{}', note: str = None) -> dict:
+    """Create a Greek-based alert."""
+    import uuid
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    alert_id = str(uuid.uuid4())[:8]
+    cursor.execute(
+        '''INSERT INTO greek_alerts (id, symbol, metric, threshold, direction, action_type, action_config, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+        (alert_id, symbol, metric, threshold, direction, action_type, action_config, note)
+    )
+    conn.commit()
+    cursor.execute('SELECT * FROM greek_alerts WHERE id = ?', (alert_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row)
+
+
+def get_greek_alerts(status: str = None) -> list:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if status:
+        cursor.execute('SELECT * FROM greek_alerts WHERE status = ? ORDER BY created_at DESC', (status,))
+    else:
+        cursor.execute('SELECT * FROM greek_alerts ORDER BY created_at DESC')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def trigger_greek_alert(alert_id: str) -> bool:
+    from datetime import datetime
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE greek_alerts SET status='triggered', triggered_at=? WHERE id=?",
+        (datetime.utcnow().isoformat(), alert_id)
+    )
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+
+def cancel_greek_alert(alert_id: str) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE greek_alerts SET status='cancelled' WHERE id=?", (alert_id,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
 
 
 # Initialize database on import

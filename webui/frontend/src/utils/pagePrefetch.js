@@ -34,6 +34,7 @@ const pageImports = {
   monitoring: () => import('../pages/MonitoringPage'),
   config: () => import('../pages/ConfigPage'),
   dashboard: () => import('../pages/DashboardPage'),
+  portfolio_margin: () => import('../pages/PortfolioMarginPage'),
 };
 
 // Track what's already been prefetched to avoid duplicate calls

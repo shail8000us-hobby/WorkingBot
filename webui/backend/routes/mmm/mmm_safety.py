@@ -57,6 +57,7 @@ class MMMSafety:
         events = []
 
         events.extend(self.check_position_cap(session))
+        events.extend(self.check_total_exposure(session))   # Split Ledger
         events.extend(self.check_max_adjustments(session))
         events.extend(self.check_max_loss(session))
         events.extend(self.check_whipsaw(session))
@@ -85,7 +86,7 @@ class MMMSafety:
 
         for side_key in ['ce', 'pe']:
             side_state = session.get(side_key, {})
-            total = side_state.get('total_lots', 0)
+            total = side_state.get('active_lots', 0)  # Split Ledger: cap on active lots only
             ratio = total / max_lots if max_lots > 0 else 0
 
             if total >= max_lots:
@@ -323,6 +324,58 @@ class MMMSafety:
                     'resume_at': resume_at,
                 },
             })
+
+        return events
+
+    def check_total_exposure(self, session: Dict) -> List[Dict]:
+        """
+        Split Ledger: Warn when active + frozen lots approach max_total_exposure
+        ceiling. action='warn' only — the engine handles the hard block.
+        Does NOT fire 'stop_adjustments' to avoid bypassing the engine path.
+        """
+        events = []
+        params = session.get('params', {})
+        max_lots = params.get('max_lots_per_side', 100)
+        max_total = params.get('max_total_exposure', 0)
+        if max_total <= 0:
+            max_total = max_lots * 2
+
+        for side_key in ['ce', 'pe']:
+            side_state = session.get(side_key, {})
+            total = side_state.get('total_lots', 0)
+            frozen = side_state.get('frozen_total_lots', 0)
+            active = side_state.get('active_lots', 0)
+            ratio = total / max_total if max_total > 0 else 0
+
+            if total >= max_total:
+                events.append({
+                    'type': 'total_exposure',
+                    'level': 'alert',
+                    'message': (
+                        f"{side_key.upper()} TOTAL EXPOSURE CEILING: "
+                        f"{total}/{max_total} lots "
+                        f"(active: {active}, frozen: {frozen})"
+                    ),
+                    'action': 'warn',
+                    'details': {
+                        'side': side_key, 'total': total,
+                        'active': active, 'frozen': frozen, 'max': max_total,
+                    },
+                })
+            elif ratio >= 0.8:
+                events.append({
+                    'type': 'total_exposure',
+                    'level': 'info',
+                    'message': (
+                        f"{side_key.upper()} approaching total exposure ceiling: "
+                        f"{total}/{max_total} lots ({ratio:.0%})"
+                    ),
+                    'action': 'continue',
+                    'details': {
+                        'side': side_key, 'total': total,
+                        'active': active, 'frozen': frozen, 'max': max_total,
+                    },
+                })
 
         return events
 

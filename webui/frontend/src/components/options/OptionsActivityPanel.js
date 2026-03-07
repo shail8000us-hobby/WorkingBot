@@ -19,6 +19,8 @@ import {
   LinearProgress,
   Divider,
   Alert,
+  Button,
+  ButtonGroup,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -28,12 +30,35 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorIcon from '@mui/icons-material/Error';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayCircleIcon from '@mui/icons-material/PlayCircle';
+import DownloadIcon from '@mui/icons-material/Download';
+
+// Filter definitions — maps UI label to the `category` field on events
+const FILTER_TABS = [
+  { label: 'All',    value: 'all' },
+  { label: 'Trades', value: 'trade' },
+  { label: 'Hedges', value: 'hedge' },
+  { label: 'Alerts', value: 'alert' },
+  { label: 'Errors', value: 'error' },
+  { label: 'System', value: 'system' },
+];
 
 export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
   const [activityData, setActivityData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  // Filter events client-side by category field
+  const filteredEvents = useCallback((events) => {
+    if (!events) return [];
+    if (activeFilter === 'all') return events;
+    return events.filter(e => (e.category || 'system') === activeFilter);
+  }, [activeFilter]);
+
+  const handleExportCsv = () => {
+    window.open('/api/options/monitoring-activity/export', '_blank');
+  };
 
   // Fetch monitoring activity
   const fetchActivity = useCallback(async () => {
@@ -269,10 +294,59 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
 
           <Divider sx={{ my: 2, borderColor: 'rgba(148, 163, 184, 0.2)' }} />
 
+          {/* Filter Bar + Export */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ color: '#94a3b8', mr: 0.5 }}>
+                Filter:
+              </Typography>
+              <ButtonGroup size="small" variant="outlined">
+                {FILTER_TABS.map(tab => (
+                  <Button
+                    key={tab.value}
+                    onClick={() => setActiveFilter(tab.value)}
+                    sx={{
+                      fontSize: '0.65rem',
+                      px: 1,
+                      py: 0.3,
+                      borderColor: 'rgba(148,163,184,0.3)',
+                      color: activeFilter === tab.value ? '#e2e8f0' : '#64748b',
+                      bgcolor: activeFilter === tab.value ? 'rgba(59,130,246,0.25)' : 'transparent',
+                      '&:hover': { bgcolor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(148,163,184,0.5)' },
+                    }}
+                  >
+                    {tab.label}
+                  </Button>
+                ))}
+              </ButtonGroup>
+            </Box>
+            <Tooltip title="Export last 24h as CSV">
+              <Button
+                size="small"
+                startIcon={<DownloadIcon sx={{ fontSize: '0.9rem' }} />}
+                onClick={handleExportCsv}
+                sx={{
+                  fontSize: '0.65rem',
+                  color: '#94a3b8',
+                  borderColor: 'rgba(148,163,184,0.3)',
+                  '&:hover': { borderColor: '#94a3b8', color: '#e2e8f0' },
+                }}
+                variant="outlined"
+              >
+                Export CSV
+              </Button>
+            </Tooltip>
+          </Box>
+
           {/* Activity Log */}
-          <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
-            📋 Real-Time Activity ({activityData.events?.length || 0} events)
-          </Typography>
+          {(() => {
+            const visibleEvents = filteredEvents(activityData.events);
+            return (
+              <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
+                Real-Time Activity ({visibleEvents.length}{activeFilter !== 'all' ? ` of ${activityData.events?.length || 0}` : ''} events)
+              </Typography>
+            );
+          })()}
 
           <Box
             sx={{
@@ -283,12 +357,14 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
               p: 1
             }}
           >
-            {activityData.events?.length === 0 ? (
+            {filteredEvents(activityData.events).length === 0 ? (
               <Typography variant="body2" sx={{ color: '#64748b', textAlign: 'center', py: 4 }}>
-                No monitoring activity yet. Set up max loss limits to see activity here.
+                {activeFilter === 'all'
+                  ? 'No monitoring activity yet. Set up max loss limits to see activity here.'
+                  : `No "${activeFilter}" events in recent log.`}
               </Typography>
             ) : (
-              activityData.events?.map((event, idx) => (
+              filteredEvents(activityData.events).map((event, idx) => (
                 <Box
                   key={idx}
                   sx={{

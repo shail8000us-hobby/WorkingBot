@@ -13,6 +13,7 @@ import sqlite3
 import logging
 import threading
 from typing import Dict, Any, Optional
+from webui.backend.sealed import sealed
 
 log = logging.getLogger('options_groups_storage')
 
@@ -75,10 +76,14 @@ except Exception as e:
 class GroupsStorage:
     """Thread-safe persistent storage for options position groups."""
 
+    @sealed
     def get_all(self) -> Dict[str, Any]:
         """
         Get all group data for all expiry keys.
         Returns the same structure as the old localStorage format:
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
         {
             "EXPIRY_KEY": {
                 "groups": { "id": { "name": ..., "color": ..., "symbols": [...], "note": ... } },
@@ -116,8 +121,14 @@ class GroupsStorage:
 
         return result
 
+    @sealed
     def get_expiry(self, expiry_key: str) -> Dict[str, Any]:
-        """Get group data for a specific expiry key."""
+        """
+        Get group data for a specific expiry key.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         conn = _get_conn()
         data = {'groups': {}, 'collapsed': {}, 'order': [], 'groupOrder': []}
 
@@ -180,8 +191,14 @@ class GroupsStorage:
             log.error(f"Failed to bulk save groups: {e}")
             raise
 
+    @sealed
     def create_group(self, expiry_key: str, group_id: str, name: str, color: str) -> Dict[str, Any]:
-        """Create a new group."""
+        """
+        Create a new group.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         conn = _get_conn()
         try:
             conn.execute(
@@ -214,8 +231,14 @@ class GroupsStorage:
             log.error(f"Failed to create group: {e}")
             raise
 
+    @sealed
     def delete_group(self, expiry_key: str, group_id: str):
-        """Delete a group."""
+        """
+        Delete a group.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         conn = _get_conn()
         try:
             conn.execute(
@@ -241,8 +264,14 @@ class GroupsStorage:
             log.error(f"Failed to delete group: {e}")
             raise
 
+    @sealed
     def update_group(self, expiry_key: str, group_id: str, updates: Dict[str, Any]):
-        """Update group fields (name, color, note, symbols)."""
+        """
+        Update group fields (name, color, note, symbols).
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         conn = _get_conn()
         try:
             # Build SET clause dynamically
@@ -274,8 +303,14 @@ class GroupsStorage:
             log.error(f"Failed to update group: {e}")
             raise
 
+    @sealed
     def assign_symbol(self, expiry_key: str, symbol: str, target_group_id: Optional[str]):
-        """Assign a symbol to a group, removing it from any other group first."""
+        """
+        Assign a symbol to a group, removing it from any other group first.
+
+        SEALED — v1.0.0 — March 4, 2026
+        Do not modify without UNSEAL command in AI_SEAL.md
+        """
         conn = _get_conn()
         try:
             # Remove symbol from all groups in this expiry

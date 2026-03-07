@@ -285,7 +285,7 @@ class MMMEngine:
         hedge_side: str,
         loss_to_cover: float,
         hedge_premium: float,
-    ) -> Tuple[int, str]:
+    ) -> Tuple[int, str, bool]:
         """
         §5.4: Calculate lots needed, apply buffer + constraints.
 
@@ -296,10 +296,13 @@ class MMMEngine:
             hedge_premium: Premium per lot at the hedge strike
 
         Returns:
-            (lots_to_sell, constraint_message or '')
+            (lots_to_sell, constraint_message or '', is_position_cap_hit)
+            
+        Fix F1.6: Returns is_position_cap_hit boolean to avoid fragile string
+        matching for M2 recycling trigger.
         """
         if hedge_premium <= 0:
-            return 0, 'Hedge premium is zero — cannot sell'
+            return 0, 'Hedge premium is zero — cannot sell', False
 
         params = session.get('params', {})
         buffer_pct = params.get('premium_buffer_pct', 0.05)
@@ -329,17 +332,18 @@ class MMMEngine:
                 )
         # ── END IMP-2 ─────────────────────────────────────────────────────
 
-        # §13.1: Position cap
+        # §13.1: Position cap — Split Ledger: only active_lots count against cap
         hedge_state = session.get(hedge_side, {})
-        current_total = hedge_state.get('total_lots', 0)
+        current_total = hedge_state.get('active_lots', 0)
 
         if current_total + lots_to_sell > max_lots_per_side:
             lots_to_sell = max_lots_per_side - current_total
             if lots_to_sell <= 0:
+                # Fix F1.6: Return is_position_cap=True for M2 recycling trigger
                 return 0, (
                     f"Position cap reached: {hedge_side.upper()} has "
                     f"{current_total}/{max_lots_per_side} lots"
-                )
+                ), True  # is_position_cap
             cap_msg = (
                 f"Capped from {math.ceil(raw_lots)} to {lots_to_sell} "
                 f"(position cap: {max_lots_per_side})"
@@ -347,7 +351,31 @@ class MMMEngine:
             # Combine with any prior constraint message (e.g. trend lot reduction)
             constraint_msg = f"{constraint_msg}; {cap_msg}" if constraint_msg else cap_msg
 
-        return lots_to_sell, constraint_msg
+        # ── Split Ledger: max_total_exposure safety ceiling ───────────────────
+        # active_lots cap is the primary gate. This is the ABSOLUTE ceiling on
+        # combined active + frozen lots to guard against runaway accumulation.
+        # IMPORTANT: error message must NOT contain "Position cap reached" —
+        # that exact string triggers M2 recycling at monitor line ~2615.
+        max_total_exposure = params.get('max_total_exposure', 0)
+        if max_total_exposure <= 0:
+            max_total_exposure = max_lots_per_side * 2
+        total_exposure = hedge_state.get('total_lots', 0)
+        if total_exposure + lots_to_sell > max_total_exposure:
+            lots_to_sell = max(max_total_exposure - total_exposure, 0)
+            if lots_to_sell <= 0:
+                # Note: is_position_cap=False — this is total exposure ceiling, not position cap
+                return 0, (
+                    f"Total exposure ceiling: {hedge_side.upper()} has "
+                    f"{total_exposure}/{max_total_exposure} lots (active+frozen)"
+                ), False  # NOT position cap — don't trigger M2
+            exp_msg = (
+                f"Capped by total exposure: {lots_to_sell} lots "
+                f"(ceiling: {max_total_exposure})"
+            )
+            constraint_msg = f"{constraint_msg}; {exp_msg}" if constraint_msg else exp_msg
+        # ── END Split Ledger ──────────────────────────────────────────────────
+
+        return lots_to_sell, constraint_msg, False  # No cap hit if we got here
 
     # =========================================================================
     # §5.5: Execute adjustment order
@@ -380,6 +408,14 @@ class MMMEngine:
         Returns:
             {success, fill_price, premium_collected, lots_sold, ...}
         """
+        # Fix F2.6: Validate strike > 0 before symbol building
+        if hedge_strike <= 0:
+            log.error(f"Invalid strike {hedge_strike} for adjustment")
+            return {
+                'success': False,
+                'error': f'Invalid strike price: {hedge_strike}',
+            }
+        
         # Build symbol
         expiry = session.get('params', {}).get('expiry', '')
         underlying = 'BTC'

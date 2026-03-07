@@ -218,9 +218,10 @@ const TradingViewSignals = () => {
     fetchWebhookConfig();
 
     const socket = io(API_URL, {
-      // POLLING ONLY - simple-websocket backend can't handle upgrade
+      // Use polling only — backend async_mode='threading' doesn't support WebSocket
       transports: ['polling'],
       upgrade: false,
+      rememberUpgrade: false,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,

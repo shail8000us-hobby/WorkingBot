@@ -66,7 +66,7 @@ import mmmService from './mmmService';
 import MMMConfigPanel from './MMMConfigPanel';
 import useMMMWebSocket from './hooks/useMMMWebSocket';
 import MMMStatusBanner from './MMMStatusBanner';
-import MMMPositionsTable from './MMMPositionsTable';
+import MMMPositionsTable, { buildPositionRows, LOT_SIZE_BTC } from './MMMPositionsTable';
 import MMMTriggerGauge from './MMMTriggerGauge';
 import MMMAdjustmentLog from './MMMAdjustmentLog';
 import MMMStrikeMap from './MMMStrikeMap';
@@ -1203,6 +1203,38 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
     return () => clearInterval(iv);
   }, [session?.expiry_time]);
 
+  // C-9 fix: safe reference to heartbeat data (may be undefined on initial load/reconnect)
+  // Moved ABOVE early return so useMemo below can reference it (React hooks rule).
+  const heartbeat = wsData?.heartbeat || null;
+
+  // BUG FIX: Compute proper per-side P&L from individual position rows.
+  // The old formula used (entry_fill_price - activePremium) × totalLots which is wrong
+  // because it applies one entry premium and one live premium to ALL lots including
+  // frozen lots at different strikes with different premiums.
+  // Must be before early return (React hooks rule — hooks must always be called).
+  const sideMetrics = useMemo(() => {
+    if (!session) return { ce: { pnl: 0, hasPnl: false, totalLots: 0, avgEntry: 0, totalEntryWeighted: 0 },
+                           pe: { pnl: 0, hasPnl: false, totalLots: 0, avgEntry: 0, totalEntryWeighted: 0 } };
+    const rows = buildPositionRows(session, heartbeat);
+    const metrics = { ce: { pnl: 0, hasPnl: false, totalLots: 0, totalEntryWeighted: 0 },
+                      pe: { pnl: 0, hasPnl: false, totalLots: 0, totalEntryWeighted: 0 } };
+    for (const row of rows) {
+      const sk = row.side === 'CE' ? 'ce' : 'pe';
+      metrics[sk].totalLots += row.lots;
+      metrics[sk].totalEntryWeighted += row.lots * (row.entryPremium || 0);
+      if (row.pnl != null) {
+        metrics[sk].pnl += row.pnl;
+        metrics[sk].hasPnl = true;
+      }
+    }
+    // Compute weighted average entry premium per side
+    for (const sk of ['ce', 'pe']) {
+      metrics[sk].avgEntry = metrics[sk].totalLots > 0
+        ? metrics[sk].totalEntryWeighted / metrics[sk].totalLots : 0;
+    }
+    return metrics;
+  }, [session, heartbeat]);
+
   if (!session) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1227,9 +1259,6 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   const peakPnl = session.peak_pnl ?? 0;
   // L-11: Compute drawdown from peak for display
   const peakDrawdown = peakPnl - netPnl;
-
-  // C-9 fix: safe reference to heartbeat data (may be undefined on initial load/reconnect)
-  const heartbeat = wsData?.heartbeat || null;
 
   // Current premium from heartbeat for CE/PE cards.
   // Fallback to session._premium_map (persisted by backend on every heartbeat) when
@@ -1441,7 +1470,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                     </HelpTooltip>
                     <HelpTooltip topic="total_lots">
                       <Chip
-                        label={`${data.total_lots || 0} lots`}
+                        label={`${data.active_lots ?? data.total_lots ?? 0} active${data.frozen_total_lots ? ` (+${data.frozen_total_lots} frozen)` : ''}`}
                         size="small"
                         sx={{
                           backgroundColor: `${color}22`,
@@ -1465,21 +1494,37 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ mb: 1 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>Entry Premium</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
-                          ${(data.entry_fill_price || data.original_premium)?.toFixed(2) || '—'}
-                        </Typography>
+                        {/* BUG FIX: Show weighted avg entry across ALL positions, not just original fill */}
+                        {(() => {
+                          const sk = key.toLowerCase();
+                          const avgEntry = sideMetrics[sk].avgEntry;
+                          const origEntry = data.entry_fill_price || data.original_premium || 0;
+                          const showWeighted = avgEntry > 0 && Math.abs(avgEntry - origEntry) > 0.5;
+                          return (
+                            <>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
+                                {showWeighted ? 'Avg Entry' : 'Entry Premium'}
+                              </Typography>
+                              <Tooltip title={showWeighted ? `Weighted avg across ${sideMetrics[sk].totalLots} lots. Original fill: $${origEntry.toFixed(2)}` : ''} arrow>
+                                <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                                  ${avgEntry > 0 ? avgEntry.toFixed(2) : (origEntry?.toFixed(2) || '—')}
+                                </Typography>
+                              </Tooltip>
+                            </>
+                          );
+                        })()}
                       </Box>
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ mb: 1 }}>
                         {(() => {
                           const livePremium = key === 'CE' ? ceLivePremium : peLivePremium;
-                          const entryPremium = data.entry_fill_price || data.original_premium || 0;
+                          const sk = key.toLowerCase();
+                          const avgEntry = sideMetrics[sk].avgEntry;
                           const hasLive = livePremium != null && livePremium > 0;
                           // For short sellers: profit when current < entry
-                          const pctChange = hasLive && entryPremium > 0
-                            ? ((livePremium - entryPremium) / entryPremium * 100)
+                          const pctChange = hasLive && avgEntry > 0
+                            ? ((livePremium - avgEntry) / avgEntry * 100)
                             : null;
                           // Green = current dropped (good for shorts), Red = current rose (bad)
                           const premColor = pctChange != null
@@ -1505,13 +1550,13 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                     </Grid>
                     <Grid item xs={6}>
                       <Box sx={{ mb: 1 }}>
+                        {/* BUG FIX: Use proper per-position P&L from buildPositionRows
+                            instead of (entryFill - activePremium) × totalLots which
+                            applies one premium to all lots including frozen at different strikes */}
                         {(() => {
-                          const livePremium = key === 'CE' ? ceLivePremium : peLivePremium;
-                          const entryPremium = data.entry_fill_price || data.original_premium || 0;
-                          const totalLots = data.total_lots || 0;
-                          const LOT_SIZE = 0.001;
-                          const hasLive = livePremium != null && livePremium > 0 && entryPremium > 0;
-                          const sidePnl = hasLive ? (entryPremium - livePremium) * totalLots * LOT_SIZE : null;
+                          const sk = key.toLowerCase();
+                          const m = sideMetrics[sk];
+                          const sidePnl = m.hasPnl ? m.pnl : null;
                           return (
                             <>
                               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>Side P&L</Typography>
@@ -1520,7 +1565,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                                 fontFamily: 'monospace',
                                 color: sidePnl != null ? (sidePnl >= 0 ? '#4caf50' : '#f44336') : 'text.secondary',
                               }}>
-                                {sidePnl != null ? `${sidePnl >= 0 ? '+' : ''}$${sidePnl.toFixed(2)}` : '—'}
+                                {sidePnl != null ? `${sidePnl >= 0 ? '+' : ''}$${sidePnl.toFixed(4)}` : '—'}
                               </Typography>
                             </>
                           );

@@ -138,8 +138,14 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
   const maxLoss = params.max_loss_amount || 5000;
   const trailingPct = params.trailing_stop_pct || 0.5;
 
-  const ceLots = session.ce?.total_lots || 0;
-  const peLots = session.pe?.total_lots || 0;
+  // Split Ledger: show active vs total
+  const ceLots = session.ce?.active_lots ?? session.ce?.total_lots ?? 0;
+  const peLots = session.pe?.active_lots ?? session.pe?.total_lots ?? 0;
+  const ceTotalLots = session.ce?.total_lots || 0;
+  const peTotalLots = session.pe?.total_lots || 0;
+  const ceFrozenLots = session.ce?.frozen_total_lots || 0;
+  const peFrozenLots = session.pe?.frozen_total_lots || 0;
+  const maxTotalExposure = params.max_total_exposure > 0 ? params.max_total_exposure : maxLots * 2;
   const adjCount = session.adjustment_count || 0;
   const realized = session.realized_pnl || 0;
   const unrealized = session.unrealized_pnl || 0;
@@ -150,10 +156,15 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
   const portfolioDelta = session.portfolio_delta || 0;
   const absDelta = Math.abs(portfolioDelta);
 
-  // Asymmetry
-  const maxSideLots = Math.max(ceLots, peLots);
-  const minSideLots = Math.max(Math.min(ceLots, peLots), 1);
+  // Asymmetry — use total_lots (matches backend check_asymmetry which tracks full exposure)
+  const maxSideLots = Math.max(ceTotalLots, peTotalLots);
+  const minSideLots = Math.max(Math.min(ceTotalLots, peTotalLots), 1);
   const asymmetryRatio = maxSideLots / minSideLots;
+
+  // M3: Rebalancing active flag
+  const rebalancingActive = (params.rebalance_enabled !== false)
+    && asymmetryRatio > (params.rebalance_asymmetry_threshold || 5.0)
+    && (maxSideLots / Math.max(maxLots, 1)) > (params.rebalance_pressure_threshold || 0.8);
 
   // Loss ratio
   const lossRatio = totalPnl < 0 ? Math.abs(totalPnl) / maxLoss : 0;
@@ -196,27 +207,31 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
       )}
 
       <Grid container spacing={1.5}>
-        {/* Position Cap CE */}
+        {/* Position Cap CE — Split Ledger: active vs cap, total shown in tooltip */}
         <Grid item xs={6} sm={4} md={3}>
           <SafetyIndicator
-            label="CE Position"
+            label="CE Active"
             value={ceLots}
             maxValue={maxLots}
-            displayText={`${ceLots} / ${maxLots}`}
+            displayText={ceFrozenLots > 0
+              ? `${ceLots} / ${maxLots} (+${ceFrozenLots} frozen)`
+              : `${ceLots} / ${maxLots}`}
             level={ceLots >= maxLots ? 'alert' : ceLots >= maxLots * 0.8 ? 'warning' : 'ok'}
-            tooltip="CE total lots vs max allowed. The algo accumulates lots through adjustments. This cap prevents runaway lot growth. If reached, the algo can't sell more CE — it will alert you instead."
+            tooltip={`CE active lots vs cap (${maxLots}). Active lots count against the position cap — frozen (shifted) lots do not. ${ceFrozenLots > 0 ? `${ceFrozenLots} frozen lots are being tracked separately; total exposure is ${ceTotalLots}/${maxTotalExposure}.` : 'No frozen lots currently.'}`}
           />
         </Grid>
 
-        {/* Position Cap PE */}
+        {/* Position Cap PE — Split Ledger: active vs cap */}
         <Grid item xs={6} sm={4} md={3}>
           <SafetyIndicator
-            label="PE Position"
+            label="PE Active"
             value={peLots}
             maxValue={maxLots}
-            displayText={`${peLots} / ${maxLots}`}
+            displayText={peFrozenLots > 0
+              ? `${peLots} / ${maxLots} (+${peFrozenLots} frozen)`
+              : `${peLots} / ${maxLots}`}
             level={peLots >= maxLots ? 'alert' : peLots >= maxLots * 0.8 ? 'warning' : 'ok'}
-            tooltip="PE total lots vs max allowed. Same as CE — prevents the algo from selling too many PE lots. You can increase this limit in Settings if comfortable with more risk."
+            tooltip={`PE active lots vs cap (${maxLots}). Active lots count against the position cap — frozen (shifted) lots do not. ${peFrozenLots > 0 ? `${peFrozenLots} frozen lots are being tracked separately; total exposure is ${peTotalLots}/${maxTotalExposure}.` : 'No frozen lots currently.'}`}
           />
         </Grid>
 
@@ -250,9 +265,9 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
             label="Asymmetry"
             value={asymmetryRatio}
             maxValue={5}
-            displayText={`${asymmetryRatio.toFixed(1)}:1`}
+            displayText={`${asymmetryRatio.toFixed(1)}:1${rebalancingActive ? ' ⚖ M3' : ''}`}
             level={asymmetryRatio >= 5 ? 'alert' : asymmetryRatio >= 3 ? 'warning' : 'ok'}
-            tooltip={`CE has ${ceLots} lots, PE has ${peLots} lots (ratio: ${asymmetryRatio.toFixed(1)}:1). A high ratio means your position is heavily skewed to one side — you're more exposed to moves in one direction than the other. Above 3:1 is concerning, above 5:1 is dangerous.`}
+            tooltip={`CE has ${ceTotalLots} lots (${ceLots} active + ${ceFrozenLots} frozen), PE has ${peTotalLots} lots (${peLots} active + ${peFrozenLots} frozen). Ratio: ${asymmetryRatio.toFixed(1)}:1. Above 3:1 is concerning, above 5:1 is dangerous.${rebalancingActive ? ' ⚖ M3 rebalancing active — harvest thresholds relaxed on dominant side.' : ''}`}
           />
         </Grid>
 

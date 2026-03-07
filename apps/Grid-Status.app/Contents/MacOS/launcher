@@ -1,0 +1,11 @@
+#!/bin/bash
+# Grid Status Launcher
+
+SCRIPT_DIR="/Users/ssr/Projects/WorkingBot"
+
+osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "cd '$SCRIPT_DIR' && ./view-grid-status.command"
+end tell
+EOF

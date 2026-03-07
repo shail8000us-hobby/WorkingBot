@@ -83,7 +83,7 @@ export default function useGroupsAPI() {
         }
 
         // Step 2: Load from server
-        const res = await fetch(API_BASE);
+        const res = await fetch(`${API_BASE}/`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 

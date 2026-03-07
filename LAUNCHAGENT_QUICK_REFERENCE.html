@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridBot LaunchAgent Quick Reference</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fff;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            font-size: 2.5em;
+            margin-top: 0;
+        }
+        
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #95a5a6;
+            padding-bottom: 8px;
+            margin-top: 30px;
+            font-size: 1.8em;
+        }
+        
+        h3 {
+            color: #34495e;
+            margin-top: 20px;
+            font-size: 1.3em;
+        }
+        
+        h4 {
+            color: #555;
+            margin-top: 15px;
+        }
+        
+        pre {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #e83e8c;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+            color: #333;
+        }
+        
+        ul {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 5px 0;
+        }
+        
+        strong {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 30px 0;
+        }
+        
+        .emoji {
+            font-size: 1.2em;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        
+        .status {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .success {
+            color: #28a745;
+            font-weight: 600;
+        }
+        
+        .error {
+            color: #dc3545;
+            font-weight: 600;
+        }
+        
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            pre {
+                page-break-inside: avoid;
+            }
+            
+            h1, h2, h3 {
+                page-break-after: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+<h1>🚀 GridBot LaunchAgent Quick Reference</h6></h5></h4></h3></h2></h1>
+
+<h2>✅ <strong>Installation Complete!</strong></h6></h5></h4></h3></h2></h1>
+
+Your GridBot WebUI is now running as a native macOS service via LaunchAgent.</h6></h5></h4></h3></h2></h1>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>📋 <strong>Service Management Commands</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Basic Control</strong>
+<pre><code class="bash">
+<h1>Start service
+launchctl start com.gridbot.webui</h6></h5></h4></h3></h2></h1>
+
+<h1>Stop service  
+launchctl stop com.gridbot.webui</h6></h5></h4></h3></h2></h1>
+
+<h1>Restart service
+launchctl stop com.gridbot.webui && launchctl start com.gridbot.webui</h6></h5></h4></h3></h2></h1>
+
+<h1>Check status
+launchctl list | grep gridbot
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Service Lifecycle</strong>
+<pre><code class="bash">
+<h1>Unload service (remove from system)
+launchctl unload ~/Library/LaunchAgents/com.gridbot.webui.plist</h6></h5></h4></h3></h2></h1>
+
+<h1>Load service (add to system)
+launchctl load ~/Library/LaunchAgents/com.gridbot.webui.plist</h6></h5></h4></h3></h2></h1>
+
+<h1>Reload after plist changes
+launchctl unload ~/Library/LaunchAgents/com.gridbot.webui.plist
+launchctl load ~/Library/LaunchAgents/com.gridbot.webui.plist
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>🌐 <strong>Access Points</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>WebUI Access</strong>
+<ul>
+<li><strong>Local:</strong> http://localhost:5555</li>
+<li><strong>Mobile (Tailscale):</strong> http://[YOUR_TAILSCALE_IP]:5555</li>
+<li><strong>Status API:</strong> http://localhost:5555/api/health</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+<h3><strong>Current Status</strong>
+<ul>
+<li>✅ <strong>Service:</strong> Running (PID 78)</li>
+<li>✅ <strong>WebUI:</strong> Accessible</li>
+<li>✅ <strong>Bot:</strong> Running</li>
+<li>✅ <strong>Guardian:</strong> Running</li>
+<li>✅ <strong>Telegram:</strong> Connected</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>📁 <strong>File Locations</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Configuration</strong>
+<ul>
+<li><strong>Plist:</strong> `~/Library/LaunchAgents/com.gridbot.webui.plist`</li>
+<li><strong>Source:</strong> `com.gridbot.webui.plist` (in project root)</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+<h3><strong>Logs</strong>
+<ul>
+<li><strong>Output:</strong> `logs/launchagent_webui.log`</li>
+<li><strong>Errors:</strong> `logs/launchagent_webui_error.log`</li>
+<li><strong>WebUI:</strong> `webui_backend.log`</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>🔄 <strong>Update Workflow</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>When You Need to Update Code:</strong></h6></h5></h4></h3></h2></h1>
+
+<strong>Step 1: Stop Service</strong>
+<pre><code class="bash">
+launchctl stop com.gridbot.webui
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<strong>Step 2: Edit in Cursor</strong>
+<ul>
+<li>Open Cursor</li>
+<li>Make your changes</li>
+<li>Test: `python3 webui/backend/app.py`</li>
+<li>Commit: `git add . && git commit -m "your changes"`</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+<strong>Step 3: Restart Service</strong>
+<pre><code class="bash">
+launchctl start com.gridbot.webui
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<strong>Done!</strong> ✅</h6></h5></h4></h3></h2></h1>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>🛠️ <strong>Troubleshooting</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Service Not Starting</strong>
+<pre><code class="bash">
+<h1>Check logs
+cat logs/launchagent_webui_error.log</h6></h5></h4></h3></h2></h1>
+
+<h1>Check service status
+launchctl list | grep gridbot</h6></h5></h4></h3></h2></h1>
+
+<h1>Restart service
+launchctl stop com.gridbot.webui
+launchctl start com.gridbot.webui
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>WebUI Not Accessible</strong>
+<pre><code class="bash">
+<h1>Test API
+curl http://localhost:5555/api/health</h6></h5></h4></h3></h2></h1>
+
+<h1>Check if port is in use
+lsof -i :5555</h6></h5></h4></h3></h2></h1>
+
+<h1>Kill conflicting process
+kill -9 $(lsof -t -i :5555)
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Permission Issues</strong>
+<pre><code class="bash">
+<h1>Fix file permissions
+chmod +x webui/backend/app.py</h6></h5></h4></h3></h2></h1>
+
+<h1>Check Python path
+which python3
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>🎯 <strong>Key Benefits</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>✅ Production Ready</strong>
+<ul>
+<li>Runs independently of Cursor</li>
+<li>Auto-starts on Mac boot</li>
+<li>Auto-restarts if crashes</li>
+<li>Native macOS integration</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+<h3><strong>✅ Resource Efficient</strong>
+<ul>
+<li>Uses ~80MB RAM (vs 500MB+ with Cursor)</li>
+<li>Low CPU usage</li>
+<li>Background priority</li>
+<li>Optimized for Mac</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+<h3><strong>✅ Easy Updates</strong>
+<ul>
+<li>Same Cursor workflow</li>
+<li>Just stop → edit → start</li>
+<li>No complex deployment</li>
+<li>Git workflow unchanged</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>🔧 <strong>Advanced Configuration</strong></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Modify Service Settings</strong>
+Edit `com.gridbot.webui.plist` and reload:
+<pre><code class="bash">
+<h1>Edit plist
+nano com.gridbot.webui.plist</h6></h5></h4></h3></h2></h1>
+
+<h1>Reload service
+launchctl unload ~/Library/LaunchAgents/com.gridbot.webui.plist
+launchctl load ~/Library/LaunchAgents/com.gridbot.webui.plist
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Environment Variables</strong>
+Add to plist under `<key>EnvironmentVariables</key>`:
+<pre><code class="xml">
+<key>YOUR_VAR</key>
+<string>your_value</string>
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+<h3><strong>Resource Limits</strong>
+Modify in plist:
+<pre><code class="xml">
+<key>SoftResourceLimits</key>
+<dict>
+    <key>NumberOfFiles</key>
+    <integer>1024</integer>
+    <key>NumberOfProcesses</key>
+    <integer>256</integer>
+</dict>
+</code></pre></h6></h5></h4></h3></h2></h1>
+
+---</h6></h5></h4></h3></h2></h1>
+
+<h2>🎉 <strong>Success!</strong></h6></h5></h4></h3></h2></h1>
+
+Your GridBot is now running as a professional macOS service!</h6></h5></h4></h3></h2></h1>
+
+<strong>What's Different:</strong>
+<ul>
+<li>✅ <strong>Before:</strong> Had to keep Cursor open all day</li>
+<li>✅ <strong>Now:</strong> Runs independently, Cursor only for updates</li>
+<li>✅ <strong>RAM Usage:</strong> 80MB vs 500MB+</li>
+<li>✅ <strong>Reliability:</strong> Auto-restart if crashes</li>
+<li>✅ <strong>Professional:</strong> Industry-standard deployment</h6></h5></h4></h3></h2></h1></li>
+</ul>
+
+<strong>Next Steps:</strong>
+1. Close Cursor (bot keeps running!)
+2. Access WebUI via browser
+3. Use Tailscale for mobile access
+4. Open Cursor only when updating code</h6></h5></h4></h3></h2></h1>
+
+<strong>You're now running a production-grade trading bot!</strong> 🚀
+
+</body>
+</html>

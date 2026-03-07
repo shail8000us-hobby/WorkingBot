@@ -109,14 +109,14 @@ export default function AdjustmentReviewDialog({
 }) {
   // Get autoloop context for background execution
   const { startAutoloop } = useAutoloop();
-  
+
   // State for execution options
   const [orderType, setOrderType] = useState('maker_first');
   const [loopRounds, setLoopRounds] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
   const [executionMode, setExecutionMode] = useState('autoloop'); // 'autoloop' or 'all_at_once'
   const [useBackgroundExecution, setUseBackgroundExecution] = useState(true); // NEW: Run in background
-  
+
   // Execution state (for inline execution fallback)
   const [executing, setExecuting] = useState(false);
   const [currentRound, setCurrentRound] = useState(0);
@@ -124,7 +124,7 @@ export default function AdjustmentReviewDialog({
   const [executionError, setExecutionError] = useState(null);
   const [executionSuccess, setExecutionSuccess] = useState(false);
   const stopExecutionRef = useRef(false);
-  
+
   // Enhanced execution tracking
   const [roundHistory, setRoundHistory] = useState([]); // Array of completed rounds with results
   const [currentRoundOrders, setCurrentRoundOrders] = useState([]); // Orders for current round with real-time status
@@ -145,7 +145,7 @@ export default function AdjustmentReviewDialog({
   const tradesGCD = useMemo(() => {
     if (trades.length === 0) return 1;
     if (trades.length === 1) return Math.abs(trades[0].quantity || 1);
-    
+
     let gcd = Math.abs(trades[0].quantity || 1);
     for (let i = 1; i < trades.length; i++) {
       gcd = calculateGCD(gcd, Math.abs(trades[i].quantity || 1));
@@ -206,7 +206,7 @@ export default function AdjustmentReviewDialog({
   };
 
   const totals = calculateTotals();
-  
+
   // Get order type info
   const getOrderTypeInfo = (key) => ORDER_TYPES.find((t) => t.key === key) || ORDER_TYPES[1];
 
@@ -237,7 +237,7 @@ export default function AdjustmentReviewDialog({
       if (executionMode === 'all_at_once') {
         // ALL AT ONCE MODE: Place full quantity in one batch
         console.log('[Execution] All-at-once mode - placing full quantities');
-        
+
         const orders = trades.map((trade, idx) => ({
           symbol: trade.symbol,
           side: trade.side,
@@ -245,10 +245,10 @@ export default function AdjustmentReviewDialog({
           premium: trade.premium || trade.ltp || 0,
           id: idx,
         }));
-        
+
         setCurrentRound(1);
         setExecutionPhase('punching');
-        
+
         // Initialize current round orders for UI
         const initialOrders = orders.map(o => ({
           ...o,
@@ -257,23 +257,23 @@ export default function AdjustmentReviewDialog({
           fillPrice: null,
         }));
         setCurrentRoundOrders(initialOrders);
-        
+
         const roundProgress = {};
         orders.forEach((order) => {
           roundProgress[order.symbol] = { status: 'placing', filled: false, size: order.size };
         });
         setExecutionProgress(roundProgress);
-        
+
         const results = await executeBatch(orders, isSSR, ssrMode, roundProgress, (statusUpdate) => {
           // Callback to update individual order status
-          setCurrentRoundOrders(prev => prev.map(o => 
+          setCurrentRoundOrders(prev => prev.map(o =>
             o.symbol === statusUpdate.symbol ? { ...o, ...statusUpdate } : o
           ));
         });
-        
+
         // Calculate round premium
         const roundPremium = calculateRoundPremium(orders, results);
-        
+
         // Add to round history
         setRoundHistory([{
           round: 1,
@@ -286,31 +286,31 @@ export default function AdjustmentReviewDialog({
           netPremium: roundPremium,
           complete: true,
         }]);
-        
+
         setExecutionPhase('done');
         setExecutionSuccess(true);
         console.log('[Execution] All-at-once completed');
-        
+
       } else {
         // AUTOLOOP MODE: Execute exact user-specified quantities per round, wait for fills
         // Each round places the FULL user-specified quantity per trade
         // Total executed = user quantity × number of rounds
-        
+
         const actualLoops = loopRounds || 1;
         const allRoundHistory = [];
-        
+
         console.log(`[Execution] Autoloop mode - ${actualLoops} rounds`);
         console.log(`[Execution] Per-round quantities: ${trades.map(t => `${t.symbol}:${t.quantity || 1}`).join(', ')}`);
-        
+
         for (let loop = 1; loop <= actualLoops; loop++) {
           if (stopExecutionRef.current) {
             setExecutionError(`Stopped by user at round ${loop - 1}/${actualLoops}`);
             break;
           }
-          
+
           setCurrentRound(loop);
           setExecutionPhase('punching');
-          
+
           // Build orders with EXACT user-specified quantities
           const loopOrders = trades.map((trade, idx) => ({
             symbol: trade.symbol,
@@ -319,9 +319,9 @@ export default function AdjustmentReviewDialog({
             premium: trade.premium || trade.ltp || 0,
             id: idx,
           }));
-          
+
           console.log(`[Execution] Round ${loop}/${actualLoops} - placing: ${loopOrders.map(o => `${o.symbol}:${o.size}`).join(', ')}`);
-          
+
           // Initialize current round orders for UI
           const initialOrders = loopOrders.map(o => ({
             ...o,
@@ -330,50 +330,50 @@ export default function AdjustmentReviewDialog({
             fillPrice: null,
           }));
           setCurrentRoundOrders(initialOrders);
-          
+
           const roundProgress = {};
           loopOrders.forEach((order) => {
-            roundProgress[order.symbol] = { 
-              status: 'placing', 
-              filled: false, 
+            roundProgress[order.symbol] = {
+              status: 'placing',
+              filled: false,
               size: order.size,
               round: loop,
             };
           });
           setExecutionProgress(roundProgress);
-          
+
           // Execute this round's batch and WAIT for all fills
           setExecutionPhase('waiting');
           const loopResult = await executeBatch(loopOrders, isSSR, ssrMode, roundProgress, (statusUpdate) => {
             // Callback to update individual order status
-            setCurrentRoundOrders(prev => prev.map(o => 
+            setCurrentRoundOrders(prev => prev.map(o =>
               o.symbol === statusUpdate.symbol ? { ...o, ...statusUpdate } : o
             ));
           });
-          
+
           // Check if all orders in this round are filled
           const allFilled = Object.values(loopResult).every(r => r.filled);
-          
+
           if (!allFilled) {
             const unfilled = Object.entries(loopResult)
               .filter(([_, r]) => !r.filled)
               .map(([symbol, _]) => symbol)
               .join(', ');
             console.log(`[Execution] ⚠️ Round ${loop} - NOT ALL ORDERS FILLED BY EXCHANGE: ${unfilled}`);
-            
+
             // CRITICAL: Do NOT proceed to next round if orders aren't confirmed filled!
             // This prevents placing Round 2 orders while Round 1 is still pending
             setExecutionError(`Round ${loop} incomplete: Orders not filled by exchange: ${unfilled}. Stopping to prevent duplicate orders.`);
             setExecutionPhase('idle');
             break; // Exit the loop - do not proceed to next round
           }
-          
+
           console.log(`[Execution] ✅ Round ${loop}/${actualLoops} ALL ORDERS CONFIRMED FILLED BY EXCHANGE`);
           setExecutionPhase('round_complete');
-          
+
           // Calculate round premium
           const roundPremium = calculateRoundPremium(loopOrders, loopResult);
-          
+
           // Update current round orders to show filled status
           setCurrentRoundOrders(prev => prev.map(o => ({
             ...o,
@@ -381,7 +381,7 @@ export default function AdjustmentReviewDialog({
             filled: loopResult[o.symbol]?.filled || false,
             fillPrice: loopResult[o.symbol]?.fillPrice || null,
           })));
-          
+
           // Add to round history
           const roundData = {
             round: loop,
@@ -396,7 +396,7 @@ export default function AdjustmentReviewDialog({
           };
           allRoundHistory.push(roundData);
           setRoundHistory([...allRoundHistory]);
-          
+
           // Update progress to show round complete
           Object.keys(roundProgress).forEach(symbol => {
             roundProgress[symbol] = {
@@ -405,21 +405,21 @@ export default function AdjustmentReviewDialog({
             };
           });
           setExecutionProgress({ ...roundProgress });
-          
+
           // Wait before next round (if not last round)
           if (loop < actualLoops && !stopExecutionRef.current) {
             console.log(`[Execution] Waiting 1.5s before Round ${loop + 1}...`);
             await new Promise(resolve => setTimeout(resolve, 1500));
           }
         }
-        
+
         if (!stopExecutionRef.current) {
           setExecutionPhase('done');
           setExecutionSuccess(true);
           console.log('[Execution] Autoloop completed');
         }
       }
-      
+
       // Notify parent
       onExecute?.({
         trades,
@@ -427,7 +427,7 @@ export default function AdjustmentReviewDialog({
         executionMode,
         loopRounds,
       });
-      
+
     } catch (err) {
       console.error('[Execution] Error:', err);
       setExecutionError(err.message || 'Execution failed');
@@ -436,7 +436,7 @@ export default function AdjustmentReviewDialog({
       setExecuting(false);
     }
   };
-  
+
   // Helper: Calculate net premium for a round
   const calculateRoundPremium = (orders, results) => {
     let premium = 0;
@@ -452,20 +452,20 @@ export default function AdjustmentReviewDialog({
     });
     return premium;
   };
-  
+
   // Helper: Execute a batch of orders and wait for fills
   const executeBatch = async (orders, isSSR, ssrMode, roundProgress, onStatusUpdate) => {
     const results = {};
-    
+
     if (isSSR) {
       // SSR orders: place one by one and monitor
       for (const order of orders) {
         if (stopExecutionRef.current) break;
-        
+
         roundProgress[order.symbol] = { ...roundProgress[order.symbol], status: 'placing' };
         setExecutionProgress({ ...roundProgress });
         onStatusUpdate?.({ symbol: order.symbol, status: 'punched', filled: false });
-        
+
         try {
           const response = await api.post('/api/options/ssr-order', {
             symbol: order.symbol,
@@ -473,15 +473,15 @@ export default function AdjustmentReviewDialog({
             quantity: order.size,
             ssrMode: ssrMode,
           });
-          
+
           if (response.data.success) {
             // Get order ID from ssrTracking or order object
             const orderId = response.data.ssrTracking?.orderId || response.data.order?.id || response.data.order_id;
-            
+
             if (!orderId) {
               console.log(`[Execution] ⚠️ SSR order for ${order.symbol} succeeded but no order_id returned - cannot track`);
             }
-            
+
             roundProgress[order.symbol] = {
               status: 'monitoring',
               filled: false,
@@ -512,48 +512,48 @@ export default function AdjustmentReviewDialog({
         }
         setExecutionProgress({ ...roundProgress });
       }
-      
+
       // For SSR, poll the REAL exchange status endpoint to wait for ACTUAL fills
       // CRITICAL: We MUST confirm with the exchange - never assume orders are filled!
       console.log('[Execution] SSR orders placed, polling exchange for REAL fill confirmations...');
-      
+
       // Collect all order IDs that need to be monitored
       const ssrPendingOrders = Object.entries(results)
         .filter(([_, r]) => r.orderId && !r.filled)
         .map(([symbol, r]) => ({ symbol, orderId: r.orderId }));
-      
+
       if (ssrPendingOrders.length > 0) {
         const ssrOrderIds = ssrPendingOrders.map(o => o.orderId);
         console.log(`[Execution] Polling ${ssrPendingOrders.length} SSR orders: ${ssrOrderIds.join(', ')}`);
-        
+
         let ssrAllFilled = false;
         let ssrPollCount = 0;
         const ssrMaxPolls = 90; // 3 minutes max for SSR (2s × 90 = 180s)
-        
+
         while (!ssrAllFilled && !stopExecutionRef.current && ssrPollCount < ssrMaxPolls) {
           ssrPollCount++;
           await new Promise(resolve => setTimeout(resolve, 2000));
-          
+
           try {
             // Call the REAL exchange status API
             const statusResponse = await api.post('/api/options/batch_order_status', {
               order_ids: ssrOrderIds,
             });
-            
+
             if (!statusResponse.data.success) {
               console.log(`[Execution] SSR Poll ${ssrPollCount}: status API failed`);
               continue;
             }
-            
+
             const statuses = statusResponse.data.orders || [];
             let filledCount = 0;
-            
+
             statuses.forEach((status) => {
               const matching = ssrPendingOrders.find(o => String(o.orderId) === String(status.order_id));
               if (matching) {
                 const isFilled = status.state === 'filled' || status.state === 'closed';
                 const isCancelled = status.state === 'cancelled' || status.state === 'rejected';
-                
+
                 if (isFilled) {
                   roundProgress[matching.symbol] = {
                     ...roundProgress[matching.symbol],
@@ -561,14 +561,14 @@ export default function AdjustmentReviewDialog({
                     filled: true,
                     fillPrice: status.fill_price || roundProgress[matching.symbol].fillPrice,
                   };
-                  results[matching.symbol] = { 
-                    ...results[matching.symbol], 
-                    filled: true, 
-                    fillPrice: status.fill_price 
+                  results[matching.symbol] = {
+                    ...results[matching.symbol],
+                    filled: true,
+                    fillPrice: status.fill_price
                   };
-                  onStatusUpdate?.({ 
-                    symbol: matching.symbol, 
-                    status: 'filled', 
+                  onStatusUpdate?.({
+                    symbol: matching.symbol,
+                    status: 'filled',
                     filled: true,
                     fillPrice: status.fill_price,
                   });
@@ -579,14 +579,14 @@ export default function AdjustmentReviewDialog({
                     status: 'cancelled',
                     filled: false,
                   };
-                  results[matching.symbol] = { 
-                    ...results[matching.symbol], 
+                  results[matching.symbol] = {
+                    ...results[matching.symbol],
                     filled: false,
                     cancelled: true,
                   };
-                  onStatusUpdate?.({ 
-                    symbol: matching.symbol, 
-                    status: 'cancelled', 
+                  onStatusUpdate?.({
+                    symbol: matching.symbol,
+                    status: 'cancelled',
                     filled: false,
                   });
                 } else if (results[matching.symbol]?.filled) {
@@ -594,15 +594,15 @@ export default function AdjustmentReviewDialog({
                 }
               }
             });
-            
+
             setExecutionProgress({ ...roundProgress });
-            
+
             // Check if all SSR orders are filled
             const totalFilled = ssrPendingOrders.filter(o => results[o.symbol]?.filled).length;
             ssrAllFilled = totalFilled === ssrPendingOrders.length;
-            
+
             console.log(`[Execution] SSR Poll ${ssrPollCount}: ${totalFilled}/${ssrPendingOrders.length} CONFIRMED filled by exchange`);
-            
+
             if (ssrAllFilled) {
               console.log('[Execution] ✅ All SSR orders CONFIRMED filled by exchange!');
             }
@@ -610,7 +610,7 @@ export default function AdjustmentReviewDialog({
             console.error('[Execution] SSR Poll error:', pollErr);
           }
         }
-        
+
         if (!ssrAllFilled && ssrPollCount >= ssrMaxPolls) {
           console.log('[Execution] ⚠️ SSR timeout waiting for exchange confirmation - NOT marking as filled!');
           // DO NOT mark unfilled orders as filled - this was the bug!
@@ -624,16 +624,16 @@ export default function AdjustmentReviewDialog({
       } else {
         console.log('[Execution] All SSR orders either filled immediately or failed');
       }
-      
+
       console.log('[Execution] SSR batch complete - REAL exchange confirmations only');
-      
+
     } else {
       // Non-SSR: batch add
       // First notify all orders are being punched
       orders.forEach(order => {
         onStatusUpdate?.({ symbol: order.symbol, status: 'punching', filled: false });
       });
-      
+
       const response = await api.post('/api/options/batch_add', {
         orders,
         order_preference: orderType,
@@ -659,18 +659,18 @@ export default function AdjustmentReviewDialog({
           error: result.error,
           size: result.size,
         };
-        
+
         results[result.symbol] = {
           filled: isFilled,
           size: result.size,
           orderId: result.order_id,
           fillPrice: result.fill_price,
         };
-        
+
         // Update UI with order status
-        onStatusUpdate?.({ 
-          symbol: result.symbol, 
-          status: isFilled ? 'filled' : 'punched', 
+        onStatusUpdate?.({
+          symbol: result.symbol,
+          status: isFilled ? 'filled' : 'punched',
           filled: isFilled,
           fillPrice: result.fill_price,
         });
@@ -710,19 +710,19 @@ export default function AdjustmentReviewDialog({
               if (matching) {
                 const isFilled = status.state === 'filled' || status.state === 'closed';
                 const isCancelled = status.state === 'cancelled' || status.state === 'rejected';
-                
+
                 roundProgress[matching.symbol] = {
                   ...roundProgress[matching.symbol],
                   status: isFilled ? 'filled' : isCancelled ? 'cancelled' : 'pending',
                   filled: isFilled,
                   fillPrice: status.fill_price || roundProgress[matching.symbol].fillPrice,
                 };
-                
+
                 if (isFilled) {
                   results[matching.symbol] = { ...results[matching.symbol], filled: true, fillPrice: status.fill_price };
-                  onStatusUpdate?.({ 
-                    symbol: matching.symbol, 
-                    status: 'filled', 
+                  onStatusUpdate?.({
+                    symbol: matching.symbol,
+                    status: 'filled',
                     filled: true,
                     fillPrice: status.fill_price,
                   });
@@ -735,9 +735,9 @@ export default function AdjustmentReviewDialog({
             // Count only the orders we're waiting for
             const filledCount = pendingOrders.filter(o => results[o.symbol]?.filled).length;
             allFilled = filledCount === pendingOrders.length;
-            
+
             console.log(`[Execution] Poll ${pollCount}: ${filledCount}/${pendingOrders.length} filled`);
-            
+
             if (allFilled) {
               console.log('[Execution] All pending orders filled!');
             }
@@ -745,7 +745,7 @@ export default function AdjustmentReviewDialog({
             console.error('[Execution] Poll error:', pollErr);
           }
         }
-        
+
         if (!allFilled && pollCount >= maxPolls) {
           console.log('[Execution] ⚠️ Timeout waiting for exchange confirmation - orders remain UNFILLED');
           // Orders that didn't get confirmed as filled remain as unfilled in results
@@ -759,7 +759,7 @@ export default function AdjustmentReviewDialog({
         console.log('[Execution] All orders filled immediately (no pending orders)');
       }
     }
-    
+
     console.log(`[Execution] Batch complete - results: ${JSON.stringify(Object.entries(results).map(([s, r]) => `${s}:${r.filled}`))}`);
     return results;
   };
@@ -767,7 +767,7 @@ export default function AdjustmentReviewDialog({
   // Start background execution using AutoloopContext
   const startBackgroundExecution = () => {
     console.log('[Execution] Starting BACKGROUND autoloop execution');
-    
+
     const autoloopId = startAutoloop({
       trades,
       orderType,
@@ -787,9 +787,9 @@ export default function AdjustmentReviewDialog({
         console.error('[Execution] Background autoloop error:', err);
       },
     });
-    
+
     console.log(`[Execution] Background autoloop started with ID: ${autoloopId}`);
-    
+
     // Close dialog - execution continues in background
     setConfirmed(false);
     onClose?.();
@@ -801,7 +801,7 @@ export default function AdjustmentReviewDialog({
       setConfirmed(true);
       return;
     }
-    
+
     // Use background execution for autoloop mode (recommended)
     if (executionMode === 'autoloop' && useBackgroundExecution) {
       startBackgroundExecution();
@@ -826,8 +826,8 @@ export default function AdjustmentReviewDialog({
   };
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       onClose={executing ? undefined : handleClose}
       maxWidth="md"
       fullWidth
@@ -838,9 +838,9 @@ export default function AdjustmentReviewDialog({
         },
       }}
     >
-      <DialogTitle sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <DialogTitle sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
       }}>
@@ -848,13 +848,13 @@ export default function AdjustmentReviewDialog({
           <Typography variant="h6">
             Review & Execute
           </Typography>
-          <Chip 
+          <Chip
             label={`${trades.length} trade${trades.length !== 1 ? 's' : ''}`}
             size="small"
             color="primary"
           />
         </Box>
-        
+
         {!executing && (
           <IconButton onClick={handleClose} size="small">
             <CloseIcon />
@@ -873,52 +873,148 @@ export default function AdjustmentReviewDialog({
         )}
 
         {/* ============================================ */}
+        {/* PRE-TRADE RISK SUMMARY */}
+        {/* ============================================ */}
+        {formattedMetrics && !executing && !executionSuccess && (
+          <Paper sx={{
+            mb: 2.5,
+            p: 2,
+            bgcolor: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid rgba(139, 92, 246, 0.3)',
+            borderRadius: 2,
+          }}>
+            <Typography variant="subtitle2" sx={{
+              color: '#a78bfa', fontWeight: 700, mb: 1.5,
+              display: 'flex', alignItems: 'center', gap: 0.5,
+              fontSize: '0.85rem'
+            }}>
+              📊 Pre-Trade Risk Summary
+            </Typography>
+
+            {/* Net Premium Row */}
+            <Box sx={{
+              display: 'flex', alignItems: 'center', gap: 2, mb: 1, pb: 1,
+              borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+            }}>
+              <Typography variant="caption" sx={{ color: '#94a3b8', minWidth: 90 }}>Net Premium</Typography>
+              <Typography variant="body2" sx={{
+                color: totals.isCredit ? '#22c55e' : '#f97316',
+                fontWeight: 700,
+                fontSize: '0.9rem'
+              }}>
+                {totals.isCredit ? 'CREDIT' : 'DEBIT'} ${Math.abs(totals.totalPremium).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Typography>
+            </Box>
+
+            {/* Before → After Grid */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '90px 1fr 30px 1fr 1fr', gap: 0.5, alignItems: 'center' }}>
+              {/* Header */}
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, fontSize: '0.6rem' }}>METRIC</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, fontSize: '0.6rem', textAlign: 'center' }}>BEFORE</Typography>
+              <Box />
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, fontSize: '0.6rem', textAlign: 'center' }}>AFTER</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, fontSize: '0.6rem', textAlign: 'center' }}>CHANGE</Typography>
+
+              {/* Max Profit */}
+              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>Max Profit</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontSize: '0.75rem' }}>{formattedMetrics.current?.maxProfit || '-'}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', textAlign: 'center' }}>→</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>{formattedMetrics.combined?.maxProfit || '-'}</Typography>
+              <Typography variant="caption" sx={{
+                color: formattedMetrics.change?.maxProfit?.startsWith('+') ? '#22c55e' : formattedMetrics.change?.maxProfit?.startsWith('-') ? '#ef4444' : '#94a3b8',
+                textAlign: 'center', fontWeight: 600, fontSize: '0.7rem',
+              }}>{formattedMetrics.change?.maxProfit || '-'}</Typography>
+
+              {/* Max Loss */}
+              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>Max Loss</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontSize: '0.75rem' }}>{formattedMetrics.current?.maxLoss || '-'}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', textAlign: 'center' }}>→</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>{formattedMetrics.combined?.maxLoss || '-'}</Typography>
+              <Typography variant="caption" sx={{
+                color: formattedMetrics.change?.maxLoss?.startsWith('+') ? '#22c55e' : formattedMetrics.change?.maxLoss?.startsWith('-') ? '#ef4444' : '#94a3b8',
+                textAlign: 'center', fontWeight: 600, fontSize: '0.7rem',
+              }}>{formattedMetrics.change?.maxLoss || '-'}</Typography>
+
+              {/* POP */}
+              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>PoP</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontSize: '0.75rem' }}>{formattedMetrics.current?.pop || '-'}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', textAlign: 'center' }}>→</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>{formattedMetrics.combined?.pop || '-'}</Typography>
+              <Typography variant="caption" sx={{
+                color: formattedMetrics.change?.pop?.startsWith('+') ? '#22c55e' : formattedMetrics.change?.pop?.startsWith('-') ? '#ef4444' : '#94a3b8',
+                textAlign: 'center', fontWeight: 600, fontSize: '0.7rem',
+              }}>{formattedMetrics.change?.pop || '-'}</Typography>
+
+              {/* Delta */}
+              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>Delta</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontSize: '0.75rem' }}>{formattedMetrics.current?.netDelta || '-'}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', textAlign: 'center' }}>→</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>{formattedMetrics.combined?.netDelta || '-'}</Typography>
+              <Typography variant="caption" sx={{
+                color: '#94a3b8',
+                textAlign: 'center', fontWeight: 600, fontSize: '0.7rem',
+              }}>{formattedMetrics.change?.netDelta || '-'}</Typography>
+
+              {/* Theta */}
+              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>Theta</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontSize: '0.75rem' }}>{formattedMetrics.current?.netTheta || '-'}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', textAlign: 'center' }}>→</Typography>
+              <Typography variant="caption" sx={{ color: '#e2e8f0', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>{formattedMetrics.combined?.netTheta || '-'}</Typography>
+              <Typography variant="caption" sx={{
+                color: formattedMetrics.change?.netTheta?.startsWith('+') ? '#22c55e' : formattedMetrics.change?.netTheta?.startsWith('-') ? '#ef4444' : '#94a3b8',
+                textAlign: 'center', fontWeight: 600, fontSize: '0.7rem',
+              }}>{formattedMetrics.change?.netTheta || '-'}</Typography>
+            </Box>
+          </Paper>
+        )}
+
+        {/* ============================================ */}
         {/* REAL-TIME EXECUTION PROGRESS WINDOW */}
         {/* ============================================ */}
         {(executing || executionSuccess) && (
-          <Box sx={{ 
-            mb: 3, 
-            p: 2, 
-            backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+          <Box sx={{
+            mb: 3,
+            p: 2,
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
             borderRadius: 2,
             border: '1px solid rgba(59, 130, 246, 0.3)',
           }}>
             {/* Header */}
-            <Box sx={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center', 
+            <Box sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
               mb: 2,
               pb: 1.5,
               borderBottom: '1px solid rgba(255,255,255,0.1)',
             }}>
-              <Typography variant="h6" sx={{ 
-                fontWeight: 'bold', 
-                display: 'flex', 
-                alignItems: 'center', 
+              <Typography variant="h6" sx={{
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
                 gap: 1,
                 color: executionSuccess ? '#22c55e' : '#3b82f6',
               }}>
                 {executionSuccess ? '🎉' : '⚡'} Auto-Loop Execution Progress
               </Typography>
-              <Chip 
+              <Chip
                 label={`${loopRounds} round${loopRounds > 1 ? 's' : ''} × ${trades.length} trades = ${loopRounds * trades.length} total`}
-                size="small" 
-                sx={{ 
+                size="small"
+                sx={{
                   backgroundColor: 'rgba(59, 130, 246, 0.2)',
                   color: '#94a3b8',
                 }}
               />
             </Box>
-            
+
             {/* Completed Rounds History */}
             {roundHistory.map((round, idx) => (
-              <Box 
-                key={idx} 
-                sx={{ 
-                  mb: 2, 
-                  p: 1.5, 
-                  backgroundColor: 'rgba(34, 197, 94, 0.1)', 
+              <Box
+                key={idx}
+                sx={{
+                  mb: 2,
+                  p: 1.5,
+                  backgroundColor: 'rgba(34, 197, 94, 0.1)',
                   borderRadius: 1,
                   border: '1px solid rgba(34, 197, 94, 0.3)',
                 }}
@@ -927,7 +1023,7 @@ export default function AdjustmentReviewDialog({
                   <Typography variant="subtitle2" sx={{ color: '#22c55e', fontWeight: 'bold' }}>
                     ✅ Round {round.round}/{loopRounds} Complete
                   </Typography>
-                  <Typography variant="body2" sx={{ 
+                  <Typography variant="body2" sx={{
                     color: round.netPremium >= 0 ? '#22c55e' : '#ef4444',
                     fontWeight: 'bold',
                   }}>
@@ -939,11 +1035,11 @@ export default function AdjustmentReviewDialog({
                 </Box>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                   {round.orders.map((order, orderIdx) => (
-                    <Chip 
+                    <Chip
                       key={orderIdx}
                       size="small"
                       label={`${order.side === 'sell' ? 'S' : 'B'} ${order.symbol.split('-').slice(0, 3).join('-')} ×${order.size}`}
-                      sx={{ 
+                      sx={{
                         backgroundColor: order.filled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
                         color: order.filled ? '#22c55e' : '#ef4444',
                         fontSize: '0.7rem',
@@ -953,12 +1049,12 @@ export default function AdjustmentReviewDialog({
                 </Box>
               </Box>
             ))}
-            
+
             {/* Current Round (if executing) */}
             {executing && currentRound > 0 && (
-              <Box sx={{ 
-                p: 1.5, 
-                backgroundColor: 'rgba(59, 130, 246, 0.1)', 
+              <Box sx={{
+                p: 1.5,
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
                 borderRadius: 1,
                 border: '1px solid rgba(59, 130, 246, 0.3)',
               }}>
@@ -967,15 +1063,15 @@ export default function AdjustmentReviewDialog({
                     <CircularProgress size={14} sx={{ color: '#3b82f6' }} />
                     Round {currentRound}/{loopRounds}: {
                       executionPhase === 'punching' ? 'Punching orders to exchange...' :
-                      executionPhase === 'waiting' ? 'Waiting for fills...' :
-                      executionPhase === 'round_complete' ? 'Complete!' : 'Processing...'
+                        executionPhase === 'waiting' ? 'Waiting for fills...' :
+                          executionPhase === 'round_complete' ? 'Complete!' : 'Processing...'
                     }
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#94a3b8' }}>
                     {currentRoundOrders.filter(o => o.filled).length}/{currentRoundOrders.length} filled
                   </Typography>
                 </Box>
-                
+
                 {/* Order Status Table */}
                 <Table size="small" sx={{ '& td, & th': { py: 0.5, px: 1, border: 'none' } }}>
                   <TableBody>
@@ -992,14 +1088,14 @@ export default function AdjustmentReviewDialog({
                           </Typography>
                         </TableCell>
                         <TableCell align="center" sx={{ width: 50 }}>
-                          <Chip 
-                            label={order.side.toUpperCase()} 
-                            size="small" 
-                            sx={{ 
-                              ...( order.side === 'sell' ? styles.sellChip : styles.buyChip),
+                          <Chip
+                            label={order.side.toUpperCase()}
+                            size="small"
+                            sx={{
+                              ...(order.side === 'sell' ? styles.sellChip : styles.buyChip),
                               height: 20,
                               fontSize: '0.65rem',
-                            }} 
+                            }}
                           />
                         </TableCell>
                         <TableCell align="center" sx={{ width: 50 }}>
@@ -1037,13 +1133,13 @@ export default function AdjustmentReviewDialog({
                 </Table>
               </Box>
             )}
-            
+
             {/* Final Summary (when complete) */}
             {executionSuccess && roundHistory.length > 0 && (
-              <Box sx={{ 
-                mt: 2, 
-                p: 2, 
-                backgroundColor: 'rgba(34, 197, 94, 0.15)', 
+              <Box sx={{
+                mt: 2,
+                p: 2,
+                backgroundColor: 'rgba(34, 197, 94, 0.15)',
                 borderRadius: 1,
                 border: '1px solid rgba(34, 197, 94, 0.4)',
                 textAlign: 'center',
@@ -1054,7 +1150,7 @@ export default function AdjustmentReviewDialog({
                 <Typography variant="body1" sx={{ color: '#e2e8f0' }}>
                   Total orders executed: <strong>{roundHistory.reduce((sum, r) => sum + r.orders.length, 0)}</strong>
                 </Typography>
-                <Typography variant="body1" sx={{ 
+                <Typography variant="body1" sx={{
                   color: roundHistory.reduce((sum, r) => sum + (r.netPremium || 0), 0) >= 0 ? '#22c55e' : '#ef4444',
                   fontWeight: 'bold',
                   mt: 0.5,
@@ -1065,9 +1161,9 @@ export default function AdjustmentReviewDialog({
                     ({roundHistory.reduce((sum, r) => sum + (r.netPremium || 0), 0) >= 0 ? 'Credit' : 'Debit'})
                   </span>
                 </Typography>
-                <Button 
-                  variant="contained" 
-                  color="success" 
+                <Button
+                  variant="contained"
+                  color="success"
                   onClick={handleClose}
                   sx={{ mt: 2 }}
                 >
@@ -1075,13 +1171,13 @@ export default function AdjustmentReviewDialog({
                 </Button>
               </Box>
             )}
-            
+
             {/* Stop Button */}
             {executing && (
               <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                <Button 
-                  variant="outlined" 
-                  color="error" 
+                <Button
+                  variant="outlined"
+                  color="error"
                   size="small"
                   startIcon={<StopIcon />}
                   onClick={handleStop}
@@ -1109,10 +1205,10 @@ export default function AdjustmentReviewDialog({
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
           Trades to Execute
         </Typography>
-        
-        <TableContainer 
-          component={Paper} 
-          sx={{ 
+
+        <TableContainer
+          component={Paper}
+          sx={{
             mb: 3,
             backgroundColor: 'rgba(255,255,255,0.02)',
             maxHeight: 250,
@@ -1164,7 +1260,7 @@ export default function AdjustmentReviewDialog({
                     <TableCell align="right">
                       <Typography
                         variant="body2"
-                        sx={{ 
+                        sx={{
                           fontWeight: 'bold',
                           color: isCredit ? '#4caf50' : '#f44336',
                         }}
@@ -1180,11 +1276,11 @@ export default function AdjustmentReviewDialog({
         </TableContainer>
 
         {/* Net Premium Summary */}
-        <Box sx={{ 
-          p: 2, 
+        <Box sx={{
+          p: 2,
           mb: 3,
-          backgroundColor: totals.isCredit 
-            ? 'rgba(76, 175, 80, 0.1)' 
+          backgroundColor: totals.isCredit
+            ? 'rgba(76, 175, 80, 0.1)'
             : 'rgba(244, 67, 54, 0.1)',
           borderRadius: 1,
           borderLeft: `3px solid ${totals.isCredit ? '#4caf50' : '#f44336'}`,
@@ -1195,7 +1291,7 @@ export default function AdjustmentReviewDialog({
             </Typography>
             <Typography
               variant="h6"
-              sx={{ 
+              sx={{
                 fontWeight: 'bold',
                 color: totals.isCredit ? '#4caf50' : '#f44336',
               }}
@@ -1214,7 +1310,7 @@ export default function AdjustmentReviewDialog({
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>
           Execution Options
         </Typography>
-        
+
         {/* Order Type Selection - Visual Buttons like OptionsPanel */}
         <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
           Order Type
@@ -1307,7 +1403,7 @@ export default function AdjustmentReviewDialog({
               </Button>
             </Box>
           </Box>
-          
+
           {executionMode === 'autoloop' && (
             <Box>
               <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block' }}>
@@ -1319,7 +1415,7 @@ export default function AdjustmentReviewDialog({
                 value={loopRounds}
                 onChange={(e) => setLoopRounds(Math.max(1, parseInt(e.target.value) || 1))}
                 inputProps={{ min: 1, max: 100 }}
-                sx={{ 
+                sx={{
                   width: 80,
                   '& input': { textAlign: 'center' },
                 }}
@@ -1327,7 +1423,7 @@ export default function AdjustmentReviewDialog({
               />
             </Box>
           )}
-          
+
           <Box sx={{ pt: 2.5 }}>
             {executionMode === 'autoloop' ? (
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -1346,23 +1442,23 @@ export default function AdjustmentReviewDialog({
         </Box>
 
         {/* Info about execution */}
-        <Alert 
-          severity={executionMode === 'all_at_once' ? 'success' : 'info'} 
+        <Alert
+          severity={executionMode === 'all_at_once' ? 'success' : 'info'}
           sx={{ mb: 2 }}
         >
           <Typography variant="body2">
             <strong>{getOrderTypeInfo(orderType).label}</strong>: {getOrderTypeInfo(orderType).desc}
-            {executionMode === 'autoloop' && loopRounds > 1 && 
+            {executionMode === 'autoloop' && loopRounds > 1 &&
               `. Will execute ${loopRounds} rounds, each round placing: ${trades.map(t => `${t.quantity || 1} lot`).join(', ')}. Waits for all fills.`}
-            {executionMode === 'all_at_once' && 
+            {executionMode === 'all_at_once' &&
               `. Will place all ${trades.reduce((sum, t) => sum + (t.quantity || 1), 0)} lots in one batch order.`}
           </Typography>
         </Alert>
 
         {/* Metrics Summary (compact) */}
         {formattedMetrics && (
-          <Box sx={{ 
-            p: 2, 
+          <Box sx={{
+            p: 2,
             backgroundColor: 'rgba(255,255,255,0.03)',
             borderRadius: 1,
           }}>
@@ -1399,8 +1495,8 @@ export default function AdjustmentReviewDialog({
         )}
       </DialogContent>
 
-      <DialogActions sx={{ 
-        px: 3, 
+      <DialogActions sx={{
+        px: 3,
         py: 2,
         borderTop: '1px solid rgba(255,255,255,0.1)',
         justifyContent: 'space-between',
@@ -1430,7 +1526,7 @@ export default function AdjustmentReviewDialog({
               onClick={handleExecute}
               disabled={executing || trades.length === 0}
               startIcon={executing ? <CircularProgress size={20} color="inherit" /> : <ExecuteIcon />}
-              sx={{ 
+              sx={{
                 minWidth: 180,
                 bgcolor: getOrderTypeInfo(orderType).color,
                 '&:hover': {

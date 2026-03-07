@@ -25,6 +25,7 @@ export const CONTRACT_MULTIPLIERS = {
 
 /**
  * Get contract multiplier from symbol string.
+ * @sealed
  * @param {string} symbol - e.g. "C-BTC-65000-240226" or "ETH-PERP"
  * @returns {number} 0.001 for BTC, 0.01 for ETH
  */
@@ -42,6 +43,7 @@ export const getContractMultiplier = (symbol) => {
 /**
  * Cumulative distribution function for standard normal distribution.
  * Abramowitz & Stegun approximation (5-term, accuracy ~1e-7).
+ * @sealed
  */
 export const normalCDF = (x) => {
   if (x === 0) return 0.5;
@@ -60,6 +62,7 @@ export const normalCDF = (x) => {
 
 /**
  * Probability density function for standard normal distribution.
+ * @sealed
  */
 export const normalPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
 
@@ -70,6 +73,7 @@ export const normalPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
 /**
  * Calculate Black-Scholes option price.
  *
+ * @sealed
  * @param {number} S - Spot price
  * @param {number} K - Strike price
  * @param {number} T - Time to expiry in years
@@ -102,6 +106,7 @@ export const blackScholesPrice = (S, K, T, r, sigma, type) => {
 /**
  * Calculate implied volatility using Newton-Raphson with bisection fallback.
  *
+ * @sealed
  * @param {number} marketPrice - Observed option market price
  * @param {number} S - Spot price
  * @param {number} K - Strike price
@@ -149,6 +154,7 @@ export const calculateImpliedVolatility = (marketPrice, S, K, T, r, type) => {
 /**
  * Calculate portfolio delta at a given spot price.
  *
+ * @sealed
  * @param {number} S - Spot price
  * @param {Array} positions - Parsed positions array
  * @param {number} targetDaysFromNow - Days from now for target date
@@ -185,6 +191,7 @@ export const calculatePortfolioDelta = (S, positions, targetDaysFromNow = 0, r =
  * Calculate portfolio theta at a given spot price.
  * Theta = rate of time-decay per day, in $ units (accounting for multiplier).
  *
+ * @sealed
  * @param {number} S - Spot price
  * @param {Array} positions - Parsed positions array
  * @param {number} targetDaysFromNow - Days from now for target date
@@ -217,6 +224,7 @@ export const calculatePortfolioTheta = (S, positions, targetDaysFromNow = 0, r =
  * Calculate portfolio gamma at a given spot price.
  * Gamma = rate of change of delta per $1 spot move.
  *
+ * @sealed
  * @param {number} S - Spot price
  * @param {Array} positions - Parsed positions array
  * @param {number} targetDaysFromNow - Days from now for target date
@@ -250,6 +258,7 @@ export const calculatePortfolioGamma = (S, positions, targetDaysFromNow = 0, r =
  * Uses Monte Carlo-like approach: sample the expiry payoff curve and find
  * the fraction of the lognormal distribution where payoff > 0.
  *
+ * @sealed
  * @param {number} spotPrice - Current spot price
  * @param {number} weightedIV - Portfolio-weighted IV
  * @param {number} yearsToExpiry - Time to expiry in years
@@ -295,6 +304,7 @@ export const calculateProbabilityOfProfit = (spotPrice, weightedIV, yearsToExpir
  * Returns a function price → raw probability density.
  * Caller should normalize values (e.g. 0-100) for chart overlay.
  *
+ * @sealed
  * @param {number} spot - Current spot price
  * @param {number} volatility - Annualized IV (e.g. 0.8 for 80%)
  * @param {number} T - Time horizon in years
@@ -321,6 +331,7 @@ export const createPriceDistribution = (spot, volatility, T) => {
  * Weights by notional value (|size| × strike × multiplier) so larger
  * positions have proportionally more influence on the distribution.
  *
+ * @sealed
  * @param {Array} positions - Parsed positions array
  * @returns {number} Weighted average IV (fallback 0.8)
  */
@@ -349,6 +360,7 @@ export const calculateWeightedIV = (positions) => {
 
 /**
  * Format date for display in payoff diagram.
+ * @sealed
  */
 export const formatDate = (date) => {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

@@ -119,6 +119,8 @@ import usePersistedState from '../../hooks/usePersistedState';
 import useGroupsAPI from '../../hooks/useGroupsAPI';
 import useOptionsPositions from '../../hooks/useOptionsPositions';
 import useOptionsSettings from '../../hooks/useOptionsSettings';
+import usePositionGreeks from '../../hooks/usePositionGreeks';
+import useIVStats from '../../hooks/useIVStats';
 import SoundSettingsPanel from '../SoundSettingsPanel';
 // JAN 17, 2026: Futures panel - separate file structure, minimal invasion
 import FuturesPanel from '../futures/FuturesPanel';
@@ -133,6 +135,10 @@ import PayoffErrorBoundary from './PayoffErrorBoundary';
 import PositionRow from './PositionRow';
 import PortfolioGreeksSummary from './PortfolioGreeksSummary';
 import HedgeDeltaModal from './HedgeDeltaModal';
+import PnLAttributionPanel from './PnLAttributionPanel';
+import VolTermStructurePanel from './VolTermStructurePanel';
+import VolSmilePanel from './VolSmilePanel';
+import RollManagerModal from './RollManagerModal';
 import AutoLoopBanner from './AutoLoopBanner';
 import ClosePositionDialog from './ClosePositionDialog';
 
@@ -380,6 +386,44 @@ const OptionsPanel = () => {
   // expiryKey = sorted expiry codes joined by '|', or 'ALL' when no filter.
   const GROUP_PALETTE = ['#7c3aed', '#0891b2', '#0d9488', '#d97706', '#dc2626', '#db2777', '#65a30d', '#ea580c'];
 
+  // Color palettes for different group types
+  const CALL_PALETTE = ['#16a34a', '#15803d', '#166534', '#4ade80', '#86efac'];
+  const PUT_PALETTE = ['#dc2626', '#b91c1c', '#991b1b', '#f87171', '#fca5a5'];
+  const MIXED_PALETTE = ['#7c3aed', '#0891b2', '#0d9488', '#d97706', '#db2777']; // neutral colors
+
+  // Determine if a group is CALL-dominant, PUT-dominant, or MIXED based on its symbols
+  const getGroupType = useCallback((symbols) => {
+    if (!symbols || symbols.length === 0) return 'MIXED';
+
+    let callCount = 0;
+    let putCount = 0;
+
+    symbols.forEach((symbol) => {
+      if (symbol.startsWith('C-')) callCount++;
+      else if (symbol.startsWith('P-')) putCount++;
+    });
+
+    // If all are calls, return 'CALL'
+    if (putCount === 0 && callCount > 0) return 'CALL';
+    // If all are puts, return 'PUT'
+    if (callCount === 0 && putCount > 0) return 'PUT';
+    // Otherwise it's mixed
+    return 'MIXED';
+  }, []);
+
+  // Get the appropriate color for a group based on its type
+  const getGroupColor = useCallback((groupType, typeCountInExpiry) => {
+    const typeIndex = typeCountInExpiry || 0;
+
+    if (groupType === 'CALL') {
+      return CALL_PALETTE[typeIndex % CALL_PALETTE.length];
+    } else if (groupType === 'PUT') {
+      return PUT_PALETTE[typeIndex % PUT_PALETTE.length];
+    } else {
+      return MIXED_PALETTE[typeIndex % MIXED_PALETTE.length];
+    }
+  }, [CALL_PALETTE, PUT_PALETTE, MIXED_PALETTE]);
+
   // Single master persisted object for all expiry group data — SERVER-SIDE STORAGE
   // Groups are stored in SQLite on the backend and will NEVER disappear unless user deletes them.
   // On first load, any existing localStorage data is automatically migrated to the server.
@@ -486,21 +530,29 @@ const OptionsPanel = () => {
     const trimmedName = name.trim();
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
-      const usedCount = Object.keys(slice.groups || {}).length;
-      const color = GROUP_PALETTE[usedCount % GROUP_PALETTE.length];
-      const existingOrder = slice.groupOrder || Object.keys(slice.groups || {});
+      // New groups start empty, so they're MIXED type. We use MIXED_PALETTE for new groups.
+      // However, once positions are added, the color will be recalculated based on their type.
+      const existingGroups = slice.groups || {};
+      // Count existing MIXED groups to get the right index in the palette
+      let mixedCount = 0;
+      Object.values(existingGroups).forEach((g) => {
+        const type = getGroupType(g.symbols);
+        if (type === 'MIXED') mixedCount++;
+      });
+      const color = getGroupColor('MIXED', mixedCount);
+      const existingOrder = slice.groupOrder || Object.keys(existingGroups);
       // Also persist to server via targeted API
       createGroupOnServer(expiryGroupKey, id, trimmedName, color);
       return {
         ...prev,
         [expiryGroupKey]: {
           ...slice,
-          groups: { ...(slice.groups || {}), [id]: { name: trimmedName, color, symbols: [] } },
+          groups: { ...existingGroups, [id]: { name: trimmedName, color, symbols: [] } },
           groupOrder: [...existingOrder, id], // append new group at the end
         },
       };
     });
-  }, [expiryGroupKey, createGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, createGroupOnServer, getGroupType, getGroupColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Delete a group (positions become ungrouped) — also removes from groupOrder
   const handleDeleteGroup = useCallback((groupId) => {
@@ -522,16 +574,41 @@ const OptionsPanel = () => {
     setAllExpiryGroupData((prev) => {
       const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
       const prevGroups = slice.groups || {};
-      const next = {};
+
+      // PASS 1: Update symbols in all groups
+      const groupsWithUpdatedSymbols = {};
       for (const [id, g] of Object.entries(prevGroups)) {
-        next[id] = { ...g, symbols: g.symbols.filter((s) => s !== symbol) };
+        const newSymbols = g.symbols.filter((s) => s !== symbol);
+        groupsWithUpdatedSymbols[id] = { ...g, symbols: newSymbols };
       }
-      if (groupId && next[groupId]) {
-        next[groupId] = { ...next[groupId], symbols: [...next[groupId].symbols, symbol] };
+
+      // Add symbol to target group if specified
+      if (groupId && groupsWithUpdatedSymbols[groupId]) {
+        const newSymbols = [...groupsWithUpdatedSymbols[groupId].symbols, symbol];
+        groupsWithUpdatedSymbols[groupId] = { ...groupsWithUpdatedSymbols[groupId], symbols: newSymbols };
       }
+
+      // PASS 2: Recalculate colors based on final symbol sets
+      const next = {};
+      for (const [id, g] of Object.entries(groupsWithUpdatedSymbols)) {
+        const type = getGroupType(g.symbols);
+
+        // Count how many groups of the same type exist (excluding current)
+        let typeCount = 0;
+        Object.entries(groupsWithUpdatedSymbols).forEach(([otherId, otherGroup]) => {
+          if (otherId !== id) {
+            const otherType = getGroupType(otherGroup.symbols);
+            if (otherType === type) typeCount++;
+          }
+        });
+
+        const color = getGroupColor(type, typeCount);
+        next[id] = { ...g, color };
+      }
+
       return { ...prev, [expiryGroupKey]: { ...slice, groups: next } };
     });
-  }, [expiryGroupKey, assignSymbolOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, assignSymbolOnServer, getGroupType, getGroupColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get the groupId a symbol belongs to (or null)
   const getSymbolGroup = useCallback((symbol) => {
@@ -620,6 +697,14 @@ const OptionsPanel = () => {
     pop: true,
     pnl: true,
     actions: true,
+    // F3: Per-position Greeks — hidden by default, toggleable via Column Settings
+    dte: false,
+    posDelta: false,
+    posTheta: false,
+    posGamma: false,
+    posVega: false,
+    // F2: IV Rank — hidden by default
+    ivr: false,
   }), []);
   const [visibleColumns, setVisibleColumns] = usePersistedState('options_visible_columns', DEFAULT_VISIBLE_COLUMNS, {
     transform: (parsed) => ({ ...DEFAULT_VISIBLE_COLUMNS, ...parsed }),
@@ -644,6 +729,14 @@ const OptionsPanel = () => {
     { key: 'pop', label: 'PoP' },
     { key: 'pnl', label: 'PnL' },
     { key: 'actions', label: 'Actions' },
+    // F3: Per-position Greeks
+    { key: 'dte', label: 'DTE' },
+    { key: 'posDelta', label: 'Delta' },
+    { key: 'posTheta', label: 'Theta ($/d)' },
+    { key: 'posGamma', label: 'Gamma' },
+    { key: 'posVega', label: 'Vega' },
+    // F2: IV Rank
+    { key: 'ivr', label: 'IVR' },
   ];
 
   // Toggle column visibility (auto-saved by usePersistedState)
@@ -777,6 +870,10 @@ const OptionsPanel = () => {
   // Delta Hedge Modal state
   const [hedgeModalOpen, setHedgeModalOpen] = useState(false);
   const [hedgeModalDelta, setHedgeModalDelta] = useState(0);
+
+  // F9: Roll Manager Modal state
+  const [rollModalOpen, setRollModalOpen] = useState(false);
+  const [rollPosition, setRollPosition] = useState(null);
 
   // Trade notification state (JAN 19, 2026 - Visual feedback)
   const [tradeNotification, setTradeNotification] = useState(null);
@@ -1157,6 +1254,12 @@ const OptionsPanel = () => {
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
+
+  // F3: Per-position Greeks (polls /api/options/position-greeks every 30s)
+  const { positionGreeks, expirySubtotals } = usePositionGreeks(btcPrice || 0);
+
+  // F2: IV Rank/Percentile (polls /api/options/iv-stats every 60s)
+  const { ivStats } = useIVStats();
   const indexPrices = useMemo(
     () => ({
       BTC: btcPrice || 0,
@@ -4024,6 +4127,48 @@ const OptionsPanel = () => {
                       </TableCell>
                     )}
                     {visibleColumns.pnl && <TableCell align="right">PnL</TableCell>}
+                    {visibleColumns.ivr && (
+                      <TableCell align="center" sx={{ minWidth: 50 }}>
+                        <Tooltip title="IV Rank — percentile of current IV vs 52-week range">
+                          <Box>IVR</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.dte && (
+                      <TableCell align="center" sx={{ minWidth: 40 }}>
+                        <Tooltip title="Days to Expiration">
+                          <Box>DTE</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.posDelta && (
+                      <TableCell align="right" sx={{ minWidth: 60 }}>
+                        <Tooltip title="Position Delta — directional exposure">
+                          <Box>Delta</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.posTheta && (
+                      <TableCell align="right" sx={{ minWidth: 60 }}>
+                        <Tooltip title="Position Theta — daily time decay ($)">
+                          <Box>Theta</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.posGamma && (
+                      <TableCell align="right" sx={{ minWidth: 60 }}>
+                        <Tooltip title="Position Gamma — delta sensitivity">
+                          <Box>Gamma</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
+                    {visibleColumns.posVega && (
+                      <TableCell align="right" sx={{ minWidth: 60 }}>
+                        <Tooltip title="Position Vega — $ per 1 vol-point change">
+                          <Box>Vega</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
                     {visibleColumns.actions && <TableCell align="center">Actions</TableCell>}
                   </TableRow>
                 </TableHead>
@@ -4147,6 +4292,8 @@ const OptionsPanel = () => {
                                   maxLossSetting={maxLossSettings[pos.product_symbol]}
                                   tpSetting={tpSettings[pos.product_symbol]}
                                   popValue={popData[pos.product_symbol]}
+                                  posGreeks={positionGreeks[pos.product_symbol]}
+                                  ivrData={ivStats[pos.product_symbol]}
                                   skipConfirmStrike={skipConfirmStrikes[pos.product_symbol]}
                                   scalingRecommendation={scalingRecommendations[pos.product_symbol]}
                                   onToggleStrikeSelection={toggleStrikeSelection}
@@ -4191,6 +4338,7 @@ const OptionsPanel = () => {
                                   onTakeProfitUpdate={handleTakeProfitUpdate}
                                   onHandleAdd={handleAdd}
                                   onHandleClose={handleClose}
+                                  onRoll={(p) => { setRollPosition(p); setRollModalOpen(true); }}
                                   onDisableSkipConfirm={disableSkipConfirm}
                                   onRemoveClosedPosition={(symbol) => {
                                     setClosedPositions(prev => {
@@ -4407,6 +4555,62 @@ const OptionsPanel = () => {
             </TableContainer>
           )}
 
+          {/* F3: Expiry Greek Subtotals — shown when any Greek column is visible */}
+          {(visibleColumns.posDelta || visibleColumns.posTheta || visibleColumns.posGamma || visibleColumns.posVega) &&
+            Object.keys(expirySubtotals).length > 0 && (
+            <Box sx={{
+              mt: 0.5, mb: 1,
+              display: 'flex', flexWrap: 'wrap', gap: 1,
+              px: 1.5, py: 1,
+              bgcolor: 'rgba(15, 23, 42, 0.7)',
+              border: '1px solid rgba(71, 85, 105, 0.3)',
+              borderRadius: 1,
+            }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mr: 0.5, lineHeight: 2 }}>
+                Expiry Greeks:
+              </Typography>
+              {Object.entries(expirySubtotals).sort(([a], [b]) => a.localeCompare(b)).map(([expiry, st]) => {
+                const label = expiry.slice(5).replace('-', '/'); // "2026-03-13" -> "03/13"
+                return (
+                  <Box key={expiry} sx={{
+                    display: 'flex', alignItems: 'center', gap: 0.5,
+                    px: 1, py: 0.3,
+                    bgcolor: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(71, 85, 105, 0.4)',
+                    borderRadius: 0.5,
+                  }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, mr: 0.5 }}>
+                      {label}
+                    </Typography>
+                    {visibleColumns.posDelta && (
+                      <Typography variant="caption" sx={{ color: st.delta >= 0 ? '#10b981' : '#ef4444' }}>
+                        {'\u0394'}{st.delta > 0 ? '+' : ''}{st.delta.toFixed(3)}
+                      </Typography>
+                    )}
+                    {visibleColumns.posTheta && (
+                      <Typography variant="caption" sx={{ color: st.theta >= 0 ? '#10b981' : '#f59e0b', ml: 0.5 }}>
+                        {'\u0398'}{st.theta > 0 ? '+' : ''}${st.theta.toFixed(2)}/d
+                      </Typography>
+                    )}
+                    {visibleColumns.posGamma && (
+                      <Typography variant="caption" sx={{ color: '#a855f7', ml: 0.5 }}>
+                        {'\u0393'}{st.gamma.toFixed(5)}
+                      </Typography>
+                    )}
+                    {visibleColumns.posVega && (
+                      <Typography variant="caption" sx={{ color: '#f59e0b', ml: 0.5 }}>
+                        {'\u03bd'}${st.vega.toFixed(2)}
+                      </Typography>
+                    )}
+                    <Typography variant="caption" sx={{ color: '#475569', ml: 0.5 }}>
+                      ({st.count})
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+
           <BatchOrderPanel
             positions={positions}
             selectedStrikes={selectedStrikes}
@@ -4464,6 +4668,7 @@ const OptionsPanel = () => {
               <PortfolioGreeksSummary
                 sortedPositions={sortedPositions}
                 aggregatedGreeks={aggregatedGreeks}
+                ivStats={ivStats}
                 onHedgeClick={(delta) => {
                   setHedgeModalDelta(delta);
                   setHedgeModalOpen(true);
@@ -4471,8 +4676,29 @@ const OptionsPanel = () => {
               />
             )
           }
+
+          {/* F4: PnL Attribution Panel — collapsed by default, self-contained */}
+          <PnLAttributionPanel />
+
+          {/* F7: Vol Term Structure — needs positions + spot */}
+          {positions.length > 0 && (
+            <VolTermStructurePanel positions={positions} spotPrice={btcPrice || 0} />
+          )}
+
+          {/* F8: Vol Smile — needs positions + spot */}
+          {positions.length > 0 && (
+            <VolSmilePanel positions={positions} spotPrice={btcPrice || 0} />
+          )}
         </CardContent >
       </Card >
+
+      {/* F9: Roll Manager Modal */}
+      <RollManagerModal
+        open={rollModalOpen}
+        position={rollPosition}
+        onClose={() => { setRollModalOpen(false); setRollPosition(null); }}
+        onRollComplete={() => { setRollModalOpen(false); setRollPosition(null); fetchPositions(); }}
+      />
 
       {/* Delta Hedge Modal */}
       <HedgeDeltaModal
@@ -4496,6 +4722,7 @@ const OptionsPanel = () => {
                   positions={sortedPositions}
                   selectedPositions={selectedPositionsForPayoff}
                   futuresPositions={visibleFuturesPositions}
+                  indexPrices={indexPrices}
                 />
               </Suspense>
             </PayoffErrorBoundary>

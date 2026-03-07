@@ -22,6 +22,7 @@ import {
     Checkbox,
     TextField,
     IconButton,
+    Button,
 } from '@mui/material';
 import {
     TrendingUp,
@@ -105,6 +106,8 @@ function PositionRow({
     maxLossSetting,
     tpSetting,
     popValue,
+    posGreeks,
+    ivrData,
     skipConfirmStrike,
     scalingRecommendation,
     // Callbacks
@@ -121,6 +124,7 @@ function PositionRow({
     onTakeProfitUpdate,
     onHandleAdd,
     onHandleClose,
+    onRoll,
     onDisableSkipConfirm,
     onRemoveClosedPosition,
     // Context
@@ -620,6 +624,94 @@ function PositionRow({
                 </TableCell>
             )}
 
+            {/* F2: IVR — IV Rank badge */}
+            {visibleColumns.ivr && (
+                <TableCell align="center" sx={cellSx}>
+                    {ivrData ? (() => {
+                        const ivr = ivrData.ivr;
+                        const color = ivr <= 30 ? '#10b981' : ivr <= 60 ? '#f59e0b' : '#ef4444';
+                        const label = ivr <= 30 ? 'Low' : ivr <= 60 ? 'Mid' : 'Rich';
+                        const bgColor = ivr <= 30 ? 'rgba(16,185,129,0.15)' : ivr <= 60 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)';
+                        return (
+                            <Tooltip title={`IVP: ${ivrData.ivp} | 52W: ${ivrData.low_52w}%–${ivrData.high_52w}%`}>
+                                <Chip
+                                    label={`${label} ${ivr.toFixed(0)}`}
+                                    size="small"
+                                    sx={{ bgcolor: bgColor, color, fontSize: '0.6rem', height: 18, fontWeight: 600 }}
+                                />
+                            </Tooltip>
+                        );
+                    })() : (
+                        <Typography variant="caption" sx={{ color: '#475569' }}>N/A</Typography>
+                    )}
+                </TableCell>
+            )}
+
+            {/* F3: DTE */}
+            {visibleColumns.dte && (
+                <TableCell align="center" sx={cellSx}>
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            fontWeight: 600,
+                            color: (posGreeks?.dte ?? daysToExp) <= 7 ? '#ef4444' : '#94a3b8',
+                            fontSize: '0.8rem',
+                        }}
+                    >
+                        {posGreeks?.dte ?? daysToExp ?? '-'}
+                    </Typography>
+                </TableCell>
+            )}
+
+            {/* F3: Position Delta */}
+            {visibleColumns.posDelta && (
+                <TableCell align="right" sx={cellSx}>
+                    <Typography variant="body2" sx={{
+                        color: (posGreeks?.delta ?? 0) >= 0 ? '#10b981' : '#ef4444',
+                        fontSize: '0.78rem',
+                    }}>
+                        {posGreeks ? (posGreeks.delta > 0 ? '+' : '') + posGreeks.delta.toFixed(4) : '-'}
+                    </Typography>
+                </TableCell>
+            )}
+
+            {/* F3: Position Theta */}
+            {visibleColumns.posTheta && (
+                <TableCell align="right" sx={cellSx}>
+                    <Tooltip title="Theta: $/day for this position">
+                        <Typography variant="body2" sx={{
+                            color: (posGreeks?.theta ?? 0) >= 0 ? '#10b981' : '#f59e0b',
+                            fontSize: '0.78rem',
+                        }}>
+                            {posGreeks ? (posGreeks.theta > 0 ? '+$' : '-$') + Math.abs(posGreeks.theta).toFixed(2) : '-'}
+                        </Typography>
+                    </Tooltip>
+                </TableCell>
+            )}
+
+            {/* F3: Position Gamma */}
+            {visibleColumns.posGamma && (
+                <TableCell align="right" sx={cellSx}>
+                    <Typography variant="body2" sx={{ color: '#a855f7', fontSize: '0.78rem' }}>
+                        {posGreeks ? posGreeks.gamma.toFixed(6) : '-'}
+                    </Typography>
+                </TableCell>
+            )}
+
+            {/* F3: Position Vega */}
+            {visibleColumns.posVega && (
+                <TableCell align="right" sx={cellSx}>
+                    <Tooltip title="Vega: $ per 1 vol-point change">
+                        <Typography variant="body2" sx={{
+                            color: (posGreeks?.vega ?? 0) >= 0 ? '#f59e0b' : '#94a3b8',
+                            fontSize: '0.78rem',
+                        }}>
+                            {posGreeks ? '$' + posGreeks.vega.toFixed(2) : '-'}
+                        </Typography>
+                    </Tooltip>
+                </TableCell>
+            )}
+
             {/* Actions */}
             {visibleColumns.actions && (
                 <TableCell align="center" sx={cellSx}>
@@ -726,6 +818,30 @@ function PositionRow({
                                 </Tooltip>
                             );
                         })()}
+
+                        {/* F9: Roll button — shown for open short positions, amber when DTE ≤ 14 */}
+                        {!isClosed && onRoll && (
+                            <Tooltip title={`Roll to further expiry${(posGreeks?.dte ?? daysToExp) <= 14 ? ' ⚠️ expiry approaching' : ''}`}>
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => onRoll(pos)}
+                                    sx={{
+                                        minWidth: 36, px: 0.75, py: 0.25, fontSize: '0.65rem', height: 28,
+                                        borderColor: (posGreeks?.dte ?? daysToExp) <= 14
+                                            ? 'rgba(251,191,36,0.6)' : 'rgba(99,102,241,0.4)',
+                                        color: (posGreeks?.dte ?? daysToExp) <= 14 ? '#fbbf24' : '#818cf8',
+                                        '&:hover': {
+                                            borderColor: (posGreeks?.dte ?? daysToExp) <= 14 ? '#fbbf24' : '#6366f1',
+                                            bgcolor: (posGreeks?.dte ?? daysToExp) <= 14
+                                                ? 'rgba(251,191,36,0.1)' : 'rgba(99,102,241,0.1)',
+                                        },
+                                    }}
+                                >
+                                    Roll
+                                </Button>
+                            </Tooltip>
+                        )}
 
                         {/* Visual Separator */}
                         <Box sx={{ width: '2px', height: '32px', bgcolor: 'divider', mx: 0.25 }} />

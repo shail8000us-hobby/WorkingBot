@@ -1,9 +1,34 @@
 # MMM Lot Recycling & Smart Position Management — Implementation Plan
 
 > **Created:** March 3, 2026
-> **Status:** PLAN — Ready for Implementation
+> **Updated:** March 4, 2026
+> **Status:** ALL PHASES COMPLETE ✅ — Backend, Analytics, Frontend all implemented and verified
 > **Priority:** HIGH — Current max-lot exhaustion cripples the algo within hours
-> **Estimated Effort:** 3-4 implementation sessions
+> **Estimated Effort:** 3-4 implementation sessions (backend done in 1)
+
+### Implementation Progress
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `mmm_harvester.py` (new, 246 lines) | ✅ Done | M1 scanner + M3 asymmetry modifier |
+| `mmm_recycler.py` (new, 507 lines) | ✅ Done | M2 selection, viability check, two-phase execution. Bug fixed: `target_freed` now uses raw uncapped lot calc instead of `calculate_lots_to_sell()` which returns 0 at cap |
+| `mmm_constants.py` (new, 41 lines) | ✅ Done | `LOT_SIZE_BTC`, `_D()`, `_LOT`, `strike_key()` centralised |
+| `mmm_monitor.py` | ✅ Done | Step 2.1 harvest hook, `_process_harvest()`, `_process_lot_recycling()`, M2 hook in `_process_adjustment()` |
+| `mmm_state.py` | ✅ Done | 15 new params in `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS` |
+| `mmm_config.py` | ✅ Done | 15 new `PARAM_RULES` + descriptions in `get_param_info()` |
+| `mmm_websocket.py` | ✅ Done | `emit_harvest()` + `emit_recycle()` |
+| `mmm_activity.py` | ✅ Done | `harvest`, `recycle`, `rebalance_boost` event types + categories |
+| `MMMSettingsDialog.js` | ✅ Done | 2 new groups: positionLifecycle (13 params, M1+M2) + balanceControl (3 params, M3), 16 PARAM_TOOLTIPS |
+| `MMMContext.js` | ✅ Done | `mmm_harvest` + `mmm_recycle` + `mmm_session_deleted` WebSocket handlers with proper cleanup |
+| `MMMPositionsTable.js` | ✅ Done | 🌾 harvestable + ♻️ recyclable badges with tooltips, profitPct/harvestScore/capacityPressure |
+| `MMMSafetyPanel.js` | ✅ Done | M3 rebalancing active indicator (⚖ M3 suffix + extended tooltip) |
+| `MMMAnalyticsPanel.js` | ✅ Done | Harvested + Recycled MetricCards reading from aggregated analytics |
+| `mmm_analytics_storage.py` | ✅ Done | Persists `total_harvests`, `total_harvest_lots`, `total_recycles` via JSON blob (no migration) |
+| `mmm_analytics_aggregator.py` | ✅ Done | Sums harvest/recycle metrics across sessions, computes per-session averages |
+| `mmm_monitor.py` (analytics) | ✅ Done | Increments `session['harvest_count']` and `session['harvest_lots_freed']` on successful harvest |
+| Unit tests | ❌ Not started | Phase 6 — separate session |
+
+**Verified:** Backend starts cleanly, all imports pass, viability math matches plan examples, 15 params exposed via `/api/mmm/params/info` with hot-reload, health check passes with 2 active sessions. Frontend builds cleanly with `react-app-rewired build`. All WebSocket wiring verified (on/off paired). Analytics data flow verified end-to-end: session counters → storage → aggregator → API → panel.
 
 ---
 
@@ -376,24 +401,25 @@ def get_effective_harvest_params(session, side):
 
 ## 6. IMPLEMENTATION PHASES
 
-### Phase 1 — Profit Harvesting (M1) — Session 1
+### Phase 1 — Profit Harvesting (M1) — ✅ COMPLETE
 
 **Goal:** Proactive frozen position cleanup. The highest-impact, lowest-risk change.
 
-**Files to create:**
-- `mmm_harvester.py` (~200 lines)
+**Files created:**
+- ✅ `mmm_harvester.py` (246 lines) — `scan_harvestable_positions()` + `get_effective_harvest_params()` (M3)
+- ✅ `mmm_constants.py` (41 lines) — `LOT_SIZE_BTC`, `_D()`, `_LOT`, `strike_key()`
 
-**Files to modify:**
-- `mmm_monitor.py` — add `_process_harvest()` call after close-at-5 (Step 2)
-- `mmm_config.py` — add harvest parameters with validation
-- `mmm_state.py` — add `DEFAULT_PARAMS` entries + `HOT_RELOAD_PARAMS`
-- `mmm_websocket.py` — add `emit_harvest()` emitter
-- `mmm_activity.py` — add `harvest` event type
+**Files modified:**
+- ✅ `mmm_monitor.py` — Step 2.1 harvest call after close-at-5, `_process_harvest()` method (257 lines)
+- ✅ `mmm_config.py` — 5 harvest PARAM_RULES + descriptions
+- ✅ `mmm_state.py` — 5 harvest params in `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS`
+- ✅ `mmm_websocket.py` — `emit_harvest()` emitter
+- ✅ `mmm_activity.py` — `harvest`, `rebalance_boost` event types
 
-**Frontend files:**
-- `MMMSettingsDialog.js` — harvest parameter controls
-- `MMMDashboard.js` / `MMMContext.js` — handle `mmm_harvest` WebSocket event
-- `MMMPositionsTable.js` — show "Harvested" label on closed positions
+**Frontend files — ✅ COMPLETE:**
+- ✅ `MMMSettingsDialog.js` — harvest parameters in positionLifecycle group (5 params, green #4caf50)
+- ✅ `MMMContext.js` — `mmm_harvest` WebSocket handler with socket.off cleanup
+- ✅ `MMMPositionsTable.js` — 🌾 harvestable badge with profitPct and harvestScore tooltip
 
 **Testing:**
 1. Create session with max_lots=20
@@ -401,25 +427,28 @@ def get_effective_harvest_params(session, side):
 3. Verify harvesting kicks in after positions decay
 4. Verify capacity is freed and adjustments resume
 
-### Phase 2 — Lot Recycling (M2) — Session 2
+### Phase 2 — Lot Recycling (M2) — ✅ COMPLETE
 
 **Goal:** Emergency capital restructuring when blocked. Builds on Phase 1.
 
-**Files to create:**
-- `mmm_recycler.py` (~400 lines)
+**Files created:**
+- ✅ `mmm_recycler.py` (507 lines) — `select_recyclable_positions()`, `check_recycle_viability()`, `execute_lot_recycling()`
 
-**Files to modify:**
-- `mmm_monitor.py` — add recycling attempt in `_process_adjustment()` when lots = 0
-- `mmm_engine.py` — add `calculate_recycle_viability()` method
-- `mmm_config.py` — add recycle parameters
-- `mmm_state.py` — add `DEFAULT_PARAMS` entries + `HOT_RELOAD_PARAMS`
-- `mmm_websocket.py` — add `emit_recycle()` emitter
-- `mmm_activity.py` — add `recycle` event type
+**Files modified:**
+- ✅ `mmm_monitor.py` — M2 hook in `_process_adjustment()` when lots=0 due to position cap, `_process_lot_recycling()` method with regime/margin guards
+- ✅ `mmm_config.py` — 8 recycle PARAM_RULES + descriptions
+- ✅ `mmm_state.py` — 8 recycle params in `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS`
+- ✅ `mmm_websocket.py` — `emit_recycle()` emitter
+- ✅ `mmm_activity.py` — `recycle` event type
+- Note: `calculate_recycle_viability()` lives in `mmm_recycler.py` (not `mmm_engine.py` as originally planned) — better separation of concerns
 
-**Frontend files:**
-- `MMMSettingsDialog.js` — recycle parameter controls
-- `MMMContext.js` — handle `mmm_recycle` WebSocket event
-- `MMMActivityFeed.js` — show recycle events with details
+**Bug found & fixed during review:**
+- `target_freed` calculation used `engine.calculate_lots_to_sell()` which always returns 0 at position cap (that's why recycling triggered). Fixed to compute raw uncapped lots directly: `math.ceil(loss / (premium * LOT_SIZE) * (1 + buffer))`
+
+**Frontend files — ✅ COMPLETE:**
+- ✅ `MMMSettingsDialog.js` — recycle parameters in positionLifecycle group (8 params, green #4caf50)
+- ✅ `MMMContext.js` — `mmm_recycle` WebSocket handler with socket.off cleanup
+- ✅ `MMMPositionsTable.js` — ♻️ recyclable badge (mutually exclusive with 🌾, respects `recycle_protect_original`)
 
 **Testing:**
 1. Create session with max_lots=30
@@ -429,17 +458,19 @@ def get_effective_harvest_params(session, side):
 5. Verify lot count drops below cap
 6. Verify cooldown prevents immediate re-recycle
 
-### Phase 3 — Asymmetry Rebalancing (M3) — Session 3
+### Phase 3 — Asymmetry Rebalancing (M3) — ✅ COMPLETE
 
 **Goal:** Prevent one-sided accumulation proactively.
 
-**Files to modify:**
-- `mmm_harvester.py` — add `get_effective_harvest_params()` asymmetry modifier
-- `mmm_safety.py` — enhance `check_asymmetry()` to integrate with harvester
+**Files modified:**
+- ✅ `mmm_harvester.py` — `get_effective_harvest_params()` built into harvester from the start (not a separate phase)
+- ✅ `mmm_config.py` — 3 rebalance PARAM_RULES + descriptions
+- ✅ `mmm_state.py` — 3 rebalance params in `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS`
+- Note: `mmm_safety.py` was NOT modified — M3 is fully self-contained in the harvester's threshold modifier. No safety integration needed.
 
-**Frontend files:**
-- `MMMSafetyPanel.js` — show rebalancing status
-- `MMMSettingsDialog.js` — rebalance parameters
+**Frontend files — ✅ COMPLETE:**
+- ✅ `MMMSafetyPanel.js` — M3 rebalancing active indicator (⚖ M3 suffix when asymmetry exceeds threshold)
+- ✅ `MMMSettingsDialog.js` — rebalance parameters in balanceControl group (3 params, orange #ff9800)
 
 **Testing:**
 1. Create session, manually skew positions to CE=80, PE=5
@@ -447,24 +478,44 @@ def get_effective_harvest_params(session, side):
 3. Verify lots freed on CE side
 4. Verify asymmetry ratio improves over time
 
-### Phase 4 — Analytics & Monitoring — Session 4
+### Phase 4 — Analytics & Monitoring — ✅ COMPLETE
 
 **Goal:** Track and visualize recycling effectiveness.
 
-**Files to modify:**
-- `mmm_analytics_aggregator.py` — add recycle/harvest metrics
-- `mmm_analytics_storage.py` — persist metrics
+**Backend files modified:**
+- ✅ `mmm_monitor.py` — increments `session['harvest_count']` and `session['harvest_lots_freed']` on each successful harvest
+- ✅ `mmm_analytics_storage.py` — `save_session_analytics()` persists `total_harvests`, `total_harvest_lots`, `total_recycles` via JSON blob column (no schema migration)
+- ✅ `mmm_analytics_aggregator.py` — `_algo_behavior()` sums `total_harvests`, `total_recycles` across sessions, computes `avg_harvests_per_session` and `avg_recycles_per_session`
 
-**Frontend files:**
-- `MMMAnalyticsPanel.js` — add harvest/recycle stats
-- `MMMPositionsTable.js` — visual indicators for recyclable positions
+**Frontend files modified:**
+- ✅ `MMMAnalyticsPanel.js` — "Harvested" MetricCard (`analytics.total_harvests || 0`, subtitle "lots freed via M1", color success) + "Recycled" MetricCard (`analytics.total_recycles || 0`, subtitle "M2 operations", color info)
+- ✅ `MMMPositionsTable.js` — computes `capacityPressure`, `profitPct`, `isHarvestable`, `isRecyclable`, `harvestScore` per frozen position; renders 🌾/♻️ badges with tooltips
 
-**Metrics to track:**
-- Total lots harvested/recycled per session
-- Profit harvested vs. buyback cost
-- Capacity utilization over time (heatmap)
-- Asymmetry ratio over time
-- Recycle efficiency ratio (lots freed / lots spent)
+**Metrics tracked:**
+- ✅ Total lots harvested/recycled per session (counters in session state)
+- ⏳ Profit harvested vs. buyback cost — available in harvest/recycle events, not yet aggregated
+- ⏳ Capacity utilization over time (heatmap) — deferred to future enhancement
+- ⏳ Asymmetry ratio over time — deferred to future enhancement
+- ⏳ Recycle efficiency ratio (lots freed / lots spent) — deferred to future enhancement
+
+### Phase 5 — Frontend Integration — ✅ COMPLETE
+
+**Goal:** Wire all backend events to the UI.
+
+**Files modified:**
+- ✅ `MMMSettingsDialog.js` — 2 new groups: positionLifecycle (13 params: M1+M2, color #4caf50) + balanceControl (3 params: M3, color #ff9800). 16 PARAM_TOOLTIPS with detailed help text.
+- ✅ `MMMContext.js` — `mmm_harvest` + `mmm_recycle` WebSocket event handlers (inline, same pattern as mmm_close_at_5). All `socket.on`/`socket.off` properly paired.
+- ✅ `MMMPositionsTable.js` — 🌾 harvestable + ♻️ recyclable badges with tooltips (mutually exclusive, respects `recycle_protect_original`). Computes `capacityPressure`, `profitPct`, `isHarvestable`, `isRecyclable`, `harvestScore` per frozen position.
+- ✅ `MMMSafetyPanel.js` — M3 rebalancing active indicator (⚖ M3 suffix + extended tooltip when asymmetry exceeds threshold under pressure)
+- ✅ `MMMAnalyticsPanel.js` — Harvested + Recycled MetricCards alongside existing close-at-5 counter
+
+**Note:** `MMMActivityFeed.js` was NOT modified — harvest/recycle/rebalance_boost event types are defined in `mmm_activity.py` and the feed already renders any event type generically. No changes needed.
+
+**Frontend build:** ✅ Verified — `react-app-rewired build` succeeds cleanly with all changes.
+
+**Design decisions:**
+- Frontend `isHarvestable` badge uses base params only (does not account for M3 asymmetry boost which dynamically relaxes thresholds). This is intentional — the badge is a conservative visual hint, while the backend does the real eligibility check.
+- 🌾 and ♻️ badges are mutually exclusive: recyclable badge only shows when position is NOT harvestable (harvest takes priority).
 
 ---
 

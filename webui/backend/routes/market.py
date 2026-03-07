@@ -29,6 +29,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from config.loader import get_config, get_api_credentials
 
+# SEALED: get_spot_price — do not remove
+try:
+    from webui.backend.sealed import sealed
+except ImportError:
+    from sealed import sealed
+
 log = logging.getLogger(__name__)
 
 # Create blueprint
@@ -51,6 +57,7 @@ _cache_ttl = 10.0
 
 @market_bp.route('/api/market/spot-price', methods=['GET'])
 @cache.cached(timeout=CACHE_TIMEOUTS['market'], key_prefix=make_cache_key)
+@sealed
 def get_spot_price():
     """
     Get current spot price for an underlying asset.

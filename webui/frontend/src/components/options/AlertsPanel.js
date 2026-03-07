@@ -317,6 +317,7 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                                     <TableCell>Status</TableCell>
                                     <TableCell>Triggered At</TableCell>
                                     <TableCell>Note</TableCell>
+                                    <TableCell>On Trigger</TableCell>
                                     <TableCell align="right">Actions</TableCell>
                                 </TableRow>
                             </TableHead>
@@ -390,6 +391,22 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
                                             <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 150, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {alert.note || '-'}
                                             </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            {alert.action_type && alert.action_type !== 'none' ? (
+                                                <Chip
+                                                    size="small"
+                                                    label={alert.action_type.replace('_', ' ')}
+                                                    sx={{
+                                                        height: 18, fontSize: '0.65rem',
+                                                        bgcolor: alert.action_type === 'close_position'
+                                                            ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.15)',
+                                                        color: alert.action_type === 'close_position' ? '#ef4444' : '#818cf8',
+                                                    }}
+                                                />
+                                            ) : (
+                                                <Typography variant="caption" color="text.disabled">notify</Typography>
+                                            )}
                                         </TableCell>
                                         <TableCell align="right">
                                             {alert.status === 'active' && (

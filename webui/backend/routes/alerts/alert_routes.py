@@ -4,6 +4,7 @@ Endpoints for managing price alerts and notification settings
 """
 from flask import Blueprint, request, jsonify
 import asyncio
+import json
 from datetime import datetime
 import logging
 import sys
@@ -93,7 +94,19 @@ def create_alert():
             notification_channels=data.get('notification_channels', default_channels),
             expiry_date=data.get('expiry_date')
         )
-        
+
+        # F5: Set action_type and action_config if provided (create_alert is sealed, use update_alert)
+        action_type = data.get('action_type', 'none')
+        action_config = data.get('action_config', {})
+        if action_type and action_type != 'none':
+            updated = AlertsDB.update_alert(
+                alert['id'],
+                action_type=action_type,
+                action_config=json.dumps(action_config) if isinstance(action_config, dict) else action_config
+            )
+            if updated:
+                alert = updated
+
         logger.info(f"Created alert {alert['id']} at ${alert['target_price']}")
         
         return jsonify({

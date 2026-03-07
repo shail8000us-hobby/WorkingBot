@@ -234,7 +234,7 @@ const LiveStatus = React.memo(({ summary }) => {
             />
           </Tooltip>
           <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>
-            {(s.ce_trigger_pct || 0).toFixed(1)}% / {triggerMax}% · {s.ce_total_lots || 0} lots
+            {(s.ce_trigger_pct || 0).toFixed(1)}% / {triggerMax}% · {s.ce_active_lots ?? s.ce_total_lots ?? 0} active{s.ce_frozen_lots ? ` (+${s.ce_frozen_lots}F)` : ''}
           </Typography>
         </Box>
 
@@ -264,7 +264,7 @@ const LiveStatus = React.memo(({ summary }) => {
             />
           </Tooltip>
           <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>
-            {(s.pe_trigger_pct || 0).toFixed(1)}% / {triggerMax}% · {s.pe_total_lots || 0} lots
+            {(s.pe_trigger_pct || 0).toFixed(1)}% / {triggerMax}% · {s.pe_active_lots ?? s.pe_total_lots ?? 0} active{s.pe_frozen_lots ? ` (+${s.pe_frozen_lots}F)` : ''}
           </Typography>
         </Box>
       </Box>

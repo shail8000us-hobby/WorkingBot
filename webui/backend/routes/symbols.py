@@ -31,6 +31,51 @@ def instance_to_pm2_name(instance_name: str) -> str:
     return f"gridbot-{instance_name.replace('_', '-')}"
 
 
+def resolve_pm2_bot_process(symbol_name: str, mode: str) -> str:
+    """
+    Resolve the actual PM2 process name for a symbol by querying pm2 jlist first.
+
+    PM2 ecosystem names follow the pattern: gridbot-{ticker}-{mode}
+    where ticker = first 3 chars of symbol in lowercase.
+    e.g.  BTCUSD + live  ->  gridbot-btc-live
+          ETHUSD + demo  ->  gridbot-eth-live
+
+    Falls back to querying pm2 jlist for any running gridbot-* process whose
+    name contains the symbol ticker or the full symbol (case-insensitive),
+    and finally falls back to the generated name if no live process is found.
+    """
+    import subprocess
+    import json as _json
+
+    ticker = symbol_name[:3].lower()                   # btcusd[:3] = 'btc'
+    generated = f"gridbot-{ticker}-{mode}"            # gridbot-btc-live (preferred)
+
+    try:
+        result = subprocess.run(
+            ['pm2', 'jlist'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            procs = _json.loads(result.stdout)
+            # Prefer exact match for generated name; then any gridbot-* containing ticker or symbol
+            candidates = [
+                p['name'] for p in procs
+                if p.get('name', '').startswith('gridbot-')
+                and (
+                    ticker in p['name'].lower()
+                    or symbol_name.lower() in p['name'].lower()
+                )
+            ]
+            if generated in candidates:
+                return generated
+            if candidates:
+                return candidates[0]
+    except Exception:
+        pass
+
+    return generated
+
+
 @symbols_bp.route('/api/instances', methods=['GET'])
 def list_instances():
     """
@@ -430,7 +475,8 @@ def start_symbol_trading(symbol_name):
         try:
             # Start all instances for this symbol
             for instance_name, inst_config in symbol_instances:
-                bot_process = instance_to_pm2_name(instance_name)  # e.g., gridbot-BTCUSD-LONG
+                # Resolve actual PM2 process name (e.g. gridbot-btc-live, not gridbot-BTCUSD-LONG)
+                bot_process = resolve_pm2_bot_process(symbol_name, mode)
                 
                 pm2_result = subprocess.run(
                     ['pm2', 'start', bot_process],
@@ -539,7 +585,8 @@ def stop_symbol_trading(symbol_name):
         try:
             # Stop all instances for this symbol
             for instance_name, inst_config in symbol_instances:
-                bot_process = instance_to_pm2_name(instance_name)  # e.g., gridbot-BTCUSD-LONG
+                # Resolve actual PM2 process name (e.g. gridbot-btc-live, not gridbot-BTCUSD-LONG)
+                bot_process = resolve_pm2_bot_process(symbol_name, mode)
                 
                 stop_cmd = ['pm2', 'stop', bot_process]
                 if force:
@@ -553,7 +600,7 @@ def stop_symbol_trading(symbol_name):
                 )
                 
                 results[instance_name] = {
-                    'success': pm2_result.returncode == 0 or 'not found' not in pm2_result.stderr.lower(),
+                    'success': pm2_result.returncode == 0,
                     'process': bot_process,
                     'method': 'pm2',
                     'error': pm2_result.stderr if pm2_result.returncode != 0 else None

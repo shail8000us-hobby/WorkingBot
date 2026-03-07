@@ -46,14 +46,35 @@ _max_loss_monitor = None
 # Activity Log Ring Buffer - stores real-time monitoring events
 _activity_log = []
 _activity_log_lock = threading.Lock()
-_MAX_ACTIVITY_LOG_SIZE = 200  # Keep last 200 events
+_MAX_ACTIVITY_LOG_SIZE = 500  # Keep last 500 events
+
+# State-change tracker: prevents "No limits configured" from logging every cycle
+_last_limit_state = None  # "no_limits" | "has_limits"
+_last_limit_state_lock = threading.Lock()
+
+# Category map: groups event types into filterable frontend categories
+_EVENT_CATEGORY = {
+    "breach": "trade",
+    "closing": "trade",
+    "roll": "trade",
+    "hedge": "hedge",
+    "alert": "alert",
+    "error": "error",
+    "monitor_start": "system",
+    "check_start": "system",
+    "position_check": "system",
+    "idle": "system",
+    "warning": "system",
+}
 
 def add_activity_event(event_type: str, message: str, details: dict = None):
-    """Add an event to the activity log ring buffer"""
+    """Add an event to the activity log ring buffer and persist to SQLite."""
     global _activity_log
+    category = _EVENT_CATEGORY.get(event_type, "system")
     event = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "type": event_type,
+        "category": category,
         "message": message,
         "details": details or {}
     }
@@ -62,6 +83,12 @@ def add_activity_event(event_type: str, message: str, details: dict = None):
         # Keep only last N events
         if len(_activity_log) > _MAX_ACTIVITY_LOG_SIZE:
             _activity_log = _activity_log[-_MAX_ACTIVITY_LOG_SIZE:]
+    # Persist independently — import lazily to avoid circular imports
+    try:
+        from webui.backend.db.activity_log_db import persist_event
+        persist_event(event)
+    except Exception:
+        pass  # Persistence is best-effort; never block the main path
 
 def get_activity_log(limit: int = 50, event_type: str = None) -> list:
     """Get recent activity log events"""
@@ -767,7 +794,19 @@ class MaxLossMonitor:
 
                 logger.debug(f"Monitor loop {iteration}: {len(active_strike)} strike limits, {len(active_expiry)} expiry limits")
 
+                # Always count the heartbeat so "Checks" counter increments visibly
+                self._check_count += 1
+
                 if active_strike or active_expiry:
+                    # Transition: no_limits -> has_limits — log state change once
+                    with _last_limit_state_lock:
+                        if _last_limit_state != "has_limits":
+                            globals()['_last_limit_state'] = "has_limits"
+                            add_activity_event("state_change", "Max loss limits activated — monitoring started", {
+                                "strike_count": len(active_strike),
+                                "expiry_count": len(active_expiry),
+                                "transition": "no_limits -> has_limits"
+                            })
                     logger.info(f"🔍 Running max loss check (strike: {len(active_strike)}, expiry: {len(active_expiry)})")
                     add_activity_event("check_start", f"🔍 Checking {len(active_strike)} strike limits, {len(active_expiry)} expiry limits", {
                         "strike_count": len(active_strike),
@@ -775,11 +814,13 @@ class MaxLossMonitor:
                         "iteration": iteration
                     })
                     self._check_max_loss()
-                    self._check_count += 1
                 else:
-                    # Only log this occasionally to avoid spam
-                    if iteration % 12 == 1:  # Every ~60 seconds if interval is 5s
-                        add_activity_event("idle", "⏭️ No active max loss limits configured", {"iteration": iteration})
+                    # Log "no limits" only once when state first changes (not every cycle)
+                    with _last_limit_state_lock:
+                        prev = globals().get('_last_limit_state')
+                        if prev != "no_limits":
+                            globals()['_last_limit_state'] = "no_limits"
+                            add_activity_event("idle", "No active max loss limits configured", {"iteration": iteration})
 
                 self._last_check = time.time()
             except Exception as e:

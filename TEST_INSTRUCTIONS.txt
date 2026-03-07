@@ -1,0 +1,48 @@
+# Test Instructions - November 20, 2025, 3:45 AM
+
+## What Was Fixed:
+
+1. Price Health Monitor thresholds: 10s/30s → 35s/60s
+2. All shutdown errors fixed
+3. WebSocket price updates now mark ws_active=True
+4. Debug logging added to track WebSocket ticker updates
+
+## How to Test:
+
+```bash
+# Start the bot
+python3 -m bot.strategy.async_gridbot 2>&1 | tee bot_test.log
+
+# Watch for these logs:
+# - "💚 WebSocket ticker: $XX,XXX.XX" (should appear every ~30 seconds)
+# - "💚 UnifiedAPIClient price updated" (should appear every ~30 seconds)
+# - NO "PRICE STALE" warnings for age < 35s
+# - NO "[REST FALLBACK] ACTIVATING" unless WebSocket truly fails
+
+# If you see:
+# - "💚 WebSocket ticker" frequently → WebSocket IS working
+# - "[REST FALLBACK] ACTIVATING" → WebSocket NOT working
+
+# Stop with Ctrl+C and check:
+# - "Shutdown signal sent to reconciliation" → Should appear
+# - NO AttributeError → Should be clean
+# - Pending orders cancelled → Should work
+```
+
+## If WebSocket Ticker Updates Are NOT Appearing:
+
+The issue is NOT with thresholds, it's with WebSocket subscription or message routing.
+
+Check:
+1. WebSocket connection status
+2. Ticker channel subscription
+3. Message handler registration
+4. Symbol/product_id correctness
+
+## Expected Behavior:
+
+- WebSocket ticker updates every ~30 seconds
+- Price age stays < 35s
+- NO REST fallback activation
+- Clean shutdown with no errors
+

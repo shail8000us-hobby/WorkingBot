@@ -65,13 +65,16 @@ from .mmm_websocket import (
     emit_heartbeat, emit_adjustment, emit_reversal,
     emit_strike_shift, emit_close_at_5, emit_both_sides_alert,
     emit_safety, emit_pnl_update, emit_status_change,
+    emit_harvest, emit_recycle,
 )
+from .mmm_harvester import scan_harvestable_positions
+from .mmm_recycler import execute_lot_recycling
 from .mmm_perp_hedge import (
     run_perp_hedge, close_all_perp, get_perp_summary,
     is_perp_hedge_enabled,
 )
 from .mmm_storage import get_storage
-from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
+from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key, _D, _LOT
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
 from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE, ACTION_PAUSE
 from .mmm_telegram import (
@@ -1097,6 +1100,12 @@ class MMMMonitor:
         # triggers before executing any adjustment on the same side.
         _close_at_5_sides = await self._process_close_at_5(ce_now, pe_now)
 
+        # Step 2.1: Profit Harvesting (M1) — proactive frozen position cleanup
+        # Runs after close-at-5, before safety checks, so freed capacity is
+        # visible to safety. Disabled during wind-down (wind-down has own logic).
+        if not is_wind_down_active(session):
+            await self._process_harvest()
+
         # Check if both sides fully closed
         if check_both_sides_closed(session):
             # §26.10: Close perp before stopping when options are fully closed
@@ -1975,6 +1984,10 @@ class MMMMonitor:
                 'circuit_state': self._circuit.state.value if hasattr(self._circuit, 'state') else 'CLOSED',
                 'ce_total_lots': session.get('ce', {}).get('total_lots', 0),
                 'pe_total_lots': session.get('pe', {}).get('total_lots', 0),
+                'ce_active_lots': session.get('ce', {}).get('active_lots', 0),
+                'pe_active_lots': session.get('pe', {}).get('active_lots', 0),
+                'ce_frozen_lots': session.get('ce', {}).get('frozen_total_lots', 0),
+                'pe_frozen_lots': session.get('pe', {}).get('frozen_total_lots', 0),
                 'adjustment_count': session.get('adjustment_count', 0),
                 'safety_event_count': len(safety_events) if 'safety_events' in dir() else 0,
             })
@@ -2596,25 +2609,38 @@ class MMMMonitor:
                                     sid, 'warning',
                                     {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
 
-        lots, constraint_msg = self._engine.calculate_lots_to_sell(
+        lots, constraint_msg, is_position_cap = self._engine.calculate_lots_to_sell(
             session, hedge, loss, hedge_premium,
         )
 
         if lots <= 0:
             # BUG-2 FIX: Always log when trigger fires but lots=0
             skip_reason = constraint_msg or 'lot_calculation_zero'
+            # Fix F1.6: Use returned is_position_cap flag instead of string matching
+            # is_position_cap = bool(constraint_msg and 'Position cap reached' in constraint_msg)  # OLD
+
+            # §4: M2 Lot Recycling — attempt before giving up
+            # Only fires for position cap (not other lot=0 reasons), and only
+            # when regime and margin allow sells.
+            if is_position_cap:
+                recycled = await self._process_lot_recycling(
+                    aggressor, hedge, loss, hedge_premium, ce_now, pe_now,
+                )
+                if recycled:
+                    return  # Recycling handled the adjustment
+
             log_activity('adjustment_skipped',
                         f'⏭️ Adjustment skipped: {hedge.upper()} lots=0 — {skip_reason}',
                         sid, 'warning',
                         {
-                            'reason': 'position_cap' if constraint_msg else 'lot_calculation_zero',
+                            'reason': 'position_cap' if is_position_cap else 'lot_calculation_zero',
                             'aggressor': aggressor.upper(),
                             'hedge': hedge.upper(),
                             'loss': loss,
                             'hedge_premium': hedge_premium,
                             'constraint_msg': constraint_msg,
                         })
-            if constraint_msg:
+            if is_position_cap:
                 emit_safety(
                     sid, 'position_cap', 'alert', constraint_msg,
                 )
@@ -2757,12 +2783,24 @@ class MMMMonitor:
         # New strike found — NOW freeze current positions
         freeze_result = freeze_current_positions(session, side)
 
+        # ── Split Ledger Phase 2: Shift-Time Recycle ─────────────────────────
+        shift_recycle_buyback = 0.0
+        _sr_params = session.get('params', {})
+        if _sr_params.get('shift_recycle_enabled', False):
+            shift_recycle_buyback = await self._shift_time_recycle(
+                side, new_strike_info,
+            )
+        # ─────────────────────────────────────────────────────────────────────
+
         # Sell at new strike
         new_strike = new_strike_info['strike']
         hedge_premium = new_strike_info['premium']
 
+        # Fold buyback cost so extra lots at new strike recover it
+        total_loss_to_cover = loss + shift_recycle_buyback
+
         lots, _ = self._engine.calculate_lots_to_sell(
-            session, side, loss, hedge_premium,
+            session, side, total_loss_to_cover, hedge_premium,
         )
 
         if lots <= 0:
@@ -3101,6 +3139,419 @@ class MMMMonitor:
     # closing N positions can block the heartbeat for N * 60+ seconds.
     MAX_CLOSES_PER_HEARTBEAT = 3
 
+    # =========================================================================
+    # §3: M1 Profit Harvesting
+    # =========================================================================
+
+    async def _process_harvest(self) -> int:
+        """
+        §3: Proactive frozen position cleanup via profit harvesting (M1).
+
+        Scans frozen positions for harvest eligibility and closes up to
+        harvest_max_per_beat per heartbeat. Respects capacity pressure and
+        minimum profit thresholds. M3 asymmetry modifier relaxes thresholds
+        on the dominant side when one-sidedness is extreme.
+
+        Returns:
+            Number of positions successfully harvested this heartbeat.
+        """
+        session = self.session
+        sid = self.session_id
+        params = session.get('params', {})
+        harvest_max = params.get('harvest_max_per_beat', 3)
+
+        harvestable = scan_harvestable_positions(
+            session, self._make_fetch_fn(),
+        )
+        if not harvestable:
+            return 0
+
+        harvested_count = 0
+        # Track which sides already emitted a rebalance_boost log this heartbeat
+        # so we fire at most once per side even if multiple positions are harvested.
+        _boost_logged: set = set()
+
+        for pos in harvestable:
+            if harvested_count >= harvest_max:
+                break
+            if self._should_stop():
+                break
+
+            # Fix F1.2: Pre-mark _being_closed BEFORE await to prevent M2 race condition.
+            # If M2 runs concurrently, it will see this flag and skip this position.
+            pos_id = pos.get('_pos_id')
+            pos_side = pos.get('side', '')
+            if pos_id and pos_side:
+                for p in session.get(pos_side, {}).get('positions', []):
+                    if p.get('id') == pos_id:
+                        p['_being_closed'] = True
+                        break
+
+            result = await close_position(
+                self.executor, self.initializer, session, pos,
+            )
+
+            if result.get('success'):
+                harvested_count += 1
+                session['harvest_count'] = session.get('harvest_count', 0) + 1
+                session['harvest_lots_freed'] = (
+                    session.get('harvest_lots_freed', 0) + result.get('lots_closed', 0)
+                )
+                profit_pct = pos.get('_profit_pct', 0)
+                harvest_score = pos.get('_harvest_score', 0)
+                asymmetry_boosted = pos.get('_asymmetry_boosted', False)
+
+                emit_harvest(
+                    sid,
+                    pos['side'].upper(),
+                    pos['strike'],
+                    result['lots_closed'],
+                    result['realized_pnl'],
+                    result['close_premium'],
+                    profit_pct,
+                    harvest_score,
+                    asymmetry_boosted,
+                )
+
+                log_activity(
+                    'harvest',
+                    f'🌾 Harvested {result["lots_closed"]} lots '
+                    f'{pos["side"].upper()} @ {pos["strike"]} '
+                    f'({profit_pct:.0f}% profit, '
+                    f'P&L: ${result["realized_pnl"]:.4f}'
+                    + (' [asymmetry boost]' if asymmetry_boosted else '') + ')',
+                    sid, 'success',
+                    {
+                        'side': pos['side'].upper(),
+                        'strike': pos['strike'],
+                        'lots': result['lots_closed'],
+                        'realized_pnl': result['realized_pnl'],
+                        'close_premium': result['close_premium'],
+                        'profit_pct': profit_pct,
+                        'harvest_score': harvest_score,
+                        'asymmetry_boosted': asymmetry_boosted,
+                    },
+                )
+
+                # Log rebalance boost once per side per heartbeat for activity feed clarity
+                if asymmetry_boosted and pos['side'] not in _boost_logged:
+                    _boost_logged.add(pos['side'])
+                    boost_level = pos.get('_boost_level', '')
+                    ce_lots = session.get('ce', {}).get('total_lots', 0)
+                    pe_lots = session.get('pe', {}).get('total_lots', 0)
+                    log_activity(
+                        'rebalance_boost',
+                        f'⚖️ Asymmetry boost ({boost_level}): '
+                        f'CE={ce_lots} vs PE={pe_lots} — '
+                        f'harvest thresholds relaxed on {pos["side"].upper()}',
+                        sid, 'info',
+                        {
+                            'side': pos['side'].upper(),
+                            'boost_level': boost_level,
+                            'ce_lots': ce_lots,
+                            'pe_lots': pe_lots,
+                        },
+                    )
+            else:
+                # Fix F1.2: Clear pre-marked _being_closed flag on failure so position can be retried
+                if pos_id and pos_side:
+                    for p in session.get(pos_side, {}).get('positions', []):
+                        if p.get('id') == pos_id:
+                            p.pop('_being_closed', None)
+                            break
+                log.debug(
+                    f"[{sid}] Harvest: close failed for "
+                    f"{pos['side'].upper()} @ {pos['strike']}: "
+                    f"{result.get('error', 'unknown')}"
+                )
+
+        if harvested_count > 0:
+            log.info(
+                f"[{sid}] Harvest complete: {harvested_count} position(s) "
+                f"closed this heartbeat"
+            )
+
+        return harvested_count
+
+    # =========================================================================
+    # §4: M2 Lot Recycling
+    # =========================================================================
+
+    async def _process_lot_recycling(
+        self,
+        aggressor: str,
+        hedge: str,
+        loss: float,
+        hedge_premium: float,
+        ce_now: float,
+        pe_now: float,
+    ) -> bool:
+        """
+        §4: Attempt lot recycling when max lots blocks an adjustment (M2).
+
+        Called from _process_adjustment() when calculate_lots_to_sell() returns 0
+        due to position cap. Checks regime/margin safety guards before attempting.
+
+        Returns:
+            True if recycling succeeded and the adjustment was handled.
+            False if recycling is not viable or not allowed.
+        """
+        session = self.session
+        sid = self.session_id
+        params = session.get('params', {})
+
+        if not params.get('recycle_enabled', True):
+            return False
+
+        # §4.2: Regime guard — recycling involves a sell (Phase B)
+        regime_action = session.get('_regime_action', 'NORMAL')
+        if regime_action == ACTION_BLOCK_ALL_SELLS:
+            log.info(
+                f"[{sid}] Recycle skipped: regime action is "
+                f"{regime_action} — sells blocked"
+            )
+            return False
+
+        # §4.2: Directional regime block check
+        try:
+            blocked, block_reason = self._regime_engine.should_block_sell(
+                session, hedge,
+            )
+            if blocked:
+                log.info(
+                    f"[{sid}] Recycle skipped: regime blocks "
+                    f"{hedge.upper()} sells — {block_reason}"
+                )
+                return False
+        except Exception as _re:
+            log.warning(f"[{sid}] Recycle regime check failed: {_re}")
+
+        # §4.2: Margin guard — don't recycle when margin is ORANGE+
+        margin_tier = getattr(self._margin_guardian, 'last_tier', TIER_GREEN)
+        if margin_tier not in (TIER_GREEN, TIER_YELLOW):
+            log.info(
+                f"[{sid}] Recycle skipped: margin tier "
+                f"{margin_tier} — too elevated for new sells"
+            )
+            return False
+
+        # Fetch spot price for find_new_strike
+        try:
+            spot_price = await self._fetch_spot_price()
+        except Exception as e:
+            log.warning(f"[{sid}] Recycle: spot price fetch failed: {e}")
+            return False
+
+        log.info(
+            f"[{sid}] Attempting lot recycling: "
+            f"{hedge.upper()} capped, loss={loss:.4f}, "
+            f"premium={hedge_premium:.2f}"
+        )
+
+        result = await execute_lot_recycling(
+            session=session,
+            aggressor=aggressor,
+            hedge_side=hedge,
+            loss_to_hedge=loss,
+            fetch_premium_fn=self._make_fetch_fn(),
+            initializer=self.initializer,
+            executor=self.executor,
+            spot_price=spot_price,
+            engine=self._engine,
+            ce_now=ce_now,
+            pe_now=pe_now,
+        )
+
+        if result.get('success'):
+            emit_recycle(
+                sid,
+                hedge.upper(),
+                result['recycled_lots'],
+                result['new_lots_sold'],
+                0,  # old_strike — set to 0 (multiple positions recycled)
+                result['new_strike'],
+                result['new_premium'],
+                result['net_lot_gain'],
+                result['buyback_cost'],
+                result['phase_a_pnl'],
+            )
+            log_activity(
+                'recycle',
+                f'♻️ Recycled {result["recycled_lots"]} lots → sold '
+                f'{result["new_lots_sold"]} @ {result["new_strike"]} '
+                f'(premium: ${result["new_premium"]:.2f}, '
+                f'net gain: {result["net_lot_gain"]} lots)',
+                sid, 'success',
+                {
+                    'hedge_side': hedge.upper(),
+                    'recycled_lots': result['recycled_lots'],
+                    'new_lots_sold': result['new_lots_sold'],
+                    'new_strike': result['new_strike'],
+                    'new_premium': result['new_premium'],
+                    'net_lot_gain': result['net_lot_gain'],
+                    'recycle_count': session.get('recycle_count', 0),
+                },
+            )
+            return True
+
+        # Recycling failed or not viable — log and let caller handle
+        log.info(
+            f"[{sid}] Lot recycling not viable: {result.get('error', 'unknown')}"
+        )
+        log_activity(
+            'adjustment_skipped',
+            f'⏭️ Lot recycling not viable: {result.get("error", "unknown")}',
+            sid, 'info',
+            {
+                'reason': 'recycle_not_viable',
+                'recycle_error': result.get('error', ''),
+                'hedge': hedge.upper(),
+            },
+        )
+        return False
+
+    async def _shift_time_recycle(
+        self,
+        side: str,
+        new_strike_info: Dict,
+    ) -> float:
+        """
+        Split Ledger Phase 2: At shift time, close cheap frozen positions
+        on `side` to free capacity. Returns total buyback cost in USD so
+        the caller can fold it into the new sell lot calculation.
+
+        Only closes frozen positions with live premium BELOW shift_recycle_premium_floor.
+        Respects shift_recycle_max_pct limit on frozen lots closed per shift.
+        Default: shift_recycle_enabled=False — this method is never called unless enabled.
+
+        Returns:
+            Total buyback cost in USD. 0.0 if nothing closed.
+        """
+        from .mmm_close_at_5 import close_position
+
+        session = self.session
+        sid = self.session_id
+        params = session.get('params', {})
+        premium_floor = params.get('shift_recycle_premium_floor', 60.0)
+        if premium_floor <= 0:
+            # Dynamic mode: close frozen if cheaper than N% of new strike premium
+            dynamic_ratio = params.get('shift_recycle_floor_ratio', 0.40)
+            premium_floor = new_strike_info.get('premium', 100.0) * dynamic_ratio
+        max_pct = params.get('shift_recycle_max_pct', 1.0)
+
+        side_state = session.get(side, {})
+        frozen_positions = side_state.get('frozen_positions', [])
+
+        if not frozen_positions:
+            return 0.0
+
+        # Respect max_pct: limit total lots we can close this shift
+        total_frozen = sum(f.get('lots', 0) for f in frozen_positions)
+        max_closeable_lots = int(total_frozen * max_pct)
+        if max_closeable_lots <= 0:
+            return 0.0
+
+        option_type = 'call' if side == 'ce' else 'put'
+        fetch_fn = self._make_fetch_fn()
+        total_buyback = 0.0
+        closed_lots = 0
+
+        priced_frozen = []
+        for fpos in frozen_positions:
+            strike = fpos.get('strike', 0)
+            lots = fpos.get('lots', 0)
+            pos_id = fpos.get('_pos_id', '')
+            if strike <= 0 or lots <= 0:
+                continue
+            try:
+                live_premium = fetch_fn(strike, option_type)
+            except Exception as e:
+                log.warning(f"[{sid}] Shift recycle: premium fetch failed for {strike}: {e}")
+                continue
+            if live_premium is None or live_premium <= 0:
+                continue
+            if live_premium > premium_floor:
+                continue  # Too expensive — leave for M1 / close-at-5
+            priced_frozen.append({
+                'side': side,
+                'strike': strike,
+                'lots': lots,
+                'entry_premium': fpos.get('entry_premium', 0),
+                'current_premium': live_premium,
+                'type': 'frozen',
+                '_pos_id': pos_id,
+            })
+
+        # Sort cheapest first to maximise freed lots per dollar spent
+        priced_frozen.sort(key=lambda p: p.get('current_premium', 0))
+
+        for close_payload in priced_frozen:
+            if closed_lots >= max_closeable_lots:
+                break
+            lots = close_payload['lots']
+            live_premium = close_payload['current_premium']
+            try:
+                result = await close_position(
+                    self.executor, self.initializer, session, close_payload,
+                )
+            except Exception as e:
+                log.warning(
+                    f"[{sid}] Shift recycle: close failed for "
+                    f"{side.upper()} @ {close_payload['strike']}: {e}"
+                )
+                continue
+            if result.get('success'):
+                cost = float(_D(live_premium) * _D(lots) * _LOT)
+                total_buyback += cost
+                actual_closed = result.get('lots_closed', lots)
+                closed_lots += actual_closed
+                log.info(
+                    f"[{sid}] Shift recycle: closed {actual_closed} "
+                    f"{side.upper()} lots @ {close_payload['strike']} "
+                    f"(premium ${live_premium:.2f}, cost ${cost:.4f})"
+                )
+            else:
+                log.warning(
+                    f"[{sid}] Shift recycle: close rejected for "
+                    f"{side.upper()} @ {close_payload['strike']}: "
+                    f"{result.get('error', 'unknown')}"
+                )
+
+        if closed_lots > 0:
+            # Suggestion 3: Shift-time recycle ROI tracking
+            stats = session.setdefault(
+                'shift_recycle_stats',
+                {'total_buyback': 0.0, 'total_lots_freed': 0, 'total_shifts': 0},
+            )
+            stats['total_buyback'] += total_buyback
+            stats['total_lots_freed'] += closed_lots
+            stats['total_shifts'] += 1
+
+            log_activity(
+                'shift_recycle',
+                f'♻️ Shift-Time Recycle: closed {closed_lots} frozen '
+                f'{side.upper()} lots, buyback ${total_buyback:.4f}',
+                sid, 'success',
+                {
+                    'side': side.upper(),
+                    'closed_lots': closed_lots,
+                    'buyback_cost': round(total_buyback, 4),
+                    'premium_floor': premium_floor,
+                },
+            )
+            try:
+                emit_recycle(
+                    sid, side.upper(), closed_lots, 0,
+                    0, 0, 0,
+                    closed_lots,        # net_gain = lots freed
+                    total_buyback,      # buyback_cost
+                    0,                  # phase_a_pnl (already recorded by close_position)
+                )
+            except Exception as _e:
+                log.warning(f"[{sid}] Shift recycle: emit_recycle failed: {_e}")
+
+        return total_buyback
+
     async def _process_close_at_5(
         self,
         ce_now: float,
@@ -3127,13 +3578,18 @@ class MMMMonitor:
         normal_threshold = session.get('params', {}).get('close_at_threshold', 5.0)
         using_elevated = wd_threshold > normal_threshold
 
+        # Use bid price for close_at_5 checks if enabled (more accurate for illiquid options)
+        use_bid = session.get('params', {}).get('close_at_use_bid', True)
+        fetch_fn = self._make_bid_fetch_fn() if use_bid else self._make_fetch_fn()
+
         closeable = scan_closeable_positions(
-            session, self._make_fetch_fn(),
+            session, fetch_fn,
             threshold_override=wd_threshold if using_elevated else None,
         )
 
         if closeable:
             threshold_note = f' (wind-down elevated threshold: {wd_threshold})' if using_elevated else ''
+            bid_note = ' [using bid price]' if use_bid else ''
             closeable_summary = ', '.join([f"{p['side'].upper()} @ {p['strike']}" for p in closeable])
             capped_note = ''
             if len(closeable) > self.MAX_CLOSES_PER_HEARTBEAT:
@@ -3141,10 +3597,11 @@ class MMMMonitor:
                               f'{len(closeable)} this heartbeat]')
             log_activity('info',
                         f'Close-at-5 Scan: {len(closeable)} position(s) ready to close'
-                        f'{threshold_note}{capped_note} - {closeable_summary}',
+                        f'{threshold_note}{bid_note}{capped_note} - {closeable_summary}',
                         sid, 'info',
                         {'closeable_count': len(closeable), 'positions': closeable_summary,
                          'wind_down_elevated': using_elevated,
+                         'using_bid_price': use_bid,
                          'threshold_used': wd_threshold if using_elevated else normal_threshold,
                          'capped_at': self.MAX_CLOSES_PER_HEARTBEAT})
 
@@ -3183,6 +3640,8 @@ class MMMMonitor:
                     'lots_closed': result['lots_closed'],
                     'realized_pnl': result['realized_pnl'],
                     'close_premium': result['close_premium'],
+                    'scan_premium': pos.get('current_premium', 0),    # mid at scan time
+                    'threshold_used': pos.get('threshold_used', 5.0),  # actual threshold
                 })
 
                 # Check if side fully closed → auto-find new strike
@@ -4589,26 +5048,51 @@ class MMMMonitor:
                     symbol = self.initializer.build_symbol(
                         opt, 'BTC', strike, expiry,
                     )
+                    # Fetch both ticker (mark) and orderbook (bid/ask) for close_at_5 accuracy
                     resp = await rest._request_with_retry(
                         method="GET", path=f"/v2/tickers/{symbol}",
                     )
                     data = resp.get('result', resp)
-                    return (strike, opt), float(data.get('mark_price', 0))
+                    mark_price = float(data.get('mark_price', 0))
+                    
+                    # Also fetch orderbook for bid price (used by close_at_5)
+                    bid_price = 0.0
+                    try:
+                        ob_resp = await rest._request_with_retry(
+                            method="GET", path=f"/v2/orderbook/{symbol}",
+                            params={"depth": 1},
+                        )
+                        ob_data = ob_resp.get('result', ob_resp)
+                        bids = ob_data.get('buy', [])
+                        if bids:
+                            bid_price = float(bids[0][0])
+                    except Exception:
+                        pass  # Bid fetch failure is non-critical, use mark as fallback
+                    
+                    return (strike, opt), mark_price, bid_price
                 except Exception as e:
                     log.warning(f"Prefetch failed for {opt}@{strike}: {e}")
-                    return (strike, opt), 0
+                    return (strike, opt), 0, 0
 
             results = await asyncio.gather(
                 *[_fetch_one(s, o) for s, o in to_fetch],
                 return_exceptions=True,
             )
+            
+            # Create separate bid cache for close_at_5
+            bid_cache: Dict[tuple, float] = {}
+            
             for r in results:
                 if isinstance(r, Exception):
                     continue
-                key, value = r
-                cache[key] = value
+                key, mark_price, bid_price = r
+                cache[key] = mark_price
+                # Store bid price: use bid if available, else fall back to mark
+                bid_cache[key] = bid_price if bid_price > 0 else mark_price
 
         self._premium_cache = cache
+        self._bid_cache = getattr(self, '_bid_cache', {})
+        self._bid_cache.update(bid_cache if 'bid_cache' in dir() else {})
 
     async def _fetch_spot_price(self) -> float:
         """Fetch current BTC spot price."""
@@ -4669,6 +5153,31 @@ class MMMMonitor:
                 log.error(f"Cache miss fallback fetch failed for {option_type}@{strike}: {e}")
                 cache[key] = 0  # Cache the failure to prevent repeated attempts
                 return 0
+        return fetch
+
+    def _make_bid_fetch_fn(self):
+        """Create a bid-price fetch function for close_at_5 decisions.
+
+        Uses bid prices from _bid_cache (populated by _prefetch_all_premiums).
+        Bid price is more accurate for determining if a position is "cheap"
+        because it represents what the market is willing to pay, not a
+        theoretical mark price that can lag reality.
+
+        Falls back to mark price if bid not available.
+        """
+        bid_cache = getattr(self, '_bid_cache', {})
+        mark_cache = getattr(self, '_premium_cache', {})
+
+        def fetch(strike, option_type):
+            key = (float(strike), option_type)
+            # Prefer bid price, fall back to mark
+            if key in bid_cache and bid_cache[key] > 0:
+                return bid_cache[key]
+            if key in mark_cache:
+                return mark_cache[key]
+            # If neither cache has it, return 0 (position won't qualify for close)
+            log.warning(f"Bid cache miss for {option_type}@{strike}, skipping close check")
+            return 0
         return fetch
 
     def _get_minutes_to_expiry(self) -> Optional[float]:
