@@ -23,6 +23,8 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
   indexPrices,
   marginData,
   lastDataUpdate,
+  manualPnL = 0,
+  manualPnLBadge = null,
 }) {
   // Phase 6.6: Stale data detection — tick every second (hooks must be before early return)
   const [dataAgeSec, setDataAgeSec] = useState(0);
@@ -35,7 +37,8 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
 
   if (!sortedPositions || sortedPositions.length === 0) return null;
 
-  const totalPnl = sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0);
+  const livePnl = sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0);
+  const totalPnl = livePnl + manualPnL;
   const callCount = sortedPositions.filter((p) => p.product_symbol.startsWith('C-')).length;
   const putCount = sortedPositions.filter((p) => p.product_symbol.startsWith('P-')).length;
 
@@ -104,16 +107,24 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
       }}
     >
       {/* Total PnL */}
-      <Chip
-        icon={<MoneyIcon />}
-        label={`PnL: ${formatPnl(totalPnl)}`}
-        size="small"
-        sx={{
-          fontWeight: 'bold',
-          bgcolor: getPnlColor(totalPnl) + '20',
-          color: getPnlColor(totalPnl),
-        }}
-      />
+      <Tooltip
+        title={manualPnL !== 0
+          ? `Live: ${formatPnl(livePnl)} | Manual: ${manualPnL > 0 ? '+' : ''}$${Math.abs(manualPnL).toFixed(2)} | Total: ${formatPnl(totalPnl)}`
+          : ''}
+        disableHoverListener={manualPnL === 0}
+        arrow
+      >
+        <Chip
+          icon={<MoneyIcon />}
+          label={`PnL: ${formatPnl(totalPnl)}`}
+          size="small"
+          sx={{
+            fontWeight: 'bold',
+            bgcolor: getPnlColor(totalPnl) + '20',
+            color: getPnlColor(totalPnl),
+          }}
+        />
+      </Tooltip>
       {/* Calls / Puts count */}
       <Chip
         label={`📈 ${callCount}C`}
@@ -137,6 +148,8 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           fontWeight: 'bold',
         }}
       />
+      {/* Manual PnL badge — display-only offset for payoff graph */}
+      {manualPnLBadge}
       {/* CE summary: Long lots / Short lots / Net cashflow */}
       {callCount > 0 && (
         <Tooltip title={`CE Calls — Long: ${ceLongLots} lots, Short: ${ceShortLots} lots, Net cashflow: ${formatNetCash(ceNetCash)}`}>

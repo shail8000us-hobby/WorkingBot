@@ -319,6 +319,20 @@ except Exception as e:
     print(f"⚠️ Could not register pnl_attribution blueprint: {e}")
     log.warning(f"PnL attribution routes not available: {e}")
 
+# Register Options AI Advisor routes (MAR 2026: API-free copy-paste AI advisor)
+# Uses direct app.add_url_rule() to avoid Flask-SocketIO blueprint registration quirks
+try:
+    from webui.backend.routes.options.ai_routes import register_ai_routes as _reg_ai
+    _reg_ai(app)
+except Exception as e:
+    print(f"⚠️ Could not register options AI advisor routes: {e}")
+    log.warning(f"Options AI advisor routes not available: {e}")
+
+
+
+
+
+
 # Register Greek Alerts blueprint (Feature 5 — conditional execution)
 try:
     from webui.backend.routes.options.greek_alerts import greek_alerts_bp
@@ -564,6 +578,15 @@ except Exception as e:
     print(f"⚠️ Could not register claude blueprint: {e}")
     log.warning(f"Claude AI routes not available: {e}")
 
+# Register Options AI Engine blueprint (MAR 2026: AI-powered options intelligence layer)
+try:
+    from webui.backend.routes.options_ai_engine.routes import options_ai_bp
+    app.register_blueprint(options_ai_bp)
+    print(f"✅ Registered options_ai_engine blueprint (AI-powered options intelligence)")
+except Exception as e:
+    print(f"⚠️ Could not register options_ai_engine blueprint: {e}")
+    log.warning(f"Options AI Engine routes not available: {e}")
+
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
 
@@ -719,6 +742,48 @@ def debug_routes():
             'path': str(rule.rule)
         })
     return jsonify({'routes': sorted(routes, key=lambda x: x['path']), 'count': len(routes)})
+
+
+# ============================================================================
+# Options AI Advisor — API-Free Copy-Paste Model (MAR 2026)
+# Routes are defined here inline to guarantee they load into app.url_map.
+# Implementation logic lives in webui/backend/routes/options/ai_routes.py
+# ============================================================================
+
+try:
+    from webui.backend.routes.options.ai_routes import (
+        advisor_generate_prompt as _ai_gen,
+        advisor_submit_response as _ai_submit,
+        advisor_status as _ai_status,
+        advisor_history as _ai_history,
+        advisor_toggle_automation as _ai_auto,
+    )
+
+    @app.route('/api/options/ai/generate-prompt', methods=['GET'])
+    def options_ai_generate_prompt():
+        return _ai_gen()
+
+    @app.route('/api/options/ai/submit-response', methods=['POST'])
+    def options_ai_submit_response():
+        return _ai_submit()
+
+    @app.route('/api/options/ai/status', methods=['GET'])
+    def options_ai_status():
+        return _ai_status()
+
+    @app.route('/api/options/ai/history', methods=['GET'])
+    def options_ai_history():
+        return _ai_history()
+
+    @app.route('/api/options/ai/automation', methods=['POST'])
+    def options_ai_automation():
+        return _ai_auto()
+
+    print("✅ Options AI Advisor routes registered inline (API-free, no keys required)")
+except Exception as _e:
+    print(f"⚠️ Could not register Options AI Advisor routes inline: {_e}")
+
+
 
 @app.errorhandler(404)
 def not_found(e):

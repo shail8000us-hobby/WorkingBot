@@ -26,6 +26,7 @@ import {
 } from 'recharts';
 import {
   Box, Typography, Paper, Chip, IconButton, Switch, FormControlLabel, Slider,
+  TextField, Button, ClickAwayListener,
 } from '@mui/material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
@@ -49,7 +50,9 @@ const OptionsPayoffDiagram = ({
   positions,
   selectedPositions = [],
   futuresPositions = [],
-  indexPrices = { BTC: 0, ETH: 0 }
+  indexPrices = { BTC: 0, ETH: 0 },
+  manualPnL = 0,
+  onManualPnLChange,
 }) => {
   const [priceRangePercent, setPriceRangePercent] = useState(20);
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
@@ -84,6 +87,10 @@ const OptionsPayoffDiagram = ({
   const [compareSpotPct, setCompareSpotPct] = useState(0);   // ±% from current target
   const [compareTimeDays, setCompareTimeDays] = useState(0); // extra days forward
   const baselineRef = useRef(null); // kept for reset logic
+
+  // Manual PnL offset control state (popover)
+  const [manualPnLOpen, setManualPnLOpen] = useState(false);
+  const [manualPnLInput, setManualPnLInput] = useState('');
 
   // ========================================================================
   // D2: Data computation via extracted hooks (usePayoffData.js)
@@ -322,16 +329,55 @@ const OptionsPayoffDiagram = ({
     return sourceData.filter((d) => d.price >= zoomDomain.left && d.price <= zoomDomain.right);
   }, [enrichedData, chartData, isZoomed, zoomDomain]);
 
+  // Apply manual PnL offset to all displayData points (display-only, no trading effect)
+  const shiftedDisplayData = useMemo(() => {
+    if (!displayData || manualPnL === 0) return displayData;
+    return displayData.map(pt => {
+      const rawExpiry = pt.expiry !== undefined ? pt.expiry + manualPnL : undefined;
+      return {
+        ...pt,
+        ...(rawExpiry !== undefined ? {
+          expiry: rawExpiry,
+          expiryProfit: rawExpiry >= 0 ? rawExpiry : 0,
+          expiryLoss: rawExpiry < 0 ? rawExpiry : 0,
+          expiryGreen: rawExpiry >= 0 ? rawExpiry : null,
+          expiryRed: rawExpiry <= 0 ? rawExpiry : null,
+        } : {}),
+        ...(pt.target !== undefined ? { target: pt.target + manualPnL } : {}),
+        ...(pt.today !== undefined ? { today: pt.today + manualPnL } : {}),
+        ...(pt.mid !== undefined ? { mid: pt.mid + manualPnL } : {}),
+      };
+    });
+  }, [displayData, manualPnL]);
+
+  // Compute breakevens from shifted data (where shifted expiry crosses zero)
+  const displayBreakevens = useMemo(() => {
+    if (manualPnL === 0) return null; // null = use original chartData.breakevens
+    if (!shiftedDisplayData || shiftedDisplayData.length < 2) return [];
+    const bps = [];
+    for (let i = 1; i < shiftedDisplayData.length; i++) {
+      const prev = shiftedDisplayData[i - 1];
+      const curr = shiftedDisplayData[i];
+      const prevVal = prev.expiry ?? 0;
+      const currVal = curr.expiry ?? 0;
+      if (prevVal !== currVal && prevVal * currVal < 0) {
+        const t = Math.abs(prevVal) / (Math.abs(prevVal) + Math.abs(currVal));
+        bps.push(Math.round(prev.price + t * (curr.price - prev.price)));
+      }
+    }
+    return bps;
+  }, [shiftedDisplayData, manualPnL]);
+
   // Calculate Y-axis domain for zoomed view (TRULY ADAPTIVE based on visible data)
   // This is critical - when user zooms to a small area, Y-axis MUST adapt
   const zoomedYDomain = useMemo(() => {
-    if (!displayData || displayData.length === 0) {
-      return [chartData?.yMin || -10, chartData?.yMax || 10];
+    if (!shiftedDisplayData || shiftedDisplayData.length === 0) {
+      return [(chartData?.yMin || -10) + manualPnL, (chartData?.yMax || 10) + manualPnL];
     }
 
     let minY = Infinity,
       maxY = -Infinity;
-    displayData.forEach((d) => {
+    shiftedDisplayData.forEach((d) => {
       if (d.expiry < minY) minY = d.expiry;
       if (d.expiry > maxY) maxY = d.expiry;
       if (d.target < minY) minY = d.target;
@@ -367,12 +413,12 @@ const OptionsPayoffDiagram = ({
 
     // If data is all positive but close to zero, show some negative
     if (minY >= 0 && minY < 5) yMin = Math.min(-2, yMin);
-    // If data is all negative but close to zero, show some positive  
+    // If data is all negative but close to zero, show some positive
     if (maxY <= 0 && maxY > -5) yMax = Math.max(2, yMax);
 
     // Adaptive: fit tightly around data, always include zero
     return [yMin, yMax];
-  }, [displayData, chartData]);
+  }, [shiftedDisplayData, chartData, manualPnL]);
 
   // ========================================================================
   // RENDER
@@ -389,7 +435,6 @@ const OptionsPayoffDiagram = ({
   }
 
   const {
-    data,
     spotPrice,
     targetPrice,
     maxProfit,
@@ -406,6 +451,19 @@ const OptionsPayoffDiagram = ({
     probabilityOfProfit,
     parsedPositions: chartPositions,
   } = chartData;
+
+  // Manual PnL display stats — shifted values for UI only, zero trading effect
+  const displayMaxProfit = isFinite(maxProfit) ? maxProfit + manualPnL : maxProfit;
+  const displayMaxLoss = isFinite(maxLoss) ? maxLoss + manualPnL : maxLoss;
+  const displayProjectedProfit = projectedProfit + manualPnL;
+  const rawProfitPct = parseFloat(profitPct);
+  const totalPremiumForPct = (rawProfitPct !== 0 && projectedProfit !== 0)
+    ? (projectedProfit / rawProfitPct) * 100
+    : null;
+  const displayProfitPct = totalPremiumForPct
+    ? ((displayProjectedProfit / totalPremiumForPct) * 100).toFixed(2)
+    : profitPct;
+  const displayBreakevensResolved = displayBreakevens !== null ? displayBreakevens : breakevens;
 
   // Custom Tooltip - Sensibull Style
   const CustomTooltip = ({ active, payload, label }) => {
@@ -760,7 +818,7 @@ const OptionsPayoffDiagram = ({
             💰 Max Profit
           </Typography>
           <Typography variant="body2" fontWeight="bold" sx={{ color: '#10b981' }}>
-            {isFinite(maxProfit) && maxProfit > 0 ? `+$${maxProfit.toFixed(2)}` : '♾️'}
+            {isFinite(displayMaxProfit) && displayMaxProfit > 0 ? `+$${displayMaxProfit.toFixed(2)}` : '♾️'}
           </Typography>
         </Box>
 
@@ -780,7 +838,7 @@ const OptionsPayoffDiagram = ({
             ⚠️ Max Loss
           </Typography>
           <Typography variant="body2" fontWeight="bold" sx={{ color: '#ef4444' }}>
-            {isFinite(maxLoss) && maxLoss < 0 ? `$${maxLoss.toFixed(2)}` : '♾️'}
+            {isFinite(displayMaxLoss) && displayMaxLoss < 0 ? `$${displayMaxLoss.toFixed(2)}` : '♾️'}
           </Typography>
         </Box>
 
@@ -801,9 +859,9 @@ const OptionsPayoffDiagram = ({
           <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
             🎯 Breakeven
           </Typography>
-          {breakevens.length > 0 ? (
+          {displayBreakevensResolved.length > 0 ? (
             <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
-              {breakevens.map((be, idx) => {
+              {displayBreakevensResolved.map((be, idx) => {
                 const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
                 const sign = bePercent >= 0 ? '+' : '';
                 return (
@@ -836,22 +894,22 @@ const OptionsPayoffDiagram = ({
           <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
             ⚖️ R:R
           </Typography>
-          {isFinite(maxProfit) && isFinite(maxLoss) && maxLoss !== 0 ? (
+          {isFinite(displayMaxProfit) && isFinite(displayMaxLoss) && displayMaxLoss !== 0 ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <Typography variant="body2" fontWeight="bold" sx={{ color: '#3b82f6' }}>
-                {Math.abs(maxProfit / maxLoss).toFixed(2)}:1
+                {Math.abs(displayMaxProfit / displayMaxLoss).toFixed(2)}:1
               </Typography>
               <Box sx={{
                 px: 0.75,
                 py: 0.25,
                 borderRadius: 0.5,
-                bgcolor: maxProfit > Math.abs(maxLoss) ? 'rgba(16,185,129,0.2)' : maxProfit < Math.abs(maxLoss) ? 'rgba(239,68,68,0.2)' : 'rgba(156,163,175,0.2)'
+                bgcolor: displayMaxProfit > Math.abs(displayMaxLoss) ? 'rgba(16,185,129,0.2)' : displayMaxProfit < Math.abs(displayMaxLoss) ? 'rgba(239,68,68,0.2)' : 'rgba(156,163,175,0.2)'
               }}>
                 <Typography variant="caption" fontWeight="600" sx={{
-                  color: maxProfit > Math.abs(maxLoss) ? '#10b981' : maxProfit < Math.abs(maxLoss) ? '#ef4444' : '#9ca3af',
+                  color: displayMaxProfit > Math.abs(displayMaxLoss) ? '#10b981' : displayMaxProfit < Math.abs(displayMaxLoss) ? '#ef4444' : '#9ca3af',
                   fontSize: '0.65rem'
                 }}>
-                  {maxProfit > Math.abs(maxLoss) ? '✓ Fav' : maxProfit < Math.abs(maxLoss) ? '⚠ Unfav' : '○'}
+                  {displayMaxProfit > Math.abs(displayMaxLoss) ? '✓ Fav' : displayMaxProfit < Math.abs(displayMaxLoss) ? '⚠ Unfav' : '○'}
                 </Typography>
               </Box>
             </Box>
@@ -881,6 +939,75 @@ const OptionsPayoffDiagram = ({
             }}>
               {probabilityOfProfit.toFixed(1)}%
             </Typography>
+          </Box>
+        )}
+
+        {/* Manual PnL offset control */}
+        {onManualPnLChange && (
+          <Box sx={{ position: 'relative', ml: 'auto' }}>
+            <Box
+              onClick={() => {
+                setManualPnLInput(manualPnL === 0 ? '' : String(manualPnL));
+                setManualPnLOpen(true);
+              }}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 1,
+                px: 1.5, py: 0.75, borderRadius: 1.5, cursor: 'pointer',
+                bgcolor: manualPnL !== 0 ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.06)',
+                border: `1px solid ${manualPnL !== 0 ? 'rgba(99,102,241,0.5)' : 'rgba(99,102,241,0.25)'}`,
+                '&:hover': { bgcolor: 'rgba(99,102,241,0.18)' },
+              }}
+            >
+              <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
+                ✏️ Manual PnL
+              </Typography>
+              <Typography variant="body2" fontWeight="bold" sx={{ color: manualPnL !== 0 ? '#818cf8' : '#6b7280' }}>
+                {manualPnL !== 0 ? `${manualPnL > 0 ? '+' : ''}$${manualPnL.toFixed(2)}` : 'Off'}
+              </Typography>
+            </Box>
+            {manualPnLOpen && (
+              <ClickAwayListener onClickAway={() => setManualPnLOpen(false)}>
+                <Paper elevation={8} sx={{
+                  position: 'absolute', bottom: '110%', right: 0, zIndex: 1400,
+                  p: 1.5, minWidth: 250, bgcolor: 'background.paper',
+                  border: '1px solid', borderColor: 'divider', borderRadius: 1.5,
+                }}>
+                  <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
+                    Manual PnL Offset
+                  </Typography>
+                  <TextField
+                    size="small" fullWidth type="number"
+                    value={manualPnLInput}
+                    onChange={(e) => setManualPnLInput(e.target.value)}
+                    placeholder="e.g. +20.00"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = parseFloat(manualPnLInput);
+                        onManualPnLChange(isNaN(v) ? 0 : v);
+                        setManualPnLOpen(false);
+                      }
+                      if (e.key === 'Escape') setManualPnLOpen(false);
+                    }}
+                    autoFocus
+                    sx={{ mb: 0.75 }}
+                  />
+                  <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'text.secondary', fontSize: '0.7rem' }}>
+                    Realized PnL from squared-off positions. Shifts payoff graph up/down without changing its shape.
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button size="small" variant="contained" sx={{ flex: 1 }} onClick={() => {
+                      const v = parseFloat(manualPnLInput);
+                      onManualPnLChange(isNaN(v) ? 0 : v);
+                      setManualPnLOpen(false);
+                    }}>Apply</Button>
+                    <Button size="small" variant="outlined" sx={{ flex: 1 }} onClick={() => {
+                      onManualPnLChange(0);
+                      setManualPnLOpen(false);
+                    }}>Clear</Button>
+                  </Box>
+                </Paper>
+              </ClickAwayListener>
+            )}
           </Box>
         )}
       </Box>
@@ -1134,9 +1261,18 @@ const OptionsPayoffDiagram = ({
       )}
 
       {/* Chart */}
-      <ResponsiveContainer width="100%" height={350}>
+      <Box sx={{ position: 'relative' }}>
+        {manualPnL !== 0 && (
+          <Typography sx={{
+            position: 'absolute', top: 24, left: 52, zIndex: 1,
+            fontSize: '0.7rem', color: '#9ca3af', fontStyle: 'italic', pointerEvents: 'none',
+          }}>
+            ⚙ Manual offset: {manualPnL > 0 ? '+' : ''}${Math.abs(manualPnL).toFixed(2)}
+          </Typography>
+        )}
+        <ResponsiveContainer width="100%" height={350}>
         <ComposedChart
-          data={displayData}
+          data={shiftedDisplayData}
           margin={{ top: 20, right: 30, left: 20, bottom: 10 }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -1182,7 +1318,7 @@ const OptionsPayoffDiagram = ({
             tickFormatter={(v) => `$${v.toFixed(0)}`}
             stroke="#666"
             tick={{ fontSize: 11 }}
-            domain={isZoomed ? zoomedYDomain : [yMin, yMax]}
+            domain={isZoomed ? zoomedYDomain : [yMin + manualPnL, yMax + manualPnL]}
             allowDataOverflow={true}
             label={{
               value: 'Profit / Loss',
@@ -1411,15 +1547,16 @@ const OptionsPayoffDiagram = ({
             );
           })}
         </ComposedChart>
-      </ResponsiveContainer>
+        </ResponsiveContainer>
+      </Box>
 
       {/* Projected Profit Display */}
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: -1, mb: 2 }}>
         <Chip
-          label={`Projected profit at ${targetPricePercent === 0 ? 'spot' : `$${targetPrice.toLocaleString()}`}: ${projectedProfit >= 0 ? '+' : ''}$${projectedProfit.toFixed(2)} (${profitPct >= 0 ? '+' : ''}${profitPct}%)`}
+          label={`Projected profit at ${targetPricePercent === 0 ? 'spot' : `$${targetPrice.toLocaleString()}`}: ${displayProjectedProfit >= 0 ? '+' : ''}$${displayProjectedProfit.toFixed(2)} (${displayProfitPct >= 0 ? '+' : ''}${displayProfitPct}%)`}
           sx={{
-            bgcolor: projectedProfit >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-            color: projectedProfit >= 0 ? '#10b981' : '#ef4444',
+            bgcolor: displayProjectedProfit >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+            color: displayProjectedProfit >= 0 ? '#10b981' : '#ef4444',
             fontWeight: 'bold',
             px: 2,
           }}

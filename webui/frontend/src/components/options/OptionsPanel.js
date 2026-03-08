@@ -324,6 +324,97 @@ const DroppableGroupHeader = React.memo(({ groupId, color, children }) => {
   );
 });
 
+// ============================================================================
+// MANUAL PNL BADGE — Display-only PnL offset for payoff graph
+// ============================================================================
+function ManualPnLBadge({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [inputVal, setInputVal] = useState('');
+
+  const handleOpen = () => {
+    setInputVal(value === 0 ? '' : String(value));
+    setOpen(true);
+  };
+
+  const handleApply = () => {
+    const parsed = parseFloat(inputVal);
+    onChange(isNaN(parsed) ? 0 : parsed);
+    setOpen(false);
+  };
+
+  const handleClear = () => {
+    onChange(0);
+    setOpen(false);
+  };
+
+  const color = value > 0 ? '#10b981' : value < 0 ? '#ef4444' : '#94a3b8';
+  const label = value === 0
+    ? '✏️ Manual PnL'
+    : `✏️ ${value > 0 ? '+' : ''}$${Math.abs(value).toFixed(2)}`;
+
+  return (
+    <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+      <Chip
+        label={label}
+        size="small"
+        onClick={handleOpen}
+        sx={{
+          fontWeight: 'bold',
+          bgcolor: `${color}20`,
+          color,
+          cursor: 'pointer',
+          border: `1px solid ${color}40`,
+          '&:hover': { bgcolor: `${color}35` },
+        }}
+      />
+      {open && (
+        <ClickAwayListener onClickAway={() => setOpen(false)}>
+          <Paper
+            elevation={8}
+            sx={{
+              position: 'absolute',
+              top: '110%',
+              left: 0,
+              zIndex: 1300,
+              p: 1.5,
+              minWidth: 240,
+              bgcolor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+            }}
+          >
+            <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
+              Manual PnL Offset
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              type="number"
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              placeholder="e.g. +20.00"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleApply();
+                if (e.key === 'Escape') setOpen(false);
+              }}
+              autoFocus
+              sx={{ mb: 0.75 }}
+            />
+            <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'text.secondary', fontSize: '0.7rem' }}>
+              Realized PnL from squared-off positions. Shifts payoff graph up/down without changing its shape.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button size="small" variant="contained" onClick={handleApply} sx={{ flex: 1 }}>Apply</Button>
+              <Button size="small" variant="outlined" onClick={handleClear} sx={{ flex: 1 }}>Clear</Button>
+            </Box>
+          </Paper>
+        </ClickAwayListener>
+      )}
+    </Box>
+  );
+}
+
 const OptionsPanel = () => {
   // Polling interval (default 5s)
   const [pollInterval, setPollInterval] = usePersistedState('options_poll_interval', 5000, { parse: 'int' });
@@ -362,6 +453,14 @@ const OptionsPanel = () => {
   // When you reduce a position (e.g., from -300 to -150), the PnL from the closed portion is locked in here.
   // This ensures partial exits don't "disappear" from PnL and payoff graph.
   const [partialRealizedPnl, setPartialRealizedPnl] = usePersistedState('options_partial_realized_pnl', {});
+
+  // Manual PnL offset — display-only realized PnL from squared-off positions (persisted via localStorage)
+  const [manualPnL, setManualPnL] = useState(() =>
+    parseFloat(localStorage.getItem('ssrbot_manual_pnl') || '0')
+  );
+  useEffect(() => {
+    localStorage.setItem('ssrbot_manual_pnl', String(manualPnL));
+  }, [manualPnL]);
 
   // Day 1: Probability of Profit (PoP) data
   const [popData, setPopData] = useState({}); // Map of symbol -> PoP percentage
@@ -3658,6 +3757,8 @@ const OptionsPanel = () => {
             indexPrices={indexPrices}
             marginData={marginData}
             lastDataUpdate={lastDataUpdate}
+            manualPnL={manualPnL}
+            manualPnLBadge={<ManualPnLBadge value={manualPnL} onChange={setManualPnL} />}
           />
 
           {/* ── Group Manager Strip ──────────────────────────────────── */}
@@ -4723,6 +4824,8 @@ const OptionsPanel = () => {
                   selectedPositions={selectedPositionsForPayoff}
                   futuresPositions={visibleFuturesPositions}
                   indexPrices={indexPrices}
+                  manualPnL={manualPnL}
+                  onManualPnLChange={setManualPnL}
                 />
               </Suspense>
             </PayoffErrorBoundary>
