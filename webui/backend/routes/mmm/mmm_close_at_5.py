@@ -187,6 +187,7 @@ async def close_position(
     initializer,
     session: Dict,
     position: Dict,
+    pnl_attribution_key: str = None,
 ) -> Dict[str, Any]:
     """
     §11: Buy back a single position at market/ask price.
@@ -303,6 +304,11 @@ async def close_position(
 
         # Record realized P&L
         session['realized_pnl'] = session.get('realized_pnl', 0) + realized_pnl
+        # T2-5: P&L attribution by source
+        _attr_key = pnl_attribution_key
+        if _attr_key is None:
+            _attr_key = 'pnl_initial' if pos_type == 'original' else 'pnl_adjustment'
+        session[_attr_key] = session.get(_attr_key, 0.0) + realized_pnl
         session['close_at_5_count'] = session.get('close_at_5_count', 0) + 1
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
 

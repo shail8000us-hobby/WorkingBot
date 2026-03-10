@@ -2,8 +2,8 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
-> **Last Updated:** March 4, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** Production-ready.
+> **Last Updated:** March 10, 2026
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
@@ -1565,3 +1565,116 @@ mmm_config.py    ← imported by: api, state, engine, perp_hedge (~438 lines)
 ---
 
 *This document is the single source of truth for any AI agent working on the MMM algorithm. All file paths, module names, API endpoints, WebSocket events, and state fields above have been verified against the actual codebase as of March 4, 2026. Backend: 32 Python files (31 modules + 1 DB). Frontend: 28 React components + 2 hooks + 2 utils. Reference `MONEY_POWER_CALCULATION_LOGIC.md` for the sealed mathematical logic. Reference `MMM_SPLIT_LEDGER_INSTRUCTIONS.md` and `MMM_SPLIT_LEDGER_PLAN.md` for Split Ledger design rationale. Reference `MMM_10_OF_10_PRODUCTION_PLAN.md` for the remaining hardening tasks.*
+
+---
+
+## 15. MARCH 2026 AUDIT FIXES (implemented March 10, 2026)
+
+The following items were implemented as part of a comprehensive audit. All are in production code.
+
+### 15.1 T1 — Safety Fixes
+
+**T1-1: M2 P&L Rollback (`mmm_recycler.py`)**
+When Phase B fails (exception or error), both rollback paths now subtract `phase_a_pnl` from `session['realized_pnl']` to undo the P&L added by `close_position()` during Phase A. Without this, failed recycles permanently inflate realized P&L.
+
+**T1-2: Peak P&L Decay Floor (`mmm_safety.py`)**
+`update_peak_pnl()` now uses `max(current_peak * 0.9 + total_pnl * 0.1, 0)` — floor at 0 prevents peak decaying below zero when total_pnl is deeply negative, which would permanently suppress the trailing stop.
+
+**T1-3: Consecutive CRITICAL Margin Escalation (`mmm_margin_guardian.py` + `mmm_monitor.py`)**
+- `MarginGuardian.check()` tracks `self._consecutive_critical` beats at CRITICAL tier.
+- When `consecutive_critical >= consecutive_critical_threshold` (default 3), adds `force_stop_session` to the returned `actions` list and exposes `consecutive_critical` count in the result dict.
+- `mmm_monitor.py` heartbeat checks `'force_stop_session' in margin_result['actions']` BEFORE the tier-based RED/CRITICAL block and calls `self.stop()`.
+- New param (hot-reloadable): `consecutive_critical_threshold` (default 3).
+
+**T1-4: Session Heartbeat Lock (`mmm_monitor.py`)**
+`self._session_lock` (threading.Lock) is already present and protects API-thread reads via `get_session_snapshot()`. The heartbeat intentionally does NOT hold the lock for its full duration (documented at line 714) — this is an accepted trade-off to avoid blocking all API reads for 1–5 seconds.
+
+### 15.2 T2 — Operational Improvements
+
+**T2-1: min_trigger_move Fallback Default (`mmm_trigger.py`)**
+The fallback in `evaluate_triggers()` was `params.get('min_trigger_move', 3.0)` — mismatched with `DEFAULT_PARAMS` value of `10.0`. Fixed to `10.0`. Only affects malformed sessions that somehow lack `params`.
+
+**T2-2: Circuit Breaker should_alert — Already Wired**
+`self._circuit.should_alert` is already checked at monitor line 651. No change needed.
+
+**T2-3: Fill Price Bounds Check — Already Present**
+`_parse_fill_price()` already validates `price <= 0 or price > 1_000_000` at executor line 102. No change needed.
+
+**T2-4: Lot Velocity Limiter (`mmm_safety.py` + `mmm_state.py`)**
+New `check_lot_velocity()` method in `MMMSafety`. Counts lots sold in `adjustment_history` over a rolling window. Blocks adjustments if rate exceeds limit.
+
+New params (all hot-reloadable):
+- `lot_velocity_enabled` (default `True`) — master switch
+- `lot_velocity_limit` (default `10`) — max lots sold in window
+- `lot_velocity_window_mins` (default `30`) — rolling window in minutes
+
+Returns `stop_adjustments` action at limit, `continue` warning at 80% of limit.
+
+**T2-5: P&L Attribution Fields (`mmm_state.py`)**
+Five new fields added to session at creation:
+- `pnl_initial` — P&L from closing original entry positions
+- `pnl_adjustment` — P&L from closing adjustment-filled positions
+- `pnl_harvest` — P&L from M1 harvesting
+- `pnl_recycle` — P&L from M2 Phase A buybacks (net: only on success)
+- `pnl_perp` — Mirror of `perp_hedge.realized_pnl`
+
+These fields are initialized to 0.0. Population by `mmm_close_at_5.py`, `mmm_harvester.py`, and `mmm_recycler.py` is a future enhancement.
+
+**T2-6: Analytics Array Cap — Already Done**
+`auto_close_events` is already capped at 200 in `mmm_close_at_5.py`. `reversal_timestamps` and `shift_timestamps` are capped at 200 in `mmm_monitor.py`. `safety_trigger_events` is defined but never appended to (dead field).
+
+### 15.3 T3 — Strategic Enhancements
+
+**T3-1: Proactive Shift Scanner (`mmm_monitor.py`)**
+New heartbeat step 1.5: `_proactive_shift_scan(ce_now, pe_now)` runs BEFORE close-at-5.
+
+Logic: for each side with `active_lots > 0`, if `close_threshold < premium < shift_threshold`, trigger `_process_strike_shift()` immediately rather than waiting for the opposite side to breach its trigger. Only shifts one side per beat. Marks `session['_proactive_shifted_{side}'] = True` to prevent double-shifting.
+
+New param: `proactive_shift_enabled` (default `True`, hot-reloadable).
+
+**T3-2: Gamma-Aware Lot Multiplier (`mmm_engine.py`)**
+`calculate_lots_to_sell()` now applies a multiplier when the aggressor's excess_pct is large:
+- excess_pct 50–100%: multiplier 1.1×
+- excess_pct 100–200%: multiplier 1.2×
+- excess_pct 200%+: multiplier 1.3× (capped by `gamma_aware_max_multiplier`)
+
+Reads `session['_last_trigger_result']` for the aggressor excess_pct (set by `evaluate_triggers()` each heartbeat). Applied BEFORE trend-tier reduction and caps.
+
+New params (hot-reloadable):
+- `gamma_aware_enabled` (default `True`)
+- `gamma_aware_max_multiplier` (default `1.3`)
+
+**T3-3: Whipsaw Pre-Filter (`mmm_monitor.py` + `mmm_safety.py`)**
+In `_process_adjustment()`, before calling `calculate_lots_to_sell()`, a direction-flip counter `session['_whipsaw_consecutive_alternating']` is incremented each time the aggressor flips vs the last adjustment. Resets to 0 on same-direction adjustments.
+
+In `check_whipsaw()` (safety), when `_whipsaw_consecutive_alternating >= whipsaw_limit - 1`, the effective whipsaw limit is lowered by 1 so the pause fires one adjustment earlier than normal. This catches micro-whipsaw patterns faster.
+
+### 15.4 T4 — Nice-to-Have
+
+**T4-1: MONEY_POWER_ALGORITHM_PLAN.md Historical Banner**
+Added header banner marking the file as historical reference only, pointing to `AI_MMM_CONTEXT.md` as authoritative.
+
+**T4-2: Pending Order TTL Cleanup — Already Done**
+`clear_all_pending(self.session_id)` is called in `start()` at monitor line 222, ensuring a fresh pending-order registry on every monitor start.
+
+**T4-3: Pre-Adjustment Delta Projection for Perp (`mmm_perp_hedge.py`)**
+`compute_required_hedge()` and `run_perp_hedge()` both accept `projected_lots: int = 0` and `projected_side: str = ''` kwargs. When provided, projected delta from the about-to-execute adjustment is added to portfolio delta before computing the hedge size. Backward-compatible (zero defaults). Controlled by param `perp_hedge_project_adjustment` (default `True`).
+
+**T4-4: Price Basis Documentation — Already Done**
+`_fetch_premiums()` docstring documents the intentional mark/bid split: mark price for shift detection (conservative), bid price for close-at-5 (accurate for illiquid buybacks).
+
+### 15.5 New DEFAULT_PARAMS and HOT_RELOAD_PARAMS (March 2026)
+
+All new params are in both `DEFAULT_PARAMS` and `HOT_RELOAD_PARAMS` in `mmm_state.py`:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `lot_velocity_enabled` | `True` | Master switch for lot velocity limiter |
+| `lot_velocity_limit` | `10` | Max lots sold per velocity window |
+| `lot_velocity_window_mins` | `30` | Rolling window for velocity check (minutes) |
+| `gamma_aware_enabled` | `True` | Master switch for gamma-aware lot multiplier |
+| `gamma_aware_max_multiplier` | `1.3` | Cap on multiplier (1.0 = no multiplier) |
+| `proactive_shift_enabled` | `True` | Master switch for proactive shift scanner |
+| `consecutive_critical_threshold` | `3` | Beats at CRITICAL margin before force-stop |
+| `perp_hedge_project_adjustment` | `True` | Include projected adjustment delta in perp hedge |
+| `perp_hedge_approx_option_delta` | `0.5` | Approximate option delta for projection |

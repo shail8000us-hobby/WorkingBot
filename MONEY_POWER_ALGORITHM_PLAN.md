@@ -1,8 +1,13 @@
 # Money Power Algorithm — Refined Master Plan
 
-> **Strategy Type:** Options Selling with Dynamic Hedging via Incremental Shorts  
-> **Target:** 0DTE / any user-selected expiry  
-> **Core Idea:** Sell CE + PE, continuously hedge the losing side by selling more of the winning (decaying) side  
+> **⚠️ HISTORICAL REFERENCE ONLY**
+> This document is the original design plan. For the current authoritative
+> technical reference that reflects actual code, see **[AI_MMM_CONTEXT.md](AI_MMM_CONTEXT.md)**.
+> Discrepancies between this document and code should be resolved in favour of the code.
+
+> **Strategy Type:** Options Selling with Dynamic Hedging via Incremental Shorts
+> **Target:** 0DTE / any user-selected expiry
+> **Core Idea:** Sell CE + PE, continuously hedge the losing side by selling more of the winning (decaying) side
 > **Architecture:** Extends existing `BaseStrategy` → new `MoneyPowerStrategy` class  
 
 ---

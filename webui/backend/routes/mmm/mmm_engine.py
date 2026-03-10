@@ -314,11 +314,38 @@ class MMMEngine:
         raw_lots = loss_to_cover / (hedge_premium * LOT_SIZE_BTC) * (1 + buffer_pct)
         lots_to_sell = max(math.ceil(raw_lots), 1)
 
+        # ── T3-2: Gamma-Aware Lot Multiplier ──────────────────────────────
+        # When the aggressor premium has spiked aggressively above trigger,
+        # sell proportionally more lots to cover the accelerating loss.
+        # Read aggressor excess_pct from session (set by evaluate_triggers).
+        constraint_msg = ''
+        if params.get('gamma_aware_enabled', True):
+            trigger_res = session.get('_last_trigger_result', {})
+            # hedge_side is opposite to aggressor: CE hedge → PE aggressor
+            aggressor_side = 'pe' if hedge_side == 'ce' else 'ce'
+            aggressor_excess_pct = trigger_res.get(f'{aggressor_side}_excess_pct', 0)
+            max_mult = params.get('gamma_aware_max_multiplier', 1.3)
+            if aggressor_excess_pct >= 200:
+                gamma_mult = min(max_mult, 1.3)
+            elif aggressor_excess_pct >= 100:
+                gamma_mult = min(max_mult, 1.2)
+            elif aggressor_excess_pct >= 50:
+                gamma_mult = min(max_mult, 1.1)
+            else:
+                gamma_mult = 1.0
+            if gamma_mult > 1.0:
+                pre_gamma = lots_to_sell
+                lots_to_sell = max(math.ceil(lots_to_sell * gamma_mult), 1)
+                constraint_msg = (
+                    f"Gamma-aware {gamma_mult:.1f}x ({aggressor_excess_pct:.0f}% excess): "
+                    f"{pre_gamma} → {lots_to_sell} lots"
+                )
+        # ── END T3-2 ──────────────────────────────────────────────────────
+
         # ── IMP-2: Trend Tier 1 lot reduction ──────────────────────────────
         # When trend guard is at Tier 1 (ALERT), reduce lots by configurable %
         # Tier 2+ blocks sells entirely (handled in regime engine), so this
         # only applies to the "soft warning" zone.
-        constraint_msg = ''
         trend_tier = session.get('_trend_tier', 0)
         if trend_tier >= 1:
             lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
@@ -326,10 +353,11 @@ class MMMEngine:
             original_lots = lots_to_sell
             lots_to_sell = max(math.ceil(lots_to_sell * multiplier), 1)
             if lots_to_sell < original_lots:
-                constraint_msg = (
+                trend_msg = (
                     f"Trend Tier {trend_tier} lot reduction: {original_lots} → "
                     f"{lots_to_sell} ({lot_reduction:.0%} reduction)"
                 )
+                constraint_msg = f"{constraint_msg}; {trend_msg}" if constraint_msg else trend_msg
         # ── END IMP-2 ─────────────────────────────────────────────────────
 
         # §13.1: Position cap — Split Ledger: only active_lots count against cap

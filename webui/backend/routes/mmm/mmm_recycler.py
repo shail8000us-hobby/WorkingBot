@@ -397,7 +397,10 @@ async def execute_lot_recycling(
 
     for pos in selected:
         try:
-            result = await close_position(executor, initializer, session, pos)
+            result = await close_position(
+                executor, initializer, session, pos,
+                pnl_attribution_key='pnl_recycle',
+            )
             if result.get('success'):
                 phase_a_pnl += result.get('realized_pnl', 0)
                 phase_a_lots += result.get('lots_closed', 0)
@@ -471,6 +474,8 @@ async def execute_lot_recycling(
             side_state.setdefault('positions', []).append(pos)
         # Rollback realized P&L added by close_position() during Phase A
         session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
+        # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)
+        session['pnl_recycle'] = session.get('pnl_recycle', 0.0) - phase_a_pnl
         log.error(
             "Phase B exception — restored %d positions to active state, "
             "rolled back Phase A P&L: %.4f",
@@ -500,6 +505,8 @@ async def execute_lot_recycling(
             side_state.setdefault('positions', []).append(pos)
         # Rollback realized P&L added by close_position() during Phase A
         session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
+        # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)
+        session['pnl_recycle'] = session.get('pnl_recycle', 0.0) - phase_a_pnl
         log.error(
             "Phase B failed — restored %d positions to active state, "
             "rolled back Phase A P&L: %.4f",

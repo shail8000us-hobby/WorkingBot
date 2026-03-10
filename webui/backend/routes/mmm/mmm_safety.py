@@ -357,7 +357,17 @@ class MMMSafety:
                 alternating = False
                 break
 
-        if alternating and len(set(sides)) > 1:
+        # T3-3: Whipsaw pre-filter boost — if the pre-filter has been counting
+        # alternating flips eagerly, lower the effective threshold by 1.
+        alt_pre = session.get('_whipsaw_consecutive_alternating', 0)
+        effective_limit = max(whipsaw_limit - 1, 2) if alt_pre >= whipsaw_limit - 1 else whipsaw_limit
+        enough_history = len(history) >= effective_limit
+        recent_eff = history[-effective_limit:] if enough_history else recent
+        sides_eff = [h.get('aggressor', '') for h in recent_eff]
+        alt_eff = all(sides_eff[i] != sides_eff[i-1] for i in range(1, len(sides_eff))) if len(sides_eff) > 1 else False
+        use_alternating = (alternating and len(set(sides)) > 1) or (alt_eff and len(set(sides_eff)) > 1)
+
+        if use_alternating:
             now = datetime.now(timezone.utc)  # Fix #14: timezone-aware UTC
             cooldown_secs = params.get('adjustment_interval', 300) * 2
             resume_at = (now + timedelta(seconds=cooldown_secs)).isoformat()

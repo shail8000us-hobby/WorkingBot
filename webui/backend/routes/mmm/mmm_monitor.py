@@ -1154,6 +1154,9 @@ class MMMMonitor:
         # shift_threshold while still having active lots. If so, trigger a shift
         # proactively rather than waiting for the opposite side to trigger.
         if session.get('params', {}).get('proactive_shift_enabled', True):
+            # T3-1 bug fix: clear per-beat flags so each heartbeat re-evaluates
+            session.pop('_proactive_shifted_ce', None)
+            session.pop('_proactive_shifted_pe', None)
             await self._proactive_shift_scan(ce_now, pe_now)
 
         # Step 2: Close-at-5 scan (§11)
@@ -1963,6 +1966,8 @@ class MMMMonitor:
         )
         session['unrealized_pnl'] = pnl['unrealized']
         update_peak_pnl(session, pnl['net_pnl'])
+        # T2-5: Mirror perp hedge realized P&L to attribution field (sync, not incremental)
+        session['pnl_perp'] = session.get('perp_hedge', {}).get('realized_pnl', 0.0)
 
         # Track P&L for walkthrough
         self._hb_wt['pnl'] = pnl
@@ -2771,6 +2776,29 @@ class MMMMonitor:
                                     sid, 'warning',
                                     {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
 
+        # ── T3-3: Whipsaw Pre-Filter ─────────────────────────────────────
+        # Before executing, check if this adjustment is the mirror image of
+        # the last one (rapid reversal). If so, boost the whipsaw counter
+        # so the existing whipsaw check fires sooner.
+        history = session.get('adjustment_history', [])
+        if history:
+            last_adj = history[-1]
+            last_aggressor = last_adj.get('aggressor', '')
+            if last_aggressor and last_aggressor != aggressor:
+                # Direction flip — increment the alternating counter eagerly
+                session['_whipsaw_consecutive_alternating'] = (
+                    session.get('_whipsaw_consecutive_alternating', 0) + 1
+                )
+                alt_count = session['_whipsaw_consecutive_alternating']
+                log.debug(
+                    f"[{sid}] T3-3 Whipsaw pre-filter: direction flip "
+                    f"{last_aggressor.upper()} → {aggressor.upper()}, "
+                    f"alternating count={alt_count}"
+                )
+            else:
+                session['_whipsaw_consecutive_alternating'] = 0
+        # ── END T3-3 ─────────────────────────────────────────────────────
+
         lots, constraint_msg, is_position_cap = self._engine.calculate_lots_to_sell(
             session, hedge, loss, hedge_premium,
         )
@@ -3511,6 +3539,7 @@ class MMMMonitor:
 
             result = await close_position(
                 self.executor, self.initializer, session, pos,
+                pnl_attribution_key='pnl_harvest',
             )
 
             if result.get('success'):
