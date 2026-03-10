@@ -660,7 +660,8 @@ def update_peak_pnl(session: Dict, total_pnl: float):
         session['peak_pnl'] = total_pnl
     elif current_peak > 0 and total_pnl < current_peak:
         # Decay peak toward current by 10% per heartbeat
-        session['peak_pnl'] = current_peak * 0.9 + total_pnl * 0.1
+        # Floor at 0 to prevent negative peak when total_pnl is negative
+        session['peak_pnl'] = max(current_peak * 0.9 + total_pnl * 0.1, 0)
 
 
 def reset_peak_pnl_on_reversal(session: Dict, total_pnl: float):

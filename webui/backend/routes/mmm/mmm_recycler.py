@@ -469,7 +469,13 @@ async def execute_lot_recycling(
             pos['status'] = 'active'
             pos.pop('_being_closed', None)
             side_state.setdefault('positions', []).append(pos)
-        log.error("Phase B exception — restored %d positions to active state", len(bought_back_positions))
+        # Rollback realized P&L added by close_position() during Phase A
+        session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
+        log.error(
+            "Phase B exception — restored %d positions to active state, "
+            "rolled back Phase A P&L: %.4f",
+            len(bought_back_positions), phase_a_pnl,
+        )
         session['recycle_attempt_count'] = session.get('recycle_attempt_count', 0) + 1
         session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
         return {
@@ -492,7 +498,13 @@ async def execute_lot_recycling(
             pos['status'] = 'active'
             pos.pop('_being_closed', None)
             side_state.setdefault('positions', []).append(pos)
-        log.error("Phase B failed — restored %d positions to active state", len(bought_back_positions))
+        # Rollback realized P&L added by close_position() during Phase A
+        session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
+        log.error(
+            "Phase B failed — restored %d positions to active state, "
+            "rolled back Phase A P&L: %.4f",
+            len(bought_back_positions), phase_a_pnl,
+        )
         session['recycle_attempt_count'] = session.get('recycle_attempt_count', 0) + 1
         session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
         return {

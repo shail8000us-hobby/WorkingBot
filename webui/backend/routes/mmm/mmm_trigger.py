@@ -79,10 +79,10 @@ def evaluate_triggers(
     """
     params = session.get('params', {})
     # Bug #1 fix: prefer ephemeral theta-accelerated value over params
-    # Default 3.0 matches DEFAULT_PARAMS in mmm_state.py
+    # Default 10.0 matches DEFAULT_PARAMS in mmm_state.py (T2-1 fix: was 3.0)
     min_trigger_move = session.get(
         '_effective_min_trigger_move',
-        params.get('min_trigger_move', 3.0),
+        params.get('min_trigger_move', 10.0),
     )
 
     ce_side = session.get('ce', {})
