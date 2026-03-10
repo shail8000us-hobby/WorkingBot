@@ -49,6 +49,16 @@ class ConnectionManager {
       return;
     }
 
+    // Destroy previous socket before creating a new one.
+    // Without this, each reconnect attempt leaves the old socket alive and polling,
+    // causing multiple concurrent polling loops that flood the console with errors
+    // (e.g. 250+ "xhr poll error" entries during a 17-second backend restart).
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     console.log('🔵 Initializing connection...');
     this.setConnectionState('connecting');
 
@@ -107,14 +117,17 @@ class ConnectionManager {
     });
 
     this.socket.on('connect_error', (error) => {
-      // Suppress noisy WebSocket frame header errors - they're normal during transport negotiation
+      // Suppress noisy transport errors — socket.io-client already logs these internally;
+      // duplicating them doubles the console noise for no gain.
       const errorMsg = error?.message || String(error);
-      if (errorMsg.includes('Invalid frame header') || errorMsg.includes('websocket error')) {
-        // Silent fallback to polling - this is expected behavior
-        console.debug('🔄 WebSocket upgrade failed, using polling transport');
-        return;
+      const isSilent =
+        errorMsg.includes('Invalid frame header') ||
+        errorMsg.includes('websocket error') ||
+        errorMsg.includes('xhr poll error') ||
+        errorMsg.includes('xhr post error');
+      if (!isSilent) {
+        console.error('❌ Connection error:', error);
       }
-      console.error('❌ Connection error:', error);
       this.setConnectionState('error');
       this.emit('connection', { status: 'error', error: error.message });
       this.scheduleReconnect();

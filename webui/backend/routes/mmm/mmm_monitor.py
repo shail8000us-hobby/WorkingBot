@@ -224,7 +224,21 @@ class MMMMonitor:
         except Exception as _pend_e:
             log.warning(f"[{self.session_id}] Failed to clear pending order registry at start: {_pend_e}")
 
-        self._thread = threading.Thread(
+        # Use a REAL OS thread (not an eventlet greenlet) so that asyncio's
+        # run_until_complete() works inside _run_loop().  When gunicorn uses
+        # worker_class=eventlet, threading.Thread is monkey-patched to a
+        # greenlet; calling run_until_complete() from a greenlet raises
+        # "Cannot run the event loop while another loop is running" because
+        # eventlet's hub is already running in that greenlet context.
+        # eventlet.patcher.original('threading').Thread gives us the genuine
+        # OS thread class, giving asyncio a clean, isolated execution context.
+        try:
+            from eventlet.patcher import original as _ep_original
+            _RealThread = _ep_original('threading').Thread
+        except (ImportError, AttributeError):
+            _RealThread = threading.Thread
+
+        self._thread = _RealThread(
             target=self._run_loop,
             name=f"mmm-monitor-{self.session_id}",
             daemon=True,
@@ -3149,6 +3163,49 @@ class MMMMonitor:
         # Clear after use — don't affect non-shift lot calculations
         session.pop('_strike_shift_otm_multiplier', None)
 
+        # ── DELTA-NEUTRAL LOT MATCHING ────────────────────────────────────
+        # During a strike shift, the old positions are frozen and the new
+        # position gets only as many lots as the loss formula demands.
+        # This creates immediate asymmetry (e.g. 4 CE vs 11 PE) because
+        # the loss-driven count doesn't consider opposing side lot count.
+        # Fix: match the opposite side's active lots so delta stays neutral.
+        # Risk controls respected: trend tier lot reduction is applied to the
+        # matching target so regime constraints are never bypassed.
+        if params.get('shift_match_opposite_lots', True):
+            opposite_side = 'pe' if side == 'ce' else 'ce'
+            opposite_active = session.get(opposite_side, {}).get('active_lots', 0)
+            if opposite_active > lots:
+                pre_match_lots = lots
+                target = opposite_active
+                # Apply same trend-tier reduction to the balance target
+                # (the formula lots already went through calculate_lots_to_sell
+                # which applied this reduction, so repeat it here too)
+                trend_tier = session.get('_trend_tier', 0)
+                if trend_tier >= 1:
+                    lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
+                    mult = max(1.0 - lot_reduction, 0.1)
+                    # Floor at formula lots — never go below what hedging demands
+                    target = max(int(opposite_active * mult + 0.999), lots)
+                # Respect position cap (after freeze, active_lots for this side is 0)
+                max_per_side = params.get('max_lots_per_side', 100)
+                lots = min(target, max_per_side)
+                if lots > pre_match_lots:
+                    trend_note = f' (trend T{trend_tier} reduction applied)' if trend_tier >= 1 else ''
+                    log.info(
+                        f"[{sid}] DELTA-NEUTRAL MATCH: {side.upper()} lots "
+                        f"{pre_match_lots} → {lots} (matching "
+                        f"{opposite_side.upper()} active_lots={opposite_active}){trend_note}"
+                    )
+                    log_activity('delta_neutral_match',
+                        f'⚖️ Delta-Neutral Match: {side.upper()} shift lots '
+                        f'{pre_match_lots} → {lots} '
+                        f'(matching {opposite_side.upper()}={opposite_active}{trend_note})',
+                        sid, 'info',
+                        {'side': side, 'pre_match': pre_match_lots,
+                         'matched_to': lots, 'opposite_side': opposite_side,
+                         'opposite_lots': opposite_active, 'trend_tier': trend_tier})
+        # ── END DELTA-NEUTRAL LOT MATCHING ────────────────────────────────
+
         if lots <= 0:
             return
 
@@ -3402,6 +3459,30 @@ class MMMMonitor:
         lots, constraint_msg, _ = self._engine.calculate_lots_to_sell(
             session, side, loss, hedge_premium,
         )
+
+        # Delta-neutral lot matching (same logic as _process_strike_shift)
+        params = session.get('params', {})
+        if lots > 0 and params.get('shift_match_opposite_lots', True):
+            opposite_side = 'pe' if side == 'ce' else 'ce'
+            opposite_active = session.get(opposite_side, {}).get('active_lots', 0)
+            if opposite_active > lots:
+                pre_match_lots = lots
+                target = opposite_active
+                trend_tier = session.get('_trend_tier', 0)
+                if trend_tier >= 1:
+                    lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
+                    mult = max(1.0 - lot_reduction, 0.1)
+                    target = max(int(opposite_active * mult + 0.999), lots)
+                max_per_side = params.get('max_lots_per_side', 100)
+                current_active = session.get(side, {}).get('active_lots', 0)
+                lots = min(target, max_per_side - current_active)
+                lots = max(lots, pre_match_lots)  # never go below formula result
+                if lots > pre_match_lots:
+                    log.info(
+                        f"[{sid}] DELTA-NEUTRAL MATCH (fallback): {side.upper()} lots "
+                        f"{pre_match_lots} → {lots} (matching "
+                        f"{opposite_side.upper()} active_lots={opposite_active})"
+                    )
 
         if lots <= 0:
             if constraint_msg:
@@ -5795,8 +5876,13 @@ class MMMMonitor:
                         return 0.0
                 return 0.0
 
+            _greek_zero_positions = 0
             for (strike, opt), resp in ticker_results:
                 if isinstance(resp, Exception):
+                    log.warning(
+                        f"[{self.session_id}] Greeks fetch FAILED for "
+                        f"{opt} @ {strike}: {resp}"
+                    )
                     continue
 
                 result = resp.get('result', resp) if isinstance(resp, dict) else {}
@@ -5807,6 +5893,17 @@ class MMMMonitor:
                 greek_gamma = _safe_greek(greeks.get('gamma', 0))
 
                 lots = int(position_map.get((strike, opt), 0))
+
+                # Diagnostic: warn when exchange returns no greeks for a live position
+                if lots > 0 and greek_delta == 0.0:
+                    _greek_zero_positions += 1
+                    log.warning(
+                        f"[{self.session_id}] GREEKS MISSING: {opt} @ {strike} "
+                        f"({lots} lots) — exchange returned delta=0. "
+                        f"Portfolio delta will be understated. "
+                        f"greeks={greeks!r}"
+                    )
+
                 # multiplier: ALWAYS -1 for short positions (we are the seller)
                 # Fix #26.1: short CE delta = -(+call_delta), short PE delta = -(-put_delta) = +
                 # Old bug: put multiplier was +1, which preserved the negative put delta
@@ -5815,6 +5912,10 @@ class MMMMonitor:
                 multiplier = -1  # short position always negates the exchange delta
                 position_delta = greek_delta * lots * LOT_SIZE_BTC * multiplier
                 portfolio_delta += position_delta
+                log.debug(
+                    f"[{self.session_id}] Greek: {opt} @ {int(strike)} | "
+                    f"lots={lots} δ={greek_delta:+.4f} → pos_δ={position_delta:+.6f} BTC"
+                )
 
                 # Gamma: accumulate absolute gamma exposure (short options = negative gamma)
                 position_gamma = greek_gamma * lots * LOT_SIZE_BTC
@@ -5827,6 +5928,20 @@ class MMMMonitor:
                 'portfolio_gamma': portfolio_gamma,
                 'positions': gamma_positions,
             }
+
+            total_pos = len(position_map)
+            if _greek_zero_positions > 0:
+                log.warning(
+                    f"[{self.session_id}] GREEKS SUMMARY: {_greek_zero_positions}/{total_pos} "
+                    f"positions returned delta=0 — portfolio_delta={portfolio_delta:+.6f} BTC "
+                    f"may be understated. Check exchange ticker availability."
+                )
+            else:
+                log.info(
+                    f"[{self.session_id}] GREEKS OK: {total_pos} positions, "
+                    f"portfolio_delta={portfolio_delta:+.6f} BTC, "
+                    f"portfolio_gamma={portfolio_gamma:+.6f}"
+                )
 
             return portfolio_delta
             

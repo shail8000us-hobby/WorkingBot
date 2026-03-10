@@ -412,3 +412,25 @@ def emit_perp_hedge_flip(session_id: str, old_direction: str,
         'realized_pnl': realized_pnl,
         'fill_price': fill_price,
     })
+
+
+def emit_to_session(session_id: str, event: str, data: Dict):
+    """Generic per-session emit. Merges session_id into payload.
+
+    Used by route handlers that need to emit a custom event without
+    having a dedicated typed emit function.
+    """
+    _emit(event, {'session_id': session_id, **data})
+
+
+def emit_manual_injection(session_id: str, side: str, lots: int,
+                          strike: float, fill_price: float, order_id: str):
+    """Emit operator position injection event."""
+    _emit('mmm_manual_injection', {
+        'session_id': session_id,
+        'side': side,
+        'lots': lots,
+        'strike': strike,
+        'fill_price': fill_price,
+        'order_id': order_id,
+    })

@@ -335,6 +335,7 @@ DEFAULT_PARAMS = {
     'trailing_stop_pct': 0.0,           # protect profit at N% of peak (0 = disabled)
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
+    'shift_match_opposite_lots': True,     # delta-neutral: match opposite side's lot count on strike shift
 
     # Adaptive interval
     'adaptive_interval_enabled': True,     # auto-scale heartbeat frequency based on time-to-expiry
@@ -469,7 +470,8 @@ DEFAULT_PARAMS = {
 # Which parameters can be changed while algo is running
 HOT_RELOAD_PARAMS = {
     'adjustment_interval', 'min_trigger_move', 'shift_threshold',
-    'shift_threshold_pct', 'shift_target_premium', 'close_at_threshold',
+    'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots',
+    'close_at_threshold',
     'premium_buffer_pct', 'max_lots_per_side',
     # Split Ledger
     'max_total_exposure',

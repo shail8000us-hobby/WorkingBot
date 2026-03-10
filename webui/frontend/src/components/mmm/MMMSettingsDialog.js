@@ -58,7 +58,7 @@ const PARAM_GROUPS = {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
     blurb: 'Controls when the algo adjusts and how it shifts strikes. Lower trigger = more sensitive.',
-    params: ['min_trigger_move', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'max_adjustments', 'cooldown_on_reversal'],
+    params: ['min_trigger_move', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',
@@ -163,6 +163,7 @@ const PARAM_TOOLTIPS = {
   shift_threshold: HELP.shift_threshold || 'Minimum premium at the hedge strike to avoid a strike shift.',
   shift_threshold_pct: HELP.shift_threshold_pct || 'Dynamic shift threshold as % of entry premium.',
   shift_target_premium: 'Target premium when looking for a new strike after a shift. The algo picks the strike closest to this premium value. Higher = deeper OTM (safer but less premium). Lower = closer to ATM (more premium but riskier).',
+  shift_match_opposite_lots: 'Delta-neutral balance: when a strike shift opens a new position, sell AT LEAST as many lots as the opposite side has active. Example: PE has 11 lots, CE shifts → CE opens 11 lots too (not just 4). Prevents directional bias from lot asymmetry. Trend-tier lot reduction is applied proportionally so risk controls are respected. Recommended: ON.',
   max_adjustments: HELP.max_adjustments || 'Maximum number of adjustments before the algo stops and alerts you.',
   cooldown_on_reversal: HELP.cooldown || 'After a reversal is detected, skip one heartbeat interval before adjusting. Filters out false reversals from short price spikes.',
   whipsaw_limit: HELP.whipsaw || 'If the last N adjustments alternate between CE and PE, the market is whipsawing. The algo pauses.',

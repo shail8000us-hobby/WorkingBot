@@ -223,6 +223,52 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Operator-inject: Open a new short position and register it with the algo.
+   * The algo will manage the injected position going forward.
+   * @param {string} sessionId
+   * @param {string} side     - 'ce' or 'pe'
+   * @param {number} lots     - number of lots to sell
+   * @param {number} strike   - strike price
+   */
+  async injectPosition(sessionId, side, lots, strike) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/inject-position`,
+      { side, lots, strike }
+    );
+    return data;
+  },
+
+  /**
+   * Switch the algo's active monitoring strike to a different open strike.
+   * No order is placed — purely a state update; trigger snapshots are reset.
+   * @param {string} sessionId
+   * @param {string} side   - 'ce' or 'pe'
+   * @param {number} strike - target strike (must have open positions)
+   */
+  async setActiveStrike(sessionId, side, strike) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/set-active-strike`,
+      { side, strike }
+    );
+    return data;
+  },
+
+  /**
+   * Buy back ALL lots at a specific strike and remove from the algo ledger.
+   * Used to close a risky near-ATM strike before re-establishing farther away.
+   * @param {string} sessionId
+   * @param {string} side   - 'ce' or 'pe'
+   * @param {number} strike - strike to close entirely
+   */
+  async closeStrike(sessionId, side, strike) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/close-strike`,
+      { side, strike }
+    );
+    return data;
+  },
+
   // =========================================================================
   // Phase 3+: Live Data Endpoints
   // =========================================================================

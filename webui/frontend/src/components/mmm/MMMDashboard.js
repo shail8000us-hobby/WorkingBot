@@ -45,6 +45,8 @@ import {
   DialogActions,
   ToggleButtonGroup,
   ToggleButton,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import ContentCutIcon from '@mui/icons-material/ContentCut';
 import {
@@ -1149,12 +1151,239 @@ const MMMReduceModal = ({ open, session, onClose }) => {
   );
 };
 
+// =============================================================================
+// Operator Inject Modal
+// =============================================================================
+
+/**
+ * Modal for manually injecting a new short option position into a running
+ * algo session. The algo will register and manage it going forward.
+ *
+ * Props:
+ *   open    — boolean
+ *   session — session object (for lots cap info)
+ *   onClose — callback
+ */
+const MMMInjectModal = ({ open, session, onClose }) => {
+  const [side, setSide] = useState('ce');
+  const [lots, setLots] = useState(1);
+  // 'active' = use algo's current active strike; 'custom' = operator types one
+  const [strikeMode, setStrikeMode] = useState('active');
+  const [customStrike, setCustomStrike] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  if (!session) return null;
+
+  const activeStrike = session[side]?.active_strike || 0;
+  const effectiveStrike = strikeMode === 'active' ? activeStrike : Number(customStrike);
+  const maxLots = Math.max(0, (session.params?.max_lots_per_side || 100) - (session[side]?.active_lots || 0));
+
+  const resetForm = () => {
+    setResult(null); setError(''); setLots(1); setSide('ce');
+    setStrikeMode('active'); setCustomStrike(''); setConfirmed(false);
+  };
+
+  const handleClose = () => { if (loading) return; resetForm(); onClose(); };
+
+  const handleSideChange = (_, v) => { if (v) { setSide(v); setLots(1); setStrikeMode('active'); setCustomStrike(''); } };
+
+  const handleSubmit = async () => {
+    if (!confirmed || !isValid) return;
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await mmmService.injectPosition(
+        session.session_id, side, lots, effectiveStrike
+      );
+      setResult(res);
+      if (!res.success) setError(res.error || 'Injection failed');
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || 'Network error';
+      setError(
+        msg === 'Failed to fetch' || msg.includes('ERR_CONNECTION_REFUSED')
+          ? 'Backend unreachable — server may be restarting. Please try again.'
+          : msg
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isDone = result != null;
+  const isValid = effectiveStrike >= 1000 && lots >= 1 && lots <= maxLots && maxLots > 0;
+
+  return (
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 700, color: '#ff9800' }}>
+        💉 Inject Position
+      </DialogTitle>
+
+      <DialogContent sx={{ pt: 2 }}>
+        {isDone ? (
+          /* ---- Result view ---- */
+          <Box>
+            {result.success ? (
+              <Alert severity="success" sx={{ mb: 1.5 }}>
+                Injected successfully. Fill: <strong>${result.fill_price?.toFixed(2)}</strong>
+              </Alert>
+            ) : (
+              <Alert severity="error" sx={{ mb: 1.5 }}>{error || 'Injection failed.'}</Alert>
+            )}
+            {result.success && (
+              <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem', mt: 1 }}>
+                <Box>{result.side} @ {Number(result.strike).toLocaleString()}: {result.lots} lots</Box>
+                <Box>Fill price: ${result.fill_price?.toFixed(2)}</Box>
+                <Box>New active lots ({result.side}): {result.new_active_lots}</Box>
+                {result.order_id && <Box sx={{ mt: 0.5, color: 'text.secondary' }}>Order: {result.order_id}</Box>}
+              </Box>
+            )}
+          </Box>
+        ) : (
+          /* ---- Input view ---- */
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
+            <Alert severity="warning" sx={{ fontSize: '0.8rem' }}>
+              This places a <strong>real SELL order</strong> on the exchange and registers
+              the position with the algo. The algo will manage it (adjustments, shifts,
+              close-at-5) from this point forward.
+            </Alert>
+
+            {/* Side selector */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>Side</Typography>
+              <ToggleButtonGroup value={side} exclusive onChange={handleSideChange} size="small" sx={{ width: '100%' }}>
+                <ToggleButton value="ce" sx={{ flex: 1, fontWeight: 700 }}>
+                  📈 CE {session.ce?.active_lots != null && `(${session.ce.active_lots} active)`}
+                </ToggleButton>
+                <ToggleButton value="pe" sx={{ flex: 1, fontWeight: 700 }}>
+                  📉 PE {session.pe?.active_lots != null && `(${session.pe.active_lots} active)`}
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+
+            {/* Strike mode selector */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>Strike</Typography>
+              <ToggleButtonGroup
+                value={strikeMode}
+                exclusive
+                onChange={(_, v) => { if (v) { setStrikeMode(v); setCustomStrike(''); } }}
+                size="small"
+                sx={{ width: '100%', mb: 1 }}
+              >
+                <ToggleButton value="active" sx={{ flex: 1 }}>
+                  Active&nbsp;
+                  {activeStrike > 0
+                    ? <Typography component="span" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.85rem', color: 'primary.main' }}>
+                        {activeStrike.toLocaleString()}
+                      </Typography>
+                    : <Typography component="span" sx={{ color: 'text.disabled', fontSize: '0.8rem' }}>—</Typography>
+                  }
+                </ToggleButton>
+                <ToggleButton value="custom" sx={{ flex: 1 }}>Custom Strike</ToggleButton>
+              </ToggleButtonGroup>
+
+              {strikeMode === 'active' ? (
+                /* Visual confirmation of which strike will be used */
+                <Box sx={{
+                  display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1,
+                  borderRadius: 1, backgroundColor: 'rgba(33,150,243,0.08)',
+                  border: '1px solid rgba(33,150,243,0.3)',
+                }}>
+                  <Typography variant="body2" color="text.secondary">Will sell at:</Typography>
+                  {activeStrike > 0
+                    ? <Typography variant="body1" sx={{ fontWeight: 700, fontFamily: 'monospace', color: 'primary.main' }}>
+                        {activeStrike.toLocaleString()}
+                      </Typography>
+                    : <Typography variant="body2" color="error">No active strike on this side</Typography>
+                  }
+                  <Typography variant="caption" color="text.disabled" sx={{ ml: 'auto' }}>
+                    algo's current {side.toUpperCase()} strike
+                  </Typography>
+                </Box>
+              ) : (
+                <TextField
+                  label="Enter strike price"
+                  type="number"
+                  value={customStrike}
+                  onChange={e => setCustomStrike(e.target.value)}
+                  size="small"
+                  fullWidth
+                  autoFocus
+                  placeholder={activeStrike > 0 ? `e.g. ${activeStrike}` : 'e.g. 72000'}
+                  inputProps={{ min: 1000, step: 100 }}
+                  error={customStrike !== '' && Number(customStrike) < 1000}
+                  helperText={customStrike !== '' && Number(customStrike) < 1000 ? 'Enter a valid BTC strike' : ''}
+                />
+              )}
+            </Box>
+
+            {/* Lots input */}
+            <TextField
+              label={`Lots to sell ${maxLots > 0 ? `(max ${maxLots})` : '(cap reached)'}`}
+              type="number"
+              value={lots}
+              onChange={e => setLots(Math.max(1, Math.min(maxLots, parseInt(e.target.value) || 1)))}
+              inputProps={{ min: 1, max: maxLots }}
+              size="small"
+              fullWidth
+              error={lots > maxLots || maxLots <= 0}
+              helperText={maxLots <= 0 ? 'max_lots_per_side cap reached' : lots > maxLots ? `Max available: ${maxLots}` : ''}
+            />
+
+            {/* Confirmation toggle */}
+            <Box sx={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              border: '1px solid', borderColor: confirmed ? 'warning.main' : 'divider',
+              borderRadius: 1, px: 1.5, py: 0.5,
+              backgroundColor: confirmed ? 'rgba(255,152,0,0.08)' : 'transparent',
+              transition: 'all 0.2s',
+            }}>
+              <Typography variant="body2" sx={{ fontWeight: confirmed ? 700 : 400, color: confirmed ? 'warning.main' : 'text.secondary' }}>
+                I confirm this places a real SELL order
+              </Typography>
+              <Switch checked={confirmed} onChange={e => setConfirmed(e.target.checked)} color="warning" size="small" />
+            </Box>
+
+            {error && <Alert severity="error">{error}</Alert>}
+          </Box>
+        )}
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={handleClose} disabled={loading}>
+          {isDone ? 'Close' : 'Cancel'}
+        </Button>
+        {!isDone && (
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={handleSubmit}
+            disabled={loading || !isValid || !confirmed}
+            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {loading ? 'Placing order...' : `Sell ${lots} Lot${lots !== 1 ? 's' : ''} @ ${effectiveStrike >= 1000 ? effectiveStrike.toLocaleString() : '—'}`}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 /**
  * Session detail panel — tabbed live dashboard view
  */
 const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryAction }) => {
   const [detailTab, setDetailTab] = useState(0);
   const [reduceOpen, setReduceOpen] = useState(false);
+  const [injectOpen, setInjectOpen] = useState(false);
+  // Close-strike confirmation dialog state
+  const [closeStrikeDlg, setCloseStrikeDlg] = useState({
+    open: false, side: '', strike: 0, lots: 0, currentPremium: null, loading: false, error: '',
+  });
 
   // M-30 fix: Reset tab when session changes (avoids showing empty P&L tab on fresh session)
   useEffect(() => {
@@ -1209,6 +1438,41 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   // C-9 fix: safe reference to heartbeat data (may be undefined on initial load/reconnect)
   // Moved ABOVE early return so useMemo below can reference it (React hooks rule).
   const heartbeat = wsData?.heartbeat || null;
+
+  // --- Set Active Strike ---
+  const handleSetActiveStrike = async (sideKey, strike) => {
+    try {
+      const res = await mmmService.setActiveStrike(session.session_id, sideKey, strike);
+      if (!res.success) console.warn('[SetActiveStrike]', res.error);
+    } catch (e) {
+      console.error('[SetActiveStrike] failed:', e.message);
+    }
+  };
+
+  // --- Close Strike (open confirmation dialog) ---
+  const handleCloseStrikeRequest = (sideKey, strike, lots, currentPremium) => {
+    setCloseStrikeDlg({ open: true, side: sideKey, strike, lots, currentPremium, loading: false, error: '' });
+  };
+
+  const handleCloseStrikeConfirm = async () => {
+    setCloseStrikeDlg(d => ({ ...d, loading: true, error: '' }));
+    try {
+      const res = await mmmService.closeStrike(session.session_id, closeStrikeDlg.side, closeStrikeDlg.strike);
+      if (res.success) {
+        setCloseStrikeDlg(d => ({ ...d, open: false, loading: false }));
+      } else {
+        setCloseStrikeDlg(d => ({ ...d, loading: false, error: res.error || 'Close failed' }));
+      }
+    } catch (e) {
+      const msg = e?.response?.data?.error || e.message;
+      setCloseStrikeDlg(d => ({
+        ...d, loading: false,
+        error: msg.includes('fetch') || msg.includes('Network')
+          ? 'Backend unreachable — server may be restarting. Please try again.'
+          : msg,
+      }));
+    }
+  };
 
   // BUG FIX: Compute proper per-side P&L from individual position rows.
   // The old formula used (entry_fill_price - activePremium) × totalLots which is wrong
@@ -1659,9 +1923,9 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
       {/* Tab 1: Positions */}
       {detailTab === 1 && (
         <Box>
-          {/* Reduce Position button — only shown when session is active */}
+          {/* Reduce / Inject buttons — only shown when session is active */}
           {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status) && (
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mb: 1.5 }}>
               <Button
                 variant="outlined"
                 color="warning"
@@ -1672,14 +1936,92 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
               >
                 Reduce Position
               </Button>
+              {['RUNNING', 'PAUSED'].includes(status) && (
+                <Button
+                  variant="outlined"
+                  color="info"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => setInjectOpen(true)}
+                  sx={{ fontWeight: 700, borderRadius: 2 }}
+                >
+                  Inject Position
+                </Button>
+              )}
             </Box>
           )}
-          <MMMPositionsTable session={session} heartbeat={heartbeat} />
+          <MMMPositionsTable
+            session={session}
+            heartbeat={heartbeat}
+            onSetActiveStrike={handleSetActiveStrike}
+            onCloseStrike={handleCloseStrikeRequest}
+          />
           <MMMReduceModal
             open={reduceOpen}
             session={session}
             onClose={() => setReduceOpen(false)}
           />
+          <MMMInjectModal
+            open={injectOpen}
+            session={session}
+            onClose={() => setInjectOpen(false)}
+          />
+
+          {/* Close-Strike Confirmation Dialog */}
+          <Dialog
+            open={closeStrikeDlg.open}
+            onClose={() => !closeStrikeDlg.loading && setCloseStrikeDlg(d => ({ ...d, open: false }))}
+            maxWidth="xs"
+            fullWidth
+          >
+            <DialogTitle sx={{ fontWeight: 700, color: '#ef5350' }}>
+              🔴 Close Strike — Place Buyback Order
+            </DialogTitle>
+            <DialogContent>
+              <Box sx={{ pt: 1 }}>
+                <Typography sx={{ mb: 2 }}>
+                  Buy back <strong>{closeStrikeDlg.lots} lot{closeStrikeDlg.lots !== 1 ? 's' : ''}</strong> of{' '}
+                  <strong>{closeStrikeDlg.side?.toUpperCase()}</strong> @{' '}
+                  <strong>{Number(closeStrikeDlg.strike).toLocaleString()}</strong>
+                </Typography>
+                {closeStrikeDlg.currentPremium != null && closeStrikeDlg.currentPremium > 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    Current premium: ~${Number(closeStrikeDlg.currentPremium).toFixed(2)}
+                    {' '}· Est. cost: ~${(closeStrikeDlg.currentPremium * closeStrikeDlg.lots * 0.001).toFixed(4)} BTC
+                  </Typography>
+                )}
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
+                  This places a live buyback order on the exchange. The position will be removed
+                  from the algo ledger after fill. You can then inject a new position at a safer strike.
+                </Typography>
+                {closeStrikeDlg.error && (
+                  <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                    {closeStrikeDlg.error}
+                  </Typography>
+                )}
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button
+                onClick={() => setCloseStrikeDlg(d => ({ ...d, open: false }))}
+                disabled={closeStrikeDlg.loading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                onClick={handleCloseStrikeConfirm}
+                disabled={closeStrikeDlg.loading}
+                startIcon={closeStrikeDlg.loading ? <CircularProgress size={16} color="inherit" /> : null}
+              >
+                {closeStrikeDlg.loading
+                  ? 'Placing order...'
+                  : `Close ${closeStrikeDlg.lots} lot${closeStrikeDlg.lots !== 1 ? 's' : ''} @ ${Number(closeStrikeDlg.strike).toLocaleString()}`
+                }
+              </Button>
+            </DialogActions>
+          </Dialog>
         </Box>
       )}
 

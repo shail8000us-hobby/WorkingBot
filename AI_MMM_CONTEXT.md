@@ -2,11 +2,12 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
-> **Last Updated:** March 10, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). Production-ready.
+> **Last Updated:** March 11, 2026
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
+> **Operator Strike Controls:** Set Active Strike, Close Strike (manual buyback + re-establish farther OTM), Operator Position Inject — see §16.
 > **Remaining Hardening:** See `MMM_10_OF_10_PRODUCTION_PLAN.md` for 19 additional issues found in post-robustv2 audit.
 
 ---
@@ -30,6 +31,11 @@ MMM is a **BTC 0DTE options premium selling algorithm** with automatic adjustmen
 13. **Lot lifecycle** harvests profitable frozen positions (M1), recycles capped-out positions into better strikes (M2), and boosts harvesting when call/put imbalance is extreme (M3)
 14. **Split Ledger** frees frozen positions from blocking the active position cap — only `active_lots` count against `max_lots_per_side`, with `max_total_exposure` as a safety ceiling on combined active+frozen
 15. **Shift-Time Recycle** proactively closes cheap frozen positions at each strike shift, folding buyback cost into the new sell lot calculation
+16. **Operator Strike Controls** — three manual intervention tools on the Positions tab:
+    - **Set Active Strike (📌):** Switch the algo's monitoring focal point to any open strike without placing any order
+    - **Close Strike (🔴):** Buy back ALL lots at a chosen strike (exchange order), remove from ledger; if active_strike is closed, the remaining open strike with most lots auto-promotes
+    - **Operator Position Inject (💉):** Sell new lots at any strike and register them in the algo ledger
+    - Enables the operator workflow: close a near-ATM risk strike → inject at a safer far-OTM strike → reduces perp futures usage
 
 The complete calculation logic is defined in `MONEY_POWER_CALCULATION_LOGIC.md` (22 sections). The development plan is in `MMM_DEVELOPMENT_PLAN.md` (all phases complete). The comprehensive audit is in `MMM_robustv2.md` (26 items, all implemented). The remaining hardening plan is in `MMM_10_OF_10_PRODUCTION_PLAN.md`.
 
@@ -1678,3 +1684,104 @@ All new params are in both `DEFAULT_PARAMS` and `HOT_RELOAD_PARAMS` in `mmm_stat
 | `consecutive_critical_threshold` | `3` | Beats at CRITICAL margin before force-stop |
 | `perp_hedge_project_adjustment` | `True` | Include projected adjustment delta in perp hedge |
 | `perp_hedge_approx_option_delta` | `0.5` | Approximate option delta for projection |
+
+---
+
+## 16. OPERATOR STRIKE CONTROLS (implemented March 11, 2026)
+
+Three new operator intervention tools added to the Positions tab (Tab 1) of the MMM session dashboard. All require session status `RUNNING` or `PAUSED`.
+
+### 16.1 Operator Position Inject (`POST /api/mmm/session/{id}/inject-position`)
+
+Opens a new short option position on the exchange and registers it in the algo's `positions[]` ledger. The algo manages it going forward as if it had been placed by the bot itself.
+
+**Use case:** Algo missed an entry, operator wants to add exposure while keeping the risk management loop intact, or after closing a risky strike the operator re-establishes farther OTM.
+
+**Body:** `{ side: 'ce'|'pe', lots: int, strike: float }`
+
+**Guards:** Guardian GO signal, session RUNNING/PAUSED, lots cap check (`active_lots` + new ≤ `max_lots_per_side`).
+
+**State changes:** Appends to `positions[]` with `type='manual', source='operator_inject'`, calls `recompute_side_lots()`, resets trigger snapshots with fresh live premiums.
+
+**Frontend:** "Inject Position" button in Positions tab header. Dialog with Active Strike / Custom Strike mode toggle, per-side active strike auto-fill, confirmation switch.
+
+**File:** `mmm_api.py` → `inject_position()`, `MMMDashboard.js` → `MMMInjectModal`
+
+---
+
+### 16.2 Set Active Strike (`POST /api/mmm/session/{id}/set-active-strike`)
+
+Switches the algo's monitoring focal point (`active_strike`) from the current strike to any other open strike (must have `active` or `shifted` status with `lots > 0`). **No order is placed** — purely a state pointer change.
+
+**Use case:** The algo was monitoring the 71,000 CE. Operator judges the 71,800 CE (more lots, higher premium) is the better reference point. One click switches which strike the heartbeat monitors for trigger evaluation.
+
+**Body:** `{ side: 'ce'|'pe', strike: float }`
+
+**State changes:** Sets `session[side]['active_strike'] = strike`. Fetches live mid-prices for both the new active strike and the partner side → resets both trigger snapshots to current premiums. Without this reset the next heartbeat would compare against a stale snapshot from the old strike and potentially fire a false adjustment immediately.
+
+**Frontend:** 📌 (PushPin) icon button on every non-active open position row in the Positions table. Single click — no confirmation dialog needed (fully reversible, no exchange order).
+
+**File:** `mmm_api.py` → `set_active_strike()`, `MMMPositionsTable.js` → `onSetActiveStrike` prop, `mmmService.js` → `setActiveStrike()`
+
+**WebSocket event emitted:** `mmm_active_strike_changed` `{ side, old_strike, new_strike }`
+
+---
+
+### 16.3 Close Strike (`POST /api/mmm/session/{id}/close-strike`)
+
+Buys back ALL open lots at a specified strike (`active` + `shifted` statuses) with a single exchange order, then removes them from the algo ledger.
+
+**Use case:** Market is trending and a strike is approaching ATM. Operator closes the risky near-ATM strike pro-actively, then uses Operator Inject (§16.1) to re-establish at a safer far-OTM strike. This reduces the need for perp futures delta hedging.
+
+**Body:** `{ side: 'ce'|'pe', strike: float }`
+
+**Guards:** Guardian GO signal, session RUNNING/PAUSED, in-flight guard (`_being_closed=True` set before order placement to prevent duplicate orders if state-removal crashes post-fill).
+
+**State changes:**
+1. Places `buy` + `reduce_only=True` order on exchange for `sum(lots)` at the strike
+2. Marks all matching positions `status='closed'`, records `realized_pnl` per position
+3. If closed strike was `active_strike`: auto-promotes the remaining open strike with the most lots as new `active_strike` (or sets 0 if none remain)
+4. Calls `recompute_side_lots()` to rebuild derived fields
+5. Resets trigger snapshots with premiums at new active strike
+6. Adds to `session['total_realized_pnl']`
+
+**Return:** `{ success, side, strike, lots_closed, fill_price, realized_pnl, new_active_strike }`
+
+**Frontend:** 🔴 (CancelOutlined) icon button on every open position row. Confirmation dialog shows: side, strike, lots, current premium, estimated BTC cost, live `error` feedback. "Place Buyback Order" CTA.
+
+**File:** `mmm_api.py` → `close_strike_route()`, `MMMDashboard.js` → `handleCloseStrikeRequest/Confirm + closeStrikeDlg state`, `MMMPositionsTable.js` → `onCloseStrike` prop, `mmmService.js` → `closeStrike()`
+
+**WebSocket event emitted:** `mmm_strike_closed` `{ side, strike, lots_closed, fill_price, realized_pnl, new_active_strike }`
+
+---
+
+### 16.4 Operator Workflow — Close Near-ATM + Re-establish OTM
+
+The combination of 16.3 + 16.1 replaces what would otherwise require perp futures delta hedging:
+
+```
+1. BTC trends up → CE 71,000 approaching ATM (delta risk rising)
+2. Operator clicks 🔴 on CE 71,000 row → Close Strike dialog
+3. Confirm → Buyback order: BUY 15 CE @ 71,000 (fills at market)
+4. Position removed from ledger; algo promotes next CE strike as active
+5. Operator clicks "Inject Position" → Sell 15 CE @ 73,000 (far OTM)
+6. Algo registers new position, resets triggers
+7. Net result: risk moved 2,000 points farther from ATM; no perp needed
+```
+
+When operator is absent, the algo handles delta risk via perp futures (§2.16) and regime controls (§2.12). When operator is present, this workflow provides a more capital-efficient alternative.
+
+---
+
+### 16.5 Delta Neutrality Fix — `shift_match_opposite_lots` (March 2026)
+
+When the algo performs a strike shift (§2.5), it now optionally matches the number of new lots sold on the shifted side to equal the **opposite side's active lots**. This preserves delta neutrality at the new strike.
+
+**Parameter:** `shift_match_opposite_lots` (bool, default `True`, hot-reloadable)
+
+**Before:** Strike shift sold `max(original_lots, lots_to_sell)` — could produce imbalanced CE/PE lot counts after a shift, requiring immediate adjustments.
+
+**After:** With `shift_match_opposite_lots=True`, the shifted side targets `max(opposite_active_lots, original_lots, lots_to_sell)` — so CE and PE stay balanced through shifts.
+
+**Files:** `mmm_state.py` (DEFAULT_PARAMS + HOT_RELOAD_PARAMS), `mmm_monitor.py` (`_process_strike_shift()` + `_process_shift_fallback()`), `mmm_config.py`, `MMMSettingsDialog.js` (PARAM_RULES + UI).
+

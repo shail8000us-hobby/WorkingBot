@@ -34,3 +34,27 @@ Does NOT apply to:
 **Prevention rule:**
 Whenever close-at-5 would fire on a side below shift_threshold AND the other side is open, the shift mechanism should get priority. The SHIFT-BEFORE-CLOSE guard enforces this. This preserves CE positions as "alive but cheap" so that the next PE trigger produces a proper CE shift rather than leaving CE at zero.
 
+---
+
+## [2026-03-10] MMM Heartbeat Fails 100% — asyncio/eventlet Event Loop Conflict
+
+**Symptom:** Every heartbeat fails. Miss rate 100%. Circuit breaker permanently OPEN. All premiums show "–" in UI. Error in logs: `Heartbeat error: Cannot run the event loop while another loop is running`.
+
+**Root cause:**
+`gunicorn_config.py` uses `worker_class = "eventlet"`. Eventlet monkey-patches `threading.Thread` into a greenlet. `MMMMonitor._run_loop()` creates `asyncio.new_event_loop()` and calls `self._loop.run_until_complete(self._heartbeat())`. Inside a greenlet (not a real OS thread), asyncio cannot take over execution because eventlet's hub is already running in that greenlet context.
+
+**Fix applied (mmm_monitor.py `start()` method):**
+Use `eventlet.patcher.original('threading').Thread` to get the un-monkey-patched Thread class, creating a real OS thread where asyncio works without conflicts.
+
+```python
+try:
+    from eventlet.patcher import original as _ep_original
+    _RealThread = _ep_original('threading').Thread
+except (ImportError, AttributeError):
+    _RealThread = threading.Thread
+self._thread = _RealThread(target=self._run_loop, name=f"mmm-monitor-{self.session_id}", daemon=True)
+```
+
+**Prevention rule:**
+When gunicorn uses `worker_class=eventlet`, any background thread that runs `asyncio.run_until_complete()` MUST use `eventlet.patcher.original('threading').Thread`. The monkey-patched `threading.Thread` creates a greenlet, not a real OS thread, causing asyncio conflicts. `_socketio.emit()` from a real OS thread is safe with Flask-SocketIO in eventlet mode.
+

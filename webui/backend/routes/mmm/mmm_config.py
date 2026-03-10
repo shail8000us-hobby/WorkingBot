@@ -48,6 +48,7 @@ PARAM_RULES = {
     'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
     'itm_guard_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
     'shift_threshold_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
+    'shift_match_opposite_lots': {'type': bool,  'min': None, 'max': None,  'hot': True},
     # Adaptive interval
     'adaptive_interval_enabled': {'type': bool,  'min': None, 'max': None,  'hot': True},
     # Wind-down mode

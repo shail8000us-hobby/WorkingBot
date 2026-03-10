@@ -29,8 +29,11 @@ import {
   Chip,
   Typography,
   Tooltip,
+  IconButton,
 } from '@mui/material';
 import AcUnitIcon from '@mui/icons-material/AcUnit';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 
 const TYPE_COLORS = {
   original: { bg: 'rgba(33,150,243,0.1)', color: '#2196f3', label: 'Original' },
@@ -126,7 +129,9 @@ export function buildPositionRows(session, heartbeat) {
       rows.push({
         id: `${sideKey}-orig`,
         side: sideKey.toUpperCase(),
+        sideKey,
         strike: side.active_strike,
+        isActiveFocalPoint: true,
         type: 'original',
         lots: side.original_lots,
         entryPremium: side.original_premium,
@@ -140,6 +145,7 @@ export function buildPositionRows(session, heartbeat) {
       const lots = fill.lots || 0;
       const prem = fill.premium || 0;
       const fillStrike = fill.strike || side.active_strike;
+      const isActiveFocalPoint = Math.abs(fillStrike - (side.active_strike || 0)) < 1;
       const currentPremium = resolveCurrentPremium(
         fillStrike, sideKey, heartbeat, session
       );
@@ -149,7 +155,9 @@ export function buildPositionRows(session, heartbeat) {
       rows.push({
         id: `${sideKey}-adj-${i}`,
         side: sideKey.toUpperCase(),
+        sideKey,
         strike: fillStrike,
+        isActiveFocalPoint,
         type: 'adjustment',
         typeLabel: `Adj #${i + 1}`,
         lots,
@@ -211,7 +219,9 @@ export function buildPositionRows(session, heartbeat) {
       rows.push({
         id: `${sideKey}-frozen-${i}`,
         side: sideKey.toUpperCase(),
+        sideKey,
         strike: frozenStrike,
+        isActiveFocalPoint: false,
         type: 'frozen',
         typeLabel: frozen.type === 'original' ? 'FROZEN (Orig)' : `FROZEN (Adj)`,
         lots,
@@ -232,13 +242,14 @@ export function buildPositionRows(session, heartbeat) {
   return rows;
 }
 
-export default function MMMPositionsTable({ session, heartbeat }) {
+export default function MMMPositionsTable({ session, heartbeat, onSetActiveStrike, onCloseStrike }) {
   const rows = useMemo(
     () => buildPositionRows(session, heartbeat),
     [session, heartbeat]
   );
 
   const status = (session?.strategy_status || session?.status || 'IDLE').toUpperCase();
+  const canOperate = ['RUNNING', 'PAUSED'].includes(status);
 
   if (rows.length === 0) {
     const isStarting = status === 'STARTING';
@@ -312,6 +323,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
               <Tooltip title="P&L for this row = (Entry - Current) × Lots × 0.001 BTC × BTC price. Positive = profit, negative = loss." arrow>
                 <TableCell align="right" sx={{ cursor: 'help' }}>P&L</TableCell>
               </Tooltip>
+              <TableCell align="center" sx={{ width: 90 }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -438,6 +450,37 @@ export default function MMMPositionsTable({ session, heartbeat }) {
                       </Tooltip>
                     )}
                   </TableCell>
+                  {/* Actions column */}
+                  <TableCell align="center" sx={{ whiteSpace: 'nowrap', p: 0.5 }}>
+                    {canOperate && !isFrozen && !row.isActiveFocalPoint && onSetActiveStrike && (
+                      <Tooltip title={`Set ${row.side} active strike to ${Number(row.strike).toLocaleString()} — algo will monitor this strike`} arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => onSetActiveStrike(row.sideKey, row.strike)}
+                          sx={{ color: '#42a5f5', p: 0.5 }}
+                        >
+                          <PushPinOutlinedIcon sx={{ fontSize: '1rem' }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {canOperate && onCloseStrike && (
+                      <Tooltip
+                        title={`Close ALL ${row.lots} lots of ${row.side} @ ${Number(row.strike).toLocaleString()} — places buyback order on exchange`}
+                        arrow
+                      >
+                        <IconButton
+                          size="small"
+                          onClick={() => onCloseStrike(row.sideKey, row.strike, row.lots, row.currentPremium)}
+                          sx={{ color: '#ef5350', p: 0.5 }}
+                        >
+                          <CancelOutlinedIcon sx={{ fontSize: '1rem' }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {(!canOperate || (!onSetActiveStrike && !onCloseStrike)) && (
+                      <span style={{ color: 'transparent' }}>—</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -447,6 +490,7 @@ export default function MMMPositionsTable({ session, heartbeat }) {
               <TableCell colSpan={6} align="right" sx={{ fontWeight: 700 }}>
                 Total P&L
               </TableCell>
+              {/* P&L value */}
               <TableCell
                 align="right"
                 sx={{
@@ -458,6 +502,8 @@ export default function MMMPositionsTable({ session, heartbeat }) {
               >
                 {totalPnl >= 0 ? '+' : ''}${formatNum(totalPnl)}
               </TableCell>
+              {/* Empty Actions cell in total row */}
+              <TableCell />
             </TableRow>
           </TableBody>
         </Table>

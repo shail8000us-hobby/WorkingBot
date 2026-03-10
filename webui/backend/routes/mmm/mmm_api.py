@@ -3121,6 +3121,647 @@ def reduce_position(session_id: str):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@mmm_bp.route('/session/<session_id>/inject-position', methods=['POST'])
+def inject_position(session_id: str):
+    """
+    Operator-inject: Open a new short option position and register it in
+    the running algo session ledger so the algo manages it going forward.
+
+    Useful when the algo missed an entry or the operator wants to manually
+    add exposure while keeping the risk management loop intact.
+
+    Body (JSON):
+        side   : str   — 'ce' or 'pe'
+        lots   : int   — number of lots to sell
+        strike : float — strike price to sell at
+
+    Safety guards:
+        - Session must be RUNNING or PAUSED
+        - Lots + current active_lots must not exceed max_lots_per_side
+        - Guardian signal must be GO
+
+    After a successful fill the position is added to positions[] with
+    type='manual' and recompute_side_lots() rebuilds all derived fields.
+    Trigger snapshots are reset to current premiums so the next heartbeat
+    uses a fresh baseline.
+
+    Returns:
+        {
+            success        : bool,
+            side           : str,
+            lots           : int,
+            strike         : float,
+            fill_price     : float,
+            order_id       : str,
+            new_active_lots: int,
+        }
+    """
+    from .mmm_trigger import update_trigger_snapshots
+    from .mmm_executor import get_executor
+    from .mmm_activity import log_activity
+    from .mmm_initializer import get_initializer
+    from .mmm_state import recompute_side_lots as _recompute
+
+    try:
+        data = request.get_json(force=True) or {}
+        side_param = data.get('side', '').lower()
+        lots_param = int(data.get('lots', 0))
+        strike_raw = data.get('strike')
+
+        if side_param not in ('ce', 'pe'):
+            return jsonify({'success': False, 'error': "side must be 'ce' or 'pe'"}), 400
+        if lots_param <= 0:
+            return jsonify({'success': False, 'error': 'lots must be a positive integer'}), 400
+        if not strike_raw:
+            return jsonify({'success': False, 'error': 'strike is required'}), 400
+
+        strike_val = float(strike_raw)
+        if strike_val <= 0:
+            return jsonify({'success': False, 'error': 'strike must be a positive number'}), 400
+
+        # Guardian check before any order placement
+        signal = _check_guardian_signal()
+        if signal != 'GO':
+            return jsonify({'success': False, 'error': f'Guardian signal is {signal}'}), 403
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('RUNNING', 'PAUSED'):
+            return jsonify({
+                'success': False,
+                'error': f'Session must be RUNNING or PAUSED. Current: {status}',
+            }), 400
+
+        # --- Cap check ---
+        params = session.get('params', {})
+        max_lots = int(params.get('max_lots_per_side', 100))
+        side_state = session.get(side_param, {})
+        current_lots = side_state.get('active_lots', 0)
+        if current_lots + lots_param > max_lots:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f'Would exceed max_lots_per_side ({max_lots}). '
+                    f'Current active: {current_lots}, requesting: {lots_param}.'
+                ),
+            }), 400
+
+        expiry = params.get('expiry', '')
+        option_type = 'call' if side_param == 'ce' else 'put'
+        executor = get_executor()
+        initializer = get_initializer()
+        symbol = initializer.build_symbol(option_type, 'BTC', strike_val, expiry)
+
+        log_activity(
+            'manual_inject',
+            f'💉 Inject: SELL {lots_param} {side_param.upper()} @ {int(strike_val)} ({symbol})',
+            session_id, 'info',
+            {'side': side_param.upper(), 'strike': strike_val, 'lots': lots_param},
+        )
+
+        result = _run_async(executor.smart_execute(
+            symbol=symbol,
+            side='sell',
+            size=lots_param,
+            reduce_only=False,
+            session_id=session_id,
+        ))
+
+        if not result.get('success'):
+            err = result.get('error', 'execution failed')
+            log_activity(
+                'manual_inject',
+                f'💉 Inject FAILED: {side_param.upper()} @ {int(strike_val)} — {err}',
+                session_id, 'error',
+                {'side': side_param.upper(), 'strike': strike_val, 'error': err},
+            )
+            return jsonify({'success': False, 'error': err}), 500
+
+        fill_price = float(result.get('fill_price', 0))
+        order_id = str(result.get('order_id', ''))
+        now = datetime.now(timezone.utc).isoformat()
+
+        # --- Record fill in positions[] (Unified Ledger) ---
+        counter = side_state.get('_pos_counter', 0) + 1
+        side_state['_pos_counter'] = counter
+        side_state.setdefault('positions', []).append({
+            'id': f"{side_param}_manual_{counter:03d}",
+            'strike': strike_val,
+            'lots': lots_param,
+            'entry_premium': fill_price,
+            'premium': fill_price,
+            'type': 'manual',
+            'status': 'active',
+            'created_at': now,
+            'shifted_at': None,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': now,
+            'source': 'operator_inject',
+        })
+        side_state = _recompute(side_state)
+        session[side_param] = side_state
+
+        # Track total premium collected
+        premium_collected = fill_price * lots_param * LOT_SIZE_BTC
+        session['total_premium_collected'] = (
+            session.get('total_premium_collected', 0) + premium_collected
+        )
+
+        # Audit trail entry (no adjustment_count increment — this is not an algo decision)
+        session.setdefault('adjustment_history', []).append({
+            'side': side_param.upper(),
+            'aggressor': 'OPERATOR',
+            'lots_sold': lots_param,
+            'premium': fill_price,
+            'strike': strike_val,
+            'timestamp': now,
+            'type': 'manual',
+            'premium_collected': premium_collected,
+            'adjustment_number': session.get('adjustment_count', 0),
+            'source': 'operator_inject',
+        })
+        if len(session['adjustment_history']) > 200:
+            session['adjustment_history'] = session['adjustment_history'][-200:]
+
+        # --- Reset trigger snapshots with fresh premiums ---
+        try:
+            other_side = 'pe' if side_param == 'ce' else 'ce'
+            other_state = session.get(other_side, {})
+            other_strike = other_state.get('active_strike', 0)
+            other_option_type = 'put' if other_side == 'pe' else 'call'
+            other_sym = initializer.build_symbol(other_option_type, 'BTC', other_strike, expiry)
+
+            async def _fetch_other_mid():
+                return await executor.get_mid_price(other_sym)
+
+            other_mid = _run_async(_fetch_other_mid()) or 0.0
+            ce_now = fill_price if side_param == 'ce' else other_mid
+            pe_now = fill_price if side_param == 'pe' else other_mid
+            if ce_now > 0 and pe_now > 0:
+                update_trigger_snapshots(session, ce_now, pe_now)
+                log.info(
+                    f'[{session_id}] Inject: trigger snapshots reset '
+                    f'CE={ce_now:.2f} PE={pe_now:.2f}'
+                )
+        except Exception as snap_err:
+            log.warning(f'[{session_id}] Could not reset trigger snapshots after inject: {snap_err}')
+
+        session['updated_at'] = now
+        storage.save_session(session)
+
+        # --- WebSocket notification ---
+        try:
+            from .mmm_websocket import emit_manual_injection
+            emit_manual_injection(
+                session_id=session_id,
+                side=side_param.upper(),
+                lots=lots_param,
+                strike=strike_val,
+                fill_price=fill_price,
+                order_id=order_id,
+            )
+        except Exception as ws_err:
+            log.warning(f'[{session_id}] WS emit failed after inject: {ws_err}')
+
+        log_activity(
+            'manual_inject',
+            f'💉 Inject OK: SELL {lots_param} {side_param.upper()} @ {int(strike_val)} '
+            f'fill ${fill_price:.2f} (new active: {side_state.get("active_lots", 0)} lots)',
+            session_id, 'success',
+            {
+                'side': side_param.upper(),
+                'strike': strike_val,
+                'lots': lots_param,
+                'fill_price': fill_price,
+                'order_id': order_id,
+                'new_active_lots': side_state.get('active_lots', 0),
+            },
+        )
+
+        log.info(
+            f'[{session_id}] Inject complete: {side_param.upper()} '
+            f'{lots_param} lots @ {strike_val} fill=${fill_price:.2f}'
+        )
+
+        return jsonify({
+            'success': True,
+            'side': side_param.upper(),
+            'lots': lots_param,
+            'strike': strike_val,
+            'fill_price': fill_price,
+            'order_id': order_id,
+            'new_active_lots': side_state.get('active_lots', 0),
+        })
+
+    except Exception as e:
+        log.exception(f'Failed to inject position for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/set-active-strike', methods=['POST'])
+def set_active_strike(session_id: str):
+    """
+    Switch the algo's monitoring focal point to a different open strike.
+
+    No order is placed — purely a state update. The algo will start fetching
+    premium and computing loss-delta at the new strike on the next heartbeat.
+
+    Trigger snapshots are reset to current live premiums so the next heartbeat
+    starts from a fresh baseline (no false-positive adjustment on switch).
+
+    Body (JSON):
+        side   : str   — 'ce' or 'pe'
+        strike : float — target strike (must have active/shifted positions)
+
+    Returns:
+        {success, side, old_strike, new_strike}
+    """
+    from .mmm_trigger import update_trigger_snapshots
+    from .mmm_executor import get_executor
+    from .mmm_initializer import get_initializer
+    from .mmm_activity import log_activity
+
+    try:
+        data = request.get_json(force=True) or {}
+        side_param = data.get('side', '').lower()
+        strike_raw = data.get('strike')
+
+        if side_param not in ('ce', 'pe'):
+            return jsonify({'success': False, 'error': "side must be 'ce' or 'pe'"}), 400
+        if not strike_raw:
+            return jsonify({'success': False, 'error': 'strike is required'}), 400
+
+        strike_val = float(strike_raw)
+        if strike_val < 1000:
+            return jsonify({'success': False, 'error': 'strike must be >= 1000'}), 400
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('RUNNING', 'PAUSED'):
+            return jsonify({
+                'success': False,
+                'error': f'Session must be RUNNING or PAUSED. Current: {status}',
+            }), 400
+
+        side_state = session.get(side_param, {})
+        positions = side_state.get('positions', [])
+
+        # Confirm target strike has open positions
+        target_lots = sum(
+            p.get('lots', 0) for p in positions
+            if p.get('status') in ('active', 'shifted')
+            and abs(float(p.get('strike', 0)) - strike_val) < 1
+        )
+        if target_lots <= 0:
+            return jsonify({
+                'success': False,
+                'error': f'No open positions at {int(strike_val)} {side_param.upper()}',
+            }), 400
+
+        old_strike = side_state.get('active_strike', 0)
+        if abs(old_strike - strike_val) < 1:
+            return jsonify({'success': False, 'error': 'That strike is already active'}), 400
+
+        params = session.get('params', {})
+        expiry = params.get('expiry', '')
+        option_type = 'call' if side_param == 'ce' else 'put'
+        executor = get_executor()
+        initializer = get_initializer()
+
+        side_state['active_strike'] = strike_val
+        session[side_param] = side_state
+
+        log_activity(
+            'set_active_strike',
+            f'📌 Active strike: {side_param.upper()} {int(old_strike)} → {int(strike_val)}',
+            session_id, 'info',
+            {'side': side_param.upper(), 'old_strike': old_strike, 'new_strike': strike_val},
+        )
+
+        # Reset trigger snapshots with fresh live premiums
+        try:
+            other_side = 'pe' if side_param == 'ce' else 'ce'
+            other_state = session.get(other_side, {})
+            other_strike = other_state.get('active_strike', 0)
+            new_sym = initializer.build_symbol(option_type, 'BTC', strike_val, expiry)
+            other_option_type = 'put' if other_side == 'pe' else 'call'
+            other_sym = (
+                initializer.build_symbol(other_option_type, 'BTC', other_strike, expiry)
+                if other_strike else None
+            )
+
+            async def _fetch_both():
+                new_mid = await executor.get_mid_price(new_sym)
+                other_mid = await executor.get_mid_price(other_sym) if other_sym else 0.0
+                return new_mid, other_mid
+
+            new_mid, other_mid = _run_async(_fetch_both())
+            ce_now = new_mid if side_param == 'ce' else other_mid
+            pe_now = new_mid if side_param == 'pe' else other_mid
+            # Use whichever premium is available for the unresolved side
+            ce_use = ce_now if ce_now > 0 else pe_now
+            pe_use = pe_now if pe_now > 0 else ce_now
+            if ce_use > 0 or pe_use > 0:
+                update_trigger_snapshots(session, ce_use, pe_use)
+                log.info(
+                    f'[{session_id}] Set-active-strike: trigger snapshots reset '
+                    f'CE={ce_use:.2f} PE={pe_use:.2f}'
+                )
+        except Exception as snap_err:
+            log.warning(
+                f'[{session_id}] Could not reset trigger snapshots after set-active-strike: {snap_err}'
+            )
+
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
+        storage.save_session(session)
+
+        try:
+            from .mmm_websocket import emit_to_session
+            emit_to_session(session_id, 'mmm_active_strike_changed', {
+                'session_id': session_id,
+                'side': side_param.upper(),
+                'old_strike': old_strike,
+                'new_strike': strike_val,
+            })
+        except Exception as ws_err:
+            log.warning(f'[{session_id}] WS emit failed after set-active-strike: {ws_err}')
+
+        log.info(
+            f'[{session_id}] Active strike changed: {side_param.upper()} '
+            f'{int(old_strike)} → {int(strike_val)}'
+        )
+
+        return jsonify({
+            'success': True,
+            'side': side_param.upper(),
+            'old_strike': old_strike,
+            'new_strike': strike_val,
+        })
+
+    except Exception as e:
+        log.exception(f'Failed to set active strike for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/close-strike', methods=['POST'])
+def close_strike_route(session_id: str):
+    """
+    Operator manual: Buy back ALL open lots at a specific strike and remove
+    them from the algo's position ledger.
+
+    Use case: strike is approaching ATM (delta risk rising) and the operator
+    wants to close the risky position and optionally re-establish farther OTM
+    via inject-position. This avoids needing perp futures for delta hedging.
+
+    If the closed strike was the active_strike, the algo automatically
+    promotes the remaining open strike with the most lots as the new
+    active_strike. Trigger snapshots are reset accordingly.
+
+    Body (JSON):
+        side   : str   — 'ce' or 'pe'
+        strike : float — strike to close entirely
+
+    Safety guards:
+        - Session must be RUNNING or PAUSED
+        - Guardian signal must be GO
+        - In-flight guard: positions marked _being_closed before order placement
+
+    Returns:
+        {success, side, strike, lots_closed, fill_price, realized_pnl, new_active_strike}
+    """
+    from .mmm_trigger import update_trigger_snapshots
+    from .mmm_executor import get_executor
+    from .mmm_initializer import get_initializer
+    from .mmm_activity import log_activity
+    from .mmm_state import recompute_side_lots as _recompute
+    from collections import defaultdict
+
+    try:
+        data = request.get_json(force=True) or {}
+        side_param = data.get('side', '').lower()
+        strike_raw = data.get('strike')
+
+        if side_param not in ('ce', 'pe'):
+            return jsonify({'success': False, 'error': "side must be 'ce' or 'pe'"}), 400
+        if not strike_raw:
+            return jsonify({'success': False, 'error': 'strike is required'}), 400
+
+        strike_val = float(strike_raw)
+        if strike_val < 1000:
+            return jsonify({'success': False, 'error': 'strike must be >= 1000'}), 400
+
+        # Guardian check before any order
+        signal = _check_guardian_signal()
+        if signal != 'GO':
+            return jsonify({'success': False, 'error': f'Guardian signal is {signal}'}), 403
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('RUNNING', 'PAUSED'):
+            return jsonify({
+                'success': False,
+                'error': f'Session must be RUNNING or PAUSED. Current: {status}',
+            }), 400
+
+        side_state = session.get(side_param, {})
+        positions = side_state.get('positions', [])
+
+        # Collect all open positions at this strike (active + shifted/frozen)
+        target_positions = [
+            p for p in positions
+            if p.get('status') in ('active', 'shifted')
+            and abs(float(p.get('strike', 0)) - strike_val) < 1
+            and not p.get('_being_closed')
+        ]
+
+        if not target_positions:
+            return jsonify({
+                'success': False,
+                'error': f'No open positions at {int(strike_val)} {side_param.upper()}',
+            }), 400
+
+        total_lots = sum(p.get('lots', 0) for p in target_positions)
+        if total_lots <= 0:
+            return jsonify({'success': False, 'error': 'Total lots at strike is 0'}), 400
+
+        # In-flight guard: mark before placing order (prevents duplicate if state-removal crashes)
+        for p in target_positions:
+            p['_being_closed'] = True
+
+        params = session.get('params', {})
+        expiry = params.get('expiry', '')
+        option_type = 'call' if side_param == 'ce' else 'put'
+        executor = get_executor()
+        initializer = get_initializer()
+        symbol = initializer.build_symbol(option_type, 'BTC', strike_val, expiry)
+
+        log_activity(
+            'manual_close_strike',
+            f'🔴 Close Strike: BUY {total_lots} {side_param.upper()} @ {int(strike_val)} ({symbol})',
+            session_id, 'info',
+            {'side': side_param.upper(), 'strike': strike_val, 'lots': total_lots},
+        )
+
+        result = _run_async(executor.smart_execute(
+            symbol=symbol,
+            side='buy',
+            size=total_lots,
+            reduce_only=True,
+            session_id=session_id,
+        ))
+
+        if not result.get('success'):
+            err = result.get('error', 'execution failed')
+            for p in target_positions:
+                p.pop('_being_closed', None)
+            log_activity(
+                'manual_close_strike',
+                f'🔴 Close Strike FAILED: {side_param.upper()} @ {int(strike_val)} — {err}',
+                session_id, 'error',
+                {'side': side_param.upper(), 'strike': strike_val, 'error': err},
+            )
+            return jsonify({'success': False, 'error': err}), 500
+
+        fill_price = float(result.get('fill_price', 0))
+        order_id = str(result.get('order_id', ''))
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Mark all target positions as closed and compute realized P&L
+        total_realized = 0.0
+        for p in target_positions:
+            entry = float(p.get('entry_premium', p.get('premium', 0)))
+            lots = p.get('lots', 0)
+            realized = (entry - fill_price) * lots * LOT_SIZE_BTC
+            p['status'] = 'closed'
+            p['closed_at'] = now
+            p['realized_pnl'] = round(realized, 6)
+            p.pop('_being_closed', None)
+            total_realized += realized
+
+        # If closing the active_strike, promote the open strike with most lots
+        old_active = side_state.get('active_strike', 0)
+        new_active = old_active
+        if abs(old_active - strike_val) < 1:
+            remaining = [
+                p for p in positions
+                if p.get('status') == 'active'
+                and abs(float(p.get('strike', 0)) - strike_val) >= 1
+            ]
+            if remaining:
+                by_strike = defaultdict(int)
+                for p in remaining:
+                    by_strike[float(p['strike'])] += p.get('lots', 0)
+                new_active = max(by_strike, key=by_strike.get)
+            else:
+                new_active = 0
+            side_state['active_strike'] = new_active
+            log.info(
+                f'[{session_id}] active_strike auto-promoted after close: '
+                f'{side_param.upper()} {int(old_active)} → {int(new_active) if new_active else "none"}'
+            )
+
+        side_state = _recompute(side_state)
+        session[side_param] = side_state
+
+        # Reset trigger snapshots to reflect new state
+        try:
+            other_side = 'pe' if side_param == 'ce' else 'ce'
+            other_state = session.get(other_side, {})
+            other_strike = other_state.get('active_strike', 0)
+            other_option_type = 'put' if other_side == 'pe' else 'call'
+            other_sym = (
+                initializer.build_symbol(other_option_type, 'BTC', other_strike, expiry)
+                if other_strike else None
+            )
+
+            async def _fetch_snap():
+                new_strike_mid = 0.0
+                if new_active and abs(new_active - strike_val) >= 1:
+                    new_sym = initializer.build_symbol(option_type, 'BTC', new_active, expiry)
+                    new_strike_mid = await executor.get_mid_price(new_sym)
+                other_mid = (
+                    await executor.get_mid_price(other_sym)
+                    if other_sym and other_strike else 0.0
+                )
+                return new_strike_mid, other_mid
+
+            new_mid, other_mid = _run_async(_fetch_snap())
+            ce_now = new_mid if side_param == 'ce' else other_mid
+            pe_now = new_mid if side_param == 'pe' else other_mid
+            ce_use = ce_now if ce_now > 0 else pe_now
+            pe_use = pe_now if pe_now > 0 else ce_now
+            if ce_use > 0 or pe_use > 0:
+                update_trigger_snapshots(session, ce_use, pe_use)
+        except Exception as snap_err:
+            log.warning(f'[{session_id}] Could not reset trigger snapshots after close-strike: {snap_err}')
+
+        session['total_realized_pnl'] = session.get('total_realized_pnl', 0.0) + total_realized
+        session['updated_at'] = now
+        storage.save_session(session)
+
+        try:
+            from .mmm_websocket import emit_to_session
+            emit_to_session(session_id, 'mmm_strike_closed', {
+                'session_id': session_id,
+                'side': side_param.upper(),
+                'strike': strike_val,
+                'lots_closed': total_lots,
+                'fill_price': fill_price,
+                'realized_pnl': round(total_realized, 2),
+                'new_active_strike': new_active,
+            })
+        except Exception as ws_err:
+            log.warning(f'[{session_id}] WS emit failed after close-strike: {ws_err}')
+
+        log_activity(
+            'manual_close_strike',
+            f'🔴 Close Strike OK: {side_param.upper()} @ {int(strike_val)} '
+            f'fill ${fill_price:.2f}, P&L ${total_realized:.2f}',
+            session_id, 'success',
+            {
+                'side': side_param.upper(),
+                'strike': strike_val,
+                'lots': total_lots,
+                'fill_price': fill_price,
+                'realized_pnl': round(total_realized, 2),
+                'order_id': order_id,
+            },
+        )
+
+        log.info(
+            f'[{session_id}] Close strike complete: {side_param.upper()} '
+            f'{total_lots} lots @ {strike_val} fill=${fill_price:.2f} P&L=${total_realized:.2f}'
+        )
+
+        return jsonify({
+            'success': True,
+            'side': side_param.upper(),
+            'strike': strike_val,
+            'lots_closed': total_lots,
+            'fill_price': fill_price,
+            'realized_pnl': round(total_realized, 2),
+            'order_id': order_id,
+            'new_active_strike': new_active,
+        })
+
+    except Exception as e:
+        log.exception(f'Failed to close strike for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/session/<session_id>/reconcile', methods=['POST'])
 def reconcile_session(session_id: str):
     """
